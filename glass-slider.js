@@ -1,6 +1,6 @@
 /**
- * Dynamic Glass Slider Effect - iOS 26 Liquid Glass Style
- * Ultra-transparent, high-blur glass that doesn't obscure content
+ * Dynamic Glass Slider Effect - True Glass Refraction
+ * Real glass effect with edge distortion and refraction
  */
 
 class GlassSlider {
@@ -9,19 +9,55 @@ class GlassSlider {
         this.cards = [];
         this.currentCard = null;
         this.isDragging = false;
+        this.startX = 0;
+        this.startY = 0;
         this.init();
     }
 
     init() {
+        this.createSVGFilter();
         this.createSlider();
         this.cards = Array.from(document.querySelectorAll('.glass-box'));
 
         const container = document.querySelector('.bento-container');
         if (container) {
-            container.addEventListener('touchstart', this.handleTouchStart.bind(this), { passive: false });
+            container.addEventListener('touchstart', this.handleTouchStart.bind(this), { passive: true });
             container.addEventListener('touchmove', this.handleTouchMove.bind(this), { passive: false });
-            container.addEventListener('touchend', this.handleTouchEnd.bind(this), { passive: false });
+            container.addEventListener('touchend', this.handleTouchEnd.bind(this), { passive: true });
         }
+    }
+
+    createSVGFilter() {
+        // Create SVG filter for glass refraction effect
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.style.cssText = 'position: absolute; width: 0; height: 0;';
+        svg.innerHTML = `
+            <defs>
+                <filter id="glass-refraction" x="-50%" y="-50%" width="200%" height="200%">
+                    <!-- Turbulence for glass texture -->
+                    <feTurbulence type="fractalNoise" baseFrequency="0.02" numOctaves="3" result="noise"/>
+                    <!-- Displacement map for refraction -->
+                    <feDisplacementMap in="SourceGraphic" in2="noise" scale="8" xChannelSelector="R" yChannelSelector="G" result="distorted"/>
+                    <!-- Gaussian blur for depth -->
+                    <feGaussianBlur in="distorted" stdDeviation="1.5" result="blurred"/>
+                    <!-- Merge with original for subtle effect -->
+                    <feBlend in="blurred" in2="SourceGraphic" mode="normal"/>
+                </filter>
+                
+                <filter id="edge-glow" x="-50%" y="-50%" width="200%" height="200%">
+                    <!-- Edge detection -->
+                    <feMorphology operator="dilate" radius="2" in="SourceAlpha" result="dilated"/>
+                    <feGaussianBlur in="dilated" stdDeviation="4" result="blurred"/>
+                    <feFlood flood-color="rgba(255,255,255,0.6)"/>
+                    <feComposite in2="blurred" operator="in" result="glow"/>
+                    <feMerge>
+                        <feMergeNode in="glow"/>
+                        <feMergeNode in="SourceGraphic"/>
+                    </feMerge>
+                </filter>
+            </defs>
+        `;
+        document.body.appendChild(svg);
     }
 
     createSlider() {
@@ -31,31 +67,35 @@ class GlassSlider {
             position: fixed;
             width: 0;
             height: 0;
-            /* iOS 26 Liquid Glass: ultra-transparent with strong blur */
+            /* True glass material */
             background: linear-gradient(135deg, 
-                rgba(255, 255, 255, 0.08) 0%, 
-                rgba(255, 255, 255, 0.04) 50%,
-                rgba(255, 255, 255, 0.02) 100%);
-            backdrop-filter: blur(40px) saturate(200%) brightness(1.1);
-            -webkit-backdrop-filter: blur(40px) saturate(200%) brightness(1.1);
-            border: 1.5px solid rgba(255, 255, 255, 0.25);
-            border-radius: 28px;
+                rgba(255, 255, 255, 0.12) 0%, 
+                rgba(255, 255, 255, 0.06) 50%,
+                rgba(255, 255, 255, 0.03) 100%);
+            backdrop-filter: blur(30px) saturate(180%) brightness(1.15);
+            -webkit-backdrop-filter: blur(30px) saturate(180%) brightness(1.15);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 32px;
             pointer-events: none;
-            z-index: 999;
+            z-index: 998;
             opacity: 0;
-            transition: opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             box-shadow: 
-                0 8px 32px rgba(0, 0, 0, 0.15),
-                inset 0 1px 0 rgba(255, 255, 255, 0.5),
-                inset 0 -1px 0 rgba(255, 255, 255, 0.15),
-                0 0 0 0.5px rgba(255, 255, 255, 0.1);
+                0 12px 40px rgba(0, 0, 0, 0.25),
+                inset 0 2px 0 rgba(255, 255, 255, 0.6),
+                inset 0 -2px 0 rgba(255, 255, 255, 0.2),
+                inset 2px 0 0 rgba(255, 255, 255, 0.3),
+                inset -2px 0 0 rgba(255, 255, 255, 0.3);
+            filter: url(#glass-refraction) url(#edge-glow);
             transform-origin: center;
             will-change: transform, opacity, left, top, width, height;
-            /* Ensure glass doesn't cover icons */
-            mix-blend-mode: screen;
+            /* Edge distortion */
+            clip-path: polygon(
+                2% 0%, 98% 0%, 100% 2%, 100% 98%, 98% 100%, 2% 100%, 0% 98%, 0% 2%
+            );
         `;
 
-        // Add dynamic light reflection overlay
+        // Inner reflection layer
         const reflection = document.createElement('div');
         reflection.style.cssText = `
             position: absolute;
@@ -63,12 +103,13 @@ class GlassSlider {
             left: 0;
             right: 0;
             bottom: 0;
-            background: radial-gradient(circle at 30% 30%, 
-                rgba(255, 255, 255, 0.3) 0%, 
-                transparent 60%);
-            border-radius: 28px;
-            opacity: 0.6;
+            background: radial-gradient(ellipse at 25% 25%, 
+                rgba(255, 255, 255, 0.4) 0%, 
+                transparent 50%);
+            border-radius: 32px;
+            opacity: 0.8;
             pointer-events: none;
+            mix-blend-mode: overlay;
         `;
         this.slider.appendChild(reflection);
 
@@ -77,64 +118,75 @@ class GlassSlider {
 
     handleTouchStart(e) {
         const touch = e.touches[0];
+        this.startX = touch.clientX;
+        this.startY = touch.clientY;
+
         const card = this.getCardAtPosition(touch.clientX, touch.clientY);
-
         if (card) {
-            this.isDragging = true;
             this.currentCard = card;
-
             const rect = card.getBoundingClientRect();
             this.updateSliderPosition(rect);
             this.slider.style.opacity = '1';
 
             if (navigator.vibrate) {
-                navigator.vibrate(8);
+                navigator.vibrate(6);
             }
         }
     }
 
     handleTouchMove(e) {
-        if (!this.isDragging) return;
-        e.preventDefault();
-
         const touch = e.touches[0];
-        const card = this.getCardAtPosition(touch.clientX, touch.clientY);
+        const deltaX = Math.abs(touch.clientX - this.startX);
+        const deltaY = Math.abs(touch.clientY - this.startY);
 
-        if (card) {
-            if (card !== this.currentCard) {
-                this.currentCard = card;
-                if (navigator.vibrate) {
-                    navigator.vibrate(4);
+        // Only start dragging if horizontal movement is dominant
+        if (deltaX > deltaY && deltaX > 10) {
+            this.isDragging = true;
+            e.preventDefault(); // Only prevent scroll when actually dragging horizontally
+        }
+
+        if (!this.isDragging && this.currentCard) {
+            // Vertical scroll detected, hide slider
+            this.slider.style.opacity = '0';
+            this.currentCard = null;
+            return;
+        }
+
+        if (this.isDragging) {
+            const card = this.getCardAtPosition(touch.clientX, touch.clientY);
+
+            if (card) {
+                if (card !== this.currentCard) {
+                    this.currentCard = card;
+                    if (navigator.vibrate) {
+                        navigator.vibrate(4);
+                    }
                 }
-            }
 
-            const rect = card.getBoundingClientRect();
-            this.updateSliderPosition(rect);
+                const rect = card.getBoundingClientRect();
+                this.updateSliderPosition(rect);
+                this.slider.style.opacity = '1';
+            }
         }
     }
 
     handleTouchEnd(e) {
-        if (!this.isDragging) return;
-
-        this.isDragging = false;
-        this.slider.style.opacity = '0';
-
-        if (this.currentCard) {
+        if (this.isDragging && this.currentCard) {
             setTimeout(() => {
                 this.currentCard.click();
-            }, 80);
+            }, 60);
 
             if (navigator.vibrate) {
-                navigator.vibrate([8, 40, 8]);
+                navigator.vibrate([6, 30, 6]);
             }
         }
 
+        this.isDragging = false;
+        this.slider.style.opacity = '0';
         this.currentCard = null;
     }
 
     updateSliderPosition(rect) {
-        // Smooth position update without transition for real-time tracking
-        this.slider.style.transition = 'opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s ease-out'; // Keep transform transition for potential future effects
         this.slider.style.left = `${rect.left}px`;
         this.slider.style.top = `${rect.top}px`;
         this.slider.style.width = `${rect.width}px`;

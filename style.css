@@ -1477,7 +1477,8 @@ input[type="range"] {
     /* Adjust main content alignment */
     .profile-main {
         text-align: center;
-        margin-top: 10px;
+        margin-top: 30px !important;
+        padding-top: 10px;
     }
 
     .shop-heading-large {
