@@ -1459,9 +1459,13 @@ input[type="range"] {
         grid-column: span 1;
     }
 
-    /* Guestbook and Gemini span full width */
-    .box-wide,
+    /* 三维设计 and 影视后期 each take 1 column (side by side) */
     .box-small {
+        grid-column: span 1;
+    }
+
+    /* Guestbook, Gemini, and Google span full width */
+    .box-wide {
         grid-column: span 2;
     }
 
