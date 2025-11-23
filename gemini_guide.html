@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini 使用规范 - 资源导航</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        /* Override body flex layout for long scrolling content */
+        body {
+            display: block !important;
+            height: auto !important;
+            overflow-y: auto !important;
+            padding-top: 1px;
+            /* Prevent margin collapse */
+        }
+
+        /* Entrance animation */
+        .glass-card {
+            background: rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(40px);
+            -webkit-backdrop-filter: blur(40px);
+            animation: slideInUp 0.5s ease-out;
+            /* Ensure hardware acceleration */
+            transform: translate3d(0, 0, 0);
+            will-change: transform;
+        }
+
+        @keyframes slideInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Exit animation */
+        @keyframes fadeOutDown {
+            from {
+                opacity: 1;
+                transform: translateY(0);
+            }
+
+            to {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+        }
+
+        .page-exit {
+            animation: fadeOutDown 0.3s ease-in forwards;
+        }
+    </style>
+
+    <script>
+        // Handle back button with exit animation
+        document.addEventListener('DOMContentLoaded', function () {
+            const backBtn = document.querySelector('.floating-back-btn');
+            if (backBtn) {
+                backBtn.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    const targetUrl = this.getAttribute('href');
+
+                    // Add exit animation to glass card
+                    const glassCard = document.querySelector('.glass-card');
+                    if (glassCard) {
+                        glassCard.classList.add('page-exit');
+                    }
+
+                    // Navigate after animation
+                    setTimeout(() => {
+                        window.location.href = targetUrl;
+                    }, 300);
+                });
+            }
+
+            // Smooth scroll inertia effect REMOVED to fix twitching
+            // The native scroll is smoother and doesn't cause repaints/jitters.
+        });
+    </script>
+</head>
+
+<body>
+    <div class="background-blobs">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+    </div>
+
+    <a href="shop.html" class="floating-back-btn">
+        <i class="fa-solid fa-house"></i> 返回主页
+    </a>
+
+    <div class="article-container">
+
+        <div class="glass-card">
+            <div class="notion-content">
+                <h1>因官方调整新规则，必须开启2步验证，和绑定号码！！（两天内用完积分的号可以不做这一步用完即扔）</h1>
+
+                <p>F2AA 开启方法：<a href="#step-2fa">5. 开启2步验证</a>
+                    （点我）</p>
+
+                <p>veo3 使用地址：<a href="https://labs.google/fx/zh/tools/flow">https://labs.google/fx/zh/tools/flow</a></p>
+
+                <p>将账号开启两步验证，账号信息更安全，轻松应对平台风控问题！</p>
+
+                <p><strong>能做一定要做掉这一步！！！（如果是用完积分就扔可以不做，长期使用再做）</strong></p>
+                <p><strong>能做一定要做掉这一步！！！（如果是用完积分就扔可以不做，长期使用再做）</strong></p>
+
+                <p>最近平台风控严格，个别账号出现无法登录的情况，这个是网络波动引起的。</p>
+
+                <h1>【登录问题：无法验证账号归您所有】</h1>
+
+                <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1752719212811-4657ee28-3bb1-4660-ac9e-307b6f3c0371.png"
+                    alt="image">
+
+                <p>解决方法：</p>
+                <p>退出浏览器，换个连接节点（建议用美国，日本，新加坡），重新登陆。</p>
+                <p>如果出现手机验证，用手机接验证码登入即可（参照<a href="#verify-phone">👋关于验证---电话号码</a>），如因风控接码不成功，可24小时后换个号码再接，基本都没问题！
+                </p>
+
+                <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1752719415159-8a8323a8-5b6c-4bf0-834e-10114de77423.png"
+                    alt="image">
+
+                <h1>【说在前面，关于网络】</h1>
+                <p>👋<strong>自备网络！使用前确保能连接到Wai网</strong>，🪜纯净度越高，每次连接时地区保持一致，账号越不容易被风控，反之账号则容易被风控，严重会跳验证，限制登录，甚至封号！要想账号使用周期长久，请您合理选择使用节点并稳定使用区域指向，<strong>避免风控</strong>！！！<strong>避免风控</strong>！！！<strong>避免风控</strong>！！！
+                </p>
+
+                <p>mei,ri 节点，重要的是纯净度高且稳定,不稳的 (魔 v 法 p 梯 n 子) 工具DNS容易跳转，你看着界面是连同一个地方，实际可能已跳别的区域，系统标记为异常，每次使用尽可能都连一个地方！
+                </p>
+
+                <h3>多终端登录一定要保持连接环境一致，避免因自己的不当操作被系统标记为账号异常（自己盗自己）！</h3>
+
+                <h1>👋【防失联售后】</h1>
+                <p>注明自己的订单号以及遇到的问题发送邮件至 zaoyoe@gmail.com</p>
+
+                <h1>👋【关于售后】</h1>
+                <ul>
+                    <li><strong>关于改密码，自行改密码和辅助邮箱。</strong>长期使用建议养一养（固定 ip 和设备登录），优先改密码和更换辅助邮箱。</li>
+                    <li>本商品质保内容为账号已订阅Google ONE 一个月优惠( 登入后第一时间检查是否 pro ）因为都是单月号所以账号一般会提前 1-2 天制作</li>
+                    <li>查看我的订阅：<a
+                            href="https://myaccount.google.com/payments-and-subscriptions?utm_source=OGB&utm_medium=app">https://myaccount.google.com/payments-and-subscriptions?utm_source=OGB&utm_medium=app</a>
+                    </li>
+                    <li>所有商品均是无质保，封号等账号相关风险（如封号）需自行承担。</li>
+                </ul>
+
+                <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1752061259328-c8022643-4322-4081-98e0-88c5a30a42bb.png"
+                    alt="image">
+
+                <h1>👋【登录Gemini流程】</h1>
+                <h1>登录Gemini流程</h1>
+
+                <h1>1. Gemini登陆教程：</h1>
+                <p>1.浏览器打开官方网址：<a href="https://gemini.google.com/">https://gemini.google.com/</a> 点击 登录</p>
+                <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1752061338071-8dda5a4f-c88a-4c1f-af1e-3e0d9f55efeb.png"
+                    alt="image">
+
+                <p>2.填写账户，下一步</p>
+                <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1752061369012-199b84a8-8867-4ebb-bddb-6c03104ab6f5.png"
+                    alt="image">
+
+                <p>3.填写密码， 下一步 (如果遇到验证手机号跳转<a href="#verify-phone">4.关于验证---电话号码</a>）</p>
+                <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1752061395366-1b4b4760-adbc-450b-beac-36294007c1e8.png"
+                    alt="image">
+
+                <p>4.选择“确认辅助邮箱”（有的账号不需要这一步）</p>
+                <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1752061416356-fcebe673-f0c9-4553-ba44-6461922aaf8d.png"
+                    alt="image">
+
+                <p>5.填写辅助邮箱，下一步</p>
+                <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1752061434069-ef2560a0-620e-4bcd-bac5-ca9bb2dd1360.png"
+                    alt="image">
+
+                <p>6.谷歌身份验证器</p>
+                <div class="image-grid">
+                    <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1758102332122-ad119454-2309-4e45-b162-56e58ad8fb1a.png"
+                        alt="image">
+                    <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1758102475742-d658a643-ff89-4df4-a247-1d0fbd237c9a.png"
+                        alt="image">
+                    <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1758102504915-46608e47-b539-4168-9832-946177376e11.png"
+                        alt="image">
+                </div>
+
+                <p>6.完成，可以使用免费大型模型！</p>
+                <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1752061459276-4b2f6b71-90ef-4dc2-a442-0c095183ca08.png"
+                    alt="image">
+
+                <h3>1.1. 问题1：不在区域的</h3>
+                <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1752061489985-37d38c16-a0b4-4146-b43e-2264b774f5d4.png"
+                    alt="image">
+                <p>❗重点❗如果登陆后，出现不在使用区域的情况，不要着急，这是属于网络问题。先退出账号，然后换其他区域的IP魔法。。比如 美，新家PO，日等。换好网络后再重启浏览器进入。</p>
+
+                <h3>1.2. 问题2：关于 VEO 3 （需要美日英网络）</h3>
+                <p>VEO 3在flow里 每月送1000积分，veo3 高质量模式 100积分/次 veo3 速刷模式 20积分/次 （以官方为准）</p>
+                <p>使用地址：<a href="https://labs.google/flow/about">https://labs.google/flow/about</a></p>
+
+                <h1>2. 👋确定好订阅没有问题，接下来就可以修改账号的密码和辅助邮箱等了。</h1>
+
+                <h1>3. 👋修改密码和辅助邮箱以及语言</h1>
+                <p>📢复制链接到浏览器打开，可以直接转到需要修改的网页进行修改。</p>
+
+                <div style="background: rgba(255,255,255,0.05); padding: 20px; border-radius: 12px; margin: 20px 0;">
+                    <p><strong>常用链接导航：</strong></p>
+                    <p>更改密码：<a
+                            href="https://myaccount.google.com/signinoptions/password?utm_source=google-account&utm_medium=web&continue=https://myaccount.google.com/security&rapt="
+                            target="_blank">点击跳转</a></p>
+                    <p>更改辅助邮箱：<a
+                            href="https://myaccount.google.com/recovery/email?utm_source=google-account&utm_medium=web&rapt="
+                            target="_blank">点击跳转</a></p>
+                    <p>更改语言(选美国英语)：<a
+                            href="https://myaccount.google.com/language?continue=https%3A%2F%2Fmyaccount.google.com%2Fpersonal-info%3Futm_source%3DOGB%26utm_medium%3Dapp&utm_source="
+                            target="_blank">点击跳转</a></p>
+                    <p>更改手机号码：<a href="https://myaccount.google.com/phone?gar=1&rapt=" target="_blank">点击跳转</a></p>
+                    <p>打开2步验证：<a
+                            href="https://myaccount.google.com/device-activity?continue=https%3A%2F%2Fmyaccount.google.com%2Fsecurity%3Futm_source%3DOGB%26utm_medium%3Dapp&utm_source=OGB&utm_medium=app"
+                            target="_blank">点击跳转</a></p>
+                </div>
+
+                <p>1.点击右上角头像</p>
+                <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1752061641035-e309c72f-68f3-4699-b075-05bd245340ad.png"
+                    alt="image">
+
+                <p>2.管理账户</p>
+                <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1752061664116-f652ef8c-26cd-434e-a47d-73a2da46e7bb.png"
+                    alt="image">
+
+                <p>3.个人账户页面</p>
+                <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1752061683764-b22e62ee-0443-46b7-973c-c1fd0a6d2b84.png"
+                    alt="image">
+
+                <p>4.修改密码</p>
+                <div class="image-grid">
+                    <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1752061699344-922ac0c8-7a9a-48ca-b1e9-d56c539d5fd1.png"
+                        alt="image">
+                    <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1752061721453-f95074ba-f83e-424c-aea3-2366522e2d09.png"
+                        alt="image">
+                </div>
+
+                <p>5.输入新密码，下一步，修改成功</p>
+                <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1752061739759-f68c5465-e810-4f24-b9c4-cff87a73875d.png"
+                    alt="image">
+
+                <p>6.修改辅助邮箱，手机同理</p>
+                <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1752061757962-a916294e-233d-4e5f-a3cd-78e6a51f1e2f.png"
+                    alt="image">
+
+                <p>7.输入新邮箱，接收验证码，修改成功</p>
+                <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1752061777009-c07cb4e4-353e-4eed-933e-3f4d6582c3d3.png"
+                    alt="image">
+
+                <h1>👋关于验证---电话号码</h1>
+                <h1 id="verify-phone">4. 关于验证---电话号码</h1>
+                <p>若因用户网络连接不稳，DNS跳转遇风控，需验证手机，用户可用自己的号码验证，如果购买三天内需要本店验证的，可以找我们免费帮忙验证一次，但是本店所有hao吗都是一次性的，不能二次使用，谨慎使用！登录后建议绑定自己的手机号，以防二次验证无法接码！
+                </p>
+                <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1752061823208-a051f228-5991-44f5-8a3e-bbe2e2fb84ab.png"
+                    alt="image">
+
+                <p>如果出现手机验证，可先选我们华夏的地区-试你的号码 （本店接验证码的号码均为一次性使用，不可二次使用！需谨慎选择）</p>
+                <p><strong>可以输入+86 使用国内手机号接码（免费） 如果国内手机号不行可以使用下方接码平台进行接码验证。</strong></p>
+                <img src="https://cdn.nlark.com/yuque/0/2025/jpeg/29611058/1749823940092-1dd019e6-7e16-41db-aded-f50abdcd41a8.jpeg"
+                    alt="image">
+
+                <p>接码平台地址（选择其中一个即可）：<a href="https://sms-activate.io/">SMS接码</a> <a
+                        href="https://5sim.net/zh">5SIM接码</a></p>
+
+                <div class="image-grid">
+                    <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1749824786685-cd2ec38f-9ef5-4d28-8645-47da1019cacc.png"
+                        alt="image">
+                    <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1749824767944-51ffd4d6-1829-4dd9-bd0e-144ed1212e35.png"
+                        alt="image">
+                    <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1749825011923-9952a5a8-1a68-45c1-8a10-962ccdd5d8e7.png"
+                        alt="image">
+                </div>
+
+                <p>-------------------------------------------------------------------------------------------------------------
+                </p>
+                <p>1. SMS 验证方法</p>
+                <div class="image-grid">
+                    <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1749825362522-88f00a18-51cd-4041-ba88-9438816c993d.png"
+                        alt="image">
+                    <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1749825390275-a3bc505c-161e-4eb3-9cc5-f3b2aae78bbd.png"
+                        alt="image">
+                    <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1749825406531-e3bc256d-cde9-4f43-a052-669445ce5fd0.png"
+                        alt="image">
+                    <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1749825467674-1dac8435-3b76-4bb5-b4e8-2a9a1df7d779.png"
+                        alt="image">
+                    <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1749825603330-66312f8c-d41a-4c51-b520-812b0341ca3b.png"
+                        alt="image">
+                    <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1749825622391-4c1c5f9d-4542-48eb-9eff-8e33bb947b32.png"
+                        alt="image">
+                    <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1749825651175-6d13b102-5a1e-4e50-8650-333ac45e2fff.png"
+                        alt="image">
+                    <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1749825679524-b421cfd8-36ea-45bd-8dc7-0d094a1f89c2.png"
+                        alt="image">
+                    <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1749825714689-dff205a2-a2bb-485d-8f25-23ef743eeb9d.png"
+                        alt="image">
+                </div>
+
+                <p><strong>如已有首登，改密等操作，需要确定收货，君子协议，首登改密，需确认收货，相互理解！</strong></p>
+                <p>注意：已经试过自己手机号解码不成功的，需要24小时后才能继续解码！</p>
+                <p>手机接完验证后，要开启两步验证！！！</p>
+                <p>添加自己的号码为辅助电话，防止以后因为连接环境不稳定被要求再次验证！</p>
+                <p>在安全中心里设置2步验证，一定要开启，这样以后账号登录可以多1个验证方式！</p>
+                <div class="image-grid">
+                    <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1752746379497-0bbf1956-fffd-4594-8b65-ec9c82ef8234.png"
+                        alt="image">
+                    <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1752746395522-71d43bdf-3f9c-453e-93c2-4c77284cc831.png"
+                        alt="image">
+                </div>
+
+                <p>开启验证器</p>
+                <p>官方规则变化等情况，商家左右不了！</p>
+                <p>！！！首登请于电脑端用邮箱登录！！！</p>
+
+                <h1 id="step-2fa">5. 开启2步验证</h1>
+                <p>1. 直达链接：<a
+                        href="https://myaccount.google.com/signinoptions/twosv?pli=1&rapt=AEjHL4OFm78eQBQ_I1Sftx0tgTh61WGXtDBg-xamk4MELH27bceg_1ycLhJAMF0_EdqHfF8Lz6uMYAO1xTNBcbzHUc0zMrkM4JBBLgOaT89wL9hQys5Gs6k">点击跳转开启两步验证</a>
+                </p>
+                <div class="image-grid">
+                    <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1752746148710-8cb3cf15-8bd5-4c17-b97d-93614ea82c00.png"
+                        alt="image">
+                    <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1752746159797-5d06b6bc-a7ac-483d-9944-45d0913ab5fb.png"
+                        alt="image">
+                </div>
+
+                <p>1. 点击开启两步验证，需要修改为中国，输入自己的国内号码</p>
+                <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1752746177464-b15f29cc-1f0e-4d3d-9686-b4048c07f648.png"
+                    alt="image">
+
+                <p>1. 添加身份证验证器应用</p>
+                <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1752746197551-c95880be-a551-4078-9d7d-9d0c1c65bf71.png"
+                    alt="image">
+
+                <p>1. 点击 设置身份验证器</p>
+                <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1752746215749-8b721598-0e35-4275-93fb-6a3a04268ad2.png"
+                    alt="image">
+
+                <p>1. <strong>提示</strong>：手机下载个“谷歌验证器”如果你有 "**谷歌验证器APP**"，直接扫描二维码即可！</p>
+                <p>2. 回到安全中心页面，看到如图所示即表示 二步验证已完成开启</p>
+                <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1752746275537-e9516b88-6e57-4e0c-a869-01ba430da253.png"
+                    alt="image">
+
+                <h1>👋【关于封号问题】</h1>
+                <p>若遇封号情况，账号本身的问题，可提供解决方法，不成功免费更换，售后 3 天，3 天没问题一定不是账号本身问题，若因为您使用不当或连接网络不稳被平台检测造成，商家不承担责任，相互理解！</p>
+
+                <h1>【友情提醒】</h1>
+                <p>要想自己的账号长期稳定使用，按以下两个方向，一是提升优化自己的网络环境，二是尽可能接入地址稳定，不要经常变换地址，尽可能避免被平台检测。</p>
+
+                <p><strong>疑难杂症：</strong></p>
+                <p>（没有遇到问题，不要操作！！！）</p>
+                <p>如使用中发现只剩下flash，其他模板不见了。可以参考以下操作认证年龄：</p>
+                <div class="image-grid">
+                    <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1752062005253-951bc954-0ff1-4905-91e8-b993eefdb315.png"
+                        alt="image">
+                    <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1752062028680-4547ade2-fa7a-4de5-a95f-98399820328a.png"
+                        alt="image">
+                    <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1752062042263-6d233c78-e23b-4e6a-c2d3d63f1835.png"
+                        alt="image">
+                    <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1752062056684-d39867b7-9e96-4789-a667-aacdd53627c2.png"
+                        alt="image">
+                    <img src="https://cdn.nlark.com/yuque/0/2025/png/29611058/1752062069492-6e62c209-514c-4092-911a-39cbed2f4a2d.png"
+                        alt="image">
+                </div>
+
+                <p><s>👋辅助邮箱`：`@drmail.in 结尾的</s></p>
+                <p><s>5. 辅助邮箱登录</s></p>
+                <p><s>@drmail.in结尾的辅助邮箱地址：生成进入，改成自己的号，打钩确定，发送验证码，刷新接到 https://moakt.com/</s></p>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+
+</html>

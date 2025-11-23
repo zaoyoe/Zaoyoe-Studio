@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我们的店铺 - 资源导航</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;700;800&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        /* Homepage entrance animation - Subtle */
+        @keyframes slideInUp {
+            from {
+                opacity: 0;
+                transform: translateY(15px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .glass-box {
+            opacity: 0;
+            /* Start hidden to prevent flash */
+            animation: slideInUp 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+            /* Smooth entrance */
+            /* Transition for magnetic effect - separate from animation */
+            transition: transform 0.1s ease-out, background 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        /* Subtle stagger animation for each card */
+        .glass-box:nth-child(1) {
+            animation-delay: 0s;
+        }
+
+        .glass-box:nth-child(2) {
+            animation-delay: 0.05s;
+        }
+
+        .glass-box:nth-child(3) {
+            animation-delay: 0.08s;
+        }
+
+        .glass-box:nth-child(4) {
+            animation-delay: 0.11s;
+        }
+
+        .glass-box:nth-child(5) {
+            animation-delay: 0.14s;
+        }
+
+        .glass-box:nth-child(6) {
+            animation-delay: 0.17s;
+        }
+
+        .glass-box:nth-child(7) {
+            animation-delay: 0.2s;
+        }
+
+        .glass-box:nth-child(8) {
+            animation-delay: 0.23s;
+        }
+
+        .glass-box:nth-child(9) {
+            animation-delay: 0.26s;
+        }
+
+        .glass-box:nth-child(10) {
+            animation-delay: 0.29s;
+        }
+    </style>
+    <script>
+        // Page load animation trigger
+        document.addEventListener('DOMContentLoaded', function () {
+            // Animation already triggered by CSS on load
+        });
+    </script>
+</head>
+
+<body class="shop-page">
+    <div class="background-blobs">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+    </div>
+
+    <div class="bento-container">
+        <!-- Profile & Clock Card (2x2) -->
+        <div class="glass-box box-profile">
+            <div class="profile-header">
+                <div class="date-time-compact">
+                    <div id="current-date" style="font-size: 0.85rem; color: rgba(255,255,255,0.5);">2025年11月23日</div>
+                    <div id="current-time"
+                        style="font-size: 1.1rem; color: rgba(255,255,255,0.7); font-weight: 600; margin-top: 3px;">
+                        09:15:21</div>
+                </div>
+            </div>
+            <div class="profile-main">
+                <div class="shop-heading-large">Zaoyoe 拾光里</div>
+                <div class="shop-subtitle">您的资源导航中心</div>
+            </div>
+        </div>
+
+        <!-- Contact Card (2x1) - Clickable -->
+        <div class="glass-box box-contact" onclick="openModal('contactModal')">
+            <i class="fa-solid fa-address-card icon-large" style="color: #d946ef;"></i>
+            <div class="box-label">联系我们</div>
+        </div>
+
+        <!-- Taobao Card (2x1) -->
+        <div class="glass-box box-taobao">
+            <i class="fa-solid fa-cart-shopping icon-large"></i>
+            <div class="box-label">淘宝店铺</div>
+        </div>
+
+        <!-- Guestbook Card (2x1) - Interactive -->
+        <div class="glass-box box-wide" onclick="openModal('guestbookModal')">
+            <i class="fa-regular fa-comment-dots icon-large" style="color: #f59e0b;"></i>
+            <div class="box-label">留言板</div>
+        </div>
+
+        <!-- 3D Design (1x1) -->
+        <a href="#" class="glass-box box-small">
+            <i class="fa-solid fa-cube icon-large" style="color: #06b6d4;"></i>
+            <div class="box-label">三维设计</div>
+        </a>
+
+        <!-- Post-production (1x1) -->
+        <a href="#" class="glass-box box-small">
+            <i class="fa-solid fa-clapperboard icon-large" style="color: #8b5cf6;"></i>
+            <div class="box-label">影视后期</div>
+        </a>
+
+        <!-- Wide Cards (2x1) -->
+        <a href="#" class="glass-box box-wide">
+            <i class="fa-brands fa-google icon-large" style="color: #ea4335;"></i>
+            <div class="box-label">Google 邮箱 / 账号服务</div>
+        </a>
+
+        <div class="glass-box box-wide" onclick="openModal('geminiModal')">
+            <!-- Custom SVG for Gemini 4-point Star -->
+            <svg class="icon-large gemini-star" viewBox="0 0 24 24" fill="currentColor"
+                xmlns="http://www.w3.org/2000/svg" style="width: 48px; height: 48px;">
+                <path d="M12 0L14.5 9.5L24 12L14.5 14.5L12 24L9.5 14.5L0 12L9.5 9.5L12 0Z" />
+            </svg>
+            <div class="box-label">Gemini 专区</div>
+        </div>
+    </div>
+
+
+
+    <!-- Guestbook Modal -->
+    <div class="modal-overlay" id="guestbookModal" onclick="closeModal(event)">
+        <div class="modal-content guestbook-content premium-modal" style="position: relative;">
+            <!-- Mac Window Controls -->
+            <div class="mac-controls">
+                <div class="mac-dot red" onclick="closeModal(event)">
+                    <i class="fas fa-times"></i>
+                </div>
+                <div class="mac-dot yellow"></div>
+                <div class="mac-dot green"></div>
+            </div>
+
+            <div class="modal-title">留言板</div>
+            <p class="modal-subtitle">
+                欢迎留下您的宝贵建议,或告诉我们您期待上架的商品。
+            </p>
+            <form class="guestbook-form" id="guestbookForm">
+                <div class="input-group">
+                    <input type="text" id="guestName" placeholder="您的昵称 (Name)" required>
+                </div>
+
+                <div class="input-group relative-container">
+                    <textarea id="guestMessage" placeholder="写下您的留言... (Message)" required></textarea>
+
+                    <!-- Integrated Upload Icon -->
+                    <div class="upload-icon-wrapper">
+                        <input type="file" id="imageUpload" accept="image/*" style="display: none;">
+                        <button type="button" class="upload-icon-btn"
+                            onclick="document.getElementById('imageUpload').click()" title="上传图片">
+                            <i class="fas fa-camera"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div id="imagePreview" class="image-preview-compact" style="display: none;">
+                    <img id="previewImg" src="" alt="Preview">
+                    <button type="button" class="remove-image-mini" onclick="removeImage()">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+
+                <button type="submit" class="submit-btn"
+                    style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+                    <i class="fas fa-paper-plane"></i>
+                    发布留言
+                </button>
+            </form>
+
+            <!-- View More Button -->
+            <a href="guestbook.html" class="view-more-btn">
+                <i class="fas fa-comment-dots"></i>
+                查看更多
+            </a>
+        </div>
+    </div>
+
+    <!-- Contact Modal -->
+    <div class="modal-overlay" id="contactModal" onclick="closeModal(event)">
+        <div class="modal-content premium-modal" style="position: relative;">
+            <!-- Mac Window Controls -->
+            <div class="mac-controls">
+                <div class="mac-dot red" onclick="closeModal(event)">
+                    <i class="fas fa-times"></i>
+                </div>
+            </div>
+
+            <div class="modal-title">联系我们</div>
+            <p class="modal-subtitle">
+                选择您喜欢的联系方式
+            </p>
+
+            <div class="modal-grid">
+                <!-- Email Card -->
+                <div class="modal-link-card" onclick="copyText('zaoyoe@gmail.com'); event.stopPropagation();"
+                    style="cursor: pointer;">
+                    <i class="fa-solid fa-envelope"></i>
+                    <div class="link-title">电子邮箱</div>
+                    <div class="contact-detail" style="font-size: 0.9rem; opacity: 0.8; margin-top: 5px;">
+                        zaoyoe@gmail.com</div>
+                    <div class="contact-hint" style="font-size: 0.75rem; opacity: 0.5; margin-top: 2px;">(点击复制)</div>
+                </div>
+
+                <!-- WeChat Card -->
+                <div class="modal-link-card">
+                    <i class="fa-brands fa-weixin"></i>
+                    <div class="link-title">微信联系</div>
+                    <img src="assets/wechat-qr-new.jpg" alt="WeChat QR"
+                        style="width: 120px; height: 120px; border-radius: 12px; margin-top: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Gemini Modal -->
+    <div class="modal-overlay" id="geminiModal" onclick="closeModal(event)">
+        <div class="modal-content premium-modal" style="position: relative;">
+            <!-- Mac Window Controls -->
+            <div class="mac-controls">
+                <div class="mac-dot red" onclick="closeModal(event)">
+                    <i class="fas fa-times"></i>
+                </div>
+            </div>
+
+            <div class="modal-title">Gemini 专区</div>
+            <p class="modal-subtitle">
+                探索 Gemini 的无限可能
+            </p>
+
+            <div class="modal-grid">
+                <a href="gemini_guide.html" class="modal-link-card">
+                    <i class="fa-solid fa-book"></i>
+                    <div class="link-title">使用规范</div>
+                </a>
+
+                <a href="gemini_binding.html" class="modal-link-card">
+                    <i class="fa-solid fa-credit-card"></i>
+                    <div class="link-title">绑卡教程</div>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+
+</html>

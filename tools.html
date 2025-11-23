@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>闲鱼卖家工具箱</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Outfit:wght@500;700&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="background-blobs">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+    </div>
+
+    <div class="container">
+        <header>
+            <h1>卖家工具箱</h1>
+            <p>文案生成 & 图片水印</p>
+            <nav class="main-nav">
+                <a href="shop.html">首页</a>
+                <a href="index.html">利润计算</a>
+                <a href="tools.html" class="active">文案/图片工具</a>
+            </nav>
+        </header>
+
+        <main class="calculator-card">
+            <div class="tabs">
+                <button class="tab-btn active" data-tab="copywriting">文案生成</button>
+                <button class="tab-btn" data-tab="watermark">图片水印</button>
+            </div>
+
+            <!-- Copywriting Section -->
+            <div id="copywriting" class="tab-content active">
+                <div class="input-group">
+                    <label for="productName">商品名称</label>
+                    <input type="text" id="productName" placeholder="例如：iPhone 13 Pro">
+                </div>
+
+                <div class="input-group">
+                    <label for="condition">成色/新旧</label>
+                    <select id="condition">
+                        <option value="全新">全新未拆</option>
+                        <option value="99新">99新（仅拆封）</option>
+                        <option value="95新">95新（轻微使用痕迹）</option>
+                        <option value="8成新">8成新（有明显使用痕迹）</option>
+                    </select>
+                </div>
+
+                <div class="input-group">
+                    <label for="reason">转卖理由</label>
+                    <select id="reason">
+                        <option value="moving">搬家急出</option>
+                        <option value="gift">年会奖品/礼物</option>
+                        <option value="impulse">冲动消费回血</option>
+                        <option value="upgrade">换新升级</option>
+                    </select>
+                </div>
+
+                <div class="input-group">
+                    <label for="price">售价 (¥)</label>
+                    <input type="number" id="price" placeholder="例如：2999">
+                </div>
+
+                <button id="generateBtn" class="action-btn">生成文案</button>
+
+                <div class="output-area">
+                    <textarea id="copyOutput" readonly placeholder="生成的文案将显示在这里..."></textarea>
+                    <button id="copyBtn" class="secondary-btn">复制文案</button>
+                </div>
+            </div>
+
+            <!-- Watermark Section -->
+            <div id="watermark" class="tab-content">
+                <div class="input-group">
+                    <label for="imageUpload" class="upload-label">
+                        <span>点击上传图片</span>
+                        <input type="file" id="imageUpload" accept="image/*">
+                    </label>
+                </div>
+
+                <div class="controls" id="watermarkControls" style="display: none;">
+                    <div class="input-group">
+                        <label for="watermarkText">水印文字</label>
+                        <input type="text" id="watermarkText" value="闲鱼@我的店铺">
+                    </div>
+
+                    <div class="row">
+                        <div class="input-group half">
+                            <label for="watermarkColor">颜色</label>
+                            <input type="color" id="watermarkColor" value="#ffffff">
+                        </div>
+                        <div class="input-group half">
+                            <label for="watermarkSize">大小</label>
+                            <input type="range" id="watermarkSize" min="10" max="100" value="30">
+                        </div>
+                    </div>
+
+                    <div class="canvas-container">
+                        <canvas id="imageCanvas"></canvas>
+                    </div>
+
+                    <button id="downloadBtn" class="action-btn">下载处理后的图片</button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="tools.js"></script>
+</body>
+
+</html>

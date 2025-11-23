@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini 绑卡教程 - 资源导航</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        /* Entrance animation */
+        .glass-card {
+            animation: slideInUp 0.5s ease-out;
+        }
+
+        @keyframes slideInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Exit animation */
+        @keyframes fadeOutDown {
+            from {
+                opacity: 1;
+                transform: translateY(0);
+            }
+
+            to {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+        }
+
+        .page-exit {
+            animation: fadeOutDown 0.3s ease-in forwards;
+        }
+    </style>
+    <script>
+        // Handle back button with exit animation
+        document.addEventListener('DOMContentLoaded', function () {
+            const backBtn = document.querySelector('.floating-back-btn');
+            if (backBtn) {
+                backBtn.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    const targetUrl = this.getAttribute('href');
+
+                    // Add exit animation to glass card
+                    const glassCard = document.querySelector('.glass-card');
+                    if (glassCard) {
+                        glassCard.classList.add('page-exit');
+                    }
+
+                    // Navigate after animation
+                    setTimeout(() => {
+                        window.location.href = targetUrl;
+                    }, 300);
+
+
+                    // Smooth scroll inertia effect - OPTIMIZED
+                    let lastScrollTop = 0;
+                    let scrollVelocity = 0;
+                    let ticking = false;
+
+                    const contentElements = document.querySelectorAll('.notion-content > *');
+
+                    window.addEventListener('scroll', function () {
+                        if (!ticking) {
+                            window.requestAnimationFrame(function () {
+                                const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+                                // Even stronger inertia for maximum layering effect
+                                scrollVelocity = (scrollTop - lastScrollTop) * 0.6;
+
+                                contentElements.forEach((el, index) => {
+                                    // Much larger delay for dramatic depth perception
+                                    const delay = index * 0.12;
+                                    const offset = scrollVelocity * (1 - delay);
+                                    el.style.transform = `translateY(${offset}px)`;
+
+                                    // Very fast reset to eliminate jello
+                                    setTimeout(() => {
+                                        el.style.transform = 'translateY(0)';
+                                    }, 100);
+                                });
+
+                                lastScrollTop = scrollTop;
+                                ticking = false;
+                            });
+                            ticking = true;
+                        }
+                    });
+
+                    // Nearly linear easing for instant snap-back
+                    contentElements.forEach(el => {
+                        el.style.transition = 'transform 0.2s cubic-bezier(0.33, 0, 0.67, 1)';
+                    });
+                });
+            }
+        });
+    </script>
+</head>
+
+<body>
+    <div class="background-blobs">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+    </div>
+
+    <a href="shop.html" class="floating-back-btn">
+        <i class="fa-solid fa-house"></i> 返回主页
+    </a>
+
+    <div class="article-container">
+
+        <div class="glass-card">
+            <!--
+                USER: Please paste your full Notion content here.
+                You can paste the text and I will format it, or you can replace this block.
+            -->
+            <div class="notion-content">
+                <h1>Gemini 绑卡教程</h1>
+                <p>各国语言不同但是大体是相同的</p>
+
+                <div class="image-grid">
+                    <img src="placeholder_1.png" alt="绑卡步骤1">
+                    <img src="placeholder_2.png" alt="绑卡步骤2">
+                    <img src="placeholder_3.png" alt="绑卡步骤3">
+                    <img src="placeholder_4.png" alt="绑卡步骤4">
+                    <img src="placeholder_5.png" alt="绑卡步骤5">
+                    <img src="placeholder_6.png" alt="绑卡步骤6">
+                    <img src="placeholder_7.png" alt="绑卡步骤7">
+                </div>
+
+                <h1>绑卡出错解决办法：</h1>
+
+                <div class="step-box">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <div class="step-title">访问 Google Payments</div>
+                        <p><a href="https://payments.google.com/" target="_blank">https://payments.google.com/</a>
+                            点击该网址 并且登录账号 验证完身份后</p>
+                    </div>
+                </div>
+
+                <div class="step-box">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <img src="placeholder_error_1.png" alt="出错解决步骤2">
+                    </div>
+                </div>
+
+                <div class="step-box">
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <img src="placeholder_error_2.png" alt="出错解决步骤3">
+                    </div>
+                </div>
+
+                <div class="step-box">
+                    <div class="step-number">4</div>
+                    <div class="step-content">
+                        <img src="placeholder_error_3.png" alt="出错解决步骤4">
+                    </div>
+                </div>
+
+                <div class="step-box">
+                    <div class="step-number">5</div>
+                    <div class="step-content">
+                        <div class="step-title">设置地址与 IP</div>
+                        <p>绑卡地址选择<strong>台湾</strong>，IP 使用<strong>台湾</strong>，邮编为 <strong>200</strong></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+
+</html>
