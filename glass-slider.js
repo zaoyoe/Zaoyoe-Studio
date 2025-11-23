@@ -1,6 +1,6 @@
 /**
- * Dynamic Glass Slider Effect
- * Creates an iOS-style interactive glass element that follows touch gestures
+ * Dynamic Glass Slider Effect - iOS 26 Liquid Glass Style
+ * Ultra-transparent, high-blur glass that doesn't obscure content
  */
 
 class GlassSlider {
@@ -9,18 +9,13 @@ class GlassSlider {
         this.cards = [];
         this.currentCard = null;
         this.isDragging = false;
-        this.touchStartY = 0;
         this.init();
     }
 
     init() {
-        // Create the glass slider element
         this.createSlider();
-
-        // Get all interactive cards
         this.cards = Array.from(document.querySelectorAll('.glass-box'));
 
-        // Add touch event listeners to the container
         const container = document.querySelector('.bento-container');
         if (container) {
             container.addEventListener('touchstart', this.handleTouchStart.bind(this), { passive: false });
@@ -36,85 +31,85 @@ class GlassSlider {
             position: fixed;
             width: 0;
             height: 0;
-            background: radial-gradient(circle at center, 
-                rgba(255, 255, 255, 0.3) 0%, 
-                rgba(255, 255, 255, 0.15) 50%, 
-                rgba(255, 255, 255, 0.05) 100%);
-            backdrop-filter: blur(20px) saturate(180%);
-            -webkit-backdrop-filter: blur(20px) saturate(180%);
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            border-radius: 24px;
+            /* iOS 26 Liquid Glass: ultra-transparent with strong blur */
+            background: linear-gradient(135deg, 
+                rgba(255, 255, 255, 0.08) 0%, 
+                rgba(255, 255, 255, 0.04) 50%,
+                rgba(255, 255, 255, 0.02) 100%);
+            backdrop-filter: blur(40px) saturate(200%) brightness(1.1);
+            -webkit-backdrop-filter: blur(40px) saturate(200%) brightness(1.1);
+            border: 1.5px solid rgba(255, 255, 255, 0.25);
+            border-radius: 28px;
             pointer-events: none;
-            z-index: 9999;
+            z-index: 999;
             opacity: 0;
-            transition: opacity 0.2s ease, width 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), height 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+            transition: opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1);
             box-shadow: 
-                0 8px 32px rgba(0, 0, 0, 0.2),
-                inset 0 1px 0 rgba(255, 255, 255, 0.4),
-                inset 0 -1px 0 rgba(255, 255, 255, 0.1);
+                0 8px 32px rgba(0, 0, 0, 0.15),
+                inset 0 1px 0 rgba(255, 255, 255, 0.5),
+                inset 0 -1px 0 rgba(255, 255, 255, 0.15),
+                0 0 0 0.5px rgba(255, 255, 255, 0.1);
             transform-origin: center;
-            will-change: transform, opacity;
+            will-change: transform, opacity, left, top, width, height;
+            /* Ensure glass doesn't cover icons */
+            mix-blend-mode: screen;
         `;
+
+        // Add dynamic light reflection overlay
+        const reflection = document.createElement('div');
+        reflection.style.cssText = `
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: radial-gradient(circle at 30% 30%, 
+                rgba(255, 255, 255, 0.3) 0%, 
+                transparent 60%);
+            border-radius: 28px;
+            opacity: 0.6;
+            pointer-events: none;
+        `;
+        this.slider.appendChild(reflection);
+
         document.body.appendChild(this.slider);
     }
 
     handleTouchStart(e) {
         const touch = e.touches[0];
-        this.touchStartY = touch.clientY;
-
-        // Find if touch started on a card
         const card = this.getCardAtPosition(touch.clientX, touch.clientY);
+
         if (card) {
             this.isDragging = true;
             this.currentCard = card;
 
-            // Show slider at touch position
             const rect = card.getBoundingClientRect();
-            this.slider.style.left = `${rect.left}px`;
-            this.slider.style.top = `${rect.top}px`;
-            this.slider.style.width = `${rect.width}px`;
-            this.slider.style.height = `${rect.height}px`;
+            this.updateSliderPosition(rect);
             this.slider.style.opacity = '1';
 
-            // Add haptic feedback if available
             if (navigator.vibrate) {
-                navigator.vibrate(10);
+                navigator.vibrate(8);
             }
         }
     }
 
     handleTouchMove(e) {
         if (!this.isDragging) return;
-
-        e.preventDefault(); // Prevent scrolling while dragging
+        e.preventDefault();
 
         const touch = e.touches[0];
         const card = this.getCardAtPosition(touch.clientX, touch.clientY);
 
-        if (card && card !== this.currentCard) {
-            // Switched to a new card
-            this.currentCard = card;
-            const rect = card.getBoundingClientRect();
-
-            // Animate to new card position
-            this.slider.style.left = `${rect.left}px`;
-            this.slider.style.top = `${rect.top}px`;
-            this.slider.style.width = `${rect.width}px`;
-            this.slider.style.height = `${rect.height}px`;
-
-            // Add distortion effect
-            const distortion = Math.sin(Date.now() / 200) * 2;
-            this.slider.style.transform = `scale(${1 + distortion * 0.01}) rotate(${distortion * 0.5}deg)`;
-
-            // Haptic feedback
-            if (navigator.vibrate) {
-                navigator.vibrate(5);
+        if (card) {
+            if (card !== this.currentCard) {
+                this.currentCard = card;
+                if (navigator.vibrate) {
+                    navigator.vibrate(4);
+                }
             }
-        } else if (card) {
-            // Still on the same card, update position smoothly
+
             const rect = card.getBoundingClientRect();
-            this.slider.style.left = `${rect.left}px`;
-            this.slider.style.top = `${rect.top}px`;
+            this.updateSliderPosition(rect);
         }
     }
 
@@ -122,28 +117,28 @@ class GlassSlider {
         if (!this.isDragging) return;
 
         this.isDragging = false;
-
-        // Hide slider with animation
         this.slider.style.opacity = '0';
-        this.slider.style.transform = 'scale(0.95)';
 
-        // Trigger the card action if we're on a valid card
         if (this.currentCard) {
-            // Add a slight delay for visual feedback
             setTimeout(() => {
                 this.currentCard.click();
+            }, 80);
 
-                // Reset slider transform
-                this.slider.style.transform = 'scale(1)';
-            }, 100);
-
-            // Strong haptic feedback for activation
             if (navigator.vibrate) {
-                navigator.vibrate([10, 50, 10]);
+                navigator.vibrate([8, 40, 8]);
             }
         }
 
         this.currentCard = null;
+    }
+
+    updateSliderPosition(rect) {
+        // Smooth position update without transition for real-time tracking
+        this.slider.style.transition = 'opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.2s ease-out'; // Keep transform transition for potential future effects
+        this.slider.style.left = `${rect.left}px`;
+        this.slider.style.top = `${rect.top}px`;
+        this.slider.style.width = `${rect.width}px`;
+        this.slider.style.height = `${rect.height}px`;
     }
 
     getCardAtPosition(x, y) {
