@@ -211,10 +211,13 @@ class GlassSlider {
 }
 
 // Initialize when DOM is ready
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-        new GlassSlider();
-    });
-} else {
-    new GlassSlider();
-}
+// DISABLED: Glass slider causing rendering artifacts on mobile
+// if (document.readyState === 'loading') {
+//     document.addEventListener('DOMContentLoaded', () => {
+//         new GlassSlider();
+//     });
+// } else {
+//     new GlassSlider();
+// }
+
+console.log('Glass slider disabled - preventing rendering artifacts');
