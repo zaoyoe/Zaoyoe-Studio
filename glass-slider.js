@@ -29,9 +29,9 @@ class GlassSlider {
 
         // Configuration
         this.config = {
-            lerp: 0.15, // Fluidity (lower = more sluggish/liquid)
-            distortion: 0.05, // Amount of stretch when moving
-            snapThreshold: 50 // Distance to snap to card
+            lerp: 0.06, // Lower = more "liquid" weight/lag (was 0.15)
+            distortion: 0.15, // Multiplier for stretch effect
+            skew: 0.08 // Multiplier for movement tilt
         };
 
         this.rafId = null;
@@ -69,18 +69,21 @@ class GlassSlider {
             z-index: 999;
             border-radius: 24px;
             
-            /* The "Liquid Glass" Material */
-            background: linear-gradient(145deg, rgba(255,255,255,0.15), rgba(255,255,255,0.05));
-            backdrop-filter: blur(25px) saturate(180%) brightness(1.2);
-            -webkit-backdrop-filter: blur(25px) saturate(180%) brightness(1.2);
+            /* Ultra-Transparent Liquid Glass */
+            background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.01));
+            backdrop-filter: blur(12px) brightness(1.1);
+            -webkit-backdrop-filter: blur(12px) brightness(1.1);
             
-            /* Glass Edges & Depth */
-            border: 1px solid rgba(255, 255, 255, 0.3);
+            /* Subtle Edges & Depth */
+            border: 0.5px solid rgba(255, 255, 255, 0.3);
             box-shadow: 
-                0 8px 32px rgba(0, 0, 0, 0.1),
-                inset 0 0 0 1px rgba(255, 255, 255, 0.2),
-                inset 0 0 20px rgba(255, 255, 255, 0.1);
+                0 4px 20px rgba(0, 0, 0, 0.1),
+                inset 0 0 0 0.5px rgba(255, 255, 255, 0.2),
+                inset 0 0 10px rgba(255, 255, 255, 0.05);
                 
+            /* Blend Mode to reveal icons */
+            mix-blend-mode: plus-lighter;
+
             /* Performance Optimization */
             will-change: transform, width, height, opacity;
             transform-origin: center center;
@@ -96,8 +99,8 @@ class GlassSlider {
             right: 0;
             bottom: 0;
             border-radius: 24px;
-            background: linear-gradient(120deg, transparent 30%, rgba(255,255,255,0.4) 50%, transparent 70%);
-            opacity: 0.3;
+            background: linear-gradient(120deg, transparent 30%, rgba(255,255,255,0.2) 50%, transparent 70%);
+            opacity: 0.4;
             mix-blend-mode: overlay;
         `;
         this.slider.appendChild(shine);
@@ -119,8 +122,8 @@ class GlassSlider {
             this.isActive = true;
             this.updateTargetFromCard(card);
 
-            // Immediate visual feedback (optional, but physics handles it better)
-            // this.currentState = { ...this.targetState }; 
+            // Reset state to target immediately on start to avoid flying in from 0,0
+            this.currentState = { ...this.targetState, opacity: 0 };
         }
     }
 
@@ -159,10 +162,6 @@ class GlassSlider {
                     if (navigator.vibrate) navigator.vibrate(5);
                     this.lastHapticCard = card;
                 }
-            } else {
-                // Finger is between cards - optional: stick to last card or fade out?
-                // Let's stick to last card but maybe fade slightly? 
-                // For now, keep active to prevent flickering
             }
         }
     }
@@ -207,23 +206,24 @@ class GlassSlider {
             this.currentState.y = lerp(this.currentState.y, this.targetState.y, this.config.lerp);
             this.currentState.w = lerp(this.currentState.w, this.targetState.w, this.config.lerp);
             this.currentState.h = lerp(this.currentState.h, this.targetState.h, this.config.lerp);
-            this.currentState.opacity = lerp(this.currentState.opacity, 1, 0.2);
+            this.currentState.opacity = lerp(this.currentState.opacity, 1, 0.1);
         } else {
-            this.currentState.opacity = lerp(this.currentState.opacity, 0, 0.2);
+            this.currentState.opacity = lerp(this.currentState.opacity, 0, 0.1);
         }
 
         // Calculate velocity for distortion effect
         const vx = this.targetState.x - this.currentState.x;
-        const vy = this.targetState.y - this.currentState.y;
+        // const vy = this.targetState.y - this.currentState.y;
 
         // Apply transforms
-        // Translate: Position
         // Scale: Stretch based on velocity (Jelly effect)
         // Skew: Tilt based on velocity
 
-        const stretchX = 1 + Math.abs(vx) * 0.002;
-        const stretchY = 1 - Math.abs(vx) * 0.001; // Squash Y when stretching X
-        const skewX = vx * -0.05; // Tilt
+        // Enhanced distortion calculation
+        const velocityFactor = Math.abs(vx);
+        const stretchX = 1 + velocityFactor * 0.004; // Increased stretch
+        const stretchY = 1 - velocityFactor * 0.002; // Increased squash
+        const skewX = vx * -0.1; // Increased tilt (was -0.05)
 
         // Only render if visible
         if (this.currentState.opacity > 0.01) {
