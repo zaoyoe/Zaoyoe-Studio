@@ -1434,31 +1434,50 @@ input[type="range"] {
     -webkit-backdrop-filter: blur(40px) saturate(150%);
 }
 
-/* Responsive */
 @media (max-width: 768px) {
+
+    /* Optimize Bento Grid for mobile: 2 columns instead of 1 */
     .bento-container {
-        grid-template-columns: 1fr;
+        grid-template-columns: repeat(2, 1fr);
         grid-template-rows: auto;
+        gap: 12px;
+        padding: 12px;
     }
 
-    .box-profile,
-    .box-contact,
-    .box-taobao,
-    .box-wide,
-    .box-small {
-        grid-column: span 1;
-    }
-
+    /* Profile card spans full width */
     .box-profile {
+        grid-column: span 2;
         grid-row: span 1;
         align-items: center;
         text-align: center;
-        padding: 40px 20px;
+        padding: 30px 20px;
+    }
+
+    /* Contact and Taobao each take 1 column */
+    .box-contact,
+    .box-taobao {
+        grid-column: span 1;
+    }
+
+    /* Guestbook and Gemini span full width */
+    .box-wide,
+    .box-small {
+        grid-column: span 2;
     }
 
     .clock-display {
         font-size: 2.5rem;
         margin-top: 20px;
+    }
+
+    /* Move "Back to Home" button to top-left on mobile */
+    .floating-back-btn {
+        top: 20px;
+        left: 20px;
+        bottom: auto;
+        right: auto;
+        font-size: 0.85rem;
+        padding: 10px 16px;
     }
 }
 
