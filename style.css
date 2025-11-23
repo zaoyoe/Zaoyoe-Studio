@@ -1496,19 +1496,48 @@ input[type="range"] {
 
     /* Optimize modal size for mobile */
     .premium-modal {
-        max-width: 90% !important;
-        width: 90% !important;
-        padding: 24px !important;
-        margin: 20px;
+        max-width: 95% !important;
+        width: 95% !important;
+        padding: 20px !important;
+        margin: 10px;
+        max-height: 90vh;
+        overflow-y: auto;
     }
 
     .modal-title {
-        font-size: 1.5rem !important;
+        font-size: 1.4rem !important;
     }
 
     .modal-subtitle {
         font-size: 0.85rem !important;
     }
+
+    /* Single column layout for modal grid on mobile */
+    .modal-grid {
+        grid-template-columns: 1fr !important;
+        gap: 15px !important;
+        margin-top: 20px !important;
+    }
+
+    .modal-link-card {
+        padding: 20px !important;
+    }
+}
+
+/* Disable touch callout (long-press menu) on all interactive elements */
+.glass-box,
+.modal-link-card,
+.floating-back-btn,
+.icon-large,
+.gemini-star,
+img,
+svg {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    /* Prevent text selection and callout menu */
 }
 
 /* Lightbox Styles */
