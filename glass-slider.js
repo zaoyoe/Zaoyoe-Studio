@@ -1,13 +1,13 @@
 console.log('Liquid Glass Script Loaded');
 
 /**
- * Dynamic Glass Slider Effect - "Liquid Glass" (CSS Physics Engine)
+ * Dynamic Glass Slider Effect - "Prismatic Liquid Glass"
  * 
  * Core Features:
- * 1. CSS-only rendering (No SVG filters) to eliminate mobile artifacts.
- * 2. Spring physics (LERP) for fluid, organic movement.
- * 3. Velocity-based distortion (stretch/skew) for "jelly" feel.
- * 4. Smart gesture locking (allows vertical scroll, captures horizontal drag).
+ * 1. CSS-only rendering with "Prism" edge effects (Chromatic Aberration).
+ * 2. High-viscosity physics for "heavy liquid" feel.
+ * 3. Velocity-based distortion with extreme elasticity.
+ * 4. Smart gesture locking.
  */
 
 class GlassSlider {
@@ -29,9 +29,9 @@ class GlassSlider {
 
         // Configuration
         this.config = {
-            lerp: 0.06, // Lower = more "liquid" weight/lag (was 0.15)
-            distortion: 0.15, // Multiplier for stretch effect
-            skew: 0.08 // Multiplier for movement tilt
+            lerp: 0.08, // Slightly higher than 0.06 for better responsiveness but still "heavy"
+            distortion: 0.25, // Extreme stretch (was 0.15)
+            skew: 0.15 // Extreme tilt (was 0.08)
         };
 
         this.rafId = null;
@@ -69,20 +69,28 @@ class GlassSlider {
             z-index: 999;
             border-radius: 24px;
             
-            /* Ultra-Transparent Liquid Glass */
-            background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.01));
-            backdrop-filter: blur(12px) brightness(1.1);
-            -webkit-backdrop-filter: blur(12px) brightness(1.1);
+            /* 1. The Glass Body (Ultra Clear) */
+            background: linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.01));
+            backdrop-filter: blur(15px) brightness(1.2);
+            -webkit-backdrop-filter: blur(15px) brightness(1.2);
             
-            /* Subtle Edges & Depth */
-            border: 0.5px solid rgba(255, 255, 255, 0.3);
+            /* 2. The Prism Edges (Chromatic Aberration) */
+            /* This simulates the rainbow refraction seen in the reference */
             box-shadow: 
-                0 4px 20px rgba(0, 0, 0, 0.1),
-                inset 0 0 0 0.5px rgba(255, 255, 255, 0.2),
-                inset 0 0 10px rgba(255, 255, 255, 0.05);
+                /* Inner Volume Glow */
+                inset 0 0 20px rgba(255, 255, 255, 0.3),
+                inset 0 0 2px rgba(255, 255, 255, 0.5),
                 
-            /* Blend Mode to reveal icons */
-            mix-blend-mode: plus-lighter;
+                /* Outer Prism Glow (Cyan/Magenta shift) */
+                -2px 0 8px rgba(0, 255, 255, 0.15), /* Cyan Left */
+                2px 0 8px rgba(255, 0, 255, 0.15),  /* Magenta Right */
+                0 4px 20px rgba(0, 0, 0, 0.15);     /* Drop Shadow */
+                
+            /* 3. Glass Border */
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            
+            /* Blend Mode */
+            mix-blend-mode: normal; /* Changed from plus-lighter to allow shadows to work better */
 
             /* Performance Optimization */
             will-change: transform, width, height, opacity;
@@ -90,20 +98,22 @@ class GlassSlider {
             opacity: 0;
         `;
 
-        // Add a "shine" element for extra realism
-        const shine = document.createElement('div');
-        shine.style.cssText = `
+        // Add a "Lens Reflection" element
+        const lens = document.createElement('div');
+        lens.style.cssText = `
             position: absolute;
             top: 0;
             left: 0;
             right: 0;
             bottom: 0;
             border-radius: 24px;
-            background: linear-gradient(120deg, transparent 30%, rgba(255,255,255,0.2) 50%, transparent 70%);
-            opacity: 0.4;
+            /* Specular Highlight */
+            background: radial-gradient(circle at 50% 0%, rgba(255,255,255,0.4) 0%, transparent 60%);
+            opacity: 0.6;
             mix-blend-mode: overlay;
+            pointer-events: none;
         `;
-        this.slider.appendChild(shine);
+        this.slider.appendChild(lens);
 
         document.body.appendChild(this.slider);
     }
@@ -122,7 +132,7 @@ class GlassSlider {
             this.isActive = true;
             this.updateTargetFromCard(card);
 
-            // Reset state to target immediately on start to avoid flying in from 0,0
+            // Reset state to target immediately on start
             this.currentState = { ...this.targetState, opacity: 0 };
         }
     }
@@ -206,9 +216,9 @@ class GlassSlider {
             this.currentState.y = lerp(this.currentState.y, this.targetState.y, this.config.lerp);
             this.currentState.w = lerp(this.currentState.w, this.targetState.w, this.config.lerp);
             this.currentState.h = lerp(this.currentState.h, this.targetState.h, this.config.lerp);
-            this.currentState.opacity = lerp(this.currentState.opacity, 1, 0.1);
+            this.currentState.opacity = lerp(this.currentState.opacity, 1, 0.15);
         } else {
-            this.currentState.opacity = lerp(this.currentState.opacity, 0, 0.1);
+            this.currentState.opacity = lerp(this.currentState.opacity, 0, 0.15);
         }
 
         // Calculate velocity for distortion effect
@@ -221,9 +231,9 @@ class GlassSlider {
 
         // Enhanced distortion calculation
         const velocityFactor = Math.abs(vx);
-        const stretchX = 1 + velocityFactor * 0.004; // Increased stretch
-        const stretchY = 1 - velocityFactor * 0.002; // Increased squash
-        const skewX = vx * -0.1; // Increased tilt (was -0.05)
+        const stretchX = 1 + velocityFactor * 0.006; // More stretch (was 0.004)
+        const stretchY = 1 - velocityFactor * 0.003; // More squash (was 0.002)
+        const skewX = vx * -0.15; // More tilt (was -0.1)
 
         // Only render if visible
         if (this.currentState.opacity > 0.01) {
