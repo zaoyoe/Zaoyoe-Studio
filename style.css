@@ -862,14 +862,17 @@ input[type="range"] {
     border-top-right-radius: 32px;
 }
 
-.glass-box:hover {
-    transform: translateY(-8px) scale(1.01);
-    background: rgba(255, 255, 255, 0.08);
-    border-color: rgba(255, 255, 255, 0.4);
-    box-shadow:
-        0 30px 60px -12px rgba(0, 0, 0, 0.6),
-        inset 0 1px 0 rgba(255, 255, 255, 0.3),
-        inset 0 0 30px rgba(255, 255, 255, 0.05);
+/* Only apply hover effects on devices with hover capability (not touch screens) */
+@media (hover: hover) {
+    .glass-box:hover {
+        transform: translateY(-8px) scale(1.01);
+        background: rgba(255, 255, 255, 0.08);
+        border-color: rgba(255, 255, 255, 0.4);
+        box-shadow:
+            0 30px 60px -12px rgba(0, 0, 0, 0.6),
+            inset 0 1px 0 rgba(255, 255, 255, 0.3),
+            inset 0 0 30px rgba(255, 255, 255, 0.05);
+    }
 }
 
 .glass-box:active {
@@ -1373,10 +1376,6 @@ input[type="range"] {
     border-radius: 32px;
 }
 
-.glass-box:hover::before {
-    opacity: 1;
-}
-
 /* Border glow with refraction */
 .glass-box::after {
     content: '';
@@ -1396,10 +1395,6 @@ input[type="range"] {
     filter: blur(8px);
 }
 
-.glass-box:hover::after {
-    opacity: 1;
-}
-
 /* Add refraction shimmer effect */
 @keyframes shimmer {
     0% {
@@ -1411,21 +1406,36 @@ input[type="range"] {
     }
 }
 
-.glass-box:hover {
-    background: rgba(255, 255, 255, 0.1);
-    backdrop-filter: blur(40px) saturate(160%);
-    -webkit-backdrop-filter: blur(40px) saturate(160%);
-    transform: scale(1.02);
-    box-shadow: 0 30px 60px rgba(0, 0, 0, 0.4);
+@media (hover: hover) {
+    .glass-box:hover::before {
+        opacity: 1;
+    }
+
+    .glass-box:hover::after {
+        opacity: 1;
+    }
+
+    .glass-box:hover {
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(40px) saturate(160%);
+        -webkit-backdrop-filter: blur(40px) saturate(160%);
+    }
 }
 
-/* Add light refraction simulation on specific cards */
-.box-contact:hover {
-    background: linear-gradient(135deg, rgba(168, 237, 234, 0.15) 0%, rgba(254, 214, 227, 0.15) 100%);
-}
+@media (hover: hover) {
+    .glass-box:hover {
+        transform: scale(1.02);
+        box-shadow: 0 30px 60px rgba(0, 0, 0, 0.4);
+    }
 
-.box-taobao:hover {
-    background: linear-gradient(135deg, rgba(255, 154, 158, 0.15) 0%, rgba(254, 207, 239, 0.15) 100%);
+    /* Add light refraction simulation on specific cards */
+    .box-contact:hover {
+        background: linear-gradient(135deg, rgba(168, 237, 234, 0.15) 0%, rgba(254, 214, 227, 0.15) 100%);
+    }
+
+    .box-taobao:hover {
+        background: linear-gradient(135deg, rgba(255, 154, 158, 0.15) 0%, rgba(254, 207, 239, 0.15) 100%);
+    }
 }
 
 /* Enhanced backdrop blur for glass effect */
@@ -1482,6 +1492,22 @@ input[type="range"] {
         right: auto;
         font-size: 0.85rem;
         padding: 10px 16px;
+    }
+
+    /* Optimize modal size for mobile */
+    .premium-modal {
+        max-width: 90% !important;
+        width: 90% !important;
+        padding: 24px !important;
+        margin: 20px;
+    }
+
+    .modal-title {
+        font-size: 1.5rem !important;
+    }
+
+    .modal-subtitle {
+        font-size: 0.85rem !important;
     }
 }
 
