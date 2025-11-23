@@ -1458,9 +1458,35 @@ input[type="range"] {
     .box-profile {
         grid-column: span 2;
         grid-row: span 1;
-        align-items: center;
+        padding: 20px 16px !important;
+        position: relative;
+    }
+
+    /* Move time/date to top-right corner on mobile */
+    .profile-header {
+        position: absolute;
+        top: 16px;
+        right: 16px;
+        text-align: right;
+    }
+
+    .date-time-compact {
+        text-align: right;
+    }
+
+    /* Adjust main content alignment */
+    .profile-main {
         text-align: center;
-        padding: 30px 20px;
+        margin-top: 10px;
+    }
+
+    .shop-heading-large {
+        font-size: 1.8rem !important;
+        margin-bottom: 6px !important;
+    }
+
+    .shop-subtitle {
+        font-size: 0.9rem !important;
     }
 
     /* Contact and Taobao each take 1 column */
