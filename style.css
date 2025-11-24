@@ -2383,6 +2383,10 @@ svg {
     font-weight: 700;
     font-size: 1rem;
     color: #60a5fa;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 150px;
 }
 
 .message-time {
@@ -2670,14 +2674,18 @@ svg {
         right: 20px;
         padding: 10px 14px;
     }
+}
 
+/* Mobile Responsive Adjustments - Extended to larger phones */
+@media (max-width: 900px) {
     .guestbook-main {
+        max-width: 100%;
         padding: 0 20px;
         margin: 80px auto 20px;
     }
 
     .message-container {
-        column-count: 1;
+        column-count: 1 !important;
         column-gap: 16px;
     }
 
