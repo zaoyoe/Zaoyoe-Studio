@@ -93,6 +93,7 @@
 
     <div class="bento-container">
         <!-- Profile & Clock Card (2x2) -->
+        <!-- Profile & Clock Card (2x2) -->
         <div class="glass-box box-profile">
             <div class="profile-header">
                 <div class="date-time-compact">
@@ -108,18 +109,6 @@
             </div>
         </div>
 
-        <!-- Contact Card (2x1) - Clickable -->
-        <div class="glass-box box-contact" onclick="openModal('contactModal')">
-            <i class="fa-solid fa-address-card icon-large" style="color: #d946ef;"></i>
-            <div class="box-label">联系我们</div>
-        </div>
-
-        <!-- Taobao Card (2x1) -->
-        <div class="glass-box box-taobao">
-            <i class="fa-solid fa-cart-shopping icon-large"></i>
-            <div class="box-label">淘宝店铺</div>
-        </div>
-
         <!-- Gemini Card (2x1) - Interactive -->
         <div class="glass-box box-wide" onclick="openModal('geminiModal')">
             <!-- Custom SVG for Gemini 4-point Star -->
@@ -130,26 +119,44 @@
             <div class="box-label">Gemini 专区</div>
         </div>
 
-        <!-- 3D Design (1x1) -->
-        <a href="#" class="glass-box box-small">
-            <i class="fa-solid fa-cube icon-large" style="color: #06b6d4;"></i>
-            <div class="box-label">三维设计</div>
-        </a>
-
-        <!-- Post-production (1x1) -->
-        <a href="#" class="glass-box box-small">
-            <i class="fa-solid fa-clapperboard icon-large" style="color: #8b5cf6;"></i>
-            <div class="box-label">影视后期</div>
-        </a>
-
-        <!-- Wide Cards (2x1) -->
+        <!-- Google Card (2x1) -->
         <a href="#" class="glass-box box-wide" onclick="openModal('googleModal'); return false;">
             <i class="fa-brands fa-google icon-large" style="color: #ea4335;"></i>
             <div class="box-label">Google 邮箱</div>
         </a>
 
-        <!-- Guestbook Card (2x1) - Interactive -->
-        <div class="glass-box box-wide" onclick="openModal('guestbookModal')">
+        <!-- Taobao Card (1x1) -->
+        <div class="glass-box box-small">
+            <i class="fa-solid fa-cart-shopping icon-large" style="color: #ff5000;"></i>
+            <div class="box-label">淘宝店铺</div>
+        </div>
+
+        <!-- Xianyu Card (1x1) -->
+        <div class="glass-box box-small">
+            <i class="fa-solid fa-fish icon-large" style="color: #ffda44;"></i>
+            <div class="box-label">闲鱼店铺</div>
+        </div>
+
+        <!-- 3D Design (1x1) -->
+        <div class="glass-box box-small" onclick="openModal('comingSoonModal')">
+            <i class="fa-solid fa-cube icon-large" style="color: #06b6d4;"></i>
+            <div class="box-label">三维设计</div>
+        </div>
+
+        <!-- Post-production (1x1) -->
+        <div class="glass-box box-small" onclick="openModal('comingSoonModal')">
+            <i class="fa-solid fa-clapperboard icon-large" style="color: #8b5cf6;"></i>
+            <div class="box-label">影视后期</div>
+        </div>
+
+        <!-- Contact Card (1x1) - Clickable -->
+        <div class="glass-box box-small" onclick="openModal('contactModal')">
+            <i class="fa-solid fa-address-card icon-large" style="color: #d946ef;"></i>
+            <div class="box-label">联系我们</div>
+        </div>
+
+        <!-- Guestbook Card (1x1) - Interactive -->
+        <div class="glass-box box-small" onclick="openModal('guestbookModal')">
             <i class="fa-regular fa-comment-dots icon-large" style="color: #f59e0b;"></i>
             <div class="box-label">留言板</div>
         </div>
@@ -300,6 +307,25 @@
                     <div class="link-title">使用规范</div>
                 </a>
             </div>
+        </div>
+    </div>
+
+    <!-- Coming Soon Modal -->
+    <div class="modal-overlay" id="comingSoonModal" onclick="closeModal(event)">
+        <div class="modal-content premium-modal"
+            style="position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 300px;">
+            <!-- Mac Window Controls -->
+            <div class="mac-controls" style="position: absolute; top: 20px; left: 20px;">
+                <div class="mac-dot red" onclick="closeModal(event)">
+                    <i class="fas fa-times"></i>
+                </div>
+            </div>
+
+            <i class="fa-solid fa-rocket" style="font-size: 4rem; color: #8b5cf6; margin-bottom: 20px;"></i>
+            <div class="modal-title">敬请期待</div>
+            <p class="modal-subtitle">
+                该功能正在紧锣密鼓地开发中...
+            </p>
         </div>
     </div>
 
