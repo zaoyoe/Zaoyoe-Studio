@@ -1402,6 +1402,49 @@ input[type="range"] {
         opacity: 1 !important;
     }
 
+    /* --- Compact Guestbook Modal (Mobile) --- */
+    .guestbook-content .modal-title {
+        margin-bottom: 4px !important;
+        font-size: 1.2rem !important;
+    }
+
+    .guestbook-content .modal-subtitle {
+        margin-bottom: 12px !important;
+        font-size: 0.75rem !important;
+        line-height: 1.3;
+    }
+
+    .guestbook-content .input-group {
+        margin-bottom: 8px !important;
+    }
+
+    .guestbook-content input,
+    .guestbook-content textarea {
+        padding: 10px 12px !important;
+        font-size: 0.85rem !important;
+        border-radius: 10px !important;
+    }
+
+    .guestbook-content textarea {
+        height: 70px !important;
+        /* Shorter textarea */
+    }
+
+    .guestbook-content .submit-btn {
+        padding: 10px !important;
+        margin-top: 5px !important;
+        font-size: 0.9rem !important;
+        border-radius: 10px !important;
+    }
+
+    .guestbook-content .view-more-btn {
+        padding: 10px !important;
+        margin-top: 8px !important;
+        /* Much tighter */
+        font-size: 0.9rem !important;
+        border-radius: 10px !important;
+    }
+
     /* Contact Modal: 2 columns side-by-side */
     .modal-grid {
         grid-template-columns: 1fr 1fr !important;
