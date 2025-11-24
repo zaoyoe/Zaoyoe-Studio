@@ -166,34 +166,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Modal Logic
-    window.openCommentModal = function (messageId) {
-        const modal = document.getElementById('commentModal');
-        const messageIdInput = document.getElementById('commentMessageId');
-        if (modal && messageIdInput) {
-            messageIdInput.value = messageId;
-            modal.classList.add('active');
-            // Focus name input
-            setTimeout(() => {
-                const nameInput = document.getElementById('commentName');
-                if (nameInput) nameInput.focus();
-            }, 100);
-        }
-    }
-
-    window.closeCommentModal = function (event) {
-        if (event.target.classList.contains('modal-overlay') ||
-            event.target.closest('.mac-dot.red')) {
-            const modal = document.getElementById('commentModal');
-            if (modal) {
-                modal.classList.remove('active');
-                // Clear form
-                const form = document.getElementById('commentForm');
-                if (form) form.reset();
-            }
-        }
-    }
-
     // Handle Comment Submission
     const commentForm = document.getElementById('commentForm');
     if (commentForm) {
@@ -245,7 +217,19 @@ document.addEventListener('DOMContentLoaded', () => {
             localStorage.setItem('guestbook_messages', JSON.stringify(messages));
 
             // Re-render messages
-            renderMessages(messages);
+            // We need to access renderMessages which is inside the scope. 
+            // Since we are moving this function out, we need to pass it or reload.
+            // Simplest fix: Reload page or re-read from localStorage inside the scope.
+            // But wait, addComment is called by the form listener which is inside the scope.
+            // So addComment CAN stay inside.
+
+            // Only open/close need to be global.
+
+            // Let's reload to reflect changes simply, or re-render.
+            // Since renderMessages is internal, we can just reload for now or expose renderMessages.
+            // Better: Expose renderMessages globally or keep addComment inside and only move open/close.
+
+            window.location.reload();
         } catch (error) {
             if (error.name === 'QuotaExceededError') {
                 alert('存储空间已满! 请清理旧留言。');
@@ -254,60 +238,136 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     }
+});
 
-    // Initialize magnetic effect for message items
-    function initMagneticEffect() {
-        const cards = document.querySelectorAll('.message-item');
+// --- Global Modal Functions (Must be outside DOMContentLoaded) ---
 
-        cards.forEach(card => {
-            const inner = card.querySelector('.message-inner');
-            if (!inner) return;
+window.openCommentModal = function (messageId) {
+    const modal = document.getElementById('commentModal');
+    const messageIdInput = document.getElementById('commentMessageId');
+    if (modal && messageIdInput) {
+        messageIdInput.value = messageId;
+        modal.classList.add('active');
+        // Focus name input
+        setTimeout(() => {
+            const nameInput = document.getElementById('commentName');
+            if (nameInput) nameInput.focus();
+        }, 100);
+    }
+};
 
-            // Fix: Animation 'forwards' locks the transform property.
-            // We force remove the animation property after it completes.
-            // Using a timeout is more reliable than animationend for this specific case
-            // where elements might be re-rendered or added dynamically.
-            setTimeout(() => {
-                card.style.opacity = '1';
-                card.style.animation = 'none';
-                // Force a repaint to ensure transform is unlocked
-                card.offsetHeight;
-            }, 500); // Animation is 0.4s, wait 0.5s
+window.closeCommentModal = function (event) {
+    // Close if clicked on overlay or close button
+    if (event.target.classList.contains('modal-overlay') ||
+        event.target.closest('.mac-dot.red') ||
+        event.target.closest('.close-btn')) { // Added safety check
 
-            // Apply transition to inner element for smooth movement
-            inner.style.transition = 'transform 0.1s ease-out';
-            inner.style.transformOrigin = 'center center';
-            // Ensure it takes full size
-            inner.style.width = '100%';
-            inner.style.height = '100%';
+        const modal = document.getElementById('commentModal');
+        if (modal) {
+            modal.classList.remove('active');
+            // Clear form
+            const form = document.getElementById('commentForm');
+            if (form) form.reset();
+        }
+    }
+};
 
-            card.addEventListener('mousemove', (e) => {
-                const rect = card.getBoundingClientRect();
-                const x = e.clientX - rect.left;
-                const y = e.clientY - rect.top;
+function addComment(messageId, name, content) {
+    const messages = JSON.parse(localStorage.getItem('guestbook_messages') || '[]');
 
-                const centerX = rect.width / 2;
-                const centerY = rect.height / 2;
+    // Find the message by ID
+    const messageIndex = messages.findIndex(msg => msg.id === messageId);
+    if (messageIndex === -1) return;
 
-                // Consistent subtle effect: Divisor 25
-                const deltaX = (x - centerX) / 25;
-                const deltaY = (y - centerY) / 25;
+    const newComment = {
+        id: Date.now(),
+        name: name,
+        content: content,
+        timestamp: new Date().toLocaleString('zh-CN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
+        })
+    };
 
-                card.style.transform = `translate(${deltaX}px, ${deltaY}px) scale(1.01)`;
-            });
+    // Initialize comments array if it doesn't exist
+    if (!messages[messageIndex].comments) {
+        messages[messageIndex].comments = [];
+    }
 
-            card.addEventListener('mouseleave', () => {
-                card.style.transform = '';
-            });
+    // Add comment to the message
+    messages[messageIndex].comments.push(newComment);
+
+    // Save back to localStorage
+    try {
+        localStorage.setItem('guestbook_messages', JSON.stringify(messages));
+
+        // Re-render messages
+        renderMessages(messages);
+    } catch (error) {
+        if (error.name === 'QuotaExceededError') {
+            alert('存储空间已满! 请清理旧留言。');
+        } else {
+            console.error('保存失败:', error);
+        }
+    }
+}
+
+// Initialize magnetic effect for message items
+function initMagneticEffect() {
+    const cards = document.querySelectorAll('.message-item');
+
+    cards.forEach(card => {
+        const inner = card.querySelector('.message-inner');
+        if (!inner) return;
+
+        // Fix: Animation 'forwards' locks the transform property.
+        // We force remove the animation property after it completes.
+        // Using a timeout is more reliable than animationend for this specific case
+        // where elements might be re-rendered or added dynamically.
+        setTimeout(() => {
+            card.style.opacity = '1';
+            card.style.animation = 'none';
+            // Force a repaint to ensure transform is unlocked
+            card.offsetHeight;
+        }, 500); // Animation is 0.4s, wait 0.5s
+
+        // Apply transition to inner element for smooth movement
+        inner.style.transition = 'transform 0.1s ease-out';
+        inner.style.transformOrigin = 'center center';
+        // Ensure it takes full size
+        inner.style.width = '100%';
+        inner.style.height = '100%';
+
+        card.addEventListener('mousemove', (e) => {
+            const rect = card.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            const centerX = rect.width / 2;
+            const centerY = rect.height / 2;
+
+            // Consistent subtle effect: Divisor 25
+            const deltaX = (x - centerX) / 25;
+            const deltaY = (y - centerY) / 25;
+
+            card.style.transform = `translate(${deltaX}px, ${deltaY}px) scale(1.01)`;
         });
-    }
 
-    // Helper to prevent XSS
-    function escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
+        card.addEventListener('mouseleave', () => {
+            card.style.transform = '';
+        });
+    });
+}
+
+// Helper to prevent XSS
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
 });
 
 // Image Modal for full-screen view
