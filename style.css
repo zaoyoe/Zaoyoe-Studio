@@ -1380,10 +1380,10 @@ input[type="range"] {
 
     /* Reduce modal size on mobile to avoid "oppressive" feel */
     .modal-content {
-        width: 85% !important;
-        max-width: 340px !important;
-        padding: 24px !important;
-        border-radius: 24px !important;
+        width: 80% !important;
+        max-width: 300px !important;
+        padding: 20px !important;
+        border-radius: 20px !important;
     }
 
     /* Contact Modal: 2 columns side-by-side */
