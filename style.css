@@ -1428,14 +1428,7 @@ input[type="range"] {
         box-shadow: 0 30px 60px rgba(0, 0, 0, 0.4);
     }
 
-    /* Add light refraction simulation on specific cards */
-    .box-contact:hover {
-        background: linear-gradient(135deg, rgba(168, 237, 234, 0.15) 0%, rgba(254, 214, 227, 0.15) 100%);
-    }
-
-    .box-taobao:hover {
-        background: linear-gradient(135deg, rgba(255, 154, 158, 0.15) 0%, rgba(254, 207, 239, 0.15) 100%);
-    }
+    /* Removed light refraction simulation on specific cards */
 }
 
 /* Enhanced backdrop blur for glass effect */
@@ -2745,7 +2738,12 @@ svg {
     will-change: transform;
     /* Optimize for transform animations */
     /* No CSS transitions for transform - handled by JS physics */
+    position: relative;
+    overflow: hidden;
+    text-decoration: none;
 }
+
+/* Removed glossy pseudo-elements (::before, ::after) to eliminate liquid glass effect */
 
 /* Mobile Layout Optimizations */
 @media (max-width: 768px) {
@@ -2802,6 +2800,11 @@ svg {
         right: 20px;
         width: auto;
         margin: 0;
+    }
+
+    /* Hide date on mobile as requested */
+    #current-date {
+        display: none !important;
     }
 
     .profile-info {
