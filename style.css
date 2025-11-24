@@ -862,6 +862,15 @@ input[type="range"] {
     }
 }
 
+/* Add hover lift effect for static cards (not using elastic press) */
+@media (hover: hover) {
+
+    .box-contact:hover,
+    .box-taobao:hover {
+        transform: translateY(-2px) scale(1.01);
+    }
+}
+
 .glass-box:active {
     transform: scale(0.98);
 }

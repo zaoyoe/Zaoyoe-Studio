@@ -38,6 +38,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Attach comment form handlers after rendering
         attachCommentHandlers();
+
+        // Initialize magnetic effect for new cards
+        initMagneticEffect();
     }
 
     function createMessageCard(msg, index = 0) {
@@ -272,74 +275,30 @@ window.closeCommentModal = function (event) {
     }
 };
 
-function addComment(messageId, name, content) {
-    const messages = JSON.parse(localStorage.getItem('guestbook_messages') || '[]');
 
-    // Find the message by ID
-    const messageIndex = messages.findIndex(msg => msg.id === messageId);
-    if (messageIndex === -1) return;
-
-    const newComment = {
-        id: Date.now(),
-        name: name,
-        content: content,
-        timestamp: new Date().toLocaleString('zh-CN', {
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit'
-        })
-    };
-
-    // Initialize comments array if it doesn't exist
-    if (!messages[messageIndex].comments) {
-        messages[messageIndex].comments = [];
-    }
-
-    // Add comment to the message
-    messages[messageIndex].comments.push(newComment);
-
-    // Save back to localStorage
-    try {
-        localStorage.setItem('guestbook_messages', JSON.stringify(messages));
-
-        // Re-render messages
-        renderMessages(messages);
-    } catch (error) {
-        if (error.name === 'QuotaExceededError') {
-            alert('存储空间已满! 请清理旧留言。');
-        } else {
-            console.error('保存失败:', error);
-        }
-    }
-}
 
 // Initialize magnetic effect for message items
 function initMagneticEffect() {
     const cards = document.querySelectorAll('.message-item');
 
     cards.forEach(card => {
-        const inner = card.querySelector('.message-inner');
-        if (!inner) return;
-
         // Fix: Animation 'forwards' locks the transform property.
-        // We force remove the animation property after it completes.
-        // Using a timeout is more reliable than animationend for this specific case
-        // where elements might be re-rendered or added dynamically.
-        setTimeout(() => {
+        // We must remove the animation after it finishes to allow JS transforms.
+
+        // Method 1: Event Listener
+        card.addEventListener('animationend', () => {
             card.style.opacity = '1';
             card.style.animation = 'none';
-            // Force a repaint to ensure transform is unlocked
-            card.offsetHeight;
-        }, 500); // Animation is 0.4s, wait 0.5s
+        }, { once: true });
 
-        // Apply transition to inner element for smooth movement
-        inner.style.transition = 'transform 0.1s ease-out';
-        inner.style.transformOrigin = 'center center';
-        // Ensure it takes full size
-        inner.style.width = '100%';
-        inner.style.height = '100%';
+        // Method 2: Timeout Fallback (for safety)
+        setTimeout(() => {
+            const computedStyle = window.getComputedStyle(card);
+            if (computedStyle.animationName !== 'none') {
+                card.style.opacity = '1';
+                card.style.animation = 'none';
+            }
+        }, 600); // Slightly longer than 0.4s animation + delays
 
         card.addEventListener('mousemove', (e) => {
             const rect = card.getBoundingClientRect();
@@ -362,13 +321,13 @@ function initMagneticEffect() {
     });
 }
 
+
 // Helper to prevent XSS
 function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
 }
-});
 
 // Image Modal for full-screen view
 function openImageModal(src) {

@@ -115,11 +115,15 @@ function closeModal(event) {
 /* =========================================
    Guestbook Logic with Image Upload
    ========================================= */
+/* =========================================
+   Guestbook Logic with Image Upload
+   ========================================= */
 document.addEventListener('DOMContentLoaded', () => {
     const guestbookForm = document.getElementById('guestbookForm');
     const imageUpload = document.getElementById('imageUpload');
     const imagePreview = document.getElementById('imagePreview');
     const previewImg = document.getElementById('previewImg');
+    const removeImageBtn = document.getElementById('removeImageBtn');
 
     let currentImageData = null; // Store base64 image data
 
@@ -146,13 +150,29 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentImageData = await compressImage(file);
 
                 // Show preview
-                previewImg.src = currentImageData;
-                imagePreview.style.display = 'block';
+                if (previewImg && imagePreview) {
+                    previewImg.src = currentImageData;
+                    imagePreview.style.display = 'block';
+                }
             } catch (error) {
                 console.error('图片处理失败:', error);
                 alert('图片处理失败,请重试!');
             }
         });
+    }
+
+    // Remove Image Handler
+    if (removeImageBtn) {
+        removeImageBtn.addEventListener('click', () => {
+            clearImage();
+        });
+    }
+
+    function clearImage() {
+        if (imageUpload) imageUpload.value = '';
+        if (imagePreview) imagePreview.style.display = 'none';
+        if (previewImg) previewImg.src = '';
+        currentImageData = null; // Clear the data!
     }
 
     // Form Submission
@@ -167,15 +187,20 @@ document.addEventListener('DOMContentLoaded', () => {
             const message = messageInput.value.trim();
 
             if (name && message) {
-                addMessage(name, message, currentImageData);
+                const success = addMessage(name, message, currentImageData);
 
-                // Clear inputs
-                nameInput.value = '';
-                messageInput.value = '';
-                removeImage();
+                if (success) {
+                    // Clear inputs
+                    nameInput.value = '';
+                    messageInput.value = '';
+                    clearImage();
 
-                // Redirect to guestbook page to see the message
-                window.location.href = 'guestbook.html';
+                    // Add a delay before redirect to ensure localStorage is saved
+                    // This is especially important for file:// protocol and slower systems
+                    setTimeout(() => {
+                        window.location.href = 'guestbook.html';
+                    }, 500);
+                }
             }
         });
     }
@@ -212,12 +237,15 @@ document.addEventListener('DOMContentLoaded', () => {
         // Save to LocalStorage
         try {
             localStorage.setItem('guestbook_messages', JSON.stringify(messages));
+            console.log('Message saved successfully:', newMessage);
+            return true; // Return success
         } catch (error) {
             if (error.name === 'QuotaExceededError') {
                 alert('存储空间已满! 请清理旧留言或减小图片大小。');
             } else {
                 console.error('保存失败:', error);
             }
+            return false; // Return failure
         }
     }
 
@@ -275,20 +303,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return div.innerHTML;
     }
 });
-
-// Remove Image Function (global scope for onclick)
-function removeImage() {
-    const imageUpload = document.getElementById('imageUpload');
-    const imagePreview = document.getElementById('imagePreview');
-    const previewImg = document.getElementById('previewImg');
-
-    if (imageUpload) imageUpload.value = '';
-    if (imagePreview) imagePreview.style.display = 'none';
-    if (previewImg) previewImg.src = '';
-
-    // Reset in module scope would require event system
-    // For now, image will be cleared on next upload
-}
 
 function copyText(text) {
     navigator.clipboard.writeText(text).then(() => {
