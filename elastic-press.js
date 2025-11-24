@@ -92,11 +92,33 @@ class ElasticPress {
         // If scrolling, ignore everything
         if (this.isScrolling) return;
 
-        // Find which card is under the finger
-        const targetEl = document.elementFromPoint(touch.clientX, touch.clientY);
+        // --- Sticky Logic Start ---
+        // 1. Check if we are already pressing a card
+        let activeCard = this.cards.find(c => c.isPressed);
+        let cardEl = null;
 
-        // Find closest .glass-box parent
-        const cardEl = targetEl ? targetEl.closest('.glass-box') : null;
+        // 2. If we have an active card, check if we are still roughly over it (with margin)
+        // This prevents the card from "running away" when it shrinks
+        if (activeCard) {
+            const rect = activeCard.el.getBoundingClientRect();
+            const margin = 30; // 30px buffer zone
+            const isOver =
+                touch.clientX >= rect.left - margin &&
+                touch.clientX <= rect.right + margin &&
+                touch.clientY >= rect.top - margin &&
+                touch.clientY <= rect.bottom + margin;
+
+            if (isOver) {
+                cardEl = activeCard.el; // Stick to this card
+            }
+        }
+
+        // 3. If we lost the active card (moved too far), look for a new one
+        if (!cardEl) {
+            const targetEl = document.elementFromPoint(touch.clientX, touch.clientY);
+            cardEl = targetEl ? targetEl.closest('.glass-box') : null;
+        }
+        // --- Sticky Logic End ---
 
         // Track entry time for "Time on Target" logic
         if (cardEl !== this.currentCardEl) {
