@@ -102,11 +102,11 @@ class ElasticPress {
         // Check if we are releasing over a pressed card
         this.cards.forEach(c => {
             if (c.isPressed) {
-                // Time-based trigger: Only click if we've been on the card for > 80ms
-                // This filters out fast scrolling/flinging while allowing deliberate slides
+                // Time-based trigger: Only click if we've been on the card for > 150ms
+                // Increased from 80ms to 150ms to prevent accidental triggers during scrolling
                 const dwellTime = Date.now() - this.enterTime;
 
-                if (dwellTime > 80) {
+                if (dwellTime > 150) {
                     // Create and dispatch a click event
                     const clickEvent = new MouseEvent('click', {
                         view: window,
