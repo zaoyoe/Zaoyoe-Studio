@@ -143,9 +143,9 @@
         </a>
 
         <!-- Wide Cards (2x1) -->
-        <a href="#" class="glass-box box-wide">
+        <a href="#" class="glass-box box-wide" onclick="openModal('googleModal'); return false;">
             <i class="fa-brands fa-google icon-large" style="color: #ea4335;"></i>
-            <div class="box-label">Google 邮箱 / 账号服务</div>
+            <div class="box-label">Google 邮箱</div>
         </a>
 
         <!-- Guestbook Card (2x1) - Interactive -->
@@ -274,6 +274,30 @@
                 <a href="gemini_binding.html" class="modal-link-card">
                     <i class="fa-solid fa-credit-card"></i>
                     <div class="link-title">绑卡教程</div>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Google Modal -->
+    <div class="modal-overlay" id="googleModal" onclick="closeModal(event)">
+        <div class="modal-content premium-modal" style="position: relative;">
+            <!-- Mac Window Controls -->
+            <div class="mac-controls">
+                <div class="mac-dot red" onclick="closeModal(event)">
+                    <i class="fas fa-times"></i>
+                </div>
+            </div>
+
+            <div class="modal-title">Google 邮箱专区</div>
+            <p class="modal-subtitle">
+                高质量谷歌账号服务
+            </p>
+
+            <div class="modal-grid">
+                <a href="google_guide.html" class="modal-link-card">
+                    <i class="fa-solid fa-book"></i>
+                    <div class="link-title">使用规范</div>
                 </a>
             </div>
         </div>
