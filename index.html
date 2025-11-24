@@ -21,6 +21,31 @@
             emailjs.init("vawaxLVEzJMAVbut0");
         })();
     </script>
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAf5NpteGs3I7XnXbuQtEd_wBfp_tFuLOk",
+            authDomain: "zaoyoe-studio.firebaseapp.com",
+            projectId: "zaoyoe-studio",
+            storageBucket: "zaoyoe-studio.firebasestorage.app",
+            messagingSenderId: "1017068787594",
+            appId: "1:1017068787594:web:4f9bd3f95dd5d9b03ada73",
+            measurementId: "G-PEWLPYE78G"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+
+        // Make auth available globally
+        window.firebaseAuth = auth;
+        window.createUserWithEmailAndPassword = createUserWithEmailAndPassword;
+        window.signInWithEmailAndPassword = signInWithEmailAndPassword;
+        window.onAuthStateChanged = onAuthStateChanged;
+        window.signOut = signOut;
+    </script>
     <style>
         /* Homepage entrance animation - Subtle */
         @keyframes slideInUp {
@@ -348,12 +373,12 @@
                 <h2 class="card-title">Welcome Back</h2>
                 <p class="card-subtitle">Please enter your details to sign in.</p>
 
-                <form onsubmit="event.preventDefault(); alert('执行登录...');">
+                <form id="loginForm" onsubmit="handleLogin(event)">
                     <div class="input-group">
-                        <input type="email" class="glass-input" placeholder="Email Address" required>
+                        <input type="email" id="login-email" class="glass-input" placeholder="Email Address" required>
                     </div>
                     <div class="input-group">
-                        <input type="password" class="glass-input" placeholder="Password" required>
+                        <input type="password" id="login-password" class="glass-input" placeholder="Password" required>
                     </div>
                     <button type="submit" class="login-submit-btn">Sign In</button>
                 </form>

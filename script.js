@@ -444,7 +444,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // --- EmailJS Configuration & Logic ---
 let generatedCode = null; // Stores the real system-generated code
 const serviceID = "service_1bvx7vq"; // Replace with your Service ID
-const templateID = "template_qkuk30c"; // Replace with your Template ID
+const templateID = "template_ieu7m97"; // Replace with your Template ID
 
 // Function 1: Send Verification Code
 function sendVerificationCode() {
@@ -511,6 +511,7 @@ function handleRegister(event) {
     const inputCode = document.getElementById('reg-code').value;
     const password = document.getElementById('reg-password').value;
     const email = document.getElementById('reg-email').value;
+    const username = document.getElementById('reg-username').value;
 
     // Core Verification Logic: Compare user input with generated code
     if (inputCode !== generatedCode) {
@@ -518,9 +519,79 @@ function handleRegister(event) {
         return;
     }
 
-    // If code is correct, proceed with registration
-    alert(`注册成功！\n账号: ${email}\n(这里接入你的后续逻辑)`);
+    // If code is correct, create Firebase account
+    const auth = window.firebaseAuth;
+    const createUser = window.createUserWithEmailAndPassword;
 
-    // Example: Close modal
-    toggleLoginModal();
+    if (!auth || !createUser) {
+        alert("Firebase 未初始化，请刷新页面重试。");
+        return;
+    }
+
+    createUser(auth, email, password)
+        .then((userCredential) => {
+            // Registration successful
+            const user = userCredential.user;
+            alert(`注册成功！\n欢迎，${username}！\n您的账号: ${email}`);
+
+            // Close modal and reset form
+            toggleLoginModal();
+            document.getElementById('registerForm').reset();
+            generatedCode = null; // Clear verification code
+        })
+        .catch((error) => {
+            const errorCode = error.code;
+            const errorMessage = error.message;
+
+            // Handle specific errors
+            if (errorCode === 'auth/email-already-in-use') {
+                alert("该邮箱已被注册，请直接登录或使用其他邮箱。");
+            } else if (errorCode === 'auth/weak-password') {
+                alert("密码强度不足，请使用至少 6 位字符的密码。");
+            } else {
+                alert(`注册失败: ${errorMessage}`);
+            }
+        });
+}
+
+// Function 4: Handle Login Submission
+function handleLogin(event) {
+    event.preventDefault();
+
+    const email = document.getElementById('login-email').value;
+    const password = document.getElementById('login-password').value;
+
+    const auth = window.firebaseAuth;
+    const signIn = window.signInWithEmailAndPassword;
+
+    if (!auth || !signIn) {
+        alert("Firebase 未初始化，请刷新页面重试。");
+        return;
+    }
+
+    signIn(auth, email, password)
+        .then((userCredential) => {
+            // Login successful
+            const user = userCredential.user;
+            alert(`登录成功！\n欢迎回来！\n您的账号: ${email}`);
+
+            // Close modal and reset form
+            toggleLoginModal();
+            document.getElementById('loginForm').reset();
+        })
+        .catch((error) => {
+            const errorCode = error.code;
+            const errorMessage = error.message;
+
+            // Handle specific login errors
+            if (errorCode === 'auth/user-not-found') {
+                alert("该邮箱未注册，请先注册账号。");
+            } else if (errorCode === 'auth/wrong-password') {
+                alert("密码错误，请重新输入。");
+            } else if (errorCode === 'auth/invalid-credential') {
+                alert("邮箱或密码错误，请检查后重试。");
+            } else {
+                alert(`登录失败: ${errorMessage}`);
+            }
+        });
 }
