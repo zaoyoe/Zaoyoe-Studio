@@ -16,6 +16,8 @@ class ElasticPress {
         // Touch Tracking
         this.enterTime = 0;
         this.currentCardEl = null;
+        this.scrollStartY = 0;
+        this.isScrolling = false;
 
         // Physics Configuration (Spring System)
         this.config = {
@@ -62,11 +64,33 @@ class ElasticPress {
     // --- Global Touch Logic ---
 
     handleGlobalStart(e) {
+        const touch = e.touches[0];
+        this.scrollStartY = touch.clientY;
+        this.isScrolling = false;
+
         this.handleGlobalMove(e); // Trigger initial press
     }
 
     handleGlobalMove(e) {
         const touch = e.touches[0];
+
+        // Check for vertical scrolling (movement > 20px)
+        if (!this.isScrolling) {
+            const dy = Math.abs(touch.clientY - this.scrollStartY);
+            if (dy > 20) {
+                this.isScrolling = true;
+
+                // Cancel all presses immediately if scrolling starts
+                this.cards.forEach(c => {
+                    c.isPressed = false;
+                    c.target = { scale: 1, rotateX: 0, rotateY: 0 };
+                });
+                return;
+            }
+        }
+
+        // If scrolling, ignore everything
+        if (this.isScrolling) return;
 
         // Find which card is under the finger
         const targetEl = document.elementFromPoint(touch.clientX, touch.clientY);
@@ -99,6 +123,12 @@ class ElasticPress {
     }
 
     handleGlobalEnd(e) {
+        // If we were scrolling, do nothing (don't trigger clicks)
+        if (this.isScrolling) {
+            this.isScrolling = false;
+            return;
+        }
+
         // Check if we are releasing over a pressed card
         this.cards.forEach(c => {
             if (c.isPressed) {
