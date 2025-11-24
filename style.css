@@ -1992,9 +1992,29 @@ svg {
 
 .image-preview img {
     width: 100%;
-    max-height: 200px;
-    object-fit: contain;
+    max-height: 100px;
+    /* Limit height to prevent modal expansion */
+    object-fit: cover;
+    /* Crop neatly */
+    border-radius: 8px;
     display: block;
+}
+
+/* Mobile Guestbook Waterfall Layout */
+@media (max-width: 768px) {
+    .message-container {
+        column-count: 2 !important;
+        /* 2 Columns for waterfall */
+        column-gap: 10px !important;
+    }
+
+    .message-item {
+        margin-bottom: 10px !important;
+    }
+
+    .guestbook-main {
+        padding: 0 10px !important;
+    }
 }
 
 .remove-image-btn {

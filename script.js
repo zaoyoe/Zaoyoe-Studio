@@ -174,9 +174,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 messageInput.value = '';
                 removeImage();
 
-                // Show success feedback
-                alert('留言发布成功!');
-
                 // Redirect to guestbook page to see the message
                 window.location.href = 'guestbook.html';
             }
