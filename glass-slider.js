@@ -8,6 +8,7 @@ console.log('Liquid Glass Script Loaded');
  * 2. High-viscosity physics for "heavy liquid" feel.
  * 3. Velocity-based distortion with extreme elasticity.
  * 4. Smart gesture locking.
+ * 5. Interactive State: Hides original card background on touch.
  */
 
 class GlassSlider {
@@ -66,7 +67,7 @@ class GlassSlider {
             top: 0;
             left: 0;
             pointer-events: none;
-            z-index: 999;
+            z-index: 10; /* Lower z-index to sit behind card content (assuming card content is > 10) */
             border-radius: 24px;
             
             /* 1. Crystal Clear Body */
@@ -134,6 +135,9 @@ class GlassSlider {
             this.isActive = true;
             this.updateTargetFromCard(card);
 
+            // Hide original card background
+            this.activeCard.classList.add('glass-active-hidden');
+
             // Reset state to target immediately on start
             this.currentState = { ...this.targetState, opacity: 0 };
         }
@@ -151,6 +155,11 @@ class GlassSlider {
             if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 5) {
                 this.isScrolling = true;
                 this.isActive = false; // Hide glass when scrolling
+
+                // Restore card background if scrolling
+                if (this.activeCard) {
+                    this.activeCard.classList.remove('glass-active-hidden');
+                }
                 return;
             }
             if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 5) {
@@ -165,7 +174,14 @@ class GlassSlider {
             // Find card under finger
             const card = this.getCardAt(touch.clientX, touch.clientY);
             if (card) {
+                // If switching cards
+                if (this.activeCard && this.activeCard !== card) {
+                    this.activeCard.classList.remove('glass-active-hidden');
+                }
+
                 this.activeCard = card;
+                this.activeCard.classList.add('glass-active-hidden');
+
                 this.updateTargetFromCard(card);
                 this.isActive = true;
 
@@ -183,6 +199,11 @@ class GlassSlider {
             // Trigger click
             this.activeCard.click();
             if (navigator.vibrate) navigator.vibrate(10);
+        }
+
+        // Restore background
+        if (this.activeCard) {
+            this.activeCard.classList.remove('glass-active-hidden');
         }
 
         this.isActive = false;
