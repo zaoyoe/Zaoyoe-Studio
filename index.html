@@ -208,7 +208,7 @@
                 <button type="submit" class="submit-btn"
                     style="display: flex; align-items: center; justify-content: center; gap: 8px;">
                     <i class="fas fa-paper-plane"></i>
-                    发布留言
+                    留言
                 </button>
             </form>
 
@@ -307,6 +307,88 @@
                     <div class="link-title">使用规范</div>
                 </a>
             </div>
+        </div>
+    </div>
+
+    <!-- Login Trigger Button (Top Right) -->
+    <div class="top-right-nav">
+        <button class="login-trigger-btn" onclick="openAuthModal('login')">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                <circle cx="12" cy="7" r="4"></circle>
+            </svg>
+            Account
+        </button>
+    </div>
+
+    <!-- Auth Modal (Dual Mode) -->
+    <div class="login-overlay" id="loginModal" onclick="handleLoginOverlayClick(event)">
+        <div class="login-card">
+            <!-- Mac Window Controls -->
+            <div class="mac-controls">
+                <div class="mac-dot red" onclick="toggleLoginModal()">
+                    <i class="fas fa-times"></i>
+                </div>
+                <div class="mac-dot yellow"></div>
+                <div class="mac-dot green"></div>
+            </div>
+
+            <!-- Login View -->
+            <div id="loginView" class="form-view">
+                <h2 class="card-title">Welcome Back</h2>
+                <p class="card-subtitle">Please enter your details to sign in.</p>
+
+                <form onsubmit="event.preventDefault(); alert('执行登录...');">
+                    <div class="input-group">
+                        <input type="email" class="glass-input" placeholder="Email Address" required>
+                    </div>
+                    <div class="input-group">
+                        <input type="password" class="glass-input" placeholder="Password" required>
+                    </div>
+                    <button type="submit" class="login-submit-btn">Sign In</button>
+                </form>
+
+                <div class="switch-text">
+                    Don't have an account?
+                    <span class="switch-link" onclick="switchAuthView('register')">Sign Up</span>
+                </div>
+            </div>
+
+            <!-- Register View -->
+            <div id="registerView" class="form-view hidden">
+                <h2 class="card-title">Create Account</h2>
+                <p class="card-subtitle">Join us and start your journey.</p>
+
+                <form onsubmit="event.preventDefault(); alert('执行注册...');">
+                    <div class="input-group">
+                        <input type="text" class="glass-input" placeholder="Username" required>
+                    </div>
+                    <div class="input-group">
+                        <input type="email" class="glass-input" placeholder="Email Address" required>
+                    </div>
+                    <div class="input-group">
+                        <input type="password" class="glass-input" placeholder="Password" required>
+                    </div>
+                    <div class="input-group">
+                        <input type="password" class="glass-input" placeholder="Confirm Password" required>
+                    </div>
+
+                    <div class="checkbox-wrapper">
+                        <input type="checkbox" class="custom-checkbox" id="terms" required>
+                        <label for="terms">I agree to the <span style="color:white; cursor:pointer">Terms &
+                                Conditions</span></label>
+                    </div>
+
+                    <button type="submit" class="login-submit-btn">Create Account</button>
+                </form>
+
+                <div class="switch-text">
+                    Already have an account?
+                    <span class="switch-link" onclick="switchAuthView('login')">Sign In</span>
+                </div>
+            </div>
+
         </div>
     </div>
 

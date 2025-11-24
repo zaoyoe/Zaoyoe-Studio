@@ -90,7 +90,38 @@ function updateClock() {
 updateClock();
 setInterval(updateClock, 1000);
 
-// Modal Logic
+// --- Auth Modal Logic (Dual Mode) ---
+function openAuthModal(view = 'login') {
+    const modal = document.getElementById('loginModal');
+    modal.classList.add('active');
+    switchAuthView(view);
+}
+
+function toggleLoginModal() {
+    const modal = document.getElementById('loginModal');
+    modal.classList.remove('active');
+}
+
+function handleLoginOverlayClick(event) {
+    if (event.target.classList.contains('login-overlay')) {
+        toggleLoginModal();
+    }
+}
+
+function switchAuthView(viewName) {
+    const loginView = document.getElementById('loginView');
+    const registerView = document.getElementById('registerView');
+
+    if (viewName === 'register') {
+        loginView.classList.add('hidden');
+        registerView.classList.remove('hidden');
+    } else {
+        registerView.classList.add('hidden');
+        loginView.classList.remove('hidden');
+    }
+}
+
+// --- Coming Soon Modal Logic ---
 function openModal(modalId) {
     const modal = document.getElementById(modalId);
     if (modal) {

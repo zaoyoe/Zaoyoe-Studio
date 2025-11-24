@@ -512,11 +512,10 @@ input[type="range"] {
     max-width: 480px !important;
     padding: 40px !important;
     /* Match Guestbook/Gemini Guide Card Style */
-    background: rgba(30, 41, 59, 0.6) !important;
-    /* Slightly more transparent than before to match guide */
-    backdrop-filter: blur(20px) !important;
-    /* Reduced blur from 50px to 20px */
-    -webkit-backdrop-filter: blur(20px) !important;
+    /* Match Guestbook/Gemini Guide Card Style */
+    /* background removed to use shared rule */
+    /* backdrop-filter removed to use shared rule */
+    /* -webkit-backdrop-filter removed to use shared rule */
     border: 1px solid rgba(255, 255, 255, 0.15) !important;
     border-radius: 24px !important;
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5) !important;
@@ -856,13 +855,40 @@ input[type="range"] {
 
 /* Only apply hover effects on devices with hover capability (not touch screens) */
 @media (hover: hover) {
+    .glass-box {
+        position: relative;
+        overflow: hidden;
+    }
+
+    /* Flow of light effect - Mouse Following (Enhanced) */
+    .glass-box::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: radial-gradient(600px circle at var(--mouse-x) var(--mouse-y),
+                rgba(255, 255, 255, 0.15),
+                transparent 40%);
+        opacity: 0;
+        transition: opacity 0.3s;
+        pointer-events: none;
+        z-index: 2;
+        mix-blend-mode: overlay;
+    }
+
+    .glass-box:hover::before {
+        opacity: 1;
+    }
+
     .glass-box:hover {
         background: rgba(255, 255, 255, 0.08);
-        border-color: rgba(255, 255, 255, 0.4);
-        box-shadow:
-            0 30px 60px -12px rgba(0, 0, 0, 0.6),
-            inset 0 1px 0 rgba(255, 255, 255, 0.3),
-            inset 0 0 30px rgba(255, 255, 255, 0.05);
+        border-color: rgba(255, 255, 255, 0.3);
+        transform: translateY(-2px);
+        box-shadow: 0 8px 32px rgba(155, 93, 229, 0.3),
+            0 0 40px rgba(241, 91, 181, 0.2),
+            inset 0 0 20px rgba(255, 255, 255, 0.1);
     }
 }
 
@@ -892,6 +918,7 @@ input[type="range"] {
 .shop-heading {
     background: linear-gradient(45deg, #fff, #ccc);
     -webkit-background-clip: text;
+    background-clip: text;
     -webkit-text-fill-color: transparent;
 }
 
@@ -967,6 +994,7 @@ input[type="range"] {
     margin-bottom: 10px;
     background: linear-gradient(45deg, #1d1d1f, #434344);
     -webkit-background-clip: text;
+    background-clip: text;
     -webkit-text-fill-color: transparent;
 }
 
@@ -1029,6 +1057,7 @@ input[type="range"] {
     align-items: center;
     text-align: center;
     padding: 20px 0;
+    width: 100%;
 }
 
 .shop-heading-large {
@@ -1041,6 +1070,8 @@ input[type="range"] {
     background-clip: text;
     -webkit-text-fill-color: transparent;
     line-height: 1.1;
+    text-align: center;
+    width: 100%;
 }
 
 .shop-subtitle {
@@ -1194,9 +1225,11 @@ input[type="range"] {
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.2);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
+    background: rgba(0, 0, 0, 0.6);
+    /* Darker background for less transparency */
+    backdrop-filter: blur(8px);
+    /* Blur background to focus attention */
+    -webkit-backdrop-filter: blur(8px);
     z-index: 1000;
     display: flex;
     justify-content: center;
@@ -1216,13 +1249,15 @@ input[type="range"] {
 }
 
 .modal-content {
-    background: rgba(255, 255, 255, 0.85);
+    background: rgba(255, 255, 255, 0.03);
     padding: 50px;
-    border-radius: 40px;
+    border-radius: 24px;
     text-align: center;
     max-width: 90%;
     width: 480px;
-    box-shadow: 0 40px 80px -12px rgba(0, 0, 0, 0.3), inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-top: 1px solid rgba(255, 255, 255, 0.2);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     transform: scale(0.9);
@@ -1231,6 +1266,7 @@ input[type="range"] {
     /* Optimize animation */
     backface-visibility: hidden;
     /* Hardware acceleration */
+    color: white;
 }
 
 .modal-overlay.active .modal-content {
@@ -1245,8 +1281,8 @@ input[type="range"] {
 }
 
 .modal-link-card {
-    background: rgba(255, 255, 255, 0.5);
-    border: 1px solid rgba(0, 0, 0, 0.05);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 24px;
     padding: 30px 20px;
     text-decoration: none;
@@ -1261,7 +1297,8 @@ input[type="range"] {
 }
 
 .modal-link-card:hover {
-    background: rgba(255, 255, 255, 0.8);
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.3);
     transform: translateY(-5px);
     box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
 }
@@ -1278,24 +1315,27 @@ input[type="range"] {
 .link-title {
     font-size: 1.2rem;
     font-weight: 600;
-    color: #1d1d1f;
+    color: rgba(255, 255, 255, 0.9);
 }
 
 .modal-title {
     font-size: 2rem;
     font-weight: 800;
     margin-bottom: 10px;
-    color: #1d1d1f;
-    /* Dark color for visibility */
+    background: linear-gradient(to right, #fff, #ccc);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
     letter-spacing: -0.5px;
 }
 
 .modal-text {
     font-size: 1.2rem;
-    color: #1d1d1f;
+    color: rgba(255, 255, 255, 0.8);
     margin-bottom: 20px;
     padding: 15px;
-    background: #f5f5f7;
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 15px;
     word-break: break-all;
     cursor: pointer;
@@ -1321,19 +1361,20 @@ input[type="range"] {
 }
 
 .close-btn {
-    background: #1d1d1f;
+    background: rgba(255, 255, 255, 0.1);
     color: white;
-    border: none;
+    border: 1px solid rgba(255, 255, 255, 0.1);
     padding: 12px 30px;
     border-radius: 20px;
     font-size: 1rem;
     font-weight: 600;
     cursor: pointer;
-    transition: transform 0.2s;
+    transition: all 0.2s;
 }
 
 .close-btn:hover {
     transform: scale(1.05);
+    background: rgba(255, 255, 255, 0.2);
 }
 
 /* Contact Card Specific Styles */
@@ -1356,14 +1397,14 @@ input[type="range"] {
 
 .contact-detail {
     font-size: 0.95rem;
-    color: #515154;
+    color: rgba(255, 255, 255, 0.7);
     margin-top: 10px;
     font-weight: 500;
 }
 
 .contact-hint {
     font-size: 0.75rem;
-    color: #86868b;
+    color: rgba(255, 255, 255, 0.5);
     margin-top: 5px;
 }
 
@@ -1448,7 +1489,16 @@ input[type="range"] {
         padding-right: 50px !important;
         /* Prevent text overlap with camera icon */
         font-size: 0.85rem !important;
-        border-radius: 10px !important;
+        border-radius: 12px !important;
+        background: rgba(0, 0, 0, 0.2) !important;
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        color: white !important;
+    }
+
+    .guestbook-content input:focus,
+    .guestbook-content textarea:focus {
+        border-color: #9b5de5 !important;
+        background: rgba(0, 0, 0, 0.4) !important;
     }
 
     .guestbook-content textarea {
@@ -1464,11 +1514,24 @@ input[type="range"] {
     }
 
     .guestbook-content .view-more-btn {
-        padding: 10px !important;
-        margin-top: 8px !important;
-        /* Much tighter */
+        padding: 0 !important;
+        margin-top: 15px !important;
         font-size: 0.9rem !important;
-        border-radius: 10px !important;
+        background: none !important;
+        border: none !important;
+        color: #f15bb5 !important;
+        font-weight: 600 !important;
+        text-decoration: none !important;
+        display: inline-block !important;
+        width: auto !important;
+    }
+
+    .guestbook-content .view-more-btn:hover {
+        text-decoration: underline !important;
+        color: #d14b9e !important;
+        background: none !important;
+        transform: none !important;
+        box-shadow: none !important;
     }
 
     /* Contact Modal: 2 columns side-by-side */
@@ -1836,18 +1899,22 @@ svg {
     border-radius: 4px;
 }
 
+/* Message Card in Modal - Ultra Transparent Glass */
 .message-card {
-    background: rgba(255, 255, 255, 0.05);
-    border-radius: 12px;
-    padding: 15px;
-    margin-bottom: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    animation: slideIn 0.3s ease-out;
-    transition: transform 0.2s ease;
+    background: rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-top: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 16px;
+    padding: 20px;
+    margin-bottom: 15px;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
 }
 
 .message-card:hover {
-    background: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.06);
     transform: translateX(2px);
 }
 
@@ -2103,8 +2170,10 @@ svg {
 .comment-section {
     margin-top: 10px;
     background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 8px;
-    padding: 8px;
+    padding: 12px;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
 .comment-header-bar {
@@ -2155,31 +2224,77 @@ svg {
     transform: scale(1.1);
 }
 
-/* ==================== View More Button ==================== */
-.view-more-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    width: 100%;
-    padding: 14px 20px;
-    margin-top: 20px;
-    background: linear-gradient(135deg, #f59e0b, #d97706);
-    border: none;
-    border-radius: 14px;
+/* Standardized Button Gradient */
+/* Standardized Button Gradient */
+.submit-btn,
+.floating-back-btn,
+.login-submit-btn {
+    background: linear-gradient(135deg, #9b5de5 0%, #f15bb5 100%);
     color: white;
-    font-size: 1rem;
+    border: none;
+    transition: opacity 0.2s, transform 0.2s;
+    max-width: 200px;
+    margin: 0 auto;
+    display: block;
+}
+
+.submit-btn:hover,
+.floating-back-btn:hover,
+.login-submit-btn:hover {
+    opacity: 0.9;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(155, 93, 229, 0.4);
+}
+
+.view-more-btn {
+    background: none;
+    color: #f15bb5;
+    border: none;
     font-weight: 600;
+    padding: 12px 24px;
     text-decoration: none;
-    cursor: pointer;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: 0 4px 15px rgba(245, 158, 11, 0.3);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.3s ease;
 }
 
 .view-more-btn:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 8px 25px rgba(245, 158, 11, 0.5);
-    background: linear-gradient(135deg, #fbbf24, #f59e0b);
+    text-decoration: underline;
+    color: #d14b9e;
+    background: none;
+    transform: none;
+    box-shadow: none;
+}
+
+/* Ensure floating back button specific positioning remains */
+.floating-back-btn {
+    position: fixed;
+    top: 30px;
+    left: 30px;
+    padding: 10px 20px;
+    border-radius: 50px;
+    text-decoration: none;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    z-index: 100;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+/* Standardized Modal Backgrounds - Ultra Transparent Glass (Login Card Style) */
+.modal-content,
+.premium-modal,
+.login-card {
+    background: rgba(255, 255, 255, 0.03);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-top: 1px solid rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    color: white;
 }
 
 .view-more-btn i {
@@ -2316,6 +2431,7 @@ svg {
     /* Subtle gradient */
     background: conic-gradient(from 0deg, transparent 0%, rgba(255, 255, 255, 0.4) 15%, transparent 30%);
     -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
     -webkit-mask-composite: xor;
     mask-composite: exclude;
     opacity: 0;
@@ -2341,27 +2457,22 @@ svg {
     column-gap: 20px;
 }
 
-/* Message Item Card - Premium Style (Matching Gemini Guide) */
-/* Message Item Card - Premium Style (Matching Gemini Guide) */
+/* Message Item Card - Ultra Transparent Glass (Matching Modal Style) */
 .message-item {
-    background: rgba(30, 41, 59, 0.4);
-    /* Reduced opacity to 0.4 for better transparency */
-    backdrop-filter: blur(12px);
-    /* Reduced blur to minimize moiré patterns */
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+    border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 24px;
     padding: 24px;
     animation: slideInUp 0.4s ease-out forwards;
-    /* Remove transform from transition to prevent fighting with JS magnetic effect */
     transition: background 0.4s ease, box-shadow 0.4s ease, border-color 0.4s ease;
     break-inside: avoid;
     margin-bottom: 20px;
     display: inline-block;
     width: 100%;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
     opacity: 0;
-    /* Ensure hardware acceleration to prevent rendering glitches */
     backface-visibility: hidden;
     -webkit-backface-visibility: hidden;
     transform: translateZ(0);
@@ -2369,8 +2480,7 @@ svg {
 
 .message-item:hover {
     background: rgba(30, 41, 59, 0.6);
-    /* Slightly more opaque on hover */
-    border-color: rgba(56, 189, 248, 0.3);
+    border-color: rgba(255, 255, 255, 0.3);
     /* Transform is handled by JS for magnetic effect, but we keep a fallback/base scale here if JS fails, 
        though JS overrides inline style. actually JS sets transform directly. 
        We rely on JS for the scale(1.01) as well to combine them. */
@@ -2981,4 +3091,317 @@ svg {
         margin-top: 40px;
         /* Space for the time */
     }
+}
+
+/* ==================== Login System Styles ==================== */
+
+/* Top Right Trigger Button */
+.top-right-nav {
+    position: fixed;
+    top: 30px;
+    right: 30px;
+    z-index: 100;
+}
+
+.login-trigger-btn {
+    /* Glassmorphism Core */
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+
+    /* Shape & Typography */
+    padding: 10px 24px;
+    border-radius: 50px;
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.login-trigger-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.3);
+    transform: translateY(-2px);
+    box-shadow: 0 0 15px rgba(149, 76, 233, 0.3);
+    /* Purple Glow */
+}
+
+/* Login Modal Overlay */
+.login-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    /* Darkened background */
+    backdrop-filter: blur(8px);
+    /* Blur background to focus attention */
+    -webkit-backdrop-filter: blur(8px);
+    z-index: 2000;
+    /* Higher than other modals */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+
+    /* Hidden by default */
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s ease;
+}
+
+.login-overlay.active {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* Login Card Body */
+.login-card {
+    width: 360px;
+    padding: 40px;
+    border-radius: 24px;
+    position: relative;
+
+    /* Advanced Glassmorphism - Inherited from shared rule */
+    /* background: rgba(255, 255, 255, 0.03); - Removed to use shared rule */
+    /* backdrop-filter: blur(20px); - Removed to use shared rule */
+    /* -webkit-backdrop-filter: blur(20px); - Removed to use shared rule */
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-top: 1px solid rgba(255, 255, 255, 0.2);
+    /* Top Highlight */
+
+    transform: scale(0.95);
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.login-overlay.active .login-card {
+    transform: scale(1);
+}
+
+/* Card Internal Elements */
+.card-title {
+    font-size: 24px;
+    margin-bottom: 8px;
+    /* Gradient Text */
+    background: linear-gradient(to right, #fff, #ccc);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    font-weight: 700;
+    text-align: center;
+}
+
+.card-subtitle {
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.5);
+    margin-bottom: 30px;
+    text-align: center;
+}
+
+/* Input Groups */
+.input-group {
+    margin-bottom: 20px;
+}
+
+.glass-input {
+    width: 100%;
+    padding: 14px 16px;
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.2);
+    /* Dark semi-transparent background */
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: white;
+    font-size: 14px;
+    outline: none;
+    box-sizing: border-box;
+    transition: 0.3s;
+}
+
+.glass-input:focus {
+    border-color: #9b5de5;
+    /* Focus Purple */
+    background: rgba(0, 0, 0, 0.4);
+}
+
+/* Login Button */
+.login-submit-btn {
+    width: 100%;
+    padding: 14px;
+    border-radius: 12px;
+    border: none;
+    color: white;
+    font-weight: 600;
+    font-size: 16px;
+    cursor: pointer;
+    /* Gradient Color */
+    background: linear-gradient(135deg, #9b5de5 0%, #f15bb5 100%);
+    transition: opacity 0.2s;
+    margin-top: 10px;
+}
+
+.login-submit-btn:hover {
+    opacity: 0.9;
+}
+
+/* Divider */
+.login-divider {
+    margin: 24px 0;
+    text-align: center;
+    position: relative;
+}
+
+.login-divider::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 50%;
+    width: 100%;
+    height: 1px;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.login-divider span {
+    position: relative;
+    background: transparent;
+    padding: 0 10px;
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 12px;
+    z-index: 1;
+}
+
+/* Google Quick Login */
+.google-btn {
+    width: 100%;
+    padding: 12px;
+    border-radius: 12px;
+    background: white;
+    color: #333;
+    border: none;
+    font-weight: 500;
+    font-size: 14px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    transition: 0.2s;
+}
+
+.google-btn:hover {
+    background: #f0f0f0;
+}
+
+/* Mobile Responsive for Login */
+@media (max-width: 480px) {
+    .top-right-nav {
+        top: 20px;
+        right: 20px;
+    }
+
+    .login-card {
+        width: 90%;
+        padding: 30px 20px;
+    }
+}
+
+/* --- Dual Mode Login System Styles --- */
+
+/* View Switching Animation */
+.form-view {
+    animation: fadeIn 0.4s ease forwards;
+}
+
+.hidden {
+    display: none;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Switch Links */
+.switch-text {
+    margin-top: 20px;
+    text-align: center;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.switch-link {
+    color: #f15bb5;
+    text-decoration: none;
+    font-weight: 600;
+    cursor: pointer;
+    margin-left: 5px;
+    transition: color 0.2s;
+}
+
+.switch-link:hover {
+    text-decoration: underline;
+    color: #d14b9e;
+}
+
+/* Checkbox Styles */
+.checkbox-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.6);
+    margin-bottom: 15px;
+}
+
+.custom-checkbox {
+    accent-color: #9b5de5;
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+}
+
+/* Ensure card handles overflow gracefully */
+.login-card {
+    overflow: hidden;
+    /* Prevent content spill during animation */
+}
+
+/* Global Guestbook Input Styles */
+.guestbook-form input,
+.guestbook-form textarea {
+    width: 100%;
+    padding: 14px 16px;
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: white;
+    font-size: 14px;
+    outline: none;
+    box-sizing: border-box;
+    transition: 0.3s;
+    font-family: inherit;
+}
+
+.guestbook-form input:focus,
+.guestbook-form textarea:focus {
+    border-color: #9b5de5;
+    background: rgba(0, 0, 0, 0.4);
+}
+
+.guestbook-form textarea {
+    min-height: 100px;
+    resize: vertical;
 }
