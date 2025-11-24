@@ -176,6 +176,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 // Show success feedback
                 alert('留言发布成功!');
+
+                // Redirect to guestbook page to see the message
+                window.location.href = 'guestbook.html';
             }
         });
     }

@@ -1421,6 +1421,8 @@ input[type="range"] {
     .guestbook-content input,
     .guestbook-content textarea {
         padding: 10px 12px !important;
+        padding-right: 50px !important;
+        /* Prevent text overlap with camera icon */
         font-size: 0.85rem !important;
         border-radius: 10px !important;
     }
