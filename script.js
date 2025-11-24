@@ -181,7 +181,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function addMessage(name, content, image = null) {
-        const messages = JSON.parse(localStorage.getItem('guestbook_messages') || '[]');
+        let messages = [];
+        try {
+            const stored = localStorage.getItem('guestbook_messages');
+            messages = stored ? JSON.parse(stored) : [];
+            if (!Array.isArray(messages)) messages = [];
+        } catch (e) {
+            console.error('Error parsing messages:', e);
+            messages = [];
+        }
 
         const newMessage = {
             id: Date.now(),

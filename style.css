@@ -853,7 +853,8 @@ input[type="range"] {
 /* Only apply hover effects on devices with hover capability (not touch screens) */
 @media (hover: hover) {
     .glass-box:hover {
-        transform: translateY(-8px) scale(1.01);
+        transform: scale(1.02);
+        /* Subtle scale only, no translation */
         background: rgba(255, 255, 255, 0.08);
         border-color: rgba(255, 255, 255, 0.4);
         box-shadow:
