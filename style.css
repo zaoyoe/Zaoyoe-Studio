@@ -1378,6 +1378,48 @@ input[type="range"] {
         position: relative;
     }
 
+    /* Reduce modal size on mobile to avoid "oppressive" feel */
+    .modal-content {
+        width: 85% !important;
+        max-width: 340px !important;
+        padding: 24px !important;
+        border-radius: 24px !important;
+    }
+
+    /* Contact Modal: 2 columns side-by-side */
+    .modal-grid {
+        grid-template-columns: 1fr 1fr !important;
+        gap: 12px !important;
+        margin-top: 20px !important;
+    }
+
+    /* Compact Contact Cards */
+    .modal-link-card {
+        padding: 16px 10px !important;
+        width: 100% !important;
+        /* Fill grid cell */
+        min-height: 110px;
+    }
+
+    .modal-link-card i {
+        font-size: 2rem !important;
+        /* Smaller icons */
+        margin-bottom: 8px !important;
+    }
+
+    .link-title {
+        font-size: 0.9rem !important;
+    }
+
+    .contact-detail {
+        font-size: 0.75rem !important;
+        word-break: break-all;
+    }
+
+    .contact-hint {
+        font-size: 0.65rem !important;
+    }
+
     /* Move time/date to top-right corner on mobile */
     .profile-header {
         position: absolute;
