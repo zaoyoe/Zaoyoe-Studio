@@ -30,7 +30,7 @@ class GlassSlider {
 
         // Configuration
         this.config = {
-            lerp: 0.08,
+            lerp: 0.12, // Increased from 0.08 for snappier/less sluggish response
             distortion: 0.25,
             skew: 0.15
         };
@@ -67,7 +67,7 @@ class GlassSlider {
             top: 0;
             left: 0;
             pointer-events: none;
-            z-index: 10; /* Lower z-index to sit behind card content (assuming card content is > 10) */
+            z-index: 90; /* High enough to be above bg, but below card content (z-index: 100) */
             border-radius: 24px;
             
             /* 1. Crystal Clear Body */

@@ -2739,7 +2739,13 @@ svg {
         transform: translateY(0);
     }
 }
+
 /* Interactive Glass State */
+.glass-box {
+    /* Smooth transition for background fade */
+    transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease, backdrop-filter 0.3s ease;
+}
+
 .glass-box.glass-active-hidden {
     background: transparent !important;
     border-color: transparent !important;
@@ -2748,9 +2754,11 @@ svg {
     -webkit-backdrop-filter: none !important;
 }
 
-/* Ensure card content sits ABOVE the liquid glass slider (z-index: 10) */
-.glass-box > * {
+/* Ensure card content sits ABOVE the liquid glass slider (slider is z-index: 90) */
+.glass-box>* {
     position: relative;
-    z-index: 20;
-    pointer-events: none; /* Let touches pass through to container */
+    z-index: 100;
+    /* Increased to 100 to be safely above slider */
+    pointer-events: none;
+    /* Let touches pass through to container */
 }
