@@ -1,7 +1,7 @@
 console.log('Liquid Glass Script Loaded');
 
 /**
- * Dynamic Glass Slider Effect - "Prismatic Liquid Glass"
+ * Dynamic Glass Slider Effect - "Crystal Prism Glass"
  * 
  * Core Features:
  * 1. CSS-only rendering with "Prism" edge effects (Chromatic Aberration).
@@ -29,9 +29,9 @@ class GlassSlider {
 
         // Configuration
         this.config = {
-            lerp: 0.08, // Slightly higher than 0.06 for better responsiveness but still "heavy"
-            distortion: 0.25, // Extreme stretch (was 0.15)
-            skew: 0.15 // Extreme tilt (was 0.08)
+            lerp: 0.08,
+            distortion: 0.25,
+            skew: 0.15
         };
 
         this.rafId = null;
@@ -69,28 +69,30 @@ class GlassSlider {
             z-index: 999;
             border-radius: 24px;
             
-            /* 1. The Glass Body (Ultra Clear) */
-            background: linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.01));
-            backdrop-filter: blur(15px) brightness(1.2);
-            -webkit-backdrop-filter: blur(15px) brightness(1.2);
+            /* 1. Crystal Clear Body */
+            background: rgba(255, 255, 255, 0); /* Zero opacity background */
+            backdrop-filter: blur(20px) saturate(180%) brightness(1.1);
+            -webkit-backdrop-filter: blur(20px) saturate(180%) brightness(1.1);
             
-            /* 2. The Prism Edges (Chromatic Aberration) */
-            /* This simulates the rainbow refraction seen in the reference */
+            /* 2. Sharp Prism Edges */
             box-shadow: 
-                /* Inner Volume Glow */
-                inset 0 0 20px rgba(255, 255, 255, 0.3),
-                inset 0 0 2px rgba(255, 255, 255, 0.5),
+                /* Sharp Inner Highlight (Top/Left) */
+                inset 1px 1px 0 0 rgba(255, 255, 255, 0.7),
+                /* Soft Inner Glow */
+                inset 0 0 20px rgba(255, 255, 255, 0.1),
                 
-                /* Outer Prism Glow (Cyan/Magenta shift) */
-                -2px 0 8px rgba(0, 255, 255, 0.15), /* Cyan Left */
-                2px 0 8px rgba(255, 0, 255, 0.15),  /* Magenta Right */
-                0 4px 20px rgba(0, 0, 0, 0.15);     /* Drop Shadow */
+                /* Chromatic Aberration (Tighter & Sharper) */
+                -1px 0 4px rgba(0, 255, 255, 0.3), /* Cyan */
+                1px 0 4px rgba(255, 0, 255, 0.3),  /* Magenta */
                 
-            /* 3. Glass Border */
-            border: 1px solid rgba(255, 255, 255, 0.4);
+                /* Drop Shadow */
+                0 8px 32px rgba(0, 0, 0, 0.2);
+                
+            /* 3. High Contrast Border */
+            border: 1px solid rgba(255, 255, 255, 0.6);
             
             /* Blend Mode */
-            mix-blend-mode: normal; /* Changed from plus-lighter to allow shadows to work better */
+            mix-blend-mode: normal;
 
             /* Performance Optimization */
             will-change: transform, width, height, opacity;
@@ -98,18 +100,18 @@ class GlassSlider {
             opacity: 0;
         `;
 
-        // Add a "Lens Reflection" element
+        // Add a "Lens Flare" element
         const lens = document.createElement('div');
         lens.style.cssText = `
             position: absolute;
             top: 0;
             left: 0;
             right: 0;
-            bottom: 0;
-            border-radius: 24px;
-            /* Specular Highlight */
-            background: radial-gradient(circle at 50% 0%, rgba(255,255,255,0.4) 0%, transparent 60%);
-            opacity: 0.6;
+            height: 60%;
+            border-radius: 24px 24px 100% 100%;
+            /* Sharp Top Reflection */
+            background: linear-gradient(to bottom, rgba(255,255,255,0.5) 0%, transparent 100%);
+            opacity: 0.8;
             mix-blend-mode: overlay;
             pointer-events: none;
         `;
