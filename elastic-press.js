@@ -32,18 +32,15 @@ class ElasticPress {
     }
 
     init() {
-        // Map all cards, but exclude static cards that should only have hover effects
-        this.cards = Array.from(document.querySelectorAll('.glass-box'))
-            .filter(el => !el.classList.contains('box-contact') && !el.classList.contains('box-taobao'))
-            .map(el => ({
-                el: el,
-                // Physics State
-                current: { scale: 1, rotateX: 0, rotateY: 0 },
-                target: { scale: 1, rotateX: 0, rotateY: 0 },
-                velocity: { scale: 0, rotateX: 0, rotateY: 0 },
-                // Interaction State
-                isPressed: false
-            }));
+        this.cards = Array.from(document.querySelectorAll('.glass-box')).map(el => ({
+            el: el,
+            // Physics State
+            current: { scale: 1, rotateX: 0, rotateY: 0 },
+            target: { scale: 1, rotateX: 0, rotateY: 0 },
+            velocity: { scale: 0, rotateX: 0, rotateY: 0 },
+            // Interaction State
+            isPressed: false
+        }));
 
         // Global Touch Events (to handle sliding between cards)
         document.addEventListener('touchstart', (e) => this.handleGlobalStart(e), { passive: false });
