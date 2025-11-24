@@ -1340,11 +1340,15 @@ input[type="range"] {
     margin-top: 5px;
 }
 
-transform: scale(1.02);
-box-shadow: 0 30px 60px rgba(0, 0, 0, 0.4);
-}
+/* Removed Enhanced Liquid Glass Refraction Effect */
 
-/* Removed light refraction simulation on specific cards */
+@media (hover: hover) {
+    .glass-box:hover {
+        transform: scale(1.02);
+        box-shadow: 0 30px 60px rgba(0, 0, 0, 0.4);
+    }
+
+    /* Removed light refraction simulation on specific cards */
 }
 
 /* Enhanced backdrop blur for glass effect */
@@ -1355,12 +1359,12 @@ box-shadow: 0 30px 60px rgba(0, 0, 0, 0.4);
 
 @media (max-width: 768px) {
 
-    /* Optimize Bento Grid for mobile: 2 columns instead of 1 */
+    /* Optimize Bento Grid for mobile: 2 columns, smaller padding */
     .bento-container {
         grid-template-columns: repeat(2, 1fr);
         grid-template-rows: auto;
-        gap: 12px;
-        padding: 12px;
+        gap: 10px;
+        padding: 10px;
     }
 
     /* Profile card spans full width */
@@ -1470,8 +1474,8 @@ box-shadow: 0 30px 60px rgba(0, 0, 0, 0.4);
     }
 
     /* Reduce glass card padding */
-    .glass-card {
-        padding: 20px !important;
+    .glass-box {
+        padding: 16px 10px !important;
         margin-bottom: 15px !important;
         border-radius: 16px !important;
     }
