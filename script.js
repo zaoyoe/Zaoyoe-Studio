@@ -440,3 +440,87 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize Lightbox
     initLightbox();
 });
+
+// --- EmailJS Configuration & Logic ---
+let generatedCode = null; // Stores the real system-generated code
+const serviceID = "service_1bvx7vq"; // Replace with your Service ID
+const templateID = "template_qkuk30c"; // Replace with your Template ID
+
+// Function 1: Send Verification Code
+function sendVerificationCode() {
+    const emailInput = document.getElementById('reg-email');
+    const sendBtn = document.getElementById('sendBtn');
+    const email = emailInput.value;
+
+    // 1. Validate email format
+    if (!email || !email.includes('@')) {
+        alert("请先填写正确的邮箱地址！");
+        return;
+    }
+
+    // 2. Generate 6-digit random number
+    generatedCode = Math.floor(100000 + Math.random() * 900000).toString();
+    console.log("Debug: Verification Code is " + generatedCode); // For debugging
+
+    // 3. Change button state (prevent duplicate clicks)
+    sendBtn.disabled = true;
+    sendBtn.innerText = "发送中...";
+
+    // 4. Call EmailJS to send
+    const templateParams = {
+        to_email: email, // Corresponds to recipient logic in template
+        code: generatedCode // Corresponds to {{code}} in template
+    };
+
+    emailjs.send(serviceID, templateID, templateParams)
+        .then(function (response) {
+            console.log('SUCCESS!', response.status, response.text);
+            alert(`验证码已发送至 ${email}，请查收！`);
+            startCountdown(sendBtn); // Start countdown
+        }, function (error) {
+            console.log('FAILED...', error);
+            alert("发送失败，请检查网络或配置。");
+            sendBtn.disabled = false;
+            sendBtn.innerText = "重新获取";
+        });
+}
+
+// Function 2: Button Countdown
+function startCountdown(btnElement) {
+    let seconds = 60;
+    btnElement.innerText = `${seconds}s`;
+
+    const timer = setInterval(() => {
+        seconds--;
+        btnElement.innerText = `${seconds}s`;
+
+        if (seconds <= 0) {
+            clearInterval(timer);
+            btnElement.disabled = false;
+            btnElement.innerText = "重新获取";
+            // Optional: Invalidate code after timeout
+            // generatedCode = null; 
+        }
+    }, 1000);
+}
+
+// Function 3: Handle Registration Submission
+function handleRegister(event) {
+    event.preventDefault(); // Prevent default form submission
+
+    const inputCode = document.getElementById('reg-code').value;
+    const password = document.getElementById('reg-password').value;
+    const email = document.getElementById('reg-email').value;
+
+    // Core Verification Logic: Compare user input with generated code
+    if (inputCode !== generatedCode) {
+        alert("验证码错误！请检查邮件重新输入。");
+        return;
+    }
+
+    // If code is correct, proceed with registration
+    alert(`注册成功！\n账号: ${email}\n(这里接入你的后续逻辑)`);
+
+    // Example: Close modal
+    toggleLoginModal();
+}

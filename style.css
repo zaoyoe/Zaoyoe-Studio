@@ -3405,3 +3405,47 @@ svg {
     min-height: 100px;
     resize: vertical;
 }
+
+/* Verification Code Input Container */
+.input-with-action {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+/* Adjust input to make room for the button */
+.input-with-action .glass-input {
+    padding-right: 110px;
+    /* Right padding to prevent text overlap */
+}
+
+/* Send Verification Code Button */
+.verify-code-btn {
+    position: absolute;
+    right: 8px;
+    /* Distance from right border */
+    top: 50%;
+    transform: translateY(-50%);
+
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.verify-code-btn:hover {
+    background: rgba(255, 255, 255, 0.25);
+    color: #fff;
+}
+
+/* Disabled state for countdown */
+.verify-code-btn:disabled {
+    cursor: not-allowed;
+    background: transparent;
+    border-color: transparent;
+    color: rgba(255, 255, 255, 0.3);
+}

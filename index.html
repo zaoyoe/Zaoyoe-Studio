@@ -12,6 +12,15 @@
         rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="stylesheet" href="style.css?v=20251124_FIX_FINAL">
+    <link rel="stylesheet" href="login_styles.css">
+    <link rel="stylesheet" href="login_dual_mode.css">
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+    <script type="text/javascript">
+        (function () {
+            // Replace with your Public Key
+            emailjs.init("vawaxLVEzJMAVbut0");
+        })();
+    </script>
     <style>
         /* Homepage entrance animation - Subtle */
         @keyframes slideInUp {
@@ -358,26 +367,28 @@
             <!-- Register View -->
             <div id="registerView" class="form-view hidden">
                 <h2 class="card-title">Create Account</h2>
-                <p class="card-subtitle">Join us and start your journey.</p>
+                <p class="card-subtitle">Join us to access premium features.</p>
 
-                <form onsubmit="event.preventDefault(); alert('执行注册...');">
+                <form id="registerForm" onsubmit="handleRegister(event)">
                     <div class="input-group">
-                        <input type="text" class="glass-input" placeholder="Username" required>
-                    </div>
-                    <div class="input-group">
-                        <input type="email" class="glass-input" placeholder="Email Address" required>
-                    </div>
-                    <div class="input-group">
-                        <input type="password" class="glass-input" placeholder="Password" required>
-                    </div>
-                    <div class="input-group">
-                        <input type="password" class="glass-input" placeholder="Confirm Password" required>
+                        <input type="text" id="reg-username" class="glass-input" placeholder="Username" required>
                     </div>
 
-                    <div class="checkbox-wrapper">
-                        <input type="checkbox" class="custom-checkbox" id="terms" required>
-                        <label for="terms">I agree to the <span style="color:white; cursor:pointer">Terms &
-                                Conditions</span></label>
+                    <div class="input-group">
+                        <input type="email" id="reg-email" class="glass-input" placeholder="Email Address" required>
+                    </div>
+
+                    <div class="input-group input-with-action">
+                        <input type="text" id="reg-code" class="glass-input" placeholder="Enter 6-digit code"
+                            maxlength="6" required>
+                        <button type="button" class="verify-code-btn" id="sendBtn" onclick="sendVerificationCode()">
+                            获取验证码
+                        </button>
+                    </div>
+
+                    <div class="input-group">
+                        <input type="password" id="reg-password" class="glass-input" placeholder="Set Password"
+                            required>
                     </div>
 
                     <button type="submit" class="login-submit-btn">Create Account</button>
