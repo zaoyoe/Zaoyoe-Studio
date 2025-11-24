@@ -21,8 +21,8 @@ class ElasticPress {
 
         // Physics Configuration (Spring System)
         this.config = {
-            stiffness: 0.05, // Spring tension (higher = snappier) - very low for ultra-smooth effect
-            damping: 0.88,    // Friction (lower = more wobble) - high damping for minimal bounce
+            stiffness: 0.15, // Spring tension (higher = snappier)
+            damping: 0.8,    // Friction (lower = more wobble)
             mass: 1.0,       // Weight
             scaleTarget: 0.95, // How much to shrink on press
             tiltMax: 5       // Max tilt angle in degrees
