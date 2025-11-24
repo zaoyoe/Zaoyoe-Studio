@@ -1992,29 +1992,105 @@ svg {
 
 .image-preview img {
     width: 100%;
-    max-height: 100px;
-    /* Limit height to prevent modal expansion */
+    max-height: 120px;
+    /* Slightly larger but strictly contained */
     object-fit: cover;
-    /* Crop neatly */
     border-radius: 8px;
     display: block;
+    margin-top: 8px;
 }
 
-/* Mobile Guestbook Waterfall Layout */
+/* Mobile Guestbook Waterfall Layout - Fix Gap Issue */
 @media (max-width: 768px) {
     .message-container {
         column-count: 2 !important;
-        /* 2 Columns for waterfall */
-        column-gap: 10px !important;
+        column-gap: 12px !important;
+        /* Fix for top gap issue */
+        column-fill: balance;
+    }
+
+    .message-anim-wrapper {
+        break-inside: avoid;
+        margin-bottom: 12px;
+        display: inline-block;
+        /* Crucial for column layout */
+        width: 100%;
     }
 
     .message-item {
-        margin-bottom: 10px !important;
+        margin-bottom: 0 !important;
+        /* Wrapper handles margin */
     }
 
     .guestbook-main {
-        padding: 0 10px !important;
+        padding: 0 12px !important;
     }
+}
+
+/* --- Message Card Visual Refinement --- */
+.message-content {
+    font-size: 1.05rem;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.95);
+    line-height: 1.5;
+    margin-bottom: 10px;
+}
+
+.message-footer-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.author-info {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 0.85rem;
+}
+
+.author-name {
+    font-weight: 500;
+}
+
+.message-time {
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.3);
+}
+
+.comment-section {
+    margin-top: 10px;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 8px;
+    padding: 8px;
+}
+
+.comment-header-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.comment-count-group {
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.5);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.add-comment-trigger-btn {
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    color: rgba(255, 255, 255, 0.8);
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    cursor: pointer;
 }
 
 .remove-image-btn {

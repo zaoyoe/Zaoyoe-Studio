@@ -77,21 +77,27 @@ document.addEventListener('DOMContentLoaded', () => {
         const messageHtml = `
             <div class="message-anim-wrapper" style="animation-delay: ${delay}s">
                 <div class="message-item" data-id="${msg.id}">
-                    <div class="message-header">
+                    
+                    <!-- 1. Content (Primary Focus) -->
+                    <div class="message-content">${escapeHtml(msg.content)}</div>
+
+                    <!-- 2. Image -->
+                    ${imageHtml}
+
+                    <!-- 3. Footer (Meta Info) -->
+                    <div class="message-footer-meta">
                         <div class="author-info">
                             <i class="fas fa-user-circle"></i>
                             <span class="author-name">${escapeHtml(msg.name)}</span>
                         </div>
-                        <span class="message-time">${msg.timestamp}</span>
+                        <span class="message-time">${msg.timestamp.split(' ')[0]}</span> <!-- Only show date -->
                     </div>
-                    <div class="message-content">${escapeHtml(msg.content)}</div>
-                    ${imageHtml}
                     
                     <div class="comment-section">
                         <div class="comment-header-bar">
                             <div class="comment-count-group">
                                 <i class="fas fa-comments"></i>
-                                <span>评论 (${commentCount})</span>
+                                <span>${commentCount}</span>
                             </div>
                             <!-- Add Comment Trigger Button in header -->
                             <button class="add-comment-trigger-btn" onclick="openCommentModal(${msg.id})">
