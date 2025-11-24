@@ -208,35 +208,73 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Form Submission
     if (guestbookForm) {
-        guestbookForm.addEventListener('submit', (e) => {
+        guestbookForm.addEventListener('submit', async (e) => {
             e.preventDefault();
 
-            const nameInput = document.getElementById('guestName');
+            // Check if user is logged in
+            const auth = window.firebaseAuth;
+            if (!auth || !auth.currentUser) {
+                alert("请先登录后再留言");
+                if (window.openAuthModal) window.openAuthModal('login');
+                return;
+            }
+
+            const user = auth.currentUser;
             const messageInput = document.getElementById('guestMessage');
 
-            const name = nameInput.value.trim();
+            // Use logged in user's display name
+            // Use logged in user's display name
+            const name = user.displayName || user.email.split('@')[0];
             const message = messageInput.value.trim();
 
-            if (name && message) {
-                const success = addMessage(name, message, currentImageData);
+            console.log('🚀 Submitting message:', { name, messageLength: message.length, hasImage: !!currentImageData });
+
+            // Allow submission if there is text OR an image
+            // Explicitly check for non-null currentImageData
+            if (message.length > 0 || (currentImageData && currentImageData.length > 0)) {
+                console.log('✅ Submission criteria met');
+                const success = await addMessage(name, message, currentImageData);
 
                 if (success) {
                     // Clear inputs
-                    nameInput.value = '';
                     messageInput.value = '';
                     clearImage();
 
-                    // Add a delay before redirect to ensure localStorage is saved
-                    // This is especially important for file:// protocol and slower systems
-                    setTimeout(() => {
+                    // Close the modal with animation
+                    const modal = document.getElementById('guestbookModal');
+                    if (modal) {
+                        modal.classList.add('closing'); // Trigger exit animation
+
+                        // Wait for animation to finish BEFORE redirecting/closing
+                        setTimeout(() => {
+                            modal.classList.remove('active');
+                            modal.classList.remove('closing');
+
+                            // Optimize redirect: 
+                            // If we are already on guestbook.html, just reload or let the listener handle it.
+                            // If on index.html, redirect fast.
+                            if (window.location.pathname.includes('guestbook.html')) {
+                                // Already on guestbook, listener will update UI automatically via Firestore
+                                console.log('Already on guestbook, UI will update automatically');
+                            } else {
+                                // Redirect immediately after animation
+                                window.location.href = 'guestbook.html';
+                            }
+                        }, 300); // Wait for animation (300ms matches CSS)
+                    } else {
+                        // Fallback if modal not found
                         window.location.href = 'guestbook.html';
-                    }, 500);
+                    }
                 }
+            } else {
+                alert("请输入留言内容或上传图片");
             }
         });
     }
 
-    function addMessage(name, content, image = null) {
+    async function addMessage(name, content, image = null) {
+        console.log('📝 Adding message, name:', name);
+
         let messages = [];
         try {
             const stored = localStorage.getItem('guestbook_messages');
@@ -247,36 +285,86 @@ document.addEventListener('DOMContentLoaded', () => {
             messages = [];
         }
 
+        // Get user avatar from LocalStorage (Primary - Cached Profile) or Auth
+        const auth = window.firebaseAuth;
+        let avatarUrl = null;
+
+        // 1. Try Cached Profile (Best source for Firestore avatar)
+        try {
+            const cachedProfile = localStorage.getItem('cached_user_profile');
+            if (cachedProfile) {
+                const profile = JSON.parse(cachedProfile);
+                if (profile.avatarUrl) {
+                    avatarUrl = profile.avatarUrl;
+                }
+            }
+        } catch (e) {
+            console.error('Error reading cached profile:', e);
+        }
+
+        // 2. Fallback to Auth profile
+        if (!avatarUrl && auth && auth.currentUser && auth.currentUser.photoURL) {
+            avatarUrl = auth.currentUser.photoURL;
+        }
+
+        // 3. Fallback to Firestore (Direct Fetch) if critical
+        if (!avatarUrl && auth && auth.currentUser) {
+            // Try to get from Firestore directly if not in cache
+            try {
+                const db = window.firebaseDB;
+                const getDoc = window.firestoreGetDoc;
+                const doc = window.firestoreDoc;
+                if (db && getDoc && doc) {
+                    const userDoc = await getDoc(doc(db, "users", auth.currentUser.uid));
+                    if (userDoc.exists() && userDoc.data().avatarUrl) {
+                        avatarUrl = userDoc.data().avatarUrl;
+                    }
+                }
+            } catch (e) {
+                console.error("Error fetching avatar for message:", e);
+            }
+        }
+
+        // Fallback if no avatar found
+        if (!avatarUrl) {
+            avatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`;
+        }
+
         const newMessage = {
-            id: Date.now(),
             name: name,
+            avatarUrl: avatarUrl,
             content: content,
-            image: image, // Base64 encoded image or null
-            timestamp: new Date().toLocaleString('zh-CN', {
+            image: image,
+            timestamp: new Date().toISOString(), // Use ISO string for sorting
+            displayTime: new Date().toLocaleString('zh-CN', {
                 year: 'numeric',
                 month: '2-digit',
                 day: '2-digit',
                 hour: '2-digit',
                 minute: '2-digit'
             }),
-            comments: [] // Array for nested comments
+            comments: []
         };
 
-        // Add to beginning of array
-        messages.unshift(newMessage);
-
-        // Save to LocalStorage
         try {
-            localStorage.setItem('guestbook_messages', JSON.stringify(messages));
-            console.log('Message saved successfully:', newMessage);
-            return true; // Return success
-        } catch (error) {
-            if (error.name === 'QuotaExceededError') {
-                alert('存储空间已满! 请清理旧留言或减小图片大小。');
+            const db = window.firebaseDB;
+            const addDoc = window.firestoreAddDoc;
+            const collection = window.firestoreCollection;
+
+            if (db && addDoc && collection) {
+                console.log('☁️ Uploading message to Firestore...');
+                await addDoc(collection(db, "messages"), newMessage);
+                console.log('✅ Message uploaded successfully');
+                return true;
             } else {
-                console.error('保存失败:', error);
+                console.error("Firestore not initialized");
+                alert("连接云端数据库失败，请刷新页面重试");
+                return false;
             }
-            return false; // Return failure
+        } catch (e) {
+            console.error("❌ Error uploading message:", e);
+            alert("留言发布失败: " + e.message);
+            return false;
         }
     }
 
@@ -504,54 +592,77 @@ function startCountdown(btnElement) {
     }, 1000);
 }
 
-// Function 3: Handle Registration Submission
-function handleRegister(event) {
-    event.preventDefault(); // Prevent default form submission
+// Function 3: Handle Registration Submission (with Firestore)
+async function handleRegister(event) {
+    event.preventDefault();
 
     const inputCode = document.getElementById('reg-code').value;
     const password = document.getElementById('reg-password').value;
     const email = document.getElementById('reg-email').value;
     const username = document.getElementById('reg-username').value;
 
-    // Core Verification Logic: Compare user input with generated code
+    // Verification code check
     if (inputCode !== generatedCode) {
         alert("验证码错误！请检查邮件重新输入。");
         return;
     }
 
-    // If code is correct, create Firebase account
     const auth = window.firebaseAuth;
+    const db = window.firebaseDB;
     const createUser = window.createUserWithEmailAndPassword;
+    const updateProfile = window.updateProfile; // New import
+    const setDoc = window.firestoreSetDoc;
+    const doc = window.firestoreDoc;
 
-    if (!auth || !createUser) {
+    if (!auth || !createUser || !db) {
         alert("Firebase 未初始化，请刷新页面重试。");
         return;
     }
 
-    createUser(auth, email, password)
-        .then((userCredential) => {
-            // Registration successful
-            const user = userCredential.user;
-            alert(`注册成功！\n欢迎，${username}！\n您的账号: ${email}`);
+    try {
+        // A. Create user in Firebase Auth
+        const userCredential = await createUser(auth, email, password);
+        const user = userCredential.user;
 
-            // Close modal and reset form
-            toggleLoginModal();
-            document.getElementById('registerForm').reset();
-            generatedCode = null; // Clear verification code
-        })
-        .catch((error) => {
-            const errorCode = error.code;
-            const errorMessage = error.message;
+        // B. Update Auth Profile immediately (Crucial for immediate display)
+        const avatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=random`;
+        if (updateProfile) {
+            await updateProfile(user, {
+                displayName: username,
+                photoURL: avatarUrl
+            });
+        }
 
-            // Handle specific errors
-            if (errorCode === 'auth/email-already-in-use') {
-                alert("该邮箱已被注册，请直接登录或使用其他邮箱。");
-            } else if (errorCode === 'auth/weak-password') {
-                alert("密码强度不足，请使用至少 6 位字符的密码。");
-            } else {
-                alert(`注册失败: ${errorMessage}`);
-            }
+        // C. Store user profile in Firestore
+        await setDoc(doc(db, "users", user.uid), {
+            nickname: username || "New User",
+            email: email,
+            avatarUrl: avatarUrl,
+            createdAt: new Date().toISOString()
         });
+
+        alert(`注册成功！\n欢迎，${username}！`);
+
+        // Close modal and reset form
+        toggleLoginModal();
+        document.getElementById('registerForm').reset();
+        generatedCode = null;
+
+        // Force UI update
+        updateUserUI(user);
+
+    } catch (error) {
+        const errorCode = error.code;
+        const errorMessage = error.message;
+
+        if (errorCode === 'auth/email-already-in-use') {
+            alert("该邮箱已被注册，请直接登录或使用其他邮箱。");
+        } else if (errorCode === 'auth/weak-password') {
+            alert("密码强度不足，请使用至少 6 位字符的密码。");
+        } else {
+            alert(`注册失败: ${errorMessage}`);
+        }
+    }
 }
 
 // Function 4: Handle Login Submission
@@ -571,19 +682,13 @@ function handleLogin(event) {
 
     signIn(auth, email, password)
         .then((userCredential) => {
-            // Login successful
-            const user = userCredential.user;
-            alert(`登录成功！\n欢迎回来！\n您的账号: ${email}`);
-
-            // Close modal and reset form
+            alert(`登录成功！欢迎回来！`);
             toggleLoginModal();
             document.getElementById('loginForm').reset();
         })
         .catch((error) => {
             const errorCode = error.code;
-            const errorMessage = error.message;
 
-            // Handle specific login errors
             if (errorCode === 'auth/user-not-found') {
                 alert("该邮箱未注册，请先注册账号。");
             } else if (errorCode === 'auth/wrong-password') {
@@ -591,7 +696,258 @@ function handleLogin(event) {
             } else if (errorCode === 'auth/invalid-credential') {
                 alert("邮箱或密码错误，请检查后重试。");
             } else {
-                alert(`登录失败: ${errorMessage}`);
+                alert(`登录失败: ${error.message}`);
             }
         });
 }
+
+// Function 5: Handle Logout
+async function handleLogout() {
+    if (!confirm("确定要退出登录吗？")) return;
+
+    const auth = window.firebaseAuth;
+    const signOutFunc = window.signOut;
+
+    if (!auth || !signOutFunc) {
+        alert("Firebase 未初始化，请刷新页面重试。");
+        return;
+    }
+
+    try {
+        await signOutFunc(auth);
+        // Close dropdown
+        document.getElementById('userDropdown').classList.remove('active');
+    } catch (error) {
+        alert(`登出失败: ${error.message}`);
+    }
+}
+
+// Function 6: Handle Auth Button Click
+function handleAuthClick() {
+    const auth = window.firebaseAuth;
+    if (auth && auth.currentUser) {
+        // User is logged in - toggle dropdown
+        const dropdown = document.getElementById('userDropdown');
+        dropdown.classList.toggle('active');
+    } else {
+        // User is not logged in - open login modal
+        openAuthModal('login');
+    }
+}
+
+// Function 7: Update UI based on auth state (with Firestore)
+async function updateUserUI(user) {
+    console.log('🎨 updateUserUI called, user:', user ? user.email : 'null');
+
+    const authBtn = document.getElementById('authBtn');
+    const btnSpan = document.getElementById('authBtnText');
+    const defaultIcon = document.getElementById('defaultAuthIcon');
+    const navAvatar = document.getElementById('navUserAvatar');
+
+    const profileEmail = document.getElementById('profileEmail');
+    const dropdownAvatar = document.getElementById('dropdownAvatar');
+
+    if (user) {
+        // Always fetch from Firestore to get latest data
+        const db = window.firebaseDB;
+        const getDoc = window.firestoreGetDoc;
+        const doc = window.firestoreDoc;
+
+        let displayName = user.displayName || user.email.split('@')[0];
+        let avatarUrl = user.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=random`;
+
+        // Force Firestore read to get latest avatar
+        if (db && getDoc && doc) {
+            try {
+                const docSnap = await getDoc(doc(db, "users", user.uid));
+                if (docSnap.exists()) {
+                    const userData = docSnap.data();
+                    if (userData.nickname) displayName = userData.nickname;
+                    if (userData.avatarUrl) avatarUrl = userData.avatarUrl;
+                }
+            } catch (error) {
+                console.error("Error fetching user data:", error);
+            }
+        }
+
+        // Cache profile for anti-flicker
+        localStorage.setItem('cached_user_profile', JSON.stringify({
+            displayName: displayName,
+            avatarUrl: avatarUrl,
+            email: user.email
+        }));
+
+        // Update UI
+        if (btnSpan) btnSpan.textContent = displayName;
+        if (defaultIcon) defaultIcon.style.display = 'none';
+        if (navAvatar) {
+            navAvatar.src = avatarUrl;
+            navAvatar.style.display = 'block';
+        }
+        if (profileEmail) profileEmail.textContent = displayName;
+        if (dropdownAvatar) dropdownAvatar.src = avatarUrl;
+
+    } else {
+        // Clear cache on logout
+        localStorage.removeItem('cached_user_profile');
+
+        console.log('👤 User logged out');
+        if (btnSpan) btnSpan.textContent = "Sign In";
+        if (defaultIcon) defaultIcon.style.display = 'block';
+        if (navAvatar) navAvatar.style.display = 'none';
+    }
+}
+
+// Anti-flicker: Load cached profile immediately
+function loadCachedProfile() {
+    try {
+        const cached = localStorage.getItem('cached_user_profile');
+        if (cached) {
+            const data = JSON.parse(cached);
+            const btnSpan = document.getElementById('authBtnText');
+            const defaultIcon = document.getElementById('defaultAuthIcon');
+            const navAvatar = document.getElementById('navUserAvatar');
+
+            if (btnSpan) btnSpan.textContent = data.displayName;
+            if (defaultIcon) defaultIcon.style.display = 'none';
+            if (navAvatar) {
+                navAvatar.src = data.avatarUrl;
+                navAvatar.style.display = 'block';
+            }
+        }
+    } catch (e) {
+        console.error('Error loading cached profile:', e);
+    }
+}
+
+// Call immediately
+loadCachedProfile();     // Hide dropdown if open
+// Hide dropdown if open
+const dropdown = document.getElementById('userDropdown');
+if (dropdown) dropdown.classList.remove('active');
+
+// Function 8: Handle Avatar Upload
+async function handleAvatarUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    // Check size (limit to 2MB)
+    if (file.size > 2 * 1024 * 1024) {
+        alert("图片大小不能超过 2MB");
+        return;
+    }
+
+    const auth = window.firebaseAuth;
+    const db = window.firebaseDB;
+    const updateProfile = window.updateProfile;
+    const setDoc = window.firestoreSetDoc;
+    const doc = window.firestoreDoc;
+
+    if (!auth || !auth.currentUser) {
+        alert("请先登录");
+        return;
+    }
+
+    const user = auth.currentUser;
+
+    // Convert to Base64 and Resize
+    const reader = new FileReader();
+    reader.onload = function (e) {
+        const img = new Image();
+        img.onload = async function () {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+
+            // Resize to 200x200 max
+            const maxSize = 200;
+            let width = img.width;
+            let height = img.height;
+
+            if (width > height) {
+                if (width > maxSize) {
+                    height *= maxSize / width;
+                    width = maxSize;
+                }
+            } else {
+                if (height > maxSize) {
+                    width *= maxSize / height;
+                    height = maxSize;
+                }
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            ctx.drawImage(img, 0, 0, width, height);
+            // Get Base64 string (JPEG, 0.8 quality)
+            const base64String = canvas.toDataURL('image/jpeg', 0.8);
+
+            try {
+                console.log('🖼️ Starting avatar upload...');
+                console.log('📦 Base64 size:', Math.round(base64String.length / 1024), 'KB');
+
+                // 1. Update Firestore first (Source of Truth)
+                console.log('💾 Updating Firestore...');
+                await setDoc(doc(db, "users", user.uid), {
+                    avatarUrl: base64String,
+                    updatedAt: new Date().toISOString()
+                }, { merge: true });
+                console.log('✅ Firestore updated');
+
+                // 2. Skip Auth Profile update for photoURL (Base64 is too long)
+                // We only use Firestore for avatar storage now
+                console.log('ℹ️ Skipped Auth Profile update (Base64 too long)');
+
+                // 3. Force refresh user object
+                console.log('🔄 Reloading user...');
+                await user.reload();
+                console.log('✅ User reloaded');
+
+                // 4. Trigger full UI update to refresh all elements from Firestore
+                console.log('🎨 Updating UI...');
+                await updateUserUI(auth.currentUser);
+                console.log('✅ UI updated');
+
+                alert("头像更新成功！");
+
+            } catch (error) {
+                console.error("❌ Error updating avatar:", error);
+                alert("头像更新失败，请重试: " + error.message);
+            }
+        };
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+// Monitor Authentication State
+window.addEventListener('DOMContentLoaded', () => {
+    // Define initialize function that reads GLOBAL window variables dynamically
+    const initializeAuth = () => {
+        const auth = window.firebaseAuth;
+        const authStateChanged = window.onAuthStateChanged;
+
+        if (auth && authStateChanged) {
+            console.log('✅ Firebase Auth initialized in script.js');
+            authStateChanged(auth, async (user) => {
+                await updateUserUI(user);
+            });
+        } else {
+            console.log('⏳ Waiting for Firebase Auth...');
+            // Retry if not ready yet
+            setTimeout(initializeAuth, 500);
+        }
+    };
+
+    // Start initialization check
+    initializeAuth();
+});
+
+// Close dropdown when clicking outside
+document.addEventListener('click', (event) => {
+    const topNav = document.querySelector('.top-right-nav');
+    const dropdown = document.getElementById('userDropdown');
+
+    if (topNav && dropdown && !topNav.contains(event.target)) {
+        dropdown.classList.remove('active');
+    }
+});

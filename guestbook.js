@@ -5,23 +5,103 @@ document.addEventListener('DOMContentLoaded', () => {
     const emptyState = document.getElementById('emptyState');
     const clearAllBtn = document.getElementById('clearAllBtn');
 
-    // Load and display messages
-    loadMessages();
-
-    // Clear all messages handler
-    if (clearAllBtn) {
-        clearAllBtn.addEventListener('click', () => {
-            if (confirm('确定要清空所有留言吗？此操作不可恢复。')) {
-                localStorage.removeItem('guestbook_messages');
-                loadMessages();
+    // Load and display messages from Firestore
+    if (messageContainer) {
+        // 1. Try Cache IMMEDIATELY (Instant Display)
+        try {
+            const cached = localStorage.getItem('guestbook_cache');
+            if (cached) {
+                const cachedMessages = JSON.parse(cached);
+                if (Array.isArray(cachedMessages) && cachedMessages.length > 0) {
+                    console.log('🚀 Loaded messages from cache instantly');
+                    renderMessages(cachedMessages);
+                } else {
+                    messageContainer.innerHTML = '<div style="text-align:center; padding:20px; color:white;">正在连接云端数据库...<br><i class="fas fa-spinner fa-spin"></i></div>';
+                }
+            } else {
+                messageContainer.innerHTML = '<div style="text-align:center; padding:20px; color:white;">正在连接云端数据库...<br><i class="fas fa-spinner fa-spin"></i></div>';
             }
-        });
+        } catch (e) {
+            messageContainer.innerHTML = '<div style="text-align:center; padding:20px; color:white;">正在连接云端数据库...<br><i class="fas fa-spinner fa-spin"></i></div>';
+        }
     }
 
-    function loadMessages() {
-        const messages = JSON.parse(localStorage.getItem('guestbook_messages') || '[]');
-        renderMessages(messages);
+    let retryCount = 0;
+    const maxRetries = 20; // 10 seconds timeout
+
+    // Clear all messages handler (Only for admin/local cleanup, maybe hide or disable for cloud)
+    if (clearAllBtn) {
+        clearAllBtn.style.display = 'none'; // Hide clear button for cloud version to prevent accidental deletion
     }
+
+    function initFirestoreListener() {
+        const db = window.firebaseDB;
+        const collection = window.firestoreCollection;
+        const query = window.firestoreQuery;
+        const orderBy = window.firestoreOrderBy;
+        const onSnapshot = window.firestoreOnSnapshot;
+
+        if (db && collection && query && orderBy && onSnapshot) {
+            console.log('✅ Connected to Firestore, listening for updates...');
+
+            // 1. Load from Cache FIRST (Instant Display)
+            try {
+                const cached = localStorage.getItem('guestbook_cache');
+                if (cached) {
+                    const cachedMessages = JSON.parse(cached);
+                    if (Array.isArray(cachedMessages) && cachedMessages.length > 0) {
+                        console.log('🚀 Loaded messages from cache');
+                        renderMessages(cachedMessages);
+                    }
+                }
+            } catch (e) {
+                console.error('Error loading cache:', e);
+            }
+
+            const q = query(collection(db, "messages"), orderBy("timestamp", "desc"));
+
+            // Real-time listener
+            onSnapshot(q, (snapshot) => {
+                const messages = [];
+                snapshot.forEach((doc) => {
+                    const data = doc.data();
+                    messages.push({
+                        id: doc.id,
+                        ...data,
+                        timestamp: data.displayTime || data.timestamp // Fallback
+                    });
+                });
+
+                // Update Cache
+                localStorage.setItem('guestbook_cache', JSON.stringify(messages));
+
+                if (messages.length === 0) {
+                    if (messageContainer) {
+                        messageContainer.innerHTML = ''; // Clear loading immediately
+                        if (emptyState) emptyState.style.display = 'flex';
+                    }
+                } else {
+                    renderMessages(messages);
+                }
+            }, (error) => {
+                console.error("Error listening to guestbook updates:", error);
+                if (messageContainer) messageContainer.innerHTML = `<div style="text-align:center; color: #ff6b6b;">无法加载留言: ${error.message}</div>`;
+            });
+        } else {
+            retryCount++;
+            if (retryCount < maxRetries) {
+                console.log(`⏳ Waiting for Firebase... (${retryCount}/${maxRetries})`);
+                // Check more frequently (100ms) to reduce perceived delay
+                setTimeout(initFirestoreListener, 100);
+            } else {
+                console.error("❌ Firebase initialization timeout");
+                if (messageContainer) messageContainer.innerHTML = '<div style="text-align:center; color: #ff6b6b;">连接数据库超时，请刷新页面重试。</div>';
+            }
+        }
+    }
+
+    // Start trying
+    initFirestoreListener();
 
     function renderMessages(messages) {
         if (!messageContainer) return;
@@ -84,7 +164,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     <!-- 1. Header (Author Info) -->
                     <div class="message-footer-meta">
                         <div class="author-info">
-                            <i class="fas fa-user-circle"></i>
+                            ${msg.avatarUrl
+                ? `<img src="${msg.avatarUrl}" alt="${escapeHtml(msg.name)}" style="width: 24px; height: 24px; border-radius: 50%; object-fit: cover; border: 1px solid rgba(255,255,255,0.3);">`
+                : '<i class="fas fa-user-circle"></i>'}
                             <span class="author-name">${escapeHtml(msg.name)}</span>
                         </div>
                         <span class="message-time">${msg.timestamp.split(' ')[0]}</span> <!-- Only show date -->
@@ -174,11 +256,21 @@ document.addEventListener('DOMContentLoaded', () => {
     if (commentForm) {
         commentForm.addEventListener('submit', (e) => {
             e.preventDefault();
+
+            // Check Auth
+            const auth = window.firebaseAuth;
+            if (!auth || !auth.currentUser) {
+                alert("请先登录后再评论");
+                return;
+            }
+
+            const user = auth.currentUser;
             const messageId = parseInt(document.getElementById('commentMessageId').value);
-            const name = document.getElementById('commentName').value.trim();
+            // Use Auth Display Name or Fallback
+            const name = user.displayName || user.email.split('@')[0];
             const content = document.getElementById('commentContent').value.trim();
 
-            if (name && content) {
+            if (content) {
                 addComment(messageId, name, content);
                 // Close modal
                 document.getElementById('commentModal').classList.remove('active');
@@ -218,20 +310,6 @@ document.addEventListener('DOMContentLoaded', () => {
         // Save back to localStorage
         try {
             localStorage.setItem('guestbook_messages', JSON.stringify(messages));
-
-            // Re-render messages
-            // We need to access renderMessages which is inside the scope. 
-            // Since we are moving this function out, we need to pass it or reload.
-            // Simplest fix: Reload page or re-read from localStorage inside the scope.
-            // But wait, addComment is called by the form listener which is inside the scope.
-            // So addComment CAN stay inside.
-
-            // Only open/close need to be global.
-
-            // Let's reload to reflect changes simply, or re-render.
-            // Since renderMessages is internal, we can just reload for now or expose renderMessages.
-            // Better: Expose renderMessages globally or keep addComment inside and only move open/close.
-
             window.location.reload();
         } catch (error) {
             if (error.name === 'QuotaExceededError') {
@@ -246,15 +324,24 @@ document.addEventListener('DOMContentLoaded', () => {
 // --- Global Modal Functions (Must be outside DOMContentLoaded) ---
 
 window.openCommentModal = function (messageId) {
+    // Check Auth First
+    const auth = window.firebaseAuth;
+    if (!auth || !auth.currentUser) {
+        alert("请先登录后再评论");
+        // Optional: Trigger login modal if accessible
+        if (window.openAuthModal) window.openAuthModal('login');
+        return;
+    }
+
     const modal = document.getElementById('commentModal');
     const messageIdInput = document.getElementById('commentMessageId');
     if (modal && messageIdInput) {
         messageIdInput.value = messageId;
         modal.classList.add('active');
-        // Focus name input
+        // Focus content input
         setTimeout(() => {
-            const nameInput = document.getElementById('commentName');
-            if (nameInput) nameInput.focus();
+            const contentInput = document.getElementById('commentContent');
+            if (contentInput) contentInput.focus();
         }, 100);
     }
 };

@@ -155,23 +155,61 @@
 
             <form id="commentForm">
                 <input type="hidden" id="commentMessageId">
-                <div class="input-group">
-                    <input type="text" id="commentName" placeholder="您的昵称" required>
+
+                <div class="form-group">
+                    <label for="commentContent">评论内容</label>
+                    <textarea id="commentContent" rows="3" placeholder="写下你的评论..." required></textarea>
                 </div>
-                <div class="input-group">
-                    <textarea id="commentContent" placeholder="写下您的评论..." required
-                        style="min-height: 120px;"></textarea>
+                <div class="form-actions">
+                    <button type="button" class="cancel-btn" onclick="closeCommentModal(event)">取消</button>
+                    <button type="submit" class="submit-btn">发送</button>
                 </div>
-                <button type="submit" class="submit-btn"
-                    style="display: flex; align-items: center; justify-content: center; gap: 8px;">
-                    <i class="fas fa-paper-plane"></i>
-                    提交评论
-                </button>
             </form>
         </div>
     </div>
 
-    <script src="guestbook.js?v=20251124_FIX_FINAL"></script>
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut, updateProfile } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+        import { getFirestore, doc, setDoc, getDoc, collection, addDoc, query, orderBy, onSnapshot, limit } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDBk5juaw5qNSPFiZVSqRJWfllEtrD6oWg",
+            authDomain: "zaoyoe-9bdf2.firebaseapp.com",
+            projectId: "zaoyoe-9bdf2",
+            storageBucket: "zaoyoe-9bdf2.firebasestorage.app",
+            messagingSenderId: "908400021338",
+            appId: "1:908400021338:web:e0bff6e65ff55d2b7b6d63"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // Make auth and db available globally
+        window.firebaseAuth = auth;
+        window.firebaseDB = db;
+        window.createUserWithEmailAndPassword = createUserWithEmailAndPassword;
+        window.signInWithEmailAndPassword = signInWithEmailAndPassword;
+        window.onAuthStateChanged = onAuthStateChanged;
+        window.signOut = signOut;
+        window.updateProfile = updateProfile;
+
+        // Firestore functions
+        window.firestoreDoc = doc;
+        window.firestoreSetDoc = setDoc;
+        window.firestoreGetDoc = getDoc;
+        window.firestoreCollection = collection;
+        window.firestoreAddDoc = addDoc;
+        window.firestoreQuery = query;
+        window.firestoreOrderBy = orderBy;
+        window.firestoreOnSnapshot = onSnapshot;
+        window.firestoreLimit = limit;
+    </script>
+
+    <script src="script.js?v=20251124_FIX_FINAL" defer></script>
+    <script src="guestbook.js?v=20251124_FIX_FINAL" defer></script>
 </body>
 
 </html>

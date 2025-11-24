@@ -1527,10 +1527,11 @@ input[type="range"] {
     }
 
     .guestbook-content .view-more-btn:hover {
-        text-decoration: underline !important;
-        color: #d14b9e !important;
+        color: #d97706 !important;
+        text-decoration: none !important;
+        /* No underline */
+        transform: translateY(-1px) !important;
         background: none !important;
-        transform: none !important;
         box-shadow: none !important;
     }
 
@@ -2121,11 +2122,48 @@ svg {
     }
 }
 
+/* Reduce padding, margins, and font sizes for desktop view */
+@media (min-width: 769px) {
+
+    /* Masonry Layout for Desktop */
+    .message-container {
+        column-count: 3;
+        /* Increased columns for smaller cards */
+        column-gap: 16px;
+        width: 100%;
+    }
+
+    .message-item {
+        margin-bottom: 16px;
+        padding: 12px;
+        /* Reduced padding */
+        border-radius: 12px;
+        /* Smaller radius */
+    }
+
+    .message-content {
+        font-size: 0.9rem;
+        /* Smaller font */
+        margin-bottom: 8px;
+        padding-top: 8px;
+    }
+
+    .author-info {
+        font-size: 0.75rem;
+    }
+
+    .nav-user-avatar {
+        width: 24px;
+        /* Smaller avatar in card */
+        height: 24px;
+    }
+}
+
 /* --- Message Card Visual Refinement --- */
 .message-content {
-    font-size: 1.1rem;
-    /* Larger content */
-    font-weight: 600;
+    font-size: 1rem;
+    /* Compact content */
+    font-weight: 500;
     /* Bolder */
     color: #ffffff;
     /* Pure white */
@@ -2464,12 +2502,15 @@ svg {
     -webkit-backdrop-filter: blur(20px);
     box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
     border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 24px;
-    padding: 24px;
+    border-radius: 16px;
+    /* Smaller radius */
+    padding: 12px;
+    /* Ultra Compact padding */
     animation: slideInUp 0.4s ease-out forwards;
     transition: background 0.4s ease, box-shadow 0.4s ease, border-color 0.4s ease;
     break-inside: avoid;
-    margin-bottom: 20px;
+    margin-bottom: 12px;
+    /* Compact margin */
     display: inline-block;
     width: 100%;
     opacity: 0;
@@ -3198,11 +3239,230 @@ svg {
     text-align: center;
 }
 
-.card-subtitle {
+/* Image Preview Container */
+.image-preview-container {
+    position: relative;
+    margin-top: 15px;
+    /* Increased spacing */
+    margin-bottom: 15px;
+    /* Added bottom spacing */
+    border-radius: 12px;
+    overflow: hidden;
+    background: rgba(0, 0, 0, 0.2);
+    display: none;
+    /* Hidden by default */
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    /* Subtle border */
+}
+
+/* Full Image Display (No Cropping) */
+.image-preview-container img {
+    width: 100%;
+    height: auto;
+    max-height: 300px;
+    object-fit: contain;
+    /* Ensure full image is visible */
+    display: block;
+}
+
+/* Modal Exit Animation */
+.modal-overlay.closing .modal-content {
+    animation: modalFadeOut 0.3s ease-in forwards;
+}
+
+.modal-overlay.closing {
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+}
+
+@keyframes modalFadeOut {
+    from {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+
+    to {
+        opacity: 0;
+        transform: scale(0.95) translateY(10px);
+    }
+}
+
+/* Mac-style Remove Button (Top-Left) - Exact Replica */
+.remove-image-btn {
+    position: absolute;
+    top: 6px;
+    left: 6px;
+    width: 24px;
+    /* Increased touch target */
+    height: 24px;
+    /* Increased touch target */
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    z-index: 20;
+}
+
+/* The visual red dot */
+.remove-image-btn::before {
+    content: '';
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    background: #ff5f57;
+    border-radius: 50%;
+    border: 1px solid #e0443e;
+    transition: all 0.2s ease;
+}
+
+/* The icon inside */
+.remove-image-btn i {
+    font-size: 8px;
+    color: #4c0002;
+    opacity: 0;
+    z-index: 2;
+    pointer-events: none;
+    transition: opacity 0.2s;
+}
+
+.image-preview-container:hover .remove-image-btn {
+    opacity: 1;
+}
+
+.remove-image-btn:hover::before {
+    background: #ff5f57;
+    box-shadow: inset 0 0 4px rgba(0, 0, 0, 0.2);
+}
+
+.remove-image-btn:hover i {
+    opacity: 1;
+}
+
+/* --- User Dropdown Menu (Premium Glassmorphism) --- */
+.user-dropdown {
+    position: absolute;
+    top: 60px;
+    right: 0;
+    width: 280px;
+    /* Wider for better layout */
+
+    /* Premium Glass Effect matching Login Card */
+    background: rgba(30, 41, 59, 0.7);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+
+    border-radius: 24px;
+    padding: 20px;
+
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-10px) scale(0.95);
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    z-index: 1000;
+}
+
+.user-dropdown.active {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0) scale(1);
+}
+
+/* Avatar Container & Hover Effects */
+#profileMenuItem {
+    display: flex;
+    align-items: center;
+}
+
+/* Avatar Image Hover - Press Down Effect */
+#dropdownAvatar:active {
+    transform: scale(0.95) translateY(2px);
+    /* Press down effect */
+}
+
+/* Remove Red Glow on Hover */
+#dropdownAvatar:hover {
+    box-shadow: none;
+    /* No red glow */
+    border-color: rgba(255, 255, 255, 0.5);
+}
+
+/* Avatar Overlay Icon (Camera) */
+.avatar-overlay-icon {
+    position: absolute;
+    bottom: -6px;
+    right: -6px;
+    width: 24px;
+    height: 24px;
+    background: rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 10px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+    transition: all 0.2s;
+    pointer-events: none;
+    /* Let clicks pass to parent */
+}
+
+/* Menu Items */
+.menu-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    color: rgba(255, 255, 255, 0.9);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
     font-size: 14px;
-    color: rgba(255, 255, 255, 0.5);
-    margin-bottom: 30px;
-    text-align: center;
+    font-weight: 500;
+    margin-top: 8px;
+}
+
+.menu-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+    transform: translateX(5px);
+}
+
+/* 3D Log Out Button */
+.menu-item.logout {
+    color: #ff6b81;
+    margin-top: 16px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    padding-top: 14px;
+    padding-bottom: 14px;
+    justify-content: center;
+    background: rgba(255, 71, 87, 0.1);
+    border-radius: 16px;
+
+    /* 3D Effect */
+    box-shadow: 0 4px 0 rgba(255, 71, 87, 0.2);
+    transform: translateY(0);
+    transition: all 0.1s ease;
+}
+
+.menu-item.logout:hover {
+    background: rgba(255, 71, 87, 0.2);
+    transform: translateY(-1px);
+    /* Slight lift */
+    box-shadow: 0 5px 0 rgba(255, 71, 87, 0.25);
+}
+
+.menu-item.logout:active {
+    transform: translateY(3px);
+    /* Press down */
+    box-shadow: 0 1px 0 rgba(255, 71, 87, 0.2);
 }
 
 /* Input Groups */
@@ -3449,3 +3709,129 @@ svg {
     border-color: transparent;
     color: rgba(255, 255, 255, 0.3);
 }
+
+/* --- User Dropdown Menu (Glassmorphism) --- */
+.user-dropdown {
+    position: absolute;
+    top: 50px;
+    /* Closer to button */
+    right: 0;
+    width: 220px;
+
+    /* Glassmorphism Style */
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-top: 1px solid rgba(255, 255, 255, 0.3);
+    border-left: 1px solid rgba(255, 255, 255, 0.3);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+
+    border-radius: 16px;
+    padding: 8px;
+
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-10px);
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    z-index: 1000;
+}
+
+.user-dropdown.active {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+/* Menu Items */
+.menu-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    color: rgba(255, 255, 255, 0.9);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.menu-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+    transform: translateX(5px);
+}
+
+.menu-item.logout {
+    color: #ff6b81;
+    margin-top: 4px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.menu-item.logout:hover {
+    background: rgba(255, 71, 87, 0.15);
+}
+
+/* User Avatar Styles */
+.nav-user-avatar {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    margin-right: 4px;
+}
+
+.login-trigger-btn {
+    /* Ensure button looks good with avatar */
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    height: 40px;
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 20px;
+    color: white;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+}
+
+.login-trigger-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+}
+
+/* --- Mobile Responsive --- */
+@media screen and (max-width: 768px) {
+
+    .glass-card,
+    .login-card {
+        width: 90%;
+        padding: 30px 20px;
+    }
+
+    .top-right-nav {
+        top: 20px;
+        right: 20px;
+        position: fixed !important;
+        /* Fix position on mobile */
+        z-index: 2000;
+    }
+
+    .card-title {
+        font-size: 22px;
+    }
+
+    .user-dropdown {
+        right: 0;
+        width: 180px;
+    }
+}
+
+```
