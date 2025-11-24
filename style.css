@@ -1379,11 +1379,18 @@ input[type="range"] {
     }
 
     /* Reduce modal size on mobile to avoid "oppressive" feel */
+    /* Reduce modal size on mobile to avoid "oppressive" feel */
     .modal-content {
         width: 80% !important;
         max-width: 300px !important;
+        max-height: 80vh !important;
+        /* Prevent too tall */
         padding: 20px !important;
         border-radius: 20px !important;
+        margin: auto !important;
+        /* Ensure centering */
+        overflow-y: auto !important;
+        /* Scroll if content is too long */
     }
 
     /* Contact Modal: 2 columns side-by-side */
