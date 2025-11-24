@@ -299,6 +299,10 @@ header p {
     .calculator-card {
         padding: 20px;
     }
+
+    .date-time-compact {
+        display: none;
+    }
 }
 
 /* Navigation */
