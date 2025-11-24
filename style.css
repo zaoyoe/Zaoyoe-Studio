@@ -2740,25 +2740,72 @@ svg {
     }
 }
 
-/* Interactive Glass State */
+/* Elastic Press State */
 .glass-box {
-    /* Smooth transition for background fade */
-    transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease, backdrop-filter 0.3s ease;
+    will-change: transform;
+    /* Optimize for transform animations */
+    /* No CSS transitions for transform - handled by JS physics */
 }
 
-.glass-box.glass-active-hidden {
-    background: transparent !important;
-    border-color: transparent !important;
-    box-shadow: none !important;
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-}
+/* Mobile Layout Optimizations */
+@media (max-width: 768px) {
 
-/* Ensure card content sits ABOVE the liquid glass slider (slider is z-index: 90) */
-.glass-box>* {
-    position: relative;
-    z-index: 100;
-    /* Increased to 100 to be safely above slider */
-    pointer-events: none;
-    /* Let touches pass through to container */
+    /* Center Profile Card Content */
+    .box-profile {
+        text-align: center;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .profile-header {
+        flex-direction: column;
+        align-items: center;
+        width: 100%;
+    }
+
+    .profile-info {
+        align-items: center;
+        text-align: center;
+        margin-top: 10px;
+    }
+
+    .profile-info h1 {
+        text-align: center;
+        width: 100%;
+    }
+
+    .profile-info p {
+        text-align: center;
+        width: 100%;
+    }
+
+    .date-time-compact {
+        width: 100%;
+        justify-content: center;
+        margin-bottom: 10px;
+        text-align: right;
+        /* Keep time at top right or center? User asked for title center. Let's keep time as is or center it too? Reference image shows time at top right. */
+    }
+
+    /* Fix time position on mobile to be top right absolute or just flow? 
+       In the reference image, time is top right. 
+       Let's make sure the title "Zaoyoe 拾光里" is centered.
+    */
+    .box-profile {
+        position: relative;
+        /* For absolute positioning of time if needed */
+    }
+
+    .date-time-compact {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        width: auto;
+        margin: 0;
+    }
+
+    .profile-info {
+        margin-top: 40px;
+        /* Space for the time */
+    }
 }
