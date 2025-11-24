@@ -1390,34 +1390,43 @@ input[type="range"] {
         position: relative !important;
         top: auto !important;
         left: auto !important;
-        transform: none !important;
-        /* Reset transform to rely on flex centering */
+        /* Restore animation: scale from 0.9 to 1 */
+        transform: scale(0.9) !important;
+        opacity: 0;
+        transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s ease !important;
         overflow-y: auto !important;
+    }
+
+    div.modal-overlay.active .modal-content {
+        transform: scale(1) !important;
+        opacity: 1 !important;
     }
 
     /* Contact Modal: 2 columns side-by-side */
     .modal-grid {
         grid-template-columns: 1fr 1fr !important;
-        gap: 12px !important;
-        margin-top: 20px !important;
+        gap: 10px !important;
+        /* Tighter gap */
+        margin-top: 15px !important;
     }
 
     /* Compact Contact Cards */
     .modal-link-card {
-        padding: 16px 10px !important;
+        padding: 12px 8px !important;
+        /* Tighter padding */
         width: 100% !important;
-        /* Fill grid cell */
-        min-height: 110px;
+        min-height: 100px;
+        /* Slightly shorter */
     }
 
     .modal-link-card i {
-        font-size: 2rem !important;
+        font-size: 1.8rem !important;
         /* Smaller icons */
-        margin-bottom: 8px !important;
+        margin-bottom: 6px !important;
     }
 
     .link-title {
-        font-size: 0.9rem !important;
+        font-size: 0.85rem !important;
     }
 
     .contact-detail {

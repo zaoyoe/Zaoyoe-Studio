@@ -84,8 +84,23 @@ class ElasticPress {
     }
 
     handleGlobalEnd(e) {
-        // Release all cards
+        // Check if we are releasing over a pressed card
         this.cards.forEach(c => {
+            if (c.isPressed) {
+                // Trigger click if we release over the card
+                // We need to verify if the touch end is still over this card
+                // But since isPressed is only true if we are over it (updated in handleGlobalTouch),
+                // we can just trigger it.
+
+                // Create and dispatch a click event
+                const clickEvent = new MouseEvent('click', {
+                    view: window,
+                    bubbles: true,
+                    cancelable: true
+                });
+                c.el.dispatchEvent(clickEvent);
+            }
+
             c.isPressed = false;
             c.target = { scale: 1, rotateX: 0, rotateY: 0 };
         });
