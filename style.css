@@ -848,19 +848,7 @@ input[type="range"] {
     text-decoration: none;
 }
 
-.glass-box::before {
-    /* Glossy Reflection Overlay */
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 50%;
-    background: linear-gradient(to bottom, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0) 100%);
-    pointer-events: none;
-    border-top-left-radius: 32px;
-    border-top-right-radius: 32px;
-}
+/* Removed glossy reflection overlay - line 1 */
 
 /* Only apply hover effects on devices with hover capability (not touch screens) */
 @media (hover: hover) {
@@ -1352,83 +1340,11 @@ input[type="range"] {
     margin-top: 5px;
 }
 
-/* Enhanced Liquid Glass Refraction Effect */
-.glass-box {
-    position: relative;
-    overflow: visible;
+transform: scale(1.02);
+box-shadow: 0 30px 60px rgba(0, 0, 0, 0.4);
 }
 
-/* Add inner glow layer for depth */
-.glass-box::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: radial-gradient(800px circle at var(--mouse-x, 50%) var(--mouse-y, 50%),
-            rgba(255, 255, 255, 0.06),
-            transparent 40%);
-    z-index: 1;
-    opacity: 0;
-    transition: opacity 0.5s ease;
-    pointer-events: none;
-    border-radius: 32px;
-}
-
-/* Border glow with refraction */
-.glass-box::after {
-    content: '';
-    position: absolute;
-    top: -2px;
-    left: -2px;
-    right: -2px;
-    bottom: -2px;
-    background: radial-gradient(600px circle at var(--mouse-x, 50%) var(--mouse-y, 50%),
-            rgba(255, 255, 255, 0.25),
-            transparent 40%);
-    z-index: -1;
-    opacity: 0;
-    transition: opacity 0.5s ease;
-    pointer-events: none;
-    border-radius: 34px;
-    filter: blur(8px);
-}
-
-/* Add refraction shimmer effect */
-@keyframes shimmer {
-    0% {
-        background-position: -200% center;
-    }
-
-    100% {
-        background-position: 200% center;
-    }
-}
-
-@media (hover: hover) {
-    .glass-box:hover::before {
-        opacity: 1;
-    }
-
-    .glass-box:hover::after {
-        opacity: 1;
-    }
-
-    .glass-box:hover {
-        background: rgba(255, 255, 255, 0.1);
-        backdrop-filter: blur(40px) saturate(160%);
-        -webkit-backdrop-filter: blur(40px) saturate(160%);
-    }
-}
-
-@media (hover: hover) {
-    .glass-box:hover {
-        transform: scale(1.02);
-        box-shadow: 0 30px 60px rgba(0, 0, 0, 0.4);
-    }
-
-    /* Removed light refraction simulation on specific cards */
+/* Removed light refraction simulation on specific cards */
 }
 
 /* Enhanced backdrop blur for glass effect */
