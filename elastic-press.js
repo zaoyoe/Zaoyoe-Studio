@@ -13,6 +13,10 @@ class ElasticPress {
         this.activeCard = null;
         this.rafId = null;
 
+        // Touch Tracking
+        this.touchStart = { x: 0, y: 0 };
+        this.isScrolling = false;
+
         // Physics Configuration (Spring System)
         this.config = {
             stiffness: 0.15, // Spring tension (higher = snappier)
@@ -38,8 +42,8 @@ class ElasticPress {
         }));
 
         // Global Touch Events (to handle sliding between cards)
-        document.addEventListener('touchstart', (e) => this.handleGlobalTouch(e), { passive: false });
-        document.addEventListener('touchmove', (e) => this.handleGlobalTouch(e), { passive: false });
+        document.addEventListener('touchstart', (e) => this.handleGlobalStart(e), { passive: false });
+        document.addEventListener('touchmove', (e) => this.handleGlobalMove(e), { passive: false });
         document.addEventListener('touchend', (e) => this.handleGlobalEnd(e), { passive: false });
         document.addEventListener('touchcancel', (e) => this.handleGlobalEnd(e), { passive: false });
 
@@ -57,9 +61,37 @@ class ElasticPress {
 
     // --- Global Touch Logic ---
 
-    handleGlobalTouch(e) {
-        // Find which card is under the finger
+    handleGlobalStart(e) {
         const touch = e.touches[0];
+        this.touchStart = { x: touch.clientX, y: touch.clientY };
+        this.isScrolling = false;
+
+        this.handleGlobalMove(e); // Trigger initial press
+    }
+
+    handleGlobalMove(e) {
+        const touch = e.touches[0];
+
+        // Check for scrolling (movement > 10px)
+        if (!this.isScrolling) {
+            const dx = Math.abs(touch.clientX - this.touchStart.x);
+            const dy = Math.abs(touch.clientY - this.touchStart.y);
+            if (dx > 10 || dy > 10) {
+                this.isScrolling = true;
+
+                // Cancel all presses immediately if scrolling starts
+                this.cards.forEach(c => {
+                    c.isPressed = false;
+                    c.target = { scale: 1, rotateX: 0, rotateY: 0 };
+                });
+                return;
+            }
+        }
+
+        // If scrolling, ignore everything
+        if (this.isScrolling) return;
+
+        // Find which card is under the finger
         const targetEl = document.elementFromPoint(touch.clientX, touch.clientY);
 
         // Find closest .glass-box parent
@@ -84,6 +116,12 @@ class ElasticPress {
     }
 
     handleGlobalEnd(e) {
+        // If we were scrolling, do nothing (don't trigger clicks)
+        if (this.isScrolling) {
+            this.isScrolling = false;
+            return;
+        }
+
         // Check if we are releasing over a pressed card
         this.cards.forEach(c => {
             if (c.isPressed) {
