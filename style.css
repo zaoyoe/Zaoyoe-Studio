@@ -2739,3 +2739,18 @@ svg {
         transform: translateY(0);
     }
 }
+/* Interactive Glass State */
+.glass-box.glass-active-hidden {
+    background: transparent !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+/* Ensure card content sits ABOVE the liquid glass slider (z-index: 10) */
+.glass-box > * {
+    position: relative;
+    z-index: 20;
+    pointer-events: none; /* Let touches pass through to container */
+}
