@@ -81,13 +81,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="message-anim-wrapper" style="animation-delay: ${delay}s">
                 <div class="message-item" data-id="${msg.id}">
                     
-                    <!-- 1. Content (Primary Focus) -->
-                    <div class="message-content">${escapeHtml(msg.content)}</div>
-
-                    <!-- 2. Image -->
-                    ${imageHtml}
-
-                    <!-- 3. Footer (Meta Info) -->
+                    <!-- 1. Header (Author Info) -->
                     <div class="message-footer-meta">
                         <div class="author-info">
                             <i class="fas fa-user-circle"></i>
@@ -95,6 +89,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         </div>
                         <span class="message-time">${msg.timestamp.split(' ')[0]}</span> <!-- Only show date -->
                     </div>
+
+                    <!-- 2. Content (Primary Focus) -->
+                    <div class="message-content">${escapeHtml(msg.content)}</div>
+
+                    <!-- 3. Image -->
+                    ${imageHtml}
                     
                     <div class="comment-section">
                         <div class="comment-header-bar">
