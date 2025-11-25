@@ -185,7 +185,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <span>${commentCount}</span>
                             </div>
                             <!-- Add Comment Trigger Button in header -->
-                            <button class="add-comment-trigger-btn" onclick="openCommentModal(${msg.id})">
+                            <button class="add-comment-trigger-btn" onclick="window.openCommentModal('${msg.id}')">
                                 <i class="fas fa-plus"></i> 评论
                             </button>
                         </div>
@@ -350,7 +350,7 @@ window.closeCommentModal = function (event) {
     // Close if clicked on overlay or close button
     if (event.target.classList.contains('modal-overlay') ||
         event.target.closest('.mac-dot.red') ||
-        event.target.closest('.close-btn')) { // Added safety check
+        event.target.closest('.close-btn')) {
 
         const modal = document.getElementById('commentModal');
         if (modal) {

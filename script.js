@@ -108,16 +108,23 @@ function handleLoginOverlayClick(event) {
     }
 }
 
-function switchAuthView(viewName) {
+function switchAuthView(view) {
     const loginView = document.getElementById('loginView');
     const registerView = document.getElementById('registerView');
+    const resetView = document.getElementById('resetView');
 
-    if (viewName === 'register') {
-        loginView.classList.add('hidden');
-        registerView.classList.remove('hidden');
-    } else {
-        registerView.classList.add('hidden');
+    // Hide all first
+    loginView.classList.add('hidden');
+    registerView.classList.add('hidden');
+    if (resetView) resetView.classList.add('hidden');
+
+    // Show requested view
+    if (view === 'login') {
         loginView.classList.remove('hidden');
+    } else if (view === 'register') {
+        registerView.classList.remove('hidden');
+    } else if (view === 'reset') {
+        if (resetView) resetView.classList.remove('hidden');
     }
 }
 
@@ -592,7 +599,8 @@ function startCountdown(btnElement) {
     }, 1000);
 }
 
-// Function 3: Handle Registration Submission (with Firestore)
+// ❌ Firebase 版本 - 已废弃，使用 LeanCloud 版本（leancloud-auth-functions.js）
+/*
 async function handleRegister(event) {
     event.preventDefault();
 
@@ -641,7 +649,7 @@ async function handleRegister(event) {
             createdAt: new Date().toISOString()
         });
 
-        alert(`注册成功！\n欢迎，${username}！`);
+        alert(`注册成功！\\n欢迎，${username}！`);
 
         // Close modal and reset form
         toggleLoginModal();
@@ -664,8 +672,168 @@ async function handleRegister(event) {
         }
     }
 }
+*/
+
+
+// Function 3.5: Handle Google Login
+function handleGoogleLogin() {
+    const auth = window.firebaseAuth;
+    const db = window.firebaseDB;
+    const provider = new window.firebase.auth.GoogleAuthProvider();
+
+    if (!auth) {
+        alert("Firebase 未初始化，请刷新页面重试。");
+        return;
+    }
+
+    // Use signInWithPopup from the modular SDK
+    window.signInWithPopup(auth, provider)
+        .then(async (result) => {
+            console.log("Google Login successful", result.user);
+
+            // Create/update user profile in Firestore with Google data
+            const user = result.user;
+            const userRef = window.doc(db, 'users', user.uid);
+
+            try {
+                await window.setDoc(userRef, {
+                    email: user.email,
+                    nickname: user.displayName || user.email.split('@')[0],
+                    avatarUrl: user.photoURL || '',
+                    createdAt: new Date().toISOString()
+                }, { merge: true }); // merge to avoid overwriting existing data
+
+                console.log("User profile created/updated in Firestore");
+            } catch (error) {
+                console.error("Error creating user profile:", error);
+            }
+
+            toggleLoginModal();
+            // User UI will auto-update via onAuthStateChanged
+        })
+        .catch((error) => {
+            console.error("Google Login Error:", error);
+            if (error.code === 'auth/popup-closed-by-user') {
+                // User closed popup, silent fail
+                console.log("User closed the login popup");
+            } else {
+                alert(`Google 登录失败: ${error.message}`);
+            }
+        });
+}
+
+// Function 3.6: Handle Password Reset (Using Resend via Cloud Function)
+// ❌ Firebase 版本 - 已废弃，使用 LeanCloud 版本（leancloud-auth-functions.js）
+/*
+let resetCooldownTimer = null;
+let resetCooldownSeconds = 0;
+
+function handlePasswordReset(event) {
+    if (event) event.preventDefault();
+
+    console.log("=== Password Reset Started (Resend) ===");
+
+    const emailInput = document.getElementById('reset-email');
+    const submitBtn = document.querySelector('#resetForm button[type="submit"]');
+
+    if (!emailInput || !submitBtn) {
+        console.error("Form elements not found!");
+        alert("❌ 系统错误：找不到表单元素，请刷新页面重试。");
+        return;
+    }
+
+    const email = emailInput.value.trim();
+
+    if (!email) {
+        alert("❌ 请输入邮箱地址");
+        return;
+    }
+
+    // Check if in cooldown
+    if (resetCooldownSeconds > 0) {
+        alert(`⏱️ 请等待 ${resetCooldownSeconds} 秒后再试`);
+        return;
+    }
+
+    // Show loading state
+    const originalText = submitBtn.textContent;
+    submitBtn.textContent = '发送中...';
+    submitBtn.disabled = true;
+
+    // Add timeout protection (15 seconds for Cloud Function)
+    const timeoutId = setTimeout(() => {
+        console.error("Cloud Function timeout!");
+        submitBtn.textContent = originalText;
+        submitBtn.disabled = false;
+        alert("❌ 请求超时\n\n网络连接可能存在问题，请检查网络后重试。");
+    }, 15000);
+
+    // Call Cloud Function via Firebase
+    const functions = window.firebaseFunctions;
+    const sendReset = window.httpsCallable(functions, 'sendPasswordResetEmail');
+
+    console.log("Calling Cloud Function with email:", email);
+
+    sendReset({ email: email })
+        .then((result) => {
+            clearTimeout(timeoutId);
+            console.log("✅ Cloud Function success:", result.data);
+            alert(`✅ 重置密码邮件已发送到 ${email}\n\n请检查您的收件箱，点击邮件中的链接重置密码。`);
+            emailInput.value = '';
+
+            // Start 30-second countdown
+            resetCooldownSeconds = 30;
+            updateResetButtonCountdown(submitBtn, originalText);
+
+            // Auto switch back to login after a delay
+            setTimeout(() => {
+                switchAuthView('login');
+            }, 2000);
+        })
+        .catch((error) => {
+            clearTimeout(timeoutId);
+            console.error("❌ Cloud Function Error:", error);
+
+            // Restore button state
+            submitBtn.textContent = originalText;
+            submitBtn.disabled = false;
+
+            // Handle different error codes
+            if (error.code === 'not-found') {
+                alert("❌ 该邮箱未注册\n\n请检查邮箱地址或点击下方\"立即注册\"创建新账号。");
+            } else if (error.code === 'invalid-argument') {
+                alert("❌ 邮箱格式不正确\n\n请检查后重试。");
+            } else if (error.code === 'unauthenticated') {
+                alert("❌ 未授权访问\n\n请刷新页面后重试。");
+            } else {
+                alert(`❌ 发送失败\n\n${error.message || '未知错误'}\n\n如果问题持续，请联系管理员。`);
+            }
+        });
+}
+*/ // End of commented out Firebase handlePasswordReset
+
+// updateResetButtonCountdown function is still used by LeanCloud version
+function updateResetButtonCountdown(button, originalText) {
+    if (!button) return;
+
+    if (resetCooldownSeconds > 0) {
+        button.textContent = `已发送 (${resetCooldownSeconds}s)`;
+        button.disabled = true;
+        resetCooldownSeconds--;
+        resetCooldownTimer = setTimeout(() => updateResetButtonCountdown(button, originalText), 1000);
+    } else {
+        button.textContent = originalText;
+        button.disabled = false;
+        if (resetCooldownTimer) {
+            clearTimeout(resetCooldownTimer);
+            resetCooldownTimer = null;
+        }
+    }
+}
 
 // Function 4: Handle Login Submission
+// ❌ Firebase 版本 - 已废弃，使用 LeanCloud 版本（leancloud-auth-functions.js）
+/*
 function handleLogin(event) {
     event.preventDefault();
 
@@ -680,11 +848,22 @@ function handleLogin(event) {
         return;
     }
 
+    // Simplified login logic to ensure reliability
     signIn(auth, email, password)
         .then((userCredential) => {
-            alert(`登录成功！欢迎回来！`);
+            // Login successful - No Alert as requested
+            console.log("Login successful");
             toggleLoginModal();
             document.getElementById('loginForm').reset();
+
+            // Handle Remember Me manually
+            const rememberMe = document.getElementById('rememberMe').checked;
+            const persistenceType = rememberMe ? 'local' : 'session';
+
+            // Use string constants directly to avoid "undefined" errors with enums
+            auth.setPersistence(persistenceType).catch((err) => {
+                console.warn("Persistence setting failed:", err);
+            });
         })
         .catch((error) => {
             const errorCode = error.code;
@@ -700,8 +879,12 @@ function handleLogin(event) {
             }
         });
 }
+*/
+
 
 // Function 5: Handle Logout
+// ❌ Firebase 版本 - 已废弃，使用 LeanCloud 版本（leancloud-auth-functions.js）
+/*
 async function handleLogout() {
     if (!confirm("确定要退出登录吗？")) return;
 
@@ -721,11 +904,14 @@ async function handleLogout() {
         alert(`登出失败: ${error.message}`);
     }
 }
+*/
+
 
 // Function 6: Handle Auth Button Click
 function handleAuthClick() {
-    const auth = window.firebaseAuth;
-    if (auth && auth.currentUser) {
+    // 检查 LeanCloud 登录状态
+    const currentUser = AV.User.current();
+    if (currentUser) {
         // User is logged in - toggle dropdown
         const dropdown = document.getElementById('userDropdown');
         dropdown.classList.toggle('active');

@@ -21,44 +21,12 @@
             emailjs.init("vawaxLVEzJMAVbut0");
         })();
     </script>
-    <!-- Firebase SDK -->
-    <script type="module">
-        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-        import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut, updateProfile } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
-        import { getFirestore, doc, setDoc, getDoc, collection, addDoc, query, orderBy, onSnapshot, limit } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
-        const firebaseConfig = {
-            apiKey: "AIzaSyDBk5juaw5qNSPFiZVSqRJWfllEtrD6oWg",
-            authDomain: "zaoyoe-9bdf2.firebaseapp.com",
-            projectId: "zaoyoe-9bdf2",
-            storageBucket: "zaoyoe-9bdf2.firebasestorage.app",
-            messagingSenderId: "908400021338",
-            appId: "1:908400021338:web:e0bff6e65ff55d2b7b6d63"
-        };
+    <!-- LeanCloud SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/leancloud-storage@4.15.2/dist/av-min.js"></script>
+    <script src="./leancloud-init.js" defer></script>
+    <script src="./leancloud-auth-functions.js" defer></script>
+    <script src="./leancloud-guestbook-functions.js" defer></script>
 
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-
-        // Make auth and db available globally
-        window.firebaseAuth = auth;
-        window.firebaseDB = db;
-        window.createUserWithEmailAndPassword = createUserWithEmailAndPassword;
-        window.signInWithEmailAndPassword = signInWithEmailAndPassword;
-        window.onAuthStateChanged = onAuthStateChanged;
-        window.signOut = signOut;
-        window.updateProfile = updateProfile;
-
-        // Firestore functions
-        window.firestoreDoc = doc;
-        window.firestoreSetDoc = setDoc;
-        window.firestoreGetDoc = getDoc;
-        window.firestoreCollection = collection;
-        window.firestoreAddDoc = addDoc;
-        window.firestoreQuery = query;
-        window.firestoreOrderBy = orderBy;
-        window.firestoreOnSnapshot = onSnapshot;
-        window.firestoreLimit = limit;
-    </script>
     <style>
         /* Homepage entrance animation - Subtle */
         @keyframes slideInUp {
@@ -374,13 +342,17 @@
                     onclick="document.getElementById('avatarUpload').click()">
                     <img id="dropdownAvatar" class="nav-user-avatar" src="" alt="Avatar"
                         style="width: 64px; height: 64px; border: 2px solid rgba(255,255,255,0.2); transition: transform 0.1s;">
-                    <!-- Overlay Icon for Change Avatar -->
-                    <div class="avatar-overlay-icon">
+                    <!-- Overlay Icon for Change Avatar (Positioned at bottom right) -->
+                    <div class="avatar-overlay-icon"
+                        style="position: absolute; bottom: 0; right: 0; transform: translate(25%, 25%);">
                         <i class="fas fa-camera"></i>
                     </div>
                 </div>
-                <div style="display: flex; flex-direction: column; gap: 4px; margin-left: 12px;">
-                    <span id="profileEmail" style="font-weight: 600; font-size: 18px;">Profile</span>
+                <div
+                    style="display: flex; flex-direction: column; gap: 4px; margin-left: 16px; justify-content: center;">
+                    <!-- Only show Email as requested -->
+                    <span id="profileEmail"
+                        style="font-weight: 500; font-size: 14px; color: rgba(255,255,255,0.8); word-break: break-all;"></span>
                 </div>
             </div>
 
@@ -401,6 +373,7 @@
         </div>
     </div>
 
+
     <!-- Auth Modal (Dual Mode) -->
     <div class="login-overlay" id="loginModal" onclick="handleLoginOverlayClick(event)">
         <div class="login-card">
@@ -415,58 +388,105 @@
 
             <!-- Login View -->
             <div id="loginView" class="form-view">
-                <h2 class="card-title">Welcome Back</h2>
-                <p class="card-subtitle">Please enter your details to sign in.</p>
+                <h2 class="card-title">欢迎回来</h2>
+                <p class="card-subtitle">请输入您的账号信息以登录</p>
+
+                <!-- Google Login Button -->
+                <button type="button" class="google-login-btn" onclick="handleGoogleLogin()">
+                    <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google"
+                        width="18" height="18">
+                    使用 Google 登录
+                </button>
+
+                <!-- Divider -->
+                <div class="login-divider">
+                    <span>或者</span>
+                </div>
 
                 <form id="loginForm" onsubmit="handleLogin(event)">
                     <div class="input-group">
-                        <input type="email" id="login-email" class="glass-input" placeholder="Email Address" required>
+                        <input type="email" id="login-email" class="glass-input" placeholder="邮箱地址" required>
                     </div>
                     <div class="input-group">
-                        <input type="password" id="login-password" class="glass-input" placeholder="Password" required>
+                        <input type="password" id="login-password" class="glass-input" placeholder="密码" required>
                     </div>
-                    <button type="submit" class="login-submit-btn">Sign In</button>
+
+                    <!-- Forgot Password Link -->
+                    <div style="text-align: right; margin-bottom: 16px;">
+                        <span class="forgot-password-link" onclick="switchAuthView('reset')">忘记密码了吗？</span>
+                    </div>
+
+                    <!-- Remember Me Checkbox -->
+                    <div class="checkbox-wrapper"
+                        style="margin-bottom: 24px; display: flex; align-items: center; gap: 8px; color: rgba(255,255,255,0.7); font-size: 13px;">
+                        <input type="checkbox" id="rememberMe" class="custom-checkbox"
+                            style="width: 16px; height: 16px; accent-color: #9b5de5; cursor: pointer;">
+                        <label for="rememberMe" style="cursor: pointer;">记住密码 (30天内免登录)</label>
+                    </div>
+
+                    <button type="submit" class="login-submit-btn">登录</button>
                 </form>
 
                 <div class="switch-text">
-                    Don't have an account?
-                    <span class="switch-link" onclick="switchAuthView('register')">Sign Up</span>
+                    还没有账号？
+                    <span class="switch-link" onclick="switchAuthView('register')">立即注册</span>
                 </div>
             </div>
 
             <!-- Register View -->
             <div id="registerView" class="form-view hidden">
-                <h2 class="card-title">Create Account</h2>
-                <p class="card-subtitle">Join us to access premium features.</p>
+                <h2 class="card-title">创建账号</h2>
+                <p class="card-subtitle">加入我们以获取更多高级功能</p>
 
                 <form id="registerForm" onsubmit="handleRegister(event)">
                     <div class="input-group">
-                        <input type="text" id="reg-username" class="glass-input" placeholder="Username" required>
+                        <input type="text" id="reg-username" class="glass-input" placeholder="用户名" required>
                     </div>
 
                     <div class="input-group">
-                        <input type="email" id="reg-email" class="glass-input" placeholder="Email Address" required>
+                        <input type="email" id="reg-email" class="glass-input" placeholder="邮箱地址" required>
                     </div>
 
                     <div class="input-group input-with-action">
-                        <input type="text" id="reg-code" class="glass-input" placeholder="Enter 6-digit code"
-                            maxlength="6" required>
+                        <input type="text" id="reg-code" class="glass-input" placeholder="输入6位验证码" maxlength="6"
+                            required>
                         <button type="button" class="verify-code-btn" id="sendBtn" onclick="sendVerificationCode()">
                             获取验证码
                         </button>
                     </div>
 
                     <div class="input-group">
-                        <input type="password" id="reg-password" class="glass-input" placeholder="Set Password"
-                            required>
+                        <input type="password" id="reg-password" class="glass-input" placeholder="设置密码" required>
                     </div>
 
-                    <button type="submit" class="login-submit-btn">Create Account</button>
+                    <button type="submit" class="login-submit-btn">创建账号</button>
                 </form>
 
                 <div class="switch-text">
-                    Already have an account?
-                    <span class="switch-link" onclick="switchAuthView('login')">Sign In</span>
+                    已有账号？
+                    <span class="switch-link" onclick="switchAuthView('login')">直接登录</span>
+                </div>
+            </div>
+
+            <!-- Password Reset View -->
+            <div id="resetView" class="form-view hidden">
+                <h2 class="card-title">找回密码</h2>
+                <p class="card-subtitle">请输入您的注册邮箱以重置密码</p>
+
+                <form id="resetForm" onsubmit="handlePasswordReset(event)">
+                    <div class="input-group">
+                        <input type="email" id="reset-email" class="glass-input" placeholder="电子邮箱" required>
+                    </div>
+
+                    <button type="submit" class="login-submit-btn" style="margin-top: 24px;">找回</button>
+                </form>
+
+                <div class="switch-text">
+                    没有账户？
+                    <span class="switch-link" onclick="switchAuthView('register')">注册</span>
+                </div>
+                <div class="switch-text" style="margin-top: 10px;">
+                    <span class="switch-link back-to-login" onclick="switchAuthView('login')">返回登录</span>
                 </div>
             </div>
 
