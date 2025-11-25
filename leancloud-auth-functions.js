@@ -181,39 +181,62 @@ function checkAuthState() {
         });
     } else {
         console.log('❌ 用户未登录');
+        // 重置 UI 为未登录状态
+        updateUserUI(null);
     }
 }
 
 // ==================== 更新用户UI ====================
 function updateUserUI(user) {
-    const authIcon = document.getElementById('authIcon');
-    const authText = document.getElementById('authText');
+    const defaultIcon = document.getElementById('defaultAuthIcon');
+    const navAvatar = document.getElementById('navUserAvatar');
+    const btnText = document.getElementById('authBtnText');
     const userDropdown = document.getElementById('userDropdown');
-    const userEmail = document.getElementById('userEmail');
-    const userAvatar = document.getElementById('userAvatar');
+    const profileEmail = document.getElementById('profileEmail');
+    const dropdownAvatar = document.getElementById('dropdownAvatar');
 
-    if (authIcon && user.avatarUrl) {
-        authIcon.innerHTML = `<img src="${user.avatarUrl}" alt="Avatar" style="width:40px; height:40px; border-radius:50%; object-fit:cover;">`;
+    if (user) {
+        // 用户已登录 - 显示头像和昵称
+        if (defaultIcon) {
+            defaultIcon.style.display = 'none';
+        }
+        if (navAvatar && user.avatarUrl) {
+            navAvatar.src = user.avatarUrl;
+            navAvatar.style.display = 'inline';
+        }
+        if (btnText) {
+            btnText.textContent = user.nickname || user.username;
+        }
+        if (profileEmail) {
+            profileEmail.textContent = user.email;
+        }
+        if (dropdownAvatar && user.avatarUrl) {
+            dropdownAvatar.src = user.avatarUrl;
+        }
+        if (userDropdown) {
+            userDropdown.style.display = 'block';
+        }
+
+        // 缓存用户信息
+        localStorage.setItem('cached_user_profile', JSON.stringify(user));
+    } else {
+        // 用户未登录 - 显示默认图标和文本
+        if (defaultIcon) {
+            defaultIcon.style.display = 'inline';
+        }
+        if (navAvatar) {
+            navAvatar.style.display = 'none';
+        }
+        if (btnText) {
+            btnText.textContent = 'Sign In';
+        }
+        if (userDropdown) {
+            userDropdown.style.display = 'none';
+        }
+
+        // 清除缓存
+        localStorage.removeItem('cached_user_profile');
     }
-
-    if (authText) {
-        authText.textContent = user.nickname || user.username;
-    }
-
-    if (userEmail) {
-        userEmail.textContent = user.email;
-    }
-
-    if (userAvatar && user.avatarUrl) {
-        userAvatar.src = user.avatarUrl;
-    }
-
-    if (userDropdown) {
-        userDropdown.style.display = 'block';
-    }
-
-    // 缓存用户信息
-    localStorage.setItem('cached_user_profile', JSON.stringify(user));
 }
 
 // ==================== 密码重置 (LeanCloud 版本) ====================

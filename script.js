@@ -1106,6 +1106,8 @@ async function handleAvatarUpload(event) {
 }
 
 // Monitor Authentication State
+// ❌ Firebase 版本 - 已废弃，使用 LeanCloud 版本（leancloud-auth-functions.js）
+/*
 window.addEventListener('DOMContentLoaded', () => {
     // Define initialize function that reads GLOBAL window variables dynamically
     const initializeAuth = () => {
@@ -1127,6 +1129,8 @@ window.addEventListener('DOMContentLoaded', () => {
     // Start initialization check
     initializeAuth();
 });
+*/
+
 
 // Close dropdown when clicking outside
 document.addEventListener('click', (event) => {
