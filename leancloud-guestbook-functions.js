@@ -7,9 +7,13 @@
 async function loadGuestbookMessages() {
     console.log('📋 加载留言板消息...');
 
+    const container = document.getElementById('messageContainer');
+    const emptyState = document.getElementById('emptyState');
+
     try {
         const query = new AV.Query('Message');
-        query.include('user');  // 关联查询用户信息
+        // 不使用 include('user') 避免 ACL 权限问题
+        // 用户信息已经存储在 userName 和 userAvatar 字段中
         query.descending('createdAt');  // 按时间倒序
         query.limit(100);  // 限制100条
 
@@ -17,19 +21,82 @@ async function loadGuestbookMessages() {
 
         console.log(`✅ 加载了 ${messages.length} 条留言`);
 
-        // 转换为前端需要的格式
+        // 转换为 guestbook.js 期望的格式
         const formattedMessages = messages.map(msg => ({
-            objectId: msg.id,
-            userName: msg.get('userName'),
-            userAvatar: msg.get('userAvatar'),
+            id: msg.id,
+            name: msg.get('userName'),
+            avatarUrl: msg.get('userAvatar') || '',
             content: msg.get('content') || '',
-            imageUrl: msg.get('imageUrl') || '',
-            createdAt: msg.get('createdAt'),
-            displayTime: msg.get('createdAt').toLocaleString('zh-CN')
+            image: msg.get('imageUrl') || null,
+            timestamp: msg.get('createdAt').toLocaleString('zh-CN', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            }),
+            comments: [] // 初始为空，稍后填充
         }));
 
-        // 显示留言
-        displayMessages(formattedMessages);
+        // 2. 获取所有相关的评论
+        // 为了减少请求，我们可以一次性获取这些消息的所有评论
+        // 或者简单点，为每条消息单独获取（如果消息不多）
+        // 这里采用一次性获取所有相关评论的方法 (Query IN)
+
+        const messageIds = messages.map(m => m); // Keep AV.Objects
+
+        const commentQuery = new AV.Query('Comment');
+        commentQuery.containedIn('message', messageIds);
+        // 不使用 include('user') 避免 ACL 权限问题
+        // 用户信息已经存储在 userName 字段中
+        commentQuery.ascending('createdAt'); // 评论按时间正序
+        commentQuery.limit(1000);
+
+        const comments = await commentQuery.find();
+        console.log(`✅ 加载了 ${comments.length} 条评论`);
+
+        // 3. 将评论分配给对应的消息
+        comments.forEach(comment => {
+            const messagePtr = comment.get('message');
+            if (messagePtr) {
+                const messageId = messagePtr.id;
+                const targetMsg = formattedMessages.find(m => m.id === messageId);
+
+                if (targetMsg) {
+                    targetMsg.comments.push({
+                        id: comment.id,
+                        name: comment.get('userName'),
+                        content: comment.get('content'),
+                        timestamp: comment.get('createdAt').toLocaleString('zh-CN', {
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                        })
+                    });
+                }
+            }
+        });
+
+        // 显示留言（使用 guestbook.js 的 renderMessages）
+        if (typeof renderMessages === 'function') {
+            renderMessages(formattedMessages);
+        } else if (container && emptyState) {
+            // 降级方案：直接显示
+            if (formattedMessages.length === 0) {
+                container.innerHTML = '';
+                emptyState.style.display = 'flex';
+            } else {
+                emptyState.style.display = 'none';
+                // 简单显示（没有动画）
+                container.innerHTML = formattedMessages.map(msg => `
+                    <div class="message-item">
+                        <div class="message-content">${msg.content}</div>
+                    </div>
+                `).join('');
+            }
+        }
 
         // 缓存到本地
         localStorage.setItem('cached_messages', JSON.stringify(formattedMessages));
@@ -37,15 +104,43 @@ async function loadGuestbookMessages() {
         return formattedMessages;
 
     } catch (error) {
-        console.error('加载留言失败:', error);
+        console.error('❌ 加载留言失败:', error);
+        console.error('错误详情:', {
+            message: error.message,
+            stack: error.stack,
+            name: error.name
+        });
 
         // 尝试使用缓存
         const cached = localStorage.getItem('cached_messages');
         if (cached) {
-            const messages = JSON.parse(cached);
-            console.log('📦 使用缓存的留言数据');
-            displayMessages(messages);
-            return messages;
+            try {
+                const messages = JSON.parse(cached);
+                console.log('📦 使用缓存的留言数据');
+
+                if (typeof renderMessages === 'function') {
+                    renderMessages(messages);
+                } else {
+                    console.error('❌ renderMessages function not found');
+                }
+                return messages;
+            } catch (parseError) {
+                console.error('❌ 解析缓存数据失败:', parseError);
+            }
+        }
+
+        // 显示详细错误信息
+        if (container) {
+            const errorDetails = error.message || '未知错误';
+            container.innerHTML = `
+                <div style="text-align:center; color: #ff6b6b; padding: 40px;">
+                    <div style="font-size: 18px; margin-bottom: 10px;">加载留言失败</div>
+                    <div style="font-size: 14px; opacity: 0.8; margin-bottom: 20px;">错误: ${errorDetails}</div>
+                    <button onclick="location.reload()" style="padding: 10px 20px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.3); color: white; border-radius: 8px; cursor: pointer;">
+                        重新加载
+                    </button>
+                </div>
+            `;
         }
 
         return [];
@@ -92,6 +187,46 @@ async function addMessage(content, imageUrl = '') {
     }
 }
 
+// ==================== 发送评论 (LeanCloud 版本) ====================
+async function addCommentToMessage(messageId, content) {
+    console.log(`💬 发送评论给消息 ${messageId}...`);
+
+    const currentUser = AV.User.current();
+    if (!currentUser) {
+        alert('请先登录后再评论');
+        return false;
+    }
+
+    try {
+        // 1. 获取消息对象 (Pointer)
+        const message = AV.Object.createWithoutData('Message', messageId);
+
+        // 2. 创建评论对象
+        const Comment = AV.Object.extend('Comment');
+        const comment = new Comment();
+
+        comment.set('user', currentUser);
+        comment.set('message', message);
+        comment.set('userName', currentUser.get('nickname') || currentUser.get('username'));
+        comment.set('userAvatar', currentUser.get('avatarUrl') || '');
+        comment.set('content', content);
+
+        // 3. 保存
+        await comment.save();
+        console.log('✅ 评论发送成功');
+
+        // 4. 重新加载留言板 (或者只更新局部，但重新加载最简单)
+        await loadGuestbookMessages();
+
+        return true;
+
+    } catch (error) {
+        console.error('发送评论失败:', error);
+        alert(`评论失败: ${error.message}`);
+        return false;
+    }
+}
+
 // ==================== 删除留言 (可选) ====================
 async function deleteMessage(messageId) {
     const currentUser = AV.User.current();
@@ -129,15 +264,25 @@ async function deleteMessage(messageId) {
 
 // ==================== 显示留言 ====================
 function displayMessages(messages) {
-    const container = document.getElementById('messagesContainer');
+    const container = document.getElementById('messageContainer');  // 改为单数
+    const emptyState = document.getElementById('emptyState');
+
     if (!container) {
-        console.error('find不到留言容器');
+        console.error('❌ 找不到留言容器 #messageContainer');
         return;
     }
 
     if (!messages || messages.length === 0) {
-        container.innerHTML = '<div class="no-messages">暂无留言</div>';
+        container.innerHTML = '';
+        if (emptyState) {
+            emptyState.style.display = 'flex';
+        }
         return;
+    }
+
+    // 隐藏空状态
+    if (emptyState) {
+        emptyState.style.display = 'none';
     }
 
     container.innerHTML = '';
@@ -146,6 +291,8 @@ function displayMessages(messages) {
         const messageCard = createMessageCard(msg);
         container.appendChild(messageCard);
     });
+
+    console.log(`✅ 显示了 ${messages.length} 条留言`);
 }
 
 // ==================== 创建留言卡片 ====================
@@ -255,7 +402,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     modal.classList.remove('active');
                 }
 
-                alert('留言发送成功！');
+                // 自动跳转到留言板页面
+                window.location.href = 'guestbook.html';
             }
         });
 

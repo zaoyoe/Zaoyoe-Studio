@@ -4,6 +4,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>我们的店铺 - 资源导航</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -23,9 +26,9 @@
     </script>
     <!-- LeanCloud SDK -->
     <script src="https://cdn.jsdelivr.net/npm/leancloud-storage@4.15.2/dist/av-min.js"></script>
-    <script src="./leancloud-init.js" defer></script>
-    <script src="./leancloud-auth-functions.js" defer></script>
-    <script src="./leancloud-guestbook-functions.js" defer></script>
+    <script src="./leancloud-init.js?v=20251125_ACL_FIX" defer></script>
+    <script src="./leancloud-auth-functions.js?v=20251125_ACL_FIX" defer></script>
+    <script src="./leancloud-guestbook-functions.js?v=20251125_ACL_FIX" defer></script>
 
     <style>
         /* Homepage entrance animation - Subtle */
@@ -420,8 +423,10 @@
                     <div class="checkbox-wrapper"
                         style="margin-bottom: 24px; display: flex; align-items: center; gap: 8px; color: rgba(255,255,255,0.7); font-size: 13px;">
                         <input type="checkbox" id="rememberMe" class="custom-checkbox"
-                            style="width: 16px; height: 16px; accent-color: #9b5de5; cursor: pointer;">
-                        <label for="rememberMe" style="cursor: pointer;">记住密码 (30天内免登录)</label>
+                            style="width: 16px; height: 16px; accent-color: #9b5de5; cursor: pointer;"
+                            title="勾选后将自动保存您的登录信息，30天内无需重复输入密码">
+                        <label for="rememberMe" style="cursor: pointer;"
+                            title="勾选后将自动保存您的登录信息，30天内无需重复输入密码">记住密码</label>
                     </div>
 
                     <button type="submit" class="login-submit-btn">登录</button>
@@ -513,8 +518,8 @@
     </div>
 
     <!-- Elastic Press Effect -->
-    <script src="elastic-press.js?v=20251124_RESTORED" defer></script>
-    <script src="script.js?v=20251124_FIX_FINAL" defer></script>
+    <script src="elastic-press.js?v=20251125_ACL_FIX" defer></script>
+    <script src="script.js?v=20251125_ACL_FIX" defer></script>
 </body>
 
 </html>

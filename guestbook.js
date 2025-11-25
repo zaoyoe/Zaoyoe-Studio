@@ -5,105 +5,34 @@ document.addEventListener('DOMContentLoaded', () => {
     const emptyState = document.getElementById('emptyState');
     const clearAllBtn = document.getElementById('clearAllBtn');
 
-    // Load and display messages from Firestore
-    if (messageContainer) {
-        // 1. Try Cache IMMEDIATELY (Instant Display)
-        try {
-            const cached = localStorage.getItem('guestbook_cache');
-            if (cached) {
-                const cachedMessages = JSON.parse(cached);
-                if (Array.isArray(cachedMessages) && cachedMessages.length > 0) {
-                    console.log('🚀 Loaded messages from cache instantly');
-                    renderMessages(cachedMessages);
-                } else {
-                    messageContainer.innerHTML = '<div style="text-align:center; padding:20px; color:white;">正在连接云端数据库...<br><i class="fas fa-spinner fa-spin"></i></div>';
-                }
-            } else {
-                messageContainer.innerHTML = '<div style="text-align:center; padding:20px; color:white;">正在连接云端数据库...<br><i class="fas fa-spinner fa-spin"></i></div>';
-            }
-        } catch (e) {
-            messageContainer.innerHTML = '<div style="text-align:center; padding:20px; color:white;">正在连接云端数据库...<br><i class="fas fa-spinner fa-spin"></i></div>';
-        }
-    }
-
-    let retryCount = 0;
-    const maxRetries = 20; // 10 seconds timeout
-
-    // Clear all messages handler (Only for admin/local cleanup, maybe hide or disable for cloud)
+    // Hide clear button (not needed for LeanCloud version)
     if (clearAllBtn) {
-        clearAllBtn.style.display = 'none'; // Hide clear button for cloud version to prevent accidental deletion
+        clearAllBtn.style.display = 'none';
     }
 
-    function initFirestoreListener() {
-        const db = window.firebaseDB;
-        const collection = window.firestoreCollection;
-        const query = window.firestoreQuery;
-        const orderBy = window.firestoreOrderBy;
-        const onSnapshot = window.firestoreOnSnapshot;
+    // Load messages from LeanCloud
+    console.log('📋 加载 LeanCloud 留言...');
 
-        if (db && collection && query && orderBy && onSnapshot) {
-            console.log('✅ Connected to Firestore, listening for updates...');
+    // Show loading state
+    if (messageContainer) {
+        messageContainer.innerHTML = '<div style="text-align:center; padding:20px; color:white;">正在加载留言...<br><i class="fas fa-spinner fa-spin"></i></div>';
+    }
 
-            // 1. Load from Cache FIRST (Instant Display)
-            try {
-                const cached = localStorage.getItem('guestbook_cache');
-                if (cached) {
-                    const cachedMessages = JSON.parse(cached);
-                    if (Array.isArray(cachedMessages) && cachedMessages.length > 0) {
-                        console.log('🚀 Loaded messages from cache');
-                        renderMessages(cachedMessages);
-                    }
-                }
-            } catch (e) {
-                console.error('Error loading cache:', e);
-            }
-
-            const q = query(collection(db, "messages"), orderBy("timestamp", "desc"));
-
-            // Real-time listener
-            onSnapshot(q, (snapshot) => {
-                const messages = [];
-                snapshot.forEach((doc) => {
-                    const data = doc.data();
-                    messages.push({
-                        id: doc.id,
-                        ...data,
-                        timestamp: data.displayTime || data.timestamp // Fallback
-                    });
-                });
-
-                // Update Cache
-                localStorage.setItem('guestbook_cache', JSON.stringify(messages));
-
-                if (messages.length === 0) {
-                    if (messageContainer) {
-                        messageContainer.innerHTML = ''; // Clear loading immediately
-                        if (emptyState) emptyState.style.display = 'flex';
-                    }
-                } else {
-                    renderMessages(messages);
-                }
-            }, (error) => {
-                console.error("Error listening to guestbook updates:", error);
-                if (messageContainer) messageContainer.innerHTML = `<div style="text-align:center; color: #ff6b6b;">无法加载留言: ${error.message}</div>`;
-            });
+    // Wait for LeanCloud to be ready, then load messages
+    function waitForLeanCloud() {
+        if (typeof AV !== 'undefined' && typeof loadGuestbookMessages === 'function') {
+            console.log('✅ LeanCloud 已就绪，加载留言');
+            loadGuestbookMessages();
         } else {
-            retryCount++;
-            if (retryCount < maxRetries) {
-                console.log(`⏳ Waiting for Firebase... (${retryCount}/${maxRetries})`);
-                // Check more frequently (100ms) to reduce perceived delay
-                setTimeout(initFirestoreListener, 100);
-            } else {
-                console.error("❌ Firebase initialization timeout");
-                if (messageContainer) messageContainer.innerHTML = '<div style="text-align:center; color: #ff6b6b;">连接数据库超时，请刷新页面重试。</div>';
-            }
+            console.log('⏳ 等待 LeanCloud 初始化...');
+            setTimeout(waitForLeanCloud, 100);
         }
     }
 
-    // Start trying
-    initFirestoreListener();
+    waitForLeanCloud();
 
-    function renderMessages(messages) {
+    // Make renderMessages global so it can be called by LeanCloud loader
+    window.renderMessages = function (messages) {
         if (!messageContainer) return;
 
         if (messages.length === 0) {
@@ -121,7 +50,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Initialize magnetic effect for new cards
         initMagneticEffect();
-    }
+    };
 
     function createMessageCard(msg, index = 0) {
         const hasComments = msg.comments && msg.comments.length > 0;
@@ -257,17 +186,18 @@ document.addEventListener('DOMContentLoaded', () => {
         commentForm.addEventListener('submit', (e) => {
             e.preventDefault();
 
-            // Check Auth
-            const auth = window.firebaseAuth;
-            if (!auth || !auth.currentUser) {
+            // Check Auth - LeanCloud
+            const currentUser = AV.User.current();
+            if (!currentUser) {
                 alert("请先登录后再评论");
+                if (typeof toggleLoginModal === 'function') {
+                    toggleLoginModal();
+                }
                 return;
             }
-
-            const user = auth.currentUser;
             const messageId = parseInt(document.getElementById('commentMessageId').value);
-            // Use Auth Display Name or Fallback
-            const name = user.displayName || user.email.split('@')[0];
+            // Use LeanCloud user info
+            const name = currentUser.get('nickname') || currentUser.get('username');
             const content = document.getElementById('commentContent').value.trim();
 
             if (content) {
@@ -279,44 +209,29 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function addComment(messageId, name, content) {
-        const messages = JSON.parse(localStorage.getItem('guestbook_messages') || '[]');
-
-        // Find the message by ID
-        const messageIndex = messages.findIndex(msg => msg.id === messageId);
-        if (messageIndex === -1) return;
-
-        const newComment = {
-            id: Date.now(),
-            name: name,
-            content: content,
-            timestamp: new Date().toLocaleString('zh-CN', {
-                year: 'numeric',
-                month: '2-digit',
-                day: '2-digit',
-                hour: '2-digit',
-                minute: '2-digit'
-            })
-        };
-
-        // Initialize comments array if it doesn't exist
-        if (!messages[messageIndex].comments) {
-            messages[messageIndex].comments = [];
-        }
-
-        // Add comment to the message
-        messages[messageIndex].comments.push(newComment);
-
-        // Save back to localStorage
-        try {
-            localStorage.setItem('guestbook_messages', JSON.stringify(messages));
-            window.location.reload();
-        } catch (error) {
-            if (error.name === 'QuotaExceededError') {
-                alert('存储空间已满! 请清理旧留言。');
-            } else {
-                console.error('保存失败:', error);
+    async function addComment(messageId, name, content) {
+        // Use LeanCloud function if available
+        if (typeof addCommentToMessage === 'function') {
+            const success = await addCommentToMessage(messageId, content);
+            if (success) {
+                // Success is handled inside addCommentToMessage (reloads messages)
+                // Scroll to the comment section of this message
+                setTimeout(() => {
+                    const messageCard = document.querySelector(`.message-item[data-id="${messageId}"]`);
+                    if (messageCard) {
+                        messageCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        // Add a subtle highlight effect
+                        messageCard.style.transition = 'background 0.5s ease';
+                        messageCard.style.background = 'rgba(155, 93, 229, 0.15)';
+                        setTimeout(() => {
+                            messageCard.style.background = '';
+                        }, 2000);
+                    }
+                }, 500); // Wait for reload to complete
             }
+        } else {
+            console.error("❌ addCommentToMessage function not found!");
+            alert("评论功能暂时不可用");
         }
     }
 });
@@ -324,25 +239,74 @@ document.addEventListener('DOMContentLoaded', () => {
 // --- Global Modal Functions (Must be outside DOMContentLoaded) ---
 
 window.openCommentModal = function (messageId) {
-    // Check Auth First
-    const auth = window.firebaseAuth;
-    if (!auth || !auth.currentUser) {
-        alert("请先登录后再评论");
-        // Optional: Trigger login modal if accessible
-        if (window.openAuthModal) window.openAuthModal('login');
+    console.log('=== openCommentModal called ===');
+    console.log('Message ID:', messageId);
+    console.log('typeof AV:', typeof AV);
+
+    // Check if AV SDK is loaded
+    if (typeof AV === 'undefined') {
+        console.error('❌ LeanCloud SDK not loaded yet');
+        alert("系统加载中，请稍后再试\n\n调试信息: LeanCloud SDK未加载");
         return;
     }
 
+    console.log('✅ AV SDK loaded');
+
+    // Check Auth First - LeanCloud
+    let currentUser;
+    try {
+        currentUser = AV.User.current();
+        console.log('AV.User.current() result:', currentUser);
+
+        if (currentUser) {
+            console.log('✅ User object exists');
+            console.log('User ID:', currentUser.id);
+            console.log('Username:', currentUser.get('username'));
+            console.log('Email:', currentUser.get('email'));
+        } else {
+            console.log('❌ No current user');
+        }
+    } catch (error) {
+        console.error('Error getting current user:', error);
+        alert("获取用户信息失败\n\n错误: " + error.message);
+        return;
+    }
+
+    if (!currentUser) {
+        console.warn('⚠️ No user logged in, showing login prompt');
+        alert("请先登录后再评论");
+        // Trigger login modal
+        if (typeof toggleLoginModal === 'function') {
+            console.log('Calling toggleLoginModal...');
+            toggleLoginModal();
+        } else {
+            console.error('toggleLoginModal function not found!');
+        }
+        return;
+    }
+
+    console.log('✅ User authenticated, opening comment modal');
     const modal = document.getElementById('commentModal');
     const messageIdInput = document.getElementById('commentMessageId');
+
+    console.log('Modal element:', modal);
+    console.log('Message ID input:', messageIdInput);
+
     if (modal && messageIdInput) {
         messageIdInput.value = messageId;
         modal.classList.add('active');
+        console.log('✅ Modal opened successfully');
+
         // Focus content input
         setTimeout(() => {
             const contentInput = document.getElementById('commentContent');
-            if (contentInput) contentInput.focus();
+            if (contentInput) {
+                contentInput.focus();
+                console.log('✅ Content input focused');
+            }
         }, 100);
+    } else {
+        console.error('❌ Modal or input not found!');
     }
 };
 
