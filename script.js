@@ -156,6 +156,8 @@ function closeModal(event) {
 /* =========================================
    Guestbook Logic with Image Upload
    ========================================= */
+// ❌ Firebase 版本的留言板代码 - 已废弃，使用 LeanCloud 版本（leancloud-guestbook-functions.js）
+/*
 document.addEventListener('DOMContentLoaded', () => {
     const guestbookForm = document.getElementById('guestbookForm');
     const imageUpload = document.getElementById('imageUpload');
@@ -429,6 +431,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return div.innerHTML;
     }
 });
+*/
 
 function copyText(text) {
     navigator.clipboard.writeText(text).then(() => {

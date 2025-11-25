@@ -208,3 +208,59 @@ function subscribeToMessages() {
 }
 
 console.log('✅ LeanCloud 留言板函数已加载');
+
+// ==================== 表单绑定 ====================
+document.addEventListener('DOMContentLoaded', function () {
+    console.log('📋 绑定留言板表单...');
+
+    const guestbookForm = document.getElementById('guestbookForm');
+
+    if (guestbookForm) {
+        guestbookForm.addEventListener('submit', async function (e) {
+            e.preventDefault();
+
+            console.log('📝 提交留言表单');
+
+            // 检查登录状态
+            const currentUser = AV.User.current();
+            if (!currentUser) {
+                alert('请先登录后再留言');
+                if (typeof toggleLoginModal === 'function') {
+                    toggleLoginModal();
+                }
+                return;
+            }
+
+            // 获取留言内容
+            const messageInput = document.getElementById('guestMessage');
+            const content = messageInput ? messageInput.value.trim() : '';
+
+            if (!content) {
+                alert('请输入留言内容');
+                return;
+            }
+
+            // 发送留言
+            const success = await addMessage(content, '');
+
+            if (success) {
+                // 清空输入框
+                if (messageInput) {
+                    messageInput.value = '';
+                }
+
+                // 关闭模态框
+                const modal = document.getElementById('guestbookModal');
+                if (modal) {
+                    modal.classList.remove('active');
+                }
+
+                alert('留言发送成功！');
+            }
+        });
+
+        console.log('✅ 留言板表单绑定成功');
+    } else {
+        console.log('⚠️ 未找到留言板表单');
+    }
+});
