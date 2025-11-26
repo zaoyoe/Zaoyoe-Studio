@@ -3,17 +3,19 @@
  * 替代 Firebase SDK
  */
 
-// ✅ LeanCloud 配置（已配置）
+// ✅ LeanCloud 配置 - 国际版（已恢复）
+// 注意：国内用户访问可能需要科学上网
 const LEANCLOUD_CONFIG = {
     appId: 'q6Nh03PQaIjEKthkhFGBL7AX-MdYXbMMI',
     appKey: 'sZuQhlUhkFCofqN96CLWYNyh',
-    serverURL: 'https://q6nh03pq.api.lncldglobal.com'
+    serverURL: 'https://q6nh03pq.api.lncldglobal.com'  // 国际节点
 };
 
 // 初始化 LeanCloud
 AV.init(LEANCLOUD_CONFIG);
 
 console.log('✅ LeanCloud SDK 初始化完成');
+console.log('📡 AppID:', LEANCLOUD_CONFIG.appId);
 console.log('📡 AppID:', LEANCLOUD_CONFIG.appId);
 console.log('⚠️ 请确保已将配置替换为您的实际 AppID/AppKey！');
 

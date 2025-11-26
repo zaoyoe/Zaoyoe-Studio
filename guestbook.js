@@ -15,7 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Show loading state
     if (messageContainer) {
-        messageContainer.innerHTML = '<div style="text-align:center; padding:20px; color:white;">正在加载留言...<br><i class="fas fa-spinner fa-spin"></i></div>';
+        messageContainer.innerHTML = '<div style="text-align:center; padding:20px; color:rgba(255,255,255,0.5); font-size:0.9rem;">加载中...</div>';
     }
 
     // Wait for LeanCloud to be ready, then load messages
@@ -98,7 +98,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 : '<i class="fas fa-user-circle"></i>'}
                             <span class="author-name">${escapeHtml(msg.name)}</span>
                         </div>
-                        <span class="message-time">${msg.timestamp.split(' ')[0]}</span> <!-- Only show date -->
+                        <span class="message-time">${msg.timestamp}</span> <!-- Show full date and time -->
                     </div>
 
                     <!-- 2. Content (Primary Focus) -->
@@ -195,7 +195,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 return;
             }
-            const messageId = parseInt(document.getElementById('commentMessageId').value);
+            const messageId = document.getElementById('commentMessageId').value; // LeanCloud objectId 必须是字符串
             // Use LeanCloud user info
             const name = currentUser.get('nickname') || currentUser.get('username');
             const content = document.getElementById('commentContent').value.trim();

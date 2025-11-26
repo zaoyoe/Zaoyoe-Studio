@@ -27,11 +27,36 @@ async function handleRegister(event) {
         user.set('nickname', username || email.split('@')[0]);
         user.set('avatarUrl', `https://ui-avatars.com/api/?name=${encodeURIComponent(username || email.split('@')[0])}&background=random`);
 
-        // 注册
+        // 注册用户
         await user.signUp();
+        console.log('✅ User created:', user.id);
+
+        // ⚠️ 尝试修复ACL（大概率会失败，因为LeanCloud的Default ACL bug）
+        let aclFixed = false;
+        try {
+            // Re-fetch to get latest server state
+            await user.fetch();
+
+            const acl = new AV.ACL(user);
+            acl.setPublicReadAccess(true);
+            acl.setWriteAccess(user, true);
+            user.setACL(acl);
+            await user.save();
+            console.log('✅ ACL set successfully (lucky!)');
+            aclFixed = true;
+        } catch (aclError) {
+            console.warn('⚠️ ACL auto-fix failed (expected):', aclError.message);
+            // 不影响注册流程
+        }
 
         console.log('✅ 注册成功:', user.toJSON());
-        alert(`注册成功！欢迎，${username || email.split('@')[0]}！`);
+
+        // 提示用户
+        if (aclFixed) {
+            alert(`注册成功！欢迎，${username || email.split('@')[0]}！\n现在可以上传头像了。`);
+        } else {
+            alert(`注册成功！欢迎，${username || email.split('@')[0]}！\n\n⚠️ 提示：首次上传头像可能需要管理员手动授权。\n如果上传失败，请联系管理员修复权限。`);
+        }
 
         // 关闭模态框
         toggleLoginModal();
@@ -52,8 +77,8 @@ async function handleRegister(event) {
         console.error('注册失败:', error);
 
         let errorMessage = '注册失败';
-        if (error.code === 202) {
-            errorMessage = '该邮箱已被注册';
+        if (error.code === 202 || error.message.includes('already taken')) {
+            errorMessage = '该邮箱已被注册。\n如果这是您的旧账号且存在问题，请使用【新的邮箱地址】注册新账号。';
         } else if (error.code === 125) {
             errorMessage = '邮箱格式不正确';
         } else {
@@ -130,7 +155,18 @@ async function handleLogin(event) {
 }
 
 // ==================== 退出登录 (LeanCloud 版本) ====================
-function handleLogout() {
+function handleLogout(event) {
+    // 阻止事件冒泡，防止下拉菜单被立即关闭
+    if (event) {
+        event.stopPropagation();
+    }
+
+    // ✅ 先关闭下拉菜单，避免 confirm() 对话框导致的焦点问题
+    const dropdown = document.getElementById('userDropdown');
+    if (dropdown) {
+        dropdown.classList.remove('active');
+    }
+
     // 确认对话框
     if (!confirm("确定要退出登录吗？")) return;
 
@@ -142,12 +178,6 @@ function handleLogout() {
     // 清除记住的凭证
     localStorage.removeItem('remembered_credentials');
     console.log('🗑️ 已清除记住的凭证');
-
-    // 关闭下拉菜单
-    const dropdown = document.getElementById('userDropdown');
-    if (dropdown) {
-        dropdown.classList.remove('active');
-    }
 
     // 重置UI - 使用正确的元素 ID
     const defaultIcon = document.getElementById('defaultAuthIcon');
@@ -230,7 +260,37 @@ function updateUserUI(user) {
             userDropdown.style.display = 'block';
         }
 
-        // 缓存用户信息
+        // Ensure click handler is properly attached after login
+        const authBtn = document.getElementById('authBtn');
+        if (authBtn) {
+            // Re-attach the click handler to ensure it works (fixes first-login issue)
+            authBtn.onclick = function () {
+                const currentUser = AV.User.current();
+                if (currentUser) {
+                    // User is logged in - toggle dropdown
+                    const dropdown = document.getElementById('userDropdown');
+                    if (dropdown) {
+                        dropdown.classList.toggle('active');
+                    }
+                } else {
+                    // User is not logged in - open login modal
+                    if (typeof openAuthModal === 'function') {
+                        openAuthModal('login');
+                    } else if (typeof toggleLoginModal === 'function') {
+                        toggleLoginModal();
+                    }
+                }
+            };
+        }
+
+        // 确保Log Out按钮的点击处理器正确绑定
+        const logoutBtn = document.querySelector('.menu-item.logout');
+        if (logoutBtn) {
+            logoutBtn.onclick = handleLogout;
+            console.log('✅ Log Out button handler attached');
+        }
+
+        // Cach
         localStorage.setItem('cached_user_profile', JSON.stringify(user));
     } else {
         // 用户未登录 - 显示默认图标和文本
@@ -421,6 +481,174 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         });
     }
+
+    // Add global click listener to close dropdown when clicking outside
+    document.addEventListener('click', function (event) {
+        const dropdown = document.getElementById('userDropdown');
+        const authBtn = document.getElementById('authBtn');
+
+        if (dropdown && authBtn &&
+            !authBtn.contains(event.target) &&
+            !dropdown.contains(event.target)) {
+            dropdown.classList.remove('active');
+        }
+    });
 });
+
+// ==================== 更换头像 (LeanCloud 版本) ====================
+async function handleAvatarUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    // Check size (limit to 2MB)
+    if (file.size > 2 * 1024 * 1024) {
+        alert("图片大小不能超过 2MB");
+        return;
+    }
+
+    const currentUser = AV.User.current();
+    if (!currentUser) {
+        alert("请先登录");
+        return;
+    }
+
+    // Convert to Base64 and Resize
+    const reader = new FileReader();
+    reader.onload = function (e) {
+        const img = new Image();
+        img.onload = async function () {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+
+            // Resize to 200x200 max
+            const maxSize = 200;
+            let width = img.width;
+            let height = img.height;
+
+            if (width > height) {
+                if (width > maxSize) {
+                    height *= maxSize / width;
+                    width = maxSize;
+                }
+            } else {
+                if (height > maxSize) {
+                    width *= maxSize / height;
+                    height = maxSize;
+                }
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            ctx.drawImage(img, 0, 0, width, height);
+
+            // Get Base64 string (JPEG, 0.8 quality)
+            const base64String = canvas.toDataURL('image/jpeg', 0.8);
+
+            try {
+                console.log('🖼️ Starting avatar upload...');
+                console.log('📦 Base64 size:', Math.round(base64String.length / 1024), 'KB');
+
+                // Update LeanCloud user avatar
+                currentUser.set('avatarUrl', base64String);
+                await currentUser.save();
+
+                console.log('✅ Avatar updated in LeanCloud');
+
+                // Update UI
+                updateUserUI({
+                    objectId: currentUser.id,
+                    username: currentUser.get('username'),
+                    email: currentUser.get('email'),
+                    nickname: currentUser.get('nickname') || currentUser.get('username'),
+                    avatarUrl: base64String
+                });
+
+                alert("头像更新成功！");
+
+            } catch (error) {
+                console.error("❌ Error updating avatar:", error);
+
+                // 添加详细错误日志用于调试
+                console.log('🔍 Error details:', {
+                    code: error.code,
+                    message: error.message,
+                    codeType: typeof error.code,
+                    fullError: error
+                });
+
+                // 改进的ACL错误检测 - 更宽松更可靠
+                // 将error转为字符串进行检测，避免类型不匹配问题
+                const errorStr = (error.message || error.toString() || '').toLowerCase();
+                const errorCode = String(error.code || '');
+                const is403Error = errorCode === '403' || errorCode === '403' || errorStr.includes('403');
+                const isACLError = errorStr.includes('forbidden') || errorStr.includes('acl');
+
+                console.log('🔍 ACL Error Check:', {
+                    is403Error,
+                    isACLError,
+                    willAttemptFix: is403Error || isACLError
+                });
+
+                if (is403Error || isACLError) {
+                    console.log('🔧 Attempting to auto-fix ACL for existing user...');
+
+                    alert(`❌ 头像上传失败：权限不足\n\n原因：您的账户权限需要管理员手动授权。\n\n解决方案：\n1. 请联系管理员\n2. 提供您的用户名或邮箱\n3. 管理员会在后台为您开通权限\n4. 然后您就可以上传头像了\n\n抱歉给您带来不便！`);
+
+                    // 仍然尝试自动修复（万一能成功）
+                    try {
+                        await currentUser.fetch();
+                        const acl = new AV.ACL(currentUser);
+                        acl.setPublicReadAccess(true);
+                        acl.setWriteAccess(currentUser, true);
+                        currentUser.setACL(acl);
+                        await currentUser.save();
+                        console.log('✅ ACL auto-fix succeeded!');
+                    } catch (retryError) {
+                        console.error('❌ ACL auto-fix failed:', retryError);
+                    }
+                    try {
+                        // 关键修复：先fetch最新的用户对象
+                        // LeanCloud要求在修改ACL前必须先获取完整的用户数据
+                        await currentUser.fetch();
+                        console.log('📡 Fetched latest user data');
+
+                        // Set proper ACL
+                        const acl = new AV.ACL();
+                        acl.setPublicReadAccess(true);
+                        acl.setWriteAccess(currentUser, true);
+                        currentUser.setACL(acl);
+
+                        // Retry save with fixed ACL
+                        currentUser.set('avatarUrl', base64String);
+                        await currentUser.save();
+
+                        console.log('✅ ACL auto-fixed and avatar updated successfully');
+
+                        // Update UI
+                        updateUserUI({
+                            objectId: currentUser.id,
+                            username: currentUser.get('username'),
+                            email: currentUser.get('email'),
+                            nickname: currentUser.get('nickname') || currentUser.get('username'),
+                            avatarUrl: base64String
+                        });
+
+                        alert("头像更新成功！\n(已自动修复账号权限)");
+                        return; // Success, exit function
+                    } catch (retryError) {
+                        console.error("❌ ACL auto-fix failed:", retryError);
+                        alert("头像更新失败: ACL 自动修复失败。\n" + retryError.message);
+                        return;
+                    }
+                }
+
+                // Generic error handling
+                alert("头像更新失败: " + error.message);
+            }
+        };
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+}
 
 console.log('✅ LeanCloud 认证函数已加载');

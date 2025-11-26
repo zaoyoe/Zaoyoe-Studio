@@ -1,0 +1,149 @@
+/* ==================== Login Dual Mode Additional Styles ==================== */
+
+/* Enhanced animation for view switching */
+.form-view {
+    animation: fadeInView 0.4s ease-in-out;
+}
+
+@keyframes fadeInView {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Back to Login Link Styling */
+.back-to-login {
+    color: rgba(255, 255, 255, 0.6);
+    font-weight: 500;
+}
+
+.back-to-login:hover {
+    color: #9b5de5;
+}
+
+/* Enhanced Input Focus States for Different Views */
+#loginView .glass-input:focus {
+    border-color: rgba(155, 93, 229, 0.5);
+    box-shadow: 0 0 0 3px rgba(155, 93, 229, 0.1);
+}
+
+#registerView .glass-input:focus {
+    border-color: rgba(46, 213, 115, 0.5);
+    box-shadow: 0 0 0 3px rgba(46, 213, 115, 0.1);
+}
+
+#resetView .glass-input:focus {
+    border-color: rgba(255, 159, 64, 0.5);
+    box-shadow: 0 0 0 3px rgba(255, 159, 64, 0.1);
+}
+
+/* Register View Submit Button - Unified Theme */
+/* Removed Green Theme Override */
+
+/* Reset View Submit Button - Unified Theme */
+/* Removed Orange Theme Override */
+
+/* Loading State for Buttons */
+.login-submit-btn.loading {
+    position: relative;
+    pointer-events: none;
+    opacity: 0.7;
+}
+
+.login-submit-btn.loading::after {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    top: 50%;
+    left: 50%;
+    margin-left: -8px;
+    margin-top: -8px;
+    border: 2px solid transparent;
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Error Message Styling */
+.error-message {
+    background: rgba(255, 59, 48, 0.1);
+    border: 1px solid rgba(255, 59, 48, 0.3);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 16px;
+    color: #ff3b30;
+    font-size: 13px;
+    text-align: center;
+    animation: shake 0.4s ease-in-out;
+}
+
+@keyframes shake {
+
+    0%,
+    100% {
+        transform: translateX(0);
+    }
+
+    25% {
+        transform: translateX(-5px);
+    }
+
+    75% {
+        transform: translateX(5px);
+    }
+}
+
+/* Success Message Styling */
+.success-message {
+    background: rgba(46, 213, 115, 0.1);
+    border: 1px solid rgba(46, 213, 115, 0.3);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 16px;
+    color: #2ed573;
+    font-size: 13px;
+    text-align: center;
+    animation: fadeInView 0.3s ease-in-out;
+}
+
+/* Enhanced Checkbox Styling */
+.checkbox-wrapper {
+    user-select: none;
+}
+
+.checkbox-wrapper label {
+    transition: color 0.2s;
+}
+
+.checkbox-wrapper:hover label {
+    color: rgba(255, 255, 255, 0.9);
+}
+
+/* Smooth transition for form height changes */
+.login-card {
+    transition: height 0.3s ease;
+}
+
+/* Mobile Enhancements */
+@media (max-width: 480px) {
+    .input-with-action {
+        flex-direction: column;
+    }
+
+    .verify-code-btn {
+        width: 100%;
+    }
+}

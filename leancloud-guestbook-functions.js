@@ -382,18 +382,27 @@ document.addEventListener('DOMContentLoaded', function () {
             const messageInput = document.getElementById('guestMessage');
             const content = messageInput ? messageInput.value.trim() : '';
 
-            if (!content) {
-                alert('请输入留言内容');
+            // 获取图片数据（如果有）
+            const imageData = typeof window.getCurrentImageData === 'function' ? window.getCurrentImageData() : null;
+
+            // 至少需要有内容或图片
+            if (!content && !imageData) {
+                alert('请输入留言内容或上传图片');
                 return;
             }
 
-            // 发送留言
-            const success = await addMessage(content, '');
+            // 发送留言（传递图片数据）
+            const success = await addMessage(content, imageData || '');
 
             if (success) {
                 // 清空输入框
                 if (messageInput) {
                     messageInput.value = '';
+                }
+
+                // 清空图片预览
+                if (typeof window.clearGuestbookImage === 'function') {
+                    window.clearGuestbookImage();
                 }
 
                 // 关闭模态框
@@ -408,7 +417,114 @@ document.addEventListener('DOMContentLoaded', function () {
         });
 
         console.log('✅ 留言板表单绑定成功');
-    } else {
-        console.log('⚠️ 未找到留言板表单');
     }
+});
+
+// ==================== 图片上传处理 ====================
+document.addEventListener('DOMContentLoaded', function () {
+    const imageUpload = document.getElementById('imageUpload');
+    const imagePreview = document.getElementById('imagePreview');
+    const previewImg = document.getElementById('previewImg');
+    const removeImageBtn = document.getElementById('removeImageBtn');
+
+    let currentImageData = null; // Store base64 image data
+
+    // Image Upload Handler
+    if (imageUpload) {
+        imageUpload.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            // Validate file type
+            if (!file.type.startsWith('image/')) {
+                alert('请选择有效的图片文件!');
+                return;
+            }
+
+            // Validate file size (max 5MB before compression)
+            if (file.size > 5 * 1024 * 1024) {
+                alert('图片文件过大! 请选择小于5MB的图片。');
+                return;
+            }
+
+            try {
+                // Compress and convert to base64
+                currentImageData = await compressImage(file);
+
+                // Show preview
+                if (previewImg && imagePreview) {
+                    previewImg.src = currentImageData;
+                    imagePreview.style.display = 'block';
+                }
+            } catch (error) {
+                console.error('图片处理失败:', error);
+                alert('图片处理失败,请重试!');
+            }
+        });
+    }
+
+    // Remove Image Handler
+    if (removeImageBtn) {
+        removeImageBtn.addEventListener('click', () => {
+            clearImage();
+        });
+    }
+
+    function clearImage() {
+        if (imageUpload) imageUpload.value = '';
+        if (imagePreview) imagePreview.style.display = 'none';
+        if (previewImg) previewImg.src = '';
+        currentImageData = null;
+    }
+
+    // Helper: Compress Image to Base64
+    async function compressImage(file, maxWidth = 800, quality = 0.7) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    // Create canvas for compression
+                    const canvas = document.createElement('canvas');
+                    let width = img.width;
+                    let height = img.height;
+
+                    // Resize if too large
+                    if (width > maxWidth) {
+                        height = (height * maxWidth) / width;
+                        width = maxWidth;
+                    }
+
+                    canvas.width = width;
+                    canvas.height = height;
+
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    // Convert to base64 with compression
+                    const compressedData = canvas.toDataURL('image/jpeg', quality);
+
+                    // Check size (warn if > 500KB)
+                    const sizeInKB = Math.round((compressedData.length * 3 / 4) / 1024);
+                    console.log(`压缩后图片大小: ${sizeInKB}KB`);
+
+                    if (sizeInKB > 500) {
+                        console.warn('图片较大,可能影响性能');
+                    }
+
+                    resolve(compressedData);
+                };
+                img.onerror = reject;
+                img.src = e.target.result;
+            };
+
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+    }
+
+    // Make clearImage available globally
+    window.clearGuestbookImage = clearImage;
+    window.getCurrentImageData = () => currentImageData;
 });

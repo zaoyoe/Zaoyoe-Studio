@@ -679,6 +679,8 @@ async function handleRegister(event) {
 
 
 // Function 3.5: Handle Google Login
+// ❌ Firebase 版本 - 已废弃，使用 LeanCloud + OAuth 版本（google-oauth.js）
+/*
 function handleGoogleLogin() {
     const auth = window.firebaseAuth;
     const db = window.firebaseDB;
@@ -724,6 +726,7 @@ function handleGoogleLogin() {
             }
         });
 }
+*/
 
 // Function 3.6: Handle Password Reset (Using Resend via Cloud Function)
 // ❌ Firebase 版本 - 已废弃，使用 LeanCloud 版本（leancloud-auth-functions.js）
@@ -911,13 +914,32 @@ async function handleLogout() {
 
 
 // Function 6: Handle Auth Button Click
-function handleAuthClick() {
+function handleAuthClick(event) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+    console.log('🔘 handleAuthClick triggered');
+
     // 检查 LeanCloud 登录状态
     const currentUser = AV.User.current();
+    console.log('👤 Current User:', currentUser ? currentUser.id : 'null');
+
     if (currentUser) {
         // User is logged in - toggle dropdown
         const dropdown = document.getElementById('userDropdown');
-        dropdown.classList.toggle('active');
+        if (dropdown) {
+            const isActive = dropdown.classList.contains('active');
+            if (isActive) {
+                dropdown.classList.remove('active');
+                console.log('🔽 Dropdown closed');
+            } else {
+                dropdown.classList.add('active');
+                console.log('🔽 Dropdown opened');
+            }
+        } else {
+            console.error('❌ userDropdown element not found!');
+        }
     } else {
         // User is not logged in - open login modal
         openAuthModal('login');
@@ -942,39 +964,97 @@ async function updateUserUI(user) {
         const getDoc = window.firestoreGetDoc;
         const doc = window.firestoreDoc;
 
-        let displayName = user.displayName || user.email.split('@')[0];
-        let avatarUrl = user.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=random`;
+        // Helper to safely get user properties (handles both AV.User and plain objects)
+        const getProp = (obj, key) => {
+            if (!obj) return null;
+            return typeof obj.get === 'function' ? obj.get(key) : obj[key];
+        };
 
-        // Force Firestore read to get latest avatar
-        if (db && getDoc && doc) {
-            try {
-                const docSnap = await getDoc(doc(db, "users", user.uid));
-                if (docSnap.exists()) {
-                    const userData = docSnap.data();
-                    if (userData.nickname) displayName = userData.nickname;
-                    if (userData.avatarUrl) avatarUrl = userData.avatarUrl;
-                }
-            } catch (error) {
-                console.error("Error fetching user data:", error);
-            }
+        // ✅ 优先显示 nickname (昵称)，其次是 username (可能是邮箱)，最后是邮箱前缀
+        // 注意：LeanCloud 中 username 默认为邮箱，所以我们应该优先用 nickname
+        let displayName = getProp(user, 'nickname') || getProp(user, 'username');
+
+        // 如果显示名包含 @ (说明是邮箱)，则尝试截取前缀
+        if (displayName && displayName.includes('@')) {
+            displayName = displayName.split('@')[0];
         }
+
+        // 最后的兜底
+        if (!displayName) {
+            displayName = getProp(user, 'email').split('@')[0];
+        }
+
+        let avatarUrl = getProp(user, 'avatarUrl') || `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=random`;
+        let email = getProp(user, 'email');
+
+        console.log('👤 Updating UI for user:', { displayName, email, avatarUrl });
 
         // Cache profile for anti-flicker
         localStorage.setItem('cached_user_profile', JSON.stringify({
             displayName: displayName,
             avatarUrl: avatarUrl,
-            email: user.email
+            email: email
         }));
 
         // Update UI
         if (btnSpan) btnSpan.textContent = displayName;
         if (defaultIcon) defaultIcon.style.display = 'none';
+
+        // ✅ 确保主页导航栏头像同步更新并强制样式
         if (navAvatar) {
             navAvatar.src = avatarUrl;
-            navAvatar.style.display = 'block';
+            navAvatar.style.display = 'block'; // 必须是 block 或 inline-block
+            navAvatar.style.width = '24px';
+            navAvatar.style.height = '24px';
+            navAvatar.style.borderRadius = '50%';
+            navAvatar.style.objectFit = 'cover';
+            console.log('🖼️ Nav avatar updated with styles');
+        } else {
+            console.warn('⚠️ Nav avatar element not found');
         }
-        if (profileEmail) profileEmail.textContent = displayName;
+
+        if (profileEmail) profileEmail.textContent = email; // 显示完整邮箱
         if (dropdownAvatar) dropdownAvatar.src = avatarUrl;
+
+        // ✅ 确保事件处理器正确绑定（修复首次登录点击无反应）
+        console.log('🔧 Re-binding event handlers...');
+
+        // 1. Re-attach click handler to authBtn to ensure it works
+        if (authBtn) {
+            // 清除旧的 handler 防止重复
+            authBtn.onclick = null;
+            authBtn.onclick = (e) => {
+                console.log('🖱️ authBtn clicked (inline handler)');
+                handleAuthClick(e);
+            };
+            console.log('✅ Auth button click handler attached');
+        }
+
+        // 2. Bind logout button
+        const logoutBtn = document.querySelector('.menu-item.logout');
+        if (logoutBtn) {
+            logoutBtn.onclick = handleLogout;
+            console.log('✅ Logout button click handler attached');
+        }
+
+        // 3. Ensure global click listener is active (close dropdown when clicking outside)
+        // This should only be set up once
+        if (!window._dropdownClickListenerAttached) {
+            document.addEventListener('click', (e) => {
+                const dropdown = document.getElementById('userDropdown');
+                const authButton = document.getElementById('authBtn');
+
+                if (dropdown && dropdown.classList.contains('active')) {
+                    // Close dropdown if click is outside both dropdown and auth button
+                    if (!dropdown.contains(e.target) && !authButton.contains(e.target)) {
+                        dropdown.classList.remove('active');
+                        console.log('🔽 Dropdown closed (clicked outside)');
+                    }
+                }
+            });
+            window._dropdownClickListenerAttached = true;
+            console.log('✅ Global dropdown click listener attached');
+        }
 
     } else {
         // Clear cache on logout
@@ -984,6 +1064,12 @@ async function updateUserUI(user) {
         if (btnSpan) btnSpan.textContent = "Sign In";
         if (defaultIcon) defaultIcon.style.display = 'block';
         if (navAvatar) navAvatar.style.display = 'none';
+
+        // Re-attach click handler even when logged out
+        if (authBtn) {
+            authBtn.onclick = handleAuthClick;
+            console.log('✅ Auth button click handler attached (logged out state)');
+        }
     }
 }
 
@@ -1026,18 +1112,13 @@ async function handleAvatarUpload(event) {
         return;
     }
 
-    const auth = window.firebaseAuth;
-    const db = window.firebaseDB;
-    const updateProfile = window.updateProfile;
-    const setDoc = window.firestoreSetDoc;
-    const doc = window.firestoreDoc;
+    // Use LeanCloud authentication instead of Firebase
+    const currentUser = AV.User.current();
 
-    if (!auth || !auth.currentUser) {
+    if (!currentUser) {
         alert("请先登录");
         return;
     }
-
-    const user = auth.currentUser;
 
     // Convert to Base64 and Resize
     const reader = new FileReader();
@@ -1074,39 +1155,154 @@ async function handleAvatarUpload(event) {
                 console.log('🖼️ Starting avatar upload...');
                 console.log('📦 Base64 size:', Math.round(base64String.length / 1024), 'KB');
 
-                // 1. Update Firestore first (Source of Truth)
-                console.log('💾 Updating Firestore...');
-                await setDoc(doc(db, "users", user.uid), {
-                    avatarUrl: base64String,
-                    updatedAt: new Date().toISOString()
-                }, { merge: true });
-                console.log('✅ Firestore updated');
+                // ✅ 关键优化：使用 fetch({ useMasterKey: false }) 确保使用用户自己的会话
+                console.log('📡 Fetching latest user data before update...');
+                await currentUser.fetch({ useMasterKey: false });
+                console.log('✅ User data fetched successfully');
 
-                // 2. Skip Auth Profile update for photoURL (Base64 is too long)
-                // We only use Firestore for avatar storage now
-                console.log('ℹ️ Skipped Auth Profile update (Base64 too long)');
+                // Save avatar to LeanCloud user profile
+                console.log('💾 Updating LeanCloud user avatar...');
+                currentUser.set('avatarUrl', base64String);
+                await currentUser.save();
+                console.log('✅ LeanCloud user avatar updated');
 
-                // 3. Force refresh user object
-                console.log('🔄 Reloading user...');
-                await user.reload();
-                console.log('✅ User reloaded');
-
-                // 4. Trigger full UI update to refresh all elements from Firestore
+                // Trigger LeanCloud UI update
                 console.log('🎨 Updating UI...');
-                await updateUserUI(auth.currentUser);
+                if (typeof updateLeanCloudUserUI === 'function') {
+                    await updateLeanCloudUserUI(currentUser);
+                } else if (typeof updateUserUI === 'function') {
+                    updateUserUI({
+                        objectId: currentUser.id,
+                        username: currentUser.get('username'),
+                        email: currentUser.get('email'),
+                        nickname: currentUser.get('nickname') || currentUser.get('username'),
+                        avatarUrl: base64String
+                    });
+                }
                 console.log('✅ UI updated');
 
                 alert("头像更新成功！");
 
             } catch (error) {
                 console.error("❌ Error updating avatar:", error);
-                alert("头像更新失败，请重试: " + error.message);
+
+                // 添加详细错误日志用于调试
+                console.log('🔍 Error details:', {
+                    code: error.code,
+                    message: error.message,
+                    codeType: typeof error.code,
+                    fullError: error
+                });
+
+                // ✅ 改进的ACL错误检测 - 更宽松更可靠
+                const errorStr = (error.message || error.toString() || '').toLowerCase();
+                const errorCode = String(error.code || '');
+                const is403Error = errorCode === '403' || errorStr.includes('403');
+                const isACLError = errorStr.includes('forbidden') || errorStr.includes('acl');
+
+                console.log('🔍 ACL Error Check:', {
+                    is403Error,
+                    isACLError,
+                    willAttemptFix: is403Error || isACLError
+                });
+
+                if (is403Error || isACLError) {
+                    console.log('🔧 Attempting to auto-fix ACL for existing user...');
+                    try {
+                        // ✅ 关键修复：重新fetch确保最新数据
+                        await currentUser.fetch({ useMasterKey: false });
+                        console.log('📡 Re-fetched user data for ACL fix');
+
+                        // ✅ 使用明确的 user.id（字符串）而非 user 对象
+                        const acl = new AV.ACL();
+                        acl.setPublicReadAccess(true);
+                        acl.setWriteAccess(currentUser.id, true); // 使用 ID 字符串
+                        currentUser.setACL(acl);
+
+                        console.log('🔧 ACL set, retrying avatar save...');
+
+                        // Retry save with fixed ACL
+                        currentUser.set('avatarUrl', base64String);
+                        await currentUser.save();
+
+                        console.log('✅ ACL auto-fixed and avatar updated successfully');
+
+                        // Trigger UI update
+                        if (typeof updateLeanCloudUserUI === 'function') {
+                            await updateLeanCloudUserUI(currentUser);
+                        } else if (typeof updateUserUI === 'function') {
+                            updateUserUI({
+                                objectId: currentUser.id,
+                                username: currentUser.get('username'),
+                                email: currentUser.get('email'),
+                                nickname: currentUser.get('nickname') || currentUser.get('username'),
+                                avatarUrl: base64String
+                            });
+                        }
+
+                        alert("✅ 头像更新成功！\n(已自动修复账号权限)");
+                        return;
+
+                    } catch (retryError) {
+                        console.error("❌ ACL auto-fix failed:", retryError);
+
+                        // ✅ 友好的恢复指引
+                        const confirmReRegister = confirm(
+                            "❌ 头像更新失败\n\n" +
+                            "原因：账号权限已损坏且无法自动修复\n\n" +
+                            "💡 解决方案：\n" +
+                            "1. 注销当前账号\n" +
+                            "2. 使用「后台删除旧账号」或「邮箱别名」注册新账号\n" +
+                            "   （例如：your+new@gmail.com）\n\n" +
+                            "是否立即注销？"
+                        );
+
+                        if (confirmReRegister) {
+                            if (typeof handleLogout === 'function') {
+                                handleLogout();
+                            } else {
+                                AV.User.logOut();
+                                location.reload();
+                            }
+                        }
+                        return;
+                    }
+                }
+
+                alert("❌ 头像上传失败: " + error.message);
             }
         };
         img.src = e.target.result;
     };
     reader.readAsDataURL(file);
 }
+
+// ✅ 全局事件委托：确保 Auth Button 永远可点击
+document.addEventListener('click', (e) => {
+    // 检查点击的是否是 authBtn 或其子元素
+    const authBtn = e.target.closest('#authBtn');
+    if (authBtn) {
+        console.log('🔘 Global delegated click handler for authBtn');
+        handleAuthClick(e);
+    }
+});
+
+// Initialize on load
+window.addEventListener('DOMContentLoaded', () => {
+    console.log('🚀 App initialized');
+
+    // Check for existing session
+    const currentUser = AV.User.current();
+    if (currentUser) {
+        console.log('👤 Found existing session:', currentUser.get('username'));
+        // 延迟一点执行 UI 更新，确保 DOM 准备好
+        setTimeout(() => {
+            if (typeof updateLeanCloudUserUI === 'function') {
+                updateLeanCloudUserUI(currentUser);
+            }
+        }, 100);
+    }
+});
 
 // Monitor Authentication State
 // ❌ Firebase 版本 - 已废弃，使用 LeanCloud 版本（leancloud-auth-functions.js）

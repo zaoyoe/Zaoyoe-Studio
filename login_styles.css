@@ -1,0 +1,299 @@
+/* ==================== Login Modal Styles ==================== */
+
+/* Login Overlay */
+.login-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.login-overlay.active {
+    display: flex;
+    opacity: 1;
+}
+
+/* Login Card */
+.login-card {
+    background: rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(40px);
+    -webkit-backdrop-filter: blur(40px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 24px;
+    padding: 40px;
+    max-width: 450px;
+    width: 90%;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    position: relative;
+    transform: scale(0.9);
+    transition: transform 0.3s ease;
+}
+
+.login-overlay.active .login-card {
+    transform: scale(1);
+}
+
+/* Mac Window Controls */
+.mac-controls {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 20px;
+}
+
+.mac-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.mac-dot.red {
+    background: #ff5f56;
+}
+
+.mac-dot.yellow {
+    background: #ffbd2e;
+}
+
+.mac-dot.green {
+    background: #27c93f;
+}
+
+.mac-dot i {
+    font-size: 6px;
+    color: rgba(0, 0, 0, 0.6);
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.mac-dot:hover i {
+    opacity: 1;
+}
+
+.mac-dot:hover {
+    filter: brightness(1.2);
+}
+
+/* Card Title & Subtitle */
+.card-title {
+    font-size: 28px;
+    font-weight: 700;
+    color: white;
+    margin-bottom: 8px;
+    text-align: center;
+}
+
+.card-subtitle {
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.6);
+    margin-bottom: 32px;
+    text-align: center;
+}
+
+/* Google Login Button */
+.google-login-btn {
+    width: 100%;
+    padding: 14px;
+    background: white;
+    color: #333;
+    border: none;
+    border-radius: 12px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    transition: all 0.3s;
+    margin-bottom: 20px;
+}
+
+.google-login-btn:hover {
+    background: #f5f5f5;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* Login Divider */
+.login-divider {
+    display: flex;
+    align-items: center;
+    text-align: center;
+    margin: 24px 0;
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 13px;
+}
+
+.login-divider::before,
+.login-divider::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.login-divider span {
+    padding: 0 16px;
+}
+
+/* Input Group */
+.input-group {
+    margin-bottom: 20px;
+}
+
+.glass-input {
+    width: 100%;
+    padding: 14px 16px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    color: white;
+    font-size: 15px;
+    transition: all 0.3s;
+    outline: none;
+}
+
+.glass-input:focus {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(155, 93, 229, 0.5);
+    box-shadow: 0 0 0 3px rgba(155, 93, 229, 0.1);
+}
+
+.glass-input::placeholder {
+    color: rgba(255, 255, 255, 0.3);
+}
+
+/* Input with Action Button (for verification code) */
+.input-with-action {
+    display: flex;
+    gap: 10px;
+}
+
+.input-with-action .glass-input {
+    flex: 1;
+}
+
+.verify-code-btn {
+    padding: 14px 24px;
+    background: rgba(155, 93, 229, 0.2);
+    border: 1px solid rgba(155, 93, 229, 0.3);
+    border-radius: 12px;
+    color: #9b5de5;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.3s;
+}
+
+.verify-code-btn:hover {
+    background: rgba(155, 93, 229, 0.3);
+    border-color: rgba(155, 93, 229, 0.5);
+}
+
+.verify-code-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Submit Button */
+.login-submit-btn {
+    width: 100%;
+    padding: 14px;
+    background: linear-gradient(135deg, #9b5de5 0%, #7b3fc9 100%);
+    border: none;
+    border-radius: 12px;
+    color: white;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+    margin-top: 8px;
+}
+
+.login-submit-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(155, 93, 229, 0.3);
+}
+
+.login-submit-btn:active {
+    transform: translateY(0);
+}
+
+/* Switch Text */
+.switch-text {
+    text-align: center;
+    margin-top: 24px;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 14px;
+}
+
+.switch-link {
+    color: #9b5de5;
+    cursor: pointer;
+    font-weight: 600;
+    transition: color 0.2s;
+}
+
+.switch-link:hover {
+    color: #b47cf3;
+    text-decoration: underline;
+}
+
+/* Forgot Password Link */
+.forgot-password-link {
+    color: #9b5de5;
+    font-size: 13px;
+    cursor: pointer;
+    transition: color 0.2s;
+}
+
+.forgot-password-link:hover {
+    color: #b47cf3;
+    text-decoration: underline;
+}
+
+/* Form View Toggle */
+.form-view {
+    opacity: 1;
+    transition: opacity 0.3s ease;
+}
+
+.form-view.hidden {
+    display: none;
+    opacity: 0;
+}
+
+/* Checkbox Styling */
+.custom-checkbox {
+    cursor: pointer;
+}
+
+/* Mobile Responsive */
+@media (max-width: 480px) {
+    .login-card {
+        padding: 30px 24px;
+    }
+
+    .card-title {
+        font-size: 24px;
+    }
+
+    .card-subtitle {
+        font-size: 13px;
+    }
+}
