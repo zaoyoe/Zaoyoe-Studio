@@ -42,13 +42,18 @@ class ElasticPress {
             isPressed: false
         }));
 
-        // Global Touch Events (to handle sliding between cards)
-        document.addEventListener('touchstart', (e) => this.handleGlobalStart(e), { passive: false });
-        document.addEventListener('touchmove', (e) => this.handleGlobalMove(e), { passive: false });
-        document.addEventListener('touchend', (e) => this.handleGlobalEnd(e), { passive: false });
-        document.addEventListener('touchcancel', (e) => this.handleGlobalEnd(e), { passive: false });
+        // Detect if device supports touch
+        const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
-        // Mouse events (keep local for simplicity on desktop)
+        if (isTouchDevice) {
+            // Global Touch Events (only on touch devices)
+            document.addEventListener('touchstart', (e) => this.handleGlobalStart(e), { passive: false });
+            document.addEventListener('touchmove', (e) => this.handleGlobalMove(e), { passive: false });
+            document.addEventListener('touchend', (e) => this.handleGlobalEnd(e), { passive: false });
+            document.addEventListener('touchcancel', (e) => this.handleGlobalEnd(e), { passive: false });
+        }
+
+        // Mouse events (always attach for desktop)
         this.cards.forEach(card => {
             card.el.addEventListener('mousedown', (e) => this.handleStart(e, card));
             card.el.addEventListener('mousemove', (e) => this.handleMove(e, card));
@@ -60,9 +65,25 @@ class ElasticPress {
         this.animate();
     }
 
+    // Check if any modal/overlay is currently active
+    isModalActive() {
+        const modals = document.querySelectorAll('.modal-overlay, .login-overlay');
+        const hasActiveModal = Array.from(modals).some(modal => modal.classList.contains('active'));
+        // Debug: log modal status
+        if (hasActiveModal) {
+            console.log('[ElasticPress] Modal is active, ignoring interactions');
+        }
+        return hasActiveModal;
+    }
+
     // --- Global Touch Logic ---
 
     handleGlobalStart(e) {
+        // DON'T interfere if a modal/overlay is active
+        if (this.isModalActive()) {
+            return;
+        }
+
         const touch = e.touches[0];
         this.scrollStartY = touch.clientY;
         this.isScrolling = false;
@@ -71,6 +92,11 @@ class ElasticPress {
     }
 
     handleGlobalMove(e) {
+        // DON'T interfere if a modal/overlay is active
+        if (this.isModalActive()) {
+            return;
+        }
+
         const touch = e.touches[0];
 
         // Check for vertical scrolling (movement > 20px)
@@ -178,11 +204,17 @@ class ElasticPress {
     // --- Mouse Logic (Legacy/Desktop) ---
 
     handleStart(e, card) {
+        // Don't interfere if a modal is active
+        if (this.isModalActive()) return;
+
         card.isPressed = true;
         this.updateTarget(e, card);
     }
 
     handleMove(e, card) {
+        // Don't interfere if a modal is active
+        if (this.isModalActive()) return;
+
         if (!card.isPressed) return;
         this.updateTarget(e, card);
     }

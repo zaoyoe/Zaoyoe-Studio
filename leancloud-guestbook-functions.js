@@ -3,6 +3,14 @@
  * 替换 script.js 中的 Firestore 留言板代码
  */
 
+// ==================== 辅助函数：防止 XSS ====================
+function escapeHTML(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
 // ==================== 加载留言板 (LeanCloud 版本) ====================
 async function loadGuestbookMessages() {
     console.log('📋 加载留言板消息...');
@@ -92,7 +100,7 @@ async function loadGuestbookMessages() {
                 // 简单显示（没有动画）
                 container.innerHTML = formattedMessages.map(msg => `
                     <div class="message-item">
-                        <div class="message-content">${msg.content}</div>
+                        <div class="message-content">${escapeHTML(msg.content)}</div>
                     </div>
                 `).join('');
             }
@@ -313,14 +321,14 @@ function createMessageCard(msg) {
 
     card.innerHTML = `
         <div class="message-header">
-            <img src="${avatar}" alt="${msg.userName}" class="message-avatar">
+            <img src="${avatar}" alt="${escapeHTML(msg.userName)}" class="message-avatar">
             <div class="message-meta">
-                <div class="message-author">${msg.userName}</div>
+                <div class="message-author">${escapeHTML(msg.userName)}</div>
                 <div class="message-time">${time}</div>
             </div>
             ${isOwnMessage ? '<button class="delete-btn" onclick="deleteMessage(\'' + msg.objectId + '\')">删除</button>' : ''}
         </div>
-        ${msg.content ? `<div class="message-content">${msg.content}</div>` : ''}
+        ${msg.content ? `<div class="message-content">${escapeHTML(msg.content)}</div>` : ''}
         ${msg.imageUrl ? `<img src="${msg.imageUrl}" alt="留言图片" class="message-image">` : ''}
     `;
 

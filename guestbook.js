@@ -304,7 +304,17 @@ window.openCommentModal = function (messageId) {
 
     if (modal && messageIdInput) {
         messageIdInput.value = messageId;
+
+        // Clear any inline styles from previous close
+        modal.style.display = '';
+        modal.style.visibility = '';
+        modal.style.opacity = '';
+        modal.style.pointerEvents = '';
+
         modal.classList.add('active');
+        modal.classList.add('overlay-visible');
+        modal.classList.remove('overlay-hidden');
+
         console.log('✅ Modal opened successfully');
 
         // Focus content input
@@ -329,9 +339,21 @@ window.closeCommentModal = function (event) {
         const modal = document.getElementById('commentModal');
         if (modal) {
             modal.classList.remove('active');
+            modal.classList.remove('overlay-visible'); // CRITICAL: Remove this to allow fade out
+
             // Clear form
             const form = document.getElementById('commentForm');
             if (form) form.reset();
+
+            // After animation, force complete cleanup
+            setTimeout(() => {
+                modal.classList.add('overlay-hidden');
+                modal.style.display = 'none'; // Force display none
+                modal.style.visibility = 'hidden';
+                modal.style.opacity = '0';
+                modal.style.pointerEvents = 'none';
+                document.body.style.overflow = ''; // Restore scroll
+            }, 200);
         }
     }
 };

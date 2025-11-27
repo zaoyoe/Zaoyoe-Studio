@@ -9,8 +9,8 @@ async function handleRegister(event) {
 
     const inputCode = document.getElementById('reg-code').value;
     const password = document.getElementById('reg-password').value;
-    const email = document.getElementById('reg-email').value.trim();  // ✅ 添加 .trim()
-    const username = document.getElementById('reg-username').value.trim();  // ✅ 添加 .trim()
+    const email = document.getElementById('reg-email').value.trim();
+    const username = document.getElementById('reg-username').value.trim();
 
     // 验证码检查
     if (inputCode !== generatedCode) {
@@ -31,10 +31,9 @@ async function handleRegister(event) {
         await user.signUp();
         console.log('✅ User created:', user.id);
 
-        // ⚠️ 尝试修复ACL（大概率会失败，因为LeanCloud的Default ACL bug）
+        // ⚠️ 尝试修复ACL
         let aclFixed = false;
         try {
-            // Re-fetch to get latest server state
             await user.fetch();
 
             const acl = new AV.ACL(user);
@@ -93,6 +92,46 @@ async function handleRegister(event) {
 window.handleAuthClick = handleAuthClick;
 
 // ==================== 登录功能 (LeanCloud 版本) ====================
+
+// 登录频率限制辅助函数
+function checkLoginAttempts() {
+    const MAX_ATTEMPTS = 5;
+    const LOCKOUT_TIME = 15 * 60 * 1000; // 15分钟
+
+    const attempts = parseInt(localStorage.getItem('login_attempts') || '0');
+    const lockoutTime = parseInt(localStorage.getItem('login_lockout_time') || '0');
+    const now = Date.now();
+
+    if (lockoutTime && now < lockoutTime) {
+        const remainingMinutes = Math.ceil((lockoutTime - now) / 60000);
+        throw new Error(`登录尝试次数过多，请在 ${remainingMinutes} 分钟后再试。`);
+    }
+
+    if (lockoutTime && now >= lockoutTime) {
+        // 锁定过期，重置
+        localStorage.removeItem('login_attempts');
+        localStorage.removeItem('login_lockout_time');
+        return;
+    }
+
+    if (attempts >= MAX_ATTEMPTS) {
+        const newLockoutTime = now + LOCKOUT_TIME;
+        localStorage.setItem('login_lockout_time', newLockoutTime);
+        throw new Error(`登录尝试次数过多，请在 15 分钟后再试。`);
+    }
+}
+
+function recordFailedLogin() {
+    let attempts = parseInt(localStorage.getItem('login_attempts') || '0');
+    attempts++;
+    localStorage.setItem('login_attempts', attempts);
+}
+
+function clearLoginAttempts() {
+    localStorage.removeItem('login_attempts');
+    localStorage.removeItem('login_lockout_time');
+}
+
 async function handleLogin(event) {
     event.preventDefault();
 
@@ -106,26 +145,31 @@ async function handleLogin(event) {
     }
 
     try {
+        // 1. 检查登录尝试次数
+        checkLoginAttempts();
+
         // 使用邮箱登录
         const user = await AV.User.logIn(email, password);
 
         console.log('✅ 登录成功:', user.toJSON());
 
+        // 登录成功，清除失败记录
+        clearLoginAttempts();
+
         // 记住我功能 - 保存30天
         if (rememberMe) {
             const expiryDate = new Date();
-            expiryDate.setDate(expiryDate.getDate() + 30); // 30天后过期
+            expiryDate.setDate(expiryDate.getDate() + 30);
 
             const credentials = {
                 email: email,
-                password: btoa(password), // Base64编码（简单混淆，不是加密）
+                password: btoa(password),
                 expiry: expiryDate.getTime()
             };
 
             localStorage.setItem('remembered_credentials', JSON.stringify(credentials));
             console.log('✅ 已保存登录凭证（30天有效）');
         } else {
-            // 不勾选则清除保存的凭证
             localStorage.removeItem('remembered_credentials');
         }
 
@@ -143,6 +187,11 @@ async function handleLogin(event) {
 
     } catch (error) {
         console.error('登录失败:', error);
+
+        // 记录失败次数（排除频率限制错误本身）
+        if (!error.message.includes('登录尝试次数过多')) {
+            recordFailedLogin();
+        }
 
         let errorMessage = '登录失败';
         if (error.code === 210) {
@@ -311,8 +360,17 @@ function updateUserUI(user) {
             const triggerAnimation = () => {
                 // 强制重排
                 void navAvatar.offsetWidth;
-                // 添加动画类
+
+                // Ensure starting state for animation
+                navAvatar.style.opacity = '0';
+
+                // Add animation class
                 navAvatar.classList.add('animate-in');
+
+                // Failsafe: Ensure opacity is 1 after animation completes
+                setTimeout(() => {
+                    navAvatar.style.opacity = '1';
+                }, 600);
             };
 
             if (user.avatarUrl) {
@@ -790,17 +848,25 @@ function handleSwitchAccount(event) {
 
 // ==================== 打开个人资料模态框 ====================
 function openProfileModal(event) {
-    // 阻止事件冒泡
     if (event) {
+        event.preventDefault();
         event.stopPropagation();
     }
 
-    // 关闭下拉菜单
+    console.log('📂 Opening Profile Modal');
+
+    // Close user dropdown to prevent backdrop conflicts
     const dropdown = document.getElementById('userDropdown');
     if (dropdown) {
         dropdown.classList.remove('active');
+        console.log('✅ Closed dropdown before opening modal');
     }
 
+    const modal = document.getElementById('profileModal');
+    if (!modal) {
+        console.error('❌ Profile modal element not found!');
+        return;
+    }
     // 获取当前用户信息
     const currentUser = AV.User.current();
     if (!currentUser) {
@@ -842,19 +908,38 @@ function openProfileModal(event) {
         }
     }
 
-    // 打开模态框
-    const modal = document.getElementById('profileModal');
+    // 更新手机绑定状态
+    updatePhoneBindingUI(currentUser.toJSON());
+
+    // 打开模态框 (reuse modal variable declared above)
     if (modal) {
+        // CRITICAL: Clear any inline styles from previous close
+        modal.style.display = '';
+        modal.style.visibility = '';
+        modal.style.opacity = '';
+
         modal.classList.add('active');
+        // Use new visibility class
+        modal.classList.remove('overlay-hidden');
+        modal.classList.add('overlay-visible');
 
         // 触发资料页面的错落上升动画
         const profileFront = document.querySelector('.profile-front');
         if (profileFront) {
-            // 确保切换到资料页面
-            const flipInner = document.querySelector('.profile-flip-inner');
-            if (flipInner) {
-                flipInner.classList.remove('flipped');
+            // 确保切换到资料页面并重置状态
+            if (typeof switchProfileTab === 'function') {
+                switchProfileTab('profile');
+            } else {
+                // Fallback if function not available
+                const flipInner = document.querySelector('.profile-flip-inner');
+                if (flipInner) {
+                    flipInner.classList.remove('flipped');
+                }
+                profileFront.classList.add('active-view');
+                const profileBack = document.querySelector('.profile-back');
+                if (profileBack) profileBack.classList.remove('active-view');
             }
+
             // 延迟触发动画，确保模态框已显示
             setTimeout(() => {
                 profileFront.classList.remove('animate-in');
@@ -946,6 +1031,11 @@ console.log('✅ LeanCloud 认证函数已加载');
 function switchProfileTab(tabName) {
     // Update Tab Styles
     const tabs = document.querySelectorAll('.tab-item');
+    const flipInner = document.querySelector('.profile-flip-inner');
+    const profileFront = document.querySelector('.profile-front');
+    const profileBack = document.querySelector('.profile-back');
+    const profileContainer = document.querySelector('.profile-flip-container');
+
     tabs.forEach(tab => {
         if (tab.textContent === (tabName === 'profile' ? '资料' : '安全')) {
             tab.classList.add('active');
@@ -954,10 +1044,10 @@ function switchProfileTab(tabName) {
         }
     });
 
-    // Toggle Views with Flip Animation
-    const flipInner = document.querySelector('.profile-flip-inner');
-    const profileFront = document.querySelector('.profile-front');
-    const profileBack = document.querySelector('.profile-back');
+    // 重置滚动位置到顶部
+    if (profileContainer) {
+        profileContainer.scrollTop = 0;
+    }
 
     if (flipInner) {
         // 移除之前的动画类
@@ -968,6 +1058,11 @@ function switchProfileTab(tabName) {
         requestAnimationFrame(() => {
             if (tabName === 'security') {
                 flipInner.classList.add('flipped');
+
+                // 切换定位模式：Security 变为 relative，Front 变为 absolute
+                if (profileBack) profileBack.classList.add('active-view');
+                if (profileFront) profileFront.classList.remove('active-view');
+
                 // 触发安全页面的错落上升动画
                 if (profileBack) {
                     profileBack.classList.remove('animate-in');
@@ -979,6 +1074,11 @@ function switchProfileTab(tabName) {
                 checkEmailVerified();
             } else {
                 flipInner.classList.remove('flipped');
+
+                // 切换定位模式：Front 变为 relative，Security 变为 absolute
+                if (profileFront) profileFront.classList.add('active-view');
+                if (profileBack) profileBack.classList.remove('active-view');
+
                 // 触发资料页面的错落上升动画
                 if (profileFront) {
                     profileFront.classList.remove('animate-in');
@@ -1058,15 +1158,14 @@ async function resendVerificationEmail() {
         console.error('Email verification failed:', error);
 
         let msg = '发送失败';
-        if (error.code === 1) {
-            msg = '发送过于频繁，请稍后再试（建议等待1分钟）。';
+        if (error.code === 216) {
+            msg = '✅ 好消息！您的邮箱已经验证过了。';
+            checkEmailVerified(); // Refresh UI
         } else if (error.code === 205) {
             msg = '找不到该邮箱的用户，请联系管理员。';
-        } else if (error.code === 216) {
-            msg = '该邮箱已经验证过了。';
-            checkEmailVerified(); // Refresh UI
         } else {
-            msg = `发送失败 (${error.code}): ${error.message}`;
+            // 显示详细的错误信息，帮助诊断问题
+            msg = `❌ 发送失败\n\n错误代码: ${error.code}\n错误信息: ${error.message || error.rawMessage || '未知错误'}\n\n💡 如果提示"频繁"，请等待1-2分钟再试。\n如果问题持续，请联系管理员。`;
         }
         alert(msg);
     }
@@ -1125,3 +1224,157 @@ async function deleteAccount() {
     }
 }
 
+// ==================== Phone Number Binding ====================
+
+// Update the phone binding UI based on user's phone status
+function updatePhoneBindingUI(user) {
+    const phoneBindingUI = document.getElementById('phoneBindingUI');
+    const phoneBoundUI = document.getElementById('phoneBoundUI');
+    const phoneBindStatus = document.getElementById('phoneBindStatus');
+    const boundPhoneDisplay = document.getElementById('boundPhoneDisplay');
+
+    if (!phoneBindingUI || !phoneBoundUI) return;
+
+    const phone = user?.mobilePhoneNumber || AV.User.current()?.get('mobilePhoneNumber');
+
+    if (phone) {
+        // Phone is bound
+        phoneBindingUI.style.display = 'none';
+        phoneBoundUI.style.display = 'block';
+        phoneBindStatus.textContent = '(已绑定)';
+        phoneBindStatus.style.color = '#10b981';
+        boundPhoneDisplay.textContent = phone;
+    } else {
+        // Phone not bound
+        phoneBindingUI.style.display = 'block';
+        phoneBoundUI.style.display = 'none';
+        phoneBindStatus.textContent = '(未绑定)';
+        phoneBindStatus.style.color = 'rgba(255,255,255,0.5)';
+    }
+}
+
+// Bind phone number to account
+async function bindPhoneNumber() {
+    const phone = document.getElementById('profile-phone').value.trim();
+    const countryCode = document.getElementById('profile-country-code').value;
+    const smsCode = document.getElementById('profile-sms-code').value.trim();
+
+    if (!phone || !smsCode) {
+        alert('请输入手机号和短信验证码');
+        return;
+    }
+
+    const fullPhone = countryCode + phone;
+
+    try {
+        const currentUser = AV.User.current();
+        if (!currentUser) {
+            alert('请先登录');
+            return;
+        }
+
+        // Set the phone number and verify with SMS code
+        currentUser.set('mobilePhoneNumber', fullPhone);
+        currentUser.set('mobilePhoneVerified', false); // Will be set to true after verification
+
+        // Save first, then verify
+        await currentUser.save();
+
+        // Verify the SMS code
+        await AV.Cloud.verifySmsCode(smsCode, fullPhone);
+
+        // Mark as verified
+        currentUser.set('mobilePhoneVerified', true);
+        await currentUser.save();
+
+        console.log('✅ Phone number bound successfully');
+        alert(`手机号绑定成功！\n\n${fullPhone} 已绑定到您的账号`);
+
+        // Update UI
+        updatePhoneBindingUI({
+            ...currentUser.toJSON(),
+            mobilePhoneNumber: fullPhone
+        });
+
+        // Clear inputs
+        document.getElementById('profile-phone').value = '';
+        document.getElementById('profile-sms-code').value = '';
+
+    } catch (error) {
+        console.error('❌ Failed to bind phone:', error);
+
+        let errorMessage = '绑定失败';
+        if (error.code === 603) {
+            errorMessage = '短信验证码错误或已过期';
+        } else if (error.code === 127) {
+            errorMessage = '该手机号已被其他账号绑定';
+        } else {
+            errorMessage = error.message || '未知错误';
+        }
+
+        alert(`绑定失败: ${errorMessage}`);
+    }
+}
+
+// Unbind phone number from account
+async function unbindPhoneNumber() {
+    const confirmed = confirm('确定要解绑手机号吗？\n\n解绑后将无法通过手机号找回邮箱。');
+    if (!confirmed) return;
+
+    try {
+        const currentUser = AV.User.current();
+        if (!currentUser) {
+            alert('请先登录');
+            return;
+        }
+
+        currentUser.unset('mobilePhoneNumber');
+        currentUser.unset('mobilePhoneVerified');
+        await currentUser.save();
+
+        console.log('✅ Phone number unbound successfully');
+        alert('手机号已成功解绑');
+
+        // Update UI
+        updatePhoneBindingUI({
+            ...currentUser.toJSON(),
+            mobilePhoneNumber: null
+        });
+
+    } catch (error) {
+        console.error('❌ Failed to unbind phone:', error);
+        alert(`解绑失败: ${error.message || '未知错误'}`);
+    }
+}
+
+// Make functions globally available
+window.bindPhoneNumber = bindPhoneNumber;
+window.unbindPhoneNumber = unbindPhoneNumber;
+window.updatePhoneBindingUI = updatePhoneBindingUI;
+
+// ==================== Security Settings Section Toggle ====================
+function toggleSecuritySection(sectionName) {
+    // Remove active class from all nav items
+    const navItems = document.querySelectorAll('.security-nav-item');
+    navItems.forEach(item => item.classList.remove('active'));
+
+    // Add active class to clicked nav item
+    const activeNavItem = Array.from(navItems).find(item =>
+        item.onclick.toString().includes(`'${sectionName}'`)
+    );
+    if (activeNavItem) {
+        activeNavItem.classList.add('active');
+    }
+
+    // Hide all sections
+    const sections = document.querySelectorAll('.security-section');
+    sections.forEach(section => section.classList.remove('active'));
+
+    // Show selected section
+    const activeSection = document.getElementById(`section-${sectionName}`);
+    if (activeSection) {
+        activeSection.classList.add('active');
+    }
+}
+
+window.toggleSecuritySection = toggleSecuritySection;

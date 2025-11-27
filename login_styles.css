@@ -94,12 +94,12 @@
     backface-visibility: hidden;
     color: white;
     cursor: default;
-    pointer-events: auto !important;
+    /* pointer-events: auto !important; REMOVED */
 }
 
 /* 确保 login-card 的所有直接子元素可交互 */
-.login-card > * {
-    pointer-events: auto !important;
+.login-card>* {
+    /* pointer-events: auto !important; REMOVED */
 }
 
 /* 确保 login-card 内的所有按钮和交互元素都有正确的 cursor 和 pointer-events */
@@ -114,9 +114,20 @@
 .login-card .forgot-password-link,
 .login-card .mac-dot {
     cursor: pointer !important;
-    pointer-events: auto !important;
+    /* pointer-events: auto !important; REMOVED */
     position: relative;
     z-index: 9999 !important;
+}
+
+.login-overlay.active .login-card,
+.login-overlay.active .login-card>*,
+.login-overlay.active .login-card button,
+.login-overlay.active .login-card input,
+.login-overlay.active .login-card a,
+.login-overlay.active .login-card .switch-link,
+.login-overlay.active .login-card .forgot-password-link,
+.login-overlay.active .login-card .mac-dot {
+    pointer-events: auto !important;
 }
 
 .login-overlay.active .login-card {

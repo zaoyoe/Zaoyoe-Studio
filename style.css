@@ -383,6 +383,7 @@ header p {
     }
 }
 
+/* Profile Front Animations */
 /* Form Elements */
 select {
     width: 100%;
@@ -1070,6 +1071,18 @@ input.submit-btn {
     width: 100%;
 }
 
+.shop-heading-l.modal-title {
+    font-size: 2.2rem;
+    font-weight: 800;
+    margin: 0;
+    /* 移除 margin-top，让标题从顶部开始 */
+    margin-bottom: 20px;
+    background: linear-gradient(135deg, #a78bfa 0%, #ec4899 50%, #f43f5e 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
 .shop-heading-large {
     font-size: 3.2rem;
     font-weight: 800;
@@ -1255,27 +1268,31 @@ input.submit-btn {
     width: 100%;
     height: 100%;
     background: rgba(0, 0, 0, 0.6);
-    /* Darker background for less transparency - copied from login-overlay */
     backdrop-filter: blur(8px);
-    /* Blur background to focus attention - copied from login-overlay */
     -webkit-backdrop-filter: blur(8px);
     z-index: 2000;
-    /* 与其他弹窗保持一致，确保不会被遮挡 */
     display: flex;
     justify-content: center;
     align-items: center;
     opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.3s ease;
+    visibility: hidden;
+    pointer-events: none !important;
+    transition: opacity 0.2s ease, visibility 0s 0.2s;
+    /* Reduced from 0.25s to 0.2s */
     will-change: opacity;
-    /* Optimize animation */
     transform: translateZ(0);
-    /* Hardware acceleration */
 }
 
 .modal-overlay.active {
     opacity: 1;
+    visibility: visible;
     pointer-events: all !important;
+    transition: opacity 0.2s ease, visibility 0s 0s;
+}
+
+/* Ensure ALL children of inactive modals can't receive clicks */
+.modal-overlay:not(.active) * {
+    pointer-events: none !important;
 }
 
 
@@ -1304,11 +1321,12 @@ input.submit-btn {
     color: white;
     position: relative;
     z-index: 1;
-    pointer-events: auto !important;
+    /* pointer-events: auto !important; REMOVED to prevent blocking clicks when invisible */
 }
 
 .modal-overlay.active .modal-content {
     transform: scale(1);
+    pointer-events: auto !important;
 }
 
 .modal-grid {
@@ -1360,7 +1378,8 @@ input.submit-btn {
     font-size: 2rem;
     font-weight: 800;
     margin-bottom: 0;
-    margin-top: 10px;
+    margin-top: -10px;
+    /* 上移标题 */
     /* 恢复纯色 */
     color: #ffffff;
     letter-spacing: -0.5px;
@@ -1810,6 +1829,54 @@ svg {
     -ms-user-select: none;
     user-select: none;
     /* Prevent text selection and callout menu */
+}
+
+/* Modal Overlay - Base Styles */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    z-index: 2000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: opacity 0.3s ease, visibility 0.3s ease;
+    /* pointer-events handled by utility classes now */
+}
+
+.profile-front {
+    z-index: 2;
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* Visibility Utility Classes */
+.overlay-hidden {
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+
+.overlay-visible {
+    opacity: 1 !important;
+    visibility: visible !important;
+    pointer-events: all !important;
+}
+
+.modal-overlay.active {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: all;
+}
+
+/* Ensure modal-overlay respects transitions - but don't interfere with card animations */
+.modal-overlay:not(.bento-item):not(.card-item) {
+    transition: opacity 0.25s ease !important;
 }
 
 /* Lightbox Styles */
@@ -3493,8 +3560,9 @@ label[for],
 
 /* 登录状态下的按钮样式：只显示头像 */
 .login-trigger-btn.logged-in {
-    padding: 8px;
-    border-radius: 50%;
+    padding: 0;
+    border: none;
+    background: transparent;
     width: 40px;
     height: 40px;
     display: flex;
@@ -3503,10 +3571,16 @@ label[for],
 }
 
 .login-trigger-btn.logged-in .nav-user-avatar {
-    margin: 0;
-    /* 确保头像没有额外的边距 */
-    border: 2px solid rgba(255, 255, 255, 0.8);
-    /* 增强头像边框 */
+    margin: 0 !important;
+    border: none;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    object-fit: cover;
+    object-position: center center;
+    display: block;
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.8);
+    /* 使用 box-shadow 创建外圈 */
 }
 
 @keyframes userAvatarRise {
@@ -3553,8 +3627,8 @@ label[for],
     backdrop-filter: blur(8px);
     /* Blur background to focus attention */
     -webkit-backdrop-filter: blur(8px);
-    z-index: 2000;
-    /* Higher than other modals */
+    z-index: 3000;
+    /* Higher than all other modals (profile modal is 2000) */
     display: flex;
     justify-content: center;
     align-items: center;
@@ -3754,6 +3828,16 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     pointer-events: all;
 }
 
+/* NUCLEAR FIX: Hide dropdown backdrop when any modal is active - use extreme specificity */
+body:has(.modal-overlay.active) .dropdown-backdrop,
+.dropdown-backdrop[style*="z-index: 2099"] {
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+    display: none !important;
+    /* FORCE COMPLETE REMOVAL */
+}
+
 .user-dropdown {
     position: absolute;
     top: calc(100% + 10px);
@@ -3762,22 +3846,18 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     min-width: 200px;
     /* Reduced from 300px for a more refined look */
 
-    /* Mac-style Glass Effect - Unified with Modals */
-    background: rgba(0, 0, 0, 0.1);
-    /* Match shared modal background */
-    backdrop-filter: blur(20px) saturate(150%);
-    /* Match shared modal filter */
-    -webkit-backdrop-filter: blur(20px) saturate(150%);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-top: 1px solid rgba(255, 255, 255, 0.2);
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-
-    border-radius: 12px;
+    width: 220px;
+    background: rgba(18, 18, 23, 0.95);
+    /* Restored dark background */
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
     padding: 8px;
-
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
     opacity: 0;
     visibility: hidden;
-    transform: translateX(-50%) translateY(-10px) scale(0.98);
+    transform: translateY(-10px) scale(0.98);
     /* Subtle container entrance */
     transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
     pointer-events: none;
@@ -3788,337 +3868,130 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
 .user-dropdown.active {
     opacity: 1;
     visibility: visible;
-    transform: translateX(-50%) translateY(0) scale(1);
+    transform: translateY(0) scale(1);
     pointer-events: all;
 }
 
-/* Content Staggered Animation */
-.user-dropdown .menu-item,
-.user-dropdown .profile-section,
-.user-dropdown .divider {
-    opacity: 0;
-    transform: translateY(-15px);
-    transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+/* Dropdown Item Hover Effect - Blue Highlight */
+.user-dropdown .menu-item:hover {
+    background: rgba(0, 122, 255, 0.2);
+    /* Blue highlight */
+    color: white;
 }
 
-.user-dropdown.active .menu-item,
-.user-dropdown.active .profile-section,
-.user-dropdown.active .divider {
-    opacity: 1;
-    transform: translateY(0);
-}
+/* ... existing animation definitions ... */
 
-/* Stagger Delays */
-.user-dropdown.active .profile-section {
-    transition-delay: 0.05s;
-}
+/* ==================== RESTORED PROFILE STYLES ==================== */
 
-.user-dropdown.active .divider {
-    transition-delay: 0.1s;
-}
-
-.user-dropdown.active .menu-item:not(.profile-section) {
-    transition-delay: 0.15s;
-}
-
-/* Avatar Container */
 /* Profile Modal - Compact & Elegant */
 .profile-modal {
-    width: 400px;
-    max-width: 90%;
+    width: 600px;
+    max-width: 95%;
     text-align: center;
+    transition: width 0.3s ease;
+    background: rgba(18, 18, 23, 0.8);
+    /* More transparent background */
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 24px;
+    padding: 30px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
 }
 
-.profile-avatar-section {
-    position: relative;
-    width: 120px;
-    height: 120px;
-    margin: 20px auto 24px;
-    cursor: pointer;
-    border-radius: 50%;
-    overflow: hidden;
-    /* 与安全页面模块风格一致的边框和阴影 */
-    border: 3px solid rgba(255, 255, 255, 0.15);
-    box-shadow:
-        0 4px 12px rgba(0, 0, 0, 0.3),
-        inset 0 1px 0 rgba(255, 255, 255, 0.1);
-    transition: all 0.3s ease;
-    flex-shrink: 0;
-}
+/* ... (avatar and nickname sections remain unchanged) ... */
 
-.profile-avatar-section:hover {
-    border-color: rgba(168, 85, 247, 0.6);
-    transform: scale(1.05);
-    box-shadow:
-        0 6px 16px rgba(0, 0, 0, 0.4),
-        inset 0 1px 0 rgba(255, 255, 255, 0.15);
-}
-
-.profile-avatar-section img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-}
-
-.avatar-upload-hint {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    background: rgba(0, 0, 0, 0.7);
-    backdrop-filter: blur(10px);
-    padding: 8px;
-    opacity: 0;
-    transition: opacity 0.3s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    font-size: 13px;
-    color: white;
-}
-
-.profile-avatar-section:hover .avatar-upload-hint {
-    opacity: 1;
-}
-
-/* Nickname Section */
-.profile-nickname-section {
-    margin-bottom: 24px;
-    min-height: 40px;
-    width: 100%;
-    max-width: 320px;
-    position: relative;
-    /* 与安全页面模块风格一致的容器 */
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 12px;
-    padding: 18px;
-    box-shadow:
-        0 2px 8px rgba(0, 0, 0, 0.3),
-        inset 0 1px 0 rgba(255, 255, 255, 0.05);
-    transition: all 0.3s ease;
-    position: relative;
-    overflow: hidden;
-    flex-shrink: 0;
-}
-
-/* 昵称区块左侧装饰条 */
-.profile-nickname-section::before {
-    content: '';
-    position: absolute;
-    left: 0;
-    top: 0;
-    bottom: 0;
-    width: 3px;
-    background: linear-gradient(180deg, rgba(168, 85, 247, 0.6), rgba(244, 114, 182, 0.6));
-    border-radius: 12px 0 0 12px;
-}
-
-.profile-nickname-section:hover {
-    border-color: rgba(255, 255, 255, 0.18);
-    box-shadow:
-        0 4px 12px rgba(0, 0, 0, 0.4),
-        inset 0 1px 0 rgba(255, 255, 255, 0.08);
-    transform: translateY(-2px);
-}
-
-.nickname-display {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    /* 编辑模式切换动画 */
-    transition: opacity 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-        transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-}
-
-.nickname-display.hiding {
-    opacity: 0;
-    transform: translateY(-10px);
-    pointer-events: none;
-}
-
-/* 显示模式进入动画 */
-.nickname-display.showing {
-    animation: displayModeRise 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) backwards;
-}
-
-@keyframes displayModeRise {
-    from {
-        opacity: 0;
-        transform: translateY(20px) scale(0.95);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateY(0) scale(1);
-    }
-}
-
-#profileModalNickname {
-    font-size: 20px;
-    font-weight: 600;
-    color: white;
-}
-
-.edit-icon {
-    font-size: 14px;
-    color: rgba(255, 255, 255, 0.4);
-    cursor: pointer;
-    transition: color 0.2s, transform 0.2s;
-}
-
-.edit-icon:hover {
-    color: #007aff;
-    transform: scale(1.1);
-}
-
-.nickname-edit {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    align-items: center;
-    /* 编辑模式进入动画 */
-    animation: editModeRise 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) backwards;
-}
-
-@keyframes editModeRise {
-    from {
-        opacity: 0;
-        transform: translateY(20px) scale(0.95);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateY(0) scale(1);
-    }
-}
-
-#nicknameInput {
-    /* 与安全页面输入框风格一致 */
-    background: rgba(0, 0, 0, 0.5);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 8px;
-    padding: 10px 16px;
-    color: white;
-    text-align: center;
-    width: 220px;
-    font-size: 16px;
-    transition: all 0.2s ease;
-}
-
-#nicknameInput:focus {
-    outline: none;
-    border-color: rgba(0, 122, 255, 0.6);
-    background: rgba(0, 0, 0, 0.6);
-    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1),
-        inset 0 1px 2px rgba(0, 0, 0, 0.3);
-}
-
-.edit-actions {
-    display: flex;
-    gap: 10px;
-}
-
-.save-btn,
-.cancel-btn {
-    padding: 8px 18px;
-    border-radius: 6px;
-    font-size: 14px;
-    cursor: pointer;
-    border: none;
-    transition: all 0.2s ease;
-    font-weight: 500;
-}
-
-.save-btn {
-    background: linear-gradient(135deg, #a855f7 0%, #f472b6 50%, #fb7185 100%);
-    color: white;
-    box-shadow: 0 2px 10px rgba(244, 114, 182, 0.3);
-}
-
-.save-btn:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(244, 114, 182, 0.4);
-    filter: brightness(1.1);
-}
-
-.cancel-btn {
-    /* 与安全页面次要按钮风格一致 */
-    background: rgba(0, 0, 0, 0.4);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    color: white;
-}
-
-.cancel-btn:hover {
-    background: rgba(0, 0, 0, 0.5);
-    border-color: rgba(255, 255, 255, 0.25);
-    transform: translateY(-1px);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-}
-
-/* Profile Flip Animation - Text Staggered Rise Effect */
+/* Profile Flip Layout */
 .profile-flip-container {
     width: 100%;
-    min-height: 580px;
+    height: 500px;
+    /* Fixed height to ensure consistency between views */
     position: relative;
-    transition: min-height 0.3s ease;
     overflow: hidden;
+}
+
+.profile-flip-container::-webkit-scrollbar {
+    display: none;
 }
 
 .profile-flip-inner {
     position: relative;
     width: 100%;
     height: 100%;
+    /* Fill container */
     text-align: center;
-    min-height: 500px;
 }
 
+/* Profile View Transition */
 .profile-view {
     position: absolute;
-    width: 100%;
-    height: 100%;
     top: 0;
     left: 0;
+    width: 100%;
+    height: 100%;
     display: flex !important;
     flex-direction: column;
     justify-content: flex-start;
     align-items: center;
-    /* 淡入淡出过渡 */
     transition: opacity 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
     will-change: opacity;
-    padding-bottom: 20px;
-}
-
-.profile-front {
-    z-index: 2;
-    opacity: 1;
-    pointer-events: auto;
-}
-
-.profile-back {
-    z-index: 1;
+    padding: 20px;
+    padding-top: 10px;
+    box-sizing: border-box;
     opacity: 0;
+    visibility: hidden;
     pointer-events: none;
 }
 
-/* Flip State Class - 切换到安全页面 */
-.profile-flip-inner.flipped .profile-front {
-    opacity: 0;
-    pointer-events: none;
-}
-
-.profile-flip-inner.flipped .profile-back {
+.profile-view.active-view {
     opacity: 1;
+    visibility: visible;
     pointer-events: auto;
 }
 
-/* 错落上升动画关键帧 */
-@keyframes staggeredRise {
+/* Text elements fade-in setup - initially invisible */
+.profile-view h2,
+.profile-view h3,
+.profile-view .section-title,
+.profile-view .section-desc,
+.profile-view .security-header,
+.profile-view .security-desc,
+.profile-view label,
+.profile-view .profile-email-display,
+.profile-view .nickname-display,
+.profile-view .member-since-badge {
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 0.4s ease, transform 0.4s ease;
+}
+
+/* Animate text when view becomes active */
+.profile-view.active-view h2,
+.profile-view.active-view h3,
+.profile-view.active-view .section-title {
+    animation: textFadeIn 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.1s forwards;
+}
+
+.profile-view.active-view .section-desc,
+.profile-view.active-view .security-desc,
+.profile-view.active-view label {
+    animation: textFadeIn 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.2s forwards;
+}
+
+.profile-view.active-view .profile-email-display,
+.profile-view.active-view .nickname-display,
+.profile-view.active-view .security-header {
+    animation: textFadeIn 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.25s forwards;
+}
+
+.profile-view.active-view .member-since-badge {
+    animation: textFadeIn 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.3s forwards;
+}
+
+@keyframes textFadeIn {
     from {
         opacity: 0;
-        transform: translateY(30px);
+        transform: translateY(10px);
     }
 
     to {
@@ -4126,45 +3999,6 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
         transform: translateY(0);
     }
 }
-
-/* 资料页面 - 文字内容错落上升动画 */
-.profile-front.animate-in .modal-title {
-    animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.1s backwards;
-}
-
-.profile-front.animate-in .profile-avatar-section {
-    animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.15s backwards;
-}
-
-.profile-front.animate-in .profile-nickname-section {
-    animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.2s backwards;
-}
-
-.profile-front.animate-in .profile-email-section {
-    animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.25s backwards;
-}
-
-.profile-front.animate-in .member-since-badge {
-    animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.3s backwards;
-}
-
-/* 安全页面 - 文字内容错落上升动画 */
-.profile-back.animate-in .modal-title {
-    animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.1s backwards;
-}
-
-.profile-back.animate-in .security-item:nth-of-type(1) {
-    animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.15s backwards;
-}
-
-.profile-back.animate-in .security-item:nth-of-type(2) {
-    animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.2s backwards;
-}
-
-.profile-back.animate-in .security-item:nth-of-type(3) {
-    animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.25s backwards;
-}
-
 
 /* Profile Tabs */
 .profile-tabs {
@@ -4193,20 +4027,397 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     background: rgba(255, 255, 255, 0.05);
 }
 
+.profile-front {
+    z-index: 2;
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.profile-back {
+    z-index: 1;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.profile-flip-inner.flipped .profile-front {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.profile-flip-inner.flipped .profile-back {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* Profile Front Animations */
+.profile-front.active-view .profile-avatar-section {
+    animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.1s backwards;
+}
+
+.profile-front.active-view .profile-nickname-section {
+    animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.15s backwards;
+}
+
+.profile-front.active-view .profile-info-grid {
+    animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.2s backwards;
+}
+
+/* Apply staggeredRise to email address in profile */
+.profile-front.active-view .profile-email {
+    animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.22s backwards;
+}
+
+.profile-front.active-view .logout-btn {
+    animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.25s backwards;
+}
+
+/* Security Back Animations (Unified with Profile Front) */
+.profile-back.active-view .modal-title {
+    animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.1s backwards;
+}
+
+/* Apply staggeredRise to Security card text elements */
+.profile-back.active-view .section-title,
+.profile-back.active-view .section-desc {
+    animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.2s backwards;
+}
+
+.profile-back.active-view .security-sidebar {
+    animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.15s backwards;
+}
+
+.profile-back.active-view .security-content {
+    animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.2s backwards;
+}
+
+/* ... existing sidebar items animation ... */
+
+/* Profile Tabs Active State - Pink Gradient */
 .tab-item.active {
-    background: rgba(255, 255, 255, 0.2);
+    background: linear-gradient(135deg, #f472b6 0%, #fb7185 100%);
+    /* Pink gradient */
     color: white;
     font-weight: 500;
+    box-shadow: 0 2px 8px rgba(244, 114, 182, 0.3);
 }
 
 /* Security View Styles */
+/* ==================== SECURITY SETTINGS - NEW COLLAPSIBLE DESIGN ==================== */
+
+.security-layout {
+    display: flex;
+    gap: 30px;
+    /* Increased gap for better separation */
+    width: 100%;
+    max-width: 100%;
+    margin-top: 10px;
+    align-items: flex-start;
+    justify-content: center;
+    /* Center the entire layout */
+}
+
+/* Left Sidebar Navigation */
+.security-sidebar {
+    flex-shrink: 0;
+    width: 180px;
+    /* Increased width */
+    display: flex;
+    flex-direction: column;
+    gap: 16px !important;
+    /* FORCE increased gap from 8px to 16px */
+    padding-top: 20px !important;
+    /* FORCE top padding to move items down */
+}
+
+/* High priority override using parent ID */
+#view-security .security-sidebar {
+    gap: 16px !important;
+    padding-top: 20px !important;
+}
+
+.security-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px;
+    /* Increased horizontal padding */
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    border: 1px solid transparent;
+    position: relative;
+    margin-bottom: 16px !important;
+    /* Force spacing between items */
+}
+
+/* First nav item - add top margin to push all items down */
+.security-nav-item:first-child {
+    margin-top: 20px !important;
+}
+
+/* Last nav item - remove bottom margin */
+.security-nav-item:last-child {
+    margin-bottom: 0 !important;
+}
+
+.security-nav-item i:first-child {
+    font-size: 1rem;
+    /* Slightly larger icon */
+    color: rgba(255, 255, 255, 0.6);
+    width: 20px;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.security-nav-item span {
+    flex: 1;
+    font-size: 0.95rem;
+    /* Larger text */
+    color: rgba(255, 255, 255, 0.7);
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.security-nav-item .nav-arrow {
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.3);
+    transition: transform 0.3s ease;
+    flex-shrink: 0;
+}
+
+.security-nav-item:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(155, 93, 229, 0.3);
+}
+
+.security-nav-item.active {
+    background: linear-gradient(135deg, rgba(155, 93, 229, 0.2) 0%, rgba(102, 126, 234, 0.2) 100%);
+    border-color: rgba(155, 93, 229, 0.5);
+}
+
+.security-nav-item.active i:first-child {
+    color: #9b5de5;
+}
+
+.security-nav-item.active span {
+    color: white;
+}
+
+.security-nav-item.active .nav-arrow {
+    color: #9b5de5;
+    transform: translateX(3px);
+}
+
+.security-nav-item.danger-nav:hover {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.3);
+}
+
+.security-nav-item.danger-nav.active {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: rgba(239, 68, 68, 0.5);
+}
+
+.security-nav-item.danger-nav.active i:first-child {
+    color: #ef4444;
+}
+
+/* Right Content Area */
+.security-content {
+    flex: 1;
+    min-width: 0;
+    max-width: 550px;
+    /* Increased max width */
+    padding: 20px 15px 10px 15px;
+    /* Match sidebar's 20px top padding for vertical alignment */
+}
+
+/* Phone Input Group */
+.phone-input-group {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 20px;
+    /* Increased from 16px */
+}
+
+.phone-input-group #profile-country-code {
+    flex-shrink: 0;
+    /* Don't shrink country code */
+}
+
+.phone-input-group #profile-phone {
+    flex: 1;
+    /* Phone input takes remaining space */
+    margin-bottom: 0;
+    /* Override default margin */
+}
+
+/* SMS Input Group */
+.sms-input-group {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 20px;
+    /* Increased from 16px */
+    align-items: stretch;
+}
+
+.sms-input-group #profile-sms-code {
+    flex: 1;
+    margin-bottom: 0;
+}
+
+.sms-input-group button {
+    flex-shrink: 0;
+    padding: 12px 20px;
+    white-space: nowrap;
+}
+
+.security-section {
+    display: none;
+    animation: slideIn 0.3s ease;
+    width: 100%;
+    /* Ensure full width */
+    padding: 0;
+    /* Remove padding to better control spacing */
+}
+
+.security-section.active {
+    display: block;
+}
+
+/* Add negative top margin to pull content up and align with sidebar */
+.security-section .section-title:first-child {
+    margin-top: -5px;
+    /* Pull up slightly to align with first nav item */
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.section-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: white;
+    margin: 0 0 12px 0;
+    /* Increased from 8px to 12px */
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.section-title.danger-text {
+    color: #ef4444;
+}
+
+.section-desc {
+    font-size: 0.9rem;
+    color: rgba(255, 255, 255, 0.6);
+    margin: 0 0 24px 0;
+    /* Increased from 20px to 24px */
+    line-height: 1.5;
+}
+
+.status-badge {
+    font-size: 0.75rem;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.5);
+}
+
+/* Phone Bound Display */
+.phone-bound-display {
+    margin-bottom: 16px;
+}
+
+.bound-phone-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px;
+    background: rgba(155, 93, 229, 0.1);
+    border-radius: 10px;
+    border: 1px solid rgba(155, 93, 229, 0.2);
+}
+
+.bound-phone-card i:first-child {
+    color: #9b5de5;
+    font-size: 1.1rem;
+}
+
+.bound-phone-card span {
+    flex: 1;
+    font-size: 0.95rem;
+    color: white;
+}
+
+.bound-phone-card .success-icon {
+    color: #10b981;
+    font-size: 1.1rem;
+}
+
+/* Danger Warning */
+.danger-warning {
+    display: flex;
+    gap: 12px;
+    padding: 16px;
+    /* Increased padding */
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 10px;
+    margin-bottom: 20px;
+    /* Increased margin */
+    width: 100%;
+    /* Full width */
+    box-sizing: border-box;
+}
+
+.danger-warning i {
+    color: #ef4444;
+    font-size: 1.2rem;
+    flex-shrink: 0;
+}
+
+.danger-warning div {
+    flex: 1;
+}
+
+.danger-warning strong {
+    display: block;
+    color: #ef4444;
+    font-size: 0.95rem;
+    margin-bottom: 4px;
+}
+
+.danger-warning p {
+    margin: 0;
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+/* ==================== OLD SECURITY ITEM STYLES (Keep for compatibility) ==================== */
+
 .security-item {
     /* 增强模块区分度 - 更明显的背景和边框 */
     background: rgba(0, 0, 0, 0.3);
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 12px;
     padding: 18px;
+    padding-left: 22px;
+    /* 为左侧装饰条留出空间 */
     margin-bottom: 18px;
+    /* 增加间距，避免拥挤 */
     text-align: left;
     /* 添加外阴影和内阴影，增强层次感 */
     box-shadow:
@@ -4217,6 +4428,8 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     overflow: hidden;
     box-sizing: border-box;
     /* 确保 padding 不会撑大容器 */
+    min-height: 80px;
+    /* 减少最小高度，让内容更紧凑 */
 }
 
 /* 为每个模块添加左侧装饰条 */
@@ -4243,34 +4456,108 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    font-size: 14px;
+    font-size: 15px;
+    /* 统一字体大小 */
     font-weight: 600;
     /* 恢复纯色 */
     color: #ffffff;
-    margin-bottom: 8px;
+    margin-bottom: 12px;
+    /* 增加间距 */
     letter-spacing: 0.3px;
 }
 
 .security-desc {
-    font-size: 12px;
+    font-size: 13px;
+    /* 稍微增大字体 */
     color: rgba(255, 255, 255, 0.5);
-    margin-bottom: 10px;
+    margin-bottom: 12px;
+    line-height: 1.5;
 }
 
 .security-input {
     width: 100%;
     box-sizing: border-box;
-    /* 确保 padding 包含在宽度内 */
-    /* 更深的背景，与暗色主题更协调 */
     background: rgba(0, 0, 0, 0.5);
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 8px;
-    padding: 10px 12px;
+    padding: 12px;
     color: white;
-    font-size: 13px;
-    margin-bottom: 10px;
+    font-size: 14px;
+    margin-bottom: 12px;
     transition: all 0.2s ease;
-    /* 恢复纯色文字 */
+}
+
+/* Country Code Select - Dark Theme Styling */
+#profile-country-code {
+    width: 110px !important;
+    background: rgba(0, 0, 0, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 10px;
+    padding: 12px 14px;
+    color: white;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='rgba(255,255,255,0.6)' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 36px;
+}
+
+#profile-country-code:hover {
+    background: rgba(0, 0, 0, 0.7);
+    border-color: rgba(168, 85, 247, 0.4);
+    box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.1);
+}
+
+#profile-country-code:focus {
+    outline: none;
+    border-color: rgba(168, 85, 247, 0.6);
+    background: rgba(0, 0, 0, 0.8);
+    box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.15);
+    animation: selectPulse 0.3s ease;
+}
+
+@keyframes selectPulse {
+    0% {
+        transform: scale(1);
+    }
+
+    50% {
+        transform: scale(1.02);
+    }
+
+    100% {
+        transform: scale(1);
+    }
+}
+
+/* Style the dropdown options */
+#profile-country-code option {
+    background: rgba(18, 18, 23, 0.95);
+    color: white;
+    padding: 10px;
+    font-size: 14px;
+}
+
+#profile-country-code option:checked {
+    background: linear-gradient(135deg, rgba(155, 93, 229, 0.3) 0%, rgba(102, 126, 234, 0.3) 100%);
+    color: white;
+}
+
+.security-input-group {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.security-input-group .security-input {
+    width: 50%;
+    margin-bottom: 0;
 }
 
 .security-input::placeholder {
@@ -4306,13 +4593,16 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
 
 .danger-btn {
     width: 100%;
-    padding: 10px;
+    padding: 12px;
+    /* 统一按钮大小 */
     background: #ef4444;
     color: white;
     border: none;
-    border-radius: 6px;
+    border-radius: 8px;
+    /* 统一圆角 */
     cursor: pointer;
-    font-size: 13px;
+    font-size: 14px;
+    /* 统一字体大小 */
     font-weight: 500;
     transition: all 0.2s ease;
     /* 恢复纯色文字 */
@@ -4343,6 +4633,335 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     border-color: rgba(255, 255, 255, 0.25);
     transform: translateY(-1px);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* Profile Modal - Compact & Elegant */
+.profile-modal {
+    width: 600px;
+    max-width: 95%;
+    text-align: center;
+    transition: width 0.3s ease;
+    background: rgba(18, 18, 23, 0.6);
+    /* Increased transparency to 0.6 */
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 24px;
+    padding: 30px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+}
+
+/* Profile Avatar Section */
+.profile-avatar-section {
+    position: relative;
+    width: 120px;
+    height: 120px;
+    margin: 20px auto 24px;
+    cursor: pointer;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 3px solid rgba(255, 255, 255, 0.15);
+    box-shadow:
+        0 4px 12px rgba(0, 0, 0, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    transition: all 0.3s ease;
+    flex-shrink: 0;
+    /* Ensure circle shape */
+    mask-image: radial-gradient(circle, white 100%, black 100%);
+    -webkit-mask-image: radial-gradient(circle, white 100%, black 100%);
+}
+
+.profile-avatar-section:hover {
+    border-color: rgba(168, 85, 247, 0.6);
+    transform: scale(1.05);
+    box-shadow:
+        0 6px 16px rgba(0, 0, 0, 0.4),
+        inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+.profile-avatar-section img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+    /* Double ensure circle */
+    display: block;
+}
+
+.avatar-upload-hint {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(10px);
+    padding: 8px;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-size: 13px;
+    color: white;
+}
+
+.profile-avatar-section:hover .avatar-upload-hint {
+    opacity: 1;
+}
+
+/* Nickname Section */
+.profile-nickname-section {
+    margin-bottom: 24px;
+    min-height: 40px;
+    width: 100%;
+    max-width: 320px;
+    position: relative;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+    padding: 18px;
+    box-shadow:
+        0 2px 8px rgba(0, 0, 0, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    transition: all 0.3s ease;
+    overflow: hidden;
+    flex-shrink: 0;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.profile-nickname-section::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: linear-gradient(180deg, rgba(168, 85, 247, 0.6), rgba(244, 114, 182, 0.6));
+    border-radius: 12px 0 0 12px;
+}
+
+.profile-nickname-section:hover {
+    border-color: rgba(255, 255, 255, 0.18);
+    box-shadow:
+        0 4px 12px rgba(0, 0, 0, 0.4),
+        inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    transform: translateY(-2px);
+}
+
+.nickname-display {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: opacity 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+        transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.nickname-display.hiding {
+    opacity: 0;
+    transform: translateY(-10px);
+    pointer-events: none;
+}
+
+.nickname-display.showing {
+    animation: displayModeRise 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) backwards;
+}
+
+@keyframes displayModeRise {
+    from {
+        opacity: 0;
+        transform: translateY(20px) scale(0.95);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+#profileModalNickname {
+    font-size: 20px;
+    font-weight: 600;
+    color: white;
+}
+
+.edit-icon {
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.4);
+    cursor: pointer;
+    transition: color 0.2s, transform 0.2s;
+}
+
+.edit-icon:hover {
+    color: #007aff;
+    transform: scale(1.1);
+}
+
+/* ... existing styles ... */
+
+.nickname-edit {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    /* Increased gap for better spacing */
+    align-items: center;
+    animation: editModeRise 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) backwards;
+    width: 100%;
+    max-width: 280px;
+    /* Constrain width for better layout */
+    margin: 0 auto;
+}
+
+@keyframes editModeRise {
+    from {
+        opacity: 0;
+        transform: translateY(20px) scale(0.95);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+#nicknameInput {
+    background: rgba(0, 0, 0, 0.5);
+    /* Dark background */
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 12px;
+    /* Softer corners */
+    padding: 12px 16px;
+    color: white;
+    text-align: center;
+    width: 100%;
+    /* Full width of container */
+    font-size: 16px;
+    transition: all 0.2s ease;
+    box-sizing: border-box;
+}
+
+#nicknameInput:focus {
+    outline: none;
+    border-color: rgba(168, 85, 247, 0.6);
+    /* Purple focus */
+    background: rgba(0, 0, 0, 0.7);
+    box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.15), inset 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.edit-actions {
+    display: flex;
+    gap: 12px;
+    width: 100%;
+    justify-content: center;
+}
+
+.cancel-btn,
+.save-btn-small {
+    padding: 10px 20px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: none;
+    flex: 1;
+    /* Equal width buttons */
+}
+
+.cancel-btn {
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.cancel-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: white;
+}
+
+.save-btn-small {
+    background: linear-gradient(135deg, #9b5de5 0%, #667eea 100%);
+    color: white;
+    box-shadow: 0 4px 12px rgba(155, 93, 229, 0.3);
+}
+
+.save-btn-small:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(155, 93, 229, 0.4);
+}
+
+.update-avatar-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: -10px;
+    /* Pull closer to avatar */
+    margin-bottom: 10px;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.6);
+    cursor: pointer;
+    padding: 6px 12px;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.05);
+    transition: all 0.2s ease;
+}
+
+.update-avatar-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+}
+
+.update-avatar-btn i {
+    font-size: 12px;
+}
+
+/* Button Styles - Ensure Visibility */
+.save-btn {
+    width: 100%;
+    padding: 12px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.95rem;
+    letter-spacing: 0.5px;
+    background: linear-gradient(135deg, #9b5de5 0%, #667eea 100%);
+    border: none;
+    color: white !important;
+    /* Force white text */
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 12px rgba(155, 93, 229, 0.3);
+    margin-top: 10px;
+    /* Add spacing */
+    display: block;
+    /* Ensure block display */
+}
+
+.save-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(155, 93, 229, 0.4);
+}
+
+/* Fix "Bind Now" button specific style if it uses a different class or ID */
+#profileSendSmsBtn {
+    width: 110px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+    height: 44px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: white;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+#profileSendSmsBtn:hover {
+    background: rgba(255, 255, 255, 0.2);
 }
 
 
@@ -4733,14 +5352,7 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
 /* 已删除重复的logout样式定义 - 使用3531-3543行的统一定义 */
 
 /* User Avatar Styles */
-.nav-user-avatar {
-    width: 24px;
-    height: 24px;
-    border-radius: 50%;
-    object-fit: cover;
-    border: 1px solid rgba(255, 255, 255, 0.5);
-    margin-right: 4px;
-}
+/* Duplicate removed - see line 3497 */
 
 .login-trigger-btn {
     /* Ensure button looks good with avatar */
@@ -4865,3 +5477,77 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     /* Start hidden */
     animation: fadeInUpElastic 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
+
+/* =========================================
+   GLOBAL CURSOR FIX - FORCE RESET
+   ========================================= */
+body,
+html {
+    cursor: default !important;
+}
+
+/* Only allow pointer on interactive elements */
+a,
+button,
+input[type="button"],
+input[type="submit"],
+[role="button"],
+.glass-box,
+.pointer-cursor,
+.mac-dot,
+.close-btn,
+.submit-btn,
+.upload-icon-btn,
+.view-more-btn {
+    cursor: pointer !important;
+}
+
+/* Ensure modal overlay doesn't have pointer */
+.modal-overlay,
+.login-overlay,
+.dropdown-backdrop,
+.background-blobs,
+.aurora-overlay {
+    cursor: default !important;
+}
+
+/* Ensure modal content inherits correctly or resets */
+.modal-content,
+.login-card {
+    cursor: default !important;
+}
+
+/* ==================== Auth Mode Toggle Buttons ==================== */
+.mode-toggle-btn {
+    flex: 1;
+    padding: 10px 16px;
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 14px;
+    font-weight: 500;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+
+.mode-toggle-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.mode-toggle-btn.active {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
+.mode-toggle-btn i {
+    font-size: 14px;
+}
+
+/* End of file */

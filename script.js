@@ -1,3 +1,19 @@
+// ===== CRITICAL FIX: Ensure all modal overlays have correct visibility =====
+// This fixes the "invisible glass barrier" issue by completely hiding closed modals
+// using visibility: hidden, which removes them from the hit-testing tree.
+document.addEventListener('DOMContentLoaded', () => {
+    const allModals = document.querySelectorAll('.modal-overlay, .login-overlay');
+    allModals.forEach(modal => {
+        // Initialize all closed modals as hidden
+        if (!modal.classList.contains('active')) {
+            modal.classList.add('overlay-hidden');
+            modal.classList.remove('overlay-visible');
+        }
+    });
+
+    console.log(`✅ Initialized visibility for ${allModals.length} modal overlays`);
+});
+
 document.addEventListener('DOMContentLoaded', () => {
     const costInput = document.getElementById('cost');
     const shippingInput = document.getElementById('shipping');
@@ -94,7 +110,7 @@ setInterval(updateClock, 1000);
 function openAuthModal(view = 'login') {
     const modal = document.getElementById('loginModal');
     if (modal) {
-        // 清除关闭状态相关的类和内联样式，确保正常显示
+        // 清除关闭状态相关的类
         modal.classList.remove('closing');
         modal.style.backdropFilter = '';
         modal.style.webkitBackdropFilter = '';
@@ -105,7 +121,29 @@ function openAuthModal(view = 'login') {
 
         // 添加 active 类以显示模态框
         modal.classList.add('active');
+
+        // Use new visibility class
+        modal.classList.remove('overlay-hidden');
+        modal.classList.add('overlay-visible');
+
         switchAuthView(view);
+    }
+}
+
+function toggleProfitCalculator() {
+    const modal = document.getElementById('profitModal');
+    if (modal) {
+        // Clear any inline styles from previous close
+        modal.style.display = '';
+        modal.style.visibility = '';
+        modal.style.opacity = '';
+        modal.style.pointerEvents = '';
+
+        modal.classList.add('active');
+        modal.classList.add('overlay-visible');
+
+        // Prevent body scroll when modal is open
+        document.body.style.overflow = 'hidden';
     }
 }
 
@@ -127,6 +165,10 @@ function toggleLoginModal() {
                 modal.style.background = 'transparent';
                 // 移除 closing 类
                 modal.classList.remove('closing');
+
+                // Use new visibility class to hide completely
+                modal.classList.remove('overlay-visible');
+                modal.classList.add('overlay-hidden');
             }
         }, 350); // 等待过渡动画完成（0.3s）+ 额外缓冲时间
     }
@@ -161,10 +203,30 @@ function switchAuthView(view) {
 }
 
 // --- Coming Soon Modal Logic ---
-function openModal(modalId) {
+function openModal(input) {
+    let modalId;
+    if (typeof input === 'string') {
+        modalId = input;
+    } else if (input && input.getAttribute) {
+        modalId = input.getAttribute('data-modal');
+    } else {
+        console.error('Invalid input for openModal');
+        return;
+    }
+
     const modal = document.getElementById(modalId);
     if (modal) {
+        // Clear any inline styles from previous close
+        modal.style.display = '';
+        modal.style.visibility = '';
+        modal.style.opacity = '';
+        modal.style.pointerEvents = '';
+
         modal.classList.add('active');
+        modal.classList.add('overlay-visible');
+
+        // Prevent body scroll when modal is open
+        document.body.style.overflow = 'hidden';
     }
 }
 
@@ -177,8 +239,35 @@ function closeModal(event) {
         event.target.closest('.mac-dot.red') ||
         event.target.closest('.modal-close-icon')) {
 
+        // Close user dropdown (this will naturally hide the backdrop via CSS)
+        const dropdown = document.getElementById('userDropdown');
+        if (dropdown) {
+            dropdown.classList.remove('active');
+        }
+
+        // Clean up dropdown backdrop inline styles if they exist
+        const dropdownBackdrop = document.querySelector('.dropdown-backdrop');
+        if (dropdownBackdrop) {
+            dropdownBackdrop.style.cssText = ''; // Clear inline styles to allow CSS to take over
+        }
+
         const modals = document.querySelectorAll('.modal-overlay');
-        modals.forEach(modal => modal.classList.remove('active'));
+        modals.forEach(modal => {
+            modal.classList.remove('active');
+            modal.classList.remove('overlay-visible'); // CRITICAL: Remove this to allow fade out
+
+            // After animation, force complete cleanup to prevent glass blur residue
+            setTimeout(() => {
+                if (!modal.classList.contains('active')) {
+                    modal.classList.add('overlay-hidden');
+                    modal.style.display = 'none'; // CRITICAL: Force display none to kill blur
+                    modal.style.visibility = 'hidden';
+                    modal.style.opacity = '0';
+                    modal.style.pointerEvents = 'none';
+                    document.body.style.overflow = ''; // Restore scroll
+                }
+            }, 200);
+        });
     }
 }
 
@@ -1372,5 +1461,72 @@ document.addEventListener('click', (event) => {
 
     if (topNav && dropdown && !topNav.contains(event.target)) {
         dropdown.classList.remove('active');
+    }
+});
+
+// Function to close profile modal with animation
+function closeProfileModal() {
+    const modal = document.getElementById('profileModal');
+    if (!modal) return;
+
+    // IMMEDIATE CLEANUP - Only clean up what's directly related
+    // Step 1: Close dropdown (this will naturally hide the backdrop via CSS)
+    const dropdown = document.getElementById('userDropdown');
+    if (dropdown) {
+        dropdown.classList.remove('active');
+    }
+
+    // Clean up dropdown backdrop inline styles if they exist
+    const dropdownBackdrop = document.querySelector('.dropdown-backdrop');
+    if (dropdownBackdrop) {
+        dropdownBackdrop.style.cssText = ''; // Clear inline styles to allow CSS to take over
+    }
+
+    // Step 2: Start closing animation for profile modal
+    modal.classList.remove('active');
+    modal.classList.remove('overlay-visible');
+
+    // Step 3: After animation, hide profile modal completely
+    setTimeout(() => {
+        modal.classList.add('overlay-hidden');
+        modal.style.display = 'none';
+        modal.style.visibility = 'hidden';
+        modal.style.opacity = '0';
+        modal.style.pointerEvents = 'none';
+        document.body.style.overflow = ''; // Restore scroll
+
+        // Reset to profile view
+        switchProfileTab('profile');
+    }, 200); // Match CSS transition of 0.2s
+}
+
+// Ensure dropdown is closed when opening profile modal
+document.addEventListener('DOMContentLoaded', () => {
+    const profileModal = document.getElementById('profileModal');
+    if (profileModal) {
+        // Use MutationObserver to detect when modal becomes active
+        const observer = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                if (mutation.attributeName === 'class') {
+                    const modal = mutation.target;
+                    if (modal.classList.contains('active')) {
+                        // DEEP FIX: Close dropdown when modal opens
+                        const dropdown = document.getElementById('userDropdown');
+                        if (dropdown) {
+                            dropdown.classList.remove('active');
+                        }
+
+                        // DEEP FIX: Close ALL other modal overlays
+                        document.querySelectorAll('.modal-overlay').forEach(overlay => {
+                            if (overlay.id !== 'profileModal' && overlay.classList.contains('active')) {
+                                overlay.classList.remove('active');
+                            }
+                        });
+                    }
+                }
+            });
+        });
+
+        observer.observe(profileModal, { attributes: true });
     }
 });
