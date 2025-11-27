@@ -14,8 +14,8 @@
         href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;700;800&display=swap"
         rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css?v=20251124_FIX_FINAL">
-    <link rel="stylesheet" href="login_styles.css">
+    <link rel="stylesheet" href="style.css?v=1764209104">
+    <link rel="stylesheet" href="login_styles.css?v=1764163660">
     <link rel="stylesheet" href="login_dual_mode.css">
     <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
     <script type="text/javascript">
@@ -26,15 +26,15 @@
     </script>
     <!-- LeanCloud SDK -->
     <script src="https://cdn.jsdelivr.net/npm/leancloud-storage@4.15.2/dist/av-min.js"></script>
-    <script src="./leancloud-init.js?v=20251126_GOOGLE_OAUTH" defer></script>
-    <script src="./leancloud-auth-functions.js?v=20251126_GOOGLE_OAUTH" defer></script>
-    <script src="./leancloud-guestbook-functions.js?v=20251126_GOOGLE_OAUTH" defer></script>
+    <script src="./leancloud-init.js?v=1764163660" defer></script>
+    <script src="./leancloud-auth-functions.js?v=1764207414" defer></script>
+    <script src="./leancloud-guestbook-functions.js?v=1764163660" defer></script>
 
     <!-- Google Sign-In SDK -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
 
     <!-- Google OAuth Implementation -->
-    <script src="./google-oauth.js?v=20251126_OAUTH_POPUP" defer></script>
+    <script src="./google-oauth.js?v=20251126_CORRECT_CLIENT_ID" defer></script>
 
     <style>
         /* Homepage entrance animation - Subtle */
@@ -53,51 +53,51 @@
         .glass-box {
             opacity: 0;
             /* Start hidden to prevent flash */
-            animation: slideInUp 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
-            /* Smooth entrance */
+            animation: fadeInUpElastic 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+            /* Elastic entrance */
             /* Transition for magnetic effect - separate from animation */
             transition: transform 0.1s ease-out, background 0.3s ease, box-shadow 0.3s ease;
         }
 
         /* Subtle stagger animation for each card */
         .glass-box:nth-child(1) {
-            animation-delay: 0s;
+            animation-delay: 0.1s;
         }
 
         .glass-box:nth-child(2) {
-            animation-delay: 0.05s;
+            animation-delay: 0.15s;
         }
 
         .glass-box:nth-child(3) {
-            animation-delay: 0.08s;
-        }
-
-        .glass-box:nth-child(4) {
-            animation-delay: 0.11s;
-        }
-
-        .glass-box:nth-child(5) {
-            animation-delay: 0.14s;
-        }
-
-        .glass-box:nth-child(6) {
-            animation-delay: 0.17s;
-        }
-
-        .glass-box:nth-child(7) {
             animation-delay: 0.2s;
         }
 
+        .glass-box:nth-child(4) {
+            animation-delay: 0.25s;
+        }
+
+        .glass-box:nth-child(5) {
+            animation-delay: 0.3s;
+        }
+
+        .glass-box:nth-child(6) {
+            animation-delay: 0.35s;
+        }
+
+        .glass-box:nth-child(7) {
+            animation-delay: 0.4s;
+        }
+
         .glass-box:nth-child(8) {
-            animation-delay: 0.23s;
+            animation-delay: 0.45s;
         }
 
         .glass-box:nth-child(9) {
-            animation-delay: 0.26s;
+            animation-delay: 0.5s;
         }
 
         .glass-box:nth-child(10) {
-            animation-delay: 0.29s;
+            animation-delay: 0.55s;
         }
     </style>
     <script>
@@ -114,6 +114,9 @@
         <div class="blob blob-2"></div>
         <div class="blob blob-3"></div>
     </div>
+
+    <!-- Dropdown Backdrop (Controlled by CSS :has) -->
+    <div class="dropdown-backdrop" style="z-index: 2099;"></div>
 
     <div class="bento-container">
         <!-- Profile & Clock Card (2x2) -->
@@ -190,7 +193,7 @@
 
     <!-- Guestbook Modal -->
     <div class="modal-overlay" id="guestbookModal" onclick="closeModal(event)">
-        <div class="modal-content guestbook-content premium-modal" style="position: relative;">
+        <div class="modal-content guestbook-content premium-modal" style="position: relative;" onclick="event.stopPropagation()">
             <!-- Mac Window Controls -->
             <div class="mac-controls">
                 <div class="mac-dot red" onclick="closeModal(event)">
@@ -331,7 +334,7 @@
     </div>
 
     <!-- Login Trigger Button (Top Right) -->
-    <div class="top-right-nav" style="position: absolute; top: 30px; right: 40px; z-index: 100;">
+    <div class="top-right-nav" style="position: fixed; top: 30px; right: 40px; z-index: 2100;">
         <button id="authBtn" class="login-trigger-btn" onclick="handleAuthClick(event)">
             <!-- Default Icon (shown when logged out) -->
             <i id="defaultAuthIcon" class="fas fa-user-circle" style="font-size: 1.2rem;"></i>
@@ -342,27 +345,27 @@
             <span id="authBtnText">Sign In</span>
         </button>
 
-        <div id="userDropdown" class="user-dropdown">
-            <!-- Profile Section -->
-            <div class="menu-item profile-section" id="profileMenuItem"
-                onclick="document.getElementById('avatarUpload').click()">
-                <div class="avatar-container">
-                    <img id="dropdownAvatar" class="nav-user-avatar" src="" alt="Avatar">
-                    <div class="avatar-overlay-icon">
-                        <i class="fas fa-camera"></i>
-                    </div>
-                </div>
-                <div class="profile-info">
-                    <span id="profileEmail" class="profile-name"></span>
-                    <span class="profile-hint">点击更换头像</span>
-                </div>
+        <div id="userDropdown" class="user-dropdown" style="z-index: 2100;">
+            <!-- Personal Profile -->
+            <div class="menu-item profile-menu-item" onclick="openProfileModal(event)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="12" cy="7" r="4"></circle>
+                </svg>
+                个人资料
             </div>
 
-            <!-- Hidden File Input -->
-            <input type="file" id="avatarUpload" accept="image/*" style="display: none;"
-                onchange="handleAvatarUpload(event)">
-
             <div class="divider" style="margin: 5px 0; border-top: 1px solid rgba(255,255,255,0.1);"></div>
+
+            <div class="menu-item switch-account" onclick="handleSwitchAccount(event)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="9" cy="7" r="4"></circle>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                </svg>
+                切换账户
+            </div>
 
             <div class="menu-item logout" onclick="handleLogout(event)">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -378,7 +381,7 @@
 
     <!-- Auth Modal (Dual Mode) -->
     <div class="login-overlay" id="loginModal" onclick="handleLoginOverlayClick(event)">
-        <div class="login-card">
+        <div class="login-card" onclick="event.stopPropagation()">
             <!-- Mac Window Controls -->
             <div class="mac-controls">
                 <div class="mac-dot red" onclick="toggleLoginModal()">
@@ -498,6 +501,110 @@
     </div>
 
     <!-- Coming Soon Modal -->
+    <!-- Profile Modal -->
+    <div class="modal-overlay" id="profileModal" onclick="closeModal(event)">
+        <div class="modal-content profile-modal">
+            <!-- Mac Window Controls -->
+            <div class="mac-controls">
+                <div class="mac-dot red" onclick="document.getElementById('profileModal').classList.remove('active')"><i
+                        class="fas fa-times"></i></div>
+                <div class="mac-dot yellow"></div>
+                <div class="mac-dot green"></div>
+            </div>
+
+            <!-- Tab Navigation -->
+            <div class="profile-tabs">
+                <div class="tab-item active" onclick="switchProfileTab('profile')">资料</div>
+                <div class="tab-item" onclick="switchProfileTab('security')">安全</div>
+            </div>
+
+            <!-- Flip Container -->
+            <div class="profile-flip-container">
+                <div class="profile-flip-inner">
+                    <!-- View 1: Profile (Front) -->
+                    <div id="view-profile" class="profile-view profile-front">
+                        <div class="modal-title">个人资料</div>
+
+                        <!-- Avatar Section -->
+                        <div class="profile-avatar-section" onclick="document.getElementById('avatarUpload').click()">
+                            <img id="profileModalAvatar" src="" alt="Avatar">
+                            <div class="avatar-upload-hint">
+                                <i class="fas fa-camera"></i>
+                                <span>更换头像</span>
+                            </div>
+                        </div>
+
+                        <!-- Nickname Section -->
+                        <div class="profile-nickname-section">
+                            <!-- Display Mode -->
+                            <div id="nicknameDisplay" class="nickname-display">
+                                <span id="profileModalNickname">Loading...</span>
+                                <i class="fas fa-pen edit-icon" onclick="toggleNicknameEdit(true)"></i>
+                            </div>
+
+                            <!-- Edit Mode -->
+                            <div id="nicknameEdit" class="nickname-edit" style="display: none;">
+                                <input type="text" id="nicknameInput" placeholder="输入新昵称">
+                                <div class="edit-actions">
+                                    <button class="cancel-btn" onclick="toggleNicknameEdit(false)">取消</button>
+                                    <button class="save-btn" onclick="saveNickname()">保存</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Email Display -->
+                        <div class="profile-email-section">
+                            <label>邮箱地址</label>
+                            <div id="profileModalEmail" class="profile-email-display"></div>
+                        </div>
+
+                        <!-- Hidden File Input (Moved here) -->
+                        <input type="file" id="avatarUpload" accept="image/*" style="display: none;"
+                            onchange="handleAvatarUpload(event)">
+
+                        <!-- Member Since Badge -->
+                        <div class="member-since-badge">
+                            <i class="fas fa-calendar-alt"></i>
+                            <span id="profileMemberSince">注册于 2025年</span>
+                        </div>
+                    </div>
+
+                    <!-- View 2: Security (Back) -->
+                    <div id="view-security" class="profile-view profile-back">
+                        <div class="modal-title">安全设置</div>
+
+                        <!-- 1. Email Verification -->
+                        <div class="security-item">
+                            <div class="security-header">
+                                <span>邮箱验证</span>
+                                <span id="emailStatusIcon"></span>
+                            </div>
+                            <p class="security-desc" id="emailStatusText">检查中...</p>
+                            <button id="resendVerifyBtn" class="secondary-btn" onclick="resendVerificationEmail()"
+                                style="display: none;">重发验证邮件</button>
+                        </div>
+
+                        <!-- 2. Change Password -->
+                        <div class="security-item">
+                            <div class="security-header">修改密码</div>
+                            <input type="password" id="oldPasswordInput" placeholder="当前密码" class="security-input">
+                            <input type="password" id="newPasswordInput" placeholder="新密码 (至少6位)"
+                                class="security-input">
+                            <button class="save-btn small" onclick="changePassword()">更新密码</button>
+                        </div>
+
+                        <!-- 3. Delete Account -->
+                        <div class="security-item danger-zone">
+                            <div class="security-header text-red">注销账号</div>
+                            <p class="security-desc">此操作不可恢复，您的所有数据将被永久删除。</p>
+                            <button class="danger-btn" onclick="deleteAccount()">注销账号</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="modal-overlay" id="comingSoonModal" onclick="closeModal(event)">
         <div class="modal-content premium-modal"
             style="position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 300px;">
@@ -518,7 +625,7 @@
 
     <!-- Elastic Press Effect -->
     <script src="elastic-press.js?v=20251126_GOOGLE_OAUTH_FIX" defer></script>
-    <script src="script.js?v=20251126_GOOGLE_OAUTH_FIX" defer></script>
+    <script src="script.js?v=1764206414" defer></script>
 </body>
 
 </html>

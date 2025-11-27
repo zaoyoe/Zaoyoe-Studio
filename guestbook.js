@@ -50,6 +50,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Initialize magnetic effect for new cards
         initMagneticEffect();
+
+        // Trigger entrance animation with a small delay to ensure DOM is ready
+        setTimeout(() => {
+            const wrappers = messageContainer.querySelectorAll('.message-anim-wrapper');
+            wrappers.forEach(wrapper => {
+                // Force reflow to ensure browser registers initial state
+                void wrapper.offsetWidth;
+                wrapper.classList.add('visible');
+            });
+        }, 150);
     };
 
     function createMessageCard(msg, index = 0) {
@@ -87,7 +97,7 @@ document.addEventListener('DOMContentLoaded', () => {
             : '';
 
         const messageHtml = `
-            <div class="message-anim-wrapper" style="animation-delay: ${delay}s">
+            <div class="message-anim-wrapper" style="transition-delay: ${delay}s">
                 <div class="message-item" data-id="${msg.id}">
                     
                     <!-- 1. Header (Author Info) -->

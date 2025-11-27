@@ -4,7 +4,7 @@
  */
 
 // Google OAuth 配置
-const GOOGLE_CLIENT_ID = '1017068787594-ep4bj8cdirkilqipbmlfp.apps.googleusercontent.com';
+const GOOGLE_CLIENT_ID = '1017068787594-ep4bj8cdirkllqlpbmlfk436br0vbifp.apps.googleusercontent.com';
 
 // ==================== 初始化 Google Sign-In ====================
 function initGoogleSignIn() {
@@ -18,12 +18,44 @@ function initGoogleSignIn() {
             client_id: GOOGLE_CLIENT_ID,
             callback: handleGoogleCredentialResponse,
             auto_select: false,
-            cancel_on_tap_outside: true
+            cancel_on_tap_outside: true,
+            context: 'signin'
         });
 
         console.log('✅ Google Sign-In initialized');
+
+        // 渲染 Google 登录按钮（如果需要的话）
+        renderGoogleButton();
+
     } catch (error) {
         console.error('❌ Failed to initialize Google Sign-In:', error);
+    }
+}
+
+// 渲染 Google 登录按钮到隐藏的 div
+function renderGoogleButton() {
+    // 创建一个隐藏的容器用于 Google 按钮
+    let googleBtnContainer = document.getElementById('google-btn-container');
+    if (!googleBtnContainer) {
+        googleBtnContainer = document.createElement('div');
+        googleBtnContainer.id = 'google-btn-container';
+        googleBtnContainer.style.display = 'none';
+        document.body.appendChild(googleBtnContainer);
+    }
+
+    try {
+        google.accounts.id.renderButton(
+            googleBtnContainer,
+            {
+                theme: 'filled_blue',
+                size: 'large',
+                text: 'signin_with',
+                shape: 'rectangular'
+            }
+        );
+        console.log('✅ Google button rendered');
+    } catch (error) {
+        console.error('❌ Failed to render Google button:', error);
     }
 }
 
@@ -37,64 +69,38 @@ window.addEventListener('load', function () {
 async function handleGoogleLogin() {
     console.log('🔵 Google Login button clicked');
 
-    // 使用传统 OAuth 2.0 授权码流程（弹窗方式）
-    const redirectUri = encodeURIComponent('http://localhost:8000');
-    const scope = encodeURIComponent('openid email profile');
-    const responseType = 'token id_token'; // 使用 implicit flow 获取 id_token
-
-    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
-        `client_id=${GOOGLE_CLIENT_ID}&` +
-        `redirect_uri=${redirectUri}&` +
-        `response_type=${responseType}&` +
-        `scope=${scope}&` +
-        `nonce=${Math.random().toString(36).substring(7)}`;
-
-    // 打开弹窗
-    const width = 500;
-    const height = 600;
-    const left = (screen.width - width) / 2;
-    const top = (screen.height - height) / 2;
-
-    const popup = window.open(
-        authUrl,
-        'Google Login',
-        `width=${width},height=${height},left=${left},top=${top}`
-    );
-
-    if (!popup) {
-        alert('弹窗被阻止，请允许浏览器弹窗');
+    if (typeof google === 'undefined') {
+        alert('Google 登录服务加载失败，请刷新页面重试');
         return;
     }
 
-    // 监听弹窗返回
-    const checkPopup = setInterval(() => {
-        try {
-            if (popup.closed) {
-                clearInterval(checkPopup);
-                console.log('⚠️ Popup closed');
-                return;
-            }
+    try {
+        // 方法1：尝试使用 One Tap
+        google.accounts.id.prompt((notification) => {
+            console.log('📢 Prompt notification:', notification);
 
-            // 检查是否跳转回来了
-            const popupUrl = popup.location.href;
+            if (notification.isNotDisplayed()) {
+                console.log('⚠️ One Tap not displayed, reason:', notification.getNotDisplayedReason());
 
-            if (popupUrl.includes('localhost') && popupUrl.includes('id_token')) {
-                clearInterval(checkPopup);
-                popup.close();
-
-                // 从 URL fragment 提取 id_token
-                const fragment = popupUrl.split('#')[1];
-                const params = new URLSearchParams(fragment);
-                const idToken = params.get('id_token');
-
-                if (idToken) {
-                    handleGoogleCredentialResponse({ credential: idToken });
+                // 如果 One Tap 不可用，触发隐藏按钮的点击
+                const googleBtnContainer = document.getElementById('google-btn-container');
+                if (googleBtnContainer) {
+                    const googleBtn = googleBtnContainer.querySelector('div[role="button"]');
+                    if (googleBtn) {
+                        console.log('🔄 Clicking hidden Google button');
+                        googleBtn.click();
+                    } else {
+                        alert('Google 登录初始化失败，请刷新页面重试');
+                    }
+                } else {
+                    alert('Google 登录服务未就绪，请稍后再试');
                 }
             }
-        } catch (e) {
-            // CORS 阻止访问 popup.location，忽略
-        }
-    }, 500);
+        });
+    } catch (error) {
+        console.error('❌ Google login error:', error);
+        alert('Google 登录失败: ' + error.message);
+    }
 }
 
 // ==================== 处理 Google 登录回调 ====================

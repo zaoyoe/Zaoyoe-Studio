@@ -574,7 +574,9 @@ input[type="range"] {
     box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.05);
 }
 
-.submit-btn {
+.submit-btn,
+button.submit-btn,
+input.submit-btn {
     width: 100%;
     padding: 16px;
     background: linear-gradient(135deg, #a855f7 0%, #f472b6 50%, #fb7185 100%);
@@ -584,12 +586,17 @@ input[type="range"] {
     color: white;
     font-size: 1.1rem;
     font-weight: 600;
-    cursor: pointer;
+    cursor: pointer !important;
     transition: all 0.3s ease;
     /* Smooth transition */
     margin-top: 10px;
     margin-bottom: 20px;
     box-shadow: 0 6px 20px rgba(168, 85, 247, 0.4);
+    position: relative;
+    z-index: 100 !important;
+    pointer-events: auto !important;
+    -webkit-user-select: none;
+    user-select: none;
 }
 
 .submit-btn:hover {
@@ -1248,11 +1255,12 @@ input[type="range"] {
     width: 100%;
     height: 100%;
     background: rgba(0, 0, 0, 0.6);
-    /* Darker background for less transparency */
+    /* Darker background for less transparency - copied from login-overlay */
     backdrop-filter: blur(8px);
-    /* Blur background to focus attention */
+    /* Blur background to focus attention - copied from login-overlay */
     -webkit-backdrop-filter: blur(8px);
-    z-index: 1000;
+    z-index: 2000;
+    /* 与其他弹窗保持一致，确保不会被遮挡 */
     display: flex;
     justify-content: center;
     align-items: center;
@@ -1267,8 +1275,9 @@ input[type="range"] {
 
 .modal-overlay.active {
     opacity: 1;
-    pointer-events: all;
+    pointer-events: all !important;
 }
+
 
 .modal-content {
     background: rgba(255, 255, 255, 0.08);
@@ -1281,9 +1290,9 @@ input[type="range"] {
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
     border: 1px solid rgba(255, 255, 255, 0.15);
     border-top: 1px solid rgba(255, 255, 255, 0.25);
-    backdrop-filter: blur(40px);
-    /* Increased blur for better glass effect */
-    -webkit-backdrop-filter: blur(40px);
+    backdrop-filter: blur(40px) saturate(150%);
+    /* Increased blur + saturation for better glass effect */
+    -webkit-backdrop-filter: blur(40px) saturate(150%);
     transform: scale(0.95);
     /* Unified with login modal */
     transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -1293,6 +1302,9 @@ input[type="range"] {
     backface-visibility: hidden;
     /* Hardware acceleration */
     color: white;
+    position: relative;
+    z-index: 1;
+    pointer-events: auto !important;
 }
 
 .modal-overlay.active .modal-content {
@@ -1347,12 +1359,12 @@ input[type="range"] {
 .modal-title {
     font-size: 2rem;
     font-weight: 800;
-    margin-bottom: 10px;
-    background: linear-gradient(to right, #fff, #ccc);
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
+    margin-bottom: 0;
+    margin-top: 10px;
+    /* 恢复纯色 */
+    color: #ffffff;
     letter-spacing: -0.5px;
+    flex-shrink: 0;
 }
 
 .modal-text {
@@ -2076,7 +2088,8 @@ svg {
     right: 12px;
 }
 
-.upload-icon-btn {
+.upload-icon-btn,
+button.upload-icon-btn {
     background: rgba(255, 255, 255, 0.15);
     border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 8px;
@@ -2087,8 +2100,13 @@ svg {
     align-items: center;
     justify-content: center;
     color: rgba(255, 255, 255, 0.8);
-    cursor: pointer;
+    cursor: pointer !important;
     transition: all 0.3s ease;
+    position: relative;
+    z-index: 100 !important;
+    pointer-events: auto !important;
+    -webkit-user-select: none;
+    user-select: none;
 }
 
 .upload-icon-btn:hover {
@@ -2297,13 +2315,16 @@ svg {
     border: none;
     font-weight: 600;
     padding: 12px 24px;
-    cursor: pointer;
+    cursor: pointer !important;
     transition: all 0.2s;
     font-size: 0.95rem;
     text-decoration: none;
     display: inline-flex;
     align-items: center;
     gap: 8px;
+    pointer-events: auto !important;
+    position: relative;
+    z-index: 100;
 }
 
 .view-more-btn:hover {
@@ -2335,13 +2356,24 @@ svg {
 .modal-content,
 .premium-modal,
 .login-card {
-    background: rgba(255, 255, 255, 0.03);
+    background: rgba(0, 0, 0, 0.1);
+    /* Much lighter black transparent */
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-top: 1px solid rgba(255, 255, 255, 0.2);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(20px) saturate(150%);
+    /* Added saturate for brighter glass effect */
+    -webkit-backdrop-filter: blur(20px) saturate(150%);
     color: white;
+    transform: scale(0.95);
+    /* Reverted to scale */
+    opacity: 0;
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.modal-overlay.active .modal-content {
+    transform: scale(1);
+    opacity: 1;
 }
 
 .view-more-btn i {
@@ -2642,6 +2674,9 @@ svg {
 
 /* Google Login Button - Transparent with icon + text only */
 .google-login-btn {
+    position: relative;
+    z-index: 10;
+    pointer-events: auto !important;
     width: 100%;
     padding: 14px 20px;
     border-radius: 14px;
@@ -2654,7 +2689,7 @@ svg {
     justify-content: center;
     align-items: center;
     gap: 12px;
-    cursor: pointer;
+    cursor: pointer !important;
     transition: all 0.25s ease;
     margin-bottom: 28px;
     backdrop-filter: blur(10px);
@@ -2762,7 +2797,9 @@ svg {
     box-shadow: 0 0 0 3px rgba(241, 91, 181, 0.2), 0 0 20px rgba(168, 85, 247, 0.15);
 }
 
-.login-submit-btn {
+.login-submit-btn,
+button.login-submit-btn,
+input.login-submit-btn {
     width: 100%;
     padding: 16px;
     border-radius: 14px;
@@ -2770,12 +2807,17 @@ svg {
     color: white;
     font-weight: 600;
     font-size: 16px;
-    cursor: pointer;
+    cursor: pointer !important;
     background: linear-gradient(135deg, #a855f7 0%, #f472b6 50%, #fb7185 100%);
     /* Unified Pink-Purple Gradient */
     transition: all 0.3s ease;
     margin-top: 14px;
     box-shadow: 0 6px 20px rgba(168, 85, 247, 0.4);
+    position: relative;
+    z-index: 100 !important;
+    pointer-events: auto !important;
+    -webkit-user-select: none;
+    user-select: none;
 }
 
 .login-submit-btn:hover {
@@ -3186,21 +3228,111 @@ svg {
     display: none;
 }
 
-/* Show form with animation */
-.add-comment-form {
-    animation: slideDown 0.3s ease-out;
+/* Content Slide Up Animation - Transition Based */
+
+/* Initial State: Hidden and Offset (only when overlay is NOT active) */
+.modal-overlay:not(.active) .modal-content>*:not(.window-controls):not(.modal-close),
+.login-overlay:not(.active) .login-card .form-view>* {
+    opacity: 0;
+    transform: translateY(20px);
 }
 
-@keyframes slideDown {
-    from {
-        opacity: 0;
-        transform: translateY(-10px);
-    }
+/* Add transition to all content elements */
+.modal-content>*:not(.window-controls):not(.modal-close),
+.login-card .form-view>* {
+    transition: all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
 
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+/* 确保按钮内的图标不干扰点击 */
+button *,
+.submit-btn *,
+.upload-icon-btn *,
+.login-submit-btn *,
+.google-login-btn *,
+.verify-code-btn *,
+.view-more-btn * {
+    pointer-events: none;
+}
+
+/* 激活状态的弹窗和内容 */
+.login-overlay.active,
+.modal-overlay.active {
+    pointer-events: all !important;
+}
+
+.login-overlay.active .login-card,
+.modal-overlay.active .modal-content {
+    pointer-events: auto !important;
+}
+
+/* Active State: Visible and Reset */
+.modal-overlay.active .modal-content>*:not(.window-controls):not(.modal-close),
+.login-overlay.active .login-card .form-view>* {
+    opacity: 1 !important;
+    transform: translateY(0) !important;
+    pointer-events: auto !important;
+}
+
+/* 全局确保所有按钮和链接始终可点击 - 最高优先级 */
+button,
+input[type="button"],
+input[type="submit"],
+input[type="reset"],
+a,
+label[for],
+.submit-btn,
+.upload-icon-btn,
+.login-submit-btn,
+.google-login-btn,
+.verify-code-btn,
+.mac-dot,
+.switch-link,
+.forgot-password-link,
+.view-more-btn,
+[onclick],
+[type="submit"],
+.modal-content button,
+.modal-content a,
+.modal-content .submit-btn,
+.modal-content .upload-icon-btn,
+.modal-content .view-more-btn,
+.login-card button,
+.login-card a,
+.login-card .login-submit-btn,
+.login-card .google-login-btn {
+    pointer-events: auto !important;
+    cursor: pointer !important;
+}
+
+/* Staggered Delays for Cascading Effect */
+.modal-overlay.active .modal-content>*:nth-child(1),
+.login-overlay.active .login-card .form-view>*:nth-child(1) {
+    transition-delay: 0.1s;
+}
+
+.modal-overlay.active .modal-content>*:nth-child(2),
+.login-overlay.active .login-card .form-view>*:nth-child(2) {
+    transition-delay: 0.15s;
+}
+
+.modal-overlay.active .modal-content>*:nth-child(3),
+.login-overlay.active .login-card .form-view>*:nth-child(3) {
+    transition-delay: 0.2s;
+}
+
+.modal-overlay.active .modal-content>*:nth-child(4),
+.login-overlay.active .login-card .form-view>*:nth-child(4) {
+    transition-delay: 0.25s;
+}
+
+.modal-overlay.active .modal-content>*:nth-child(5),
+.login-overlay.active .login-card .form-view>*:nth-child(5) {
+    transition-delay: 0.3s;
+}
+
+.modal-overlay.active .modal-content>*:nth-child(n+6),
+.login-overlay.active .login-card .form-view>*:nth-child(n+6) {
+    transition-delay: 0.35s;
 }
 
 /* Elastic Press State */
@@ -3289,8 +3421,10 @@ svg {
 .top-right-nav {
     position: fixed;
     top: 30px;
-    right: 30px;
-    z-index: 100;
+    right: 100px;
+    /* 进一步向左移动，确保下拉菜单完全显示 */
+    z-index: 2100;
+    /* Higher than login-overlay (2000) to ensure user menu is always accessible */
 }
 
 .login-trigger-btn {
@@ -3312,6 +3446,91 @@ svg {
     display: flex;
     align-items: center;
     gap: 8px;
+}
+
+/* 为 Sign In 文本添加过渡动画 */
+#authBtnText {
+    opacity: 1;
+    transition: opacity 0.3s ease, max-width 0.3s ease;
+}
+
+/* 登录状态下隐藏 Sign In 文本（已由后面的 .logged-in 规则处理） */
+
+/* 用户头像和昵称进入动画 */
+.nav-user-avatar {
+    width: 24px;
+    height: 24px;
+    min-width: 24px;
+    min-height: 24px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    flex-shrink: 0;
+    /* 防止头像被挤压 */
+    display: inline-block;
+    vertical-align: middle;
+}
+
+.nav-user-avatar.animate-in {
+    animation: userAvatarRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) backwards;
+}
+
+#authBtnText.animate-in {
+    /* 昵称动画已移除，使用CSS悬浮控制 */
+    animation: userTextRise 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.1s backwards;
+}
+
+/* 登录状态下完全隐藏昵称，不再使用悬浮展开 */
+/* 登录状态下隐藏昵称，使用动画过渡 */
+.login-trigger-btn.logged-in #authBtnText {
+    max-width: 0;
+    opacity: 0;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    /* transition 已在 #authBtnText 中定义 */
+}
+
+/* 登录状态下的按钮样式：只显示头像 */
+.login-trigger-btn.logged-in {
+    padding: 8px;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.login-trigger-btn.logged-in .nav-user-avatar {
+    margin: 0;
+    /* 确保头像没有额外的边距 */
+    border: 2px solid rgba(255, 255, 255, 0.8);
+    /* 增强头像边框 */
+}
+
+@keyframes userAvatarRise {
+    from {
+        opacity: 0;
+        transform: translateY(-10px) scale(0.8);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes userTextRise {
+    from {
+        opacity: 0;
+        transform: translateY(-15px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .login-trigger-btn:hover {
@@ -3343,12 +3562,35 @@ svg {
     /* Hidden by default */
     opacity: 0;
     visibility: hidden;
-    transition: all 0.3s ease;
+    transition: opacity 0.3s ease, visibility 0.3s ease;
+    /* 分离过渡，避免 backdrop-filter 参与过渡 */
 }
 
 .login-overlay.active {
     opacity: 1;
     visibility: visible;
+    /* 确保激活时恢复背景和模糊效果 */
+    backdrop-filter: blur(8px) !important;
+    -webkit-backdrop-filter: blur(8px) !important;
+    background: rgba(0, 0, 0, 0.6) !important;
+    pointer-events: all !important;
+}
+
+
+/* 关闭时立即清除 backdrop-filter 和背景以防止残留 */
+.login-overlay.closing {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: transparent !important;
+    pointer-events: none !important;
+}
+
+/* 非激活状态下清除效果（但优先级低于 .active） */
+.login-overlay:not(.active):not(.closing) {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: transparent;
+    pointer-events: none;
 }
 
 /* Login Card Body */
@@ -3357,6 +3599,7 @@ svg {
     padding: 40px;
     border-radius: 24px;
     position: relative;
+    z-index: 1;
 
     /* Lighter Glassmorphism - Unified with other modals */
     background: rgba(255, 255, 255, 0.03);
@@ -3368,6 +3611,7 @@ svg {
 
     transform: scale(0.95);
     transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    pointer-events: auto !important;
 }
 
 .login-overlay.active .login-card {
@@ -3482,17 +3726,50 @@ svg {
 }
 
 /* --- User Dropdown Menu (Mac System Style) --- */
+/* --- User Dropdown Menu (Mac System Style) --- */
+/* Dropdown Backdrop */
+.dropdown-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    /* Match modal overlay */
+    backdrop-filter: blur(8px);
+    /* Match modal overlay */
+    -webkit-backdrop-filter: blur(8px);
+    z-index: 1999;
+    /* 低于弹窗 (2000) 以免遮挡弹窗交互 */
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s ease;
+    pointer-events: none;
+}
+
+/* Trigger backdrop when dropdown is active */
+body:has(.user-dropdown.active) .dropdown-backdrop {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: all;
+}
+
 .user-dropdown {
     position: absolute;
-    top: 60px;
+    top: calc(100% + 10px);
     right: 0;
-    min-width: 300px;
+    left: auto;
+    min-width: 200px;
+    /* Reduced from 300px for a more refined look */
 
-    /* Mac-style Glass Effect - Unified */
-    background: rgba(255, 255, 255, 0.03);
-    backdrop-filter: blur(40px);
-    -webkit-backdrop-filter: blur(40px);
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    /* Mac-style Glass Effect - Unified with Modals */
+    background: rgba(0, 0, 0, 0.1);
+    /* Match shared modal background */
+    backdrop-filter: blur(20px) saturate(150%);
+    /* Match shared modal filter */
+    -webkit-backdrop-filter: blur(20px) saturate(150%);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-top: 1px solid rgba(255, 255, 255, 0.2);
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
 
     border-radius: 12px;
@@ -3500,88 +3777,653 @@ svg {
 
     opacity: 0;
     visibility: hidden;
-    transform: translateY(-10px) scale(0.95);
-    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-    z-index: 1000;
+    transform: translateX(-50%) translateY(-10px) scale(0.98);
+    /* Subtle container entrance */
+    transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+    pointer-events: none;
+    z-index: 2100;
+    /* Same as parent .top-right-nav, above all modals */
 }
 
 .user-dropdown.active {
     opacity: 1;
     visibility: visible;
-    transform: translateY(0) scale(1);
+    transform: translateX(-50%) translateY(0) scale(1);
+    pointer-events: all;
+}
+
+/* Content Staggered Animation */
+.user-dropdown .menu-item,
+.user-dropdown .profile-section,
+.user-dropdown .divider {
+    opacity: 0;
+    transform: translateY(-15px);
+    transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.user-dropdown.active .menu-item,
+.user-dropdown.active .profile-section,
+.user-dropdown.active .divider {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* Stagger Delays */
+.user-dropdown.active .profile-section {
+    transition-delay: 0.05s;
+}
+
+.user-dropdown.active .divider {
+    transition-delay: 0.1s;
+}
+
+.user-dropdown.active .menu-item:not(.profile-section) {
+    transition-delay: 0.15s;
 }
 
 /* Avatar Container */
-#profileMenuItem {
-    display: flex;
-    align-items: center;
-    padding: 16px;
-    background: none !important;
-    cursor: pointer;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    margin-bottom: 8px;
+/* Profile Modal - Compact & Elegant */
+.profile-modal {
+    width: 400px;
+    max-width: 90%;
+    text-align: center;
 }
 
-.avatar-container {
+.profile-avatar-section {
     position: relative;
-    width: 56px;
-    height: 56px;
+    width: 120px;
+    height: 120px;
+    margin: 20px auto 24px;
+    cursor: pointer;
+    border-radius: 50%;
+    overflow: hidden;
+    /* 与安全页面模块风格一致的边框和阴影 */
+    border: 3px solid rgba(255, 255, 255, 0.15);
+    box-shadow:
+        0 4px 12px rgba(0, 0, 0, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    transition: all 0.3s ease;
     flex-shrink: 0;
 }
 
-#dropdownAvatar {
-    width: 100%;
-    height: 100%;
-    border-radius: 50%;
-    object-fit: cover;
-    border: 2px solid rgba(255, 255, 255, 0.2);
-    transition: transform 0.2s ease;
+.profile-avatar-section:hover {
+    border-color: rgba(168, 85, 247, 0.6);
+    transform: scale(1.05);
+    box-shadow:
+        0 6px 16px rgba(0, 0, 0, 0.4),
+        inset 0 1px 0 rgba(255, 255, 255, 0.15);
 }
 
-.avatar-overlay-icon {
+.profile-avatar-section img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.avatar-upload-hint {
     position: absolute;
-    bottom: -2px;
-    right: -2px;
-    background: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(4px);
-    width: 24px;
-    height: 24px;
-    border-radius: 50%;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(10px);
+    padding: 8px;
+    opacity: 0;
+    transition: opacity 0.3s ease;
     display: flex;
     align-items: center;
     justify-content: center;
-    border: 1px solid rgba(255, 255, 255, 0.3);
+    gap: 6px;
+    font-size: 13px;
     color: white;
-    font-size: 10px;
 }
 
-.profile-info {
+.profile-avatar-section:hover .avatar-upload-hint {
+    opacity: 1;
+}
+
+/* Nickname Section */
+.profile-nickname-section {
+    margin-bottom: 24px;
+    min-height: 40px;
+    width: 100%;
+    max-width: 320px;
+    position: relative;
+    /* 与安全页面模块风格一致的容器 */
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+    padding: 18px;
+    box-shadow:
+        0 2px 8px rgba(0, 0, 0, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+/* 昵称区块左侧装饰条 */
+.profile-nickname-section::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: linear-gradient(180deg, rgba(168, 85, 247, 0.6), rgba(244, 114, 182, 0.6));
+    border-radius: 12px 0 0 12px;
+}
+
+.profile-nickname-section:hover {
+    border-color: rgba(255, 255, 255, 0.18);
+    box-shadow:
+        0 4px 12px rgba(0, 0, 0, 0.4),
+        inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    transform: translateY(-2px);
+}
+
+.nickname-display {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    /* 编辑模式切换动画 */
+    transition: opacity 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+        transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.nickname-display.hiding {
+    opacity: 0;
+    transform: translateY(-10px);
+    pointer-events: none;
+}
+
+/* 显示模式进入动画 */
+.nickname-display.showing {
+    animation: displayModeRise 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) backwards;
+}
+
+@keyframes displayModeRise {
+    from {
+        opacity: 0;
+        transform: translateY(20px) scale(0.95);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+#profileModalNickname {
+    font-size: 20px;
+    font-weight: 600;
+    color: white;
+}
+
+.edit-icon {
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.4);
+    cursor: pointer;
+    transition: color 0.2s, transform 0.2s;
+}
+
+.edit-icon:hover {
+    color: #007aff;
+    transform: scale(1.1);
+}
+
+.nickname-edit {
     display: flex;
     flex-direction: column;
-    margin-left: 16px;
+    gap: 12px;
+    align-items: center;
+    /* 编辑模式进入动画 */
+    animation: editModeRise 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) backwards;
+}
+
+@keyframes editModeRise {
+    from {
+        opacity: 0;
+        transform: translateY(20px) scale(0.95);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+#nicknameInput {
+    /* 与安全页面输入框风格一致 */
+    background: rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    padding: 10px 16px;
+    color: white;
+    text-align: center;
+    width: 220px;
+    font-size: 16px;
+    transition: all 0.2s ease;
+}
+
+#nicknameInput:focus {
+    outline: none;
+    border-color: rgba(0, 122, 255, 0.6);
+    background: rgba(0, 0, 0, 0.6);
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1),
+        inset 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.edit-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.save-btn,
+.cancel-btn {
+    padding: 8px 18px;
+    border-radius: 6px;
+    font-size: 14px;
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s ease;
+    font-weight: 500;
+}
+
+.save-btn {
+    background: linear-gradient(135deg, #a855f7 0%, #f472b6 50%, #fb7185 100%);
+    color: white;
+    box-shadow: 0 2px 10px rgba(244, 114, 182, 0.3);
+}
+
+.save-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(244, 114, 182, 0.4);
+    filter: brightness(1.1);
+}
+
+.cancel-btn {
+    /* 与安全页面次要按钮风格一致 */
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: white;
+}
+
+.cancel-btn:hover {
+    background: rgba(0, 0, 0, 0.5);
+    border-color: rgba(255, 255, 255, 0.25);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* Profile Flip Animation - Text Staggered Rise Effect */
+.profile-flip-container {
+    width: 100%;
+    min-height: 580px;
+    position: relative;
+    transition: min-height 0.3s ease;
+    overflow: hidden;
+}
+
+.profile-flip-inner {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    text-align: center;
+    min-height: 500px;
+}
+
+.profile-view {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    top: 0;
+    left: 0;
+    display: flex !important;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: center;
+    /* 淡入淡出过渡 */
+    transition: opacity 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    will-change: opacity;
+    padding-bottom: 20px;
+}
+
+.profile-front {
+    z-index: 2;
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.profile-back {
+    z-index: 1;
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* Flip State Class - 切换到安全页面 */
+.profile-flip-inner.flipped .profile-front {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.profile-flip-inner.flipped .profile-back {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* 错落上升动画关键帧 */
+@keyframes staggeredRise {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* 资料页面 - 文字内容错落上升动画 */
+.profile-front.animate-in .modal-title {
+    animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.1s backwards;
+}
+
+.profile-front.animate-in .profile-avatar-section {
+    animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.15s backwards;
+}
+
+.profile-front.animate-in .profile-nickname-section {
+    animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.2s backwards;
+}
+
+.profile-front.animate-in .profile-email-section {
+    animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.25s backwards;
+}
+
+.profile-front.animate-in .member-since-badge {
+    animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.3s backwards;
+}
+
+/* 安全页面 - 文字内容错落上升动画 */
+.profile-back.animate-in .modal-title {
+    animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.1s backwards;
+}
+
+.profile-back.animate-in .security-item:nth-of-type(1) {
+    animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.15s backwards;
+}
+
+.profile-back.animate-in .security-item:nth-of-type(2) {
+    animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.2s backwards;
+}
+
+.profile-back.animate-in .security-item:nth-of-type(3) {
+    animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.25s backwards;
+}
+
+
+/* Profile Tabs */
+.profile-tabs {
+    display: flex;
     justify-content: center;
-    overflow: hidden;
+    margin-bottom: 20px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 4px;
+    width: fit-content;
+    margin-left: auto;
+    margin-right: auto;
 }
 
-.profile-name {
+.tab-item {
+    padding: 6px 24px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.6);
+    transition: all 0.2s;
+}
+
+.tab-item:hover {
+    color: rgba(255, 255, 255, 0.9);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.tab-item.active {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    font-weight: 500;
+}
+
+/* Security View Styles */
+.security-item {
+    /* 增强模块区分度 - 更明显的背景和边框 */
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+    padding: 18px;
+    margin-bottom: 18px;
+    text-align: left;
+    /* 添加外阴影和内阴影，增强层次感 */
+    box-shadow:
+        0 2px 8px rgba(0, 0, 0, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+    box-sizing: border-box;
+    /* 确保 padding 不会撑大容器 */
+}
+
+/* 为每个模块添加左侧装饰条 */
+.security-item::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: linear-gradient(180deg, rgba(168, 85, 247, 0.6), rgba(244, 114, 182, 0.6));
+    border-radius: 12px 0 0 12px;
+}
+
+.security-item:hover {
+    border-color: rgba(255, 255, 255, 0.18);
+    box-shadow:
+        0 4px 12px rgba(0, 0, 0, 0.4),
+        inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    transform: translateY(-2px);
+}
+
+.security-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 14px;
     font-weight: 600;
-    font-size: 15px;
-    color: rgba(255, 255, 255, 0.95);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    /* 恢复纯色 */
+    color: #ffffff;
+    margin-bottom: 8px;
+    letter-spacing: 0.3px;
 }
 
-.profile-hint {
+.security-desc {
     font-size: 12px;
     color: rgba(255, 255, 255, 0.5);
-    margin-top: 2px;
+    margin-bottom: 10px;
 }
 
-/* Avatar Image Hover */
-#profileMenuItem:hover #dropdownAvatar {
-    transform: scale(1.05);
-    border-color: rgba(255, 255, 255, 0.6);
+.security-input {
+    width: 100%;
+    box-sizing: border-box;
+    /* 确保 padding 包含在宽度内 */
+    /* 更深的背景，与暗色主题更协调 */
+    background: rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    padding: 10px 12px;
+    color: white;
+    font-size: 13px;
+    margin-bottom: 10px;
+    transition: all 0.2s ease;
+    /* 恢复纯色文字 */
+}
+
+.security-input::placeholder {
+    color: rgba(255, 255, 255, 0.4);
+    text-shadow: none;
+}
+
+.security-input:focus {
+    outline: none;
+    border-color: rgba(0, 122, 255, 0.6);
+    background: rgba(0, 0, 0, 0.6);
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1),
+        inset 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.danger-zone {
+    /* 危险区域更明显的区分 */
+    border-color: rgba(239, 68, 68, 0.4);
+    background: rgba(239, 68, 68, 0.12);
+    box-shadow:
+        0 2px 8px rgba(239, 68, 68, 0.2),
+        inset 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.danger-zone::before {
+    background: linear-gradient(180deg, rgba(239, 68, 68, 0.8), rgba(220, 38, 38, 0.8));
+}
+
+.text-red {
+    /* 恢复纯色 */
+    color: #ef4444;
+}
+
+.danger-btn {
+    width: 100%;
+    padding: 10px;
+    background: #ef4444;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    /* 恢复纯色文字 */
+    box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
+}
+
+.danger-btn:hover {
+    background: #dc2626;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+}
+
+.secondary-btn {
+    padding: 6px 14px;
+    /* 更深的背景，与输入框保持一致 */
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: white;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    /* 恢复纯色文字 */
+}
+
+.secondary-btn:hover {
+    background: rgba(0, 0, 0, 0.5);
+    border-color: rgba(255, 255, 255, 0.25);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+
+/* Member Since Badge */
+.member-since-badge {
+    margin-top: 0;
+    margin-bottom: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    /* 与安全页面模块风格一致 */
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 20px;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.6);
+    box-shadow:
+        0 2px 8px rgba(0, 0, 0, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    transition: all 0.3s ease;
+    flex-shrink: 0;
+}
+
+.member-since-badge:hover {
+    border-color: rgba(255, 255, 255, 0.18);
+    box-shadow:
+        0 4px 12px rgba(0, 0, 0, 0.4),
+        inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    transform: translateY(-2px);
+}
+
+.profile-email-section {
+    margin: 0 0 24px 0;
+    padding: 18px;
+    width: 100%;
+    max-width: 320px;
+    /* 与安全页面模块风格一致 */
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+    box-shadow:
+        0 2px 8px rgba(0, 0, 0, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+/* 邮箱区块左侧装饰条 */
+.profile-email-section::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: linear-gradient(180deg, rgba(168, 85, 247, 0.6), rgba(244, 114, 182, 0.6));
+    border-radius: 12px 0 0 12px;
+}
+
+.profile-email-section:hover {
+    border-color: rgba(255, 255, 255, 0.18);
+    box-shadow:
+        0 4px 12px rgba(0, 0, 0, 0.4),
+        inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    transform: translateY(-2px);
+}
+
+.profile-email-section label {
+    display: block;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.6);
+    margin-bottom: 8px;
+}
+
+.profile-email-display {
+    font-size: 15px;
+    color: rgba(255, 255, 255, 0.95);
+    font-weight: 500;
 }
 
 /* Menu Items - Mac Style */
@@ -3602,13 +4444,31 @@ svg {
 }
 
 .menu-item:hover {
-    background: rgba(255, 255, 255, 0.12);
+    background: rgba(0, 122, 255, 0.8);
+    /* macOS 系统蓝色 - 明亮高光 */
+    color: rgba(255, 255, 255, 1);
 }
 
 .menu-item svg {
     width: 16px;
     height: 16px;
     opacity: 0.8;
+}
+
+/* Switch Account Button - Mac Style with Purple Theme */
+.menu-item.switch-account {
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.menu-item.switch-account:hover {
+    background: rgba(0, 122, 255, 0.8);
+    /* macOS 系统蓝色 - 与其他菜单项保持一致 */
+    color: rgba(255, 255, 255, 1);
+}
+
+.menu-item.switch-account:active {
+    background: rgba(0, 122, 255, 0.9);
+    /* 点击时颜色更深 */
 }
 
 /* Log Out Button - Mac Style */
@@ -3618,13 +4478,14 @@ svg {
 }
 
 .menu-item.logout:hover {
-    background: rgba(10, 132, 255, 0.15);
-    /* Mac系统蓝色 */
+    background: rgba(0, 122, 255, 0.8);
+    /* macOS 系统蓝色 - 明亮高光 */
     color: rgba(255, 255, 255, 1);
 }
 
 .menu-item.logout:active {
-    background: rgba(10, 132, 255, 0.25);
+    background: rgba(0, 122, 255, 0.9);
+    /* 点击时颜色更深 */
 }
 
 /* Divider */
@@ -3715,6 +4576,9 @@ svg {
 /* View Switching Animation */
 .form-view {
     animation: fadeIn 0.4s ease forwards;
+    position: relative;
+    z-index: 1;
+    pointer-events: auto;
 }
 
 .hidden {
@@ -3866,9 +4730,6 @@ svg {
     color: rgba(255, 255, 255, 0.3);
 }
 
-
-}
-
 /* 已删除重复的logout样式定义 - 使用3531-3543行的统一定义 */
 
 /* User Avatar Styles */
@@ -3968,4 +4829,39 @@ svg {
 /* 主要按钮 - 发送按钮（保持原有submit-btn样式）*/
 .submit-btn {
     flex: 1;
+}
+
+/* Global Animation Keyframes */
+
+/* Elastic Fade In Up (for content blocks) */
+@keyframes fadeInUpElastic {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Elastic Fade In Down (for dropdowns) */
+@keyframes fadeInDownElastic {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Utility class for staggered animation base */
+.animate-stagger {
+    opacity: 0;
+    /* Start hidden */
+    animation: fadeInUpElastic 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }

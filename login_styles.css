@@ -1,46 +1,127 @@
 /* ==================== Login Modal Styles ==================== */
 
-/* Login Overlay */
+/* Login Overlay - Exact copy from modal-overlay */
 .login-overlay {
     position: fixed;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.7);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    display: none;
-    align-items: center;
+    background: rgba(0, 0, 0, 0.6);
+    /* Darker background for less transparency */
+    backdrop-filter: blur(8px);
+    /* Blur background to focus attention */
+    -webkit-backdrop-filter: blur(8px);
+    z-index: 2000;
+    /* Higher than modals (1000) but below user dropdown (2100) */
+    display: flex;
     justify-content: center;
-    z-index: 10000;
+    align-items: center;
     opacity: 0;
+    pointer-events: none;
     transition: opacity 0.3s ease;
+    will-change: opacity;
+    /* Optimize animation */
+    transform: translateZ(0);
+    /* Hardware acceleration */
 }
 
 .login-overlay.active {
-    display: flex;
     opacity: 1;
+    pointer-events: all !important;
+    /* 确保激活时恢复背景和模糊效果，使用 !important 覆盖内联样式 */
+    backdrop-filter: blur(8px) !important;
+    -webkit-backdrop-filter: blur(8px) !important;
+    background: rgba(0, 0, 0, 0.6) !important;
 }
 
-/* Login Card */
+/* 确保激活状态下所有子元素可交互 */
+.login-overlay.active * {
+    pointer-events: auto;
+}
+
+/* 确保按钮始终可点击 */
+.login-overlay.active button,
+.login-overlay.active input[type="button"],
+.login-overlay.active input[type="submit"],
+.login-overlay.active .login-submit-btn,
+.login-overlay.active .google-login-btn,
+.login-overlay.active .verify-code-btn,
+.login-overlay.active .switch-link,
+.login-overlay.active .forgot-password-link,
+.login-overlay.active .mac-dot {
+    pointer-events: auto !important;
+    cursor: pointer !important;
+}
+
+/* 关闭时立即清除 backdrop-filter 和背景以防止残留 */
+.login-overlay.closing {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: transparent !important;
+    pointer-events: none !important;
+}
+
+/* 非激活状态下清除效果（但优先级低于 .active） */
+.login-overlay:not(.active):not(.closing) {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: transparent;
+    pointer-events: none;
+}
+
+/* Login Card - Forced Exact Match with Guestbook */
 .login-card {
-    background: rgba(255, 255, 255, 0.12);
-    backdrop-filter: blur(40px);
-    -webkit-backdrop-filter: blur(40px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(0, 0, 0, 0.1) !important;
+    /* Much lighter black transparent */
+    padding: 50px;
     border-radius: 24px;
-    padding: 40px;
-    max-width: 450px;
-    width: 90%;
+    text-align: center;
+    max-width: 90%;
+    width: 480px;
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-top: 1px solid rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(20px) saturate(150%) !important;
+    /* Exact match: 20px blur + 150% saturation */
+    -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
+    transform: scale(0.95);
+    /* Reverted to scale */
+    opacity: 0;
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    /* Elastic easing */
+    will-change: transform, opacity;
+    backface-visibility: hidden;
+    color: white;
+    cursor: default;
+    pointer-events: auto !important;
+}
+
+/* 确保 login-card 的所有直接子元素可交互 */
+.login-card > * {
+    pointer-events: auto !important;
+}
+
+/* 确保 login-card 内的所有按钮和交互元素都有正确的 cursor 和 pointer-events */
+.login-card button,
+.login-card input[type="button"],
+.login-card input[type="submit"],
+.login-card .login-submit-btn,
+.login-card .google-login-btn,
+.login-card .verify-code-btn,
+.login-card a,
+.login-card .switch-link,
+.login-card .forgot-password-link,
+.login-card .mac-dot {
+    cursor: pointer !important;
+    pointer-events: auto !important;
     position: relative;
-    transform: scale(0.9);
-    transition: transform 0.3s ease;
+    z-index: 9999 !important;
 }
 
 .login-overlay.active .login-card {
     transform: scale(1);
+    opacity: 1;
 }
 
 /* Mac Window Controls */
@@ -88,46 +169,100 @@
     filter: brightness(1.2);
 }
 
-/* Card Title & Subtitle */
+/* Card Title & Subtitle - Exact copy from premium-modal */
 .card-title {
-    font-size: 28px;
+    font-size: 2rem;
+    margin-bottom: 10px;
     font-weight: 700;
-    color: white;
-    margin-bottom: 8px;
+    letter-spacing: -0.5px;
+    color: #ffffff;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
     text-align: center;
 }
 
 .card-subtitle {
-    font-size: 14px;
     color: rgba(255, 255, 255, 0.6);
-    margin-bottom: 32px;
+    margin-bottom: 30px;
+    font-size: 0.95rem;
+    line-height: 1.5;
     text-align: center;
 }
 
-/* Google Login Button */
+.user-dropdown-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    width: 280px;
+    background: rgba(20, 20, 25, 0.95);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 16px;
+    padding: 16px;
+    margin-top: 12px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    display: flex;
+    /* Always flex, control visibility with opacity */
+    flex-direction: column;
+    z-index: 1000;
+    /* Animation: Fade In Down Elastic */
+    transform-origin: top right;
+    /* Initial hidden state */
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-20px);
+    pointer-events: none;
+    transition: opacity 0.4s cubic-bezier(0.34, 1.56, 0.64, 1),
+        transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1),
+        visibility 0.4s;
+}
+
+/* Active/Visible state */
+.user-dropdown-menu.active {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+    pointer-events: all;
+}
+
+/* Google Login Button - Redesigned */
 .google-login-btn {
     width: 100%;
     padding: 14px;
-    background: white;
-    color: #333;
-    border: none;
-    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 16px;
     font-size: 15px;
-    font-weight: 600;
-    cursor: pointer;
+    font-weight: 500;
+    cursor: pointer !important;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 10px;
-    transition: all 0.3s;
-    margin-bottom: 20px;
+    gap: 12px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    margin-bottom: 24px;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    position: relative;
+    z-index: 10;
+    pointer-events: auto !important;
 }
 
 .google-login-btn:hover {
-    background: #f5f5f5;
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.3);
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
 }
+
+.google-login-btn:active {
+    transform: translateY(0);
+}
+
+.google-login-btn img {
+    filter: brightness(0.9);
+}
+
 
 /* Login Divider */
 .login-divider {
@@ -170,7 +305,9 @@
 .glass-input:focus {
     background: rgba(255, 255, 255, 0.08);
     border-color: rgba(155, 93, 229, 0.5);
+    /* Changed to purple */
     box-shadow: 0 0 0 3px rgba(155, 93, 229, 0.1);
+    /* Changed to purple */
 }
 
 .glass-input::placeholder {
@@ -195,9 +332,12 @@
     color: #9b5de5;
     font-size: 13px;
     font-weight: 600;
-    cursor: pointer;
+    cursor: pointer !important;
     white-space: nowrap;
     transition: all 0.3s;
+    pointer-events: auto !important;
+    position: relative;
+    z-index: 10;
 }
 
 .verify-code-btn:hover {
@@ -220,9 +360,12 @@
     color: white;
     font-size: 16px;
     font-weight: 600;
-    cursor: pointer;
+    cursor: pointer !important;
     transition: all 0.3s;
     margin-top: 8px;
+    pointer-events: auto !important;
+    position: relative;
+    z-index: 10;
 }
 
 .login-submit-btn:hover {
@@ -251,7 +394,7 @@
 
 .switch-link:hover {
     color: #b47cf3;
-    text-decoration: underline;
+    /* Removed text-decoration: underline */
 }
 
 /* Forgot Password Link */
@@ -264,7 +407,7 @@
 
 .forgot-password-link:hover {
     color: #b47cf3;
-    text-decoration: underline;
+    /* Removed text-decoration: underline */
 }
 
 /* Form View Toggle */
@@ -296,4 +439,23 @@
     .card-subtitle {
         font-size: 13px;
     }
+}
+
+/* Override browser autofill green border - Force purple theme */
+.glass-input:-webkit-autofill,
+.glass-input:-webkit-autofill:hover,
+.glass-input:-webkit-autofill:focus {
+    -webkit-box-shadow: 0 0 0 1000px rgba(40, 40, 50, 0.9) inset, 0 0 0 3px rgba(155, 93, 229, 0.3) !important;
+    box-shadow: 0 0 0 1000px rgba(40, 40, 50, 0.9) inset, 0 0 0 3px rgba(155, 93, 229, 0.3) !important;
+    -webkit-text-fill-color: white !important;
+    border-color: rgba(155, 93, 229, 0.5) !important;
+    transition: background-color 5000s ease-in-out 0s;
+}
+
+/* Firefox autofill */
+.glass-input:-moz-autofill,
+.glass-input:-moz-autofill-preview {
+    box-shadow: 0 0 0 1000px rgba(40, 40, 50, 0.9) inset, 0 0 0 3px rgba(155, 93, 229, 0.3) !important;
+    color: white !important;
+    border-color: rgba(155, 93, 229, 0.5) !important;
 }

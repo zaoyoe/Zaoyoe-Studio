@@ -93,19 +93,51 @@ setInterval(updateClock, 1000);
 // --- Auth Modal Logic (Dual Mode) ---
 function openAuthModal(view = 'login') {
     const modal = document.getElementById('loginModal');
-    modal.classList.add('active');
-    switchAuthView(view);
+    if (modal) {
+        // 清除关闭状态相关的类和内联样式，确保正常显示
+        modal.classList.remove('closing');
+        modal.style.backdropFilter = '';
+        modal.style.webkitBackdropFilter = '';
+        modal.style.background = '';
+
+        // 强制重排以确保样式清除生效
+        void modal.offsetWidth;
+
+        // 添加 active 类以显示模态框
+        modal.classList.add('active');
+        switchAuthView(view);
+    }
 }
 
 function toggleLoginModal() {
     const modal = document.getElementById('loginModal');
-    modal.classList.remove('active');
+    if (modal) {
+        // 立即添加 closing 类来清除 backdrop-filter，防止残留
+        modal.classList.add('closing');
+
+        // 移除 active 类开始关闭动画
+        modal.classList.remove('active');
+
+        // 等待过渡动画完成后，确保元素完全隐藏
+        setTimeout(() => {
+            if (!modal.classList.contains('active')) {
+                // 强制清除所有视觉效果
+                modal.style.backdropFilter = 'none';
+                modal.style.webkitBackdropFilter = 'none';
+                modal.style.background = 'transparent';
+                // 移除 closing 类
+                modal.classList.remove('closing');
+            }
+        }, 350); // 等待过渡动画完成（0.3s）+ 额外缓冲时间
+    }
 }
 
 function handleLoginOverlayClick(event) {
+    // 只关闭模态框，如果点击的是 overlay 本身（不是 login-card 或其子元素）
     if (event.target.classList.contains('login-overlay')) {
         toggleLoginModal();
     }
+    // 如果点击的是 login-card 或其子元素，不关闭模态框，让事件正常传播
 }
 
 function switchAuthView(view) {
@@ -914,7 +946,8 @@ async function handleLogout() {
 
 
 // Function 6: Handle Auth Button Click
-function handleAuthClick(event) {
+// Function 6: Handle Auth Button Click
+function handleAuthClick_legacy(event) {
     if (event) {
         event.preventDefault();
         event.stopPropagation();
@@ -947,7 +980,8 @@ function handleAuthClick(event) {
 }
 
 // Function 7: Update UI based on auth state (with Firestore)
-async function updateUserUI(user) {
+// Function 7: Update UI based on auth state (with Firestore)
+async function updateUserUI_legacy(user) {
     console.log('🎨 updateUserUI called, user:', user ? user.email : 'null');
 
     const authBtn = document.getElementById('authBtn');
