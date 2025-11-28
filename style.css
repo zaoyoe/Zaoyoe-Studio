@@ -2093,6 +2093,13 @@ svg {
     opacity: 1;
 }
 
+/* Hide mac controls on mobile */
+@media (max-width: 768px) {
+    .mac-controls {
+        display: none !important;
+    }
+}
+
 .relative-container {
     position: relative;
 }

@@ -340,6 +340,13 @@
         font-size: 14px !important;
     }
 
+    /* Ensure buttons have enough space at bottom */
+    .gradient-btn,
+    .danger-btn {
+        margin-bottom: 60px !important;
+        /* Extra space to prevent truncation */
+    }
+
     .security-detail-content.active,
     .security-detail-content.show {
         display: block;

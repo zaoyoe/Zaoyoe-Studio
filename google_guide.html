@@ -60,6 +60,27 @@
         .page-exit {
             animation: fadeOutDown 0.3s ease-in forwards;
         }
+
+        /* Mobile-specific centering and layout */
+        @media (max-width: 768px) {
+            .article-container {
+                padding: 20px 10px !important;
+                display: flex;
+                justify-content: center;
+                align-items: flex-start;
+                width: 100%;
+            }
+
+            .glass-card {
+                width: 100% !important;
+                max-width: 100% !important;
+                margin: 0 auto;
+            }
+
+            .notion-content {
+                padding: 20px !important;
+            }
+        }
     </style>
 
     <script>

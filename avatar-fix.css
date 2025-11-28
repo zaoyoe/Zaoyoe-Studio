@@ -3,13 +3,17 @@
     filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.5));
 }
 
-/* Ensure avatar maintains perfect circle */
-.login-trigger-btn.logged-in {
+/* Ensure avatar maintains perfect circle - CRITICAL: High priority overrides */
+.login-trigger-btn.logged-in,
+button.login-trigger-btn.logged-in {
     padding: 0 !important;
     background: transparent !important;
     /* Remove background to prevent offset */
+    background-color: transparent !important;
     border: none !important;
     /* Remove border that might show through */
+    box-shadow: none !important;
+    /* Remove any box shadow */
 }
 
 .login-trigger-btn.logged-in .nav-user-avatar,
