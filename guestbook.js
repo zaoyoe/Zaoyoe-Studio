@@ -2,8 +2,25 @@
 
 document.addEventListener('DOMContentLoaded', () => {
     const messageContainer = document.getElementById('messageContainer');
-    const emptyState = document.getElementById('emptyState');
+    const floatingBackBtn = document.querySelector('.floating-back-btn');
     const clearAllBtn = document.getElementById('clearAllBtn');
+    const emptyState = document.getElementById('emptyState');
+
+    // CRITICAL FIX: Clean up any modal state on page load
+    document.body.classList.remove('modal-active');
+    const allModals = document.querySelectorAll('.modal-overlay');
+    allModals.forEach(modal => {
+        modal.classList.remove('active', 'overlay-visible');
+        modal.classList.add('overlay-hidden');
+        modal.style.backdropFilter = 'none';
+        modal.style.webkitBackdropFilter = 'none';
+    });
+    console.log('✅ Modal state cleaned up on page load');
+
+    // Initialize magnetic effect after page load
+    setTimeout(() => {
+        initMagneticEffect();
+    }, 100);
 
     // Hide clear button (not needed for LeanCloud version)
     if (clearAllBtn) {
@@ -305,17 +322,23 @@ window.openCommentModal = function (messageId) {
     if (modal && messageIdInput) {
         messageIdInput.value = messageId;
 
-        // Clear any inline styles from previous close
+        // CRITICAL FIX: Add body.modal-active class for CSS backdrop-filter support
+        document.body.classList.add('modal-active');
+
+        // Clear any inline styles and backdrop-filter from previous close
         modal.style.display = '';
         modal.style.visibility = '';
         modal.style.opacity = '';
         modal.style.pointerEvents = '';
+        modal.style.backdropFilter = '';
+        modal.style.webkitBackdropFilter = '';
 
         modal.classList.add('active');
         modal.classList.add('overlay-visible');
         modal.classList.remove('overlay-hidden');
 
         console.log('✅ Modal opened successfully');
+        console.log('✅ body.modal-active class added');
 
         // Focus content input
         setTimeout(() => {
@@ -338,8 +361,16 @@ window.closeCommentModal = function (event) {
 
         const modal = document.getElementById('commentModal');
         if (modal) {
+            // CRITICAL FIX: Remove body.modal-active class to clear background blur
+            document.body.classList.remove('modal-active');
+            console.log('✅ body.modal-active class removed');
+
             modal.classList.remove('active');
             modal.classList.remove('overlay-visible'); // CRITICAL: Remove this to allow fade out
+
+            // Immediately remove backdrop-filter to prevent residue
+            modal.style.backdropFilter = 'none';
+            modal.style.webkitBackdropFilter = 'none';
 
             // Clear form
             const form = document.getElementById('commentForm');
@@ -352,6 +383,8 @@ window.closeCommentModal = function (event) {
                 modal.style.visibility = 'hidden';
                 modal.style.opacity = '0';
                 modal.style.pointerEvents = 'none';
+                modal.style.backdropFilter = 'none';
+                modal.style.webkitBackdropFilter = 'none';
                 document.body.style.overflow = ''; // Restore scroll
             }, 200);
         }

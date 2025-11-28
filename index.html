@@ -14,21 +14,23 @@
         href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;700;800&display=swap"
         rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css?v=1764245500">
+    <link rel="stylesheet" href="style.css?v=FIX_LAYOUT_SHIFT_MODAL">
+    <link rel="stylesheet" href="security-cards.css?v=NO_LAYOUT_SHIFT">
     <link rel="stylesheet" href="login_styles.css?v=FIX_CURSOR_FINAL">
     <link rel="stylesheet" href="login_dual_mode.css">
     <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
     <script type="text/javascript">
         (function () {
-            emailjs.init("user_YOUR_USER_ID"); // Replace with your actual User ID
+            // Replace with your Public Key
+            emailjs.init("vawaxLVEzJMAVbut0");
         })();
     </script>
     <!-- LeanCloud SDK -->
     <script src="https://cdn.jsdelivr.net/npm/leancloud-storage@4.15.2/dist/av-min.js"></script>
     <script src="./leancloud-init.js?v=1764163660" defer></script>
-    <script src="./leancloud-auth-functions.js?v=1764232600" defer></script>
-    <script src="./phone-auth-ui.js" defer></script>
+    <script src="./leancloud-auth-functions.js?v=NO_AUTO_SELECT_V1" defer></script>
     <script src="./leancloud-guestbook-functions.js?v=1764163660" defer></script>
+    <script src="./security-cards.js?v=CLEAN_V1" defer></script>
 
     <!-- Google Sign-In SDK -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -100,6 +102,145 @@
             animation-delay: 0.55s;
         }
     </style>
+    <style>
+        /* FORCE FIX: Input Visibility - Simple & Clean */
+        .guestbook-form input,
+        .guestbook-form textarea,
+        .modal-content input,
+        .modal-content textarea,
+        .modal-content select,
+        .login-card input,
+        .login-card textarea,
+        .nickname-edit input,
+        .security-input {
+            background: rgba(255, 255, 255, 0.35) !important;
+            border: 1.5px solid rgba(255, 255, 255, 0.5) !important;
+            color: #ffffff !important;
+            caret-color: #ffffff !important;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6) !important;
+        }
+
+        .guestbook-form input:focus,
+        .modal-content input:focus,
+        .login-card input:focus,
+        .nickname-edit input:focus {
+            background: rgba(255, 255, 255, 0.45) !important;
+            border-color: rgba(255, 255, 255, 0.7) !important;
+            box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.1) !important;
+        }
+
+        /* FORCE FIX: Placeholder Color */
+        ::placeholder {
+            color: rgba(255, 255, 255, 0.65) !important;
+            opacity: 1 !important;
+        }
+
+        /* FORCE FIX: Auth Button Children */
+        #authBtn * {
+            pointer-events: none !important;
+        }
+    </style>
+    <script>
+        // FORCE FIX: Global Auth Handler
+        window.toggleAuthMenu = function (e) {
+            if (e) e.stopPropagation();
+            console.log('🔘 toggleAuthMenu called (INLINE)');
+
+            const navAvatar = document.getElementById('navUserAvatar');
+            // Check visibility directly
+            const isVisible = navAvatar && (navAvatar.style.display === 'block' || navAvatar.style.display === 'inline-block');
+
+            if (isVisible) {
+                const dropdown = document.getElementById('userDropdown');
+                if (dropdown) {
+                    dropdown.classList.toggle('active');
+                    console.log('🔽 Dropdown toggled');
+                }
+            } else {
+                console.log('🔐 Triggering login');
+                // Open login modal directly
+                const loginModal = document.getElementById('loginModal');
+                if (loginModal) {
+                    loginModal.classList.add('active');
+                } else {
+                    console.error('❌ loginModal not found');
+                }
+            }
+        };
+
+        // FORCE FIX: Dropdown Actions (Inline to guarantee availability)
+        window.handleLogout = function (event) {
+            if (event) event.stopPropagation();
+            console.log('🚪 handleLogout called (INLINE)');
+
+            // Close dropdown
+            const dropdown = document.getElementById('userDropdown');
+            if (dropdown) dropdown.classList.remove('active');
+
+            if (!confirm("确定要退出登录吗？")) return;
+
+            // Clear LeanCloud user
+            if (typeof AV !== 'undefined' && AV.User) {
+                AV.User.logOut();
+            }
+
+            // Clear local storage
+            localStorage.removeItem('cached_user_profile');
+            localStorage.removeItem('remembered_credentials');
+
+            // Reset UI
+            const defaultIcon = document.getElementById('defaultAuthIcon');
+            const navAvatar = document.getElementById('navUserAvatar');
+            const btnText = document.getElementById('authBtnText');
+
+            if (defaultIcon) defaultIcon.style.display = 'inline';
+            if (navAvatar) navAvatar.style.display = 'none';
+            if (btnText) btnText.textContent = 'Sign In';
+
+            const authBtn = document.getElementById('authBtn');
+            if (authBtn) authBtn.classList.remove('logged-in');
+
+            console.log('✅ Logged out successfully');
+        };
+
+        window.handleSwitchAccount = function (event) {
+            if (event) event.stopPropagation();
+            console.log('🔄 handleSwitchAccount called (INLINE)');
+
+            // Close dropdown
+            const dropdown = document.getElementById('userDropdown');
+            if (dropdown) dropdown.classList.remove('active');
+
+            // Logout first
+            if (typeof AV !== 'undefined' && AV.User) {
+                AV.User.logOut();
+            }
+            localStorage.removeItem('cached_user_profile');
+            localStorage.removeItem('remembered_credentials');
+
+            // Reset UI
+            const defaultIcon = document.getElementById('defaultAuthIcon');
+            const navAvatar = document.getElementById('navUserAvatar');
+            const btnText = document.getElementById('authBtnText');
+
+            if (defaultIcon) defaultIcon.style.display = 'inline';
+            if (navAvatar) navAvatar.style.display = 'none';
+            if (btnText) btnText.textContent = 'Sign In';
+
+            // Open login modal after a short delay
+            setTimeout(() => {
+                const loginModal = document.getElementById('loginModal');
+                if (loginModal) {
+                    loginModal.classList.add('active');
+                    loginModal.style.visibility = 'visible';
+                    loginModal.style.opacity = '1';
+                    loginModal.style.display = 'flex';
+                }
+            }, 200);
+        };
+
+
+    </script>
     <script>
         // Page load animation trigger
         document.addEventListener('DOMContentLoaded', function () {
@@ -116,11 +257,11 @@
     </div>
 
     <!-- Dropdown Backdrop (Controlled by CSS :has) -->
-    <div class="dropdown-backdrop" style="z-index: 2099;"></div>
+    <div class="dropdown-backdrop" style="z-index: 1998;"></div>
 
     <div class="bento-container">
         <!-- Profile & Clock Card (2x2) -->
-        <!-- Profile & Clock Card (2x2) -->
+
         <div class="glass-box box-profile">
             <div class="profile-header">
                 <div class="date-time-compact">
@@ -137,7 +278,7 @@
         </div>
 
         <!-- Gemini Card (2x1) - Interactive -->
-        <div class="glass-box box-wide" onclick="openModal('geminiModal')">
+        <div class="glass-box box-wide" data-modal-target="geminiModal">
             <!-- Custom SVG for Gemini 4-point Star -->
             <svg class="icon-large gemini-star" viewBox="0 0 24 24" fill="currentColor"
                 xmlns="http://www.w3.org/2000/svg" style="width: 48px; height: 48px;">
@@ -147,7 +288,7 @@
         </div>
 
         <!-- Google Card (2x1) -->
-        <a href="#" class="glass-box box-wide" onclick="openModal('googleModal'); return false;">
+        <a href="#" class="glass-box box-wide" data-modal-target="googleModal">
             <i class="fa-brands fa-google icon-large" style="color: #ea4335;"></i>
             <div class="box-label">Google 邮箱</div>
         </a>
@@ -165,25 +306,25 @@
         </div>
 
         <!-- 3D Design (2x1) - Wide -->
-        <div class="glass-box box-wide" onclick="openModal('comingSoonModal')">
+        <div class="glass-box box-wide" data-modal-target="comingSoonModal">
             <i class="fa-solid fa-cube icon-large" style="color: #06b6d4;"></i>
             <div class="box-label">三维设计</div>
         </div>
 
         <!-- Post-production (2x1) - Wide -->
-        <div class="glass-box box-wide" onclick="openModal('comingSoonModal')">
+        <div class="glass-box box-wide" data-modal-target="comingSoonModal">
             <i class="fa-solid fa-clapperboard icon-large" style="color: #8b5cf6;"></i>
             <div class="box-label">影视后期</div>
         </div>
 
         <!-- Contact Card (1x1) - Clickable -->
-        <div class="glass-box box-small" onclick="openModal('contactModal')">
+        <div class="glass-box box-small" data-modal-target="contactModal">
             <i class="fa-solid fa-address-card icon-large" style="color: #d946ef;"></i>
             <div class="box-label">联系我们</div>
         </div>
 
         <!-- Guestbook Card (1x1) - Interactive -->
-        <div class="glass-box box-small" onclick="openModal('guestbookModal')">
+        <div class="glass-box box-small" data-modal-target="guestbookModal">
             <i class="fa-regular fa-comment-dots icon-large" style="color: #f59e0b;"></i>
             <div class="box-label">留言板</div>
         </div>
@@ -205,7 +346,7 @@
             </div>
 
             <div class="modal-title">留言板</div>
-            <p class="modal-subtitle">
+            <p class="modal-subtitle" style="pointer-events: none; user-select: none;">
                 欢迎留下您的宝贵建议,或告诉我们您期待上架的商品。
             </p>
             <form class="guestbook-form" id="guestbookForm">
@@ -336,7 +477,7 @@
 
     <!-- Login Trigger Button (Top Right) -->
     <div class="top-right-nav" style="position: fixed; top: 30px; right: 40px; z-index: 2100;">
-        <button id="authBtn" class="login-trigger-btn" onclick="handleAuthClick(event)">
+        <button id="authBtn" class="login-trigger-btn" onclick="window.toggleAuthMenu(event)">
             <!-- Default Icon (shown when logged out) -->
             <i id="defaultAuthIcon" class="fas fa-user-circle" style="font-size: 1.2rem;"></i>
 
@@ -348,21 +489,33 @@
 
         <div id="userDropdown" class="user-dropdown" style="z-index: 2100;">
             <!-- Personal Profile -->
-            <div class="menu-item profile-menu-item" onclick="openProfileModal(event)">
-                <i class="fas fa-user" style="font-size: 1rem; width: 20px; text-align: center;"></i>
+            <div class="menu-item profile-menu-item" onclick="window.openProfileModal(event)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="12" cy="7" r="4"></circle>
+                </svg>
                 个人资料
             </div>
 
             <div class="divider" style="margin: 5px 0; border-top: 1px solid rgba(255,255,255,0.1);"></div>
 
-            <div class="menu-item switch-account" onclick="handleSwitchAccount(event)">
-                <i class="fas fa-repeat" style="font-size: 1rem; width: 20px; text-align: center;"></i>
+            <div class="menu-item switch-account" onclick="window.handleSwitchAccount(event)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                    <circle cx="9" cy="7" r="4"></circle>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                </svg>
                 切换账户
             </div>
 
-            <div class="menu-item logout" onclick="handleLogout(event)">
-                <i class="fas fa-sign-out-alt" style="font-size: 1rem; width: 20px; text-align: center;"></i>
-                退出登录
+            <div class="menu-item logout" onclick="console.log('Logout clicked'); window.handleLogout(event)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                    <polyline points="16 17 21 12 16 7"></polyline>
+                    <line x1="21" y1="12" x2="9" y2="12"></line>
+                </svg>
+                Log Out
             </div>
         </div>
     </div>
@@ -491,11 +644,12 @@
 
     <!-- Coming Soon Modal -->
     <!-- Profile Modal -->
-    <div class="modal-overlay" id="profileModal" onclick="if(event.target === this) closeProfileModal()">
+    <div class="modal-overlay" id="profileModal" onclick="closeModal(event)">
         <div class="modal-content profile-modal">
             <!-- Mac Window Controls -->
             <div class="mac-controls">
-                <div class="mac-dot red" onclick="closeProfileModal()"><i class="fas fa-times"></i></div>
+                <div class="mac-dot red" onclick="document.getElementById('profileModal').classList.remove('active')"><i
+                        class="fas fa-times"></i></div>
                 <div class="mac-dot yellow"></div>
                 <div class="mac-dot green"></div>
             </div>
@@ -509,12 +663,12 @@
             <!-- Flip Container -->
             <div class="profile-flip-container">
                 <div class="profile-flip-inner">
-                    <!-- Front Side: Profile Info -->
-                    <div class="profile-view profile-front active-view">
+                    <!-- View 1: Profile (Front) -->
+                    <div id="view-profile" class="profile-view profile-front">
                         <div class="modal-title">个人资料</div>
 
                         <!-- Avatar Section -->
-                        <div class="profile-avatar-section" onclick="document.getElementById('avatarUpload').click()">
+                        <div class="profile-avatar-section" onclick="triggerAvatarUpload()">
                             <img id="profileModalAvatar" src="" alt="Avatar">
                             <div class="avatar-upload-hint">
                                 <i class="fas fa-camera"></i>
@@ -557,104 +711,128 @@
                         </div>
                     </div>
 
-                    <!-- View 2: Security (Back) - NEW COLLAPSIBLE DESIGN -->
+                    <!--  View 2: Security (Collapsible Cards) -->
                     <div id="view-security" class="profile-view profile-back">
                         <div class="modal-title">安全设置</div>
 
-                        <div class="security-layout">
-                            <!-- Left Sidebar Navigation -->
-                            <div class="security-sidebar">
-                                <div class="security-nav-item active" onclick="toggleSecuritySection('password')">
-                                    <i class="fas fa-key"></i>
-                                    <span>修改密码</span>
-                                    <i class="fas fa-chevron-right nav-arrow"></i>
+                        <div class="security-cards-layout">
+                            <!-- Left: Security Menu Cards -->
+                            <div class="security-menu">
+                                <!-- 1. Change Password Card -->
+
+                                <div class="security-card active"
+                                    onclick="expandSecurityCard(event, 'change-password')">
+                                    <div class="security-card-icon">
+                                        <i class="fas fa-key"></i>
+                                    </div>
+                                    <div class="security-card-content">
+                                        <div class="security-card-title">修改密码</div>
+                                    </div>
+                                    <i class="fas fa-chevron-right security-card-arrow"></i>
                                 </div>
-                                <div class="security-nav-item" onclick="toggleSecuritySection('phone')">
-                                    <i class="fas fa-mobile-alt"></i>
-                                    <span>绑定手机号</span>
-                                    <i class="fas fa-chevron-right nav-arrow"></i>
+
+                                <!-- 2. Bind Phone Card -->
+                                <div class="security-card" onclick="expandSecurityCard(event, 'bind-phone')">
+                                    <div class="security-card-icon">
+                                        <i class="fas fa-mobile-alt"></i>
+                                    </div>
+                                    <div class="security-card-content">
+                                        <div class="security-card-title">绑定手机号</div>
+                                    </div>
+                                    <i class="fas fa-chevron-right security-card-arrow"></i>
                                 </div>
-                                <div class="security-nav-item danger-nav" onclick="toggleSecuritySection('delete')">
-                                    <i class="fas fa-exclamation-triangle"></i>
-                                    <span>注销账号</span>
-                                    <i class="fas fa-chevron-right nav-arrow"></i>
+
+                                <!-- 3. Delete Account Card -->
+                                <div class="security-card danger-card"
+                                    onclick="expandSecurityCard(event, 'delete-account')">
+                                    <div class="security-card-icon danger">
+                                        <i class="fas fa-exclamation-triangle"></i>
+                                    </div>
+                                    <div class="security-card-content">
+                                        <div class="security-card-title danger">注销账号</div>
+                                    </div>
+                                    <i class="fas fa-chevron-right security-card-arrow"></i>
                                 </div>
                             </div>
 
-                            <!-- Right Content Area -->
-                            <div class="security-content">
-                                <!-- Password Section -->
-                                <div id="section-password" class="security-section active">
-                                    <h3 class="section-title">修改密码</h3>
-                                    <p class="section-desc">定期更换密码可以提高账户安全性</p>
+                            <!-- Right: Expanded Content Area -->
+                            <div class="security-detail-panel" id="securityDetailPanel">
+                                <!-- Change Password Panel -->
+
+                                <!-- Default Security Overview Panel -->
+                                <div class="security-detail-content" id="detail-security-overview"
+                                    style="display: block;">
+                                    <div
+                                        style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%;">
+                                        <div class="security-overview-icon-container" style="
+                                            width: 80px; 
+                                            height: 80px; 
+                                            background: rgba(155, 93, 229, 0.1); 
+                                            border-radius: 50%; 
+                                            display: flex; 
+                                            align-items: center; 
+                                            justify-content: center; 
+                                            margin-bottom: 24px;
+                                            box-shadow: 0 0 30px rgba(155, 93, 229, 0.2);
+                                        ">
+                                            <i class="fas fa-shield-alt" style="font-size: 36px; color: #9b5de5;"></i>
+                                        </div>
+                                        <h3 class="detail-title">账号安全中心</h3>
+                                        <p class="detail-desc">您的账号当前处于安全保护中</p>
+                                        <div style="
+                                            margin-top: 20px; 
+                                            padding: 12px 20px; 
+                                            background: rgba(255, 255, 255, 0.05); 
+                                            border-radius: 12px; 
+                                            font-size: 13px; 
+                                            color: rgba(255, 255, 255, 0.5);
+                                            display: flex;
+                                            align-items: center;
+                                            gap: 8px;
+                                        ">
+                                            <i class="fas fa-info-circle"></i>
+                                            请从左侧选择项目进行安全设置
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Change Password Panel -->
+
+                                <div class="security-detail-content" id="detail-change-password" style="display: none;">
+                                    <h3 class="detail-title">修改密码</h3>
                                     <input type="password" id="oldPasswordInput" placeholder="当前密码"
                                         class="security-input">
                                     <input type="password" id="newPasswordInput" placeholder="新密码 (至少6位)"
                                         class="security-input">
-                                    <button class="save-btn" onclick="changePassword()">更新密码</button>
+                                    <button class="gradient-btn" onclick="changePassword()">更新密码</button>
                                 </div>
 
-                                <!-- Phone Binding Section -->
-                                <div id="section-phone" class="security-section">
-                                    <h3 class="section-title">
-                                        绑定手机号
-                                        <span id="phoneBindStatus" class="status-badge"
-                                            style="font-size: 0.75rem; font-weight: normal; margin-left: auto; opacity: 0.7;">
-                                            <!-- Will show binding status -->
-                                        </span>
-                                    </h3>
-                                    <p class="section-desc">绑定手机号可用于找回忘记的邮箱账号</p>
-
-                                    <!-- If not bound, show binding UI -->
-                                    <div id="phoneBindingUI" style="display: none;">
-                                        <div class="phone-input-group">
-                                            <select id="profile-country-code" class="security-input">
-                                                <option value="+86">+86</option>
-                                                <option value="+1">+1</option>
-                                                <option value="+44">+44</option>
-                                                <option value="+852">+852</option>
-                                                <option value="+853">+853</option>
-                                            </select>
-                                            <input type="tel" id="profile-phone" placeholder="输入手机号"
-                                                class="security-input">
-                                        </div>
-
-                                        <div class="sms-input-group">
-                                            <input type="text" id="profile-sms-code" placeholder="6位验证码"
-                                                class="security-input" maxlength="6">
-                                            <button class="secondary-btn" id="profileSendSmsBtn"
-                                                onclick="sendSmsCode('profile')">获取验证码</button>
-                                        </div>
-
-                                        <button class="save-btn" onclick="bindPhoneNumber()">立即绑定</button>
+                                <!-- Bind Phone Panel -->
+                                <div class="security-detail-content" id="detail-bind-phone" style="display: none;">
+                                    <h3 class="detail-title">绑定手机号</h3>
+                                    <p class="detail-desc">绑定手机号可以增强账户安全性</p>
+                                    <div class="input-group input-with-action"
+                                        style="max-width: 100%; margin-bottom: 12px;">
+                                        <input type="tel" id="phoneNumberInput" placeholder="输入手机号"
+                                            class="security-input" maxlength="11">
+                                        <button type="button" class="verify-code-btn" id="sendPhoneCodeBtn"
+                                            onclick="sendPhoneVerificationCode()">
+                                            获取验证码
+                                        </button>
                                     </div>
-
-                                    <!-- If bound, show phone number and unbind option -->
-                                    <div id="phoneBoundUI" style="display: none;">
-                                        <div class="bound-phone-card">
-                                            <i class="fas fa-mobile-alt"></i>
-                                            <span id="boundPhoneDisplay"></span>
-                                            <i class="fas fa-check-circle"
-                                                style="margin-left: auto; color: #10b981;"></i>
-                                        </div>
-                                        <button class="secondary-btn" onclick="unbindPhoneNumber()"
-                                            style="width: 100%;">解绑手机号</button>
-                                    </div>
+                                    <input type="text" id="phoneCodeInput" placeholder="输入6位验证码" class="security-input"
+                                        maxlength="6">
+                                    <button class="gradient-btn" onclick="bindPhone()">绑定手机号</button>
                                 </div>
 
-                                <!-- Delete Account Section -->
-                                <div id="section-delete" class="security-section">
-                                    <h3 class="section-title danger-text">注销账号</h3>
-                                    <p class="section-desc">此操作不可恢复，您的所有数据将被永久删除。</p>
-                                    <div class="danger-warning">
-                                        <i class="fas fa-exclamation-triangle"></i>
-                                        <div>
-                                            <strong>警告</strong>
-                                            <p>注销后无法恢复账号和相关数据</p>
-                                        </div>
-                                    </div>
-                                    <button class="danger-btn" onclick="deleteAccount()">永久注销账号</button>
+                                <!-- Delete Account Panel -->
+                                <div class="security-detail-content" id="detail-delete-account" style="display: none;">
+                                    <h3 class="detail-title danger">注销账号</h3>
+                                    <p class="detail-desc danger">⚠️ 此操作不可恢复，您的所有数据将被永久删除。</p>
+                                    <button class="danger-btn" onclick="deleteAccount()">确认注销账号</button>
                                 </div>
+
+
                             </div>
                         </div>
                     </div>
@@ -681,9 +859,13 @@
         </div>
     </div>
 
+    <link rel="stylesheet" href="style.css?v=FIX_ANIMATION_FINAL">
+    <link rel="stylesheet" href="style.css?v=FIX_INPUT_AVATAR_FINAL">
     <!-- Elastic Press Effect -->
-    <script src="elastic-press.js?v=FIX_CURSOR_FINAL" defer></script>
-    <script src="script.js?v=1764222001" defer></script>
+    <script src="elastic-press.js?v=FIX_MODAL_DETECTION" defer></script>
+    <script src="script.js?v=FIX_UI_OPTIMIZATIONS_V6" defer></script>
 </body>
+
+</html>
 
 </html>

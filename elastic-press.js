@@ -65,13 +65,20 @@ class ElasticPress {
         this.animate();
     }
 
-    // Check if any modal/overlay is currently active
+    // Check if any modal/overlay is currently active AND visible
     isModalActive() {
         const modals = document.querySelectorAll('.modal-overlay, .login-overlay');
-        const hasActiveModal = Array.from(modals).some(modal => modal.classList.contains('active'));
-        // Debug: log modal status
+        const hasActiveModal = Array.from(modals).some(modal => {
+            // Check both active class AND visibility
+            const isActive = modal.classList.contains('active');
+            const isVisible = window.getComputedStyle(modal).display !== 'none' &&
+                window.getComputedStyle(modal).visibility !== 'hidden' &&
+                window.getComputedStyle(modal).opacity !== '0';
+            return isActive && isVisible;
+        });
+        // Debug: log modal status only if actually blocking
         if (hasActiveModal) {
-            console.log('[ElasticPress] Modal is active, ignoring interactions');
+            console.log('[ElasticPress] Modal is active and visible, ignoring interactions');
         }
         return hasActiveModal;
     }

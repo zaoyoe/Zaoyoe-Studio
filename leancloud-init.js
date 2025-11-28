@@ -16,7 +16,7 @@ AV.init(LEANCLOUD_CONFIG);
 
 console.log('✅ LeanCloud SDK 初始化完成');
 console.log('📡 AppID:', LEANCLOUD_CONFIG.appId);
-console.log('📡 AppID:', LEANCLOUD_CONFIG.appId);
+
 console.log('⚠️ 请确保已将配置替换为您的实际 AppID/AppKey！');
 
 // 辅助函数：检查登录状态

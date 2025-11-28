@@ -88,19 +88,17 @@
     transform: scale(0.95);
     /* Reverted to scale */
     opacity: 0;
-    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    transition: all 0.3s ease-out;
     /* Elastic easing */
     will-change: transform, opacity;
     backface-visibility: hidden;
     color: white;
     cursor: default;
-    /* pointer-events: auto !important; REMOVED */
+
 }
 
 /* 确保 login-card 的所有直接子元素可交互 */
-.login-card>* {
-    /* pointer-events: auto !important; REMOVED */
-}
+.login-card>* {}
 
 /* 确保 login-card 内的所有按钮和交互元素都有正确的 cursor 和 pointer-events */
 .login-card button,
@@ -114,7 +112,7 @@
 .login-card .forgot-password-link,
 .login-card .mac-dot {
     cursor: pointer !important;
-    /* pointer-events: auto !important; REMOVED */
+
     position: relative;
     z-index: 9999 !important;
 }
@@ -222,8 +220,8 @@
     visibility: hidden;
     transform: translateY(-20px);
     pointer-events: none;
-    transition: opacity 0.4s cubic-bezier(0.34, 1.56, 0.64, 1),
-        transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1),
+    transition: opacity 0.4s ease-out,
+        transform 0.4s ease-out,
         visibility 0.4s;
 }
 
@@ -326,17 +324,35 @@
 }
 
 /* Input with Action Button (for verification code) */
+/* Input with Action Button (for verification code) */
 .input-with-action {
-    display: flex;
-    gap: 10px;
+    display: grid !important;
+    grid-template-columns: 1fr auto !important;
+    gap: 12px !important;
+    align-items: center !important;
+    position: relative !important;
+    flex-direction: unset !important;
 }
 
 .input-with-action .glass-input {
-    flex: 1;
+    width: 100% !important;
+    min-width: 0 !important;
+    padding-right: 16px !important;
+    position: relative !important;
+    flex: unset !important;
 }
 
 .verify-code-btn {
-    padding: 14px 24px;
+    width: auto !important;
+    white-space: nowrap !important;
+    position: relative !important;
+    top: auto !important;
+    right: auto !important;
+    transform: none !important;
+    margin: 0 !important;
+    align-self: center !important;
+
+    padding: 14px 20px;
     background: rgba(155, 93, 229, 0.2);
     border: 1px solid rgba(155, 93, 229, 0.3);
     border-radius: 12px;
@@ -344,11 +360,8 @@
     font-size: 13px;
     font-weight: 600;
     cursor: pointer !important;
-    white-space: nowrap;
     transition: all 0.3s;
     pointer-events: auto !important;
-    position: relative;
-    z-index: 10;
 }
 
 .verify-code-btn:hover {
@@ -405,7 +418,7 @@
 
 .switch-link:hover {
     color: #b47cf3;
-    /* Removed text-decoration: underline */
+
 }
 
 /* Forgot Password Link */

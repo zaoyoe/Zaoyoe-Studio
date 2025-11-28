@@ -9,8 +9,8 @@ async function handleRegister(event) {
 
     const inputCode = document.getElementById('reg-code').value;
     const password = document.getElementById('reg-password').value;
-    const email = document.getElementById('reg-email').value.trim();
-    const username = document.getElementById('reg-username').value.trim();
+    const email = document.getElementById('reg-email').value.trim();  // ✅ 添加 .trim()
+    const username = document.getElementById('reg-username').value.trim();  // ✅ 添加 .trim()
 
     // 验证码检查
     if (inputCode !== generatedCode) {
@@ -31,9 +31,10 @@ async function handleRegister(event) {
         await user.signUp();
         console.log('✅ User created:', user.id);
 
-        // ⚠️ 尝试修复ACL
+        // ⚠️ 尝试修复ACL（大概率会失败，因为LeanCloud的Default ACL bug）
         let aclFixed = false;
         try {
+            // Re-fetch to get latest server state
             await user.fetch();
 
             const acl = new AV.ACL(user);
@@ -92,52 +93,12 @@ async function handleRegister(event) {
 window.handleAuthClick = handleAuthClick;
 
 // ==================== 登录功能 (LeanCloud 版本) ====================
-
-// 登录频率限制辅助函数
-function checkLoginAttempts() {
-    const MAX_ATTEMPTS = 5;
-    const LOCKOUT_TIME = 15 * 60 * 1000; // 15分钟
-
-    const attempts = parseInt(localStorage.getItem('login_attempts') || '0');
-    const lockoutTime = parseInt(localStorage.getItem('login_lockout_time') || '0');
-    const now = Date.now();
-
-    if (lockoutTime && now < lockoutTime) {
-        const remainingMinutes = Math.ceil((lockoutTime - now) / 60000);
-        throw new Error(`登录尝试次数过多，请在 ${remainingMinutes} 分钟后再试。`);
-    }
-
-    if (lockoutTime && now >= lockoutTime) {
-        // 锁定过期，重置
-        localStorage.removeItem('login_attempts');
-        localStorage.removeItem('login_lockout_time');
-        return;
-    }
-
-    if (attempts >= MAX_ATTEMPTS) {
-        const newLockoutTime = now + LOCKOUT_TIME;
-        localStorage.setItem('login_lockout_time', newLockoutTime);
-        throw new Error(`登录尝试次数过多，请在 15 分钟后再试。`);
-    }
-}
-
-function recordFailedLogin() {
-    let attempts = parseInt(localStorage.getItem('login_attempts') || '0');
-    attempts++;
-    localStorage.setItem('login_attempts', attempts);
-}
-
-function clearLoginAttempts() {
-    localStorage.removeItem('login_attempts');
-    localStorage.removeItem('login_lockout_time');
-}
-
 async function handleLogin(event) {
     event.preventDefault();
 
     const email = document.getElementById('login-email').value.trim();
     const password = document.getElementById('login-password').value;
-    const rememberMe = document.getElementById('remember-me')?.checked || false;
+    const rememberMe = document.getElementById('rememberMe')?.checked || false;
 
     if (!email || !password) {
         alert("请输入邮箱和密码");
@@ -145,31 +106,43 @@ async function handleLogin(event) {
     }
 
     try {
-        // 1. 检查登录尝试次数
-        checkLoginAttempts();
-
         // 使用邮箱登录
         const user = await AV.User.logIn(email, password);
 
         console.log('✅ 登录成功:', user.toJSON());
 
-        // 登录成功，清除失败记录
-        clearLoginAttempts();
-
-        // 记住我功能 - 保存30天
+        // 记住我功能 - 保存30天 (用于自动登录)
         if (rememberMe) {
             const expiryDate = new Date();
-            expiryDate.setDate(expiryDate.getDate() + 30);
+            expiryDate.setDate(expiryDate.getDate() + 30); // 30天后过期
 
             const credentials = {
                 email: email,
-                password: btoa(password),
+                password: btoa(password), // Base64编码
                 expiry: expiryDate.getTime()
             };
 
             localStorage.setItem('remembered_credentials', JSON.stringify(credentials));
+
+            // ==================== 新增：多账号自动填充逻辑 ====================
+            // 获取现有的密码库
+            let savedPasswords = {};
+            try {
+                const saved = localStorage.getItem('saved_passwords');
+                if (saved) savedPasswords = JSON.parse(saved);
+            } catch (e) { console.error('读取密码库失败', e); }
+
+            // 更新当前账号密码
+            savedPasswords[email] = btoa(password);
+
+            // 保存回 localStorage
+            localStorage.setItem('saved_passwords', JSON.stringify(savedPasswords));
+            console.log('✅ 已更新密码库:', Object.keys(savedPasswords));
+            // ============================================================
+
             console.log('✅ 已保存登录凭证（30天有效）');
         } else {
+            // 不勾选则清除自动登录凭证 (但不清除密码库，除非用户明确希望清除 - 这里暂不清除密码库以保持体验)
             localStorage.removeItem('remembered_credentials');
         }
 
@@ -187,11 +160,6 @@ async function handleLogin(event) {
 
     } catch (error) {
         console.error('登录失败:', error);
-
-        // 记录失败次数（排除频率限制错误本身）
-        if (!error.message.includes('登录尝试次数过多')) {
-            recordFailedLogin();
-        }
 
         let errorMessage = '登录失败';
         if (error.code === 210) {
@@ -227,9 +195,9 @@ function handleLogout(event) {
     // 退出登录
     AV.User.logOut();
 
-    // 清除记住的凭证
+    // 清除自动登录凭证 (但不清除 saved_passwords，以便下次自动填充)
     localStorage.removeItem('remembered_credentials');
-    console.log('🗑️ 已清除记住的凭证');
+    console.log('🗑️ 已清除自动登录凭证');
 
     // 重置UI - 使用正确的元素 ID
     const defaultIcon = document.getElementById('defaultAuthIcon');
@@ -262,9 +230,10 @@ function handleLogout(event) {
         // 只移除 active 类
         userDropdown.classList.remove('active');
     }
-
-    // ✅ 移除"已退出登录"提示 - 用户已确认，不需要二次提示
 }
+
+// 显式挂载到 window 对象
+window.handleLogout = handleLogout;
 
 // ==================== 处理 Auth 按钮点击 ====================
 function handleAuthClick(event) {
@@ -294,10 +263,13 @@ function handleAuthClick(event) {
         }
     } else {
         // User is not logged in - open login modal
-        if (typeof openAuthModal === 'function') {
-            openAuthModal('login');
-        } else if (typeof toggleLoginModal === 'function') {
-            toggleLoginModal();
+        console.log('🔐 Triggering login flow');
+        const loginModal = document.getElementById('loginModal');
+        if (loginModal) {
+            console.log('✅ Found loginModal, adding active class');
+            loginModal.classList.add('active');
+        } else {
+            console.error('❌ loginModal element not found!');
         }
     }
 }
@@ -347,35 +319,26 @@ function updateUserUI(user) {
             btnText: !!btnText
         });
 
-        // 用户已登录 - 显示头像和昵称
+        // 用户已登录 - 显示头像，隐藏默认图标
         if (defaultIcon) {
             defaultIcon.style.display = 'none';
         }
         if (navAvatar) {
-            // 移除之前的动画类（如果存在）
+            // 清除之前的动画类
             navAvatar.classList.remove('animate-in');
-            // 设置初始状态为透明，让动画控制显示
-            navAvatar.style.opacity = '0';
+            // 直接设置为可见（不使用动画）
+            navAvatar.style.display = 'inline-block';
+            navAvatar.style.visibility = 'visible';
+            navAvatar.style.opacity = '1';
 
             const triggerAnimation = () => {
-                // 强制重排
                 void navAvatar.offsetWidth;
-
-                // Ensure starting state for animation
-                navAvatar.style.opacity = '0';
-
-                // Add animation class
                 navAvatar.classList.add('animate-in');
-
-                // Failsafe: Ensure opacity is 1 after animation completes
-                setTimeout(() => {
-                    navAvatar.style.opacity = '1';
-                }, 600);
             };
 
             if (user.avatarUrl) {
                 navAvatar.src = user.avatarUrl;
-                navAvatar.style.display = 'inline';
+                navAvatar.style.display = 'inline-block';
 
                 // 等待图片加载完成后再显示动画
                 if (navAvatar.complete && navAvatar.naturalWidth > 0) {
@@ -395,7 +358,7 @@ function updateUserUI(user) {
                 // 没有头像URL，使用默认头像
                 const defaultAvatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.nickname || user.username || 'User')}&background=random`;
                 navAvatar.src = defaultAvatarUrl;
-                navAvatar.style.display = 'inline';
+                navAvatar.style.display = 'inline-block';
 
                 // 等待默认头像加载
                 if (navAvatar.complete && navAvatar.naturalWidth > 0) {
@@ -583,7 +546,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     // 自动填充UI (为了视觉反馈)
                     const loginEmailInput = document.getElementById('login-email');
                     const loginPasswordInput = document.getElementById('login-password');
-                    const rememberCheckbox = document.getElementById('remember-me');
+                    const rememberCheckbox = document.getElementById('rememberMe');
 
                     if (loginEmailInput) loginEmailInput.value = credentials.email;
                     if (loginPasswordInput && credentials.password) loginPasswordInput.value = atob(credentials.password);
@@ -621,10 +584,31 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    // 监听邮箱输入变化，自动填充对应密码
+    // 监听邮箱输入变化，自动填充对应密码 (支持多账号)
     const loginEmailInput = document.getElementById('login-email');
     if (loginEmailInput) {
         loginEmailInput.addEventListener('input', function () {
+            const email = this.value.trim();
+
+            // 1. 尝试从多账号密码库中查找
+            try {
+                const savedPasswordsStr = localStorage.getItem('saved_passwords');
+                if (savedPasswordsStr) {
+                    const savedPasswords = JSON.parse(savedPasswordsStr);
+                    if (savedPasswords[email]) {
+                        const loginPasswordInput = document.getElementById('login-password');
+                        if (loginPasswordInput) {
+                            loginPasswordInput.value = atob(savedPasswords[email]);
+                            console.log('✨ 已自动填充密码 for:', email);
+                            return; // 找到后直接返回
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error('自动填充密码失败 (多账号):', e);
+            }
+
+            // 2. (后备) 尝试从旧的单账号凭证中查找
             try {
                 const savedCredentials = localStorage.getItem('remembered_credentials');
                 if (savedCredentials) {
@@ -632,7 +616,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     const now = new Date().getTime();
 
                     // 检查是否匹配且未过期
-                    if (credentials.email === this.value && now < credentials.expiry) {
+                    if (credentials.email === email && now < credentials.expiry) {
                         const loginPasswordInput = document.getElementById('login-password');
                         if (loginPasswordInput && credentials.password) {
                             loginPasswordInput.value = atob(credentials.password);
@@ -640,7 +624,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     }
                 }
             } catch (e) {
-                console.error('自动填充密码失败:', e);
+                console.error('自动填充密码失败 (单账号):', e);
             }
         });
     }
@@ -811,6 +795,7 @@ async function handleAvatarUpload(event) {
         };
         img.src = e.target.result;
     };
+    reader.readAsDataURL(file); // 关键：触发文件读取
 }
 
 // ==================== 切换账户 ====================
@@ -846,27 +831,23 @@ function handleSwitchAccount(event) {
     }, 100); // 短暂延迟确保下拉菜单完全关闭
 }
 
+// 显式挂载到 window 对象
+window.handleSwitchAccount = handleSwitchAccount;
+
+// ==================== 打开个人资料模态框 ====================
 // ==================== 打开个人资料模态框 ====================
 function openProfileModal(event) {
+    // 阻止事件冒泡
     if (event) {
-        event.preventDefault();
         event.stopPropagation();
     }
 
-    console.log('📂 Opening Profile Modal');
-
-    // Close user dropdown to prevent backdrop conflicts
+    // 关闭下拉菜单
     const dropdown = document.getElementById('userDropdown');
     if (dropdown) {
         dropdown.classList.remove('active');
-        console.log('✅ Closed dropdown before opening modal');
     }
 
-    const modal = document.getElementById('profileModal');
-    if (!modal) {
-        console.error('❌ Profile modal element not found!');
-        return;
-    }
     // 获取当前用户信息
     const currentUser = AV.User.current();
     if (!currentUser) {
@@ -893,7 +874,9 @@ function openProfileModal(event) {
     }
 
     // 更新邮箱验证状态
-    checkEmailVerified();
+    if (typeof checkEmailVerified === 'function') {
+        checkEmailVerified();
+    }
 
     if (memberSinceSpan) {
         const createdAt = currentUser.get('createdAt');
@@ -908,38 +891,45 @@ function openProfileModal(event) {
         }
     }
 
-    // 更新手机绑定状态
-    updatePhoneBindingUI(currentUser.toJSON());
-
-    // 打开模态框 (reuse modal variable declared above)
+    // 打开模态框
+    const modal = document.getElementById('profileModal');
     if (modal) {
-        // CRITICAL: Clear any inline styles from previous close
-        modal.style.display = '';
-        modal.style.visibility = '';
-        modal.style.opacity = '';
-
         modal.classList.add('active');
-        // Use new visibility class
-        modal.classList.remove('overlay-hidden');
-        modal.classList.add('overlay-visible');
+        // 确保可见性
+        modal.style.visibility = 'visible';
+        modal.style.opacity = '1';
+        modal.style.display = 'flex';
+
+        // 重置到资料页面
+        const flipInner = document.querySelector('.profile-flip-inner');
+        if (flipInner) {
+            flipInner.classList.remove('flipped');
+        }
+
+        // 重置tab状态
+        document.querySelectorAll('.tab-item').forEach(tab => {
+            tab.classList.remove('active');
+        });
+        const profileTab = document.querySelector('.tab-item:first-child');
+        if (profileTab) {
+            profileTab.classList.add('active');
+        }
+
+        // Reset modal to compact width
+        const profileModalElement = document.querySelector('.profile-modal');
+        if (profileModalElement) {
+            profileModalElement.classList.remove('wide');
+        }
+
+        // 隐藏安全页面的back视图
+        const profileBack = document.querySelector('.profile-back');
+        if (profileBack) {
+            profileBack.classList.remove('animate-in');
+        }
 
         // 触发资料页面的错落上升动画
         const profileFront = document.querySelector('.profile-front');
         if (profileFront) {
-            // 确保切换到资料页面并重置状态
-            if (typeof switchProfileTab === 'function') {
-                switchProfileTab('profile');
-            } else {
-                // Fallback if function not available
-                const flipInner = document.querySelector('.profile-flip-inner');
-                if (flipInner) {
-                    flipInner.classList.remove('flipped');
-                }
-                profileFront.classList.add('active-view');
-                const profileBack = document.querySelector('.profile-back');
-                if (profileBack) profileBack.classList.remove('active-view');
-            }
-
             // 延迟触发动画，确保模态框已显示
             setTimeout(() => {
                 profileFront.classList.remove('animate-in');
@@ -949,6 +939,9 @@ function openProfileModal(event) {
         }
     }
 }
+
+// 显式挂载到 window 对象
+window.openProfileModal = openProfileModal;
 
 // ==================== 昵称修改功能 ====================
 function toggleNicknameEdit(show) {
@@ -1026,68 +1019,70 @@ async function saveNickname() {
 
 console.log('✅ LeanCloud 认证函数已加载');
 
-// ==================== Tab 切换功能 ====================
+// 显式挂载到 window 对象，确保全局可用
+window.handleLogout = handleLogout;
+window.handleSwitchAccount = handleSwitchAccount;
+window.openProfileModal = openProfileModal;
+window.switchProfileTab = switchProfileTab;
+window.toggleNicknameEdit = toggleNicknameEdit;
+window.saveNickname = saveNickname;
+
 // ==================== Tab 切换功能 ====================
 function switchProfileTab(tabName) {
-    // Update Tab Styles
-    const tabs = document.querySelectorAll('.tab-item');
+    console.log('🔄 Switching profile tab to:', tabName);
+
+    const profileModal = document.querySelector('.profile-modal');
     const flipInner = document.querySelector('.profile-flip-inner');
     const profileFront = document.querySelector('.profile-front');
     const profileBack = document.querySelector('.profile-back');
-    const profileContainer = document.querySelector('.profile-flip-container');
 
-    tabs.forEach(tab => {
-        if (tab.textContent === (tabName === 'profile' ? '资料' : '安全')) {
-            tab.classList.add('active');
-        } else {
-            tab.classList.remove('active');
-        }
+    // Update tab buttons
+    document.querySelectorAll('.tab-item').forEach(item => {
+        item.classList.remove('active');
     });
 
-    // 重置滚动位置到顶部
-    if (profileContainer) {
-        profileContainer.scrollTop = 0;
-    }
+    if (tabName === 'profile') {
+        document.querySelector('.tab-item:first-child').classList.add('active');
+        if (flipInner) flipInner.classList.remove('flipped');
+        if (profileModal) profileModal.classList.remove('wide'); // Reset to compact width
 
-    if (flipInner) {
-        // 移除之前的动画类
-        if (profileFront) profileFront.classList.remove('animate-in');
-        if (profileBack) profileBack.classList.remove('animate-in');
+        // Manage pointer events
+        if (profileFront) profileFront.style.pointerEvents = 'auto';
+        if (profileBack) profileBack.style.pointerEvents = 'none';
 
-        // 使用 requestAnimationFrame 确保 DOM 更新后再添加动画类
-        requestAnimationFrame(() => {
-            if (tabName === 'security') {
-                flipInner.classList.add('flipped');
+        // Trigger animation for profile front
+        if (profileFront) {
+            profileFront.classList.remove('animate-in');
+            void profileFront.offsetWidth;
+            profileFront.classList.add('animate-in');
+        }
+        if (profileBack) {
+            profileBack.classList.remove('animate-in');
+        }
 
-                // 切换定位模式：Security 变为 relative，Front 变为 absolute
-                if (profileBack) profileBack.classList.add('active-view');
-                if (profileFront) profileFront.classList.remove('active-view');
+    } else if (tabName === 'security') {
+        document.querySelector('.tab-item:last-child').classList.add('active');
+        if (flipInner) flipInner.classList.add('flipped');
+        if (profileModal) profileModal.classList.add('wide'); // Expand modal
 
-                // 触发安全页面的错落上升动画
-                if (profileBack) {
-                    profileBack.classList.remove('animate-in');
-                    // 强制重排，然后添加动画类
-                    void profileBack.offsetWidth;
-                    profileBack.classList.add('animate-in');
-                }
-                // Check email status when switching to security tab
-                checkEmailVerified();
-            } else {
-                flipInner.classList.remove('flipped');
+        // Manage pointer events
+        if (profileFront) profileFront.style.pointerEvents = 'none';
+        if (profileBack) profileBack.style.pointerEvents = 'auto';
 
-                // 切换定位模式：Front 变为 relative，Security 变为 absolute
-                if (profileFront) profileFront.classList.add('active-view');
-                if (profileBack) profileBack.classList.remove('active-view');
+        // Reset security cards
+        if (typeof resetSecurityCards === 'function') {
+            resetSecurityCards();
+        }
 
-                // 触发资料页面的错落上升动画
-                if (profileFront) {
-                    profileFront.classList.remove('animate-in');
-                    // 强制重排，然后添加动画类
-                    void profileFront.offsetWidth;
-                    profileFront.classList.add('animate-in');
-                }
-            }
-        });
+        // Trigger animation for profile back
+        if (profileBack) {
+            profileBack.classList.remove('animate-in');
+            void profileBack.offsetWidth;
+            profileBack.classList.add('animate-in');
+        }
+        if (profileFront) {
+            profileFront.classList.remove('animate-in');
+        }
     }
 }
 
@@ -1158,14 +1153,15 @@ async function resendVerificationEmail() {
         console.error('Email verification failed:', error);
 
         let msg = '发送失败';
-        if (error.code === 216) {
-            msg = '✅ 好消息！您的邮箱已经验证过了。';
-            checkEmailVerified(); // Refresh UI
+        if (error.code === 1) {
+            msg = '发送过于频繁，请稍后再试（建议等待1分钟）。';
         } else if (error.code === 205) {
             msg = '找不到该邮箱的用户，请联系管理员。';
+        } else if (error.code === 216) {
+            msg = '该邮箱已经验证过了。';
+            checkEmailVerified(); // Refresh UI
         } else {
-            // 显示详细的错误信息，帮助诊断问题
-            msg = `❌ 发送失败\n\n错误代码: ${error.code}\n错误信息: ${error.message || error.rawMessage || '未知错误'}\n\n💡 如果提示"频繁"，请等待1-2分钟再试。\n如果问题持续，请联系管理员。`;
+            msg = `发送失败 (${error.code}): ${error.message}`;
         }
         alert(msg);
     }
@@ -1224,157 +1220,107 @@ async function deleteAccount() {
     }
 }
 
-// ==================== Phone Number Binding ====================
 
-// Update the phone binding UI based on user's phone status
-function updatePhoneBindingUI(user) {
-    const phoneBindingUI = document.getElementById('phoneBindingUI');
-    const phoneBoundUI = document.getElementById('phoneBoundUI');
-    const phoneBindStatus = document.getElementById('phoneBindStatus');
-    const boundPhoneDisplay = document.getElementById('boundPhoneDisplay');
 
-    if (!phoneBindingUI || !phoneBoundUI) return;
-
-    const phone = user?.mobilePhoneNumber || AV.User.current()?.get('mobilePhoneNumber');
-
-    if (phone) {
-        // Phone is bound
-        phoneBindingUI.style.display = 'none';
-        phoneBoundUI.style.display = 'block';
-        phoneBindStatus.textContent = '(已绑定)';
-        phoneBindStatus.style.color = '#10b981';
-        boundPhoneDisplay.textContent = phone;
-    } else {
-        // Phone not bound
-        phoneBindingUI.style.display = 'block';
-        phoneBoundUI.style.display = 'none';
-        phoneBindStatus.textContent = '(未绑定)';
-        phoneBindStatus.style.color = 'rgba(255,255,255,0.5)';
-    }
-}
-
-// Bind phone number to account
-async function bindPhoneNumber() {
-    const phone = document.getElementById('profile-phone').value.trim();
-    const countryCode = document.getElementById('profile-country-code').value;
-    const smsCode = document.getElementById('profile-sms-code').value.trim();
-
-    if (!phone || !smsCode) {
-        alert('请输入手机号和短信验证码');
+// Trigger Avatar Upload with Safety Check
+function triggerAvatarUpload() {
+    // Check if we are in the profile tab
+    const flipInner = document.querySelector('.profile-flip-inner');
+    if (flipInner && flipInner.classList.contains('flipped')) {
+        console.warn('🚫 Blocked avatar upload click while in Security tab');
         return;
     }
 
-    const fullPhone = countryCode + phone;
+    console.log('📸 Triggering avatar upload');
+    const fileInput = document.getElementById('avatarUpload');
+    if (fileInput) {
+        fileInput.click();
+    }
+}
+
+// Expose to window
+window.triggerAvatarUpload = triggerAvatarUpload;
+
+// ==================== 绑定手机号 (LeanCloud 版本) ====================
+async function requestPhoneBindCode(phoneNumber) {
+    if (!phoneNumber) {
+        alert("请输入手机号");
+        return false;
+    }
+
+    const currentUser = AV.User.current();
+    if (!currentUser) {
+        alert("请先登录");
+        return false;
+    }
 
     try {
-        const currentUser = AV.User.current();
-        if (!currentUser) {
-            alert('请先登录');
-            return;
-        }
-
-        // Set the phone number and verify with SMS code
-        currentUser.set('mobilePhoneNumber', fullPhone);
-        currentUser.set('mobilePhoneVerified', false); // Will be set to true after verification
-
-        // Save first, then verify
-        await currentUser.save();
-
-        // Verify the SMS code
-        await AV.Cloud.verifySmsCode(smsCode, fullPhone);
-
-        // Mark as verified
-        currentUser.set('mobilePhoneVerified', true);
-        await currentUser.save();
-
-        console.log('✅ Phone number bound successfully');
-        alert(`手机号绑定成功！\n\n${fullPhone} 已绑定到您的账号`);
-
-        // Update UI
-        updatePhoneBindingUI({
-            ...currentUser.toJSON(),
-            mobilePhoneNumber: fullPhone
+        // 请求发送验证码
+        await AV.Cloud.requestSmsCode({
+            mobilePhoneNumber: phoneNumber,
+            name: '应用名',
+            op: '绑定手机',
+            ttl: 10
         });
 
-        // Clear inputs
-        document.getElementById('profile-phone').value = '';
-        document.getElementById('profile-sms-code').value = '';
+        console.log('✅ 验证码已发送到:', phoneNumber);
+        alert(`验证码已发送到 ${phoneNumber}`);
+        return true;
 
     } catch (error) {
-        console.error('❌ Failed to bind phone:', error);
+        console.error('发送验证码失败:', error);
+        alert(`发送失败: ${error.message}`);
+        return false;
+    }
+}
 
-        let errorMessage = '绑定失败';
-        if (error.code === 603) {
-            errorMessage = '短信验证码错误或已过期';
-        } else if (error.code === 127) {
-            errorMessage = '该手机号已被其他账号绑定';
-        } else {
-            errorMessage = error.message || '未知错误';
+async function bindPhoneNumber(phoneNumber, code) {
+    if (!phoneNumber || !code) {
+        alert("请输入手机号和验证码");
+        return false;
+    }
+
+    const currentUser = AV.User.current();
+    if (!currentUser) {
+        alert("请先登录");
+        return false;
+    }
+
+    try {
+        console.log('🔗 正在绑定手机号:', phoneNumber);
+
+        // 1. 设置手机号
+        currentUser.setMobilePhoneNumber(phoneNumber);
+
+        // 2. 保存用户 (这会检查手机号是否已被占用)
+        await currentUser.save();
+        console.log('✅ 手机号已设置，正在验证...');
+
+        // 3. 验证手机号
+        await AV.User.verifyMobilePhone(code);
+        console.log('✅ 手机号验证成功');
+
+        alert("手机号绑定成功！");
+        return true;
+
+    } catch (error) {
+        console.error('绑定失败:', error);
+
+        let errorMessage = error.message;
+        if (error.code === 214) {
+            errorMessage = "手机号已被注册";
+        } else if (error.code === 603) {
+            errorMessage = "验证码无效";
         }
 
         alert(`绑定失败: ${errorMessage}`);
+        return false;
     }
 }
 
-// Unbind phone number from account
-async function unbindPhoneNumber() {
-    const confirmed = confirm('确定要解绑手机号吗？\n\n解绑后将无法通过手机号找回邮箱。');
-    if (!confirmed) return;
-
-    try {
-        const currentUser = AV.User.current();
-        if (!currentUser) {
-            alert('请先登录');
-            return;
-        }
-
-        currentUser.unset('mobilePhoneNumber');
-        currentUser.unset('mobilePhoneVerified');
-        await currentUser.save();
-
-        console.log('✅ Phone number unbound successfully');
-        alert('手机号已成功解绑');
-
-        // Update UI
-        updatePhoneBindingUI({
-            ...currentUser.toJSON(),
-            mobilePhoneNumber: null
-        });
-
-    } catch (error) {
-        console.error('❌ Failed to unbind phone:', error);
-        alert(`解绑失败: ${error.message || '未知错误'}`);
-    }
-}
-
-// Make functions globally available
+// 显式挂载所有安全函数到 window 对象
+window.changePassword = changePassword;
+window.deleteAccount = deleteAccount;
+window.requestPhoneBindCode = requestPhoneBindCode;
 window.bindPhoneNumber = bindPhoneNumber;
-window.unbindPhoneNumber = unbindPhoneNumber;
-window.updatePhoneBindingUI = updatePhoneBindingUI;
 
-// ==================== Security Settings Section Toggle ====================
-function toggleSecuritySection(sectionName) {
-    // Remove active class from all nav items
-    const navItems = document.querySelectorAll('.security-nav-item');
-    navItems.forEach(item => item.classList.remove('active'));
-
-    // Add active class to clicked nav item
-    const activeNavItem = Array.from(navItems).find(item =>
-        item.onclick.toString().includes(`'${sectionName}'`)
-    );
-    if (activeNavItem) {
-        activeNavItem.classList.add('active');
-    }
-
-    // Hide all sections
-    const sections = document.querySelectorAll('.security-section');
-    sections.forEach(section => section.classList.remove('active'));
-
-    // Show selected section
-    const activeSection = document.getElementById(`section-${sectionName}`);
-    if (activeSection) {
-        activeSection.classList.add('active');
-    }
-}
-
-window.toggleSecuritySection = toggleSecuritySection;
