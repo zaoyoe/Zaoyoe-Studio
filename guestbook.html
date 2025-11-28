@@ -84,6 +84,18 @@
         .page-exit {
             animation: fadeOutDown 0.3s ease-in forwards;
         }
+
+        /* Prevent iOS zoom on input focus */
+        @media (max-width: 768px) {
+
+            textarea,
+            input[type="text"],
+            input[type="email"],
+            input[type="password"] {
+                font-size: 16px !important;
+                /* Prevent iOS auto-zoom */
+            }
+        }
     </style>
     <script>
         // Handle back button with exit animation
