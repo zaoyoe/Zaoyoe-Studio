@@ -11,6 +11,15 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css">
     <style>
+        /* Override body flex layout for long scrolling content */
+        body {
+            display: block !important;
+            height: auto !important;
+            overflow-y: auto !important;
+            padding-top: 1px;
+            /* Prevent margin collapse */
+        }
+
         /* Entrance animation */
         .glass-card {
             animation: slideInUp 0.5s ease-out;

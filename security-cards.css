@@ -294,8 +294,8 @@
         flex-direction: column;
         height: auto;
         gap: 20px;
-        padding-bottom: 100px;
-        /* Increased padding to ensure bottom content is reachable */
+        padding-bottom: 20px;
+        /* Reduced since we're using proper scrolling now */
     }
 
     .security-menu {
@@ -307,22 +307,25 @@
         min-height: auto;
         /* Allow height to adjust to content */
         height: auto;
-        padding: 20px;
-        padding-bottom: 150px;
-        /* Further increased to ensure buttons are fully visible */
+        padding: 0;
+        /* Remove padding, let content handle it */
         overflow: visible;
         /* Let content flow */
     }
 
     .security-detail-content {
-        position: relative;
+        position: static;
+        /* Use static positioning for proper flow */
         /* Reset from absolute */
         top: auto;
         left: auto;
         transform: none;
         width: 100%;
         max-width: 100%;
-        padding: 0;
+        padding: 20px;
+        /* Move padding here */
+        padding-bottom: 100px;
+        /* Ample bottom space for all buttons */
         background: transparent;
         border: none;
         display: none;
@@ -340,11 +343,10 @@
         font-size: 14px !important;
     }
 
-    /* Ensure buttons have enough space at bottom */
+    /* Ensure buttons have proper spacing */
     .gradient-btn,
     .danger-btn {
-        margin-bottom: 60px !important;
-        /* Extra space to prevent truncation */
+        margin-bottom: 20px !important;
     }
 
     .security-detail-content.active,
