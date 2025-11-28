@@ -97,6 +97,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Recursively render comment tree
         function renderCommentTree(comments, depth = 0, messageId, parentName = null) {
+            // console.log(`Rendering tree: depth=${depth}, parent=${parentName}, comments=${comments.length}`);
             if (!comments || comments.length === 0) return '';
 
             const maxDepth = 2; // Limit nesting depth
@@ -106,7 +107,11 @@ document.addEventListener('DOMContentLoaded', () => {
             return comments.map(comment => {
                 const hasReplies = comment.replies && comment.replies.length > 0;
 
+                // Debug log for mention logic
+                // if (depth > 0) console.log(`Nested comment: id=${comment.id}, parentName=${parentName}, name=${comment.name}`);
+
                 // Add @mention if this is a nested comment
+                // Ensure parentName is valid and not same as current user (optional)
                 const mentionPrefix = depth > 0 && parentName
                     ? `<span class="comment-mention">@${escapeHtml(parentName)}</span> `
                     : '';
