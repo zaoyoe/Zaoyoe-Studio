@@ -55,6 +55,8 @@ async function loadGuestbookMessages() {
 
         const commentQuery = new AV.Query('Comment');
         commentQuery.containedIn('message', messageIds);
+        // 关键修复：必须 include parentComment 才能获取到指针数据
+        commentQuery.include('parentComment');
         // 不使用 include('user') 避免 ACL 权限问题
         // 用户信息已经存储在 userName 字段中
         commentQuery.ascending('createdAt'); // 评论按时间正序
@@ -69,6 +71,43 @@ async function loadGuestbookMessages() {
         const topLevelComments = []; // 顶级评论（直接回复留言）
 
         comments.forEach(comment => {
+            // 🔧 FIX: 获取 parentUserName，如果是字符串 "null" 或 "undefined"，转换为实际的 null
+            const rawParentUserName = comment.get('parentUserName');
+            const parentUserName = (rawParentUserName && rawParentUserName !== 'null' && rawParentUserName !== 'undefined')
+                ? rawParentUserName
+                : null;
+
+            const rawParent = comment.get('parentComment');
+
+            // 🔍 DEBUG: 打印第一个评论的完整数据，查看是否有其他字段存储了父ID
+            if (comments.indexOf(comment) === 0) {
+                console.log('  🔍 第一个评论的完整数据 (toJSON):', comment.toJSON());
+            }
+
+            // 🔍 DEBUG: 专门检查有 parentUserName 但没有 parentComment 指针的情况
+            if (parentUserName && !rawParent) {
+                console.warn(`  ⚠️ 发现“孤儿”回复 (有名字无指针): ${comment.id}, parentUserName=${parentUserName}`);
+                if (!window.hasLoggedOrphan) {
+                    console.log('  🔍 孤儿回复完整数据:', comment.toJSON());
+                    window.hasLoggedOrphan = true;
+                }
+            }
+
+            // 尝试获取 ID
+            let pId = null;
+            if (rawParent) {
+                if (typeof rawParent === 'string') {
+                    pId = rawParent;
+                } else if (rawParent.id) {
+                    pId = rawParent.id;
+                } else if (rawParent.objectId) {
+                    pId = rawParent.objectId;
+                }
+            }
+
+            // 过滤无效 ID
+            if (pId === 'null' || pId === 'undefined') pId = null;
+
             const formattedComment = {
                 id: comment.id,
                 name: comment.get('userName') || '匿名用户', // Fallback for legacy comments
@@ -81,7 +120,8 @@ async function loadGuestbookMessages() {
                     minute: '2-digit'
                 }),
                 messageId: comment.get('message')?.id,
-                parentCommentId: comment.get('parentComment')?.id || null,
+                parentCommentId: pId,
+                parentUserName: parentUserName, // 🆕 父评论者名字（用于 @mention）
                 replies: [] // 存储子评论
             };
 
@@ -94,16 +134,31 @@ async function loadGuestbookMessages() {
         });
 
         // 3.2 构建树结构：将回复添加到父评论的 replies 数组
+        console.log(`🌳 开始构建评论树，共 ${commentMap.size} 条评论`);
         commentMap.forEach(comment => {
+            console.log(`  - 评论 ${comment.id.substring(0, 8)}: name="${comment.name}", parentCommentId="${comment.parentCommentId}"`);
+
             if (comment.parentCommentId) {
+                console.log(`    🔗 这是一个回复，查找父评论: ${comment.parentCommentId.substring(0, 8)}`);
                 const parent = commentMap.get(comment.parentCommentId);
+
                 if (parent) {
+                    console.log(`    ✅ 找到父评论: ${parent.name}`);
                     parent.replies.push(comment);
+                    console.log(`    📝 已添加到父评论的 replies 数组，现在有 ${parent.replies.length} 个回复`);
+
+                    // 🆕 向后兼容：如果数据库中没有存储 parentUserName，从父评论中获取
+                    if (!comment.parentUserName && parent.name) {
+                        comment.parentUserName = parent.name;
+                        console.log(`    🔧 设置 parentUserName = "${parent.name}"`);
+                    }
                 } else {
+                    console.warn(`    ⚠️ 找不到父评论 ${comment.parentCommentId}，将评论 ${comment.id} 作为顶级评论`);
                     // 如果找不到父评论，降级为顶级评论
-                    console.warn(`⚠️ 找不到父评论 ${comment.parentCommentId}，将评论 ${comment.id} 作为顶级评论`);
                     topLevelComments.push(comment);
                 }
+            } else {
+                console.log(`    📌 这是一个顶级评论（直接回复留言）`);
             }
         });
 
@@ -126,6 +181,9 @@ async function loadGuestbookMessages() {
 
         // 缓存到本地
         localStorage.setItem('cached_messages', JSON.stringify(formattedMessages));
+
+        // Store for debugging
+        window.lastLoadedMessages = formattedMessages;
 
         return formattedMessages;
 
@@ -270,11 +328,22 @@ async function addReplyToComment(parentCommentId, messageId, content) {
     }
 
     try {
-        // 1. 获取父评论和消息对象 (Pointer)
+        // 1. 获取父评论对象以获取父评论者的名字
+        const parentCommentQuery = new AV.Query('Comment');
+        const parentCommentObj = await parentCommentQuery.get(parentCommentId);
+
+        // 🔍 DEBUG: 检查获取到的父评论对象
+        console.log(`🔍 [addReply] 获取父评论对象: id=${parentCommentObj.id}, userName=${parentCommentObj.get('userName')}`);
+
+        const parentUserName = parentCommentObj.get('userName') || '匿名用户';
+
+        console.log(`👤 回复给: ${parentUserName}`);
+
+        // 2. 获取消息对象 (Pointer)
         const parentComment = AV.Object.createWithoutData('Comment', parentCommentId);
         const message = AV.Object.createWithoutData('Message', messageId);
 
-        // 2. 创建回复评论对象
+        // 3. 创建回复评论对象
         const Comment = AV.Object.extend('Comment');
         const reply = new Comment();
 
@@ -283,13 +352,21 @@ async function addReplyToComment(parentCommentId, messageId, content) {
         reply.set('parentComment', parentComment); // 关联到父评论
         reply.set('userName', currentUser.get('nickname') || currentUser.get('username'));
         reply.set('userAvatar', currentUser.get('avatarUrl') || '');
+        reply.set('parentUserName', parentUserName); // 🆕 存储父评论者名字用于 @mention
         reply.set('content', content);
 
-        // 3. 保存
+        // 🔍 DEBUG: 打印即将保存的回复对象
+        console.log('🔍 [addReply] 即将保存回复:', {
+            parentCommentId: parentComment.id,
+            parentUserName: parentUserName,
+            content: content
+        });
+
+        // 4. 保存
         await reply.save();
         console.log('✅ 回复发送成功');
 
-        // 4. 重新加载留言板
+        // 5. 重新加载留言板
         await loadGuestbookMessages();
 
         return true;

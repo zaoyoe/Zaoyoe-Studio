@@ -97,27 +97,37 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Recursively render comment tree
         function renderCommentTree(comments, depth = 0, messageId, parentName = null) {
-            // console.log(`Rendering tree: depth=${depth}, parent=${parentName}, comments=${comments.length}`);
+            console.log(`📊 renderCommentTree: depth=${depth}, parentName="${parentName}", comments=${comments?.length || 0}`);
             if (!comments || comments.length === 0) return '';
 
             const maxDepth = 2; // Limit nesting depth
             const indentPx = Math.min(depth * 20, 40); // Max 40px indent
             const canReply = depth < maxDepth; // Can reply if not at max depth
 
-            return comments.map(comment => {
+            return comments.map((comment, idx) => {
                 const hasReplies = comment.replies && comment.replies.length > 0;
 
-                // Debug log for mention logic
-                // if (depth > 0) console.log(`Nested comment: id=${comment.id}, parentName=${parentName}, name=${comment.name}`);
+                console.log(`  Comment #${idx}: id=${comment.id}, name="${comment.name}", parentUserName="${comment.parentUserName}", depth=${depth}`);
 
-                // Add @mention if this is a nested comment
-                // Ensure parentName is valid
-                const displayParentName = parentName || '匿名用户';
-                const mentionPrefix = depth > 0
-                    ? `<span class="comment-mention">@${escapeHtml(displayParentName)}</span> `
+                // 🔧 FIX: 过滤掉字符串 "null" 和 "undefined"，将它们当作实际的 null
+                const cleanParentUserName = (comment.parentUserName && comment.parentUserName !== 'null' && comment.parentUserName !== 'undefined')
+                    ? comment.parentUserName
+                    : null;
+
+                // 🆕 优先使用数据库中的 parentUserName（清洗后），如果没有则使用递归传递的 parentName
+                const mentionName = cleanParentUserName || parentName;
+
+                console.log(`    → cleanParentUserName="${cleanParentUserName}", parentName="${parentName}", final mentionName="${mentionName}"`);
+                console.log(`    → Result: mentionName="${mentionName}", hasReplies=${hasReplies}, depth>0=${depth > 0}`);
+
+                // Add @mention if this is a nested comment and we have a parent name
+                const mentionPrefix = (depth > 0 && mentionName)
+                    ? `<span class="comment-mention">@${escapeHtml(mentionName)}</span> `
                     : '';
 
-                return `
+                console.log(`    → mentionPrefix="${mentionPrefix.substring(0, 50)}..."`);
+
+                const html = `
                     <div class="comment-item ${depth > 0 ? 'comment-item--nested' : ''} ${canReply ? 'comment-item--clickable' : ''}"
                          style="margin-left: ${indentPx}px"
                          data-comment-id="${comment.id}" 
@@ -132,6 +142,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         ${hasReplies ? renderCommentTree(comment.replies, depth + 1, messageId, comment.name) : ''}
                     </div>
                 `;
+                return html;
             }).join('');
         }
 
@@ -349,9 +360,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // --- Global Modal Functions (Must be outside DOMContentLoaded) ---
 
-window.openCommentModal = function (messageId) {
+window.openCommentModal = function (messageId, parentCommentId = null) {
     console.log('=== openCommentModal called ===');
     console.log('Message ID:', messageId);
+    console.log('Parent Comment ID:', parentCommentId);
     console.log('typeof AV:', typeof AV);
 
     // Check if AV SDK is loaded
@@ -399,12 +411,17 @@ window.openCommentModal = function (messageId) {
     console.log('✅ User authenticated, opening comment modal');
     const modal = document.getElementById('commentModal');
     const messageIdInput = document.getElementById('commentMessageId');
+    const parentIdInput = document.getElementById('commentParentId');
 
     console.log('Modal element:', modal);
     console.log('Message ID input:', messageIdInput);
+    console.log('Parent ID input:', parentIdInput);
 
     if (modal && messageIdInput) {
         messageIdInput.value = messageId;
+        if (parentIdInput) {
+            parentIdInput.value = parentCommentId || ''; // Set or clear parent ID
+        }
 
         // CRITICAL FIX: Add body.modal-active class for CSS backdrop-filter support
         document.body.classList.add('modal-active');

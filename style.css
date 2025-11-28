@@ -2679,11 +2679,12 @@ button.upload-icon-btn {
 }
 
 .comment-item {
-    background: rgba(255, 255, 255, 0.02);
-    border-radius: 10px;
-    padding: 12px;
-    margin-bottom: 8px;
-    border-left: 3px solid rgba(245, 158, 11, 0.3);
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+    /* Removed border-left to reduce noise on top-level comments */
+    transition: background 0.2s ease;
 }
 
 /* Google Login Button - Transparent with icon + text only */
@@ -2843,31 +2844,33 @@ input.login-submit-btn {
 .comment-header {
     display: flex;
     align-items: center;
-    gap: 6px;
-    margin-bottom: 6px;
-    font-size: 0.85rem;
+    gap: 8px;
+    margin-bottom: 8px;
+    font-size: 0.9rem;
 }
 
 .comment-header i {
     color: rgba(255, 255, 255, 0.5);
-    font-size: 0.9rem;
+    font-size: 1rem;
 }
 
 .comment-author {
     font-weight: 600;
     color: #fbbf24;
+    letter-spacing: 0.3px;
 }
 
 .comment-time {
     color: rgba(255, 255, 255, 0.3);
-    font-size: 0.75rem;
+    font-size: 0.8rem;
     margin-left: auto;
 }
 
 .comment-content {
-    color: rgba(255, 255, 255, 0.8);
-    font-size: 0.95rem;
-    line-height: 1.4;
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 1rem;
+    line-height: 1.6;
+    margin-left: 4px;
 }
 
 .no-comments {
@@ -3181,13 +3184,14 @@ input.login-submit-btn {
         border-bottom: 1px solid rgba(255, 255, 255, 0.05);
         margin-left: 0;
         transition: background-color 0.2s;
+        background: transparent;
+        /* Ensure transparent on mobile too */
     }
 
     .comment-item:last-child {
         border-bottom: none;
     }
 
-}
 }
 
 /* Global Comment Styles */
@@ -3197,8 +3201,8 @@ input.login-submit-btn {
 }
 
 .comment-item--clickable:hover {
-    background-color: rgba(255, 255, 255, 0.15);
-    /* Stronger background */
+    background-color: rgba(255, 255, 255, 0.05);
+    /* Subtle hover */
 }
 
 .comment-item--clickable:hover .comment-author {
@@ -3213,21 +3217,32 @@ input.login-submit-btn {
 
 /* Nested comment styles */
 .comment-item--nested {
-    border-left: 2px solid rgba(56, 189, 248, 0.2);
-    padding-left: 12px;
-    background: rgba(56, 189, 248, 0.03);
+    border-left: 2px solid rgba(255, 255, 255, 0.1);
+    /* Subtle thread line */
+    padding-left: 16px;
+    background: transparent;
+    /* REMOVED BACKGROUND to fix "box-in-box" */
+    margin-top: 8px;
+    margin-bottom: 8px;
+    border-radius: 0;
+    /* Remove border radius for thread look */
 }
 
 .comment-item--nested.comment-item--clickable:hover {
-    background: rgba(56, 189, 248, 0.25);
-    /* Stronger blue highlight */
+    background: rgba(255, 255, 255, 0.02);
+    /* Very subtle hover for nested */
 }
 
 /* @mention styling */
 .comment-mention {
-    color: rgba(56, 189, 248, 0.9);
+    color: #a78bfa;
+    /* Soft purple */
     font-weight: 600;
     margin-right: 4px;
+    background: rgba(167, 139, 250, 0.1);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.9em;
 }
 
 /* Force Desktop Layout Override */
