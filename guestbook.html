@@ -145,55 +145,55 @@
 </head>
 
 <body class="guestbook-page">
-    < !-- Background Blobs -->
-        <div class="background-blobs">
-            <div class="blob blob-1"></div>
-            <div class="blob blob-2"></div>
-            <div class="blob blob-3"></div>
+    <!-- Background Blobs -->
+    <div class="background-blobs">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+    </div>
+    <!-- Floating Back Button -->
+    <a href="index.html" class="floating-back-btn">
+        <i class="fa-solid fa-house"></i>返回首页
+    </a>
+    <!-- Floating Clear Button -->
+    <button id="clearAllBtn" class="floating-clear-btn" title="清空所有留言">
+        <i class="fas fa-trash-alt"></i>
+    </button>
+    <!-- Main Content -->
+    <div class="guestbook-main">
+        <!-- Hidden initially to prevent FOUC/Garbage text -->
+        <div id="messageContainer" class="message-container" style="opacity: 0; transition: opacity 0.3s ease;">
+            <!-- Messages will be inserted here by JavaScript -->
         </div>
-        < !-- Floating Back Button --><a href="index.html" class="floating-back-btn"><i
-                    class="fa-solid fa-house"></i>返回首页 </a>
-            < !-- Floating Clear Button --><button id="clearAllBtn" class="floating-clear-btn" title="清空所有留言"><i
-                        class="fas fa-trash-alt"></i></button>
-                < !-- Main Content -->
-                    <div class="guestbook-main">
-                        <!-- Hidden initially to prevent FOUC/Garbage text -->
-                        <div id="messageContainer" class="message-container"
-                            style="opacity: 0; transition: opacity 0.3s ease;">
-                            < !-- Messages will be inserted here by JavaScript -->
-                        </div>
-                        <div id="emptyState" class="empty-state-large" style="display: none;"><i
-                                class="fas fa-comments"></i>
-                            <p>还没有留言哦</p>
-                            <p class="empty-hint">快去首页留下你的第一条留言吧 !</p>
-                        </div>
+        <div id="emptyState" class="empty-state-large" style="display: none;"><i class="fas fa-comments"></i>
+            <p>还没有留言哦</p>
+            <p class="empty-hint">快去首页留下你的第一条留言吧 !</p>
+        </div>
+    </div>
+    < !-- Comment Modal -->
+        <div class="modal-overlay" id="commentModal" onclick="closeCommentModal(event)">
+            <div class="modal-content premium-modal" style="position: relative; max-width: 500px;">
+                < !-- Mac Window Controls -->
+                    <div class="mac-controls">
+                        <div class="mac-dot red" onclick="closeCommentModal(event)"><i class="fas fa-times"></i></div>
                     </div>
-                    < !-- Comment Modal -->
-                        <div class="modal-overlay" id="commentModal" onclick="closeCommentModal(event)">
-                            <div class="modal-content premium-modal" style="position: relative; max-width: 500px;">
-                                < !-- Mac Window Controls -->
-                                    <div class="mac-controls">
-                                        <div class="mac-dot red" onclick="closeCommentModal(event)"><i
-                                                class="fas fa-times"></i></div>
-                                    </div>
-                                    <div class="modal-title">发表评论</div>
-                                    <p class="modal-subtitle">分享您的想法 </p>
-                                    <form id="commentForm"><input type="hidden" id="commentMessageId">
-                                        <div class="form-group"><label for="commentContent">评论内容</label><textarea
-                                                id="commentContent" rows="3" placeholder="写下你的评论..."
-                                                required></textarea></div>
-                                        <div class="form-actions"><button type="submit" class="submit-btn">发送</button>
-                                        </div>
-                                    </form>
-                            </div>
+                    <div class="modal-title">发表评论</div>
+                    <p class="modal-subtitle">分享您的想法 </p>
+                    <form id="commentForm"><input type="hidden" id="commentMessageId">
+                        <div class="form-group"><label for="commentContent">评论内容</label><textarea id="commentContent"
+                                rows="3" placeholder="写下你的评论..." required></textarea></div>
+                        <div class="form-actions"><button type="submit" class="submit-btn">发送</button>
                         </div>
-                        < !-- LeanCloud SDK -->
-                            <script src="https://cdn.jsdelivr.net/npm/leancloud-storage@4.15.2/dist/av-min.js"></script>
-                            <script src="./leancloud-init.js?v=20251125_ACL_FIX" defer></script>
-                            <script src="./leancloud-auth-functions.js?v=20251125_ACL_FIX" defer></script>
-                            <script src="./leancloud-guestbook-functions.js?v=20251125_ACL_FIX" defer></script>
-                            <script src="script.js?v=20251125_ACL_FIX" defer></script>
-                            <script src="guestbook.js?v=20251125_ACL_FIX" defer></script>
+                    </form>
+            </div>
+        </div>
+        < !-- LeanCloud SDK -->
+            <script src="https://cdn.jsdelivr.net/npm/leancloud-storage@4.15.2/dist/av-min.js"></script>
+            <script src="./leancloud-init.js?v=20251125_ACL_FIX" defer></script>
+            <script src="./leancloud-auth-functions.js?v=20251125_ACL_FIX" defer></script>
+            <script src="./leancloud-guestbook-functions.js?v=20251125_ACL_FIX" defer></script>
+            <script src="script.js?v=20251125_ACL_FIX" defer></script>
+            <script src="guestbook.js?v=20251125_ACL_FIX" defer></script>
 </body>
 
 </html>
