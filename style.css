@@ -3516,15 +3516,17 @@ label[for],
 
 /* 用户头像和昵称进入动画 */
 .nav-user-avatar {
-    width: 24px;
-    height: 24px;
-    min-width: 24px;
-    min-height: 24px;
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    min-height: 28px;
     border-radius: 50%;
     object-fit: cover;
-    border: 2px solid rgba(255, 255, 255, 0.2);
+    border: 2px solid rgba(255, 255, 255, 0.8);
+    /* White border for 3D effect */
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    /* Shadow for depth */
     flex-shrink: 0;
-    /* 防止头像被挤压 */
     display: inline-block;
     vertical-align: middle;
 }

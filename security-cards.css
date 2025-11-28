@@ -294,8 +294,8 @@
         flex-direction: column;
         height: auto;
         gap: 20px;
-        padding-bottom: 20px;
-        /* Add padding for scrolling */
+        padding-bottom: 100px;
+        /* Increased padding to ensure bottom content is reachable */
     }
 
     .security-menu {
@@ -325,6 +325,18 @@
         border: none;
         display: none;
         /* Keep hidden by default */
+    }
+
+    /* Reduce font size for inputs on mobile */
+    .security-input {
+        font-size: 14px !important;
+        /* Smaller font size for mobile */
+        padding: 12px !important;
+    }
+
+    .security-input::placeholder {
+        font-size: 13px !important;
+        /* Even smaller placeholder */
     }
 
     .security-detail-content.active,
