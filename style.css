@@ -2174,12 +2174,12 @@ button.upload-icon-btn {
     }
 }
 
-/* Mobile Guestbook Waterfall Layout - Fix Gap Issue */
+/* Mobile Guestbook Waterfall Layout */
 @media (max-width: 768px) {
     .message-container {
-        column-count: 4 !important;
-        /* Changed from 2 to 4 columns */
-        column-gap: 20px !important;
+        column-count: 2 !important;
+        /* Revert to 2 for tablets/large phones */
+        column-gap: 16px !important;
         column-fill: balance;
     }
 
