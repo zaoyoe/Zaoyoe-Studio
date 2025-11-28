@@ -38,22 +38,7 @@ body {
     overflow-x: hidden;
 }
 
-/* Aurora Background Overlay */
-.aurora-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    z-index: -1;
-    background:
-        radial-gradient(circle at 0% 0%, rgba(56, 189, 248, 0.15) 0%, transparent 50%),
-        radial-gradient(circle at 100% 0%, rgba(168, 85, 247, 0.15) 0%, transparent 50%),
-        radial-gradient(circle at 100% 100%, rgba(56, 189, 248, 0.15) 0%, transparent 50%),
-        radial-gradient(circle at 0% 100%, rgba(168, 85, 247, 0.15) 0%, transparent 50%);
-    filter: blur(40px);
-    pointer-events: none;
-}
+/* Aurora Overlay Removed as requested */
 
 body {
     font-family: var(--font-main);
@@ -85,35 +70,42 @@ body {
     position: absolute;
     border-radius: 50%;
     filter: blur(80px);
-    opacity: 0.7;
+    /* Increased blur for smoother blend */
+    opacity: 0.6;
+    /* Slightly reduced opacity for cleaner look */
     will-change: transform;
 }
 
 .blob-1 {
-    top: -10%;
-    left: -10%;
-    width: 50vw;
-    height: 50vw;
+    top: -20%;
+    left: -20%;
+    width: 90vw;
+    /* Stretched size */
+    height: 90vw;
     background: linear-gradient(45deg, #7c3aed, #ec4899);
-    animation: float1 15s ease-in-out infinite;
+    animation: float1 20s ease-in-out infinite;
 }
 
 .blob-2 {
-    bottom: -10%;
-    right: -10%;
-    width: 50vw;
-    height: 50vw;
-    background: linear-gradient(135deg, #2563eb, #06b6d4);
-    animation: float2 18s ease-in-out infinite;
+    bottom: -20%;
+    right: -20%;
+    width: 90vw;
+    /* Stretched size */
+    height: 90vw;
+    background: linear-gradient(45deg, #3b82f6, #8b5cf6);
+    animation: float2 25s ease-in-out infinite;
 }
 
 .blob-3 {
-    top: 40%;
-    left: 40%;
-    width: 40vw;
-    height: 40vw;
-    background: linear-gradient(225deg, #db2777, #f59e0b);
-    animation: float3 20s ease-in-out infinite;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 80vw;
+    /* Center filler */
+    height: 80vw;
+    background: linear-gradient(45deg, #06b6d4, #3b82f6);
+    animation: float3 22s ease-in-out infinite;
+    opacity: 0.4;
 }
 
 @keyframes float1 {
@@ -123,16 +115,12 @@ body {
         transform: translate(0, 0) rotate(0deg) scale(1);
     }
 
-    25% {
-        transform: translate(100px, -100px) rotate(90deg) scale(1.1);
+    33% {
+        transform: translate(50px, -50px) rotate(10deg) scale(1.1);
     }
 
-    50% {
-        transform: translate(200px, 50px) rotate(180deg) scale(0.9);
-    }
-
-    75% {
-        transform: translate(50px, 150px) rotate(270deg) scale(1.05);
+    66% {
+        transform: translate(-20px, 20px) rotate(-5deg) scale(0.9);
     }
 }
 
@@ -144,28 +132,15 @@ body {
     }
 
     33% {
-        transform: translate(-150px, -80px) rotate(120deg) scale(1.15);
+        transform: translate(-50px, 50px) rotate(-10deg) scale(1.1);
     }
 
     66% {
-        transform: translate(-80px, 120px) rotate(240deg) scale(0.85);
+        transform: translate(20px, -20px) rotate(5deg) scale(0.9);
     }
 }
 
 @keyframes float3 {
-
-    0%,
-    100% {
-        transform: translate(0, 0) rotate(0deg) scale(1);
-    }
-
-    20% {
-        transform: translate(-100px, -150px) rotate(72deg) scale(1.2);
-    }
-
-    40% {
-        transform: translate(150px, -50px) rotate(144deg) scale(0.9);
-    }
 
     60% {
         transform: translate(100px, 100px) rotate(216deg) scale(1.1);
