@@ -329,16 +329,15 @@
         /* Keep hidden by default */
     }
 
-    /* Reduce font size for inputs on mobile */
+    /* Prevent iOS zoom on input focus */
     .security-input {
-        font-size: 14px !important;
-        /* Smaller font size for mobile */
+        font-size: 16px !important;
+        /* 16px prevents iOS auto-zoom */
         padding: 12px !important;
     }
 
     .security-input::placeholder {
-        font-size: 13px !important;
-        /* Even smaller placeholder */
+        font-size: 14px !important;
     }
 
     .security-detail-content.active,

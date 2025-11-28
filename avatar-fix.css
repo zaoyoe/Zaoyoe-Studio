@@ -1,0 +1,19 @@
+/* Default Avatar Icon Shadow */
+#defaultAuthIcon {
+    filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.5));
+}
+
+/* Ensure avatar maintains perfect circle */
+.login-trigger-btn.logged-in {
+    padding: 0 !important;
+}
+
+.login-trigger-btn.logged-in .nav-user-avatar,
+#navUserAvatar {
+    width: 40px !important;
+    height: 40px !important;
+    min-width: 40px !important;
+    min-height: 40px !important;
+    object-fit: cover !important;
+    border-radius: 50% !important;
+}

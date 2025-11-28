@@ -1501,19 +1501,18 @@ body.no-scroll {
     div.modal-overlay.active .modal-content {
         width: 85vw !important;
         max-width: 320px !important;
-        max-height: 85vh !important;
-        /* Increased height for better visibility */
+        max-height: 90vh !important;
         padding: 20px !important;
         border-radius: 20px !important;
         margin: auto !important;
         position: relative !important;
         top: auto !important;
         left: auto !important;
-        /* Restore animation: scale from 0.95 to 1 (Unified with Desktop) */
         transform: scale(0.95) !important;
         opacity: 0;
         transition: transform 0.3s ease-out, opacity 0.3s ease !important;
-        overflow-y: auto !important;
+        overflow-y: scroll !important;
+        -webkit-overflow-scrolling: touch !important;
     }
 
     div.modal-overlay.active .modal-content {
@@ -3494,10 +3493,17 @@ label[for],
     border: 1px solid rgba(255, 255, 255, 0.1);
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 
-    /* Shape & Typography */
-    padding: 10px 24px;
-    border-radius: 50px;
-    color: rgba(255, 255, 255, 0.9);
+    /* Shape and Size */
+    border-radius: 20px;
+    padding: 8px 16px;
+    height: 40px;
+
+    /* Misc */
+    color: white;
+    cursor: pointer;
+    transition: all 0.3s ease;
+
+    /* Text and Icon */
     font-size: 14px;
     font-weight: 500;
     cursor: pointer;
@@ -3505,6 +3511,11 @@ label[for],
     display: flex;
     align-items: center;
     gap: 8px;
+}
+
+/* Add shadow to default icon for 3D effect */
+#defaultAuthIcon {
+    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.5));
 }
 
 /* 为 Sign In 文本添加过渡动画 */
@@ -3557,20 +3568,23 @@ label[for],
 /* 登录状态下的按钮样式：只显示头像 */
 .login-trigger-btn.logged-in {
     padding: 0;
-    /* Remove padding to prevent squeezing the avatar */
     border-radius: 50%;
-    width: 40px;
-    height: 40px;
+    width: 40px !important;
+    height: 40px !important;
+    min-width: 40px !important;
+    min-height: 40px !important;
     display: flex;
     align-items: center;
     justify-content: center;
+    overflow: hidden;
+    /* Prevent content from spilling out */
 }
 
 .login-trigger-btn.logged-in .nav-user-avatar {
     margin: 0;
-    /* 确保头像没有额外的边距 */
+    width: 40px !important;
+    height: 40px !important;
     border: 2px solid rgba(255, 255, 255, 0.8);
-    /* 增强头像边框 */
 }
 
 @keyframes userAvatarRise {
