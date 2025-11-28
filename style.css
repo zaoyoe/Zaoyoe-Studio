@@ -3118,44 +3118,71 @@ input.login-submit-btn {
 
     .message-container {
         column-count: 1 !important;
-        column-gap: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+        /* No gap between items for seamless look */
     }
 
     .message-item {
-        padding: 16px;
-        margin-bottom: 16px;
-        background: rgba(255, 255, 255, 0.08);
-        /* Slightly lighter background */
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        /* Clearer border */
-        backdrop-filter: blur(12px);
-        /* Stronger blur */
+        padding: 16px 20px;
+        margin-bottom: 0;
+        /* Remove bottom margin */
+        background: transparent;
+        /* Clean background */
+        border: none;
+        /* Remove border */
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        /* Divider line */
+        backdrop-filter: none;
+        /* Remove blur for cleaner look */
+        break-inside: avoid;
+        /* Prevent column breaks */
+    }
+
+    .message-item:last-child {
+        border-bottom: none;
+        /* No border on last item */
     }
 
     .message-content {
-        font-size: 1rem;
-        /* Larger font size */
+        font-size: 0.95rem;
         line-height: 1.6;
-        color: rgba(255, 255, 255, 0.95);
-        /* Higher contrast */
+        color: rgba(255, 255, 255, 0.9);
+        margin-bottom: 8px;
     }
 
     .message-author {
-        font-size: 0.95rem;
+        font-size: 0.9rem;
         font-weight: 600;
-        color: #fff;
+        color: rgba(56, 189, 248, 0.95);
+        /* Accent color for author */
+        margin-bottom: 4px;
     }
 
     .message-time {
-        font-size: 0.8rem;
-        color: rgba(255, 255, 255, 0.6);
+        font-size: 0.75rem;
+        color: rgba(255, 255, 255, 0.5);
+        margin-bottom: 8px;
     }
 
     .message-image {
         max-width: 100%;
         border-radius: 8px;
-        margin-top: 8px;
+        margin: 12px 0;
     }
+
+    /* Comment styling for mobile */
+    .comment-item {
+        padding: 12px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        margin-left: 0;
+    }
+
+    .comment-item:last-child {
+        border-bottom: none;
+    }
+}
 }
 
 /* Remove duplicate tablet media query */
