@@ -3233,7 +3233,7 @@ input.login-submit-btn {
 /* Force Desktop Layout Override */
 @media (min-width: 1441px) {
     .message-container {
-        column-count: 4 !important;
+        column-count: 5 !important;
         column-gap: 20px;
     }
 }
