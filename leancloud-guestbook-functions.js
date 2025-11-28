@@ -90,20 +90,10 @@ async function loadGuestbookMessages() {
         // 显示留言（使用 guestbook.js 的 renderMessages）
         if (typeof renderMessages === 'function') {
             renderMessages(formattedMessages);
-        } else if (container && emptyState) {
-            // 降级方案：直接显示
-            if (formattedMessages.length === 0) {
-                container.innerHTML = '';
-                emptyState.style.display = 'flex';
-            } else {
-                emptyState.style.display = 'none';
-                // 简单显示（没有动画）
-                container.innerHTML = formattedMessages.map(msg => `
-                    <div class="message-item">
-                        <div class="message-content">${escapeHTML(msg.content)}</div>
-                    </div>
-                `).join('');
-            }
+        } else {
+            // 等待 renderMessages 定义
+            console.warn('⚠️ renderMessages 未定义，等待加载...');
+            // 不做任何fallback显示，避免乱码闪烁
         }
 
         // 缓存到本地
