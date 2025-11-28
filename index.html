@@ -827,13 +827,62 @@
                                 </div>
 
                                 <!-- Delete Account Panel -->
-                                <div class="security-detail-content" id="detail-delete-account" style="display: none;">
+                                <div class="security-detail-content" id="detail-delete-account">
                                     <h3 class="detail-title danger">注销账号</h3>
-                                    <p class="detail-desc danger">⚠️ 此操作不可恢复，您的所有数据将被永久删除。</p>
-                                    <button class="danger-btn" onclick="deleteAccount()">确认注销账号</button>
+                                    <p class="detail-desc">⚠️ 此操作不可恢复，您的所有数据将被永久删除。</p>
+                                    <div class="danger-zone">
+                                        <button class="danger-btn" onclick="deleteAccount()">
+                                            <i class="fas fa-trash-alt"></i>
+                                            确认注销
+                                        </button>
+                                    </div>
                                 </div>
 
 
+                            </div>
+                        </div>
+
+                        <!-- Mobile Security Layout (Visible only on mobile) -->
+                        <div class="mobile-security-layout">
+                            <!-- Section 1: Change Password -->
+                            <div class="mobile-security-section">
+                                <h3 class="mobile-section-title">修改密码</h3>
+                                <div class="input-group">
+                                    <input type="password" id="mobile_oldPassword" class="security-input"
+                                        placeholder="当前密码">
+                                </div>
+                                <div class="input-group">
+                                    <input type="password" id="mobile_newPassword" class="security-input"
+                                        placeholder="新密码 (至少6位)">
+                                </div>
+                                <button class="gradient-btn" onclick="changePassword('mobile')">更新密码</button>
+                            </div>
+
+                            <!-- Section 2: Bind Phone -->
+                            <div class="mobile-security-section">
+                                <h3 class="mobile-section-title">绑定手机号</h3>
+                                <p class="mobile-section-desc">绑定手机号可以增强账户安全性</p>
+                                <div class="input-group">
+                                    <input type="tel" id="mobile_phoneNumberInput" class="security-input"
+                                        placeholder="输入手机号">
+                                </div>
+                                <div class="input-group" style="display: flex; gap: 10px;">
+                                    <input type="text" id="mobile_phoneCodeInput" class="security-input"
+                                        placeholder="输入6位验证码" style="flex: 1;">
+                                    <button class="code-btn" id="mobile_sendPhoneCodeBtn"
+                                        onclick="sendPhoneVerificationCode('mobile')">获取验证码</button>
+                                </div>
+                                <button class="gradient-btn" onclick="bindPhone('mobile')">绑定手机号</button>
+                            </div>
+
+                            <!-- Section 3: Delete Account -->
+                            <div class="mobile-security-section">
+                                <h3 class="mobile-section-title danger">注销账号</h3>
+                                <p class="mobile-section-desc">⚠️ 此操作不可恢复，您的所有数据将被永久删除。</p>
+                                <button class="danger-btn" onclick="deleteAccount()">
+                                    <i class="fas fa-trash-alt"></i>
+                                    确认注销
+                                </button>
                             </div>
                         </div>
                     </div>

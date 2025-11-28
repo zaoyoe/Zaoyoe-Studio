@@ -290,86 +290,108 @@
 }
 
 @media (max-width: 768px) {
+
+    /* Hide Desktop Layout completely */
     .security-cards-layout {
-        flex-direction: column;
-        height: auto;
-        gap: 0;
-        /* Remove gap since panels flow continuously */
-        padding-bottom: 20px;
-    }
-
-    /* Hide the menu tabs on mobile - single scroll is better UX */
-    .security-menu {
         display: none !important;
     }
 
-    .security-detail-panel {
+    /* Show Mobile Layout */
+    .mobile-security-layout {
         display: block !important;
-        /* Override desktop flex display */
-        min-height: auto;
-        height: auto;
-        padding: 0;
-        overflow: visible;
+        padding: 10px 0;
+        padding-bottom: 100px;
+        /* Ensure bottom scrolling space */
     }
 
-    /* Hide the overview panel on mobile - we only want actionable items */
-    #detail-security-overview {
-        display: none !important;
-    }
-
-    /* Show all panels simultaneously in a continuous scroll */
-    .security-detail-content {
-        position: static !important;
-        /* Use static positioning for proper flow */
-        top: auto;
-        left: auto;
-        transform: none;
-        width: 100%;
-        max-width: 100%;
-        display: block !important;
-        /* Always visible - no hiding */
-        opacity: 1 !important;
-        padding: 25px 20px;
-        /* Consistent padding */
-        padding-bottom: 40px;
-        /* Space between sections */
-        background: transparent;
-        border: none;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-        /* Subtle separator */
-        margin-bottom: 0;
-    }
-
-    /* Last panel gets extra bottom space */
-    .security-detail-content:last-child {
-        border-bottom: none;
-        padding-bottom: 80px;
-        /* Extra space at end of scroll */
-    }
-
-    /* Add visual section headers */
-    .security-detail-content .detail-title {
-        margin-top: 0;
-        font-size: 20px;
-        font-weight: 600;
+    .mobile-security-section {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 20px;
+        padding: 20px;
         margin-bottom: 20px;
+    }
+
+    .mobile-section-title {
+        font-size: 18px;
+        font-weight: 600;
+        margin-bottom: 15px;
         color: rgba(255, 255, 255, 0.95);
     }
 
-    /* Prevent iOS zoom on input focus */
-    .security-input {
+    .mobile-section-title.danger {
+        color: #ff4757;
+    }
+
+    .mobile-section-desc {
+        font-size: 13px;
+        color: rgba(255, 255, 255, 0.6);
+        margin-bottom: 15px;
+        line-height: 1.5;
+    }
+
+    .mobile-security-layout .input-group {
+        margin-bottom: 15px;
+    }
+
+    .mobile-security-layout .security-input {
+        width: 100%;
+        background: rgba(0, 0, 0, 0.2);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px;
+        padding: 12px;
+        color: #fff;
         font-size: 16px !important;
-        padding: 12px !important;
+        /* Prevent iOS zoom */
+        transition: all 0.3s ease;
     }
 
-    .security-input::placeholder {
-        font-size: 14px !important;
+    .mobile-security-layout .security-input:focus {
+        border-color: #9b5de5;
+        background: rgba(155, 93, 229, 0.1);
+        outline: none;
     }
 
-    /* Ensure buttons have proper spacing */
-    .gradient-btn,
-    .danger-btn {
-        margin-bottom: 15px !important;
-        margin-top: 10px !important;
+    .mobile-security-layout .code-btn {
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px;
+        color: #fff;
+        padding: 0 15px;
+        font-size: 14px;
+        white-space: nowrap;
+        cursor: pointer;
     }
+
+    .mobile-security-layout .gradient-btn {
+        width: 100%;
+        padding: 12px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #9b5de5, #f15bb5);
+        border: none;
+        color: #fff;
+        font-weight: 600;
+        font-size: 16px;
+        margin-top: 5px;
+    }
+
+    .mobile-security-layout .danger-btn {
+        width: 100%;
+        padding: 12px;
+        border-radius: 12px;
+        background: rgba(255, 71, 87, 0.1);
+        border: 1px solid rgba(255, 71, 87, 0.3);
+        color: #ff4757;
+        font-weight: 600;
+        font-size: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+    }
+}
+
+/* Default state: Hide mobile layout on desktop */
+.mobile-security-layout {
+    display: none;
 }
