@@ -3245,7 +3245,8 @@ input.login-submit-btn {
     transition: max-height 0.5s cubic-bezier(0.4, 0, 0.2, 1);
     position: relative;
     overflow: hidden;
-    /* Ensure content is hidden during animation */
+    will-change: max-height;
+    /* Optimize animation performance */
 }
 
 .comment-list::after {

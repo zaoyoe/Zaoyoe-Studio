@@ -204,6 +204,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (commentList.classList.contains('collapsed')) {
                     // Expand
+                    // 1. Lock current height (200px) explicitly to ensure transition start point
+                    commentList.style.maxHeight = '200px';
+
+                    // 2. Force reflow
+                    void commentList.offsetHeight;
+
+                    // 3. Remove class
                     commentList.classList.remove('collapsed');
 
                     // Get the full height for animation
