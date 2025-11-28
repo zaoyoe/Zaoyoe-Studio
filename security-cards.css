@@ -352,6 +352,6 @@
     .security-detail-content.active,
     .security-detail-content.show {
         display: block;
-        animation: fadeInUp 0.4s ease;
+        /* Removed animation to prevent glitches on mobile */
     }
 }
