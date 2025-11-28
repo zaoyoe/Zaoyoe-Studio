@@ -134,7 +134,7 @@ document.addEventListener('DOMContentLoaded', () => {
             : '<div class="no-comments">暂无评论</div>';
 
         const toggleButtonHtml = shouldCollapse
-            ? `<button class="comment-toggle-btn" data-message-id="${msg.id}">
+            ? `<button class="comment-toggle-btn" data-message-id="${msg.id}" data-count="${commentCount}">
                 <i class="fas fa-chevron-down"></i>
                 <span>展开全部 ${commentCount} 条评论</span>
                </button>`
@@ -197,6 +197,7 @@ document.addEventListener('DOMContentLoaded', () => {
         toggleButtons.forEach(btn => {
             btn.addEventListener('click', function () {
                 const messageId = this.dataset.messageId;
+                const count = this.dataset.count; // Get count from data attribute
                 const commentList = document.querySelector(`.comment-list[data-message-id="${messageId}"]`);
                 const icon = this.querySelector('i');
                 const span = this.querySelector('span');
@@ -204,7 +205,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (commentList.classList.contains('collapsed')) {
                     // Expand
                     commentList.classList.remove('collapsed');
-                    commentList.offsetHeight;
+
+                    // Get the full height for animation
+                    const fullHeight = commentList.scrollHeight;
 
                     // 4. Animate to full height
                     commentList.style.maxHeight = fullHeight + 'px';
@@ -233,7 +236,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     commentList.style.maxHeight = '200px';
 
                     // 3. Update button
-                    const count = span.textContent.match(/\d+/)[0];
                     icon.className = 'fas fa-chevron-down';
                     span.textContent = `展开全部 ${count} 条评论`;
                 }
