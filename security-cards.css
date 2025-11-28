@@ -294,6 +294,8 @@
         flex-direction: column;
         height: auto;
         gap: 20px;
+        padding-bottom: 20px;
+        /* Add padding for scrolling */
     }
 
     .security-menu {
@@ -302,7 +304,32 @@
     }
 
     .security-detail-panel {
-        min-height: 400px;
-        padding: 30px;
+        min-height: auto;
+        /* Allow height to adjust to content */
+        height: auto;
+        padding: 20px;
+        overflow: visible;
+        /* Let content flow */
+    }
+
+    .security-detail-content {
+        position: relative;
+        /* Reset from absolute */
+        top: auto;
+        left: auto;
+        transform: none;
+        width: 100%;
+        max-width: 100%;
+        padding: 0;
+        background: transparent;
+        border: none;
+        display: none;
+        /* Keep hidden by default */
+    }
+
+    .security-detail-content.active,
+    .security-detail-content.show {
+        display: block;
+        animation: fadeInUp 0.4s ease;
     }
 }

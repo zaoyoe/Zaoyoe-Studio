@@ -108,6 +108,7 @@ function openAuthModal(view = 'login') {
 
         // 添加 active 类以显示模态框
         modal.classList.add('active');
+        document.body.classList.add('no-scroll'); // Lock body scroll
         switchAuthView(view);
     }
 }
@@ -130,6 +131,7 @@ function toggleLoginModal() {
                 modal.style.background = 'transparent';
                 // 移除 closing 类
                 modal.classList.remove('closing');
+                document.body.classList.remove('no-scroll'); // Unlock body scroll
             }
         }, 350); // 等待过渡动画完成（0.3s）+ 额外缓冲时间
     }
@@ -169,6 +171,7 @@ function openModal(modalId) {
     const modal = document.getElementById(modalId);
     if (modal) {
         modal.classList.add('active');
+        document.body.classList.add('no-scroll'); // Lock body scroll
         console.log('✅ Modal opened:', modalId);
     } else {
         console.error('❌ Modal not found:', modalId);
@@ -191,6 +194,7 @@ function closeModal(event) {
             modal.style.removeProperty('opacity');
             modal.style.removeProperty('display');
         });
+        document.body.classList.remove('no-scroll'); // Unlock body scroll
     }
 }
 

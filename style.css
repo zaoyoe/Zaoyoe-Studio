@@ -1457,6 +1457,27 @@ input.submit-btn {
     -webkit-backdrop-filter: blur(40px) saturate(150%);
 }
 
+/* Prevent body scroll when modal is open */
+body.no-scroll {
+    overflow: hidden;
+    height: 100vh;
+    touch-action: none;
+    /* Disable default touch actions on body */
+}
+
+/* Prevent scroll chaining */
+.modal-overlay {
+    overscroll-behavior: contain;
+    /* Ensure the overlay itself handles touch events properly */
+    touch-action: pan-y;
+}
+
+.modal-content {
+    overscroll-behavior: contain;
+    /* Re-enable touch actions for the content */
+    touch-action: pan-y;
+}
+
 @media (max-width: 768px) {
 
     /* Optimize Bento Grid for mobile: 2 columns, smaller padding */
