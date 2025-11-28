@@ -1501,7 +1501,8 @@ body.no-scroll {
     div.modal-overlay.active .modal-content {
         width: 85vw !important;
         max-width: 320px !important;
-        max-height: 70vh !important;
+        max-height: 85vh !important;
+        /* Increased height for better visibility */
         padding: 20px !important;
         border-radius: 20px !important;
         margin: auto !important;
@@ -3529,6 +3530,8 @@ label[for],
     flex-shrink: 0;
     display: inline-block;
     vertical-align: middle;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    /* Stronger shadow for 3D effect */
 }
 
 .nav-user-avatar.animate-in {
@@ -3553,7 +3556,8 @@ label[for],
 
 /* 登录状态下的按钮样式：只显示头像 */
 .login-trigger-btn.logged-in {
-    padding: 8px;
+    padding: 0;
+    /* Remove padding to prevent squeezing the avatar */
     border-radius: 50%;
     width: 40px;
     height: 40px;
