@@ -58,9 +58,18 @@
         /* Remove old nth-child rules - JS sets delay dynamically */
 
         /* Ensure responsive doesn't override */
-        @media (min-width: 1025px) {
+        @media (min-width: 1441px) {
             .message-container {
-                column-count: 6 !important;
+                column-count: 4 !important;
+                /* FORCE 4 COLUMNS */
+                column-gap: 20px !important;
+            }
+        }
+
+        /* Tablet screens: 2 columns */
+        @media (max-width: 1024px) and (min-width: 769px) {
+            .message-container {
+                column-count: 2 !important;
             }
         }
 
@@ -195,7 +204,7 @@
     <script src="./leancloud-auth-functions.js?v=20251125_ACL_FIX" defer></script>
     <script src="./leancloud-guestbook-functions.js?v=NESTED_COMMENTS_V2" defer></script>
     <script src="script.js?v=20251125_ACL_FIX" defer></script>
-    <script src="guestbook.js?v=MENTION_FIX_V1" defer></script>
+    <script src="guestbook.js?v=NO_MAGNETIC_V4" defer></script>
 </body>
 
 </html>

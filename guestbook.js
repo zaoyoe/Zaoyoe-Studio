@@ -18,9 +18,9 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('✅ Modal state cleaned up on page load');
 
     // Initialize magnetic effect after page load
-    setTimeout(() => {
-        initMagneticEffect();
-    }, 100);
+    // setTimeout(() => {
+    //     initMagneticEffect();
+    // }, 100);
 
     // Hide clear button (not needed for LeanCloud version)
     if (clearAllBtn) {
@@ -71,7 +71,7 @@ document.addEventListener('DOMContentLoaded', () => {
         attachCommentHandlers();
 
         // Initialize magnetic effect for new cards
-        initMagneticEffect();
+        // initMagneticEffect();
 
         // Trigger entrance animation with a small delay to ensure DOM is ready
         setTimeout(() => {
