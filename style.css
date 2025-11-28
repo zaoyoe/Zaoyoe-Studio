@@ -52,10 +52,11 @@ body {
     position: relative;
 }
 
-/* Background Blobs - Oversized fixed container */
+/* Background Blobs - Critical: NO transforms to ensure fixed works */
 
 .background-blobs {
-    position: fixed;
+    position: fixed !important;
+    /* Force fixed */
     top: -10vh;
     /* Start above viewport */
     left: 0;
@@ -65,21 +66,21 @@ body {
     z-index: -1;
     pointer-events: none;
     overflow: hidden;
-    /* iOS fix */
-    -webkit-transform: translateZ(0);
-    transform: translateZ(0);
+    /* CRITICAL: Remove all transforms - they break position:fixed on iOS */
+    /* DO NOT add translateZ, translate3d, or any transform */
+    backface-visibility: hidden;
+    /* But keep this for rendering */
+    -webkit-backface-visibility: hidden;
 }
 
 .blob {
-    position: fixed;
-    /* Individual blobs also fixed */
+    position: fixed !important;
+    /* Individual blobs also strongly fixed */
     border-radius: 50%;
     filter: blur(80px);
     opacity: 0.7;
     will-change: transform;
-    /* iOS fix */
-    -webkit-transform: translateZ(0);
-    transform: translateZ(0);
+    /* NO transform property - it breaks position:fixed */
 }
 
 .blob-1 {
