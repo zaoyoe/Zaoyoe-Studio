@@ -179,7 +179,9 @@
             </div>
             <div class="modal-title">发表评论</div>
             <p class="modal-subtitle">分享您的想法 </p>
-            <form id="commentForm"><input type="hidden" id="commentMessageId">
+            <form id="commentForm">
+                <input type="hidden" id="commentMessageId">
+                <input type="hidden" id="commentParentId">
                 <div class="form-group"><label for="commentContent">评论内容</label><textarea id="commentContent" rows="3"
                         placeholder="写下你的评论..." required></textarea></div>
                 <div class="form-actions"><button type="submit" class="submit-btn">发送</button>

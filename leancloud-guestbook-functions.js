@@ -63,27 +63,55 @@ async function loadGuestbookMessages() {
         const comments = await commentQuery.find();
         console.log(`✅ 加载了 ${comments.length} 条评论`);
 
-        // 3. 将评论分配给对应的消息
-        comments.forEach(comment => {
-            const messagePtr = comment.get('message');
-            if (messagePtr) {
-                const messageId = messagePtr.id;
-                const targetMsg = formattedMessages.find(m => m.id === messageId);
+        // 3. 构建评论树结构（支持嵌套回复）
+        // 3.1 先格式化所有评论为对象
+        const commentMap = new Map(); // 用于快速查找评论
+        const topLevelComments = []; // 顶级评论（直接回复留言）
 
-                if (targetMsg) {
-                    targetMsg.comments.push({
-                        id: comment.id,
-                        name: comment.get('userName'),
-                        content: comment.get('content'),
-                        timestamp: comment.get('createdAt').toLocaleString('zh-CN', {
-                            year: 'numeric',
-                            month: '2-digit',
-                            day: '2-digit',
-                            hour: '2-digit',
-                            minute: '2-digit'
-                        })
-                    });
+        comments.forEach(comment => {
+            const formattedComment = {
+                id: comment.id,
+                name: comment.get('userName'),
+                content: comment.get('content'),
+                timestamp: comment.get('createdAt').toLocaleString('zh-CN', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                }),
+                messageId: comment.get('message')?.id,
+                parentCommentId: comment.get('parentComment')?.id || null,
+                replies: [] // 存储子评论
+            };
+
+            commentMap.set(comment.id, formattedComment);
+
+            // 如果没有 parentComment，就是顶级评论
+            if (!formattedComment.parentCommentId) {
+                topLevelComments.push(formattedComment);
+            }
+        });
+
+        // 3.2 构建树结构：将回复添加到父评论的 replies 数组
+        commentMap.forEach(comment => {
+            if (comment.parentCommentId) {
+                const parent = commentMap.get(comment.parentCommentId);
+                if (parent) {
+                    parent.replies.push(comment);
+                } else {
+                    // 如果找不到父评论，降级为顶级评论
+                    console.warn(`⚠️ 找不到父评论 ${comment.parentCommentId}，将评论 ${comment.id} 作为顶级评论`);
+                    topLevelComments.push(comment);
                 }
+            }
+        });
+
+        // 3.3 将顶级评论分配给对应的消息
+        topLevelComments.forEach(comment => {
+            const targetMsg = formattedMessages.find(m => m.id === comment.messageId);
+            if (targetMsg) {
+                targetMsg.comments.push(comment);
             }
         });
 
@@ -221,6 +249,48 @@ async function addCommentToMessage(messageId, content) {
     } catch (error) {
         console.error('发送评论失败:', error);
         alert(`评论失败: ${error.message}`);
+        return false;
+    }
+}
+
+// ==================== 回复评论 (嵌套评论) ====================
+async function addReplyToComment(parentCommentId, messageId, content) {
+    console.log(`💬 回复评论 ${parentCommentId}...`);
+
+    const currentUser = AV.User.current();
+    if (!currentUser) {
+        alert('请先登录后再回复');
+        return false;
+    }
+
+    try {
+        // 1. 获取父评论和消息对象 (Pointer)
+        const parentComment = AV.Object.createWithoutData('Comment', parentCommentId);
+        const message = AV.Object.createWithoutData('Message', messageId);
+
+        // 2. 创建回复评论对象
+        const Comment = AV.Object.extend('Comment');
+        const reply = new Comment();
+
+        reply.set('user', currentUser);
+        reply.set('message', message); // 仍然关联到根留言
+        reply.set('parentComment', parentComment); // 关联到父评论
+        reply.set('userName', currentUser.get('nickname') || currentUser.get('username'));
+        reply.set('userAvatar', currentUser.get('avatarUrl') || '');
+        reply.set('content', content);
+
+        // 3. 保存
+        await reply.save();
+        console.log('✅ 回复发送成功');
+
+        // 4. 重新加载留言板
+        await loadGuestbookMessages();
+
+        return true;
+
+    } catch (error) {
+        console.error('回复评论失败:', error);
+        alert(`回复失败: ${error.message || '未知错误'}`);
         return false;
     }
 }

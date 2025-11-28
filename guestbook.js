@@ -95,17 +95,39 @@ document.addEventListener('DOMContentLoaded', () => {
         // Calculate delay: 0.03s per item, max 0.5s
         const delay = Math.min(index * 0.03, 0.5);
 
-        const commentsHtml = hasComments
-            ? msg.comments.map(comment => `
-                <div class="comment-item">
-                    <div class="comment-header">
-                        <i class="fas fa-user-circle"></i>
-                        <span class="comment-author">${escapeHtml(comment.name)}</span>
-                        <span class="comment-time">${comment.timestamp}</span>
+        // Recursively render comment tree
+        function renderCommentTree(comments, depth = 0, messageId) {
+            if (!comments || comments.length === 0) return '';
+
+            const maxDepth = 2; // Limit nesting depth
+            const indentPx = Math.min(depth * 20, 40); // Max 40px indent
+
+            return comments.map(comment => {
+                const hasReplies = comment.replies && comment.replies.length > 0;
+                const replyBtnHtml = depth < maxDepth
+                    ? `<button class="comment-reply-btn" data-comment-id="${comment.id}" data-message-id="${messageId}">
+                        <i class="fas fa-reply"></i> 回复
+                       </button>`
+                    : '';
+
+                return `
+                    <div class="comment-item ${depth > 0 ? 'comment-item--nested' : ''}" 
+                         style="margin-left: ${indentPx}px">
+                        <div class="comment-header">
+                            <i class="fas fa-user-circle"></i>
+                            <span class="comment-author">${escapeHtml(comment.name)}</span>
+                            <span class="comment-time">${comment.timestamp}</span>
+                        </div>
+                        <div class="comment-content">${escapeHtml(comment.content)}</div>
+                        ${replyBtnHtml}
+                        ${hasReplies ? renderCommentTree(comment.replies, depth + 1, messageId) : ''}
                     </div>
-                    <div class="comment-content">${escapeHtml(comment.content)}</div>
-                </div>
-            `).join('')
+                `;
+            }).join('');
+        }
+
+        const commentsHtml = hasComments
+            ? renderCommentTree(msg.comments, 0, msg.id)
             : '<div class="no-comments">暂无评论</div>';
 
         const toggleButtonHtml = shouldCollapse
@@ -166,6 +188,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function attachCommentHandlers() {
         const toggleButtons = document.querySelectorAll('.comment-toggle-btn');
+        const replyButtons = document.querySelectorAll('.comment-reply-btn');
 
         // Toggle comments expansion
         toggleButtons.forEach(btn => {
@@ -213,6 +236,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
         });
+
+        // Handle reply button clicks (nested comments)
+        replyButtons.forEach(btn => {
+            btn.addEventListener('click', function (e) {
+                e.stopPropagation();
+                const parentCommentId = this.dataset.commentId;
+                const messageId = this.dataset.messageId;
+
+                // Open comment modal with parent comment tracking
+                openCommentModal(messageId, parentCommentId);
+            });
+        });
     }
 
     // Handle Comment Submission
@@ -230,14 +265,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 return;
             }
-            const messageId = document.getElementById('commentMessageId').value; // LeanCloud objectId 必须是字符串
-            // Use LeanCloud user info
-            const name = currentUser.get('nickname') || currentUser.get('username');
+
+            const messageId = document.getElementById('commentMessageId').value;
+            const parentCommentId = document.getElementById('commentParentId').value;
             const content = document.getElementById('commentContent').value.trim();
 
             if (content) {
-                addComment(messageId, name, content);
-                // Close modal
+                // Check if this is a reply to a comment or a top-level comment
+                if (parentCommentId) {
+                    // Nested reply
+                    if (typeof addReplyToComment === 'function') {
+                        addReplyToComment(parentCommentId, messageId, content);
+                    }
+                } else {
+                    // Top-level comment
+                    if (typeof addCommentToMessage === 'function') {
+                        addCommentToMessage(messageId, content);
+                    }
+                }
+
+                // Close modal and reset form
                 document.getElementById('commentModal').classList.remove('active');
                 commentForm.reset();
             }
