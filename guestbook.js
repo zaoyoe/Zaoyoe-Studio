@@ -101,25 +101,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const maxDepth = 2; // Limit nesting depth
             const indentPx = Math.min(depth * 20, 40); // Max 40px indent
+            const canReply = depth < maxDepth; // Can reply if not at max depth
 
             return comments.map(comment => {
                 const hasReplies = comment.replies && comment.replies.length > 0;
-                const replyBtnHtml = depth < maxDepth
-                    ? `<button class="comment-reply-btn" data-comment-id="${comment.id}" data-message-id="${messageId}">
-                        <i class="fas fa-reply"></i> 回复
-                       </button>`
-                    : '';
 
                 return `
-                    <div class="comment-item ${depth > 0 ? 'comment-item--nested' : ''}" 
-                         style="margin-left: ${indentPx}px">
+                    <div class="comment-item ${depth > 0 ? 'comment-item--nested' : ''} ${canReply ? 'comment-item--clickable' : ''}"
+                         style="margin-left: ${indentPx}px"
+                         data-comment-id="${comment.id}"
+                         data-message-id="${messageId}"
+                         data-can-reply="${canReply}">
                         <div class="comment-header">
                             <i class="fas fa-user-circle"></i>
                             <span class="comment-author">${escapeHtml(comment.name)}</span>
                             <span class="comment-time">${comment.timestamp}</span>
                         </div>
                         <div class="comment-content">${escapeHtml(comment.content)}</div>
-                        ${replyBtnHtml}
                         ${hasReplies ? renderCommentTree(comment.replies, depth + 1, messageId) : ''}
                     </div>
                 `;
@@ -188,7 +186,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function attachCommentHandlers() {
         const toggleButtons = document.querySelectorAll('.comment-toggle-btn');
-        const replyButtons = document.querySelectorAll('.comment-reply-btn');
+        const clickableComments = document.querySelectorAll('.comment-item--clickable');
 
         // Toggle comments expansion
         toggleButtons.forEach(btn => {
@@ -237,15 +235,20 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
-        // Handle reply button clicks (nested comments)
-        replyButtons.forEach(btn => {
-            btn.addEventListener('click', function (e) {
-                e.stopPropagation();
-                const parentCommentId = this.dataset.commentId;
+        // Handle comment item clicks (click entire comment to reply)
+        clickableComments.forEach(item => {
+            item.addEventListener('click', function (e) {
+                // Don't trigger if clicking on nested comments
+                if (e.target.closest('.comment-item') !== this) return;
+
+                const canReply = this.dataset.canReply === 'true';
+                if (!canReply) return;
+
+                const commentId = this.dataset.commentId;
                 const messageId = this.dataset.messageId;
 
                 // Open comment modal with parent comment tracking
-                openCommentModal(messageId, parentCommentId);
+                openCommentModal(messageId, commentId);
             });
         });
     }

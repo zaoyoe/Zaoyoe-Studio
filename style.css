@@ -3177,10 +3177,20 @@ input.login-submit-btn {
         padding: 12px 0;
         border-bottom: 1px solid rgba(255, 255, 255, 0.05);
         margin-left: 0;
+        transition: background-color 0.2s;
     }
 
     .comment-item:last-child {
         border-bottom: none;
+    }
+
+    /* Clickable comments (can be replied to) */
+    .comment-item--clickable {
+        cursor: pointer;
+    }
+
+    .comment-item--clickable:hover {
+        background-color: rgba(255, 255, 255, 0.03);
     }
 
     /* Nested comment styles */
@@ -3190,26 +3200,8 @@ input.login-submit-btn {
         background: rgba(56, 189, 248, 0.03);
     }
 
-    .comment-reply-btn {
-        background: none;
-        border: none;
-        color: rgba(56, 189, 248, 0.8);
-        font-size: 0.75rem;
-        padding: 4px 0;
-        margin-top: 4px;
-        cursor: pointer;
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        transition: color 0.2s;
-    }
-
-    .comment-reply-btn:hover {
-        color: rgba(56, 189, 248, 1);
-    }
-
-    .comment-reply-btn i {
-        font-size: 0.7rem;
+    .comment-item--nested.comment-item--clickable:hover {
+        background: rgba(56, 189, 248, 0.08);
     }
 }
 }
