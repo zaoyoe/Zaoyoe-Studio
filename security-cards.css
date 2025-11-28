@@ -300,8 +300,8 @@
     .mobile-security-layout {
         display: block !important;
         padding: 0;
-        padding-bottom: 40px;
-        /* Reduced from 100px */
+        padding-bottom: 10px;
+        /* Reduced from 40px */
     }
 
     /* Hide the large "Security Settings" title on mobile to save space */

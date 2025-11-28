@@ -46,7 +46,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    waitForLeanCloud();
+    // waitForLeanCloud(); // Moved to after renderMessages definition
 
     // Make renderMessages global so it can be called by LeanCloud loader
     window.renderMessages = function (messages) {
@@ -78,6 +78,9 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }, 150);
     };
+
+    // Call this AFTER defining renderMessages to avoid race condition
+    waitForLeanCloud();
 
     function createMessageCard(msg, index = 0) {
         const hasComments = msg.comments && msg.comments.length > 0;
