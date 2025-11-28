@@ -3187,45 +3187,55 @@ input.login-submit-btn {
         border-bottom: none;
     }
 
-    /* Clickable comments (can be replied to) */
-    .comment-item--clickable {
-        cursor: pointer;
-    }
-
-    .comment-item--clickable:hover {
-        background-color: rgba(255, 255, 255, 0.15);
-        /* Stronger background */
-    }
-
-    .comment-item--clickable:hover .comment-author {
-        color: rgba(56, 189, 248, 1);
-        /* Highlight author name */
-    }
-
-    .comment-item--clickable:hover .comment-content {
-        color: rgba(255, 255, 255, 1);
-        /* Brighter text */
-    }
-
-    /* Nested comment styles */
-    .comment-item--nested {
-        border-left: 2px solid rgba(56, 189, 248, 0.2);
-        padding-left: 12px;
-        background: rgba(56, 189, 248, 0.03);
-    }
-
-    .comment-item--nested.comment-item--clickable:hover {
-        background: rgba(56, 189, 248, 0.25);
-        /* Stronger blue highlight */
-    }
-
-    /* @mention styling */
-    .comment-mention {
-        color: rgba(56, 189, 248, 0.9);
-        font-weight: 600;
-        margin-right: 4px;
-    }
 }
+}
+
+/* Global Comment Styles */
+/* Clickable comments (can be replied to) */
+.comment-item--clickable {
+    cursor: pointer;
+}
+
+.comment-item--clickable:hover {
+    background-color: rgba(255, 255, 255, 0.15);
+    /* Stronger background */
+}
+
+.comment-item--clickable:hover .comment-author {
+    color: rgba(56, 189, 248, 1);
+    /* Highlight author name */
+}
+
+.comment-item--clickable:hover .comment-content {
+    color: rgba(255, 255, 255, 1);
+    /* Brighter text */
+}
+
+/* Nested comment styles */
+.comment-item--nested {
+    border-left: 2px solid rgba(56, 189, 248, 0.2);
+    padding-left: 12px;
+    background: rgba(56, 189, 248, 0.03);
+}
+
+.comment-item--nested.comment-item--clickable:hover {
+    background: rgba(56, 189, 248, 0.25);
+    /* Stronger blue highlight */
+}
+
+/* @mention styling */
+.comment-mention {
+    color: rgba(56, 189, 248, 0.9);
+    font-weight: 600;
+    margin-right: 4px;
+}
+
+/* Force Desktop Layout Override */
+@media (min-width: 1441px) {
+    .message-container {
+        column-count: 4 !important;
+        column-gap: 20px;
+    }
 }
 
 /* Remove duplicate tablet media query */
