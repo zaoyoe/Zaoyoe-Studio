@@ -304,10 +304,17 @@
     }
 
     .security-detail-panel {
+        display: block !important;
+        /* Override desktop flex display */
         min-height: auto;
         height: auto;
         padding: 0;
         overflow: visible;
+    }
+
+    /* Hide the overview panel on mobile - we only want actionable items */
+    #detail-security-overview {
+        display: none !important;
     }
 
     /* Show all panels simultaneously in a continuous scroll */
