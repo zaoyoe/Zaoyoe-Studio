@@ -293,49 +293,65 @@
     .security-cards-layout {
         flex-direction: column;
         height: auto;
-        gap: 20px;
+        gap: 0;
+        /* Remove gap since panels flow continuously */
         padding-bottom: 20px;
-        /* Reduced since we're using proper scrolling now */
     }
 
+    /* Hide the menu tabs on mobile - single scroll is better UX */
     .security-menu {
-        flex: none;
-        width: 100%;
+        display: none !important;
     }
 
     .security-detail-panel {
         min-height: auto;
-        /* Allow height to adjust to content */
         height: auto;
         padding: 0;
-        /* Remove padding, let content handle it */
         overflow: visible;
-        /* Let content flow */
     }
 
+    /* Show all panels simultaneously in a continuous scroll */
     .security-detail-content {
-        position: static;
+        position: static !important;
         /* Use static positioning for proper flow */
-        /* Reset from absolute */
         top: auto;
         left: auto;
         transform: none;
         width: 100%;
         max-width: 100%;
-        padding: 20px;
-        /* Move padding here */
-        padding-bottom: 100px;
-        /* Ample bottom space for all buttons */
+        display: block !important;
+        /* Always visible - no hiding */
+        opacity: 1 !important;
+        padding: 25px 20px;
+        /* Consistent padding */
+        padding-bottom: 40px;
+        /* Space between sections */
         background: transparent;
         border: none;
-        display: none;
-        /* Keep hidden by default */
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        /* Subtle separator */
+        margin-bottom: 0;
+    }
+
+    /* Last panel gets extra bottom space */
+    .security-detail-content:last-child {
+        border-bottom: none;
+        padding-bottom: 80px;
+        /* Extra space at end of scroll */
+    }
+
+    /* Add visual section headers */
+    .security-detail-content .detail-title {
+        margin-top: 0;
+        font-size: 20px;
+        font-weight: 600;
+        margin-bottom: 20px;
+        color: rgba(255, 255, 255, 0.95);
     }
 
     /* Prevent iOS zoom on input focus */
     .security-input {
         font-size: 16px !important;
-        /* 16px prevents iOS auto-zoom */
         padding: 12px !important;
     }
 
@@ -346,12 +362,7 @@
     /* Ensure buttons have proper spacing */
     .gradient-btn,
     .danger-btn {
-        margin-bottom: 20px !important;
-    }
-
-    .security-detail-content.active,
-    .security-detail-content.show {
-        display: block;
-        /* Removed animation to prevent glitches on mobile */
+        margin-bottom: 15px !important;
+        margin-top: 10px !important;
     }
 }

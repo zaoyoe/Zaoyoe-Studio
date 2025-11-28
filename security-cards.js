@@ -1,6 +1,12 @@
 // Interactive security card expansion with staggered rise animation
 function expandSecurityCard(event, cardType) {
-    // Stop event propagation
+    // On mobile (<= 768px), do nothing - all panels are always visible in a single scroll
+    if (window.innerWidth <= 768) {
+        console.log('📱 Mobile view - panels always visible, no switching needed');
+        return;
+    }
+
+    // Stop event propagation (desktop only)
     if (event) {
         event.preventDefault();
         event.stopPropagation();
