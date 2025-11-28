@@ -96,7 +96,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const delay = Math.min(index * 0.03, 0.5);
 
         // Recursively render comment tree
-        function renderCommentTree(comments, depth = 0, messageId) {
+        function renderCommentTree(comments, depth = 0, messageId, parentName = null) {
             if (!comments || comments.length === 0) return '';
 
             const maxDepth = 2; // Limit nesting depth
@@ -106,10 +106,15 @@ document.addEventListener('DOMContentLoaded', () => {
             return comments.map(comment => {
                 const hasReplies = comment.replies && comment.replies.length > 0;
 
+                // Add @mention if this is a nested comment
+                const mentionPrefix = depth > 0 && parentName
+                    ? `<span class="comment-mention">@${escapeHtml(parentName)}</span> `
+                    : '';
+
                 return `
                     <div class="comment-item ${depth > 0 ? 'comment-item--nested' : ''} ${canReply ? 'comment-item--clickable' : ''}"
                          style="margin-left: ${indentPx}px"
-                         data-comment-id="${comment.id}"
+                         data-comment-id="${comment.id}" 
                          data-message-id="${messageId}"
                          data-can-reply="${canReply}">
                         <div class="comment-header">
@@ -117,15 +122,15 @@ document.addEventListener('DOMContentLoaded', () => {
                             <span class="comment-author">${escapeHtml(comment.name)}</span>
                             <span class="comment-time">${comment.timestamp}</span>
                         </div>
-                        <div class="comment-content">${escapeHtml(comment.content)}</div>
-                        ${hasReplies ? renderCommentTree(comment.replies, depth + 1, messageId) : ''}
+                        <div class="comment-content">${mentionPrefix}${escapeHtml(comment.content)}</div>
+                        ${hasReplies ? renderCommentTree(comment.replies, depth + 1, messageId, comment.name) : ''}
                     </div>
                 `;
             }).join('');
         }
 
         const commentsHtml = hasComments
-            ? renderCommentTree(msg.comments, 0, msg.id)
+            ? renderCommentTree(msg.comments, 0, msg.id, null)
             : '<div class="no-comments">暂无评论</div>';
 
         const toggleButtonHtml = shouldCollapse

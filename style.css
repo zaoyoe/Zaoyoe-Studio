@@ -2154,7 +2154,9 @@ button.upload-icon-btn {
 /* Large screens: 6 columns */
 @media (min-width: 1441px) {
     .message-container {
-        column-count: 6;
+        column-count: 4;
+        /* Changed from 6 to 4 */
+        column-gap: 20px;
     }
 }
 
@@ -2175,8 +2177,9 @@ button.upload-icon-btn {
 /* Mobile Guestbook Waterfall Layout - Fix Gap Issue */
 @media (max-width: 768px) {
     .message-container {
-        column-count: 2 !important;
-        column-gap: 12px !important;
+        column-count: 4 !important;
+        /* Changed from 2 to 4 columns */
+        column-gap: 20px !important;
         column-fill: balance;
     }
 
@@ -3190,7 +3193,18 @@ input.login-submit-btn {
     }
 
     .comment-item--clickable:hover {
-        background-color: rgba(255, 255, 255, 0.03);
+        background-color: rgba(255, 255, 255, 0.15);
+        /* Stronger background */
+    }
+
+    .comment-item--clickable:hover .comment-author {
+        color: rgba(56, 189, 248, 1);
+        /* Highlight author name */
+    }
+
+    .comment-item--clickable:hover .comment-content {
+        color: rgba(255, 255, 255, 1);
+        /* Brighter text */
     }
 
     /* Nested comment styles */
@@ -3201,7 +3215,15 @@ input.login-submit-btn {
     }
 
     .comment-item--nested.comment-item--clickable:hover {
-        background: rgba(56, 189, 248, 0.08);
+        background: rgba(56, 189, 248, 0.25);
+        /* Stronger blue highlight */
+    }
+
+    /* @mention styling */
+    .comment-mention {
+        color: rgba(56, 189, 248, 0.9);
+        font-weight: 600;
+        margin-right: 4px;
     }
 }
 }
