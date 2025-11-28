@@ -50,19 +50,19 @@ body {
 
 /* Background Blobs - Fixed to viewport */
 
-/* Background Blobs - Fixed to viewport with overscroll coverage */
+/* Background Blobs - Extra large to cover all iOS overscroll */
 
 .background-blobs {
     position: fixed;
-    top: -10vh;
-    /* Extend upwards */
+    top: -50vh;
+    /* Massive upward extension */
     left: 0;
     right: 0;
-    bottom: -10vh;
-    /* Extend downwards */
+    bottom: -50vh;
+    /* Massive downward extension */
     width: 100%;
-    height: 120vh;
-    /* 120% height to cover bounces */
+    height: 200vh;
+    /* Double viewport height */
     z-index: -1;
     pointer-events: none;
     /* iOS Safari fix for position fixed */
@@ -86,7 +86,8 @@ body {
 }
 
 .blob-1 {
-    top: -30%;
+    top: 10%;
+    /* Position within the 200vh container */
     left: -10%;
     width: 70vw;
     /* Wider */
@@ -97,7 +98,8 @@ body {
 }
 
 .blob-2 {
-    bottom: -30%;
+    bottom: 10%;
+    /* Position within the 200vh container */
     right: -10%;
     width: 70vw;
     /* Wider */
@@ -108,7 +110,8 @@ body {
 }
 
 .blob-3 {
-    top: 20%;
+    top: 50%;
+    /* Center in the 200vh container */
     left: 30%;
     width: 60vw;
     height: 80vh;
