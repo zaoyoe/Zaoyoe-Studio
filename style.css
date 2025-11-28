@@ -60,47 +60,54 @@ body {
     height: 100%;
     z-index: -1;
     pointer-events: none;
+    /* iOS Safari fix for position fixed */
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
     /* Force hardware acceleration */
-    transform: translateZ(0);
+    transform: translate3d(0, 0, 0);
     will-change: transform;
 }
 
 .blob {
-    position: absolute;
+    position: fixed;
+    /* Individual blobs also fixed */
     border-radius: 50%;
     filter: blur(80px);
     opacity: 0.7;
     will-change: transform;
+    /* iOS fix */
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
 }
 
 .blob-1 {
-    top: -20%;
-    /* Extended upward */
+    top: -30%;
     left: -10%;
-    width: 60vw;
-    /* Increased size */
-    height: 60vw;
+    width: 70vw;
+    /* Wider */
+    height: 100vh;
+    /* Tall - stretched vertically */
     background: linear-gradient(45deg, #7c3aed, #ec4899);
     animation: float1 15s ease-in-out infinite;
 }
 
 .blob-2 {
-    bottom: -20%;
-    /* Extended downward */
+    bottom: -30%;
     right: -10%;
-    width: 60vw;
-    /* Increased size */
-    height: 60vw;
+    width: 70vw;
+    /* Wider */
+    height: 100vh;
+    /* Tall - stretched vertically */
     background: linear-gradient(135deg, #2563eb, #06b6d4);
     animation: float2 18s ease-in-out infinite;
 }
 
 .blob-3 {
-    top: 40%;
-    left: 40%;
-    width: 50vw;
-    /* Increased size */
-    height: 50vw;
+    top: 20%;
+    left: 30%;
+    width: 60vw;
+    height: 80vh;
+    /* Tall - stretched vertically */
     background: linear-gradient(225deg, #db2777, #f59e0b);
     animation: float3 20s ease-in-out infinite;
 }
