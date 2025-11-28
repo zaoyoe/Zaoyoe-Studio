@@ -210,16 +210,23 @@ async function addMessage(content, imageUrl = '') {
         console.error('发送留言失败:', error);
         alert(`发送失败: ${error.message || '未知错误'}`);
         return false;
+        ```javascript
     }
 }
 
 // ==================== 发送评论 (LeanCloud 版本) ====================
 async function addCommentToMessage(messageId, content) {
-    console.log(`💬 发送评论给消息 ${messageId}...`);
+    console.log(`💬 回复评论 ${ parentCommentId }...`);
+
+    if (!parentCommentId || parentCommentId === 'undefined') {
+        console.error('❌ Invalid parentCommentId:', parentCommentId);
+        alert('无法回复：评论ID无效');
+        return false;
+    }
 
     const currentUser = AV.User.current();
     if (!currentUser) {
-        alert('请先登录后再评论');
+        alert('请先登录后再回复');
         return false;
     }
 
@@ -248,14 +255,20 @@ async function addCommentToMessage(messageId, content) {
 
     } catch (error) {
         console.error('发送评论失败:', error);
-        alert(`评论失败: ${error.message}`);
+        alert(`评论失败: ${ error.message } `);
         return false;
     }
 }
 
 // ==================== 回复评论 (嵌套评论) ====================
 async function addReplyToComment(parentCommentId, messageId, content) {
-    console.log(`💬 回复评论 ${parentCommentId}...`);
+    console.log(`💬 回复评论 ${ parentCommentId }...`);
+
+    if (!parentCommentId || parentCommentId === 'undefined') {
+        console.error('❌ Invalid parentCommentId:', parentCommentId);
+        alert('无法回复：评论ID无效');
+        return false;
+    }
 
     const currentUser = AV.User.current();
     if (!currentUser) {
@@ -290,7 +303,7 @@ async function addReplyToComment(parentCommentId, messageId, content) {
 
     } catch (error) {
         console.error('回复评论失败:', error);
-        alert(`回复失败: ${error.message || '未知错误'}`);
+        alert(`回复失败: ${ error.message || '未知错误' } `);
         return false;
     }
 }
@@ -325,7 +338,7 @@ async function deleteMessage(messageId) {
 
     } catch (error) {
         console.error('删除留言失败:', error);
-        alert(`删除失败: ${error.message}`);
+        alert(`删除失败: ${ error.message } `);
         return false;
     }
 }
@@ -360,7 +373,7 @@ function displayMessages(messages) {
         container.appendChild(messageCard);
     });
 
-    console.log(`✅ 显示了 ${messages.length} 条留言`);
+    console.log(`✅ 显示了 ${ messages.length } 条留言`);
 }
 
 // ==================== 创建留言卡片 ====================
@@ -372,14 +385,14 @@ function createMessageCard(msg) {
     // 头像
     const avatar = msg.userAvatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(msg.userName)}&background=random`;
 
-    // 时间
-    const time = msg.displayTime || new Date(msg.createdAt).toLocaleString('zh-CN');
+        // 时间
+        const time = msg.displayTime || new Date(msg.createdAt).toLocaleString('zh-CN');
 
-    // 检查是否是当前用户的留言
-    const currentUser = AV.User.current();
-    const isOwnMessage = currentUser && msg.user && currentUser.id === msg.user.id;
+        // 检查是否是当前用户的留言
+        const currentUser = AV.User.current();
+        const isOwnMessage = currentUser && msg.user && currentUser.id === msg.user.id;
 
-    card.innerHTML = `
+        card.innerHTML = `
         <div class="message-header">
             <img src="${avatar}" alt="${escapeHTML(msg.userName)}" class="message-avatar">
             <div class="message-meta">
@@ -392,207 +405,207 @@ function createMessageCard(msg) {
         ${msg.imageUrl ? `<img src="${msg.imageUrl}" alt="留言图片" class="message-image">` : ''}
     `;
 
-    return card;
-}
+        return card;
+    }
 
-// ==================== 实时订阅更新（可选）====================
-function subscribeToMessages() {
-    const query = new AV.Query('Message');
-    query.descending('createdAt');
-    query.limit(100);
+    // ==================== 实时订阅更新（可选）====================
+    function subscribeToMessages() {
+        const query = new AV.Query('Message');
+        query.descending('createdAt');
+        query.limit(100);
 
-    // 订阅新消息
-    query.subscribe().then(liveQuery => {
-        console.log('✅ 已订阅留言更新');
+        // 订阅新消息
+        query.subscribe().then(liveQuery => {
+            console.log('✅ 已订阅留言更新');
 
-        // 新消息创建
-        liveQuery.on('create', message => {
-            console.log('🆕 收到新留言');
-            loadGuestbookMessages();  // 重新加载
+            // 新消息创建
+            liveQuery.on('create', message => {
+                console.log('🆕 收到新留言');
+                loadGuestbookMessages();  // 重新加载
+            });
+
+            // 消息删除
+            liveQuery.on('delete', message => {
+                console.log('🗑️ 留言被删除');
+                loadGuestbookMessages();  // 重新加载
+            });
+
+        }).catch(error => {
+            console.error('订阅失败:', error);
         });
+    }
 
-        // 消息删除
-        liveQuery.on('delete', message => {
-            console.log('🗑️ 留言被删除');
-            loadGuestbookMessages();  // 重新加载
-        });
+    console.log('✅ LeanCloud 留言板函数已加载');
 
-    }).catch(error => {
-        console.error('订阅失败:', error);
+    // ==================== 表单绑定 ====================
+    document.addEventListener('DOMContentLoaded', function () {
+        console.log('📋 绑定留言板表单...');
+
+        const guestbookForm = document.getElementById('guestbookForm');
+
+        if (guestbookForm) {
+            guestbookForm.addEventListener('submit', async function (e) {
+                e.preventDefault();
+
+                console.log('📝 提交留言表单');
+
+                // 检查登录状态
+                const currentUser = AV.User.current();
+                if (!currentUser) {
+                    alert('请先登录后再留言');
+                    if (typeof toggleLoginModal === 'function') {
+                        toggleLoginModal();
+                    }
+                    return;
+                }
+
+                // 获取留言内容
+                const messageInput = document.getElementById('guestMessage');
+                const content = messageInput ? messageInput.value.trim() : '';
+
+                // 获取图片数据（如果有）
+                const imageData = typeof window.getCurrentImageData === 'function' ? window.getCurrentImageData() : null;
+
+                // 至少需要有内容或图片
+                if (!content && !imageData) {
+                    alert('请输入留言内容或上传图片');
+                    return;
+                }
+
+                // 发送留言（传递图片数据）
+                const success = await addMessage(content, imageData || '');
+
+                if (success) {
+                    // 清空输入框
+                    if (messageInput) {
+                        messageInput.value = '';
+                    }
+
+                    // 清空图片预览
+                    if (typeof window.clearGuestbookImage === 'function') {
+                        window.clearGuestbookImage();
+                    }
+
+                    // 关闭模态框
+                    const modal = document.getElementById('guestbookModal');
+                    if (modal) {
+                        modal.classList.remove('active');
+                    }
+
+                    // 自动跳转到留言板页面
+                    window.location.href = 'guestbook.html';
+                }
+            });
+
+            console.log('✅ 留言板表单绑定成功');
+        }
     });
-}
 
-console.log('✅ LeanCloud 留言板函数已加载');
+    // ==================== 图片上传处理 ====================
+    document.addEventListener('DOMContentLoaded', function () {
+        const imageUpload = document.getElementById('imageUpload');
+        const imagePreview = document.getElementById('imagePreview');
+        const previewImg = document.getElementById('previewImg');
+        const removeImageBtn = document.getElementById('removeImageBtn');
 
-// ==================== 表单绑定 ====================
-document.addEventListener('DOMContentLoaded', function () {
-    console.log('📋 绑定留言板表单...');
+        let currentImageData = null; // Store base64 image data
 
-    const guestbookForm = document.getElementById('guestbookForm');
+        // Image Upload Handler
+        if (imageUpload) {
+            imageUpload.addEventListener('change', async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
 
-    if (guestbookForm) {
-        guestbookForm.addEventListener('submit', async function (e) {
-            e.preventDefault();
-
-            console.log('📝 提交留言表单');
-
-            // 检查登录状态
-            const currentUser = AV.User.current();
-            if (!currentUser) {
-                alert('请先登录后再留言');
-                if (typeof toggleLoginModal === 'function') {
-                    toggleLoginModal();
-                }
-                return;
-            }
-
-            // 获取留言内容
-            const messageInput = document.getElementById('guestMessage');
-            const content = messageInput ? messageInput.value.trim() : '';
-
-            // 获取图片数据（如果有）
-            const imageData = typeof window.getCurrentImageData === 'function' ? window.getCurrentImageData() : null;
-
-            // 至少需要有内容或图片
-            if (!content && !imageData) {
-                alert('请输入留言内容或上传图片');
-                return;
-            }
-
-            // 发送留言（传递图片数据）
-            const success = await addMessage(content, imageData || '');
-
-            if (success) {
-                // 清空输入框
-                if (messageInput) {
-                    messageInput.value = '';
+                // Validate file type
+                if (!file.type.startsWith('image/')) {
+                    alert('请选择有效的图片文件!');
+                    return;
                 }
 
-                // 清空图片预览
-                if (typeof window.clearGuestbookImage === 'function') {
-                    window.clearGuestbookImage();
+                // Validate file size (max 5MB before compression)
+                if (file.size > 5 * 1024 * 1024) {
+                    alert('图片文件过大! 请选择小于5MB的图片。');
+                    return;
                 }
 
-                // 关闭模态框
-                const modal = document.getElementById('guestbookModal');
-                if (modal) {
-                    modal.classList.remove('active');
-                }
+                try {
+                    // Compress and convert to base64
+                    currentImageData = await compressImage(file);
 
-                // 自动跳转到留言板页面
-                window.location.href = 'guestbook.html';
-            }
-        });
-
-        console.log('✅ 留言板表单绑定成功');
-    }
-});
-
-// ==================== 图片上传处理 ====================
-document.addEventListener('DOMContentLoaded', function () {
-    const imageUpload = document.getElementById('imageUpload');
-    const imagePreview = document.getElementById('imagePreview');
-    const previewImg = document.getElementById('previewImg');
-    const removeImageBtn = document.getElementById('removeImageBtn');
-
-    let currentImageData = null; // Store base64 image data
-
-    // Image Upload Handler
-    if (imageUpload) {
-        imageUpload.addEventListener('change', async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-
-            // Validate file type
-            if (!file.type.startsWith('image/')) {
-                alert('请选择有效的图片文件!');
-                return;
-            }
-
-            // Validate file size (max 5MB before compression)
-            if (file.size > 5 * 1024 * 1024) {
-                alert('图片文件过大! 请选择小于5MB的图片。');
-                return;
-            }
-
-            try {
-                // Compress and convert to base64
-                currentImageData = await compressImage(file);
-
-                // Show preview
-                if (previewImg && imagePreview) {
-                    previewImg.src = currentImageData;
-                    imagePreview.style.display = 'block';
-                }
-            } catch (error) {
-                console.error('图片处理失败:', error);
-                alert('图片处理失败,请重试!');
-            }
-        });
-    }
-
-    // Remove Image Handler
-    if (removeImageBtn) {
-        removeImageBtn.addEventListener('click', () => {
-            clearImage();
-        });
-    }
-
-    function clearImage() {
-        if (imageUpload) imageUpload.value = '';
-        if (imagePreview) imagePreview.style.display = 'none';
-        if (previewImg) previewImg.src = '';
-        currentImageData = null;
-    }
-
-    // Helper: Compress Image to Base64
-    async function compressImage(file, maxWidth = 800, quality = 0.7) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-
-            reader.onload = (e) => {
-                const img = new Image();
-                img.onload = () => {
-                    // Create canvas for compression
-                    const canvas = document.createElement('canvas');
-                    let width = img.width;
-                    let height = img.height;
-
-                    // Resize if too large
-                    if (width > maxWidth) {
-                        height = (height * maxWidth) / width;
-                        width = maxWidth;
+                    // Show preview
+                    if (previewImg && imagePreview) {
+                        previewImg.src = currentImageData;
+                        imagePreview.style.display = 'block';
                     }
+                } catch (error) {
+                    console.error('图片处理失败:', error);
+                    alert('图片处理失败,请重试!');
+                }
+            });
+        }
 
-                    canvas.width = width;
-                    canvas.height = height;
+        // Remove Image Handler
+        if (removeImageBtn) {
+            removeImageBtn.addEventListener('click', () => {
+                clearImage();
+            });
+        }
 
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0, width, height);
+        function clearImage() {
+            if (imageUpload) imageUpload.value = '';
+            if (imagePreview) imagePreview.style.display = 'none';
+            if (previewImg) previewImg.src = '';
+            currentImageData = null;
+        }
 
-                    // Convert to base64 with compression
-                    const compressedData = canvas.toDataURL('image/jpeg', quality);
+        // Helper: Compress Image to Base64
+        async function compressImage(file, maxWidth = 800, quality = 0.7) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
 
-                    // Check size (warn if > 500KB)
-                    const sizeInKB = Math.round((compressedData.length * 3 / 4) / 1024);
-                    console.log(`压缩后图片大小: ${sizeInKB}KB`);
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        // Create canvas for compression
+                        const canvas = document.createElement('canvas');
+                        let width = img.width;
+                        let height = img.height;
 
-                    if (sizeInKB > 500) {
-                        console.warn('图片较大,可能影响性能');
-                    }
+                        // Resize if too large
+                        if (width > maxWidth) {
+                            height = (height * maxWidth) / width;
+                            width = maxWidth;
+                        }
 
-                    resolve(compressedData);
+                        canvas.width = width;
+                        canvas.height = height;
+
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+
+                        // Convert to base64 with compression
+                        const compressedData = canvas.toDataURL('image/jpeg', quality);
+
+                        // Check size (warn if > 500KB)
+                        const sizeInKB = Math.round((compressedData.length * 3 / 4) / 1024);
+                        console.log(`压缩后图片大小: ${sizeInKB}KB`);
+
+                        if (sizeInKB > 500) {
+                            console.warn('图片较大,可能影响性能');
+                        }
+
+                        resolve(compressedData);
+                    };
+                    img.onerror = reject;
+                    img.src = e.target.result;
                 };
-                img.onerror = reject;
-                img.src = e.target.result;
-            };
 
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-        });
-    }
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        }
 
-    // Make clearImage available globally
-    window.clearGuestbookImage = clearImage;
-    window.getCurrentImageData = () => currentImageData;
-});
+        // Make clearImage available globally
+        window.clearGuestbookImage = clearImage;
+        window.getCurrentImageData = () => currentImageData;
+    });

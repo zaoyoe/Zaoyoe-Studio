@@ -267,6 +267,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 const commentId = this.dataset.commentId;
                 const messageId = this.dataset.messageId;
 
+                console.log(`🖱️ Clicked comment: id=${commentId}, message=${messageId}`);
+
+                if (!commentId || commentId === 'undefined') {
+                    console.error('❌ Invalid comment ID on click');
+                    return;
+                }
+
                 // Open comment modal with parent comment tracking
                 openCommentModal(messageId, commentId);
             });
@@ -274,7 +281,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Handle Comment Submission
-    const commentForm = document.getElementById('commentForm');
     if (commentForm) {
         commentForm.addEventListener('submit', (e) => {
             e.preventDefault();
