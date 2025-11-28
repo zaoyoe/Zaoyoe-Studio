@@ -6,6 +6,10 @@
 /* Ensure avatar maintains perfect circle */
 .login-trigger-btn.logged-in {
     padding: 0 !important;
+    background: transparent !important;
+    /* Remove background to prevent offset */
+    border: none !important;
+    /* Remove border that might show through */
 }
 
 .login-trigger-btn.logged-in .nav-user-avatar,

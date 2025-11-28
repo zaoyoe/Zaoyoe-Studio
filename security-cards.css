@@ -308,8 +308,8 @@
         /* Allow height to adjust to content */
         height: auto;
         padding: 20px;
-        padding-bottom: 120px;
-        /* Ensure ample space at bottom for scrolling */
+        padding-bottom: 150px;
+        /* Further increased to ensure buttons are fully visible */
         overflow: visible;
         /* Let content flow */
     }
