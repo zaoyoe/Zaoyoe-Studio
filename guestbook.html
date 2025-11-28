@@ -170,30 +170,30 @@
             <p class="empty-hint">快去首页留下你的第一条留言吧 !</p>
         </div>
     </div>
-    < !-- Comment Modal -->
-        <div class="modal-overlay" id="commentModal" onclick="closeCommentModal(event)">
-            <div class="modal-content premium-modal" style="position: relative; max-width: 500px;">
-                < !-- Mac Window Controls -->
-                    <div class="mac-controls">
-                        <div class="mac-dot red" onclick="closeCommentModal(event)"><i class="fas fa-times"></i></div>
-                    </div>
-                    <div class="modal-title">发表评论</div>
-                    <p class="modal-subtitle">分享您的想法 </p>
-                    <form id="commentForm"><input type="hidden" id="commentMessageId">
-                        <div class="form-group"><label for="commentContent">评论内容</label><textarea id="commentContent"
-                                rows="3" placeholder="写下你的评论..." required></textarea></div>
-                        <div class="form-actions"><button type="submit" class="submit-btn">发送</button>
-                        </div>
-                    </form>
+    <!-- Comment Modal -->
+    <div class="modal-overlay" id="commentModal" onclick="closeCommentModal(event)">
+        <div class="modal-content premium-modal" style="position: relative; max-width: 500px;">
+            <!-- Mac Window Controls -->
+            <div class="mac-controls">
+                <div class="mac-dot red" onclick="closeCommentModal(event)"><i class="fas fa-times"></i></div>
             </div>
+            <div class="modal-title">发表评论</div>
+            <p class="modal-subtitle">分享您的想法 </p>
+            <form id="commentForm"><input type="hidden" id="commentMessageId">
+                <div class="form-group"><label for="commentContent">评论内容</label><textarea id="commentContent" rows="3"
+                        placeholder="写下你的评论..." required></textarea></div>
+                <div class="form-actions"><button type="submit" class="submit-btn">发送</button>
+                </div>
+            </form>
         </div>
-        < !-- LeanCloud SDK -->
-            <script src="https://cdn.jsdelivr.net/npm/leancloud-storage@4.15.2/dist/av-min.js"></script>
-            <script src="./leancloud-init.js?v=20251125_ACL_FIX" defer></script>
-            <script src="./leancloud-auth-functions.js?v=20251125_ACL_FIX" defer></script>
-            <script src="./leancloud-guestbook-functions.js?v=20251125_ACL_FIX" defer></script>
-            <script src="script.js?v=20251125_ACL_FIX" defer></script>
-            <script src="guestbook.js?v=20251125_ACL_FIX" defer></script>
+    </div>
+    <!-- LeanCloud SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/leancloud-storage@4.15.2/dist/av-min.js"></script>
+    <script src="./leancloud-init.js?v=20251125_ACL_FIX" defer></script>
+    <script src="./leancloud-auth-functions.js?v=20251125_ACL_FIX" defer></script>
+    <script src="./leancloud-guestbook-functions.js?v=20251125_ACL_FIX" defer></script>
+    <script src="script.js?v=20251125_ACL_FIX" defer></script>
+    <script src="guestbook.js?v=20251125_ACL_FIX" defer></script>
 </body>
 
 </html>

@@ -3091,6 +3091,12 @@ input.login-submit-btn {
         overflow-x: hidden;
     }
 
+    /* Center guestbook main container on desktop */
+    .guestbook-page .guestbook-main {
+        margin-left: auto;
+        margin-right: auto;
+    }
+
     .message-container {
         column-count: 1 !important;
         column-gap: 16px;
