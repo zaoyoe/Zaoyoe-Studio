@@ -24,6 +24,10 @@ html {
     background-color: #000;
     /* Pure black, no tinting */
     /* Fix for over-scroll background */
+    position: relative;
+    /* Create positioning context */
+    min-height: 100%;
+    overflow-x: hidden;
 }
 
 body {
@@ -48,29 +52,20 @@ body {
     position: relative;
 }
 
-/* Background Blobs - Fixed to viewport */
-
-/* Background Blobs - Extra large to cover all iOS overscroll */
+/* Background Blobs - Pure fixed positioning */
 
 .background-blobs {
     position: fixed;
-    top: -50vh;
-    /* Massive upward extension */
+    top: 0;
     left: 0;
-    right: 0;
-    bottom: -50vh;
-    /* Massive downward extension */
-    width: 100%;
-    height: 200vh;
-    /* Double viewport height */
+    width: 100vw;
+    height: 100vh;
     z-index: -1;
     pointer-events: none;
-    /* iOS Safari fix for position fixed */
-    -webkit-backface-visibility: hidden;
-    backface-visibility: hidden;
-    /* Force hardware acceleration */
-    transform: translate3d(0, 0, 0);
-    will-change: transform;
+    overflow: hidden;
+    /* iOS fixes */
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
 }
 
 .blob {
@@ -86,36 +81,32 @@ body {
 }
 
 .blob-1 {
-    top: 10%;
-    /* Position within the 200vh container */
+    top: -10%;
+    /* Slight extension */
     left: -10%;
-    width: 70vw;
-    /* Wider */
-    height: 100vh;
-    /* Tall - stretched vertically */
+    width: 60vw;
+    height: 70vh;
+    /* Tall enough to cover */
     background: linear-gradient(45deg, #7c3aed, #ec4899);
     animation: float1 15s ease-in-out infinite;
 }
 
 .blob-2 {
-    bottom: 10%;
-    /* Position within the 200vh container */
+    bottom: -10%;
+    /* Slight extension */
     right: -10%;
-    width: 70vw;
-    /* Wider */
-    height: 100vh;
-    /* Tall - stretched vertically */
+    width: 60vw;
+    height: 70vh;
+    /* Tall enough to cover */
     background: linear-gradient(135deg, #2563eb, #06b6d4);
     animation: float2 18s ease-in-out infinite;
 }
 
 .blob-3 {
-    top: 50%;
-    /* Center in the 200vh container */
+    top: 30%;
     left: 30%;
-    width: 60vw;
-    height: 80vh;
-    /* Tall - stretched vertically */
+    width: 50vw;
+    height: 60vh;
     background: linear-gradient(225deg, #db2777, #f59e0b);
     animation: float3 20s ease-in-out infinite;
 }
