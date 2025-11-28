@@ -21,8 +21,8 @@
 
 /* Base Styles */
 html {
-    background-color: #0a0a1a;
-    /* Dark purple-black to blend with blobs */
+    background-color: #000;
+    /* Pure black, no tinting */
     /* Fix for over-scroll background */
 }
 
