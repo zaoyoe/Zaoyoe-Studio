@@ -1501,8 +1501,8 @@ body.no-scroll {
     div.modal-overlay.active .modal-content {
         width: 85vw !important;
         max-width: 320px !important;
-        max-height: 85vh !important;
-        /* Balanced height */
+        max-height: 75vh !important;
+        /* Reduced to 75vh for better mobile fit */
         /* Reduced from 95vh to ensure bottom edge is visible */
         padding: 20px !important;
         padding-bottom: 20px !important;
