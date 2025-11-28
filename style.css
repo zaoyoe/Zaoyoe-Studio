@@ -47,7 +47,7 @@ body {
     position: relative;
 }
 
-/* Background Blobs - Subtle */
+/* Background Blobs - Original Light Flow */
 
 .background-blobs {
     position: fixed;
@@ -64,9 +64,8 @@ body {
 .blob {
     position: absolute;
     border-radius: 50%;
-    filter: blur(100px);
-    opacity: 0.15;
-    /* Very subtle */
+    filter: blur(80px);
+    opacity: 0.7;
     will-change: transform;
 }
 
@@ -75,9 +74,8 @@ body {
     left: -10%;
     width: 50vw;
     height: 50vw;
-    background: linear-gradient(45deg, #1e293b, #334155);
-    /* Subtle slate tones */
-    animation: float1 20s ease-in-out infinite;
+    background: linear-gradient(45deg, #7c3aed, #ec4899);
+    animation: float1 15s ease-in-out infinite;
 }
 
 .blob-2 {
@@ -85,21 +83,17 @@ body {
     right: -10%;
     width: 50vw;
     height: 50vw;
-    background: linear-gradient(45deg, #1e293b, #334155);
-    /* Subtle slate tones */
-    animation: float2 25s ease-in-out infinite;
+    background: linear-gradient(135deg, #2563eb, #06b6d4);
+    animation: float2 18s ease-in-out infinite;
 }
 
 .blob-3 {
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
+    top: 40%;
+    left: 40%;
     width: 40vw;
     height: 40vw;
-    background: linear-gradient(45deg, #1e293b, #334155);
-    /* Subtle slate tones */
-    animation: float3 22s ease-in-out infinite;
-    opacity: 0.1;
+    background: linear-gradient(225deg, #db2777, #f59e0b);
+    animation: float3 20s ease-in-out infinite;
 }
 
 @keyframes float1 {
