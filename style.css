@@ -1501,7 +1501,8 @@ body.no-scroll {
     div.modal-overlay.active .modal-content {
         width: 85vw !important;
         max-width: 320px !important;
-        max-height: 80vh !important;
+        max-height: 85vh !important;
+        /* Balanced height */
         /* Reduced from 95vh to ensure bottom edge is visible */
         padding: 20px !important;
         padding-bottom: 20px !important;
@@ -4227,6 +4228,53 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     opacity: 1;
     pointer-events: auto;
     visibility: visible;
+}
+
+/* --- Mobile Overrides for Flip Container (Fix Truncation) --- */
+@media (max-width: 768px) {
+    .profile-flip-container {
+        min-height: auto !important;
+        height: auto !important;
+        overflow: visible !important;
+        /* Allow content to overflow naturally */
+    }
+
+    .profile-flip-inner {
+        min-height: auto !important;
+        height: auto !important;
+        display: block !important;
+    }
+
+    .profile-view {
+        position: relative !important;
+        /* Stack naturally, no absolute positioning */
+        height: auto !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+        transition: none !important;
+        /* Remove transition to prevent glitches */
+    }
+
+    /* Manually manage visibility since we aren't using absolute positioning */
+    .profile-front {
+        display: block !important;
+    }
+
+    .profile-back {
+        display: none !important;
+    }
+
+    /* When flipped, hide front and show back */
+    .profile-flip-inner.flipped .profile-front {
+        display: none !important;
+    }
+
+    .profile-flip-inner.flipped .profile-back {
+        display: block !important;
+        opacity: 1 !important;
+        pointer-events: auto !important;
+        visibility: visible !important;
+    }
 }
 
 /* 错落上升动画关键帧 */
