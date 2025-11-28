@@ -3048,10 +3048,10 @@ input.login-submit-btn {
     opacity: 0;
     background: transparent !important;
     /* Force transparent */
-    border: none !important;
-    /* Force no border */
-    box-shadow: none !important;
-    /* Force no shadow */
+    border: 2px solid rgba(255, 255, 255, 0.8) !important;
+    /* Add white border */
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3) !important;
+    /* Add depth shadow */
     outline: none !important;
     /* Force no outline */
 }
