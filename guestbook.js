@@ -52,8 +52,13 @@ document.addEventListener('DOMContentLoaded', () => {
     window.renderMessages = function (messages) {
         if (!messageContainer) return;
 
+        // Clear loading state
+        messageContainer.innerHTML = '';
+
+        // Fade in container
+        messageContainer.style.opacity = '1';
+
         if (messages.length === 0) {
-            messageContainer.innerHTML = '';
             emptyState.style.display = 'flex';
             return;
         }

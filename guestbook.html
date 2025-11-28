@@ -157,7 +157,9 @@
                         class="fas fa-trash-alt"></i></button>
                 < !-- Main Content -->
                     <div class="guestbook-main">
-                        <div id="messageContainer" class="message-container">
+                        <!-- Hidden initially to prevent FOUC/Garbage text -->
+                        <div id="messageContainer" class="message-container"
+                            style="opacity: 0; transition: opacity 0.3s ease;">
                             < !-- Messages will be inserted here by JavaScript -->
                         </div>
                         <div id="emptyState" class="empty-state-large" style="display: none;"><i

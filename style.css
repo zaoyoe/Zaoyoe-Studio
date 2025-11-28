@@ -21,8 +21,8 @@
 
 /* Base Styles */
 html {
-    background-color: #0f172a;
-    /* Match theme bg to hide black bars */
+    background-color: #050505;
+    /* Deep black-purple base */
     /* Fix for over-scroll white background */
 }
 
@@ -62,7 +62,6 @@ body {
     z-index: -1;
     overflow: hidden;
     pointer-events: none;
-    /* Ensure it stays fixed even with address bar changes */
     min-height: -webkit-fill-available;
 }
 
@@ -71,8 +70,8 @@ body {
     border-radius: 50%;
     filter: blur(80px);
     /* Increased blur for smoother blend */
-    opacity: 0.6;
-    /* Slightly reduced opacity for cleaner look */
+    opacity: 0.5;
+    /* Reduced opacity for less "fog" */
     will-change: transform;
 }
 
@@ -82,7 +81,8 @@ body {
     width: 90vw;
     /* Stretched size */
     height: 90vw;
-    background: linear-gradient(45deg, #7c3aed, #ec4899);
+    background: linear-gradient(45deg, #4c1d95, #be185d);
+    /* Deep Violet to Pink */
     animation: float1 20s ease-in-out infinite;
 }
 
@@ -92,7 +92,8 @@ body {
     width: 90vw;
     /* Stretched size */
     height: 90vw;
-    background: linear-gradient(45deg, #3b82f6, #8b5cf6);
+    background: linear-gradient(45deg, #1e3a8a, #7c3aed);
+    /* Deep Blue to Purple */
     animation: float2 25s ease-in-out infinite;
 }
 
@@ -103,9 +104,10 @@ body {
     width: 80vw;
     /* Center filler */
     height: 80vw;
-    background: linear-gradient(45deg, #06b6d4, #3b82f6);
+    background: linear-gradient(45deg, #5b21b6, #3b82f6);
+    /* Violet to Blue */
     animation: float3 22s ease-in-out infinite;
-    opacity: 0.4;
+    opacity: 0.3;
 }
 
 @keyframes float1 {
