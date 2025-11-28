@@ -21,9 +21,8 @@
 
 /* Base Styles */
 html {
-    background-color: #050505;
-    /* Deep black-purple base */
-    /* Fix for over-scroll white background */
+    background-color: #000;
+    /* Fix for over-scroll background */
 }
 
 body {
@@ -31,14 +30,11 @@ body {
     padding: 0;
     font-family: var(--font-main);
     background-color: transparent;
-    /* Allow backgrounds to show through */
     color: var(--text-color);
     line-height: 1.6;
     min-height: 100vh;
     overflow-x: hidden;
 }
-
-/* Aurora Overlay Removed as requested */
 
 body {
     font-family: var(--font-main);
@@ -51,7 +47,7 @@ body {
     position: relative;
 }
 
-/* Background Blobs */
+/* Background Blobs - Subtle */
 
 .background-blobs {
     position: fixed;
@@ -68,32 +64,29 @@ body {
 .blob {
     position: absolute;
     border-radius: 50%;
-    filter: blur(80px);
-    /* Increased blur for smoother blend */
-    opacity: 0.5;
-    /* Reduced opacity for less "fog" */
+    filter: blur(100px);
+    opacity: 0.15;
+    /* Very subtle */
     will-change: transform;
 }
 
 .blob-1 {
-    top: -20%;
-    left: -20%;
-    width: 90vw;
-    /* Stretched size */
-    height: 90vw;
-    background: linear-gradient(45deg, #4c1d95, #be185d);
-    /* Deep Violet to Pink */
+    top: -10%;
+    left: -10%;
+    width: 50vw;
+    height: 50vw;
+    background: linear-gradient(45deg, #1e293b, #334155);
+    /* Subtle slate tones */
     animation: float1 20s ease-in-out infinite;
 }
 
 .blob-2 {
-    bottom: -20%;
-    right: -20%;
-    width: 90vw;
-    /* Stretched size */
-    height: 90vw;
-    background: linear-gradient(45deg, #1e3a8a, #7c3aed);
-    /* Deep Blue to Purple */
+    bottom: -10%;
+    right: -10%;
+    width: 50vw;
+    height: 50vw;
+    background: linear-gradient(45deg, #1e293b, #334155);
+    /* Subtle slate tones */
     animation: float2 25s ease-in-out infinite;
 }
 
@@ -101,13 +94,12 @@ body {
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    width: 80vw;
-    /* Center filler */
-    height: 80vw;
-    background: linear-gradient(45deg, #5b21b6, #3b82f6);
-    /* Violet to Blue */
+    width: 40vw;
+    height: 40vw;
+    background: linear-gradient(45deg, #1e293b, #334155);
+    /* Subtle slate tones */
     animation: float3 22s ease-in-out infinite;
-    opacity: 0.3;
+    opacity: 0.1;
 }
 
 @keyframes float1 {
