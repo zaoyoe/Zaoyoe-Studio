@@ -48,21 +48,21 @@ body {
     position: relative;
 }
 
-/* Background Blobs - Extended for full coverage */
+/* Background Blobs - Fixed to viewport */
 
 .background-blobs {
     position: fixed;
-    top: -10%;
-    /* Extend beyond viewport */
+    top: 0;
     left: 0;
-    width: 100vw;
-    height: 120vh;
-    /* Extended height */
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    height: 100%;
     z-index: -1;
-    overflow: visible;
-    /* Allow blobs to extend outside */
     pointer-events: none;
-    min-height: -webkit-fill-available;
+    /* Force hardware acceleration */
+    transform: translateZ(0);
+    will-change: transform;
 }
 
 .blob {
