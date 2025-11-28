@@ -50,14 +50,19 @@ body {
 
 /* Background Blobs - Fixed to viewport */
 
+/* Background Blobs - Fixed to viewport with overscroll coverage */
+
 .background-blobs {
     position: fixed;
-    top: 0;
+    top: -10vh;
+    /* Extend upwards */
     left: 0;
     right: 0;
-    bottom: 0;
+    bottom: -10vh;
+    /* Extend downwards */
     width: 100%;
-    height: 100%;
+    height: 120vh;
+    /* 120% height to cover bounces */
     z-index: -1;
     pointer-events: none;
     /* iOS Safari fix for position fixed */
