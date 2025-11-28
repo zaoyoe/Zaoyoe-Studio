@@ -18,10 +18,14 @@
     <style>
         /* Force 4 columns - Override any conflicts */
         .guestbook-main {
-            max-width: 98% !important;
-            /* Use full width to ensure space for 4 columns */
+            max-width: 100% !important;
             width: 100% !important;
-            padding: 0 20px !important;
+            padding: 0 16px !important;
+            /* Reduced padding */
+            box-sizing: border-box !important;
+            /* Prevent overflow */
+            overflow-x: hidden !important;
+            /* Force hide overflow */
         }
 
         .message-container {
