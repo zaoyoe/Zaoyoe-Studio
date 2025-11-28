@@ -52,27 +52,20 @@ body {
     position: relative;
 }
 
-/* Background Blobs - Pure fixed positioning with safe area coverage */
+/* Background Blobs - Oversized fixed container */
 
 .background-blobs {
     position: fixed;
-    /* Cover entire viewport including safe areas */
-    top: 0;
+    top: -10vh;
+    /* Start above viewport */
     left: 0;
-    right: 0;
-    bottom: 0;
     width: 100vw;
-    /* Use dynamic viewport height for iOS */
-    height: 100vh;
-    /* Fallback */
-    height: 100dvh;
-    /* Dynamic viewport height - adapts to iOS address bar */
-    /* Extend into safe areas on notched devices */
-    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    height: 120vh;
+    /* Oversized to cover all cases */
     z-index: -1;
     pointer-events: none;
     overflow: hidden;
-    /* iOS fixes */
+    /* iOS fix */
     -webkit-transform: translateZ(0);
     transform: translateZ(0);
 }
@@ -90,39 +83,33 @@ body {
 }
 
 .blob-1 {
-    top: -10%;
-    /* Slight extension */
+    top: 5%;
+    /* Position within oversized container */
     left: -10%;
     width: 60vw;
-    height: 70vh;
-    /* Fallback */
-    height: 70dvh;
-    /* Dynamic viewport */
+    height: 80vh;
+    /* Tall fixed height */
     background: linear-gradient(45deg, #7c3aed, #ec4899);
     animation: float1 15s ease-in-out infinite;
 }
 
 .blob-2 {
-    bottom: -10%;
-    /* Slight extension */
+    bottom: 5%;
+    /* Position within oversized container */
     right: -10%;
     width: 60vw;
-    height: 70vh;
-    /* Fallback */
-    height: 70dvh;
-    /* Dynamic viewport */
+    height: 80vh;
+    /* Tall fixed height */
     background: linear-gradient(135deg, #2563eb, #06b6d4);
     animation: float2 18s ease-in-out infinite;
 }
 
 .blob-3 {
-    top: 30%;
+    top: 35%;
     left: 30%;
     width: 50vw;
-    height: 60vh;
-    /* Fallback */
-    height: 60dvh;
-    /* Dynamic viewport */
+    height: 70vh;
+    /* Tall fixed height */
     background: linear-gradient(225deg, #db2777, #f59e0b);
     animation: float3 20s ease-in-out infinite;
 }
