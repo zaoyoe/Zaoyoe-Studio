@@ -71,7 +71,7 @@ async function loadGuestbookMessages() {
         comments.forEach(comment => {
             const formattedComment = {
                 id: comment.id,
-                name: comment.get('userName'),
+                name: comment.get('userName') || '匿名用户', // Fallback for legacy comments
                 content: comment.get('content'),
                 timestamp: comment.get('createdAt').toLocaleString('zh-CN', {
                     year: 'numeric',

@@ -111,9 +111,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 // if (depth > 0) console.log(`Nested comment: id=${comment.id}, parentName=${parentName}, name=${comment.name}`);
 
                 // Add @mention if this is a nested comment
-                // Ensure parentName is valid and not same as current user (optional)
-                const mentionPrefix = depth > 0 && parentName
-                    ? `<span class="comment-mention">@${escapeHtml(parentName)}</span> `
+                // Ensure parentName is valid
+                const displayParentName = parentName || '匿名用户';
+                const mentionPrefix = depth > 0
+                    ? `<span class="comment-mention">@${escapeHtml(displayParentName)}</span> `
                     : '';
 
                 return `
