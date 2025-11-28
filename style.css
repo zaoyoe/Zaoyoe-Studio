@@ -21,7 +21,8 @@
 
 /* Base Styles */
 html {
-    background-color: #000;
+    background-color: #0f172a;
+    /* Match theme bg to hide black bars */
     /* Fix for over-scroll white background */
 }
 
@@ -3117,6 +3118,14 @@ input.login-submit-btn {
         max-width: 100%;
         padding: 0 20px;
         margin: 80px auto 20px;
+    }
+
+    /* Reset body layout for guestbook page to prevent crash */
+    body.guestbook-page {
+        display: block !important;
+        height: auto !important;
+        min-height: 100vh;
+        overflow-x: hidden;
     }
 
     .message-container {
