@@ -89,7 +89,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function createMessageCard(msg, index = 0) {
         const hasComments = msg.comments && msg.comments.length > 0;
-        const commentCount = msg.comments ? msg.comments.length : 0;
+        // Recursively count all comments (including nested replies)
+        function countAllComments(comments) {
+            if (!comments || comments.length === 0) return 0;
+            let total = comments.length;
+            comments.forEach(c => {
+                if (c.replies && c.replies.length > 0) {
+                    total += countAllComments(c.replies);
+                }
+            });
+            return total;
+        }
+        const commentCount = msg.comments ? countAllComments(msg.comments) : 0;
         const shouldCollapse = commentCount > 2;
 
         // Calculate delay: 0.03s per item, max 0.5s
@@ -133,12 +144,22 @@ document.addEventListener('DOMContentLoaded', () => {
                          data-comment-id="${comment.id}" 
                          data-message-id="${messageId}"
                          data-can-reply="${canReply}">
-                        <div class="comment-header">
-                            <i class="fas fa-user-circle"></i>
-                            <span class="comment-author">${escapeHtml(comment.name)}</span>
-                            <span class="comment-time">${comment.timestamp}</span>
+                        <div class="comment-row">
+                            <div class="comment-main">
+                                <div class="comment-header">
+                                    <span class="comment-author">${escapeHtml(comment.name)}</span>
+                                    <span class="comment-time">${comment.timestamp}</span>
+                                </div>
+                                <div class="comment-content">${mentionPrefix}${escapeHtml(comment.content)}</div>
+                            </div>
+                            <div class="comment-like-wrapper">
+                                <button class="comment-like-btn ${comment.isLiked ? 'active' : ''}" 
+                                        onclick="handleLike('Comment', '${comment.id}', this)">
+                                    <i class="${comment.isLiked ? 'fas' : 'far'} fa-heart"></i>
+                                    <span class="like-count">${comment.likes || 0}</span>
+                                </button>
+                            </div>
                         </div>
-                        <div class="comment-content">${mentionPrefix}${escapeHtml(comment.content)}</div>
                         ${hasReplies ? renderCommentTree(comment.replies, depth + 1, messageId, comment.name) : ''}
                     </div>
                 `;
@@ -152,8 +173,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const toggleButtonHtml = shouldCollapse
             ? `<button class="comment-toggle-btn" data-message-id="${msg.id}" data-count="${commentCount}">
+                <span>展开</span>
                 <i class="fas fa-chevron-down"></i>
-                <span>展开全部 ${commentCount} 条评论</span>
                </button>`
             : '';
 
@@ -167,34 +188,39 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="message-anim-wrapper" style="transition-delay: ${delay}s">
                 <div class="message-item" data-id="${msg.id}">
                     
-                    <!-- 1. Header (Author Info) -->
-                    <div class="message-footer-meta">
+                    <!-- 1. Header (Author Info & Time) -->
+                    <div class="message-header">
                         <div class="author-info">
                             ${msg.avatarUrl
-                ? `<img src="${msg.avatarUrl}" alt="${escapeHtml(msg.name)}" style="width: 24px; height: 24px; border-radius: 50%; object-fit: cover; border: 1px solid rgba(255,255,255,0.3);">`
-                : '<i class="fas fa-user-circle"></i>'}
+                ? `<img src="${msg.avatarUrl}" alt="${escapeHtml(msg.name)}" class="author-avatar">`
+                : '<i class="fas fa-user-circle author-avatar-placeholder"></i>'}
                             <span class="author-name">${escapeHtml(msg.name)}</span>
                         </div>
-                        <span class="message-time">${msg.timestamp}</span> <!-- Show full date and time -->
+                        <span class="message-time">${msg.timestamp}</span>
                     </div>
 
-                    <!-- 2. Content (Primary Focus) -->
+                    <!-- 2. Content -->
                     <div class="message-content">${escapeHtml(msg.content)}</div>
 
                     <!-- 3. Image -->
                     ${imageHtml}
                     
+                    <!-- 4. Actions Bar (Like & Comment) -->
+                    <div class="message-actions-bar">
+                        <button class="action-btn like-btn ${msg.isLiked ? 'active' : ''}" 
+                                onclick="handleLike('Message', '${msg.id}', this)">
+                            <i class="${msg.isLiked ? 'fas' : 'far'} fa-heart"></i>
+                            <span class="like-count">${msg.likes || 0}</span>
+                        </button>
+                        
+                        <button class="action-btn comment-trigger-btn" onclick="window.openCommentModal('${msg.id}')">
+                            <i class="far fa-comment"></i>
+                            <span class="comment-count">${commentCount || 0}</span>
+                        </button>
+                    </div>
+                    
+                    <!-- 5. Comment Section -->
                     <div class="comment-section">
-                        <div class="comment-header-bar">
-                            <div class="comment-count-group">
-                                <i class="fas fa-comments"></i>
-                                <span>${commentCount}</span>
-                            </div>
-                            <!-- Add Comment Trigger Button in header -->
-                            <button class="add-comment-trigger-btn" onclick="window.openCommentModal('${msg.id}')">
-                                <i class="fas fa-plus"></i> 评论
-                            </button>
-                        </div>
                         <div class="comment-list ${shouldCollapse ? 'collapsed' : ''}" data-message-id="${msg.id}">
                             ${commentsHtml}
                         </div>
@@ -238,30 +264,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     // 5. Update button
                     icon.className = 'fas fa-chevron-up';
-                    span.textContent = '收起评论';
+                    span.textContent = '收起';
 
-                    // 6. Cleanup after animation
-                    commentList.addEventListener('transitionend', function handler() {
-                        commentList.style.maxHeight = 'none';
-                        commentList.removeEventListener('transitionend', handler);
-                    }, { once: true });
+                    // 6. Cleanup after animation (simple timeout is more reliable than transitionend here)
+                    setTimeout(() => {
+                        if (!commentList.classList.contains('collapsed')) {
+                            commentList.style.maxHeight = 'none';
+                        }
+                    }, 500); // Match transition duration
 
                 } else {
                     // Collapse
-                    // 1. Set explicit height (current full height)
-                    commentList.style.maxHeight = commentList.scrollHeight + 'px';
+                    // Set explicit current height first for smooth animation
+                    const currentHeight = commentList.scrollHeight;
+                    commentList.style.maxHeight = currentHeight + 'px';
 
                     // Force reflow
-                    commentList.offsetHeight;
+                    void commentList.offsetHeight;
 
-                    // 2. Animate down to 200px
-                    // Add collapsed class immediately to trigger gradient fade in (if we add transition to it)
-                    commentList.classList.add('collapsed');
+                    // Then animate to collapsed height
                     commentList.style.maxHeight = '200px';
+                    commentList.classList.add('collapsed');
 
-                    // 3. Update button
+                    // Update button text
+                    span.textContent = '展开';
                     icon.className = 'fas fa-chevron-down';
-                    span.textContent = `展开全部 ${count} 条评论`;
                 }
             });
         });
@@ -585,3 +612,59 @@ function closeImageModal() {
         document.body.style.overflow = '';
     }
 }
+
+// ==================== 点赞处理 ====================
+window.handleLike = async function (type, id, btn) {
+    // 阻止冒泡，防止触发卡片点击
+    if (event) event.stopPropagation();
+
+    const icon = btn.querySelector('i');
+    const countSpan = btn.querySelector('.like-count');
+    let count = parseInt(countSpan.textContent);
+
+    // 乐观 UI 更新
+    const isLiked = btn.classList.contains('active');
+    if (isLiked) {
+        btn.classList.remove('active');
+        icon.classList.replace('fas', 'far');
+        count = Math.max(0, count - 1);
+    } else {
+        btn.classList.add('active');
+        icon.classList.replace('far', 'fas');
+        count++;
+
+        // 添加点赞动画效果
+        icon.style.transform = 'scale(1.2)';
+        setTimeout(() => icon.style.transform = 'scale(1)', 200);
+    }
+    countSpan.textContent = count;
+
+    // 调用后端 API
+    if (typeof toggleLike === 'function') {
+        const result = await toggleLike(type, id);
+        if (result) {
+            // 确保最终状态一致
+            countSpan.textContent = result.likes;
+            if (result.isLiked) {
+                btn.classList.add('active');
+                icon.classList.replace('far', 'fas');
+            } else {
+                btn.classList.remove('active');
+                icon.classList.replace('fas', 'far');
+            }
+        } else {
+            // 失败回滚
+            if (isLiked) {
+                btn.classList.add('active');
+                icon.classList.replace('far', 'fas');
+                countSpan.textContent = count + 1;
+            } else {
+                btn.classList.remove('active');
+                icon.classList.replace('fas', 'far');
+                countSpan.textContent = count - 1;
+            }
+        }
+    } else {
+        console.error('toggleLike function not found!');
+    }
+};

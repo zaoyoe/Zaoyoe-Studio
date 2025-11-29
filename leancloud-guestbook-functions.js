@@ -19,32 +19,31 @@ async function loadGuestbookMessages() {
     const emptyState = document.getElementById('emptyState');
 
     try {
+        // 1. 查询留言
         const query = new AV.Query('Message');
-        // 不使用 include('user') 避免 ACL 权限问题
-        // 用户信息已经存储在 userName 和 userAvatar 字段中
-        query.descending('createdAt');  // 按时间倒序
+        // 回退到按创建时间倒序，确保能拉取到最新的留言
+        // 客户端会根据 latestActivityTimestamp 重新排序（实现顶贴效果）
+        query.descending('createdAt');
         query.limit(100);  // 限制100条
 
         const messages = await query.find();
 
         console.log(`✅ 加载了 ${messages.length} 条留言`);
 
-        // 转换为 guestbook.js 期望的格式
-        const formattedMessages = messages.map(msg => ({
-            id: msg.id,
-            name: msg.get('userName'),
-            avatarUrl: msg.get('userAvatar') || '',
-            content: msg.get('content') || '',
-            image: msg.get('imageUrl') || null,
-            timestamp: msg.get('createdAt').toLocaleString('zh-CN', {
-                year: 'numeric',
-                month: '2-digit',
-                day: '2-digit',
-                hour: '2-digit',
-                minute: '2-digit'
-            }),
-            comments: [] // 初始为空，稍后填充
-        }));
+        // 🆕 Fetch ALL likes for these messages and comments to calculate counts
+        const allTargetIds = [...messages.map(m => m.id)];
+        // We will add comment IDs after we fetch comments, but we need to do this in order.
+        // Let's fetch comments first, then likes.
+
+        // ... (Wait, the original code fetches comments later. Let's adjust the flow)
+        // Actually, we can fetch likes for messages first, or wait until we have all IDs.
+        // The current structure fetches messages -> then comments.
+        // Let's insert the like fetching AFTER fetching comments.
+
+
+        // 4. (Moved) 转换为 guestbook.js 期望的格式
+        // Wait until we have like counts!
+
 
         // 2. 获取所有相关的评论
         // 为了减少请求，我们可以一次性获取这些消息的所有评论
@@ -69,6 +68,41 @@ async function loadGuestbookMessages() {
         // 3.1 先格式化所有评论为对象
         const commentMap = new Map(); // 用于快速查找评论
         const topLevelComments = []; // 顶级评论（直接回复留言）
+
+        // 🆕 收集所有 ID (留言 + 评论) 用于查询点赞
+        allTargetIds.push(...comments.map(c => c.id));
+        const likeCounts = {}; // targetId -> count
+        const userLikedSet = new Set(); // targetIds liked by current user
+
+        if (allTargetIds.length > 0) {
+            console.log(`🔍 [Load] Fetching likes for ${allTargetIds.length} items...`);
+            const likeQuery = new AV.Query('Like');
+            likeQuery.containedIn('targetId', allTargetIds);
+            likeQuery.limit(1000); // 注意：如果超过1000条点赞可能需要分页，暂且假设够用
+
+            try {
+                const allLikes = await likeQuery.find();
+                console.log(`🔍 [Load] Found ${allLikes.length} total likes`);
+
+                const currentUserId = AV.User.current()?.id;
+
+                allLikes.forEach(like => {
+                    const tid = like.get('targetId');
+                    // 计数
+                    likeCounts[tid] = (likeCounts[tid] || 0) + 1;
+                    // 检查当前用户是否点赞
+                    if (currentUserId && like.get('user').id === currentUserId) {
+                        userLikedSet.add(tid);
+                    }
+                });
+            } catch (e) {
+                if (e.code === 101 || e.message.includes('Class or object doesn\'t exists')) {
+                    console.log('ℹ️ [Load] Like class does not exist yet.');
+                } else {
+                    console.error('❌ [Load] Failed to fetch likes:', e);
+                }
+            }
+        }
 
         comments.forEach(comment => {
             // 🔧 FIX: 获取 parentUserName，如果是字符串 "null" 或 "undefined"，转换为实际的 null
@@ -119,9 +153,12 @@ async function loadGuestbookMessages() {
                     hour: '2-digit',
                     minute: '2-digit'
                 }),
+                rawDate: comment.get('createdAt'), // 🆕 用于排序
                 messageId: comment.get('message')?.id,
                 parentCommentId: pId,
                 parentUserName: parentUserName, // 🆕 父评论者名字（用于 @mention）
+                likes: likeCounts[comment.id] || 0, // 🆕 Use calculated count
+                isLiked: userLikedSet.has(comment.id), // 🆕 Check if liked
                 replies: [] // 存储子评论
             };
 
@@ -162,21 +199,58 @@ async function loadGuestbookMessages() {
             }
         });
 
-        // 3.3 将顶级评论分配给对应的消息
-        topLevelComments.forEach(comment => {
-            const targetMsg = formattedMessages.find(m => m.id === comment.messageId);
-            if (targetMsg) {
-                targetMsg.comments.push(comment);
-            }
+        // 4. 将评论分配给对应的消息
+        // 🆕 Now we format messages, AFTER we have like counts
+        const formattedMessages = messages.map(msg => ({
+            id: msg.id,
+            name: msg.get('userName'),
+            avatarUrl: msg.get('userAvatar') || '',
+            content: msg.get('content') || '',
+            image: msg.get('imageUrl') || null,
+            likes: likeCounts[msg.id] || 0, // 🆕 Use calculated count
+            isLiked: userLikedSet.has(msg.id), // 🆕 Check if liked
+            timestamp: msg.get('createdAt').toLocaleString('zh-CN', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            }),
+            rawDate: msg.get('createdAt'), // 🆕 用于排序
+            comments: [] // 初始为空，稍后填充
+        }));
+
+        formattedMessages.forEach(msg => {
+            msg.comments = topLevelComments.filter(c => c.messageId === msg.id);
+
+            // 🆕 计算最新动态时间 (Client-side Sorting Logic)
+            // 默认最新时间是消息创建时间
+            let latestTime = new Date(msg.rawDate || 0).getTime();
+
+            // 遍历该消息的所有评论（包括子评论），找到最新的时间
+            // 注意：这里我们遍历的是所有属于该消息的 commentMap 中的评论，而不仅仅是 topLevel
+            commentMap.forEach(c => {
+                if (c.messageId === msg.id) {
+                    const cTime = new Date(c.rawDate).getTime();
+                    if (cTime > latestTime) {
+                        latestTime = cTime;
+                    }
+                }
+            });
+
+            msg.latestActivityTimestamp = latestTime;
         });
 
-        // 显示留言（使用 guestbook.js 的 renderMessages）
+        // 🆕 5. 客户端排序：按 latestActivityTimestamp 倒序
+        formattedMessages.sort((a, b) => b.latestActivityTimestamp - a.latestActivityTimestamp);
+
+        console.log('✅ 留言板数据处理完成 (已按最新动态排序)');
+
+        // 渲染到页面 (调用 guestbook.js 中的 renderMessages)
         if (typeof renderMessages === 'function') {
             renderMessages(formattedMessages);
         } else {
-            // 等待 renderMessages 定义
-            console.warn('⚠️ renderMessages 未定义，等待加载...');
-            // 不做任何fallback显示，避免乱码闪烁
+            console.error('❌ renderMessages function not found!');
         }
 
         // 缓存到本地
@@ -251,10 +325,13 @@ async function addMessage(content, imageUrl = '') {
         message.set('user', currentUser);  // Pointer 类型
         message.set('userName', currentUser.get('nickname') || currentUser.get('username'));
         message.set('userAvatar', currentUser.get('avatarUrl') || '');
-        message.set('content', content || '');
-        message.set('imageUrl', imageUrl || '');
+        message.set('content', content);
+        message.set('imageUrl', imageUrl);
+        message.set('latestActivityAt', new Date()); // 🆕 初始化最新动态时间
+        message.set('likes', 0); // 🆕 初始化点赞数
+        message.set('likedBy', []); // 🆕 初始化点赞列表
 
-        // 保存
+        // 3. 保存
         await message.save();
 
         console.log('✅ 留言发送成功');
@@ -294,12 +371,20 @@ async function addCommentToMessage(messageId, content) {
         comment.set('userName', currentUser.get('nickname') || currentUser.get('username'));
         comment.set('userAvatar', currentUser.get('avatarUrl') || '');
         comment.set('content', content);
+        comment.set('likes', 0); // 🆕 初始化点赞数
+        comment.set('likedBy', []); // 🆕 初始化点赞列表
 
-        // 3. 保存
+        // 3. 保存评论
         await comment.save();
-        console.log('✅ 评论发送成功');
 
-        // 4. 重新加载留言板 (或者只更新局部，但重新加载最简单)
+        // 🆕 4. (已移除) 更新父留言的 latestActivityAt - 由于 ACL 限制，普通用户无法更新他人留言
+        // 我们将在前端通过排序解决这个问题
+        // const messageToUpdate = AV.Object.createWithoutData('Message', messageId);
+        // messageToUpdate.set('latestActivityAt', new Date());
+        // await messageToUpdate.save();
+        // console.log('✅ 父留言最新动态时间已更新');
+
+        // 5. 重新加载留言板
         await loadGuestbookMessages();
 
         return true;
@@ -354,6 +439,8 @@ async function addReplyToComment(parentCommentId, messageId, content) {
         reply.set('userAvatar', currentUser.get('avatarUrl') || '');
         reply.set('parentUserName', parentUserName); // 🆕 存储父评论者名字用于 @mention
         reply.set('content', content);
+        reply.set('likes', 0); // 🆕 初始化点赞数
+        reply.set('likedBy', []); // 🆕 初始化点赞列表
 
         // 🔍 DEBUG: 打印即将保存的回复对象
         console.log('🔍 [addReply] 即将保存回复:', {
@@ -362,11 +449,17 @@ async function addReplyToComment(parentCommentId, messageId, content) {
             content: content
         });
 
-        // 4. 保存
+        // 4. 保存回复
         await reply.save();
         console.log('✅ 回复发送成功');
 
-        // 5. 重新加载留言板
+        // 🆕 5. (已移除) 更新根留言的 latestActivityAt - 由于 ACL 限制，普通用户无法更新他人留言
+        // const messageToUpdate = AV.Object.createWithoutData('Message', messageId);
+        // messageToUpdate.set('latestActivityAt', new Date());
+        // await messageToUpdate.save();
+        // console.log('✅ 根留言最新动态时间已更新');
+
+        // 6. 重新加载留言板
         await loadGuestbookMessages();
 
         return true;
@@ -478,6 +571,77 @@ function createMessageCard(msg) {
     return card;
 }
 
+// ==================== 点赞功能 (Like Class) ====================
+async function toggleLike(type, id) {
+    console.log(`❤️ 切换点赞: type=${type}, id=${id}`);
+    const currentUser = AV.User.current();
+    if (!currentUser) {
+        alert('请先登录后再点赞');
+        return null;
+    }
+
+    try {
+        // 1. Check if already liked
+        const likeQuery = new AV.Query('Like');
+        likeQuery.equalTo('user', currentUser);
+        likeQuery.equalTo('targetId', id);
+
+        let existingLike = null;
+        try {
+            existingLike = await likeQuery.first();
+            console.log(`🔍 [Like] Existing like found?`, !!existingLike);
+        } catch (e) {
+            if (e.code === 101 || e.message.includes('Class or object doesn\'t exists')) {
+                console.log('ℹ️ [Like] Like class does not exist yet, will create on save.');
+            } else {
+                throw e; // Rethrow other errors
+            }
+        }
+
+        // 2. Get target object to update count (best effort)
+        // ⚠️ ACL 限制：普通用户无法更新 Message/Comment 的 likes 字段
+        // 所以我们不再尝试更新 targetObj，而是直接返回最新的 count
+
+        let likes = 0;
+        let isLiked = false;
+
+        if (existingLike) {
+            // Unlike
+            await existingLike.destroy();
+            console.log('✅ [Like] Like object destroyed');
+            isLiked = false;
+        } else {
+            // Like
+            const Like = AV.Object.extend('Like');
+            const newLike = new Like();
+            newLike.set('user', currentUser);
+            newLike.set('targetId', id);
+            newLike.set('targetType', type);
+
+            // Set ACL: Public Read, Owner Write
+            const acl = new AV.ACL(currentUser);
+            acl.setPublicReadAccess(true);
+            newLike.setACL(acl);
+
+            await newLike.save();
+            console.log('✅ [Like] New Like object saved');
+            isLiked = true;
+        }
+
+        // 3. Count total likes for this target to return accurate number
+        const countQuery = new AV.Query('Like');
+        countQuery.equalTo('targetId', id);
+        likes = await countQuery.count();
+        console.log(`✅ [Like] New count for ${id}: ${likes}`);
+
+        return { likes, isLiked };
+
+    } catch (error) {
+        console.error('点赞失败:', error);
+        return null;
+    }
+}
+
 // ==================== 实时订阅更新（可选）====================
 function subscribeToMessages() {
     const query = new AV.Query('Message');
@@ -490,18 +654,18 @@ function subscribeToMessages() {
 
         // 新消息创建
         liveQuery.on('create', message => {
-            console.log('🆕 收到新留言');
-            loadGuestbookMessages();  // 重新加载
+            console.log('📩 收到新留言:', message.id);
+            loadGuestbookMessages();
         });
 
         // 消息删除
         liveQuery.on('delete', message => {
             console.log('🗑️ 留言被删除');
-            loadGuestbookMessages();  // 重新加载
+            loadGuestbookMessages();
         });
 
     }).catch(error => {
-        console.error('订阅失败:', error);
+        console.error('❌ 订阅失败:', error);
     });
 }
 

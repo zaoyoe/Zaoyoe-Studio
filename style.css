@@ -739,6 +739,8 @@ input.submit-btn {
     box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     z-index: 100;
+    /* Always stay at bottom right */
+    top: auto !important;
 }
 
 .floating-back-btn:hover {
@@ -749,7 +751,16 @@ input.submit-btn {
 }
 
 .floating-back-btn i {
-    font-size: 1.1rem;
+    margin-right: 0;
+    /* No margin since text is removed */
+    font-size: 1.2rem;
+}
+
+/* Hide back button on mobile (can swipe back) */
+@media (max-width: 768px) {
+    .floating-back-btn {
+        display: none;
+    }
 }
 
 /* Step Box (for Binding Guide) */
@@ -1322,11 +1333,11 @@ input.submit-btn {
     margin: 0 auto;
 }
 
-.modal-link-card:hover {
-    background: rgba(255, 255, 255, 0.15);
-    border-color: rgba(255, 255, 255, 0.3);
-    transform: translateY(-5px);
-    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+.modal-link-c.message-item:hover {
+    transform: scale(1.02);
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.3);
+    border-color: rgba(255, 255, 255, 0.15);
+    /* No background change - keeping it bright */
 }
 
 .modal-link-card i {
@@ -1986,11 +1997,11 @@ svg {
     word-wrap: break-word;
 }
 
-.empty-state {
+.empty.no-comments {
     text-align: center;
-    color: rgba(255, 255, 255, 0.4);
-    padding: 30px 0;
-    font-style: italic;
+    color: rgba(255, 255, 255, 0.5);
+    padding: 30px 20px;
+    font-size: 0.9rem;
 }
 
 @keyframes slideIn {
@@ -2552,37 +2563,26 @@ button.upload-icon-btn {
 
 /* Message Item Card - Ultra Transparent Glass (Matching Modal Style) */
 .message-item {
-    background: rgba(255, 255, 255, 0.03);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.04);
+    backdrop-filter: blur(10px);
     border-radius: 16px;
-    /* Smaller radius */
-    padding: 12px;
-    /* Ultra Compact padding */
-    animation: slideInUp 0.4s ease-out forwards;
-    transition: background 0.4s ease, box-shadow 0.4s ease, border-color 0.4s ease;
-    break-inside: avoid;
-    margin-bottom: 12px;
-    /* Compact margin */
-    display: inline-block;
-    width: 100%;
-    opacity: 0;
-    backface-visibility: hidden;
-    -webkit-backface-visibility: hidden;
-    transform: translateZ(0);
+    padding: 24px;
+    margin-bottom: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transform-origin: center;
+    will-change: transform, box-shadow;
 }
 
 .message-item:hover {
-    background: rgba(30, 41, 59, 0.6);
-    border-color: rgba(255, 255, 255, 0.3);
-    /* Transform is handled by JS for magnetic effect, but we keep a fallback/base scale here if JS fails, 
-       though JS overrides inline style. actually JS sets transform directly. 
-       We rely on JS for the scale(1.01) as well to combine them. */
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1);
+    background: rgba(255, 255, 255, 0.06);
+    /* Slightly BRIGHTER, not darker */
+    border-color: rgba(255, 255, 255, 0.2);
+    transform: scale(1.01) translateY(-1px);
+    /* Very subtle lift */
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
     z-index: 10;
-    /* Bring to front */
 }
 
 .message-header {
@@ -2685,6 +2685,15 @@ button.upload-icon-btn {
     margin-bottom: 16px;
     /* Removed border-left to reduce noise on top-level comments */
     transition: background 0.2s ease;
+}
+
+.comment-row {
+    display: flex;
+    /* Flex layout for side-by-side content & like */
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
 }
 
 /* Google Login Button - Transparent with icon + text only */
@@ -2874,11 +2883,15 @@ input.login-submit-btn {
 }
 
 .no-comments {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100px;
+    /* Give it some height to center within */
     text-align: center;
-    color: rgba(255, 255, 255, 0.3);
-    font-style: italic;
-    padding: 12px;
-    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.5);
+    padding: 30px 20px;
+    font-size: 0.9rem;
 }
 
 /* Add Comment Form */
@@ -2990,6 +3003,19 @@ input.login-submit-btn {
 .image-modal.active {
     display: flex;
     opacity: 1;
+}
+
+.image-.modal-overlay.active {
+    visibility: visible;
+    opacity: 1;
+}
+
+/* Prevent background scroll when modal open - especially on mobile */
+body.no-scroll {
+    overflow: hidden !important;
+    position: fixed !important;
+    width: 100% !important;
+    height: 100% !important;
 }
 
 .image-modal-content {
@@ -3166,32 +3192,132 @@ input.login-submit-btn {
         margin-bottom: 4px;
     }
 
-    .message-time {
-        font-size: 0.75rem;
-        color: rgba(255, 255, 255, 0.5);
-        margin-bottom: 8px;
-    }
-
-    .message-image {
-        max-width: 100%;
-        border-radius: 8px;
-        margin: 12px 0;
+    /* Comment Section Adjustments */
+    .comment-section {
+        margin-top: 0;
+        padding-top: 0;
     }
 
     /* Comment styling for mobile */
     .comment-item {
+        /* Inherit global flex styles */
         padding: 12px 0;
         border-bottom: 1px solid rgba(255, 255, 255, 0.05);
         margin-left: 0;
-        transition: background-color 0.2s;
         background: transparent;
-        /* Ensure transparent on mobile too */
+        border-radius: 0;
+        margin-bottom: 0;
     }
 
     .comment-item:last-child {
         border-bottom: none;
     }
 
+}
+
+/* ==================== Message Card Global Styles ==================== */
+/* New Message Card Layout - Applied Globally */
+.message-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.author-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.author-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.author-avatar-placeholder {
+    font-size: 32px;
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.author-name {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.message-time {
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.4);
+}
+
+.message-content {
+    font-size: 1rem;
+    line-height: 1.6;
+    color: rgba(255, 255, 255, 0.85);
+    margin-bottom: 16px;
+    white-space: pre-wrap;
+    /* Preserve line breaks */
+}
+
+/* Actions Bar */
+.message-actions-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    /* Separate left and right */
+    gap: 20px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    margin-bottom: 12px;
+}
+
+.action-btn {
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.5);
+    /* More subtle default color */
+    font-size: 0.95rem;
+    /* Slightly larger */
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    padding: 4px 8px;
+    /* Reduced padding */
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+.action-btn:hover {
+    color: rgba(255, 255, 255, 0.9);
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    /* No transform to prevent displacement */
+}
+
+.action-btn i {
+    font-size: 1.1rem;
+    /* Larger icons */
+}
+
+.action-btn.active {
+    color: #ef4444;
+    /* Red for liked */
+}
+
+.action-btn.active i {
+    animation: heartBeat 0.3s ease-in-out;
+}
+
+/* Comment Section Adjustments */
+.comment-section {
+    margin-top: 0;
+    padding-top: 0;
 }
 
 /* Global Comment Styles */
@@ -3205,32 +3331,134 @@ input.login-submit-btn {
     /* Subtle hover */
 }
 
-.comment-item--clickable:hover .comment-author {
+/* Only highlight the direct author of the hovered comment */
+.comment-item--clickable:hover>.comment-row>.comment-main>.comment-header>.comment-author {
     color: rgba(56, 189, 248, 1);
     /* Highlight author name */
 }
 
-.comment-item--clickable:hover .comment-content {
+.comment-item--clickable:hover>.comment-row>.comment-main>.comment-content {
     color: rgba(255, 255, 255, 1);
     /* Brighter text */
+}
+
+/* New Comment Layout Structure */
+.comment-main {
+    flex: 1;
+    /* Take up available space */
+    min-width: 0;
+    /* Prevent overflow */
+}
+
+.comment-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.comment-author {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.comment-time {
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.4);
+}
+
+.comment-content {
+    font-size: 0.95rem;
+    line-height: 1.5;
+    color: rgba(255, 255, 255, 0.7);
+    word-break: break-word;
+}
+
+/* Comment Like Button (Right Side) */
+.comment-like-wrapper {
+    display: flex;
+    align-items: center;
+    padding-top: 2px;
+    /* Align with first line of text roughly */
+}
+
+.comment-like-btn {
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 0.85rem;
+    display: flex;
+    flex-direction: column;
+    /* Stack icon and number */
+    align-items: center;
+    gap: 2px;
+    cursor: pointer;
+    padding: 4px;
+    transition: all 0.2s;
+}
+
+.comment-like-btn:hover {
+    color: rgba(255, 255, 255, 0.8);
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    /* No transform to prevent displacement */
+}
+
+.comment-like-btn.active {
+    color: #ef4444;
+}
+
+.comment-like-btn.active i {
+    animation: heartBeat 0.3s ease-in-out;
+}
+
+.like-count {
+    font-size: 0.75rem;
+    font-weight: 500;
 }
 
 /* Nested comment styles */
 .comment-item--nested {
     border-left: 2px solid rgba(255, 255, 255, 0.1);
     /* Subtle thread line */
-    padding-left: 16px;
+    padding-left: 12px;
     background: transparent;
     /* REMOVED BACKGROUND to fix "box-in-box" */
     margin-top: 8px;
     margin-bottom: 8px;
     border-radius: 0;
     /* Remove border radius for thread look */
+    transition: border-left-color 0.2s ease;
+    /* Smooth color transition */
 }
 
 .comment-item--nested.comment-item--clickable:hover {
     background: rgba(255, 255, 255, 0.02);
     /* Very subtle hover for nested */
+    border-left-color: rgba(56, 189, 248, 0.6);
+    /* Blue thread line on hover */
+}
+
+/* Nested Comment Text Colors - High Specificity */
+.comment-item--nested .comment-main .comment-header .comment-author {
+    color: rgba(255, 255, 255, 1) !important;
+    /* White for nested author (stands out from gray main) */
+}
+
+.comment-item--nested .comment-main .comment-content {
+    color: rgba(255, 255, 255, 0.95) !important;
+    /* Brighter for nested content */
+}
+
+/* Toggle Button Hover - No Underline */
+.comment-toggle-btn:hover {
+    color: rgba(56, 189, 248, 1);
+    text-decoration: none !important;
+    /* No underline */
+    transform: translateY(-1px);
+    /* Subtle lift */
 }
 
 /* @mention styling */
@@ -3289,24 +3517,26 @@ input.login-submit-btn {
 
 .comment-toggle-btn {
     width: 100%;
-    padding: 8px;
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 8px;
-    color: #f59e0b;
-    font-size: 0.85rem;
+    padding: 12px;
+    background: transparent;
+    /* Transparent background */
+    border: none;
+    color: rgba(56, 189, 248, 0.8);
+    /* Accent color */
     cursor: pointer;
-    transition: all 0.3s ease;
-    margin-top: 10px;
+    font-size: 0.9rem;
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 6px;
+    transition: all 0.2s;
+    margin-top: 8px;
 }
 
 .comment-toggle-btn:hover {
-    background: rgba(255, 255, 255, 0.06);
-    border-color: rgba(245, 158, 11, 0.3);
+    color: rgba(56, 189, 248, 1);
+    text-decoration: underline;
+    /* Link-like hover */
 }
 
 /* Add Comment Trigger Button - Compact inline style for header */
@@ -5809,4 +6039,67 @@ input[type="submit"],
 #profileModal:not(.active) .profile-avatar-section * {
     pointer-events: none !important;
     cursor: default !important;
+}
+
+/* Like Button Styles */
+.like-btn {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.9rem;
+    padding: 4px 8px;
+    border-radius: 12px;
+    transition: all 0.2s ease;
+}
+
+.like-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.like-btn.active {
+    color: #ef4444;
+    /* Red for liked */
+}
+
+.like-btn.active i {
+    animation: heartBeat 0.3s ease-in-out;
+}
+
+/* Clean up old styles */
+/* .message-like-btn { ... } - Removed */
+/* .comment-header-bar { ... } - Removed */
+
+.comment-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 4px;
+}
+
+.comment-actions .like-btn {
+    padding: 2px 0;
+}
+
+.comment-actions .like-btn:hover {
+    background: transparent;
+    color: #ef4444;
+}
+
+@keyframes heartBeat {
+    0% {
+        transform: scale(1);
+    }
+
+    50% {
+        transform: scale(1.3);
+    }
+
+    100% {
+        transform: scale(1);
+    }
 }
