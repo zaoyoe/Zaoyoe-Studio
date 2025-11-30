@@ -554,168 +554,168 @@ document.addEventListener('DOMContentLoaded', () => {
             // Open comment modal with parent comment tracking
             openCommentModal(messageId, commentId);
         });
-    });
     }
 
-// Handle Comment Submission
-if (commentForm) {
-    commentForm.addEventListener('submit', (e) => {
-        e.preventDefault();
 
-        // Check Auth - LeanCloud
-        const currentUser = AV.User.current();
-        if (!currentUser) {
-            alert("请先登录后再评论");
-            if (typeof toggleLoginModal === 'function') {
-                toggleLoginModal();
+    // Handle Comment Submission
+    if (commentForm) {
+        commentForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+
+            // Check Auth - LeanCloud
+            const currentUser = AV.User.current();
+            if (!currentUser) {
+                alert("请先登录后再评论");
+                if (typeof toggleLoginModal === 'function') {
+                    toggleLoginModal();
+                }
+                return;
             }
+
+            const messageId = document.getElementById('commentMessageId').value;
+            const parentCommentId = document.getElementById('commentParentId').value;
+            const content = document.getElementById('commentContent').value.trim();
+
+            if (content) {
+                // Check if this is a reply to a comment or a top-level comment
+                if (parentCommentId) {
+                    // Nested reply
+                    if (typeof addReplyToComment === 'function') {
+                        addReplyToComment(parentCommentId, messageId, content);
+                    }
+                } else {
+                    // Top-level comment
+                    if (typeof addCommentToMessage === 'function') {
+                        addCommentToMessage(messageId, content);
+                    }
+                }
+
+                // Close modal and reset form
+                document.getElementById('commentModal').classList.remove('active');
+                commentForm.reset();
+            }
+        });
+    }
+
+    async function addComment(messageId, name, content) {
+        // Use LeanCloud function if available
+        if (typeof addCommentToMessage === 'function') {
+            const success = await addCommentToMessage(messageId, content);
+            if (success) {
+                // Success is handled inside addCommentToMessage (reloads messages)
+                // Scroll to the comment section of this message
+                setTimeout(() => {
+                    const messageCard = document.querySelector(`.message-item[data-id="${messageId}"]`);
+                    if (messageCard) {
+                        messageCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        // Add a subtle highlight effect
+                        messageCard.style.transition = 'background 0.5s ease';
+                        messageCard.style.background = 'rgba(155, 93, 229, 0.15)';
+                        setTimeout(() => {
+                            messageCard.style.background = '';
+                        }, 2000);
+                    }
+                }, 500); // Wait for reload to complete
+            }
+        } else {
+            console.error("❌ addCommentToMessage function not found!");
+            alert("评论功能暂时不可用");
+        }
+    }
+    // Mobile Scroll Highlight - Simplified and Immediate
+    let mobileHighlightActive = false;
+    let currentHighlightedItem = null; // Track currently highlighted item
+
+    function updateMobileHighlight() {
+        // Only run on mobile
+        if (window.innerWidth > 768) return;
+
+        const items = document.querySelectorAll('.message-item');
+        if (items.length === 0) {
+            console.log('📱 [Mobile Highlight] No items found');
             return;
         }
 
-        const messageId = document.getElementById('commentMessageId').value;
-        const parentCommentId = document.getElementById('commentParentId').value;
-        const content = document.getElementById('commentContent').value.trim();
+        const centerY = window.innerHeight / 2;
+        let closestItem = null;
+        let minDistance = Infinity;
 
-        if (content) {
-            // Check if this is a reply to a comment or a top-level comment
-            if (parentCommentId) {
-                // Nested reply
-                if (typeof addReplyToComment === 'function') {
-                    addReplyToComment(parentCommentId, messageId, content);
-                }
-            } else {
-                // Top-level comment
-                if (typeof addCommentToMessage === 'function') {
-                    addCommentToMessage(messageId, content);
-                }
+        items.forEach(item => {
+            const rect = item.getBoundingClientRect();
+            const itemCenterY = rect.top + (rect.height / 2);
+            const distance = Math.abs(centerY - itemCenterY);
+
+            if (distance < minDistance) {
+                minDistance = distance;
+                closestItem = item;
             }
+        });
 
-            // Close modal and reset form
-            document.getElementById('commentModal').classList.remove('active');
-            commentForm.reset();
+        // Hysteresis: only switch if new item is significantly closer (50px threshold)
+        const SWITCH_THRESHOLD = 50;
+
+        if (currentHighlightedItem && currentHighlightedItem !== closestItem) {
+            const currentRect = currentHighlightedItem.getBoundingClientRect();
+            const currentCenterY = currentRect.top + (currentRect.height / 2);
+            const currentDistance = Math.abs(centerY - currentCenterY);
+
+            // Only switch if new item is at least SWITCH_THRESHOLD closer
+            if (minDistance > currentDistance - SWITCH_THRESHOLD) {
+                return; // Keep current highlight
+            }
         }
-    });
-}
 
-async function addComment(messageId, name, content) {
-    // Use LeanCloud function if available
-    if (typeof addCommentToMessage === 'function') {
-        const success = await addCommentToMessage(messageId, content);
-        if (success) {
-            // Success is handled inside addCommentToMessage (reloads messages)
-            // Scroll to the comment section of this message
-            setTimeout(() => {
-                const messageCard = document.querySelector(`.message-item[data-id="${messageId}"]`);
-                if (messageCard) {
-                    messageCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    // Add a subtle highlight effect
-                    messageCard.style.transition = 'background 0.5s ease';
-                    messageCard.style.background = 'rgba(155, 93, 229, 0.15)';
-                    setTimeout(() => {
-                        messageCard.style.background = '';
-                    }, 2000);
-                }
-            }, 500); // Wait for reload to complete
-        }
-    } else {
-        console.error("❌ addCommentToMessage function not found!");
-        alert("评论功能暂时不可用");
-    }
-}
-// Mobile Scroll Highlight - Simplified and Immediate
-let mobileHighlightActive = false;
-let currentHighlightedItem = null; // Track currently highlighted item
+        // Remove highlight from all
+        items.forEach(item => {
+            item.classList.remove('active-focus');
+        });
 
-function updateMobileHighlight() {
-    // Only run on mobile
-    if (window.innerWidth > 768) return;
-
-    const items = document.querySelectorAll('.message-item');
-    if (items.length === 0) {
-        console.log('📱 [Mobile Highlight] No items found');
-        return;
-    }
-
-    const centerY = window.innerHeight / 2;
-    let closestItem = null;
-    let minDistance = Infinity;
-
-    items.forEach(item => {
-        const rect = item.getBoundingClientRect();
-        const itemCenterY = rect.top + (rect.height / 2);
-        const distance = Math.abs(centerY - itemCenterY);
-
-        if (distance < minDistance) {
-            minDistance = distance;
-            closestItem = item;
-        }
-    });
-
-    // Hysteresis: only switch if new item is significantly closer (50px threshold)
-    const SWITCH_THRESHOLD = 50;
-
-    if (currentHighlightedItem && currentHighlightedItem !== closestItem) {
-        const currentRect = currentHighlightedItem.getBoundingClientRect();
-        const currentCenterY = currentRect.top + (currentRect.height / 2);
-        const currentDistance = Math.abs(centerY - currentCenterY);
-
-        // Only switch if new item is at least SWITCH_THRESHOLD closer
-        if (minDistance > currentDistance - SWITCH_THRESHOLD) {
-            return; // Keep current highlight
+        // Highlight closest
+        if (closestItem) {
+            closestItem.classList.add('active-focus');
+            currentHighlightedItem = closestItem;
+            console.log('📱 [Mobile Highlight] Highlighted closest card');
         }
     }
 
-    // Remove highlight from all
-    items.forEach(item => {
-        item.classList.remove('active-focus');
-    });
+    function initMobileHighlight() {
+        if (window.innerWidth > 768) return;
+        if (mobileHighlightActive) return;
 
-    // Highlight closest
-    if (closestItem) {
-        closestItem.classList.add('active-focus');
-        currentHighlightedItem = closestItem;
-        console.log('📱 [Mobile Highlight] Highlighted closest card');
+        console.log('📱 [Mobile Highlight] Initializing...');
+
+        // Throttled scroll listener
+        let ticking = false;
+        window.addEventListener('scroll', () => {
+            if (!ticking) {
+                window.requestAnimationFrame(() => {
+                    updateMobileHighlight();
+                    ticking = false;
+                });
+                ticking = true;
+            }
+        }, { passive: true });
+
+        // Initial highlight - call immediately and directly
+        updateMobileHighlight();
+
+        mobileHighlightActive = true;
+        console.log('📱 [Mobile Highlight] Initialized successfully');
     }
-}
 
-function initMobileHighlight() {
-    if (window.innerWidth > 768) return;
-    if (mobileHighlightActive) return;
-
-    console.log('📱 [Mobile Highlight] Initializing...');
-
-    // Throttled scroll listener
-    let ticking = false;
-    window.addEventListener('scroll', () => {
-        if (!ticking) {
-            window.requestAnimationFrame(() => {
+    function observeNewItems() {
+        // For mobile, ensure highlight system is initialized
+        if (window.innerWidth <= 768) {
+            if (!mobileHighlightActive) {
+                console.log('📱 [Mobile Highlight] Calling init from observeNewItems');
+                initMobileHighlight();
+            } else {
+                // Update highlight for new items
+                console.log('📱 [Mobile Highlight] Updating for new items');
                 updateMobileHighlight();
-                ticking = false;
-            });
-            ticking = true;
-        }
-    }, { passive: true });
-
-    // Initial highlight - call immediately and directly
-    updateMobileHighlight();
-
-    mobileHighlightActive = true;
-    console.log('📱 [Mobile Highlight] Initialized successfully');
-}
-
-function observeNewItems() {
-    // For mobile, ensure highlight system is initialized
-    if (window.innerWidth <= 768) {
-        if (!mobileHighlightActive) {
-            console.log('📱 [Mobile Highlight] Calling init from observeNewItems');
-            initMobileHighlight();
-        } else {
-            // Update highlight for new items
-            console.log('📱 [Mobile Highlight] Updating for new items');
-            updateMobileHighlight();
+            }
         }
     }
-}
 
     // Mobile highlight will be initialized by observeNewItems() when first batch renders
 });
