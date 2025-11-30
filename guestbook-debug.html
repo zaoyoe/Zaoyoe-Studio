@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-visual">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>留言板 - Zaoyoe</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;700;800&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="security-cards.css?v=DARK_BG_INPUTS_V1">
+    <link rel="stylesheet" href="login_styles.css?v=DARK_BG_INPUTS_V1">
+    <link rel="stylesheet" href="login_dual_mode.css?v=DARK_BG_INPUTS_V1">
+    <link rel="stylesheet" href="avatar-fix.css?v=UNIFIED_HOVER_V2">
+    <link rel="stylesheet" href="style.css?v=5_COLUMNS_FIX">
+    <style>
+        /* Force 4 columns - Override any conflicts */
+        .guestbook-main {
+            max-width: 100% !important;
+            width: 100% !important;
+            padding: 0 16px !important;
+            /* Reduced padding */
+            box-sizing: border-box !important;
+            /* Prevent overflow */
+            overflow-x: hidden !important;
+            /* Force hide overflow */
+        }
+
+        .message-container {
+            width: 100% !important;
+        }
+
+        /* Apply animation to wrapper (JS generates wrapper with inline delay) */
+        .message-anim-wrapper {
+            opacity: 0;
+            transform: translateY(-30px);
+            transition: opacity 0.6s ease, transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+            /* Delay is set inline by JS via transition-delay */
+        }
+
+        .message-anim-wrapper.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .message-item {
+            break-inside: avoid !important;
+            -webkit-column-break-inside: avoid !important;
+            page-break-inside: avoid !important;
+            margin-bottom: 20px !important;
+            display: inline-block !important;
+            width: 100% !important;
+        }
+
+
+
+        /* Ensure responsive doesn't override */
+        @media (min-width: 1441px) {
+            body .guestbook-main .message-container {
+                column-count: 5 !important;
+                /* FORCE 5 COLUMNS - Higher specificity */
+                column-gap: 20px !important;
+            }
+        }
+
+        @media (max-width: 1440px) and (min-width: 1025px) {
+            body .guestbook-main .message-container {
+                column-count: 4 !important;
+                column-gap: 20px !important;
+            }
+        }
+
+        /* Tablet screens: 2 columns */
+        @media (max-width: 1024px) and (min-width: 769px) {
+            .message-container {
+                column-count: 2 !important;
+            }
+        }
+
+        /* Mobile/Tablet adjustments */
+        @media (max-width: 1024px) {
+            .guestbook-main {
+                padding: 0 15px !important;
+            }
+
+            .message-container {
+                column-count: 2 !important;
+                /* Enable 2 columns on mobile */
+                column-gap: 15px;
+            }
+        }
+
+
+
+        /* Exit animation */
+        @keyframes fadeOutDown {
+            from {
+                opacity: 1;
+                transform: translateY(0);
+            }
+
+            to {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+        }
+
+        .page-exit {
+            animation: fadeOutDown 0.3s ease-in forwards;
+        }
+
+        /* Prevent iOS zoom on input focus */
+        @media (max-width: 768px) {
+
+            /* Global text size adjustment prevention */
+            * {
+                -webkit-text-size-adjust: 100%;
+            }
+
+            /* Force all inputs to 16px minimum */
+            textarea,
+            input,
+            select,
+            input[type="text"],
+            input[type="email"],
+            input[type="password"] {
+                font-size: 16px !important;
+            }
+        }
+
+
+        /* ⚡ CRITICAL FIX: Force dark text on white cards - 柔和配色 */
+        .message-item .author-name {
+            color: rgba(0, 0, 0, 0.7) !important;
+        }
+
+        .message-item .message-time {
+            color: rgba(0, 0, 0, 0.4) !important;
+        }
+
+        .message-item .message-content {
+            color: rgba(0, 0, 0, 0.85) !important;
+        }
+
+        .message-item .action-btn,
+        .message-item .like-btn,
+        .message-item .comment-btn {
+            color: rgba(0, 0, 0, 0.5) !important;
+        }
+
+        .message-item .action-btn:hover,
+        .message-item .like-btn:hover,
+        .message-item .comment-btn:hover {
+            color: rgba(0, 0, 0, 0.75) !important;
+        }
+
+        /* ⚡ CRITICAL FIX: Ensure active like button is RED */
+        .message-item .like-btn.active,
+        .message-item .like-btn.active:hover {
+            color: #ef4444 !important;
+        }
+
+        .comment-item .comment-author {
+            color: rgba(0, 0, 0, 0.7) !important;
+        }
+
+        .comment-item .comment-time {
+            color: rgba(0, 0, 0, 0.4) !important;
+        }
+
+        .comment-item .comment-content {
+            color: rgba(0, 0, 0, 0.85) !important;
+        }
+
+        .comment-count-group {
+            color: rgba(0, 0, 0, 0.6) !important;
+        }
+
+        .comment-toggle-btn {
+            color: rgba(0, 0, 0, 0.6) !important;
+        }
+
+        .add-comment-trigger-btn {
+            color: rgba(0, 0, 0, 0.6) !important;
+        }
+    </style>
+    <script>
+        // Handle back button with exit animation
+        document.addEventListener('DOMContentLoaded', function () {
+            const backBtn = document.querySelector('.floating-back-btn');
+
+            if (backBtn) {
+                backBtn.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    const targetUrl = this.getAttribute('href');
+
+                    // Add exit animation to main container
+                    const mainContainer = document.querySelector('.guestbook-main');
+
+                    if (mainContainer) {
+                        mainContainer.classList.add('page-exit');
+                    }
+
+                    // Navigate after animation
+                    setTimeout(() => {
+                        window.location.href = targetUrl;
+                    }
+
+                        , 300);
+                });
+            }
+        });
+    </script>
+</head>
+
+<body class="guestbook-page">
+    <!-- Background Blobs -->
+    <div class="background-blobs">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+    </div>
+    <!-- Floating Back Button -->
+    <a href="index.html" class="floating-back-btn">
+        <i class="fa-solid fa-house"></i>
+    </a>
+    <!-- Floating Clear Button -->
+    <button id="clearAllBtn" class="floating-clear-btn" title="清空所有留言">
+        <i class="fas fa-trash-alt"></i>
+    </button>
+    <!-- Main Content -->
+    <div class="guestbook-main">
+        <!-- Hidden initially to prevent FOUC/Garbage text -->
+        <div id="messageContainer" class="message-container" style="opacity: 0; transition: opacity 0.3s ease;">
+            <!-- Messages will be inserted here by JavaScript -->
+        </div>
+        <div id="emptyState" class="empty-state-large" style="display: none;"><i class="fas fa-comments"></i>
+            <p>还没有留言哦</p>
+            <p class="empty-hint">快去首页留下你的第一条留言吧 !</p>
+        </div>
+    </div>
+    <!-- Comment Modal -->
+    <div class="modal-overlay" id="commentModal" onclick="closeCommentModal(event)">
+        <div class="modal-content comment-modal-content">
+            <!-- Mac-style close button -->
+            <div class="mac-controls">
+                <div class="mac-dot red" onclick="closeCommentModal(event)">
+                    <i class="fas fa-times"></i>
+                </div>
+            </div>
+
+            <h2 class="modal-title">发表评论</h2>
+
+            <form id="commentForm" class="add-comment-form">
+                <input type="hidden" id="commentMessageId">
+                <input type="hidden" id="commentParentId">
+                <textarea id="commentContent" placeholder="写下您的评论..." rows="3" required></textarea>
+                <button type="submit" class="submit-btn">
+                    <i class="fa-solid fa-paper-plane"></i>
+                    发送
+                </button>
+            </form>
+        </div>
+    </div>
+    <!-- Force Input Background Fix -->
+    <script src="./force-input-bg-fix.js?v=3" defer></script>
+
+    <!-- LeanCloud SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/leancloud-storage@4.15.2/dist/av-min.js"></script>
+    <script src="./leancloud-init.js?v=20251125_ACL_FIX" defer></script>
+    <script src="./leancloud-auth-functions.js?v=20251125_ACL_FIX" defer></script>
+    <script src="./leancloud-guestbook-functions.js?v=NESTED_COMMENTS_V2" defer></script>
+    <script src="script.js?v=20251125_ACL_FIX" defer></script>
+    <script src="guestbook.js?v=1764485873" defer></script>
+    <script src="guestbook-hover-effect.js" defer></script>
+    <script src="inject-auth.js?v=12" defer></script>
+    <script src="prevent-zoom.js?v=20251130" defer></script>
+    <script src="image-zoom.js?v=20251130_FIX" defer></script>
+</body>
+
+</html>
