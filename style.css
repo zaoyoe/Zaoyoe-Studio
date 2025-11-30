@@ -2614,7 +2614,7 @@ button.upload-icon-btn {
     font-size: 0.95rem;
     line-height: 1.6;
     color: rgba(0, 0, 0, 0.85);
-    margin-bottom: 15px;
+    margin-bottom: 8px;
     white-space: pre-wrap;
     word-wrap: break-word;
 }
@@ -2641,8 +2641,8 @@ button.upload-icon-btn {
 
 /* Comment Section */
 .comment-section {
-    margin-top: 20px;
-    padding-top: 15px;
+    margin-top: 0;
+    padding-top: 8px;
     border-top: 1px solid rgba(0, 0, 0, 0.06);
 }
 
