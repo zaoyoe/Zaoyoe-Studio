@@ -2686,13 +2686,10 @@ button.upload-icon-btn {
     gap: 12px;
     width: 100%;
     /* Moved styles from comment-item to comment-row */
-    padding: 16px;
+    padding: 12px;
     border-radius: 12px;
     transition: background 0.2s ease;
     position: relative;
-    /* Ensure absolute positioning context for like button */
-    padding-right: 40px;
-    /* Make space for the absolute positioned heart */
 }
 
 /* Google Login Button - Transparent with icon + text only */
@@ -2853,7 +2850,7 @@ input.login-submit-btn {
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-bottom: 2px;
+    margin-bottom: 4px;
     font-size: 0.9rem;
 }
 
@@ -3433,13 +3430,10 @@ body.no-scroll {
 /* Comment Like Button (Right Side) */
 .comment-like-wrapper {
     display: flex;
-    align-items: center;
-    /* Absolute positioning for perfect right alignment */
-    position: absolute;
-    top: 16px;
-    right: 16px;
-    margin: 0;
-    padding: 0;
+    align-items: flex-start;
+    margin-left: 8px;
+    padding-top: 2px;
+    flex-shrink: 0;
 }
 
 .comment-like-btn {
@@ -3500,7 +3494,7 @@ body.no-scroll {
 
 /* Compact nested comments row */
 .comment-item--nested .comment-row {
-    padding: 4px 12px !important;
+    padding: 8px 12px !important;
     /* More compact padding */
     min-height: auto;
 }
