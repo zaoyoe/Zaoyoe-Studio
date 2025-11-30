@@ -3244,14 +3244,14 @@ body.no-scroll {
         padding: 16px 20px;
         margin-bottom: 0;
         /* Remove bottom margin */
-        background: transparent;
-        /* Clean background */
+        /* Keep translucent white background from base style */
+        background: rgba(255, 255, 255, 0.75);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
         border: none;
         /* Remove border */
         border-bottom: 1px solid rgba(255, 255, 255, 0.08);
         /* Divider line */
-        backdrop-filter: none;
-        /* Remove blur for cleaner look */
         break-inside: avoid;
         /* Prevent column breaks */
     }
