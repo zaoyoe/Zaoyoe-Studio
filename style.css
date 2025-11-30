@@ -4041,8 +4041,8 @@ label[for],
 
 /* 登录状态下的按钮样式：只显示头像 */
 .login-trigger-btn.logged-in {
-    padding: 0;
-    border-radius: 50%;
+    padding: 0 !important;
+    border-radius: 50% !important;
     width: 40px !important;
     height: 40px !important;
     min-width: 40px !important;
@@ -4052,6 +4052,10 @@ label[for],
     justify-content: center;
     overflow: hidden;
     /* Prevent content from spilling out */
+    /* Explicitly prevent any background/border/shadow */
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
 }
 
 .login-trigger-btn.logged-in .nav-user-avatar {
