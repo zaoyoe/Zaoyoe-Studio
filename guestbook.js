@@ -629,80 +629,85 @@ document.addEventListener('DOMContentLoaded', () => {
             alert("评论功能暂时不可用");
         }
     }
-    // Initialize Scroll Highlight for Mobile
-    let scrollHighlightInitialized = false;
+    // Mobile Scroll Highlight - Simplified and Immediate
+    let mobileHighlightActive = false;
 
-    // Mobile Scroll Highlight - Scroll Event Version (More Stable)
-    function initScrollHighlight() {
+    function updateMobileHighlight() {
+        // Only run on mobile
         if (window.innerWidth > 768) return;
-        if (scrollHighlightInitialized) return; // Only init once
 
-        const handleScroll = () => {
-            const centerY = window.innerHeight / 2;
-            const items = document.querySelectorAll('.message-item');
+        const items = document.querySelectorAll('.message-item');
+        if (items.length === 0) {
+            console.log('📱 [Mobile Highlight] No items found');
+            return;
+        }
 
-            if (items.length === 0) return; // No cards yet
+        const centerY = window.innerHeight / 2;
+        let closestItem = null;
+        let minDistance = Infinity;
 
-            let closestItem = null;
-            let minDistance = Infinity;
+        items.forEach(item => {
+            const rect = item.getBoundingClientRect();
+            const itemCenterY = rect.top + (rect.height / 2);
+            const distance = Math.abs(centerY - itemCenterY);
 
-            items.forEach(item => {
-                const rect = item.getBoundingClientRect();
-                // Calculate distance from item center to viewport center
-                const itemCenterY = rect.top + (rect.height / 2);
-                const distance = Math.abs(centerY - itemCenterY);
-
-                if (distance < minDistance) {
-                    minDistance = distance;
-                    closestItem = item;
-                }
-
-                // Reset all
-                item.classList.remove('active-focus');
-            });
-
-            // Highlight closest (guaranteed to have at least one)
-            if (closestItem) {
-                closestItem.classList.add('active-focus');
+            if (distance < minDistance) {
+                minDistance = distance;
+                closestItem = item;
             }
-        };
+
+            // Remove highlight from all
+            item.classList.remove('active-focus');
+        });
+
+        // Highlight closest (guaranteed to exist)
+        if (closestItem) {
+            closestItem.classList.add('active-focus');
+            console.log('📱 [Mobile Highlight] Highlighted closest card');
+        }
+    }
+
+    function initMobileHighlight() {
+        if (window.innerWidth > 768) return;
+        if (mobileHighlightActive) return;
+
+        console.log('📱 [Mobile Highlight] Initializing...');
 
         // Throttled scroll listener
         let ticking = false;
         window.addEventListener('scroll', () => {
             if (!ticking) {
                 window.requestAnimationFrame(() => {
-                    handleScroll();
+                    updateMobileHighlight();
                     ticking = false;
                 });
                 ticking = true;
             }
         }, { passive: true });
 
-        // Initial check (delayed to ensure DOM is ready)
-        setTimeout(() => handleScroll(), 300);
+        // Initial highlight - call immediately and directly
+        updateMobileHighlight();
 
-        scrollHighlightInitialized = true;
+        mobileHighlightActive = true;
+        console.log('📱 [Mobile Highlight] Initialized successfully');
     }
 
     function observeNewItems() {
-        // For scroll version, ensure init is called and then trigger check
-        setTimeout(() => {
-            if (window.innerWidth <= 768) {
-                // Ensure scroll highlight is initialized
-                if (!scrollHighlightInitialized) {
-                    initScrollHighlight();
-                } else {
-                    // Trigger a scroll check manually for new items
-                    const event = new Event('scroll');
-                    window.dispatchEvent(event);
-                }
+        // For mobile, ensure highlight system is initialized
+        if (window.innerWidth <= 768) {
+            if (!mobileHighlightActive) {
+                console.log('📱 [Mobile Highlight] Calling init from observeNewItems');
+                initMobileHighlight();
+            } else {
+                // Update highlight for new items
+                console.log('📱 [Mobile Highlight] Updating for new items');
+                updateMobileHighlight();
             }
-        }, 200);
+        }
     }
 
     // Initialize on load
-    scrollObserver = initScrollHighlight();
+    scrollObserver = initMobileHighlight();
 });
 
 // --- Global Modal Functions (Must be outside DOMContentLoaded) ---
