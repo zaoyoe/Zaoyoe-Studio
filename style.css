@@ -6296,9 +6296,24 @@ body {
 
 /* 修复输入框获得焦点时模态框被输入法遮挡的问题 */
 @media (max-width: 768px) {
-    .modal-overlay.active {
+
+    /* Fix all modal overlays on mobile */
+    .modal-overlay.active,
+    .login-overlay.active {
         align-items: flex-start !important;
-        padding-top: 20px;
+        padding-top: 20px !important;
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+    }
+
+    /* Ensure modal content is scrollable and fits viewport */
+    .modal-content,
+    .login-card {
+        max-height: calc(100vh - 40px) !important;
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+        margin-top: 0 !important;
+        position: relative !important;
     }
 
     .guestbook-content {
