@@ -3979,10 +3979,19 @@ label[for],
 /* Add shadow to default icon for 3D effect */
 #defaultAuthIcon {
     filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.4)) drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
-    font-size: 1.8rem !important;
+    font-size: 1.2rem !important;
     transition: all 0.3s ease;
     color: white !important;
-    /* Full white since fa-user has no circular background */
+    /* Add refined circular background */
+    background: rgba(255, 255, 255, 0.15);
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
 }
 
 #defaultAuthIcon:hover {
