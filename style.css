@@ -3245,10 +3245,9 @@ body.no-scroll {
         margin-bottom: 0;
         /* Remove bottom margin */
         /* Keep translucent white background from base style */
-        background: rgba(255, 255, 255, 0.75) !important;
-        /* Force override any conflicting styles */
-        backdrop-filter: blur(12px) !important;
-        -webkit-backdrop-filter: blur(12px) !important;
+        background: rgba(255, 255, 255, 0.75);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
         border: none;
         /* Remove border */
         border-bottom: 1px solid rgba(255, 255, 255, 0.08);
