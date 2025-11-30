@@ -4,7 +4,7 @@
     --text-muted: #94a3b8;
     --card-bg: rgba(255, 255, 255, 0.05);
     --card-border: rgba(255, 255, 255, 0.1);
-    --input-bg: rgba(0, 0, 0, 0.2);
+    --input-bg: transparent;
     --accent-color: #38bdf8;
     --accent-gradient: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%);
     --success-color: #4ade80;
@@ -30,13 +30,12 @@ html {
     overflow-x: hidden;
 }
 
+/* 简化body和html样式 */
+html,
 body {
     margin: 0;
     padding: 0;
-    font-family: var(--font-main);
-    background-color: transparent;
-    color: var(--text-color);
-    line-height: 1.6;
+    width: 100%;
     min-height: 100vh;
     overflow-x: hidden;
 }
@@ -44,43 +43,49 @@ body {
 body {
     font-family: var(--font-main);
     color: var(--text-color);
+    background-color: transparent;
+    line-height: 1.6;
+    position: relative;
+}
+
+/* main-wrapper简化 */
+.main-wrapper {
     min-height: 100vh;
     display: flex;
     justify-content: center;
     align-items: center;
-    overflow-x: hidden;
-    position: relative;
+    width: 100%;
 }
 
-/* Background Blobs - Critical: NO transforms to ensure fixed works */
+/* 移动端优化 */
+@media (max-width: 768px) {
+    .main-wrapper {
+        align-items: flex-start;
+        padding-top: 40px;
+    }
+}
 
+/* Background Blobs - 统一为fixed定位 */
 .background-blobs {
     position: fixed !important;
-    /* Force fixed */
-    top: -10vh;
-    /* Start above viewport */
+    top: 0;
     left: 0;
-    width: 100vw;
-    height: 120vh;
-    /* Oversized to cover all cases */
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    height: 100%;
     z-index: -1;
     pointer-events: none;
     overflow: hidden;
-    /* CRITICAL: Remove all transforms - they break position:fixed on iOS */
-    /* DO NOT add translateZ, translate3d, or any transform */
-    backface-visibility: hidden;
-    /* But keep this for rendering */
-    -webkit-backface-visibility: hidden;
 }
 
 .blob {
-    position: fixed !important;
-    /* Individual blobs also strongly fixed */
+    position: absolute !important;
+    /* 使用absolute配合父级absolute定位 */
     border-radius: 50%;
     filter: blur(80px);
     opacity: 0.7;
     will-change: transform;
-    /* NO transform property - it breaks position:fixed */
 }
 
 .blob-1 {
@@ -238,6 +243,33 @@ header p {
     outline: none;
     border-color: var(--accent-color);
     box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
+}
+
+/* Form focus states - UNIFIED PURPLE GLOW */
+textarea:focus,
+input[type="text"]:focus,
+input[type="email"]:focus,
+input[type="tel"]:focus {
+    outline: none !important;
+    border-color: rgba(139, 92, 246, 0.5) !important;
+    /* Softer, unified opacity */
+    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15) !important;
+    /* Subtle glow */
+}
+
+/* Specific for comment textarea */
+#commentContent:focus {
+    outline: none !important;
+    border-color: rgba(139, 92, 246, 0.5) !important;
+    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15) !important;
+}
+
+/* Main guestbook modal textarea */
+#guestbookModal textarea:focus,
+#guestbookMessageInput:focus {
+    outline: none !important;
+    border-color: rgba(139, 92, 246, 0.5) !important;
+    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15) !important;
 }
 
 .divider {
@@ -400,10 +432,7 @@ select {
     margin-top: 10px;
 }
 
-.action-btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 10px 20px -5px rgba(56, 189, 248, 0.4);
-}
+
 
 .secondary-btn {
     width: 100%;
@@ -499,7 +528,8 @@ input[type="range"] {
     /* Match Guestbook/Gemini Guide Card Style */
 
 
-    border: 1px solid rgba(255, 255, 255, 0.15) !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.2) !important;
     border-radius: 24px !important;
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5) !important;
 }
@@ -587,6 +617,14 @@ input.submit-btn {
     box-shadow: 0 10px 30px rgba(168, 85, 247, 0.6);
     opacity: 0.95;
 }
+
+.submit-btn.card:hover {
+    transform: translateY(-8px);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
+    /* Deeper black shadow */
+}
+
+/* Black shadow instead of purple */
 
 .close-pill-btn {
     padding: 10px 30px;
@@ -855,7 +893,7 @@ input.submit-btn {
     text-decoration: none;
 }
 
-/* Removed glossy reflection overlay - line 1 */
+
 
 /* Only apply hover effects on devices with hover capability (not touch screens) */
 @media (hover: hover) {
@@ -870,15 +908,15 @@ input.submit-btn {
         position: absolute;
         top: 0;
         left: 0;
-        width: 100%;
-        height: 100%;
-        background: radial-gradient(600px circle at var(--mouse-x) var(--mouse-y),
-                rgba(255, 255, 255, 0.15),
+        right: 0;
+        bottom: 0;
+        border-radius: 24px;
+        background: radial-gradient(600px circle at var(--mouse-x, 50%) var(--mouse-y, 50%),
+                rgba(255, 255, 255, 0.22),
                 transparent 40%);
         opacity: 0;
-        transition: opacity 0.3s;
+        transition: opacity 0.3s ease;
         pointer-events: none;
-        z-index: 2;
         mix-blend-mode: overlay;
     }
 
@@ -889,10 +927,9 @@ input.submit-btn {
     .glass-box:hover {
         background: rgba(255, 255, 255, 0.08);
         border-color: rgba(255, 255, 255, 0.3);
-        transform: translateY(-2px);
-        box-shadow: 0 8px 32px rgba(155, 93, 229, 0.3),
-            0 0 40px rgba(241, 91, 181, 0.2),
-            inset 0 0 20px rgba(255, 255, 255, 0.1);
+        transform: translateY(-6px);
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7),
+            0 12px 24px -8px rgba(0, 0, 0, 0.5);
     }
 }
 
@@ -909,6 +946,23 @@ input.submit-btn {
         transition: transform 0.5s ease-out, background 0.3s ease, box-shadow 0.3s ease;
     }
 }
+
+/* Non-interactive card: disable all interaction effects */
+.glass-box.non-interactive {
+    cursor: default !important;
+}
+
+.glass-box.non-interactive:hover::before {
+    opacity: 0 !important;
+}
+
+.glass-box.non-interactive:hover {
+    transform: none !important;
+    background: rgba(255, 255, 255, 0.03) !important;
+    border-color: rgba(255, 255, 255, 0.15) !important;
+    box-shadow: 0 12px 24px -8px rgba(0, 0, 0, 0.4) !important;
+}
+
 
 .glass-box:active {
     transform: scale(0.98);
@@ -939,7 +993,7 @@ input.submit-btn {
 }
 
 .box-profile {
-    background: rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.05);
 }
 
 .box-contact {
@@ -1245,15 +1299,17 @@ input.submit-btn {
     position: fixed;
     top: 0;
     left: 0;
-    width: 100%;
-    height: 100%;
+    right: 0;
+    bottom: 0;
+    /* Use bottom: 0 to ensure full coverage regardless of address bar */
+    height: auto;
     background: rgba(0, 0, 0, 0.6);
     /* Darker background for less transparency - copied from login-overlay */
     backdrop-filter: blur(8px);
     /* Blur background to focus attention - copied from login-overlay */
     -webkit-backdrop-filter: blur(8px);
-    z-index: 2000;
-    /* 与其他弹窗保持一致，确保不会被遮挡 */
+    z-index: 9999;
+    /* Very high z-index to appear above mobile browser UI */
     display: flex;
     justify-content: center;
     align-items: center;
@@ -1269,6 +1325,7 @@ input.submit-btn {
     /* Hardware acceleration */
 }
 
+
 .modal-overlay.active {
     opacity: 1;
     visibility: visible;
@@ -1279,7 +1336,7 @@ input.submit-btn {
 
 
 .modal-content {
-    background: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.03) !important;
     /* Ultra light glassmorphism matching login card */
     padding: 50px;
     border-radius: 24px;
@@ -1287,11 +1344,11 @@ input.submit-btn {
     max-width: 90%;
     width: 480px;
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    border-top: 1px solid rgba(255, 255, 255, 0.25);
-    backdrop-filter: blur(40px) saturate(150%);
-    /* Increased blur + saturation for better glass effect */
-    -webkit-backdrop-filter: blur(40px) saturate(150%);
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.2) !important;
+    backdrop-filter: blur(20px) saturate(150%) !important;
+    /* Exact match: 20px blur + 150% saturation */
+    -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
     transform: scale(0.95);
     /* Unified with login modal */
     transition: transform 0.3s ease-out;
@@ -1333,11 +1390,17 @@ input.submit-btn {
     margin: 0 auto;
 }
 
-.modal-link-c.message-item:hover {
-    transform: scale(1.02);
+.modal-content a {
+    text-decoration: none;
+    color: inherit;
+}
+
+.modal-link-card:hover {
+    transform: translateY(-4px);
     box-shadow: 0 12px 24px rgba(0, 0, 0, 0.3);
-    border-color: rgba(255, 255, 255, 0.15);
-    /* No background change - keeping it bright */
+    border-color: rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.08);
+    /* Slight brightness increase */
 }
 
 .modal-link-card i {
@@ -1566,27 +1629,7 @@ body.no-scroll {
         border-radius: 10px !important;
     }
 
-    .guestbook-content .view-more-btn {
-        padding: 0 !important;
-        margin-top: 15px !important;
-        font-size: 0.9rem !important;
-        background: none !important;
-        border: none !important;
-        color: #f15bb5 !important;
-        font-weight: 600 !important;
-        text-decoration: none !important;
-        display: inline-block !important;
-        width: auto !important;
-    }
 
-    .guestbook-content .view-more-btn:hover {
-        color: #d97706 !important;
-        text-decoration: none !important;
-        /* No underline */
-        transform: translateY(-1px) !important;
-        background: none !important;
-        box-shadow: none !important;
-    }
 
     /* Contact Modal: 2 columns side-by-side */
     .modal-grid {
@@ -1674,13 +1717,9 @@ body.no-scroll {
     }
 
     /* Move "Back to Home" button to top-left on mobile */
+    /* Move "Back to Home" button to top-left on mobile */
     .floating-back-btn {
-        top: 20px;
-        left: 20px;
-        bottom: auto;
-        right: auto;
-        font-size: 0.85rem;
-        padding: 10px 16px;
+        display: none !important;
     }
 
     /* Optimize modal size for mobile */
@@ -2038,6 +2077,27 @@ svg {
     gap: 10px;
 }
 
+.card {
+    background: linear-gradient(135deg,
+            rgba(255, 255, 255, 0.05) 0%,
+            rgba(255, 255, 255, 0.02) 100%);
+    border: 1px solid var(--card-border);
+    border-radius: 24px;
+    padding: 25px;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    /* Slower box-shadow for visible lift animation, fast transform is handled by JS */
+    transition: transform 0.3s ease-out, box-shadow 0.25s ease-out;
+    cursor: pointer;
+}
+
+/* Card hover - DEEP BLACK SHADOW ONLY */
+.card:hover {
+    transform: translateY(-8px);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7),
+        0 12px 24px -8px rgba(0, 0, 0, 0.5);
+}
+
 .upload-btn:hover {
     background: linear-gradient(135deg, rgba(139, 92, 246, 0.3), rgba(59, 130, 246, 0.3));
     border-color: rgba(139, 92, 246, 0.6);
@@ -2162,11 +2222,11 @@ button.upload-icon-btn {
 }
 
 /* Responsive Column Layout */
-/* Large screens: 6 columns */
+/* Large screens: 5 columns */
 @media (min-width: 1441px) {
     .message-container {
-        column-count: 4;
-        /* Changed from 6 to 4 */
+        column-count: 5;
+        /* Restored to 5 columns */
         column-gap: 20px;
     }
 }
@@ -2240,16 +2300,19 @@ button.upload-icon-btn {
 
 .message-time {
     font-size: 0.75rem;
-    color: rgba(255, 255, 255, 0.3);
+    color: rgba(0, 0, 0, 0.35);
 }
 
 .comment-section {
     margin-top: 10px;
-    background: rgba(0, 0, 0, 0.2);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(0, 0, 0, 0.02);
+    /* 极淡的背景 */
+    border: 1px solid rgba(0, 0, 0, 0.03);
+    /* 极淡的边框 */
     border-radius: 8px;
     padding: 12px;
-    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.06);
+    /* 极淡的内阴影 */
 }
 
 .comment-header-bar {
@@ -2333,32 +2396,7 @@ button.upload-icon-btn {
     box-shadow: 0 4px 15px rgba(155, 93, 229, 0.4);
 }
 
-.view-more-btn {
-    background: none;
-    color: #f472b6;
-    /* Pink-purple theme */
-    border: none;
-    font-weight: 600;
-    padding: 12px 24px;
-    cursor: pointer !important;
-    transition: all 0.2s;
-    font-size: 0.95rem;
-    text-decoration: none;
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    pointer-events: auto !important;
-    position: relative;
-    z-index: 100;
-}
 
-.view-more-btn:hover {
-    color: #ff85c0;
-    /* Lighter pink on hover */
-    transform: scale(1.05);
-    background: none;
-    box-shadow: none;
-}
 
 /* Ensure floating back button specific positioning remains */
 .floating-back-btn {
@@ -2561,28 +2599,37 @@ button.upload-icon-btn {
     column-gap: 20px;
 }
 
-/* Message Item Card - Ultra Transparent Glass (Matching Modal Style) */
+/* Message Item Card - 半透明卡片，hover变全白 */
 .message-item {
-    background: rgba(255, 255, 255, 0.04);
-    backdrop-filter: blur(10px);
+    /* 半透明白色背景 */
+    background: rgba(255, 255, 255, 0.75);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+
     border-radius: 16px;
     padding: 24px;
     margin-bottom: 20px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+    /* 细腻边框 */
+    border: 1px solid rgba(0, 0, 0, 0.06);
+
+    /* 柔和阴影 */
+    box-shadow:
+        0 2px 8px rgba(0, 0, 0, 0.04),
+        0 8px 24px rgba(0, 0, 0, 0.06);
+
+    transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
     transform-origin: center;
-    will-change: transform, box-shadow;
 }
 
 .message-item:hover {
-    background: rgba(255, 255, 255, 0.06);
-    /* Slightly BRIGHTER, not darker */
-    border-color: rgba(255, 255, 255, 0.2);
-    transform: scale(1.01) translateY(-1px);
-    /* Very subtle lift */
-    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
-    z-index: 10;
+    background: rgba(255, 255, 255, 1);
+    border-color: rgba(0, 0, 0, 0.08);
+    transform: translateY(-2px);
+
+    box-shadow:
+        0 4px 12px rgba(0, 0, 0, 0.06),
+        0 12px 32px rgba(0, 0, 0, 0.08);
 }
 
 .message-header {
@@ -2600,13 +2647,13 @@ button.upload-icon-btn {
 
 .author-info i {
     font-size: 0.95rem;
-    color: #60a5fa;
+    color: rgba(0, 0, 0, 0.35);
 }
 
 .author-name {
     font-weight: 600;
     font-size: 0.85rem;
-    color: #60a5fa;
+    color: rgba(0, 0, 0, 0.7);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -2615,13 +2662,13 @@ button.upload-icon-btn {
 
 .message-time {
     font-size: 0.8rem;
-    color: rgba(255, 255, 255, 0.4);
+    color: rgba(0, 0, 0, 0.4);
 }
 
 .message-content {
     font-size: 0.95rem;
     line-height: 1.6;
-    color: rgba(255, 255, 255, 0.9);
+    color: rgba(0, 0, 0, 0.85);
     margin-bottom: 15px;
     white-space: pre-wrap;
     word-wrap: break-word;
@@ -2651,7 +2698,7 @@ button.upload-icon-btn {
 .comment-section {
     margin-top: 20px;
     padding-top: 15px;
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    border-top: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 .comment-header-bar {
@@ -2666,7 +2713,7 @@ button.upload-icon-btn {
     align-items: center;
     gap: 6px;
     font-weight: 600;
-    color: rgba(255, 255, 255, 0.7);
+    color: rgba(0, 0, 0, 0.6);
     font-size: 0.85rem;
 }
 
@@ -2679,12 +2726,11 @@ button.upload-icon-btn {
 }
 
 .comment-item {
-    background: rgba(255, 255, 255, 0.03);
-    border-radius: 12px;
-    padding: 16px;
+    background: transparent;
+    border: none;
+    /* Removed padding from container to fix nested alignment */
+    padding: 0;
     margin-bottom: 16px;
-    /* Removed border-left to reduce noise on top-level comments */
-    transition: background 0.2s ease;
 }
 
 .comment-row {
@@ -2694,6 +2740,14 @@ button.upload-icon-btn {
     justify-content: space-between;
     gap: 12px;
     width: 100%;
+    /* Moved styles from comment-item to comment-row */
+    padding: 16px;
+    border-radius: 12px;
+    transition: background 0.2s ease;
+    position: relative;
+    /* Ensure absolute positioning context for like button */
+    padding-right: 40px;
+    /* Make space for the absolute positioned heart */
 }
 
 /* Google Login Button - Transparent with icon + text only */
@@ -2800,9 +2854,9 @@ button.upload-icon-btn {
     width: 100%;
     padding: 18px 22px;
     border-radius: 16px;
-    background: rgba(255, 255, 255, 0.12);
+    background: rgba(0, 0, 0, 0.3);
     backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 255, 255, 0.20);
+    border: 1px solid rgba(155, 93, 229, 0.3);
     color: white;
     font-size: 16px;
     outline: none;
@@ -2816,9 +2870,9 @@ button.upload-icon-btn {
 }
 
 .glass-input:focus {
-    border-color: rgba(241, 91, 181, 0.7);
-    background: rgba(255, 255, 255, 0.22);
-    box-shadow: 0 0 0 3px rgba(241, 91, 181, 0.2), 0 0 20px rgba(168, 85, 247, 0.15);
+    border-color: rgba(155, 93, 229, 0.7);
+    background: rgba(0, 0, 0, 0.5) !important;
+    box-shadow: 0 0 0 3px rgba(155, 93, 229, 0.15), 0 0 20px rgba(168, 85, 247, 0.12);
 }
 
 .login-submit-btn,
@@ -2859,39 +2913,67 @@ input.login-submit-btn {
 }
 
 .comment-header i {
-    color: rgba(255, 255, 255, 0.5);
+    color: rgba(0, 0, 0, 0.4);
     font-size: 1rem;
 }
 
 .comment-author {
     font-weight: 600;
-    color: #fbbf24;
+    color: rgba(0, 0, 0, 0.7);
     letter-spacing: 0.3px;
+    white-space: nowrap;
+    /* 防止昵称竖向排列 */
+}
+
+/* 点赞激活状态 - 红色爱心 */
+.like-btn.liked,
+.action-btn.liked {
+    color: #ef4444 !important;
+}
+
+.like-btn.liked i,
+.action-btn.liked i {
+    color: #ef4444 !important;
+    font-weight: 900;
+    /* 实心图标 */
 }
 
 .comment-time {
-    color: rgba(255, 255, 255, 0.3);
+    color: rgba(0, 0, 0, 0.4);
     font-size: 0.8rem;
     margin-left: auto;
 }
 
+/* 确保爱心颜色优先级 - 暴力覆盖 */
+.like-btn.liked,
+.like-btn.liked i,
+.like-btn.liked span,
+.action-btn.liked,
+.action-btn.liked i,
+.action-btn.liked span {
+    color: #ef4444 !important;
+    font-weight: 900 !important;
+}
+
 .comment-content {
-    color: rgba(255, 255, 255, 0.85);
-    font-size: 1rem;
-    line-height: 1.6;
+    color: rgba(0, 0, 0, 0.85);
+    font-size: 0.95rem;
+    /* 稍微减小字号 */
+    line-height: 1.5;
     margin-left: 4px;
+    margin-top: 4px;
+    /* 增加一点顶部间距 */
 }
 
 .no-comments {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 100px;
-    /* Give it some height to center within */
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
     text-align: center;
-    color: rgba(255, 255, 255, 0.5);
-    padding: 30px 20px;
+    color: rgba(0, 0, 0, 0.5);
     font-size: 0.9rem;
+    white-space: nowrap;
 }
 
 /* Add Comment Form */
@@ -2902,26 +2984,27 @@ input.login-submit-btn {
 
 .comment-name-input {
     padding: 10px 14px;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(0, 0, 0, 0.03);
+    border: 1px solid rgba(0, 0, 0, 0.08);
     border-radius: 8px;
-    color: rgba(255, 255, 255, 0.9);
+    color: rgba(0, 0, 0, 0.85);
     font-size: 0.9rem;
     transition: all 0.3s ease;
 }
 
 .comment-name-input:focus {
     outline: none;
-    background: rgba(255, 255, 255, 0.08);
-    border-color: rgba(245, 158, 11, 0.5);
+    background: #fff;
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
 }
 
 .comment-input {
     padding: 10px 14px;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(0, 0, 0, 0.03);
+    border: 1px solid rgba(0, 0, 0, 0.08);
     border-radius: 8px;
-    color: rgba(255, 255, 255, 0.9);
+    color: rgba(0, 0, 0, 0.85);
     font-size: 0.9rem;
     min-height: 70px;
     resize: vertical;
@@ -2931,8 +3014,9 @@ input.login-submit-btn {
 
 .comment-input:focus {
     outline: none;
-    background: rgba(255, 255, 255, 0.08);
-    border-color: rgba(245, 158, 11, 0.5);
+    background: #fff;
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
 }
 
 .comment-submit-btn {
@@ -2956,6 +3040,29 @@ input.login-submit-btn {
     transform: translateY(-2px);
     box-shadow: 0 8px 25px rgba(245, 158, 11, 0.5);
     background: linear-gradient(135deg, #fbbf24, #f59e0b);
+}
+
+.comment-submit.save-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(56, 189, 248, 0.3);
+    background: linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%);
+}
+
+.gradient-btn {
+    background: linear-gradient(135deg, #ec4899 0%, #f472b6 100%);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 12px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.3s ease;
+}
+
+.gradient-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(236, 72, 153, 0.4);
+    opacity: 0.95;
 }
 
 /* Empty State */
@@ -2989,10 +3096,14 @@ input.login-submit-btn {
     position: fixed;
     top: 0;
     left: 0;
-    width: 100%;
-    height: 100%;
+    right: 0;
+    bottom: 0;
+    /* Use bottom: 0 for full coverage */
+    height: auto;
     background: rgba(0, 0, 0, 0.95);
-    z-index: 2000;
+    z-index: 10000;
+    /* Higher than guestbook modal */
+    /* touch-action: none; - Removed to allow pinch-to-zoom */
     display: none;
     align-items: center;
     justify-content: center;
@@ -3013,7 +3124,7 @@ input.login-submit-btn {
 /* Prevent background scroll when modal open - especially on mobile */
 body.no-scroll {
     overflow: hidden !important;
-    position: fixed !important;
+    /* Removed position: fixed to prevent scroll jump and layout issues */
     width: 100% !important;
     height: 100% !important;
 }
@@ -3029,22 +3140,18 @@ body.no-scroll {
     max-height: 90vh;
     border-radius: 12px;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+    touch-action: none;
+    /* 完全禁止触摸手势 */
+    user-select: none;
+    /* Prevent text selection */
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    /* Disable iOS callout */
 }
 
 .image-modal-close {
-    position: absolute;
-    top: -50px;
-    right: 0;
-    width: 40px;
-    height: 40px;
-    /* Removed background and border */
-    color: white;
-    font-size: 1.2rem;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    display: none;
+    /* Hide close button - users can click image to close */
 }
 
 .image-modal-close:hover {
@@ -3113,10 +3220,7 @@ body.no-scroll {
 /* Responsive */
 @media (max-width: 768px) {
     .floating-back-btn {
-        top: 20px;
-        left: 20px;
-        font-size: 0.9rem;
-        padding: 10px 16px;
+        display: none !important;
     }
 
     .floating-clear-btn {
@@ -3263,61 +3367,71 @@ body.no-scroll {
     /* Preserve line breaks */
 }
 
-/* Actions Bar */
+/* ========== ACTIONS BAR - COMPLETE REWRITE ========== */
 .message-actions-bar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    /* Separate left and right */
-    gap: 20px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-gap: 40px;
+    border-top: 1px solid rgba(0, 0, 0, 0.06);
     padding-top: 12px;
-    border-top: 1px solid rgba(255, 255, 255, 0.05);
     margin-bottom: 12px;
 }
 
-.action-btn {
-    background: transparent;
-    border: none;
-    color: rgba(255, 255, 255, 0.5);
-    /* More subtle default color */
-    font-size: 0.95rem;
-    /* Slightly larger */
+/* Action buttons - clean simple styling */
+.action-btn,
+.like-btn,
+.comment-btn {
+    all: unset;
+    /* Reset all styles */
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    color: rgba(0, 0, 0, 0.5);
+    font-size: 0.9rem;
+    cursor: pointer !important;
+    padding: 8px;
+    transition: all 0.3s ease;
+    pointer-events: auto !important;
+    /* Critical: ensure clickable */
+    user-select: none;
+    /* Prevent text selection on click */
+}
+
+.action-btn:hover,
+.like-btn:hover,
+.comment-btn:hover {
+    color: rgba(0, 0, 0, 0.75);
+    transform: translateY(-2px);
+}
+
+.action-btn.active,
+.like-btn.active {
+    color: #ef4444;
+}
+
+.action-btn i,
+.like-btn i,
+.comment-btn i {
+    font-size: 1.1rem;
+}
+
+/* ========== NO COMMENTS - SIMPLE CENTERING ========== */
+.no-comments {
     display: flex;
     align-items: center;
-    gap: 6px;
-    cursor: pointer;
-    padding: 4px 8px;
-    /* Reduced padding */
-    border-radius: 6px;
-    transition: all 0.2s ease;
+    justify-content: center;
+    min-height: 80px;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.9rem;
 }
 
-.action-btn:hover {
-    color: rgba(255, 255, 255, 0.9);
-    background: transparent !important;
-    border: none !important;
-    box-shadow: none !important;
-    /* No transform to prevent displacement */
-}
-
-.action-btn i {
-    font-size: 1.1rem;
-    /* Larger icons */
-}
-
-.action-btn.active {
-    color: #ef4444;
-    /* Red for liked */
-}
-
-.action-btn.active i {
-    animation: heartBeat 0.3s ease-in-out;
-}
-
-/* Comment Section Adjustments */
-.comment-section {
-    margin-top: 0;
-    padding-top: 0;
+/* ========== COMMENT LIST ========== */
+.comment-list {
+    transition: max-height 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+    will-change: max-height;
 }
 
 /* Global Comment Styles */
@@ -3327,7 +3441,7 @@ body.no-scroll {
 }
 
 .comment-item--clickable:hover {
-    background-color: rgba(255, 255, 255, 0.05);
+    background-color: rgba(0, 0, 0, 0.04);
     /* Subtle hover */
 }
 
@@ -3338,8 +3452,8 @@ body.no-scroll {
 }
 
 .comment-item--clickable:hover>.comment-row>.comment-main>.comment-content {
-    color: rgba(255, 255, 255, 1);
-    /* Brighter text */
+    color: rgba(0, 0, 0, 1);
+    /* Darker text */
 }
 
 /* New Comment Layout Structure */
@@ -3360,18 +3474,18 @@ body.no-scroll {
 .comment-author {
     font-size: 0.9rem;
     font-weight: 600;
-    color: rgba(255, 255, 255, 0.8);
+    color: rgba(0, 0, 0, 0.7);
 }
 
 .comment-time {
     font-size: 0.75rem;
-    color: rgba(255, 255, 255, 0.4);
+    color: rgba(0, 0, 0, 0.4);
 }
 
 .comment-content {
     font-size: 0.95rem;
     line-height: 1.5;
-    color: rgba(255, 255, 255, 0.7);
+    color: rgba(0, 0, 0, 0.85);
     word-break: break-word;
 }
 
@@ -3379,14 +3493,19 @@ body.no-scroll {
 .comment-like-wrapper {
     display: flex;
     align-items: center;
-    padding-top: 2px;
-    /* Align with first line of text roughly */
+    /* Absolute positioning for perfect right alignment */
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    margin: 0;
+    padding: 0;
 }
 
 .comment-like-btn {
     background: transparent;
     border: none;
-    color: rgba(255, 255, 255, 0.4);
+    color: rgba(0, 0, 0, 0.5);
+    /* 深灰色，在浅色背景上清晰可见 */
     font-size: 0.85rem;
     display: flex;
     flex-direction: column;
@@ -3399,11 +3518,17 @@ body.no-scroll {
 }
 
 .comment-like-btn:hover {
-    color: rgba(255, 255, 255, 0.8);
+    color: rgba(0, 0, 0, 0.75);
+    /* Hover时变深 */
     background: transparent !important;
     border: none !important;
     box-shadow: none !important;
     /* No transform to prevent displacement */
+}
+
+/* Ensure active state stays red even on hover */
+.comment-like-btn.active:hover {
+    color: #ef4444 !important;
 }
 
 .comment-like-btn.active {
@@ -3421,35 +3546,52 @@ body.no-scroll {
 
 /* Nested comment styles */
 .comment-item--nested {
-    border-left: 2px solid rgba(255, 255, 255, 0.1);
-    /* Subtle thread line */
+    border-left: 2px solid rgba(0, 0, 0, 0.1);
     padding-left: 12px;
     background: transparent;
-    /* REMOVED BACKGROUND to fix "box-in-box" */
     margin-top: 8px;
     margin-bottom: 8px;
     border-radius: 0;
-    /* Remove border radius for thread look */
     transition: border-left-color 0.2s ease;
-    /* Smooth color transition */
+    position: relative;
 }
 
+/* Hover state for nested comments */
+/* Update hover selector to target comment-row */
+.comment-item--clickable:hover>.comment-row {
+    background: rgba(255, 255, 255, 0.05);
+    cursor: pointer;
+}
+
+/* Thread line highlight - controlled by JS */
+.comment-item--nested.thread-highlight {
+    border-left-color: rgba(56, 189, 248, 0.6) !important;
+}
+
+/* SMART: Only highlight if this element is being directly hovered, not a child */
 .comment-item--nested.comment-item--clickable:hover {
-    background: rgba(255, 255, 255, 0.02);
-    /* Very subtle hover for nested */
     border-left-color: rgba(56, 189, 248, 0.6);
-    /* Blue thread line on hover */
+}
+
+/* Reset border for nested children when parent is hovered */
+.comment-item--nested.comment-item--clickable:hover .comment-item--nested {
+    border-left-color: rgba(0, 0, 0, 0.1);
+}
+
+/* But allow the deeply nested one to highlight itself when directly hovered */
+.comment-item--nested.comment-item--clickable:hover .comment-item--nested.comment-item--clickable:hover {
+    border-left-color: rgba(56, 189, 248, 0.6);
 }
 
 /* Nested Comment Text Colors - High Specificity */
 .comment-item--nested .comment-main .comment-header .comment-author {
-    color: rgba(255, 255, 255, 1) !important;
-    /* White for nested author (stands out from gray main) */
+    color: #6366f1 !important;
+    /* Indigo for nested author */
 }
 
 .comment-item--nested .comment-main .comment-content {
-    color: rgba(255, 255, 255, 0.95) !important;
-    /* Brighter for nested content */
+    color: rgba(0, 0, 0, 0.85) !important;
+    /* Dark for nested content */
 }
 
 /* Toggle Button Hover - No Underline */
@@ -3481,48 +3623,70 @@ body.no-scroll {
     }
 }
 
-/* Remove duplicate tablet media query */
+
 
 /* Comment Collapse Styles */
 .comment-list {
-    transition: max-height 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+        opacity 0.4s ease;
     position: relative;
     overflow: hidden;
-    will-change: max-height;
-    /* Optimize animation performance */
+    /* 移除min-height避免抽搐 */
 }
 
-.comment-list::after {
-    content: '';
+/* ONLY use flex when showing 'no comments' */
+.comment-list:empty::before {
+    content: '暂无评论';
     position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 60px;
-    background: linear-gradient(to bottom, transparent, rgba(0, 0, 0, 0.6));
-    /* Darker gradient for better visibility */
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.5s ease;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.9rem;
+    white-space: nowrap;
 }
+
+/* 移除伪元素遮罩，改用 mask-image */
 
 .comment-list.collapsed {
-    max-height: 200px;
+    max-height: 160px;
+    /* 减小折叠高度 */
     overflow: hidden;
+    /* 使用 mask-image 实现自然淡出 */
+    -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+    mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
 }
 
-.comment-list.collapsed::after {
-    opacity: 1;
+/* 展开状态下的样式限制，防止卡片过长 */
+.comment-list:not(.collapsed) {
+    max-height: 60vh;
+    /* 限制最大高度为视口高度的60% */
+    overflow-y: auto;
+    /* 允许内部滚动 */
+    /* 自定义滚动条样式 */
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+}
+
+.comment-list:not(.collapsed)::-webkit-scrollbar {
+    width: 4px;
+}
+
+.comment-list:not(.collapsed)::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.comment-list:not(.collapsed)::-webkit-scrollbar-thumb {
+    background-color: rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
 }
 
 .comment-toggle-btn {
     width: 100%;
     padding: 12px;
     background: transparent;
-    /* Transparent background */
     border: none;
-    color: rgba(56, 189, 248, 0.8);
-    /* Accent color */
+    color: rgba(0, 0, 0, 0.6);
     cursor: pointer;
     font-size: 0.9rem;
     display: flex;
@@ -3534,18 +3698,19 @@ body.no-scroll {
 }
 
 .comment-toggle-btn:hover {
-    color: rgba(56, 189, 248, 1);
-    text-decoration: underline;
-    /* Link-like hover */
+    color: rgba(0, 0, 0, 0.8);
+    text-decoration: none;
+    background: rgba(0, 0, 0, 0.03);
+    border-radius: 8px;
 }
 
 /* Add Comment Trigger Button - Compact inline style for header */
 .add-comment-trigger-btn {
     padding: 6px 12px;
-    background: rgba(245, 158, 11, 0.1);
-    border: 1px solid rgba(245, 158, 11, 0.3);
+    background: rgba(0, 0, 0, 0.04);
+    border: 1px solid rgba(0, 0, 0, 0.1);
     border-radius: 6px;
-    color: #f59e0b;
+    color: rgba(0, 0, 0, 0.6);
     font-size: 0.8rem;
     font-weight: 600;
     cursor: pointer;
@@ -3557,8 +3722,8 @@ body.no-scroll {
 }
 
 .add-comment-trigger-btn:hover {
-    background: rgba(245, 158, 11, 0.2);
-    border-color: rgba(245, 158, 11, 0.5);
+    background: rgba(0, 0, 0, 0.06);
+    border-color: rgba(0, 0, 0, 0.15);
     transform: translateY(-1px);
 }
 
@@ -3569,21 +3734,17 @@ body.no-scroll {
 /* Comment Form Styles */
 .add-comment-form {
     position: relative;
-    margin-top: 12px;
-    padding: 16px;
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 12px;
-    overflow: hidden;
-    max-height: 500px;
+    margin-top: 0;
+    padding: 0;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    overflow: visible;
+    max-height: none;
     opacity: 1;
-    transform: scaleY(1);
+    transform: none;
     transform-origin: top;
-    transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1),
-        opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1),
-        transform 0.4s cubic-bezier(0.4, 0, 0.2, 1),
-        padding 0.4s cubic-bezier(0.4, 0, 0.2, 1),
-        margin 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* Cancel Button - Small close icon in top-right */
@@ -3762,7 +3923,7 @@ label[for],
     text-decoration: none;
 }
 
-/* Removed glossy pseudo-elements (::before, ::after) to eliminate liquid glass effect */
+
 
 /* Mobile Layout Optimizations */
 @media (max-width: 768px) {
@@ -3845,36 +4006,42 @@ label[for],
 }
 
 .login-trigger-btn {
-    /* Glassmorphism Core */
-    background: rgba(255, 255, 255, 0.05);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    /* Remove glassmorphism background */
+    background: transparent !important;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border: none !important;
+    box-shadow: none;
 
-    /* Shape and Size */
-    border-radius: 20px;
-    padding: 8px 16px;
-    height: 40px;
+    /* Circular shape to fit icon */
+    border-radius: 50%;
+    padding: 0;
+    width: 48px;
+    height: 48px;
 
     /* Misc */
     color: white;
     cursor: pointer;
     transition: all 0.3s ease;
 
-    /* Text and Icon */
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.3s ease;
+    /* Center icon */
     display: flex;
     align-items: center;
-    gap: 8px;
+    justify-content: center;
+    gap: 0;
 }
 
 /* Add shadow to default icon for 3D effect */
 #defaultAuthIcon {
-    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.5));
+    filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.4)) drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
+    font-size: 1.8rem !important;
+    transition: all 0.3s ease;
+}
+
+#defaultAuthIcon:hover {
+    transform: scale(1.1);
+    filter: drop-shadow(0 0 0 3px rgba(255, 255, 255, 0.9)) drop-shadow(0 0 15px rgba(255, 255, 255, 0.7)) brightness(1.3);
+    transition: all 0.3s ease;
 }
 
 /* 为 Sign In 文本添加过渡动画 */
@@ -3887,13 +4054,16 @@ label[for],
 
 /* 用户头像和昵称进入动画 */
 .nav-user-avatar {
-    width: 28px;
-    height: 28px;
-    min-width: 28px;
-    min-height: 28px;
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    min-height: 40px;
     border-radius: 50%;
     object-fit: cover;
-    border: 2px solid rgba(255, 255, 255, 0.8);
+    border: none !important;
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.4),
+        0 4px 8px rgba(0, 0, 0, 0.3) !important;
+    transition: all 0.3s ease;
     /* White border for 3D effect */
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
     /* Shadow for depth */
@@ -3909,11 +4079,11 @@ label[for],
 }
 
 #authBtnText.animate-in {
-    /* 昵称动画已移除，使用CSS悬浮控制 */
+
     animation: userTextRise 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.1s backwards;
 }
 
-/* 登录状态下完全隐藏昵称，不再使用悬浮展开 */
+
 /* 登录状态下隐藏昵称，使用动画过渡 */
 .login-trigger-btn.logged-in #authBtnText {
     max-width: 0;
@@ -3968,14 +4138,6 @@ label[for],
         opacity: 1;
         transform: translateY(0);
     }
-}
-
-.login-trigger-btn:hover {
-    background: rgba(255, 255, 255, 0.15);
-    border-color: rgba(255, 255, 255, 0.3);
-    transform: translateY(-2px);
-    box-shadow: 0 0 15px rgba(149, 76, 233, 0.3);
-    /* Purple Glow */
 }
 
 /* Login Modal Overlay */
@@ -4122,8 +4284,8 @@ label[for],
     position: absolute;
     top: 8px;
     left: 8px;
-    width: 12px;
-    height: 12px;
+    width: 16px;
+    height: 16px;
     background: #ff5f57;
     border: 1px solid #e0443e;
     border-radius: 50%;
@@ -4137,13 +4299,11 @@ label[for],
 }
 
 /* Hover时显示黑色X */
-.remove-image-btn::after {
-    content: '×';
-    position: absolute;
-    color: #2c0001;
+/* Hover时显示黑色X */
+.remove-image-btn i {
     font-size: 10px;
-    font-weight: bold;
-    line-height: 1;
+    color: #4a0002;
+    /* Match mac-dot red icon color */
     opacity: 0;
     transition: opacity 0.2s ease;
 }
@@ -4153,11 +4313,11 @@ label[for],
     box-shadow: 0 0 8px rgba(255, 95, 87, 0.6);
 }
 
-.remove-image-btn:hover::after {
+.remove-image-btn:hover i {
     opacity: 1;
 }
 
-/* 移除之前的::before和i样式，不再需要 */
+
 .image-preview-container:hover .remove-image-btn {
     opacity: 1;
 }
@@ -4664,7 +4824,7 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.1s backwards;
 }
 
-/* 移除容器动画以防止布局抖动 - 只对内部子元素动画 */
+
 .profile-back.animate-in .security-menu {
     /* 不再对整个菜单容器动画，避免布局抖动 */
     opacity: 1;
@@ -4783,16 +4943,14 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     width: 100%;
     box-sizing: border-box;
     /* 确保 padding 包含在宽度内 */
-    /* 更深的背景，与暗色主题更协调 */
-    background: rgba(0, 0, 0, 0.5);
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: transparent;
+    border: 1px solid rgba(155, 93, 229, 0.3);
     border-radius: 8px;
     padding: 10px 12px;
     color: white;
     font-size: 13px;
     margin-bottom: 10px;
     transition: all 0.2s ease;
-    /* 恢复纯色文字 */
 }
 
 .security-input::placeholder {
@@ -4802,10 +4960,9 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
 
 .security-input:focus {
     outline: none;
-    border-color: rgba(0, 122, 255, 0.6);
-    background: rgba(0, 0, 0, 0.6);
-    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1),
-        inset 0 1px 2px rgba(0, 0, 0, 0.3);
+    border-color: rgba(155, 93, 229, 0.7);
+    background: transparent !important;
+    box-shadow: 0 0 0 3px rgba(155, 93, 229, 0.15);
 }
 
 .danger-zone {
@@ -4837,14 +4994,11 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     font-size: 13px;
     font-weight: 500;
     transition: all 0.2s ease;
-    /* 恢复纯色文字 */
-    box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
 }
 
 .danger-btn:hover {
     background: #dc2626;
     transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
 }
 
 .secondary-btn {
@@ -5256,7 +5410,7 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     color: rgba(255, 255, 255, 0.3);
 }
 
-/* 已删除重复的logout样式定义 - 使用3531-3543行的统一定义 */
+
 
 /* User Avatar Styles */
 .nav-user-avatar {
@@ -6041,54 +6195,7 @@ input[type="submit"],
     cursor: default !important;
 }
 
-/* Like Button Styles */
-.like-btn {
-    background: transparent;
-    border: none;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    color: rgba(255, 255, 255, 0.5);
-    font-size: 0.9rem;
-    padding: 4px 8px;
-    border-radius: 12px;
-    transition: all 0.2s ease;
-}
 
-.like-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: rgba(255, 255, 255, 0.8);
-}
-
-.like-btn.active {
-    color: #ef4444;
-    /* Red for liked */
-}
-
-.like-btn.active i {
-    animation: heartBeat 0.3s ease-in-out;
-}
-
-/* Clean up old styles */
-/* .message-like-btn { ... } - Removed */
-/* .comment-header-bar { ... } - Removed */
-
-.comment-actions {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-top: 4px;
-}
-
-.comment-actions .like-btn {
-    padding: 2px 0;
-}
-
-.comment-actions .like-btn:hover {
-    background: transparent;
-    color: #ef4444;
-}
 
 @keyframes heartBeat {
     0% {
@@ -6102,4 +6209,148 @@ input[type="submit"],
     100% {
         transform: scale(1);
     }
+}
+
+/* Cache buster: 1764385623 */
+
+/* ==========================================================================
+   FORCE REWRITE: View More Button (Renamed to bypass conflicts)
+   ========================================================================== */
+.guestbook-view-more,
+.guestbook-view-more:visited {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 8px !important;
+    margin-top: 20px !important;
+    padding: 12px 24px !important;
+    background: transparent !important;
+    border: none !important;
+    color: #f472b6 !important;
+    /* Pink-400 */
+    font-size: 0.95rem !important;
+    font-weight: 600 !important;
+    text-decoration: none !important;
+    cursor: pointer !important;
+    transition-duration: 0.5s !important;
+    transition-timing-function: ease-out !important;
+    /* Match modal content animation (0.5s ease-out) */
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    -webkit-font-smoothing: antialiased;
+    position: relative !important;
+    z-index: 1000 !important;
+}
+
+.guestbook-view-more:hover {
+    color: #ff85c0 !important;
+    /* Lighter Pink (Pink-300) */
+    transform: translateY(-2px) translateZ(0) !important;
+    /* Match submit-btn lift */
+    text-shadow: 0 4px 12px rgba(244, 114, 182, 0.4) !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    transition-delay: 0s !important;
+    /* Instant hover response */
+}
+
+.guestbook-view-more:active {
+    transform: translateY(-1px) translateZ(0) !important;
+}
+
+.guestbook-view-more i {
+    font-size: 1.1em !important;
+    transition: transform 0.3s ease !important;
+}
+
+.guestbook-view-more:hover i {
+    transform: scale(1.1) !important;
+}
+
+/* Mobile Scroll Highlight Effect - 白色卡片版 */
+@media (max-width: 768px) {
+    .message-item {
+        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .message-item.active-focus {
+        /* 优雅的抬起效果 */
+        transform: scale(1.02) translateY(-3px);
+
+        /* 完全不透明 */
+        background: rgba(255, 255, 255, 1) !important;
+
+        /* 紫色边框 */
+        border-color: rgba(139, 92, 246, 0.3) !important;
+
+        /* 更深的阴影 */
+        box-shadow:
+            0 8px 16px rgba(0, 0, 0, 0.08),
+            0 20px 40px rgba(0, 0, 0, 0.12),
+            0 0 0 1px rgba(139, 92, 246, 0.2) !important;
+
+        z-index: 10;
+    }
+}
+
+/* 强制禁止移动端页面缩放 */
+html,
+body {
+    touch-action: pan-y !important;
+    -ms-touch-action: pan-y !important;
+}
+
+/* 图片预览模态框也禁止缩放，避免触发页面缩放 */
+.image-modal,
+.image-modal * {
+    touch-action: none !important;
+}
+
+/* 修复输入框获得焦点时模态框被输入法遮挡的问题 */
+@media (max-width: 768px) {
+    .modal-overlay.active {
+        align-items: flex-start !important;
+        padding-top: 20px;
+    }
+
+    .guestbook-content {
+        margin-top: 0 !important;
+        max-height: calc(100vh - 40px) !important;
+        overflow-y: auto !important;
+    }
+
+    /* 防止背景滚动，但不使用position:fixed避免背景跟随上移 */
+    body.modal-active {
+        overflow: hidden !important;
+        /* 移除 position: fixed，它会导致背景跟随弹窗上移 */
+    }
+}
+
+/* 强制修复iOS输入法导致的背景上移问题 */
+html,
+body {
+    position: relative !important;
+    min-height: 100vh !important;
+    overflow-x: hidden !important;
+}
+
+/* 确保background-blobs完全固定 */
+.background-blobs {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    z-index: -1 !important;
+    pointer-events: none !important;
+    /* 使用transform: translateZ(0)创建新的stacking context */
+    transform: translateZ(0) !important;
+    will-change: auto !important;
+}
+
+/* blob使用fixed相对于viewport */
+.background-blobs .blob {
+    position: fixed !important;
 }

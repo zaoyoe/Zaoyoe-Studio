@@ -12,21 +12,58 @@ function escapeHTML(str) {
 }
 
 // ==================== 加载留言板 (LeanCloud 版本) ====================
-async function loadGuestbookMessages() {
+async function loadGuestbookMessages(forceRefresh = false) {
     console.log('📋 加载留言板消息...');
 
     const container = document.getElementById('messageContainer');
     const emptyState = document.getElementById('emptyState');
 
+    // 🚀 Cache-First Strategy: Show cached content immediately
+    const CACHE_VERSION = 'v2_fix_images'; // 🆕 强制刷新缓存的版本号
+    if (!forceRefresh) {
+        const cached = localStorage.getItem('cached_messages_' + CACHE_VERSION);
+        const cacheTime = localStorage.getItem('cache_time_' + CACHE_VERSION);
+        const currentTime = Date.now();
+
+        // Use cache if it's less than 30 minutes old
+        if (cached && cacheTime && (currentTime - parseInt(cacheTime) < 30 * 60 * 1000)) {
+            try {
+                const messages = JSON.parse(cached);
+                console.log('⚡ 使用缓存数据 (立即显示) - 缓存时间:', new Date(parseInt(cacheTime)).toLocaleTimeString());
+
+                if (typeof renderMessages === 'function') {
+                    renderMessages(messages);
+
+                    // If cache is recent (<2 min), skip background refresh
+                    if (currentTime - parseInt(cacheTime) < 2 * 60 * 1000) {
+                        console.log('✅ 缓存足够新鲜，跳过后台更新');
+                        return messages;
+                    }
+                }
+
+                // Continue loading fresh data in background
+                console.log('🔄 后台更新数据...');
+            } catch (e) {
+                console.error('缓存解析失败:', e);
+            }
+        }
+    }
+
     try {
+        const startTime = performance.now();
+
         // 1. 查询留言
+        console.time('⏱️ Query Messages');
         const query = new AV.Query('Message');
-        // 回退到按创建时间倒序，确保能拉取到最新的留言
-        // 客户端会根据 latestActivityTimestamp 重新排序（实现顶贴效果）
-        query.descending('createdAt');
-        query.limit(100);  // 限制100条
+        // Only select necessary fields to reduce payload
+        query.select('userName', 'userAvatar', 'content', 'imageUrl', 'createdAt', 'likes');
+        // 按热度排序 (点赞数倒序)，其次按时间倒序
+        query.addDescending('likes');
+        query.addDescending('createdAt');
+        query.limit(1000);  // 增加到1000条，确保获取更多历史留言
 
         const messages = await query.find();
+        console.timeEnd('⏱️ Query Messages');
 
         console.log(`✅ 加载了 ${messages.length} 条留言`);
 
@@ -35,17 +72,11 @@ async function loadGuestbookMessages() {
         // We will add comment IDs after we fetch comments, but we need to do this in order.
         // Let's fetch comments first, then likes.
 
-        // ... (Wait, the original code fetches comments later. Let's adjust the flow)
-        // Actually, we can fetch likes for messages first, or wait until we have all IDs.
-        // The current structure fetches messages -> then comments.
-        // Let's insert the like fetching AFTER fetching comments.
 
-
-        // 4. (Moved) 转换为 guestbook.js 期望的格式
-        // Wait until we have like counts!
 
 
         // 2. 获取所有相关的评论
+        console.time('⏱️ Query Comments');
         // 为了减少请求，我们可以一次性获取这些消息的所有评论
         // 或者简单点，为每条消息单独获取（如果消息不多）
         // 这里采用一次性获取所有相关评论的方法 (Query IN)
@@ -59,9 +90,10 @@ async function loadGuestbookMessages() {
         // 不使用 include('user') 避免 ACL 权限问题
         // 用户信息已经存储在 userName 字段中
         commentQuery.ascending('createdAt'); // 评论按时间正序
-        commentQuery.limit(1000);
+        commentQuery.limit(200); // 减少评论查询限制以提升速度
 
         const comments = await commentQuery.find();
+        console.timeEnd('⏱️ Query Comments');
         console.log(`✅ 加载了 ${comments.length} 条评论`);
 
         // 3. 构建评论树结构（支持嵌套回复）
@@ -75,13 +107,15 @@ async function loadGuestbookMessages() {
         const userLikedSet = new Set(); // targetIds liked by current user
 
         if (allTargetIds.length > 0) {
+            console.time('⏱️ Query Likes');
             console.log(`🔍 [Load] Fetching likes for ${allTargetIds.length} items...`);
             const likeQuery = new AV.Query('Like');
             likeQuery.containedIn('targetId', allTargetIds);
-            likeQuery.limit(1000); // 注意：如果超过1000条点赞可能需要分页，暂且假设够用
+            likeQuery.limit(500); // 减少到500以提升性能
 
             try {
                 const allLikes = await likeQuery.find();
+                console.timeEnd('⏱️ Query Likes');
                 console.log(`🔍 [Load] Found ${allLikes.length} total likes`);
 
                 const currentUserId = AV.User.current()?.id;
@@ -241,10 +275,17 @@ async function loadGuestbookMessages() {
             msg.latestActivityTimestamp = latestTime;
         });
 
-        // 🆕 5. 客户端排序：按 latestActivityTimestamp 倒序
-        formattedMessages.sort((a, b) => b.latestActivityTimestamp - a.latestActivityTimestamp);
+        // 🆕 5. 客户端排序：按热度（点赞数）倒序，其次按创建时间倒序
+        formattedMessages.sort((a, b) => {
+            // 首先按点赞数排序
+            if (b.likes !== a.likes) {
+                return b.likes - a.likes;
+            }
+            // 点赞数相同时，按创建时间排序
+            return new Date(b.rawDate).getTime() - new Date(a.rawDate).getTime();
+        });
 
-        console.log('✅ 留言板数据处理完成 (已按最新动态排序)');
+        console.log('✅ 留言板数据处理完成 (已按热度排序)');
 
         // 渲染到页面 (调用 guestbook.js 中的 renderMessages)
         if (typeof renderMessages === 'function') {
@@ -253,8 +294,9 @@ async function loadGuestbookMessages() {
             console.error('❌ renderMessages function not found!');
         }
 
-        // 缓存到本地
-        localStorage.setItem('cached_messages', JSON.stringify(formattedMessages));
+        // 缓存到本地（带时间戳和版本号）
+        localStorage.setItem('cached_messages_' + CACHE_VERSION, JSON.stringify(formattedMessages));
+        localStorage.setItem('cache_time_' + CACHE_VERSION, Date.now().toString());
 
         // Store for debugging
         window.lastLoadedMessages = formattedMessages;
@@ -298,8 +340,13 @@ async function loadGuestbookMessages() {
                         重新加载
                     </button>
                 </div>
+                </div>
             `;
         }
+
+        // 🆕 确保隐藏加载指示器
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        if (loadingIndicator) loadingIndicator.style.display = 'none';
 
         return [];
     }
@@ -312,7 +359,13 @@ async function addMessage(content, imageUrl = '') {
     // 检查登录状态
     const currentUser = AV.User.current();
     if (!currentUser) {
-        alert('请先登录后再留言');
+        if (confirm('请先登录后再留言。是否立即登录？')) {
+            if (typeof window.parent.toggleLoginModal === 'function') {
+                window.parent.toggleLoginModal();
+            } else if (typeof toggleLoginModal === 'function') {
+                toggleLoginModal();
+            }
+        }
         return false;
     }
 
@@ -336,8 +389,8 @@ async function addMessage(content, imageUrl = '') {
 
         console.log('✅ 留言发送成功');
 
-        // 重新加载留言板
-        await loadGuestbookMessages();
+        // 重新加载留言板 (强制刷新缓存)
+        await loadGuestbookMessages(true);
 
         return true;
 
@@ -354,7 +407,13 @@ async function addCommentToMessage(messageId, content) {
 
     const currentUser = AV.User.current();
     if (!currentUser) {
-        alert('请先登录后再评论');
+        if (confirm('请先登录后再评论。是否立即登录？')) {
+            if (typeof window.parent.toggleLoginModal === 'function') {
+                window.parent.toggleLoginModal();
+            } else if (typeof toggleLoginModal === 'function') {
+                toggleLoginModal();
+            }
+        }
         return false;
     }
 
@@ -377,15 +436,10 @@ async function addCommentToMessage(messageId, content) {
         // 3. 保存评论
         await comment.save();
 
-        // 🆕 4. (已移除) 更新父留言的 latestActivityAt - 由于 ACL 限制，普通用户无法更新他人留言
-        // 我们将在前端通过排序解决这个问题
-        // const messageToUpdate = AV.Object.createWithoutData('Message', messageId);
-        // messageToUpdate.set('latestActivityAt', new Date());
-        // await messageToUpdate.save();
-        // console.log('✅ 父留言最新动态时间已更新');
 
-        // 5. 重新加载留言板
-        await loadGuestbookMessages();
+
+        // 5. 重新加载留言板 (强制刷新缓存)
+        await loadGuestbookMessages(true);
 
         return true;
 
@@ -408,7 +462,13 @@ async function addReplyToComment(parentCommentId, messageId, content) {
 
     const currentUser = AV.User.current();
     if (!currentUser) {
-        alert('请先登录后再回复');
+        if (confirm('请先登录后再回复。是否立即登录？')) {
+            if (typeof window.parent.toggleLoginModal === 'function') {
+                window.parent.toggleLoginModal();
+            } else if (typeof toggleLoginModal === 'function') {
+                toggleLoginModal();
+            }
+        }
         return false;
     }
 
@@ -453,14 +513,10 @@ async function addReplyToComment(parentCommentId, messageId, content) {
         await reply.save();
         console.log('✅ 回复发送成功');
 
-        // 🆕 5. (已移除) 更新根留言的 latestActivityAt - 由于 ACL 限制，普通用户无法更新他人留言
-        // const messageToUpdate = AV.Object.createWithoutData('Message', messageId);
-        // messageToUpdate.set('latestActivityAt', new Date());
-        // await messageToUpdate.save();
-        // console.log('✅ 根留言最新动态时间已更新');
 
-        // 6. 重新加载留言板
-        await loadGuestbookMessages();
+
+        // 6. 重新加载留言板 (强制刷新缓存)
+        await loadGuestbookMessages(true);
 
         return true;
 
@@ -494,8 +550,8 @@ async function deleteMessage(messageId) {
         await message.destroy();
         console.log('✅ 留言已删除');
 
-        // 重新加载
-        await loadGuestbookMessages();
+        // 重新加载 (强制刷新缓存)
+        await loadGuestbookMessages(true);
 
         return true;
 
