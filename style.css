@@ -2247,54 +2247,8 @@ button.upload-icon-btn {
     /* Remove top margin as container handles it */
 }
 
-/* Responsive Column Layout */
-/* Large screens: 5 columns */
-@media (min-width: 1441px) {
-    .message-container {
-        column-count: 5;
-        /* Restored to 5 columns */
-        column-gap: 20px;
-    }
-}
-
-/* Medium-large screens: 4 columns */
-@media (max-width: 1440px) and (min-width: 1025px) {
-    .message-container {
-        column-count: 4;
-    }
-}
-
-/* Tablet screens: 2 columns */
-@media (max-width: 1024px) and (min-width: 769px) {
-    .message-container {
-        column-count: 2;
-    }
-}
-
-/* Mobile Guestbook Waterfall Layout */
-@media (max-width: 768px) {
-    .message-container {
-        column-count: 2 !important;
-        /* Revert to 2 for tablets/large phones */
-        column-gap: 16px !important;
-        column-fill: balance;
-    }
-
-    .message-anim-wrapper {
-        break-inside: avoid;
-        margin-bottom: 12px;
-        display: inline-block;
-        width: 100%;
-    }
-
-    .message-item {
-        margin-bottom: 0 !important;
-    }
-
-    .guestbook-main {
-        padding: 0 12px !important;
-    }
-}
+/* Responsive Column Layout - REMOVED (Replaced by Flexbox Masonry in guestbook.js) */
+/* Old column-count styles deleted to prevent conflicts */
 
 
 
