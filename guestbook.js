@@ -115,10 +115,21 @@ document.addEventListener('DOMContentLoaded', () => {
         // Attach comment form handlers for new items
         attachCommentHandlers();
 
-        // Trigger entrance animation with a small delay
+        // Trigger entrance animation with top-to-bottom order based on actual DOM position
         setTimeout(() => {
             const wrappers = messageContainer.querySelectorAll('.message-anim-wrapper:not(.visible)');
-            wrappers.forEach(wrapper => {
+
+            // Sort wrappers by their offsetTop position (top to bottom)
+            const sortedWrappers = Array.from(wrappers).sort((a, b) => {
+                return a.offsetTop - b.offsetTop;
+            });
+
+            // Apply staggered animation based on sorted order
+            sortedWrappers.forEach((wrapper, index) => {
+                const delay = Math.min(index * 0.03, 0.6); // 0.03s per item, max 0.6s
+                wrapper.style.transitionDelay = `${delay}s`;
+
+                // Force reflow
                 void wrapper.offsetWidth;
                 wrapper.classList.add('visible');
             });
@@ -217,8 +228,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const commentCount = msg.comments ? countAllComments(msg.comments) : 0;
         const shouldCollapse = commentCount > 2;
 
-        // Calculate delay: 0.03s per item, max 0.5s
-        const delay = Math.min(index * 0.03, 0.5);
+        // Calculate delay based on item's actual DOM position (top-to-bottom)
+        // This is calculated after rendering using element's offsetTop
+        const delay = 0; // Will be set dynamically after render
 
         // Recursively render comment tree
         function renderCommentTree(comments, depth = 0, messageId, parentName = null) {
