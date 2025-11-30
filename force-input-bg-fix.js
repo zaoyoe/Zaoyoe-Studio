@@ -1,0 +1,91 @@
+// Force Input Background Fix - Immediate Execution
+(function () {
+    'use strict';
+
+    console.log('🎨 强制修复输入框背景...');
+
+    // Track currently focused input
+    let currentFocusedInput = null;
+
+    function applyInputStyles() {
+        // 获取所有输入框
+        const inputs = document.querySelectorAll('input[type="email"], input[type="password"], input[type="text"], input[type="tel"], textarea, .glass-input, .security-input');
+
+        console.log(`找到 ${inputs.length} 个输入框`);
+
+        inputs.forEach((input, index) => {
+            // Check if this input is currently focused
+            if (input === document.activeElement) {
+                applyFocusStyles(input);
+            } else {
+                // Only apply blur styles if NOT focused
+                applyBlurStyles(input);
+            }
+
+            // 添加焦点事件 - 聚焦时加深背景和边框
+            input.addEventListener('focus', function () {
+                currentFocusedInput = this;
+                applyFocusStyles(this);
+                console.log('📍 输入框获得焦点');
+            });
+
+            // 添加失焦事件 - 恢复灰白色边框
+            input.addEventListener('blur', function () {
+                if (currentFocusedInput === this) {
+                    currentFocusedInput = null;
+                }
+                applyBlurStyles(this);
+                console.log('📍 输入框失去焦点');
+            });
+
+            console.log(`✅ 已修复输入框 #${index + 1}`);
+        });
+
+        console.log('✨ 所有输入框背景已强制修复！');
+    }
+
+    function applyFocusStyles(input) {
+        input.style.setProperty('background', 'rgba(0, 0, 0, 0.5)', 'important');
+        input.style.setProperty('background-color', 'rgba(0, 0, 0, 0.5)', 'important');
+        input.style.setProperty('border', '1px solid rgba(155, 93, 229, 0.7)', 'important');
+        input.style.setProperty('border-color', 'rgba(155, 93, 229, 0.7)', 'important');
+        input.style.setProperty('box-shadow', '0 0 0 3px rgba(155, 93, 229, 0.15)', 'important');
+    }
+
+    function applyBlurStyles(input) {
+        input.style.setProperty('background', 'rgba(0, 0, 0, 0.3)', 'important');
+        input.style.setProperty('background-color', 'rgba(0, 0, 0, 0.3)', 'important');
+        input.style.setProperty('border', '1px solid rgba(155, 93, 229, 0.3)', 'important');
+        input.style.setProperty('border-color', 'rgba(155, 93, 229, 0.3)', 'important');
+        input.style.setProperty('box-shadow', 'none', 'important');
+    }
+
+    // 持续监控当前聚焦的输入框，防止样式被覆盖
+    // setInterval(function () {
+    //     if (currentFocusedInput && document.activeElement === currentFocusedInput) {
+    //         applyFocusStyles(currentFocusedInput);
+    //     }
+    // }, 50); // 每50ms检查一次
+
+    // 立即执行
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', applyInputStyles);
+    } else {
+        applyInputStyles();
+    }
+
+    // 监听DOM变化，处理动态添加的输入框
+    const observer = new MutationObserver(function (mutations) {
+        mutations.forEach(function (mutation) {
+            if (mutation.addedNodes.length) {
+                setTimeout(applyInputStyles, 100);
+            }
+        });
+    });
+
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
+
+})();

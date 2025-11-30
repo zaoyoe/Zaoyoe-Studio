@@ -32,25 +32,28 @@ class ElasticPress {
     }
 
     init() {
-        this.cards = Array.from(document.querySelectorAll('.glass-box')).map(el => ({
-            el: el,
-            // Physics State
-            current: { scale: 1, rotateX: 0, rotateY: 0 },
-            target: { scale: 1, rotateX: 0, rotateY: 0 },
-            velocity: { scale: 0, rotateX: 0, rotateY: 0 },
-            // Interaction State
-            isPressed: false
-        }));
+        this.cards = Array.from(document.querySelectorAll('.glass-box'))
+            .filter(el => !el.classList.contains('non-interactive'))
+            .map(el => ({
+                el: el,
+                // Physics State
+                current: { scale: 1, rotateX: 0, rotateY: 0 },
+                target: { scale: 1, rotateX: 0, rotateY: 0 },
+                velocity: { scale: 0, rotateX: 0, rotateY: 0 },
+                // Interaction State
+                isPressed: false
+            }));
 
         // Detect if device supports touch
         const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
         if (isTouchDevice) {
             // Global Touch Events (only on touch devices)
-            document.addEventListener('touchstart', (e) => this.handleGlobalStart(e), { passive: false });
-            document.addEventListener('touchmove', (e) => this.handleGlobalMove(e), { passive: false });
-            document.addEventListener('touchend', (e) => this.handleGlobalEnd(e), { passive: false });
-            document.addEventListener('touchcancel', (e) => this.handleGlobalEnd(e), { passive: false });
+            // Use passive:true to prevent scroll blocking
+            document.addEventListener('touchstart', (e) => this.handleGlobalStart(e), { passive: true });
+            document.addEventListener('touchmove', (e) => this.handleGlobalMove(e), { passive: true });
+            document.addEventListener('touchend', (e) => this.handleGlobalEnd(e), { passive: true });
+            document.addEventListener('touchcancel', (e) => this.handleGlobalEnd(e), { passive: true });
         }
 
         // Mouse events (always attach for desktop)
@@ -148,7 +151,7 @@ class ElasticPress {
         // 3. If we lost the active card (moved too far), look for a new one
         if (!cardEl) {
             const targetEl = document.elementFromPoint(touch.clientX, touch.clientY);
-            cardEl = targetEl ? targetEl.closest('.glass-box') : null;
+            cardEl = targetEl ? targetEl.closest('.glass-box:not(.non-interactive)') : null;
         }
         // --- Sticky Logic End ---
 

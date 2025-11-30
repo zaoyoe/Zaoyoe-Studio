@@ -29,18 +29,21 @@
 
 /* Enhanced Input Focus States for Different Views */
 #loginView .glass-input:focus {
-    border-color: rgba(155, 93, 229, 0.5);
-    box-shadow: 0 0 0 3px rgba(155, 93, 229, 0.1);
+    background: transparent !important;
+    border-color: rgba(155, 93, 229, 0.7);
+    box-shadow: 0 0 0 3px rgba(155, 93, 229, 0.12);
 }
 
 #registerView .glass-input:focus {
-    border-color: rgba(46, 213, 115, 0.5);
-    box-shadow: 0 0 0 3px rgba(46, 213, 115, 0.1);
+    background: transparent !important;
+    border-color: rgba(46, 213, 115, 0.7);
+    box-shadow: 0 0 0 3px rgba(46, 213, 115, 0.12);
 }
 
 #resetView .glass-input:focus {
-    border-color: rgba(255, 159, 64, 0.5);
-    box-shadow: 0 0 0 3px rgba(255, 159, 64, 0.1);
+    background: transparent !important;
+    border-color: rgba(255, 159, 64, 0.7);
+    box-shadow: 0 0 0 3px rgba(255, 159, 64, 0.12);
 }
 
 /* Register View Submit Button - Unified Theme */

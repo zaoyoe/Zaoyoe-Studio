@@ -3,7 +3,8 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-visual">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
@@ -14,11 +15,11 @@
         href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;700;800&display=swap"
         rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css?v=FIX_LAYOUT_SHIFT_MODAL">
-    <link rel="stylesheet" href="security-cards.css?v=NO_LAYOUT_SHIFT">
-    <link rel="stylesheet" href="login_styles.css?v=FIX_CURSOR_FINAL">
-    <link rel="stylesheet" href="login_dual_mode.css">
-    <link rel="stylesheet" href="avatar-fix.css?v=FIX_AVATAR_SQUASH">
+    <!-- <link rel="stylesheet" href="style.css?v=FIX_LAYOUT_SHIFT_MODAL"> -->
+    <link rel="stylesheet" href="security-cards.css?v=DARK_BG_INPUTS_V1">
+    <link rel="stylesheet" href="login_styles.css?v=DARK_BG_INPUTS_V1">
+    <link rel="stylesheet" href="login_dual_mode.css?v=DARK_BG_INPUTS_V1">
+    <link rel="stylesheet" href="avatar-fix.css?v=UNIFIED_HOVER_V2">
     <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
     <script type="text/javascript">
         (function () {
@@ -40,8 +41,11 @@
     <!-- Google OAuth Implementation -->
     <script src="./google-oauth.js?v=20251126_CORRECT_CLIENT_ID" defer></script>
 
+    <!-- Force Input Background Fix -->
+    <script src="./force-input-bg-fix.js?v=3" defer></script>
+
     <!-- Main Styles -->
-    <link rel="stylesheet" href="style.css?v=FORCE_FIX_V3">
+    <link rel="stylesheet" href="style.css?v=DARK_BG_INPUTS_V1">
 
     <style>
         /* Homepage entrance animation - Subtle */
@@ -108,7 +112,7 @@
         }
     </style>
     <style>
-        /* FORCE FIX: Input Visibility - Simple & Clean */
+        /* FORCE FIX: Input Visibility - Show Background on Focus */
         .guestbook-form input,
         .guestbook-form textarea,
         .modal-content input,
@@ -118,25 +122,28 @@
         .login-card textarea,
         .nickname-edit input,
         .security-input {
-            background: rgba(255, 255, 255, 0.35) !important;
-            border: 1.5px solid rgba(255, 255, 255, 0.5) !important;
+            background: rgba(0, 0, 0, 0.3) !important;
+            border: 1.5px solid rgba(155, 93, 229, 0.3) !important;
             color: #ffffff !important;
             caret-color: #ffffff !important;
             text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6) !important;
         }
 
         .guestbook-form input:focus,
+        .guestbook-form textarea:focus,
         .modal-content input:focus,
+        .modal-content textarea:focus,
         .login-card input:focus,
-        .nickname-edit input:focus {
-            background: rgba(255, 255, 255, 0.45) !important;
-            border-color: rgba(255, 255, 255, 0.7) !important;
-            box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.1) !important;
+        .nickname-edit input:focus,
+        .security-input:focus {
+            background: rgba(0, 0, 0, 0.5) !important;
+            border-color: rgba(155, 93, 229, 0.7) !important;
+            box-shadow: 0 0 0 3px rgba(155, 93, 229, 0.15) !important;
         }
 
         /* FORCE FIX: Placeholder Color */
         ::placeholder {
-            color: rgba(255, 255, 255, 0.65) !important;
+            color: rgba(255, 255, 255, 0.4) !important;
             opacity: 1 !important;
         }
 
@@ -146,105 +153,56 @@
         }
     </style>
     <script>
-        // FORCE FIX: Global Auth Handler
-        window.toggleAuthMenu = function (e) {
-            if (e) e.stopPropagation();
-            console.log('🔘 toggleAuthMenu called (INLINE)');
+        // Page load animation trigger
+        document.addEventListener('DOMContentLoaded', function () {
+            console.log('🚀 Page loaded');
+        });
 
-            const navAvatar = document.getElementById('navUserAvatar');
-            // Check visibility directly
-            const isVisible = navAvatar && (navAvatar.style.display === 'block' || navAvatar.style.display === 'inline-block');
-
-            if (isVisible) {
-                const dropdown = document.getElementById('userDropdown');
-                if (dropdown) {
-                    dropdown.classList.toggle('active');
-                    console.log('🔽 Dropdown toggled');
-                }
-            } else {
-                console.log('🔐 Triggering login');
-                // Open login modal directly
-                const loginModal = document.getElementById('loginModal');
-                if (loginModal) {
-                    loginModal.classList.add('active');
-                } else {
-                    console.error('❌ loginModal not found');
-                }
-            }
-        };
-
-        // FORCE FIX: Dropdown Actions (Inline to guarantee availability)
-        window.handleLogout = function (event) {
+        // FORCE FIX: Robust Logout Function (Inline)
+        window.forceLogout = function (event) {
             if (event) event.stopPropagation();
-            console.log('🚪 handleLogout called (INLINE)');
 
-            // Close dropdown
+            // 1. Close dropdown
             const dropdown = document.getElementById('userDropdown');
             if (dropdown) dropdown.classList.remove('active');
 
+            // 2. Confirmation
             if (!confirm("确定要退出登录吗？")) return;
 
-            // Clear LeanCloud user
-            if (typeof AV !== 'undefined' && AV.User) {
-                AV.User.logOut();
+            console.log('🚨 forceLogout called');
+
+            // 3. Try LeanCloud Logout (Best Effort)
+            try {
+                if (typeof AV !== 'undefined' && AV.User) {
+                    AV.User.logOut();
+                    console.log('✅ AV.User.logOut() executed');
+                }
+            } catch (e) {
+                console.error('⚠️ AV.User.logOut() failed:', e);
             }
 
-            // Clear local storage
+            // 4. FORCE CLEAR Local Storage
             localStorage.removeItem('cached_user_profile');
             localStorage.removeItem('remembered_credentials');
+            console.log('🗑️ Local storage cleared');
 
-            // Reset UI
+            // 5. Reset UI immediately (Visual Feedback)
             const defaultIcon = document.getElementById('defaultAuthIcon');
             const navAvatar = document.getElementById('navUserAvatar');
             const btnText = document.getElementById('authBtnText');
+            const authBtn = document.getElementById('authBtn');
 
             if (defaultIcon) defaultIcon.style.display = 'inline';
             if (navAvatar) navAvatar.style.display = 'none';
             if (btnText) btnText.textContent = 'Sign In';
-
-            const authBtn = document.getElementById('authBtn');
             if (authBtn) authBtn.classList.remove('logged-in');
 
-            console.log('✅ Logged out successfully');
-        };
-
-        window.handleSwitchAccount = function (event) {
-            if (event) event.stopPropagation();
-            console.log('🔄 handleSwitchAccount called (INLINE)');
-
-            // Close dropdown
-            const dropdown = document.getElementById('userDropdown');
-            if (dropdown) dropdown.classList.remove('active');
-
-            // Logout first
-            if (typeof AV !== 'undefined' && AV.User) {
-                AV.User.logOut();
-            }
-            localStorage.removeItem('cached_user_profile');
-            localStorage.removeItem('remembered_credentials');
-
-            // Reset UI
-            const defaultIcon = document.getElementById('defaultAuthIcon');
-            const navAvatar = document.getElementById('navUserAvatar');
-            const btnText = document.getElementById('authBtnText');
-
-            if (defaultIcon) defaultIcon.style.display = 'inline';
-            if (navAvatar) navAvatar.style.display = 'none';
-            if (btnText) btnText.textContent = 'Sign In';
-
-            // Open login modal after a short delay
+            // 6. Hard Reload to clear any memory state/overlays
+            console.log('🔄 Reloading page...');
             setTimeout(() => {
-                const loginModal = document.getElementById('loginModal');
-                if (loginModal) {
-                    loginModal.classList.add('active');
-                    loginModal.style.visibility = 'visible';
-                    loginModal.style.opacity = '1';
-                    loginModal.style.display = 'flex';
-                }
-            }, 200);
+                window.location.reload();
+            }, 100);
         };
-
-
     </script>
     <script>
         // Page load animation trigger
@@ -261,84 +219,79 @@
         <div class="blob blob-3"></div>
     </div>
 
-    <!-- Dropdown Backdrop (Controlled by CSS :has) -->
-    <div class="dropdown-backdrop" style="z-index: 1998;"></div>
+    <!-- Dropdown Backdrop Removed -->
 
-    <div class="bento-container">
-        <!-- Profile & Clock Card (2x2) -->
+    <div class="main-wrapper">
+        <div class="bento-container">
+            <!-- Profile & Clock Card (2x2) -->
 
-        <div class="glass-box box-profile">
-            <div class="profile-header">
-                <div class="date-time-compact">
-                    <div id="current-time" style="font-size: 1.1rem; color: rgba(255,255,255,0.7); font-weight: 600;">
-                        09:15:21</div>
-                    <div id="current-date" style="font-size: 0.85rem; color: rgba(255,255,255,0.5); margin-top: 3px;">
-                        2025年11月23日</div>
+            <div class="glass-box box-profile non-interactive">
+                <div class="profile-header">
+                </div>
+                <div class="profile-main"
+                    style="display: flex; justify-content: center; align-items: center; height: 100%;">
+                    <div class="shop-heading-large">Zaoyoe</div>
+
                 </div>
             </div>
-            <div class="profile-main">
-                <div class="shop-heading-large">Zaoyoe</div>
 
+            <!-- Gemini Card (2x1) - Interactive -->
+            <div class="glass-box box-wide" data-modal-target="geminiModal">
+                <!-- Custom SVG for Gemini 4-point Star -->
+                <svg class="icon-large gemini-star" viewBox="0 0 24 24" fill="currentColor"
+                    xmlns="http://www.w3.org/2000/svg" style="width: 48px; height: 48px;">
+                    <path d="M12 0L14.5 9.5L24 12L14.5 14.5L12 24L9.5 14.5L0 12L9.5 9.5L12 0Z" />
+                </svg>
+                <div class="box-label">Gemini 专区</div>
+            </div>
+
+            <!-- Google Card (2x1) -->
+            <a href="#" class="glass-box box-wide" data-modal-target="googleModal">
+                <i class="fa-brands fa-google icon-large" style="color: #ea4335;"></i>
+                <div class="box-label">Google 邮箱</div>
+            </a>
+
+            <!-- Taobao Card (1x1) -->
+            <div class="glass-box box-small">
+                <i class="fa-solid fa-cart-shopping icon-large" style="color: #ff5000;"></i>
+                <div class="box-label">淘宝店铺</div>
+            </div>
+
+            <!-- Xianyu Card (1x1) -->
+            <div class="glass-box box-small">
+                <i class="fa-solid fa-fish icon-large" style="color: #ffda44;"></i>
+                <div class="box-label">闲鱼店铺</div>
+            </div>
+
+            <!-- 3D Design (2x1) - Wide -->
+            <div class="glass-box box-wide" data-modal-target="comingSoonModal">
+                <i class="fa-solid fa-cube icon-large" style="color: #06b6d4;"></i>
+                <div class="box-label">三维设计</div>
+            </div>
+
+            <!-- Post-production (2x1) - Wide -->
+            <div class="glass-box box-wide" data-modal-target="comingSoonModal">
+                <i class="fa-solid fa-clapperboard icon-large" style="color: #8b5cf6;"></i>
+                <div class="box-label">影视后期</div>
+            </div>
+
+            <!-- Contact Card (1x1) - Clickable -->
+            <div class="glass-box box-small" data-modal-target="contactModal">
+                <i class="fa-solid fa-address-card icon-large" style="color: #d946ef;"></i>
+                <div class="box-label">联系我们</div>
+            </div>
+
+            <!-- Guestbook Card (1x1) - Interactive -->
+            <div class="glass-box box-small" data-modal-target="guestbookModal">
+                <i class="fa-regular fa-comment-dots icon-large" style="color: #f59e0b;"></i>
+                <div class="box-label">留言板</div>
             </div>
         </div>
-
-        <!-- Gemini Card (2x1) - Interactive -->
-        <div class="glass-box box-wide" data-modal-target="geminiModal">
-            <!-- Custom SVG for Gemini 4-point Star -->
-            <svg class="icon-large gemini-star" viewBox="0 0 24 24" fill="currentColor"
-                xmlns="http://www.w3.org/2000/svg" style="width: 48px; height: 48px;">
-                <path d="M12 0L14.5 9.5L24 12L14.5 14.5L12 24L9.5 14.5L0 12L9.5 9.5L12 0Z" />
-            </svg>
-            <div class="box-label">Gemini 专区</div>
-        </div>
-
-        <!-- Google Card (2x1) -->
-        <a href="#" class="glass-box box-wide" data-modal-target="googleModal">
-            <i class="fa-brands fa-google icon-large" style="color: #ea4335;"></i>
-            <div class="box-label">Google 邮箱</div>
-        </a>
-
-        <!-- Taobao Card (1x1) -->
-        <div class="glass-box box-small">
-            <i class="fa-solid fa-cart-shopping icon-large" style="color: #ff5000;"></i>
-            <div class="box-label">淘宝店铺</div>
-        </div>
-
-        <!-- Xianyu Card (1x1) -->
-        <div class="glass-box box-small">
-            <i class="fa-solid fa-fish icon-large" style="color: #ffda44;"></i>
-            <div class="box-label">闲鱼店铺</div>
-        </div>
-
-        <!-- 3D Design (2x1) - Wide -->
-        <div class="glass-box box-wide" data-modal-target="comingSoonModal">
-            <i class="fa-solid fa-cube icon-large" style="color: #06b6d4;"></i>
-            <div class="box-label">三维设计</div>
-        </div>
-
-        <!-- Post-production (2x1) - Wide -->
-        <div class="glass-box box-wide" data-modal-target="comingSoonModal">
-            <i class="fa-solid fa-clapperboard icon-large" style="color: #8b5cf6;"></i>
-            <div class="box-label">影视后期</div>
-        </div>
-
-        <!-- Contact Card (1x1) - Clickable -->
-        <div class="glass-box box-small" data-modal-target="contactModal">
-            <i class="fa-solid fa-address-card icon-large" style="color: #d946ef;"></i>
-            <div class="box-label">联系我们</div>
-        </div>
-
-        <!-- Guestbook Card (1x1) - Interactive -->
-        <div class="glass-box box-small" data-modal-target="guestbookModal">
-            <i class="fa-regular fa-comment-dots icon-large" style="color: #f59e0b;"></i>
-            <div class="box-label">留言板</div>
-        </div>
-    </div>
-
+    </div><!-- End of main-wrapper -->
 
 
     <!-- Guestbook Modal -->
-    <div class="modal-overlay" id="guestbookModal" onclick="closeModal(event)">
+    <div class="modal-overlay" id="guestbookModal" onmousedown="closeModal(event)" onmouseup="closeModal(event)">
         <div class="modal-content guestbook-content premium-modal" style="position: relative;"
             onclick="event.stopPropagation()">
             <!-- Mac Window Controls -->
@@ -349,16 +302,12 @@
                 <div class="mac-dot yellow"></div>
                 <div class="mac-dot green"></div>
             </div>
-
             <div class="modal-title">留言板</div>
-            <p class="modal-subtitle" style="pointer-events: none; user-select: none;">
-                欢迎留下您的宝贵建议,或告诉我们您期待上架的商品。
-            </p>
-            <form class="guestbook-form" id="guestbookForm">
-                <!-- Nickname input removed - Will use logged in user -->
+            <!-- Subtitle removed -->
 
+            <form class="guestbook-form" id="guestbookForm">
                 <div class="input-group relative-container">
-                    <textarea id="guestMessage" placeholder="写下您的留言... (Message)"></textarea>
+                    <textarea id="guestMessage" placeholder="畅所欲言..."></textarea>
 
                     <!-- Integrated Upload Icon -->
                     <div class="upload-icon-wrapper">
@@ -372,7 +321,9 @@
 
                 <div id="imagePreview" class="image-preview-container" style="display: none;">
                     <img id="previewImg" src="" alt="Preview">
-                    <button type="button" class="remove-image-btn" id="removeImageBtn"></button>
+                    <button type="button" class="remove-image-btn" id="removeImageBtn">
+                        <i class="fas fa-times"></i>
+                    </button>
                 </div>
 
                 <button type="submit" class="submit-btn"
@@ -383,7 +334,7 @@
             </form>
 
             <!-- View More Button -->
-            <a href="guestbook.html" class="view-more-btn">
+            <a href="guestbook.html" class="guestbook-view-more">
                 <i class="fas fa-comment-dots"></i>
                 查看更多
             </a>
@@ -391,7 +342,7 @@
     </div>
 
     <!-- Contact Modal -->
-    <div class="modal-overlay" id="contactModal" onclick="closeModal(event)">
+    <div class="modal-overlay" id="contactModal" onmousedown="closeModal(event)" onmouseup="closeModal(event)">
         <div class="modal-content premium-modal" style="position: relative;">
             <!-- Mac Window Controls -->
             <div class="mac-controls">
@@ -413,7 +364,8 @@
                     <div class="link-title">电子邮箱</div>
                     <div class="contact-detail" style="font-size: 0.9rem; opacity: 0.8; margin-top: 5px;">
                         zaoyoe@gmail.com</div>
-                    <div class="contact-hint" style="font-size: 0.75rem; opacity: 0.5; margin-top: 2px;">(点击复制)</div>
+                    <div class="contact-hint" style="font-size: 0.75rem; opacity: 0.5; margin-top: 2px;">(点击复制)
+                    </div>
                 </div>
 
                 <!-- WeChat Card -->
@@ -428,7 +380,7 @@
     </div>
 
     <!-- Gemini Modal -->
-    <div class="modal-overlay" id="geminiModal" onclick="closeModal(event)">
+    <div class="modal-overlay" id="geminiModal" onmousedown="closeModal(event)" onmouseup="closeModal(event)">
         <div class="modal-content premium-modal" style="position: relative;">
             <!-- Mac Window Controls -->
             <div class="mac-controls">
@@ -457,7 +409,7 @@
     </div>
 
     <!-- Google Modal -->
-    <div class="modal-overlay" id="googleModal" onclick="closeModal(event)">
+    <div class="modal-overlay" id="googleModal" onmousedown="closeModal(event)" onmouseup="closeModal(event)">
         <div class="modal-content premium-modal" style="position: relative;">
             <!-- Mac Window Controls -->
             <div class="mac-controls">
@@ -489,7 +441,7 @@
             <!-- User Avatar (shown when logged in) -->
             <img id="navUserAvatar" class="nav-user-avatar" src="" alt="Avatar" style="display: none;">
 
-            <span id="authBtnText">Sign In</span>
+            <span id="authBtnText" style="display: none;">Sign In</span>
         </button>
 
         <div id="userDropdown" class="user-dropdown" style="z-index: 2100;">
@@ -514,7 +466,7 @@
                 切换账户
             </div>
 
-            <div class="menu-item logout" onclick="console.log('Logout clicked'); window.handleLogout(event)">
+            <div class="menu-item logout" onclick="console.log('Logout clicked'); window.forceLogout(event)">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
                     <polyline points="16 17 21 12 16 7"></polyline>
@@ -527,7 +479,8 @@
 
 
     <!-- Auth Modal (Dual Mode) -->
-    <div class="login-overlay" id="loginModal" onclick="handleLoginOverlayClick(event)">
+    <div class="login-overlay" id="loginModal" onmousedown="handleLoginOverlayClick(event)"
+        onmouseup="handleLoginOverlayClick(event)">
         <div class="login-card" onclick="event.stopPropagation()">
             <!-- Mac Window Controls -->
             <div class="mac-controls">
@@ -649,8 +602,8 @@
 
     <!-- Coming Soon Modal -->
     <!-- Profile Modal -->
-    <div class="modal-overlay" id="profileModal" onclick="closeModal(event)">
-        <div class="modal-content profile-modal">
+    <div class="modal-overlay" id="profileModal" onmousedown="closeModal(event)" onmouseup="closeModal(event)">
+        <div class="modal-content profile-modal" onclick="event.stopPropagation()">
             <!-- Mac Window Controls -->
             <div class="mac-controls">
                 <div class="mac-dot red" onclick="document.getElementById('profileModal').classList.remove('active')"><i
@@ -897,7 +850,7 @@
         </div>
     </div>
 
-    <div class="modal-overlay" id="comingSoonModal" onclick="closeModal(event)">
+    <div class="modal-overlay" id="comingSoonModal" onmousedown="closeModal(event)" onmouseup="closeModal(event)">
         <div class="modal-content premium-modal"
             style="position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 300px;">
             <!-- Mac Window Controls -->
@@ -913,15 +866,12 @@
                 该功能正在紧锣密鼓地开发中...
             </p>
         </div>
-    </div>
-
-    <link rel="stylesheet" href="style.css?v=FIX_ANIMATION_FINAL">
-    <link rel="stylesheet" href="style.css?v=FIX_INPUT_AVATAR_FINAL">
-    <!-- Elastic Press Effect -->
-    <script src="elastic-press.js?v=FIX_MODAL_DETECTION" defer></script>
-    <script src="script.js?v=FIX_UI_OPTIMIZATIONS_V6" defer></script>
+        <link rel="stylesheet" href="style.css?v=FIX_INPUT_AVATAR_FINAL">
+        <script src="inject-auth.js?v=12" defer></script>
+        <script src="prevent-zoom.js?v=20251130" defer></script>
+        <!-- Elastic Press Effect -->
+        <script src="elastic-press.js?v=FIX_MODAL_DETECTION" defer></script>
+        <script src="script.js?v=FIX_UI_OPTIMIZATIONS_V6" defer></script>
 </body>
-
-</html>
 
 </html>

@@ -8,7 +8,11 @@
 const LEANCLOUD_CONFIG = {
     appId: 'q6Nh03PQaIjEKthkhFGBL7AX-MdYXbMMI',
     appKey: 'sZuQhlUhkFCofqN96CLWYNyh',
-    serverURL: 'https://q6nh03pq.api.lncldglobal.com'  // 国际节点
+    // 使用 Vercel 代理转发，解决国内访问问题
+    // 生产环境使用 /api，本地开发使用直接连接
+    serverURL: window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+        ? 'https://q6nh03pq.api.lncldglobal.com'
+        : 'https://www.zaoyoe.com/api'
 };
 
 // 初始化 LeanCloud

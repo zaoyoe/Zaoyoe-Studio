@@ -193,9 +193,13 @@ function handleLogout(event) {
     console.log('🚪 退出登录');
 
     // 退出登录
-    AV.User.logOut();
+    try {
+        AV.User.logOut();
+    } catch (error) {
+        console.error('❌ LeanCloud logout failed:', error);
+    }
 
-    // 清除自动登录凭证 (但不清除 saved_passwords，以便下次自动填充)
+    // 无论 SDK 退出是否成功，都强制清除本地状态
     localStorage.removeItem('remembered_credentials');
     console.log('🗑️ 已清除自动登录凭证');
 
@@ -284,6 +288,14 @@ function checkAuthState() {
     const currentUser = AV.User.current();
 
     if (currentUser) {
+        // 数据完整性检查：如果关键信息丢失，强制登出
+        if (!currentUser.get('email') && !currentUser.get('username')) {
+            console.warn('⚠️ 检测到用户状态异常（缺失关键信息），强制清理状态');
+            AV.User.logOut(); // 尝试清除 SDK 状态
+            updateUserUI(null); // 清除 UI
+            return;
+        }
+
         console.log('✅ 用户已登录:', currentUser.toJSON());
 
         updateUserUI({
@@ -389,7 +401,7 @@ function updateUserUI(user) {
             authBtn.classList.add('logged-in');
         }
         if (profileModalEmail) {
-            profileModalEmail.textContent = user.email;
+            profileModalEmail.textContent = user.email || '未绑定邮箱';
         }
         if (profileModalAvatar && user.avatarUrl) {
             profileModalAvatar.src = user.avatarUrl;
@@ -407,11 +419,12 @@ function updateUserUI(user) {
         // 注意：不要覆盖 HTML 中的 onclick，而是确保 handleAuthClick 函数可用
         // HTML 中已经有 onclick="handleAuthClick(event)"，所以不需要重新绑定
 
-        // 确保Log Out按钮的点击处理器正确绑定
+        // ⚠️ DO NOT OVERRIDE LOGOUT BUTTON HANDLER
+        // The HTML onclick="window.forceLogout(event)" is the robust fix.
+        // Overriding it here with handleLogout would break the force logout mechanism.
         const logoutBtn = document.querySelector('.menu-item.logout');
         if (logoutBtn) {
-            logoutBtn.onclick = handleLogout;
-            console.log('✅ Log Out button handler attached');
+            console.log('✅ Log Out button handler preserved (using forceLogout)');
         }
 
         // Cach
@@ -739,20 +752,8 @@ async function handleAvatarUpload(event) {
                 if (is403Error || isACLError) {
                     console.log('🔧 Attempting to auto-fix ACL for existing user...');
 
-                    alert(`❌ 头像上传失败：权限不足\n\n原因：您的账户权限需要管理员手动授权。\n\n解决方案：\n1. 请联系管理员\n2. 提供您的用户名或邮箱\n3. 管理员会在后台为您开通权限\n4. 然后您就可以上传头像了\n\n抱歉给您带来不便！`);
-
-                    // 仍然尝试自动修复（万一能成功）
-                    try {
-                        await currentUser.fetch();
-                        const acl = new AV.ACL(currentUser);
-                        acl.setPublicReadAccess(true);
-                        acl.setWriteAccess(currentUser, true);
-                        currentUser.setACL(acl);
-                        await currentUser.save();
-                        console.log('✅ ACL auto-fix succeeded!');
-                    } catch (retryError) {
-                        console.error('❌ ACL auto-fix failed:', retryError);
-                    }
+                    // 尝试自动修复
+                    console.log('🔧 Attempting to auto-fix ACL for existing user...');
                     try {
                         // 关键修复：先fetch最新的用户对象
                         // LeanCloud要求在修改ACL前必须先获取完整的用户数据
@@ -1101,17 +1102,21 @@ function checkEmailVerified() {
     currentUser.fetch().then(user => {
         const isVerified = user.get('emailVerified');
 
-        if (isVerified) {
-            statusIcon.innerHTML = '<i class="fas fa-check-circle" style="color: #4ade80;"></i>';
-            statusText.textContent = '您的邮箱已验证，账户安全。';
-            statusText.style.color = '#4ade80';
-            resendBtn.style.display = 'none';
-        } else {
-            statusIcon.innerHTML = '<i class="fas fa-exclamation-triangle" style="color: #fbbf24;"></i>';
-            statusText.textContent = '您的邮箱尚未验证，请尽快验证以确保账户安全。';
-            statusText.style.color = '#fbbf24';
-            resendBtn.style.display = 'block';
+        if (statusIcon && statusText && resendBtn) {
+            if (isVerified) {
+                statusIcon.innerHTML = '<i class="fas fa-check-circle" style="color: #4ade80;"></i>';
+                statusText.textContent = '您的邮箱已验证，账户安全。';
+                statusText.style.color = '#4ade80';
+                resendBtn.style.display = 'none';
+            } else {
+                statusIcon.innerHTML = '<i class="fas fa-exclamation-triangle" style="color: #fbbf24;"></i>';
+                statusText.textContent = '您的邮箱尚未验证，请尽快验证以确保账户安全。';
+                statusText.style.color = '#fbbf24';
+                resendBtn.style.display = 'block';
+            }
         }
+    }).catch(error => {
+        console.warn('Check email verified failed:', error);
     });
 }
 
@@ -1167,33 +1172,6 @@ async function resendVerificationEmail() {
     }
 }
 
-// 3. 修改密码
-async function changePassword() {
-    const oldPassword = document.getElementById('oldPasswordInput').value;
-    const newPassword = document.getElementById('newPasswordInput').value;
-
-    if (!oldPassword || !newPassword) {
-        alert('请输入当前密码和新密码');
-        return;
-    }
-
-    if (newPassword.length < 6) {
-        alert('新密码长度不能少于6位');
-        return;
-    }
-
-    const currentUser = AV.User.current();
-    if (!currentUser) return;
-
-    try {
-        // LeanCloud requires updating password via updatePassword(old, new)
-        await currentUser.updatePassword(oldPassword, newPassword);
-        alert('密码修改成功！请重新登录。');
-        handleLogout();
-    } catch (error) {
-        alert('密码修改失败: ' + error.message);
-    }
-}
 
 // 4. 注销账号
 async function deleteAccount() {
@@ -1319,8 +1297,9 @@ async function bindPhoneNumber(phoneNumber, code) {
 }
 
 // 显式挂载所有安全函数到 window 对象
-window.changePassword = changePassword;
+// changePassword is now in security-cards.js
 window.deleteAccount = deleteAccount;
 window.requestPhoneBindCode = requestPhoneBindCode;
 window.bindPhoneNumber = bindPhoneNumber;
+
 

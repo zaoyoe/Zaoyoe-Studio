@@ -72,13 +72,13 @@
 
 /* Login Card - Forced Exact Match with Guestbook */
 .login-card {
-    background: rgba(0, 0, 0, 0.1) !important;
+    background: rgba(255, 255, 255, 0.03) !important;
     /* Much lighter black transparent */
-    padding: 50px;
+    padding: 40px !important;
     border-radius: 24px;
     text-align: center;
     max-width: 90%;
-    width: 480px;
+    width: 360px !important;
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-top: 1px solid rgba(255, 255, 255, 0.2);
@@ -278,20 +278,24 @@
     display: flex;
     align-items: center;
     text-align: center;
-    margin: 24px 0;
-    color: rgba(255, 255, 255, 0.4);
-    font-size: 13px;
+    margin: 0 0 28px 0;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 14px;
 }
 
-.login-divider::before,
+.login-divider::before {
+    display: none;
+}
+
 .login-divider::after {
-    content: '';
+    content: "";
     flex: 1;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    height: 1px;
+    background: rgba(255, 255, 255, 0.1);
 }
 
 .login-divider span {
-    padding: 0 16px;
+    padding: 0 14px;
 }
 
 /* Input Group */
@@ -299,29 +303,8 @@
     margin-bottom: 20px;
 }
 
-.glass-input {
-    width: 100%;
-    padding: 14px 16px;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 12px;
-    color: white;
-    font-size: 15px;
-    transition: all 0.3s;
-    outline: none;
-}
+/* glass-input styles are inherited from style.css - DO NOT override */
 
-.glass-input:focus {
-    background: rgba(255, 255, 255, 0.08);
-    border-color: rgba(155, 93, 229, 0.5);
-    /* Changed to purple */
-    box-shadow: 0 0 0 3px rgba(155, 93, 229, 0.1);
-    /* Changed to purple */
-}
-
-.glass-input::placeholder {
-    color: rgba(255, 255, 255, 0.3);
-}
 
 /* Input with Action Button (for verification code) */
 /* Input with Action Button (for verification code) */
@@ -409,30 +392,8 @@
     font-size: 14px;
 }
 
-.switch-link {
-    color: #9b5de5;
-    cursor: pointer;
-    font-weight: 600;
-    transition: color 0.2s;
-}
+/* switch-link and forgot-password-link styles are inherited from style.css - DO NOT override */
 
-.switch-link:hover {
-    color: #b47cf3;
-
-}
-
-/* Forgot Password Link */
-.forgot-password-link {
-    color: #9b5de5;
-    font-size: 13px;
-    cursor: pointer;
-    transition: color 0.2s;
-}
-
-.forgot-password-link:hover {
-    color: #b47cf3;
-    /* Removed text-decoration: underline */
-}
 
 /* Form View Toggle */
 .form-view {
@@ -469,17 +430,17 @@
 .glass-input:-webkit-autofill,
 .glass-input:-webkit-autofill:hover,
 .glass-input:-webkit-autofill:focus {
-    -webkit-box-shadow: 0 0 0 1000px rgba(40, 40, 50, 0.9) inset, 0 0 0 3px rgba(155, 93, 229, 0.3) !important;
-    box-shadow: 0 0 0 1000px rgba(40, 40, 50, 0.9) inset, 0 0 0 3px rgba(155, 93, 229, 0.3) !important;
+    -webkit-box-shadow: 0 0 0 1000px transparent inset, 0 0 0 3px rgba(155, 93, 229, 0.15) !important;
+    box-shadow: 0 0 0 1000px transparent inset, 0 0 0 3px rgba(155, 93, 229, 0.15) !important;
     -webkit-text-fill-color: white !important;
-    border-color: rgba(155, 93, 229, 0.5) !important;
+    border-color: rgba(155, 93, 229, 0.7) !important;
     transition: background-color 5000s ease-in-out 0s;
 }
 
 /* Firefox autofill */
 .glass-input:-moz-autofill,
 .glass-input:-moz-autofill-preview {
-    box-shadow: 0 0 0 1000px rgba(40, 40, 50, 0.9) inset, 0 0 0 3px rgba(155, 93, 229, 0.3) !important;
+    box-shadow: 0 0 0 1000px transparent inset, 0 0 0 3px rgba(155, 93, 229, 0.15) !important;
     color: white !important;
-    border-color: rgba(155, 93, 229, 0.5) !important;
+    border-color: rgba(155, 93, 229, 0.7) !important;
 }
