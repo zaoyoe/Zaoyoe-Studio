@@ -3117,8 +3117,8 @@ body.no-scroll {
     opacity: 0;
     background: transparent !important;
     /* Force transparent */
-    border: 2px solid rgba(255, 255, 255, 0.8) !important;
-    /* Add white border */
+    border: none !important;
+    /* Remove white border */
     box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3) !important;
     /* Add depth shadow */
     outline: none !important;
@@ -4048,11 +4048,10 @@ label[for],
     /* Prevent content from spilling out */
 }
 
-.login-trigger-btn.logged-in .nav-user-avatar {
-    margin: 0;
-    width: 40px !important;
-    height: 40px !important;
-    border: 2px solid rgba(255, 255, 255, 0.8);
+margin: 0;
+width: 40px !important;
+height: 40px !important;
+border: none !important;
 }
 
 @keyframes userAvatarRise {
@@ -5352,13 +5351,12 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
 
 
 /* User Avatar Styles */
-.nav-user-avatar {
-    width: 24px;
-    height: 24px;
-    border-radius: 50%;
-    object-fit: cover;
-    border: 1px solid rgba(255, 255, 255, 0.5);
-    margin-right: 4px;
+width: 24px;
+height: 24px;
+border-radius: 50%;
+object-fit: cover;
+border: none;
+margin-right: 4px;
 }
 
 .login-trigger-btn {
@@ -5368,22 +5366,21 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     gap: 8px;
     padding: 8px 16px;
     height: 40px;
-    background: rgba(255, 255, 255, 0.1);
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: transparent;
+    border: none;
     border-radius: 20px;
     color: white;
     font-size: 14px;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.3s ease;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
 }
 
 .login-trigger-btn:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: transparent;
     transform: translateY(-2px);
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
 }
 
 /* --- Mobile Responsive --- */
@@ -5856,13 +5853,12 @@ input[type="submit"],
 /* 已删除重复的logout样式定义 - 使用3531-3543行的统一定义 */
 
 /* User Avatar Styles */
-.nav-user-avatar {
-    width: 24px;
-    height: 24px;
-    border-radius: 50%;
-    object-fit: cover;
-    border: 1px solid rgba(255, 255, 255, 0.5);
-    margin-right: 4px;
+width: 24px;
+height: 24px;
+border-radius: 50%;
+object-fit: cover;
+border: none;
+margin-right: 4px;
 }
 
 .login-trigger-btn {
