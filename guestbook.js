@@ -706,8 +706,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Initialize on load
-    scrollObserver = initMobileHighlight();
+    // Mobile highlight will be initialized by observeNewItems() when first batch renders
 });
 
 // --- Global Modal Functions (Must be outside DOMContentLoaded) ---
