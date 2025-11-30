@@ -5872,22 +5872,21 @@ input[type="submit"],
     gap: 8px;
     padding: 8px 16px;
     height: 40px;
-    background: rgba(255, 255, 255, 0.1);
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: transparent;
+    border: none;
     border-radius: 20px;
     color: white;
     font-size: 14px;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.3s ease;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
 }
 
 .login-trigger-btn:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: transparent;
     transform: translateY(-2px);
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
 }
 
 /* --- Mobile Responsive --- */
