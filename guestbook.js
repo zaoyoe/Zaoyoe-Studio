@@ -223,80 +223,95 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }, 200);
     });
-
     // Persistent observer
     let infiniteScrollObserver = null;
 
     function setupInfiniteScroll() {
-        // Create loading indicator if needed
+        // 1. Create Sentinel (Invisible Trigger)
+        let sentinel = document.getElementById('scrollSentinel');
+        if (!sentinel) {
+            sentinel = document.createElement('div');
+            sentinel.id = 'scrollSentinel';
+            sentinel.style.cssText = `
+                width: 100%;
+                height: 10px;
+                background: transparent;
+                pointer-events: none;
+                clear: both;
+            `;
+            messageContainer.parentElement.appendChild(sentinel);
+        }
+
+        // 2. Create Loading Spinner (Visible Indicator)
         let loadingIndicator = document.getElementById('loadingIndicator');
         if (!loadingIndicator) {
             loadingIndicator = document.createElement('div');
             loadingIndicator.id = 'loadingIndicator';
-            // Ensure strictly transparent and no layout impact when hidden
+            // Strictly transparent and hidden by default
             loadingIndicator.style.cssText = `
                 width: 100%;
                 padding: 20px;
                 text-align: center;
                 color: rgba(255, 255, 255, 0.6);
                 font-size: 0.9rem;
-                display: none;
                 background: transparent !important;
                 border: none !important;
                 box-shadow: none !important;
                 clear: both;
-                opacity: 0; /* Start hidden */
+                opacity: 0;
                 transition: opacity 0.3s;
+                pointer-events: none; /* Prevent clicks */
             `;
             loadingIndicator.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 加载中...';
-            messageContainer.parentElement.appendChild(loadingIndicator);
+            // Insert BEFORE sentinel so sentinel is always last
+            messageContainer.parentElement.insertBefore(loadingIndicator, sentinel);
         }
 
-        // If observer already exists, do nothing (persistent)
+        // If observer already exists, do nothing
         if (infiniteScrollObserver) return;
 
-        // Set up Intersection Observer
+        // Set up Intersection Observer on the SENTINEL
         infiniteScrollObserver = new IntersectionObserver((entries) => {
             entries.forEach(entry => {
-                // Check if intersecting AND we have more messages
+                // Check if sentinel is intersecting
                 if (entry.isIntersecting && !isLoading && renderedCount < allMessages.length) {
-                    console.log('🔍 [Guestbook Debug] Infinite scroll triggered');
+                    console.log('🔍 [Guestbook Debug] Sentinel intersected, triggering load');
                     isLoading = true;
 
-                    // Show loading state visually
-                    loadingIndicator.style.opacity = '1';
+                    // Show spinner
+                    if (loadingIndicator) loadingIndicator.style.opacity = '1';
 
-                    // Simulate delay for smooth UX
+                    // Simulate delay
                     setTimeout(() => {
                         renderBatch(LOAD_MORE_COUNT);
                         isLoading = false;
-                    }, 500); // Slightly longer delay to prevent rapid-fire
+                    }, 500);
                 }
             });
         }, {
             root: null,
-            rootMargin: '200px', // Pre-load earlier
+            rootMargin: '200px', // Trigger well before bottom
             threshold: 0.1
         });
 
-        infiniteScrollObserver.observe(loadingIndicator);
+        infiniteScrollObserver.observe(sentinel);
     }
 
     function updateLoadingIndicator() {
         const loadingIndicator = document.getElementById('loadingIndicator');
+        const sentinel = document.getElementById('scrollSentinel');
+
         if (loadingIndicator) {
             if (renderedCount < allMessages.length) {
-                loadingIndicator.style.display = 'block';
-                // Small delay to allow display:block to apply before opacity transition
-                setTimeout(() => { loadingIndicator.style.opacity = '1'; }, 10);
-            } else {
+                // Keep spinner in DOM but hide it until loading starts
+                // It will be shown by the observer callback when loading starts
+                // Or we can show it "ready" state? No, better hide it.
                 loadingIndicator.style.opacity = '0';
-                setTimeout(() => {
-                    loadingIndicator.style.display = 'none';
-                }, 300);
-
-                // Don't disconnect observer, just hide indicator
-                // This allows it to work if we reset/reload messages
+            } else {
+                // All loaded
+                loadingIndicator.style.display = 'none';
+                if (sentinel) sentinel.style.display = 'none'; // Disable sentinel
+                if (infiniteScrollObserver) infiniteScrollObserver.disconnect();
             }
         }
     }
