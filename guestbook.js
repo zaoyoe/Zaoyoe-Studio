@@ -631,6 +631,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     // Mobile Scroll Highlight - Simplified and Immediate
     let mobileHighlightActive = false;
+    let currentHighlightedItem = null; // Track currently highlighted item
 
     function updateMobileHighlight() {
         // Only run on mobile
@@ -655,14 +656,31 @@ document.addEventListener('DOMContentLoaded', () => {
                 minDistance = distance;
                 closestItem = item;
             }
+        });
 
-            // Remove highlight from all
+        // Hysteresis: only switch if new item is significantly closer (50px threshold)
+        const SWITCH_THRESHOLD = 50;
+
+        if (currentHighlightedItem && currentHighlightedItem !== closestItem) {
+            const currentRect = currentHighlightedItem.getBoundingClientRect();
+            const currentCenterY = currentRect.top + (currentRect.height / 2);
+            const currentDistance = Math.abs(centerY - currentCenterY);
+
+            // Only switch if new item is at least SWITCH_THRESHOLD closer
+            if (minDistance > currentDistance - SWITCH_THRESHOLD) {
+                return; // Keep current highlight
+            }
+        }
+
+        // Remove highlight from all
+        items.forEach(item => {
             item.classList.remove('active-focus');
         });
 
-        // Highlight closest (guaranteed to exist)
+        // Highlight closest
         if (closestItem) {
             closestItem.classList.add('active-focus');
+            currentHighlightedItem = closestItem;
             console.log('📱 [Mobile Highlight] Highlighted closest card');
         }
     }
