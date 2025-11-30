@@ -79,7 +79,6 @@ function resetSecurityCards() {
 }
 
 // Phone Binding Functions
-// Phone Binding Functions
 let phoneCooldownTimer = null;
 let phoneCooldownSeconds = 0;
 
@@ -195,14 +194,22 @@ function bindPhone(source = 'desktop') {
 }
 
 // Change Password Function
-function changePassword(source = 'desktop') {
-    const prefix = source === 'mobile' ? 'mobile_' : '';
-    const oldPassInput = document.getElementById(`${prefix}oldPassword`);
-    const newPassInput = document.getElementById(`${prefix}newPassword`);
+async function changePassword(source = 'desktop') {
+    // Determine correct input IDs based on source
+    let oldPassInput, newPassInput;
+
+    if (source === 'mobile') {
+        oldPassInput = document.getElementById('mobile_oldPassword');
+        newPassInput = document.getElementById('mobile_newPassword');
+    } else {
+        // Desktop uses different IDs
+        oldPassInput = document.getElementById('oldPasswordInput');
+        newPassInput = document.getElementById('newPasswordInput');
+    }
 
     if (!oldPassInput || !newPassInput) {
-        // Fallback to desktop IDs if mobile IDs not found (or vice versa)
-        console.error('Password inputs not found for source:', source);
+        console.error('❌ Password inputs not found for source:', source);
+        alert('系统错误：找不到密码输入框');
         return;
     }
 
@@ -219,19 +226,43 @@ function changePassword(source = 'desktop') {
         return;
     }
 
-    // Call backend function (assuming it exists globally)
-    if (typeof window.updateUserPassword === 'function') {
-        window.updateUserPassword(oldPassword, newPassword).then(success => {
-            if (success) {
-                oldPassInput.value = '';
-                newPassInput.value = '';
-            }
-        });
-    } else {
-        console.log('Mock password change:', { oldPassword, newPassword });
-        alert('密码修改成功 (演示模式)');
+    const currentUser = AV.User.current();
+    if (!currentUser) {
+        alert('请先登录');
+        return;
+    }
+
+    try {
+        // LeanCloud requires updating password via updatePassword(old, new)
+        await currentUser.updatePassword(oldPassword, newPassword);
+        alert('密码修改成功！请重新登录。');
+
+        // Clear inputs
         oldPassInput.value = '';
         newPassInput.value = '';
+
+        // Logout and redirect to login
+        if (typeof handleLogout === 'function') {
+            handleLogout();
+        }
+    } catch (error) {
+        console.error('❌ Password change failed:', error);
+
+        let errorMsg = '密码修改失败';
+
+        // Handle specific LeanCloud errors
+        if (error.code === 210 || (error.message && error.message.includes('mismatch'))) {
+            errorMsg = '当前密码不正确，请检查后重试。';
+        } else if (error.code === 1) {
+            errorMsg = '操作过于频繁，请稍后再试。';
+        } else if (error.message) {
+            errorMsg = '密码修改失败: ' + error.message;
+        }
+
+        // Ensure alert is called
+        setTimeout(() => {
+            alert(errorMsg);
+        }, 100);
     }
 }
 
@@ -242,9 +273,5 @@ window.sendPhoneVerificationCode = sendPhoneVerificationCode;
 window.bindPhone = bindPhone;
 window.changePassword = changePassword;
 
-// Expose to window
-window.expandSecurityCard = expandSecurityCard;
-window.resetSecurityCards = resetSecurityCards;
-window.sendPhoneVerificationCode = sendPhoneVerificationCode;
-window.bindPhone = bindPhone;
+
 

@@ -137,12 +137,23 @@ function toggleLoginModal() {
     }
 }
 
+let loginOverlayMouseDownTarget = null;
+
 function handleLoginOverlayClick(event) {
-    // 只关闭模态框，如果点击的是 overlay 本身（不是 login-card 或其子元素）
-    if (event.target.classList.contains('login-overlay')) {
-        toggleLoginModal();
+    // Track mousedown to differentiate clicks from drags
+    // Only close if mousedown and mouseup both happened on overlay (not a drag)
+    if (event.type === 'mousedown') {
+        loginOverlayMouseDownTarget = event.target;
+    } else if (event.type === 'mouseup') {
+        // Only close if both mousedown and mouseup were on the overlay
+        // This prevents closing when dragging text selection
+        if (event.target.classList.contains('login-overlay') &&
+            loginOverlayMouseDownTarget &&
+            loginOverlayMouseDownTarget.classList.contains('login-overlay')) {
+            toggleLoginModal();
+        }
+        loginOverlayMouseDownTarget = null;
     }
-    // 如果点击的是 login-card 或其子元素，不关闭模态框，让事件正常传播
 }
 
 function switchAuthView(view) {
@@ -166,6 +177,8 @@ function switchAuthView(view) {
 }
 
 // --- Coming Soon Modal Logic ---
+// Global scroll position tracker
+
 function openModal(modalId) {
     console.log('🔵 openModal called with:', modalId);
     const modal = document.getElementById(modalId);
@@ -178,24 +191,45 @@ function openModal(modalId) {
     }
 }
 
+let modalOverlayMouseDownTarget = null; // Declare globally
+
 function closeModal(event) {
-    // Close if clicked on overlay or close button
-    if (event.target.classList.contains('modal-overlay') ||
-        event.target.closest('.close-btn') ||
+    // Track mousedown to differentiate clicks from drags
+    if (event.type === 'mousedown') {
+        modalOverlayMouseDownTarget = event.target;
+    } else if (event.type === 'mouseup') {
+        // Only close if both mousedown and mouseup were on the overlay
+        // This prevents closing when dragging text selection or clicking inputs
+        if (event.target.classList.contains('modal-overlay') &&
+            modalOverlayMouseDownTarget &&
+            modalOverlayMouseDownTarget.classList.contains('modal-overlay')) {
+            closeAllModals();
+        }
+        modalOverlayMouseDownTarget = null;
+    }
+
+    // Also close if clicked on close buttons, regardless of drag
+    if (event.target.closest('.close-btn') ||
         event.target.closest('.close-pill-btn') ||
         event.target.closest('.mac-dot.red') ||
         event.target.closest('.modal-close-icon')) {
-
-        const modals = document.querySelectorAll('.modal-overlay');
-        modals.forEach(modal => {
-            modal.classList.remove('active');
-            // Immediately remove all inline styles for synchronized animation
-            modal.style.removeProperty('visibility');
-            modal.style.removeProperty('opacity');
-            modal.style.removeProperty('display');
-        });
-        document.body.classList.remove('no-scroll'); // Unlock body scroll
+        closeAllModals();
     }
+}
+
+function closeAllModals() {
+    const modals = document.querySelectorAll('.modal-overlay');
+    modals.forEach(modal => {
+        modal.classList.remove('active');
+        // Immediately remove all inline styles for synchronized animation
+        modal.style.removeProperty('visibility');
+        modal.style.removeProperty('opacity');
+        modal.style.removeProperty('display');
+    });
+
+    // Restore Scroll
+    document.body.classList.remove('no-scroll');
+
 }
 
 /* =========================================
@@ -229,27 +263,76 @@ function initMagneticEffect(selector) {
                 card.style.opacity = '1';
                 card.style.animation = 'none';
             }
-        }, 1000); // Wait slightly longer than animation duration
+        }, 1000);
+    });
+
+    // Magnetic card effect - hybrid approach (Smooth Entry + Fast Tracking)
+    cards.forEach(card => {
+        let enterTimeout;
+
+        card.addEventListener('mouseenter', () => {
+            // 1. Initial Entry: Smooth transition for "float out"
+            // We use 0.2s for transform (lift) and keep box-shadow smooth
+            card.style.transition = 'transform 0.2s ease-out, box-shadow 0.25s ease-out';
+
+            // 2. After entry animation completes, switch to fast tracking
+            clearTimeout(enterTimeout);
+            enterTimeout = setTimeout(() => {
+                // Switch to fast transition for magnetic effect
+                // Using linear for tracking feels more responsive
+                card.style.transition = 'transform 0.05s linear, box-shadow 0.25s ease-out';
+            }, 200); // Wait for the 0.2s entry animation
+        });
 
         card.addEventListener('mousemove', (e) => {
             const rect = card.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
+            const x = e.clientX - rect.left - rect.width / 2;
+            const y = e.clientY - rect.top - rect.height / 2;
 
-            const centerX = rect.width / 2;
-            const centerY = rect.height / 2;
+            const moveX = x * 0.05;
+            const moveY = y * 0.05;
 
-            // Reduced sensitivity: Divisor 25 (was 8) for subtle premium feel
-            const deltaX = (x - centerX) / 25;
-            const deltaY = (y - centerY) / 25;
-
-            card.style.transform = `translate(${deltaX}px, ${deltaY}px) scale(1.01)`;
+            card.style.transform = `translateY(-8px) translate(${moveX}px, ${moveY}px)`;
         });
 
         card.addEventListener('mouseleave', () => {
+            clearTimeout(enterTimeout);
+            // Reset to default transition (defined in CSS)
+            card.style.transition = '';
             card.style.transform = '';
         });
     });
+
+    /* AGGRESSIVE FIX: View More Button Hover - Force with setInterval */
+    const viewMoreBtn = document.querySelector('.guestbook-view-more');
+    if (viewMoreBtn) {
+        let isHovering = false;
+
+        viewMoreBtn.addEventListener('mouseenter', function () {
+            isHovering = true;
+        });
+
+        viewMoreBtn.addEventListener('mouseleave', function () {
+            isHovering = false;
+        });
+
+        // Force styles every 50ms
+        setInterval(() => {
+            if (viewMoreBtn) {
+                if (isHovering) {
+                    viewMoreBtn.style.setProperty('transform', 'translateY(-2px)', 'important');
+                    viewMoreBtn.style.setProperty('color', '#ff85c0', 'important');
+                    viewMoreBtn.style.setProperty('text-shadow', '0 4px 12px rgba(244, 114, 182, 0.6)', 'important');
+                } else {
+                    viewMoreBtn.style.setProperty('transform', 'translateZ(0)', 'important');
+                    viewMoreBtn.style.setProperty('color', '#f472b6', 'important');
+                    viewMoreBtn.style.setProperty('text-shadow', 'none', 'important');
+                }
+            }
+        }, 50);
+
+        console.log('✅ Aggressive View More hover initialized');
+    }
 }
 
 // Mouse Tracking for Glow Effect
@@ -444,241 +527,14 @@ document.addEventListener('click', (e) => {
     }
 });
 
-// Anti-flicker: Load cached profile immediately
-function loadCachedProfile() {
-    try {
-        const cached = localStorage.getItem('cached_user_profile');
-        if (cached) {
-            const data = JSON.parse(cached);
-            const btnSpan = document.getElementById('authBtnText');
-            const defaultIcon = document.getElementById('defaultAuthIcon');
-            const navAvatar = document.getElementById('navUserAvatar');
+// Profile loading is handled by leancloud-auth-functions.js
 
-            if (btnSpan) btnSpan.textContent = data.displayName;
-            if (defaultIcon) defaultIcon.style.display = 'none';
-            if (navAvatar) {
-                navAvatar.src = data.avatarUrl;
-                navAvatar.style.display = 'block';
-            }
-        }
-    } catch (e) {
-        console.error('Error loading cached profile:', e);
-    }
-}
-
-// Call immediately
-loadCachedProfile();     // Hide dropdown if open
-// Hide dropdown if open
-const dropdown = document.getElementById('userDropdown');
-if (dropdown) dropdown.classList.remove('active');
-
-// Function 8: Handle Avatar Upload
-async function handleAvatarUpload(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    // Check size (limit to 2MB)
-    if (file.size > 2 * 1024 * 1024) {
-        alert("图片大小不能超过 2MB");
-        return;
-    }
-
-    // Use LeanCloud authentication instead of Firebase
-    const currentUser = AV.User.current();
-
-    if (!currentUser) {
-        alert("请先登录");
-        return;
-    }
-
-    // Convert to Base64 and Resize
-    const reader = new FileReader();
-    reader.onload = function (e) {
-        const img = new Image();
-        img.onload = async function () {
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-
-            // Resize to 200x200 max
-            const maxSize = 200;
-            let width = img.width;
-            let height = img.height;
-
-            if (width > height) {
-                if (width > maxSize) {
-                    height *= maxSize / width;
-                    width = maxSize;
-                }
-            } else {
-                if (height > maxSize) {
-                    width *= maxSize / height;
-                    height = maxSize;
-                }
-            }
-
-            canvas.width = width;
-            canvas.height = height;
-            ctx.drawImage(img, 0, 0, width, height);
-            // Get Base64 string (JPEG, 0.8 quality)
-            const base64String = canvas.toDataURL('image/jpeg', 0.8);
-
-            try {
-                console.log('🖼️ Starting avatar upload...');
-                console.log('📦 Base64 size:', Math.round(base64String.length / 1024), 'KB');
-
-                // ✅ 关键优化：使用 fetch({ useMasterKey: false }) 确保使用用户自己的会话
-                console.log('📡 Fetching latest user data before update...');
-                await currentUser.fetch({ useMasterKey: false });
-                console.log('✅ User data fetched successfully');
-
-                // Save avatar to LeanCloud user profile
-                console.log('💾 Updating LeanCloud user avatar...');
-                currentUser.set('avatarUrl', base64String);
-                await currentUser.save();
-                console.log('✅ LeanCloud user avatar updated');
-
-                // Trigger LeanCloud UI update
-                console.log('🎨 Updating UI...');
-                if (typeof updateLeanCloudUserUI === 'function') {
-                    await updateLeanCloudUserUI(currentUser);
-                } else if (typeof updateUserUI === 'function') {
-                    updateUserUI({
-                        objectId: currentUser.id,
-                        username: currentUser.get('username'),
-                        email: currentUser.get('email'),
-                        nickname: currentUser.get('nickname') || currentUser.get('username'),
-                        avatarUrl: base64String
-                    });
-                }
-                console.log('✅ UI updated');
-
-                alert("头像更新成功！");
-
-            } catch (error) {
-                console.error("❌ Error updating avatar:", error);
-
-                // 添加详细错误日志用于调试
-                console.log('🔍 Error details:', {
-                    code: error.code,
-                    message: error.message,
-                    codeType: typeof error.code,
-                    fullError: error
-                });
-
-                // ✅ 改进的ACL错误检测 - 更宽松更可靠
-                const errorStr = (error.message || error.toString() || '').toLowerCase();
-                const errorCode = String(error.code || '');
-                const is403Error = errorCode === '403' || errorStr.includes('403');
-                const isACLError = errorStr.includes('forbidden') || errorStr.includes('acl');
-
-                console.log('🔍 ACL Error Check:', {
-                    is403Error,
-                    isACLError,
-                    willAttemptFix: is403Error || isACLError
-                });
-
-                if (is403Error || isACLError) {
-                    console.log('🔧 Attempting to auto-fix ACL for existing user...');
-                    try {
-                        // ✅ 关键修复：重新fetch确保最新数据
-                        await currentUser.fetch({ useMasterKey: false });
-                        console.log('📡 Re-fetched user data for ACL fix');
-
-                        // ✅ 使用明确的 user.id（字符串）而非 user 对象
-                        const acl = new AV.ACL();
-                        acl.setPublicReadAccess(true);
-                        acl.setWriteAccess(currentUser.id, true); // 使用 ID 字符串
-                        currentUser.setACL(acl);
-
-                        console.log('🔧 ACL set, retrying avatar save...');
-
-                        // Retry save with fixed ACL
-                        currentUser.set('avatarUrl', base64String);
-                        await currentUser.save();
-
-                        console.log('✅ ACL auto-fixed and avatar updated successfully');
-
-                        // Trigger UI update
-                        if (typeof updateLeanCloudUserUI === 'function') {
-                            await updateLeanCloudUserUI(currentUser);
-                        } else if (typeof updateUserUI === 'function') {
-                            updateUserUI({
-                                objectId: currentUser.id,
-                                username: currentUser.get('username'),
-                                email: currentUser.get('email'),
-                                nickname: currentUser.get('nickname') || currentUser.get('username'),
-                                avatarUrl: base64String
-                            });
-                        }
-
-                        alert("✅ 头像更新成功！\n(已自动修复账号权限)");
-                        return;
-
-                    } catch (retryError) {
-                        console.error("❌ ACL auto-fix failed:", retryError);
-
-                        // ✅ 友好的恢复指引
-                        const confirmReRegister = confirm(
-                            "❌ 头像更新失败\n\n" +
-                            "原因：账号权限已损坏且无法自动修复\n\n" +
-                            "💡 解决方案：\n" +
-                            "1. 注销当前账号\n" +
-                            "2. 使用「后台删除旧账号」或「邮箱别名」注册新账号\n" +
-                            "   （例如：your+new@gmail.com）\n\n" +
-                            "是否立即注销？"
-                        );
-
-                        if (confirmReRegister) {
-                            if (typeof handleLogout === 'function') {
-                                handleLogout();
-                            } else {
-                                AV.User.logOut();
-                                location.reload();
-                            }
-                        }
-                        return;
-                    }
-                }
-
-                alert("❌ 头像上传失败: " + error.message);
-            }
-        };
-        img.src = e.target.result;
-    };
-    reader.readAsDataURL(file);
-}
+// handleAvatarUpload is now handled by leancloud-auth-functions.js
 
 
 
 // Initialize on load
-window.addEventListener('DOMContentLoaded', () => {
-    console.log('🚀 App initialized');
-
-    // Check for existing session
-    const currentUser = AV.User.current();
-    if (currentUser) {
-        console.log('👤 Found existing session:', currentUser.get('username'));
-        // 延迟一点执行 UI 更新，确保 DOM 准备好
-        setTimeout(() => {
-            if (typeof updateLeanCloudUserUI === 'function') {
-                updateLeanCloudUserUI(currentUser);
-            }
-        }, 100);
-    }
-});
-
-
-
-
-// Close dropdown when clicking outside
-document.addEventListener('click', (event) => {
-    const topNav = document.querySelector('.top-right-nav');
-    const dropdown = document.getElementById('userDropdown');
-
-    if (topNav && dropdown && !topNav.contains(event.target)) {
-        dropdown.classList.remove('active');
-    }
-});
+// Initialization is handled by leancloud-auth-functions.js
 
 
 
@@ -721,4 +577,35 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const modalTriggers = document.querySelectorAll('[data-modal-target]');
     console.log(`✅ Initialized ${modalTriggers.length} modal click handlers`);
+});
+
+/* =========================================
+   Mobile UX: Auto-close modals on page return
+   ========================================= */
+// When user navigates back from guestbook.html (or other pages), 
+// close all modals to show a clean homepage
+window.addEventListener('pageshow', (event) => {
+    // Check if page is being restored from cache (back/forward navigation)
+    if (event.persisted) {
+        console.log('📱 Page restored from cache, closing all modals');
+
+        // Close all modal overlays
+        const modals = document.querySelectorAll('.modal-overlay, .login-overlay');
+        modals.forEach(modal => {
+            modal.classList.remove('active');
+            modal.classList.remove('closing');
+            // Remove inline styles instead of setting to 'none'
+            modal.style.removeProperty('backdrop-filter');
+            modal.style.removeProperty('-webkit-backdrop-filter');
+            modal.style.removeProperty('background');
+            modal.style.removeProperty('visibility');
+            modal.style.removeProperty('opacity');
+            modal.style.removeProperty('display');
+        });
+
+        // Unlock body scroll
+        document.body.classList.remove('no-scroll');
+
+        console.log('✅ All modals closed, homepage is clean');
+    }
 });

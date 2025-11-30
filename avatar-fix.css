@@ -1,6 +1,15 @@
-/* Default Avatar Icon Shadow */
+/* Default Avatar Icon Shadow - Enhanced 3D Effect */
 #defaultAuthIcon {
-    filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.5));
+    filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.4)) drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
+    font-size: 1.8rem !important;
+}
+
+/* Default icon hover - HIGHEST PRIORITY */
+#defaultAuthIcon:hover,
+.login-trigger-btn:hover #defaultAuthIcon {
+    transform: scale(1.1) !important;
+    filter: drop-shadow(0 0 0 3px rgba(255, 255, 255, 0.9)) drop-shadow(0 0 15px rgba(255, 255, 255, 0.7)) brightness(1.3) !important;
+    transition: all 0.3s ease !important;
 }
 
 /* Ensure avatar maintains perfect circle - CRITICAL: High priority overrides */
@@ -14,6 +23,9 @@ button.login-trigger-btn.logged-in {
     /* Remove border that might show through */
     box-shadow: none !important;
     /* Remove any box shadow */
+    width: 48px !important;
+    height: 48px !important;
+    border-radius: 50% !important;
 }
 
 .login-trigger-btn.logged-in .nav-user-avatar,
@@ -24,4 +36,20 @@ button.login-trigger-btn.logged-in {
     min-height: 40px !important;
     object-fit: cover !important;
     border-radius: 50% !important;
+    border: none !important;
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.4),
+        0 4px 8px rgba(0, 0, 0, 0.3) !important;
+    transition: all 0.3s ease;
+}
+
+/* Avatar hover - HIGHEST PRIORITY - All possible selectors */
+#navUserAvatar:hover,
+.nav-user-avatar:hover,
+.login-trigger-btn:hover #navUserAvatar,
+.login-trigger-btn:hover .nav-user-avatar,
+.login-trigger-btn.logged-in:hover .nav-user-avatar {
+    transform: scale(1.1) !important;
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.9),
+        0 0 15px rgba(255, 255, 255, 0.7) !important;
+    transition: all 0.3s ease !important;
 }
