@@ -630,15 +630,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     // Initialize Scroll Highlight for Mobile
-    let scrollObserver = null;
+    let scrollHighlightInitialized = false;
 
     // Mobile Scroll Highlight - Scroll Event Version (More Stable)
     function initScrollHighlight() {
         if (window.innerWidth > 768) return;
+        if (scrollHighlightInitialized) return; // Only init once
 
         const handleScroll = () => {
             const centerY = window.innerHeight / 2;
             const items = document.querySelectorAll('.message-item');
+
+            if (items.length === 0) return; // No cards yet
+
             let closestItem = null;
             let minDistance = Infinity;
 
@@ -657,7 +661,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 item.classList.remove('active-focus');
             });
 
-            // Highlight closest
+            // Highlight closest (guaranteed to have at least one)
             if (closestItem) {
                 closestItem.classList.add('active-focus');
             }
@@ -675,18 +679,24 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }, { passive: true });
 
-        // Initial check
-        handleScroll();
+        // Initial check (delayed to ensure DOM is ready)
+        setTimeout(() => handleScroll(), 300);
+
+        scrollHighlightInitialized = true;
     }
 
     function observeNewItems() {
-        // For scroll version, we just need to re-run the check
-        // No need to observe individual items
+        // For scroll version, ensure init is called and then trigger check
         setTimeout(() => {
             if (window.innerWidth <= 768) {
-                // Trigger a scroll check manually
-                const event = new Event('scroll');
-                window.dispatchEvent(event);
+                // Ensure scroll highlight is initialized
+                if (!scrollHighlightInitialized) {
+                    initScrollHighlight();
+                } else {
+                    // Trigger a scroll check manually for new items
+                    const event = new Event('scroll');
+                    window.dispatchEvent(event);
+                }
             }
         }, 200);
     }
