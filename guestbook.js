@@ -225,12 +225,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     function setupInfiniteScroll() {
-        // Remove existing observer if any
-        if (observer) {
-            observer.disconnect();
-        }
-
-        // Create loading indicator element
+        // Create loading indicator if needed
         let loadingIndicator = document.getElementById('loadingIndicator');
         if (!loadingIndicator) {
             loadingIndicator = document.createElement('div');
@@ -242,38 +237,40 @@ document.addEventListener('DOMContentLoaded', () => {
                 color: rgba(255, 255, 255, 0.5);
                 font-size: 0.9rem;
                 display: none;
+                background: transparent !important; /* Fix ghost card */
+                clear: both;
             `;
             loadingIndicator.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 加载中...';
+            // Append to parent of messageContainer (guestbook-main)
             messageContainer.parentElement.appendChild(loadingIndicator);
+        }
+
+        // If observer already exists, just ensure it's observing
+        if (observer) {
+            observer.disconnect(); // Reset to be safe
         }
 
         // Set up Intersection Observer
         observer = new IntersectionObserver((entries) => {
             entries.forEach(entry => {
+                // Check if intersecting AND visible (display != none)
                 if (entry.isIntersecting && !isLoading && renderedCount < allMessages.length) {
+                    console.log('🔍 [Guestbook Debug] Infinite scroll triggered');
                     isLoading = true;
-                    loadingIndicator.style.display = 'block';
 
-                    // Simulate slight delay for smooth experience
+                    // Simulate delay
                     setTimeout(() => {
                         renderBatch(LOAD_MORE_COUNT);
                         isLoading = false;
-
-                        // Update or remove loading indicator
-                        if (renderedCount >= allMessages.length) {
-                            loadingIndicator.style.display = 'none';
-                            observer.disconnect();
-                        }
                     }, 300);
                 }
             });
         }, {
             root: null,
-            rootMargin: '200px', // Start loading 200px before reaching bottom
+            rootMargin: '100px', // Trigger earlier
             threshold: 0.1
         });
 
-        // Observe the loading indicator
         observer.observe(loadingIndicator);
     }
 
