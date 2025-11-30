@@ -138,6 +138,11 @@ document.addEventListener('DOMContentLoaded', () => {
         // Add loading indicator if there are more messages
         updateLoadingIndicator();
 
+        // Re-setup infinite scroll if there are more messages to load
+        if (renderedCount < allMessages.length) {
+            setupInfiniteScroll();
+        }
+
         // Trigger scroll highlight for new items (Mobile)
         observeNewItems();
     }
