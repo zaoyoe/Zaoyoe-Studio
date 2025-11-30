@@ -485,6 +485,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const toggleBtn = e.target.closest('.comment-toggle-btn');
             if (!toggleBtn) return;
 
+            console.log('🖱️ Toggle button clicked:', toggleBtn);
             e.stopPropagation();
             const messageId = toggleBtn.dataset.messageId;
             const count = toggleBtn.dataset.count;

@@ -2853,7 +2853,7 @@ input.login-submit-btn {
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-bottom: 8px;
+    margin-bottom: 2px;
     font-size: 0.9rem;
 }
 
@@ -2906,7 +2906,9 @@ input.login-submit-btn {
     /* 稍微减小字号 */
     line-height: 1.5;
     margin-left: 4px;
-    margin-top: 4px;
+    line-height: 1.5;
+    margin-left: 4px;
+    margin-top: 0;
     /* 增加一点顶部间距 */
 }
 
@@ -3498,7 +3500,7 @@ body.no-scroll {
 
 /* Compact nested comments row */
 .comment-item--nested .comment-row {
-    padding: 8px 12px !important;
+    padding: 4px 12px !important;
     /* More compact padding */
     min-height: auto;
 }
@@ -3630,7 +3632,7 @@ body.no-scroll {
 
 .comment-toggle-btn {
     width: 100%;
-    padding: 12px;
+    padding: 6px;
     background: transparent;
     border: none;
     color: rgba(0, 0, 0, 0.6);
@@ -3641,7 +3643,9 @@ body.no-scroll {
     justify-content: center;
     gap: 6px;
     transition: all 0.2s;
-    margin-top: 8px;
+    margin-top: 4px;
+    position: relative;
+    z-index: 5;
 }
 
 .comment-toggle-btn:hover {
