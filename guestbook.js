@@ -632,47 +632,61 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize Scroll Highlight for Mobile
     let scrollObserver = null;
 
+    // Mobile Scroll Highlight - Scroll Event Version (More Stable)
     function initScrollHighlight() {
-        // Only run on mobile/tablet
-        if (window.innerWidth > 768) return null;
+        if (window.innerWidth > 768) return;
 
-        const observerOptions = {
-            root: null,
-            rootMargin: '-40% 0px -40% 0px', // Focus on the center 20% strip of the screen
-            threshold: 0 // Trigger as soon as ANY part touches the center strip
-        };
-        const observer = new IntersectionObserver((entries) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    entry.target.classList.add('active-focus');
-                } else {
-                    entry.target.classList.remove('active-focus');
+        const handleScroll = () => {
+            const centerY = window.innerHeight / 2;
+            const items = document.querySelectorAll('.message-item');
+            let closestItem = null;
+            let minDistance = Infinity;
+
+            items.forEach(item => {
+                const rect = item.getBoundingClientRect();
+                // Calculate distance from item center to viewport center
+                const itemCenterY = rect.top + (rect.height / 2);
+                const distance = Math.abs(centerY - itemCenterY);
+
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    closestItem = item;
                 }
+
+                // Reset all
+                item.classList.remove('active-focus');
             });
-        }, observerOptions);
 
-        // Observe existing items
-        document.querySelectorAll('.message-item').forEach(item => {
-            observer.observe(item);
-            item.classList.add('observed');
-        });
+            // Highlight closest
+            if (closestItem) {
+                closestItem.classList.add('active-focus');
+            }
+        };
 
-        return observer;
+        // Throttled scroll listener
+        let ticking = false;
+        window.addEventListener('scroll', () => {
+            if (!ticking) {
+                window.requestAnimationFrame(() => {
+                    handleScroll();
+                    ticking = false;
+                });
+                ticking = true;
+            }
+        }, { passive: true });
+
+        // Initial check
+        handleScroll();
     }
 
     function observeNewItems() {
-        // Wait for DOM update
+        // For scroll version, we just need to re-run the check
+        // No need to observe individual items
         setTimeout(() => {
-            if (!scrollObserver) {
-                scrollObserver = initScrollHighlight();
-            }
-
-            if (scrollObserver) {
-                const newItems = messageContainer.querySelectorAll('.message-item:not(.observed)');
-                newItems.forEach(item => {
-                    scrollObserver.observe(item);
-                    item.classList.add('observed');
-                });
+            if (window.innerWidth <= 768) {
+                // Trigger a scroll check manually
+                const event = new Event('scroll');
+                window.dispatchEvent(event);
             }
         }, 200);
     }
