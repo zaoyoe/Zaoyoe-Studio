@@ -224,54 +224,62 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 200);
     });
 
+    // Persistent observer
+    let infiniteScrollObserver = null;
+
     function setupInfiniteScroll() {
         // Create loading indicator if needed
         let loadingIndicator = document.getElementById('loadingIndicator');
         if (!loadingIndicator) {
             loadingIndicator = document.createElement('div');
             loadingIndicator.id = 'loadingIndicator';
+            // Ensure strictly transparent and no layout impact when hidden
             loadingIndicator.style.cssText = `
                 width: 100%;
                 padding: 20px;
                 text-align: center;
-                color: rgba(255, 255, 255, 0.5);
+                color: rgba(255, 255, 255, 0.6);
                 font-size: 0.9rem;
                 display: none;
-                background: transparent !important; /* Fix ghost card */
+                background: transparent !important;
+                border: none !important;
+                box-shadow: none !important;
                 clear: both;
+                opacity: 0; /* Start hidden */
+                transition: opacity 0.3s;
             `;
             loadingIndicator.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 加载中...';
-            // Append to parent of messageContainer (guestbook-main)
             messageContainer.parentElement.appendChild(loadingIndicator);
         }
 
-        // If observer already exists, just ensure it's observing
-        if (observer) {
-            observer.disconnect(); // Reset to be safe
-        }
+        // If observer already exists, do nothing (persistent)
+        if (infiniteScrollObserver) return;
 
         // Set up Intersection Observer
-        observer = new IntersectionObserver((entries) => {
+        infiniteScrollObserver = new IntersectionObserver((entries) => {
             entries.forEach(entry => {
-                // Check if intersecting AND visible (display != none)
+                // Check if intersecting AND we have more messages
                 if (entry.isIntersecting && !isLoading && renderedCount < allMessages.length) {
                     console.log('🔍 [Guestbook Debug] Infinite scroll triggered');
                     isLoading = true;
 
-                    // Simulate delay
+                    // Show loading state visually
+                    loadingIndicator.style.opacity = '1';
+
+                    // Simulate delay for smooth UX
                     setTimeout(() => {
                         renderBatch(LOAD_MORE_COUNT);
                         isLoading = false;
-                    }, 300);
+                    }, 500); // Slightly longer delay to prevent rapid-fire
                 }
             });
         }, {
             root: null,
-            rootMargin: '100px', // Trigger earlier
+            rootMargin: '200px', // Pre-load earlier
             threshold: 0.1
         });
 
-        observer.observe(loadingIndicator);
+        infiniteScrollObserver.observe(loadingIndicator);
     }
 
     function updateLoadingIndicator() {
@@ -279,11 +287,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (loadingIndicator) {
             if (renderedCount < allMessages.length) {
                 loadingIndicator.style.display = 'block';
+                // Small delay to allow display:block to apply before opacity transition
+                setTimeout(() => { loadingIndicator.style.opacity = '1'; }, 10);
             } else {
-                loadingIndicator.style.display = 'none';
-                if (observer) {
-                    observer.disconnect();
-                }
+                loadingIndicator.style.opacity = '0';
+                setTimeout(() => {
+                    loadingIndicator.style.display = 'none';
+                }, 300);
+
+                // Don't disconnect observer, just hide indicator
+                // This allows it to work if we reset/reload messages
             }
         }
     }
