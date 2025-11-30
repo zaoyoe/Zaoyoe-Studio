@@ -2675,7 +2675,7 @@ button.upload-icon-btn {
     border: none;
     /* Removed padding from container to fix nested alignment */
     padding: 0;
-    margin-bottom: 16px;
+    margin-bottom: 12px;
 }
 
 .comment-row {
@@ -3488,8 +3488,8 @@ body.no-scroll {
     border-left: 2px solid rgba(0, 0, 0, 0.1);
     padding-left: 12px;
     background: transparent;
-    margin-top: 8px;
-    margin-bottom: 8px;
+    margin-top: 4px;
+    margin-bottom: 4px;
     border-radius: 0;
     transition: border-left-color 0.2s ease;
     position: relative;
