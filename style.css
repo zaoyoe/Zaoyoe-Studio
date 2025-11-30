@@ -2686,7 +2686,7 @@ button.upload-icon-btn {
     gap: 12px;
     width: 100%;
     /* Moved styles from comment-item to comment-row */
-    padding: 12px;
+    padding: 8px 12px;
     border-radius: 12px;
     transition: background 0.2s ease;
     position: relative;
@@ -2850,7 +2850,7 @@ input.login-submit-btn {
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-bottom: 4px;
+    margin-bottom: 0;
     font-size: 0.9rem;
 }
 
@@ -3431,8 +3431,8 @@ body.no-scroll {
 .comment-like-wrapper {
     display: flex;
     align-items: flex-start;
-    margin-left: 8px;
-    padding-top: 2px;
+    margin-left: 4px;
+    padding-top: 0;
     flex-shrink: 0;
 }
 
@@ -3494,7 +3494,7 @@ body.no-scroll {
 
 /* Compact nested comments row */
 .comment-item--nested .comment-row {
-    padding: 8px 12px !important;
+    padding: 4px 12px !important;
     /* More compact padding */
     min-height: auto;
 }
@@ -4054,10 +4054,11 @@ label[for],
     /* Prevent content from spilling out */
 }
 
-margin: 0;
-width: 40px !important;
-height: 40px !important;
-border: none !important;
+.login-trigger-btn.logged-in .nav-user-avatar {
+    margin: 0;
+    width: 40px !important;
+    height: 40px !important;
+    border: none !important;
 }
 
 @keyframes userAvatarRise {
@@ -5357,12 +5358,13 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
 
 
 /* User Avatar Styles */
-width: 24px;
-height: 24px;
-border-radius: 50%;
-object-fit: cover;
-border: none;
-margin-right: 4px;
+.nav-user-avatar {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: none;
+    margin-right: 4px;
 }
 
 .login-trigger-btn {
@@ -5859,12 +5861,13 @@ input[type="submit"],
 /* 已删除重复的logout样式定义 - 使用3531-3543行的统一定义 */
 
 /* User Avatar Styles */
-width: 24px;
-height: 24px;
-border-radius: 50%;
-object-fit: cover;
-border: none;
-margin-right: 4px;
+.nav-user-avatar {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: none;
+    margin-right: 4px;
 }
 
 .login-trigger-btn {
