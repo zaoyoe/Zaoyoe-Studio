@@ -478,251 +478,244 @@ document.addEventListener('DOMContentLoaded', () => {
         return messageHtml;
     }
 
+
+    // Use event delegation for comment handlers to avoid duplicate listeners
+    let commentHandlersAttached = false;
+
     function attachCommentHandlers() {
-        const toggleButtons = document.querySelectorAll('.comment-toggle-btn');
-        const clickableComments = document.querySelectorAll('.comment-item--clickable');
+        // Only attach once using event delegation
+        if (commentHandlersAttached) return;
+        commentHandlersAttached = true;
 
-        // Toggle comments expansion
-        toggleButtons.forEach(btn => {
-            btn.addEventListener('click', function () {
-                const messageId = this.dataset.messageId;
-                const count = this.dataset.count; // Get count from data attribute
-                const commentList = document.querySelector(`.comment-list[data-message-id="${messageId}"]`);
-                const icon = this.querySelector('i');
-                const span = this.querySelector('span');
+        // Event delegation for toggle buttons
+        document.addEventListener('click', function (e) {
+            const toggleBtn = e.target.closest('.comment-toggle-btn');
+            if (!toggleBtn) return;
 
-                if (commentList.classList.contains('collapsed')) {
-                    // Expand
-                    // 1. Lock current height (200px) explicitly to ensure transition start point
-                    commentList.style.maxHeight = '200px';
+            e.stopPropagation();
+            const messageId = toggleBtn.dataset.messageId;
+            const count = toggleBtn.dataset.count;
+            const commentList = document.querySelector(`.comment-list[data-message-id="${messageId}"]`);
+            const icon = toggleBtn.querySelector('i');
+            const span = toggleBtn.querySelector('span');
 
-                    // 2. Force reflow
-                    void commentList.offsetHeight;
-
-                    // 3. Remove class
-                    commentList.classList.remove('collapsed');
-
-                    // Get the full height for animation
-                    const fullHeight = commentList.scrollHeight;
-
-                    // 4. Animate to full height
-                    commentList.style.maxHeight = fullHeight + 'px';
-
-                    // 5. Update button
-                    icon.className = 'fas fa-chevron-up';
-                    span.textContent = '收起';
-
-                    // 6. Cleanup after animation (simple timeout is more reliable than transitionend here)
-                    setTimeout(() => {
-                        if (!commentList.classList.contains('collapsed')) {
-                            commentList.style.maxHeight = 'none';
-                        }
-                    }, 500); // Match transition duration
-
-                } else {
-                    // Collapse
-                    // Set explicit current height first for smooth animation
-                    const currentHeight = commentList.scrollHeight;
-                    commentList.style.maxHeight = currentHeight + 'px';
-
-                    // Force reflow
-                    void commentList.offsetHeight;
-
-                    // Then animate to collapsed height
-                    commentList.style.maxHeight = '200px';
-                    commentList.classList.add('collapsed');
-
-                    // Update button text
-                    span.textContent = '展开';
-                    icon.className = 'fas fa-chevron-down';
-                }
-            });
-        });
-
-        // Handle comment item clicks (click entire comment to reply)
-        clickableComments.forEach(item => {
-            item.addEventListener('click', function (e) {
-                // Don't trigger if clicking on nested comments
-                if (e.target.closest('.comment-item') !== this) return;
-
-                const canReply = this.dataset.canReply === 'true';
-                if (!canReply) return;
-
-                const commentId = this.dataset.commentId;
-                const messageId = this.dataset.messageId;
-
-                console.log(`🖱️ Clicked comment: id=${commentId}, message=${messageId}`);
-
-                if (!commentId || commentId === 'undefined') {
-                    console.error('❌ Invalid comment ID on click');
-                    return;
-                }
-
-                // Open comment modal with parent comment tracking
-                openCommentModal(messageId, commentId);
-            });
-        });
-    }
-
-    // Handle Comment Submission
-    if (commentForm) {
-        commentForm.addEventListener('submit', (e) => {
-            e.preventDefault();
-
-            // Check Auth - LeanCloud
-            const currentUser = AV.User.current();
-            if (!currentUser) {
-                alert("请先登录后再评论");
-                if (typeof toggleLoginModal === 'function') {
-                    toggleLoginModal();
-                }
+            if (!commentList) {
+                console.error('❌ Comment list not found for message:', messageId);
                 return;
             }
 
-            const messageId = document.getElementById('commentMessageId').value;
-            const parentCommentId = document.getElementById('commentParentId').value;
-            const content = document.getElementById('commentContent').value.trim();
-
-            if (content) {
-                // Check if this is a reply to a comment or a top-level comment
-                if (parentCommentId) {
-                    // Nested reply
-                    if (typeof addReplyToComment === 'function') {
-                        addReplyToComment(parentCommentId, messageId, content);
+            if (commentList.classList.contains('collapsed')) {
+                // Expand
+                commentList.style.maxHeight = '200px';
+                void commentList.offsetHeight;
+                commentList.classList.remove('collapsed');
+                const fullHeight = commentList.scrollHeight;
+                commentList.style.maxHeight = fullHeight + 'px';
+                icon.className = 'fas fa-chevron-up';
+                span.textContent = '收起';
+                setTimeout(() => {
+                    if (!commentList.classList.contains('collapsed')) {
+                        commentList.style.maxHeight = 'none';
                     }
-                } else {
-                    // Top-level comment
-                    if (typeof addCommentToMessage === 'function') {
-                        addCommentToMessage(messageId, content);
-                    }
-                }
-
-                // Close modal and reset form
-                document.getElementById('commentModal').classList.remove('active');
-                commentForm.reset();
+                }, 500);
+            } else {
+                // Collapse
+                const currentHeight = commentList.scrollHeight;
+                commentList.style.maxHeight = currentHeight + 'px';
+                void commentList.offsetHeight;
+                commentList.style.maxHeight = '200px';
+                commentList.classList.add('collapsed');
+                span.textContent = '展开';
+                icon.className = 'fas fa-chevron-down';
             }
         });
-    }
 
-    async function addComment(messageId, name, content) {
-        // Use LeanCloud function if available
-        if (typeof addCommentToMessage === 'function') {
-            const success = await addCommentToMessage(messageId, content);
-            if (success) {
-                // Success is handled inside addCommentToMessage (reloads messages)
-                // Scroll to the comment section of this message
-                setTimeout(() => {
-                    const messageCard = document.querySelector(`.message-item[data-id="${messageId}"]`);
-                    if (messageCard) {
-                        messageCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        // Add a subtle highlight effect
-                        messageCard.style.transition = 'background 0.5s ease';
-                        messageCard.style.background = 'rgba(155, 93, 229, 0.15)';
-                        setTimeout(() => {
-                            messageCard.style.background = '';
-                        }, 2000);
-                    }
-                }, 500); // Wait for reload to complete
+        // Event delegation for clickable comments
+        document.addEventListener('click', function (e) {
+            const clickableComment = e.target.closest('.comment-item--clickable');
+            if (!clickableComment) return;
+
+            // Don't trigger if clicking on nested comments
+            if (e.target.closest('.comment-item') !== clickableComment) return;
+
+            const canReply = clickableComment.dataset.canReply === 'true';
+            if (!canReply) return;
+
+            const commentId = clickableComment.dataset.commentId;
+            const messageId = clickableComment.dataset.messageId;
+
+            console.log(`🖱️ Clicked comment: id=${commentId}, message=${messageId}`);
+
+            if (!commentId || commentId === 'undefined') {
+                console.error('❌ Invalid comment ID on click');
+                return;
             }
-        } else {
-            console.error("❌ addCommentToMessage function not found!");
-            alert("评论功能暂时不可用");
-        }
+
+            // Open comment modal with parent comment tracking
+            openCommentModal(messageId, commentId);
+        });
+    });
     }
-    // Mobile Scroll Highlight - Simplified and Immediate
-    let mobileHighlightActive = false;
-    let currentHighlightedItem = null; // Track currently highlighted item
 
-    function updateMobileHighlight() {
-        // Only run on mobile
-        if (window.innerWidth > 768) return;
+// Handle Comment Submission
+if (commentForm) {
+    commentForm.addEventListener('submit', (e) => {
+        e.preventDefault();
 
-        const items = document.querySelectorAll('.message-item');
-        if (items.length === 0) {
-            console.log('📱 [Mobile Highlight] No items found');
+        // Check Auth - LeanCloud
+        const currentUser = AV.User.current();
+        if (!currentUser) {
+            alert("请先登录后再评论");
+            if (typeof toggleLoginModal === 'function') {
+                toggleLoginModal();
+            }
             return;
         }
 
-        const centerY = window.innerHeight / 2;
-        let closestItem = null;
-        let minDistance = Infinity;
+        const messageId = document.getElementById('commentMessageId').value;
+        const parentCommentId = document.getElementById('commentParentId').value;
+        const content = document.getElementById('commentContent').value.trim();
 
-        items.forEach(item => {
-            const rect = item.getBoundingClientRect();
-            const itemCenterY = rect.top + (rect.height / 2);
-            const distance = Math.abs(centerY - itemCenterY);
-
-            if (distance < minDistance) {
-                minDistance = distance;
-                closestItem = item;
-            }
-        });
-
-        // Hysteresis: only switch if new item is significantly closer (50px threshold)
-        const SWITCH_THRESHOLD = 50;
-
-        if (currentHighlightedItem && currentHighlightedItem !== closestItem) {
-            const currentRect = currentHighlightedItem.getBoundingClientRect();
-            const currentCenterY = currentRect.top + (currentRect.height / 2);
-            const currentDistance = Math.abs(centerY - currentCenterY);
-
-            // Only switch if new item is at least SWITCH_THRESHOLD closer
-            if (minDistance > currentDistance - SWITCH_THRESHOLD) {
-                return; // Keep current highlight
-            }
-        }
-
-        // Remove highlight from all
-        items.forEach(item => {
-            item.classList.remove('active-focus');
-        });
-
-        // Highlight closest
-        if (closestItem) {
-            closestItem.classList.add('active-focus');
-            currentHighlightedItem = closestItem;
-            console.log('📱 [Mobile Highlight] Highlighted closest card');
-        }
-    }
-
-    function initMobileHighlight() {
-        if (window.innerWidth > 768) return;
-        if (mobileHighlightActive) return;
-
-        console.log('📱 [Mobile Highlight] Initializing...');
-
-        // Throttled scroll listener
-        let ticking = false;
-        window.addEventListener('scroll', () => {
-            if (!ticking) {
-                window.requestAnimationFrame(() => {
-                    updateMobileHighlight();
-                    ticking = false;
-                });
-                ticking = true;
-            }
-        }, { passive: true });
-
-        // Initial highlight - call immediately and directly
-        updateMobileHighlight();
-
-        mobileHighlightActive = true;
-        console.log('📱 [Mobile Highlight] Initialized successfully');
-    }
-
-    function observeNewItems() {
-        // For mobile, ensure highlight system is initialized
-        if (window.innerWidth <= 768) {
-            if (!mobileHighlightActive) {
-                console.log('📱 [Mobile Highlight] Calling init from observeNewItems');
-                initMobileHighlight();
+        if (content) {
+            // Check if this is a reply to a comment or a top-level comment
+            if (parentCommentId) {
+                // Nested reply
+                if (typeof addReplyToComment === 'function') {
+                    addReplyToComment(parentCommentId, messageId, content);
+                }
             } else {
-                // Update highlight for new items
-                console.log('📱 [Mobile Highlight] Updating for new items');
-                updateMobileHighlight();
+                // Top-level comment
+                if (typeof addCommentToMessage === 'function') {
+                    addCommentToMessage(messageId, content);
+                }
             }
+
+            // Close modal and reset form
+            document.getElementById('commentModal').classList.remove('active');
+            commentForm.reset();
+        }
+    });
+}
+
+async function addComment(messageId, name, content) {
+    // Use LeanCloud function if available
+    if (typeof addCommentToMessage === 'function') {
+        const success = await addCommentToMessage(messageId, content);
+        if (success) {
+            // Success is handled inside addCommentToMessage (reloads messages)
+            // Scroll to the comment section of this message
+            setTimeout(() => {
+                const messageCard = document.querySelector(`.message-item[data-id="${messageId}"]`);
+                if (messageCard) {
+                    messageCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    // Add a subtle highlight effect
+                    messageCard.style.transition = 'background 0.5s ease';
+                    messageCard.style.background = 'rgba(155, 93, 229, 0.15)';
+                    setTimeout(() => {
+                        messageCard.style.background = '';
+                    }, 2000);
+                }
+            }, 500); // Wait for reload to complete
+        }
+    } else {
+        console.error("❌ addCommentToMessage function not found!");
+        alert("评论功能暂时不可用");
+    }
+}
+// Mobile Scroll Highlight - Simplified and Immediate
+let mobileHighlightActive = false;
+let currentHighlightedItem = null; // Track currently highlighted item
+
+function updateMobileHighlight() {
+    // Only run on mobile
+    if (window.innerWidth > 768) return;
+
+    const items = document.querySelectorAll('.message-item');
+    if (items.length === 0) {
+        console.log('📱 [Mobile Highlight] No items found');
+        return;
+    }
+
+    const centerY = window.innerHeight / 2;
+    let closestItem = null;
+    let minDistance = Infinity;
+
+    items.forEach(item => {
+        const rect = item.getBoundingClientRect();
+        const itemCenterY = rect.top + (rect.height / 2);
+        const distance = Math.abs(centerY - itemCenterY);
+
+        if (distance < minDistance) {
+            minDistance = distance;
+            closestItem = item;
+        }
+    });
+
+    // Hysteresis: only switch if new item is significantly closer (50px threshold)
+    const SWITCH_THRESHOLD = 50;
+
+    if (currentHighlightedItem && currentHighlightedItem !== closestItem) {
+        const currentRect = currentHighlightedItem.getBoundingClientRect();
+        const currentCenterY = currentRect.top + (currentRect.height / 2);
+        const currentDistance = Math.abs(centerY - currentCenterY);
+
+        // Only switch if new item is at least SWITCH_THRESHOLD closer
+        if (minDistance > currentDistance - SWITCH_THRESHOLD) {
+            return; // Keep current highlight
         }
     }
+
+    // Remove highlight from all
+    items.forEach(item => {
+        item.classList.remove('active-focus');
+    });
+
+    // Highlight closest
+    if (closestItem) {
+        closestItem.classList.add('active-focus');
+        currentHighlightedItem = closestItem;
+        console.log('📱 [Mobile Highlight] Highlighted closest card');
+    }
+}
+
+function initMobileHighlight() {
+    if (window.innerWidth > 768) return;
+    if (mobileHighlightActive) return;
+
+    console.log('📱 [Mobile Highlight] Initializing...');
+
+    // Throttled scroll listener
+    let ticking = false;
+    window.addEventListener('scroll', () => {
+        if (!ticking) {
+            window.requestAnimationFrame(() => {
+                updateMobileHighlight();
+                ticking = false;
+            });
+            ticking = true;
+        }
+    }, { passive: true });
+
+    // Initial highlight - call immediately and directly
+    updateMobileHighlight();
+
+    mobileHighlightActive = true;
+    console.log('📱 [Mobile Highlight] Initialized successfully');
+}
+
+function observeNewItems() {
+    // For mobile, ensure highlight system is initialized
+    if (window.innerWidth <= 768) {
+        if (!mobileHighlightActive) {
+            console.log('📱 [Mobile Highlight] Calling init from observeNewItems');
+            initMobileHighlight();
+        } else {
+            // Update highlight for new items
+            console.log('📱 [Mobile Highlight] Updating for new items');
+            updateMobileHighlight();
+        }
+    }
+}
 
     // Mobile highlight will be initialized by observeNewItems() when first batch renders
 });
