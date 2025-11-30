@@ -259,7 +259,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 box-shadow: none !important;
                 clear: both;
                 opacity: 0;
-                transition: opacity 0.3s;
+                visibility: hidden; /* Ensure it's not rendered */
+                transition: opacity 0.3s, visibility 0.3s;
                 pointer-events: none; /* Prevent clicks */
             `;
             loadingIndicator.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 加载中...';
@@ -279,7 +280,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     isLoading = true;
 
                     // Show spinner
-                    if (loadingIndicator) loadingIndicator.style.opacity = '1';
+                    if (loadingIndicator) {
+                        loadingIndicator.style.visibility = 'visible';
+                        loadingIndicator.style.opacity = '1';
+                    }
 
                     // Simulate delay
                     setTimeout(() => {
@@ -307,6 +311,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // It will be shown by the observer callback when loading starts
                 // Or we can show it "ready" state? No, better hide it.
                 loadingIndicator.style.opacity = '0';
+                loadingIndicator.style.visibility = 'hidden';
             } else {
                 // All loaded
                 loadingIndicator.style.display = 'none';
