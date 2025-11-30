@@ -6247,39 +6247,7 @@ input[type="submit"],
     transform: scale(1.1) !important;
 }
 
-/* Mobile Scroll Highlight Effect - 白色卡片版 */
-@media (max-width: 768px) {
-    .message-item {
-        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-        /* Default: Translucent white (same as desktop) */
-        /* Background is already set in base .message-item style */
-        /* No need to override here - it will cause conflicts */
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
-        border: 1px solid rgba(0, 0, 0, 0.06);
-        transform: scale(1);
-        /* Reset scale */
-    }
-
-    .message-item.active-focus {
-        /* 优雅的抬起效果 */
-        transform: scale(1.02) translateY(-3px);
-
-        /* 完全不透明 */
-        background: rgba(255, 255, 255, 1) !important;
-
-        /* 紫色边框 */
-        border-color: rgba(139, 92, 246, 0.3) !important;
-
-        /* 更深的阴影 */
-        box-shadow:
-            0 8px 16px rgba(0, 0, 0, 0.08),
-            0 20px 40px rgba(0, 0, 0, 0.12),
-            0 0 0 1px rgba(139, 92, 246, 0.2) !important;
-
-        z-index: 10;
-    }
-}
+/* Mobile: No highlight feature - all cards have consistent semi-transparent white background */
 
 /* 强制禁止移动端页面缩放 */
 html,
