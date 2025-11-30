@@ -63,25 +63,16 @@
 
         /* Ensure responsive doesn't override */
         @media (min-width: 1441px) {
-            body .guestbook-main .message-container {
-                column-count: 5 !important;
-                /* FORCE 5 COLUMNS - Higher specificity */
-                column-gap: 20px !important;
-            }
+            /* Masonry layout handled by JS */
         }
 
         @media (max-width: 1440px) and (min-width: 1025px) {
-            body .guestbook-main .message-container {
-                column-count: 4 !important;
-                column-gap: 20px !important;
-            }
+            /* Masonry layout handled by JS */
         }
 
-        /* Tablet screens: 2 columns */
+        /* Tablet screens */
         @media (max-width: 1024px) and (min-width: 769px) {
-            .message-container {
-                column-count: 2 !important;
-            }
+            /* Masonry layout handled by JS */
         }
 
         /* Mobile/Tablet adjustments */
@@ -90,11 +81,7 @@
                 padding: 0 15px !important;
             }
 
-            .message-container {
-                column-count: 2 !important;
-                /* Enable 2 columns on mobile */
-                column-gap: 15px;
-            }
+            /* Masonry layout handled by JS */
         }
 
 

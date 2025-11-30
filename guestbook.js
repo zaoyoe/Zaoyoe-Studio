@@ -54,40 +54,91 @@ document.addEventListener('DOMContentLoaded', () => {
     let observer = null;
 
     // Make renderMessages global so it can be called by LeanCloud loader
+    // Masonry Layout State
+    let masonryColumns = [];
+    let currentColumnCount = 0;
+
+    // Initialize Masonry Layout
+    function initMasonry() {
+        const width = window.innerWidth;
+        let newCols = 2; // Default Mobile/Tablet
+
+        if (width > 1440) newCols = 5;
+        else if (width > 1024) newCols = 4;
+
+        // Only re-initialize if column count changes
+        if (newCols !== currentColumnCount) {
+            currentColumnCount = newCols;
+            messageContainer.innerHTML = '';
+            masonryColumns = [];
+
+            for (let i = 0; i < newCols; i++) {
+                const col = document.createElement('div');
+                col.className = 'masonry-column';
+                messageContainer.appendChild(col);
+                masonryColumns.push(col);
+            }
+            return true; // Layout changed
+        }
+        return false; // No change
+    }
+
+    // Helper: Convert HTML string to DOM element
+    function htmlToElement(html) {
+        const template = document.createElement('template');
+        html = html.trim(); // Never return a text node of whitespace as the result
+        template.innerHTML = html;
+        return template.content.firstChild;
+    }
+
+    // Helper: Find shortest column
+    function getShortestColumn() {
+        if (masonryColumns.length === 0) return messageContainer;
+
+        let minHeight = Infinity;
+        let shortest = masonryColumns[0];
+
+        masonryColumns.forEach(col => {
+            // Use offsetHeight for actual rendered height
+            if (col.offsetHeight < minHeight) {
+                minHeight = col.offsetHeight;
+                shortest = col;
+            }
+        });
+        return shortest;
+    }
+
+    // Make renderMessages global
     window.renderMessages = function (messages) {
         if (!messageContainer) return;
 
-        // Store all messages
         allMessages = messages;
         renderedCount = 0;
 
-        console.log('🔍 [Guestbook Debug] Total messages loaded:', allMessages.length);
-        console.log('🔍 [Guestbook Debug] INITIAL_LOAD value:', INITIAL_LOAD);
-
-        // Clear loading state
-        messageContainer.innerHTML = '';
+        console.log('🔍 [Guestbook Debug] Total messages:', allMessages.length);
 
         // Fade in container
         messageContainer.style.opacity = '1';
 
         if (messages.length === 0) {
             emptyState.style.display = 'flex';
+            messageContainer.innerHTML = ''; // Clear any columns
             return;
         }
 
         emptyState.style.display = 'none';
 
+        // Force init masonry
+        currentColumnCount = 0; // Reset to force init
+        initMasonry();
+
         // Render initial batch
         renderBatch(INITIAL_LOAD);
 
-        console.log('🔍 [Guestbook Debug] Rendered count after initial batch:', renderedCount);
-
-        // Set up infinite scroll observer if there are more messages
+        // Set up infinite scroll
         if (renderedCount < allMessages.length) {
-            console.log('🔍 [Guestbook Debug] Setting up infinite scroll, remaining:', allMessages.length - renderedCount);
             setupInfiniteScroll();
         } else {
-            // No more messages, hide indicator
             const loadingIndicator = document.getElementById('loadingIndicator');
             if (loadingIndicator) loadingIndicator.style.display = 'none';
         }
@@ -98,54 +149,80 @@ document.addEventListener('DOMContentLoaded', () => {
         const endIndex = Math.min(renderedCount + count, allMessages.length);
         const batch = allMessages.slice(startIndex, endIndex);
 
-        console.log(`🔍 [Guestbook Debug] renderBatch called with count: ${count}, rendering ${batch.length} messages (${startIndex} to ${endIndex - 1})`);
+        console.log(`🔍 [Guestbook Debug] Rendering batch: ${batch.length} items`);
 
         // Render batch
-        const batchHTML = batch.map((msg, index) =>
-            createMessageCard(msg, startIndex + index)
-        ).join('');
+        batch.forEach((msg, index) => {
+            const html = createMessageCard(msg, startIndex + index);
+            const element = htmlToElement(html);
 
-        messageContainer.insertAdjacentHTML('beforeend', batchHTML);
+            // Find shortest column and append
+            const targetCol = getShortestColumn();
+            targetCol.appendChild(element);
 
-        // Update rendered count
+            // Trigger animation
+            // Simple delay based on batch index for top-to-bottom feel within the batch
+            const delay = Math.min(index * 0.05, 0.5);
+            element.style.transitionDelay = `${delay}s`;
+
+            // Force reflow
+            void element.offsetWidth;
+            element.classList.add('visible');
+        });
+
         renderedCount = endIndex;
 
-        console.log('🔍 [Guestbook Debug] New renderedCount:', renderedCount);
-
-        // Attach comment form handlers for new items
+        // Attach handlers
         attachCommentHandlers();
 
-        // Trigger entrance animation with top-to-bottom order based on actual DOM position
-        setTimeout(() => {
-            const wrappers = messageContainer.querySelectorAll('.message-anim-wrapper:not(.visible)');
-
-            // Sort wrappers by their offsetTop position (top to bottom)
-            const sortedWrappers = Array.from(wrappers).sort((a, b) => {
-                return a.offsetTop - b.offsetTop;
-            });
-
-            // Apply staggered animation based on sorted order
-            sortedWrappers.forEach((wrapper, index) => {
-                const delay = Math.min(index * 0.03, 0.6); // 0.03s per item, max 0.6s
-                wrapper.style.transitionDelay = `${delay}s`;
-
-                // Force reflow
-                void wrapper.offsetWidth;
-                wrapper.classList.add('visible');
-            });
-        }, 150);
-
-        // Add loading indicator if there are more messages
+        // Add loading indicator
         updateLoadingIndicator();
 
-        // Re-setup infinite scroll if there are more messages to load
+        // Re-setup infinite scroll
         if (renderedCount < allMessages.length) {
             setupInfiniteScroll();
         }
 
-        // Trigger scroll highlight for new items (Mobile)
+        // Trigger scroll highlight (Mobile)
         observeNewItems();
     }
+
+    // Handle Resize
+    let resizeTimeout;
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(() => {
+            if (initMasonry()) {
+                // If layout changed, re-render everything
+                // We need to reset renderedCount and re-render all currently loaded messages
+                // But to keep it simple and consistent, let's just re-render the currently visible amount
+                // Or just re-distribute? Re-distributing is hard because we need to detach and re-attach.
+                // Easiest is to re-render from scratch up to current renderedCount.
+
+                const currentCount = renderedCount;
+                renderedCount = 0;
+                currentColumnCount = 0; // Force init
+                initMasonry();
+
+                // Re-render all previously rendered messages
+                // We render them in one go, but we might want to batch them if too many?
+                // For now, just render them all.
+                const messagesToRender = allMessages.slice(0, currentCount);
+
+                messagesToRender.forEach((msg, index) => {
+                    const html = createMessageCard(msg, index);
+                    const element = htmlToElement(html);
+                    const targetCol = getShortestColumn();
+                    targetCol.appendChild(element);
+                    element.classList.add('visible'); // No animation on resize
+                    element.style.transitionDelay = '0s';
+                });
+
+                renderedCount = currentCount;
+                attachCommentHandlers();
+            }
+        }, 200);
+    });
 
     function setupInfiniteScroll() {
         // Remove existing observer if any
