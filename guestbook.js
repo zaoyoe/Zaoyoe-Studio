@@ -629,11 +629,99 @@ document.addEventListener('DOMContentLoaded', () => {
             alert("评论功能暂时不可用");
         }
     }
-    // Mobile highlight feature removed for simplicity and reliability
+    // Mobile Scroll Highlight - Simplified and Immediate
+    let mobileHighlightActive = false;
+    let currentHighlightedItem = null; // Track currently highlighted item
+
+    function updateMobileHighlight() {
+        // Only run on mobile
+        if (window.innerWidth > 768) return;
+
+        const items = document.querySelectorAll('.message-item');
+        if (items.length === 0) {
+            console.log('📱 [Mobile Highlight] No items found');
+            return;
+        }
+
+        const centerY = window.innerHeight / 2;
+        let closestItem = null;
+        let minDistance = Infinity;
+
+        items.forEach(item => {
+            const rect = item.getBoundingClientRect();
+            const itemCenterY = rect.top + (rect.height / 2);
+            const distance = Math.abs(centerY - itemCenterY);
+
+            if (distance < minDistance) {
+                minDistance = distance;
+                closestItem = item;
+            }
+        });
+
+        // Hysteresis: only switch if new item is significantly closer (50px threshold)
+        const SWITCH_THRESHOLD = 50;
+
+        if (currentHighlightedItem && currentHighlightedItem !== closestItem) {
+            const currentRect = currentHighlightedItem.getBoundingClientRect();
+            const currentCenterY = currentRect.top + (currentRect.height / 2);
+            const currentDistance = Math.abs(centerY - currentCenterY);
+
+            // Only switch if new item is at least SWITCH_THRESHOLD closer
+            if (minDistance > currentDistance - SWITCH_THRESHOLD) {
+                return; // Keep current highlight
+            }
+        }
+
+        // Remove highlight from all
+        items.forEach(item => {
+            item.classList.remove('active-focus');
+        });
+
+        // Highlight closest
+        if (closestItem) {
+            closestItem.classList.add('active-focus');
+            currentHighlightedItem = closestItem;
+            console.log('📱 [Mobile Highlight] Highlighted closest card');
+        }
+    }
+
+    function initMobileHighlight() {
+        if (window.innerWidth > 768) return;
+        if (mobileHighlightActive) return;
+
+        console.log('📱 [Mobile Highlight] Initializing...');
+
+        // Throttled scroll listener
+        let ticking = false;
+        window.addEventListener('scroll', () => {
+            if (!ticking) {
+                window.requestAnimationFrame(() => {
+                    updateMobileHighlight();
+                    ticking = false;
+                });
+                ticking = true;
+            }
+        }, { passive: true });
+
+        // Initial highlight - call immediately and directly
+        updateMobileHighlight();
+
+        mobileHighlightActive = true;
+        console.log('📱 [Mobile Highlight] Initialized successfully');
+    }
 
     function observeNewItems() {
-        // Mobile highlight feature has been removed
-        // This function is kept for potential future use
+        // For mobile, ensure highlight system is initialized
+        if (window.innerWidth <= 768) {
+            if (!mobileHighlightActive) {
+                console.log('📱 [Mobile Highlight] Calling init from observeNewItems');
+                initMobileHighlight();
+            } else {
+                // Update highlight for new items
+                console.log('📱 [Mobile Highlight] Updating for new items');
+                updateMobileHighlight();
+            }
+        }
     }
 
     // Mobile highlight will be initialized by observeNewItems() when first batch renders
