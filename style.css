@@ -3488,11 +3488,19 @@ body.no-scroll {
     border-left: 2px solid rgba(0, 0, 0, 0.1);
     padding-left: 12px;
     background: transparent;
-    margin-top: 4px;
-    margin-bottom: 4px;
+    background: transparent;
+    margin-top: 2px;
+    margin-bottom: 2px;
     border-radius: 0;
     transition: border-left-color 0.2s ease;
     position: relative;
+}
+
+/* Compact nested comments row */
+.comment-item--nested .comment-row {
+    padding: 8px 12px !important;
+    /* More compact padding */
+    min-height: auto;
 }
 
 /* Hover state for nested comments */
