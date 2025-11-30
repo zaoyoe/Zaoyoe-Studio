@@ -4,7 +4,7 @@
     // 1. Define HTML Structure
     const authHTML = `
     <!-- Auth Button (Top Right) -->
-    <div class="top-right-nav" style="position: fixed; top: 30px; right: 130px; z-index: 2100;">
+    <div class="top-right-nav" style="position: fixed; top: 30px; right: 40px; z-index: 2100;">
         <button id="authBtn" class="login-trigger-btn" onclick="handleAuthClick(event)">
             <i id="defaultAuthIcon" class="fas fa-user-circle"></i>
             <img id="navUserAvatar" class="nav-user-avatar" src="" alt="Avatar" style="display: none;">
@@ -170,7 +170,7 @@
             .top-right-nav {
                 position: fixed !important;
                 top: 30px !important;
-                right: 130px !important;
+                right: 40px !important;
                 z-index: 2100 !important;
             }
             

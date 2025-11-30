@@ -3,7 +3,6 @@
 document.addEventListener('DOMContentLoaded', () => {
     const messageContainer = document.getElementById('messageContainer');
     const floatingBackBtn = document.querySelector('.floating-back-btn');
-    const clearAllBtn = document.getElementById('clearAllBtn');
     const emptyState = document.getElementById('emptyState');
 
     // CRITICAL FIX: Clean up any modal state on page load
@@ -17,12 +16,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     console.log('✅ Modal state cleaned up on page load');
 
-
-
-    // Hide clear button (not needed for LeanCloud version)
-    if (clearAllBtn) {
-        clearAllBtn.style.display = 'none';
-    }
 
     // Load messages from LeanCloud
     console.log('📋 加载 LeanCloud 留言...');

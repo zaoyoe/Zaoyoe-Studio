@@ -2497,40 +2497,6 @@ button.upload-icon-btn {
     color: #f87171;
 }
 
-/* Floating Clear Button */
-.floating-clear-btn {
-    position: fixed;
-    top: 30px;
-    right: 30px;
-    z-index: 1000;
-    padding: 12px 18px;
-    background: rgba(30, 41, 59, 0.6);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    border-radius: 50px;
-    color: white;
-    font-size: 1rem;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-    overflow: hidden;
-    display: inline-flex;
-    align-items: center;
-    width: fit-content;
-    backface-visibility: hidden;
-    -webkit-backface-visibility: hidden;
-    transform: translateZ(0);
-}
-
-.floating-clear-btn:hover {
-    transform: translateY(-2px) translateZ(0);
-    box-shadow: 0 8px 25px rgba(239, 68, 68, 0.3);
-    background: rgba(30, 41, 59, 0.8);
-    border-color: rgba(239, 68, 68, 0.5);
-    color: #f87171;
-}
-
 /* Subtle Circular Flow Border Effect */
 @keyframes borderRotate {
     from {
@@ -2542,8 +2508,7 @@ button.upload-icon-btn {
     }
 }
 
-.floating-back-btn::before,
-.floating-clear-btn::before {
+.floating-back-btn::before {
     content: '';
     position: absolute;
     inset: -1px;
@@ -2561,12 +2526,12 @@ button.upload-icon-btn {
     pointer-events: none;
 }
 
-.floating-back-btn:hover::before,
-.floating-clear-btn:hover::before {
+.floating-back-btn:hover::before {
     opacity: 1;
     animation: borderRotate 3s linear infinite;
     /* Slower animation */
 }
+
 
 .guestbook-main {
     max-width: 1600px;
@@ -3201,12 +3166,6 @@ body.no-scroll {
 @media (max-width: 768px) {
     .floating-back-btn {
         display: none !important;
-    }
-
-    .floating-clear-btn {
-        top: 20px;
-        right: 20px;
-        padding: 10px 14px;
     }
 }
 
