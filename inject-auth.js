@@ -6,7 +6,7 @@
     <!-- Auth Button (Top Right) -->
     <div class="top-right-nav" style="position: fixed; top: 30px; right: 40px; z-index: 2100;">
         <button id="authBtn" class="login-trigger-btn" onclick="handleAuthClick(event)">
-            <i id="defaultAuthIcon" class="fas fa-user-circle"></i>
+            <i id="defaultAuthIcon" class="fas fa-user"></i>
             <img id="navUserAvatar" class="nav-user-avatar" src="" alt="Avatar" style="display: none;">
             <span id="authBtnText" style="display: none;">Sign In</span>
         </button>
