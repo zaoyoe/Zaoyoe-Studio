@@ -638,10 +638,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const observerOptions = {
             root: null,
-            rootMargin: '-20% 0px -20% 0px', // Focus on the center 60% of the screen
-            threshold: 0.6 // Item must be 60% visible to be "active"
+            rootMargin: '-40% 0px -40% 0px', // Focus on the center 20% strip of the screen
+            threshold: 0 // Trigger as soon as ANY part touches the center strip
         };
-
         const observer = new IntersectionObserver((entries) => {
             entries.forEach(entry => {
                 if (entry.isIntersecting) {
