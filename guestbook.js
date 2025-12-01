@@ -55,15 +55,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initialize Masonry Layout
     function initMasonry() {
-        const width = window.innerWidth;
-        let newCols = 2; // Default Mobile/Tablet
+        // Use the smaller of innerWidth or clientWidth to avoid scrollbar issues or zoom quirks
+        const width = Math.min(window.innerWidth, document.documentElement.clientWidth || window.innerWidth);
+        let newCols = 1; // Default Mobile (safer default)
 
-        // Adjusted for 4K monitors (often 1920px effective width)
-        if (width > 2400) newCols = 5;      // Ultra-wide screens only
-        else if (width > 1600) newCols = 4; // 4K with 200% scaling (1920px) gets 4 columns
-        else if (width > 900) newCols = 3;  // Standard Desktop/Laptop
-        else if (width > 600) newCols = 2;  // Tablets
-        else newCols = 1;                   // Mobile
+        // Adjusted breakpoints
+        if (width > 2400) newCols = 5;      // Ultra-wide
+        else if (width > 1600) newCols = 4; // 4K / Large Desktop
+        else if (width > 1024) newCols = 3;  // Standard Desktop (up from 900)
+        else if (width > 768) newCols = 2;  // Tablets (up from 600)
+        else newCols = 1;                   // Mobile (< 768px)
 
         // Only re-initialize if column count changes
         if (newCols !== currentColumnCount) {
