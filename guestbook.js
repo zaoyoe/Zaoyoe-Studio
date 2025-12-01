@@ -99,10 +99,17 @@ document.addEventListener('DOMContentLoaded', () => {
         let shortest = masonryColumns[0];
 
         masonryColumns.forEach(col => {
-            // Use offsetHeight for actual rendered height
-            if (col.offsetHeight < minHeight) {
-                minHeight = col.offsetHeight;
+            const h = col.offsetHeight;
+            // If height is smaller, pick it
+            if (h < minHeight) {
+                minHeight = h;
                 shortest = col;
+            }
+            // If heights are equal (e.g. both 0 on initial load), pick the one with fewer items
+            else if (h === minHeight) {
+                if (col.childElementCount < shortest.childElementCount) {
+                    shortest = col;
+                }
             }
         });
         return shortest;
