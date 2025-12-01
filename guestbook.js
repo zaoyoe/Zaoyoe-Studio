@@ -157,14 +157,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const targetCol = getShortestColumn();
             targetCol.appendChild(element);
 
-            // Trigger animation
-            // Simple delay based on batch index for top-to-bottom feel within the batch
+            // Trigger animation with delay
             const delay = Math.min(index * 0.05, 0.5);
-            element.style.transitionDelay = `${delay}s`;
-
-            // Force reflow
-            void element.offsetWidth;
-            element.classList.add('visible');
+            setTimeout(() => {
+                element.classList.add('visible');
+            }, delay * 1000);
         });
 
         renderedCount = endIndex;

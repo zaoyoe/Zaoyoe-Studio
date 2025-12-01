@@ -1468,6 +1468,7 @@ input.submit-btn {
     gap: 20px;
     align-items: flex-start;
     width: 100%;
+    background: transparent !important;
 }
 
 .masonry-column {
@@ -1476,6 +1477,7 @@ input.submit-btn {
     flex-direction: column;
     gap: 20px;
     min-width: 0;
+    background: transparent !important;
 }
 
 @media (max-width: 1024px) {
@@ -2616,6 +2618,18 @@ button.upload-icon-btn {
 .message-container {
     /* column-count is defined in responsive media queries above */
     column-gap: 20px;
+}
+
+/* Message Animation Wrapper - 防止白色闪烁 */
+.message-anim-wrapper {
+    opacity: 0;
+    transform: translateY(20px);
+    transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+}
+
+.message-anim-wrapper.visible {
+    opacity: 1;
+    transform: translateY(0);
 }
 
 /* Message Item Card - 半透明卡片，hover变全白 */

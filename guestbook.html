@@ -40,10 +40,8 @@
         /* Apply animation to wrapper (JS generates wrapper with inline delay) */
         .message-anim-wrapper {
             opacity: 0;
-            transform: translateY(60px);
-            /* Start from further below */
-            transition: opacity 1.2s ease, transform 1.2s cubic-bezier(0.2, 0.8, 0.2, 1);
-            /* Slower, smoother float */
+            transform: translateY(20px);
+            transition: opacity 0.6s ease-out, transform 0.6s ease-out;
             /* Delay is set inline by JS via transition-delay */
         }
 
@@ -52,7 +50,9 @@
             transform: translateY(0);
         }
 
+        /* 确保卡片背景不会闪烁 */
         .message-item {
+            background: rgba(255, 255, 255, 0.75);
             break-inside: avoid !important;
             -webkit-column-break-inside: avoid !important;
             page-break-inside: avoid !important;
