@@ -632,7 +632,13 @@ async function toggleLike(type, id) {
     console.log(`❤️ 切换点赞: type=${type}, id=${id}`);
     const currentUser = AV.User.current();
     if (!currentUser) {
-        alert('请先登录后再点赞');
+        if (confirm('请先登录后再点赞。是否立即登录？')) {
+            if (typeof window.parent.toggleLoginModal === 'function') {
+                window.parent.toggleLoginModal();
+            } else if (typeof toggleLoginModal === 'function') {
+                toggleLoginModal();
+            }
+        }
         return null;
     }
 
