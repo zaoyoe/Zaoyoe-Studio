@@ -18,6 +18,9 @@ async function loadGuestbookMessages(forceRefresh = false) {
     const container = document.getElementById('messageContainer');
     const emptyState = document.getElementById('emptyState');
 
+    // 🔧 判断是否是留言板页面
+    const isGuestbookPage = window.location.pathname.includes('guestbook.html');
+
     // 🚀 Cache-First Strategy: Show cached content immediately
     const CACHE_VERSION = 'v2_fix_images'; // 🆕 强制刷新缓存的版本号
     if (!forceRefresh) {
@@ -34,14 +37,23 @@ async function loadGuestbookMessages(forceRefresh = false) {
                 if (typeof renderMessages === 'function') {
                     renderMessages(messages);
 
-                    // If cache is recent (<2 min), skip background refresh
-                    if (currentTime - parseInt(cacheTime) < 2 * 60 * 1000) {
-                        console.log('✅ 缓存足够新鲜，跳过后台更新');
+                    // 🆕 在留言板页面，如果缓存新鲜就直接返回，避免二次刷新
+                    if (isGuestbookPage) {
+                        console.log('✅ 留言板页面使用缓存，跳过后台更新（实时推送已启用）');
                         return messages;
+                    }
+
+                    // 在其他页面，如果缓存很新鲜（<2分钟），也直接返回
+                    const cacheAge = currentTime - parseInt(cacheTime);
+                    if (cacheAge < 2 * 60 * 1000) {
+                        console.log('✅ 缓存很新鲜，跳过后台更新');
+                        return messages;
+                    } else {
+                        console.log('⚠️ 缓存较旧，将继续后台更新');
                     }
                 }
 
-                // Continue loading fresh data in background
+                // Continue loading fresh data in background (only for non-guestbook pages)
                 console.log('🔄 后台更新数据...');
             } catch (e) {
                 console.error('缓存解析失败:', e);
@@ -124,8 +136,9 @@ async function loadGuestbookMessages(forceRefresh = false) {
                     const tid = like.get('targetId');
                     // 计数
                     likeCounts[tid] = (likeCounts[tid] || 0) + 1;
-                    // 检查当前用户是否点赞
-                    if (currentUserId && like.get('user').id === currentUserId) {
+                    // 检查当前用户是否点赞（优先使用userId，兼容旧数据的user.id）
+                    const likeUserId = like.get('userId') || like.get('user')?.id;
+                    if (currentUserId && likeUserId === currentUserId) {
                         userLikedSet.add(tid);
                     }
                 });
@@ -430,16 +443,49 @@ async function addCommentToMessage(messageId, content) {
         comment.set('userName', currentUser.get('nickname') || currentUser.get('username'));
         comment.set('userAvatar', currentUser.get('avatarUrl') || '');
         comment.set('content', content);
-        comment.set('likes', 0); // 🆕 初始化点赞数
-        comment.set('likedBy', []); // 🆕 初始化点赞列表
+        comment.set('likes', 0);
+        comment.set('likedBy', []);
 
         // 3. 保存评论
         await comment.save();
+        console.log('✅ 评论发送成功');
 
+        // 4. 🆕 无刷新插入评论到DOM
+        const newComment = {
+            id: comment.id,
+            name: currentUser.get('nickname') || currentUser.get('username'),
+            content: content,
+            timestamp: new Date().toLocaleString('zh-CN', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            }),
+            likes: 0,
+            isLiked: false,
+            replies: [],
+            messageId: messageId,
+            parentCommentId: null,
+            parentUserName: null
+        };
 
+        // 插入DOM
+        insertCommentToDOM(messageId, newComment);
 
-        // 5. 重新加载留言板 (强制刷新缓存)
-        await loadGuestbookMessages(true);
+        // 更新内存数据
+        if (window.allMessages) {
+            const msg = window.allMessages.find(m => m.id === messageId);
+            if (msg) {
+                if (!msg.comments) msg.comments = [];
+                msg.comments.push(newComment);
+
+                // 更新缓存
+                const CACHE_VERSION = 'v2_fix_images';
+                localStorage.setItem('cached_messages_' + CACHE_VERSION, JSON.stringify(window.allMessages));
+                localStorage.setItem('cache_time_' + CACHE_VERSION, Date.now().toString());
+            }
+        }
 
         return true;
 
@@ -476,10 +522,6 @@ async function addReplyToComment(parentCommentId, messageId, content) {
         // 1. 获取父评论对象以获取父评论者的名字
         const parentCommentQuery = new AV.Query('Comment');
         const parentCommentObj = await parentCommentQuery.get(parentCommentId);
-
-        // 🔍 DEBUG: 检查获取到的父评论对象
-        console.log(`🔍 [addReply] 获取父评论对象: id=${parentCommentObj.id}, userName=${parentCommentObj.get('userName')}`);
-
         const parentUserName = parentCommentObj.get('userName') || '匿名用户';
 
         console.log(`👤 回复给: ${parentUserName}`);
@@ -493,30 +535,69 @@ async function addReplyToComment(parentCommentId, messageId, content) {
         const reply = new Comment();
 
         reply.set('user', currentUser);
-        reply.set('message', message); // 仍然关联到根留言
-        reply.set('parentComment', parentComment); // 关联到父评论
+        reply.set('message', message);
+        reply.set('parentComment', parentComment);
         reply.set('userName', currentUser.get('nickname') || currentUser.get('username'));
         reply.set('userAvatar', currentUser.get('avatarUrl') || '');
-        reply.set('parentUserName', parentUserName); // 🆕 存储父评论者名字用于 @mention
+        reply.set('parentUserName', parentUserName);
         reply.set('content', content);
-        reply.set('likes', 0); // 🆕 初始化点赞数
-        reply.set('likedBy', []); // 🆕 初始化点赞列表
-
-        // 🔍 DEBUG: 打印即将保存的回复对象
-        console.log('🔍 [addReply] 即将保存回复:', {
-            parentCommentId: parentComment.id,
-            parentUserName: parentUserName,
-            content: content
-        });
+        reply.set('likes', 0);
+        reply.set('likedBy', []);
 
         // 4. 保存回复
         await reply.save();
         console.log('✅ 回复发送成功');
 
+        // 5. 🆕 无刷新插入回复到DOM
+        const newReply = {
+            id: reply.id,
+            name: currentUser.get('nickname') || currentUser.get('username'),
+            content: content,
+            timestamp: new Date().toLocaleString('zh-CN', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            }),
+            likes: 0,
+            isLiked: false,
+            replies: [],
+            messageId: messageId,
+            parentCommentId: parentCommentId,
+            parentUserName: parentUserName
+        };
 
+        // 插入DOM
+        insertReplyToDOM(parentCommentId, newReply);
 
-        // 6. 重新加载留言板 (强制刷新缓存)
-        await loadGuestbookMessages(true);
+        // 更新内存数据
+        if (window.allMessages) {
+            const msg = window.allMessages.find(m => m.id === messageId);
+            if (msg) {
+                // 递归查找父评论并添加回复
+                function addReplyToParent(comments) {
+                    for (let comment of comments) {
+                        if (comment.id === parentCommentId) {
+                            if (!comment.replies) comment.replies = [];
+                            comment.replies.push(newReply);
+                            return true;
+                        }
+                        if (comment.replies && comment.replies.length > 0) {
+                            if (addReplyToParent(comment.replies)) return true;
+                        }
+                    }
+                    return false;
+                }
+
+                addReplyToParent(msg.comments || []);
+
+                // 更新缓存
+                const CACHE_VERSION = 'v2_fix_images';
+                localStorage.setItem('cached_messages_' + CACHE_VERSION, JSON.stringify(window.allMessages));
+                localStorage.setItem('cache_time_' + CACHE_VERSION, Date.now().toString());
+            }
+        }
 
         return true;
 
@@ -525,6 +606,140 @@ async function addReplyToComment(parentCommentId, messageId, content) {
         alert(`回复失败: ${error.message || '未知错误'} `);
         return false;
     }
+}
+
+// ==================== 辅助函数：插入评论到DOM ====================
+function insertCommentToDOM(messageId, comment) {
+    console.log(`📝 插入评论到DOM: messageId=${messageId}, commentId=${comment.id}`);
+
+    // 查找对应的留言卡片
+    const messageCard = document.querySelector(`[data-message-id="${messageId}"]`);
+    if (!messageCard) {
+        console.error('❌ 找不到对应的留言卡片, messageId=', messageId);
+        console.log('📋 当前页面的所有 message-item:', document.querySelectorAll('[data-message-id]').length);
+        return;
+    }
+
+    console.log('✅ 找到留言卡片');
+
+    // 🔧 修复：直接查找 .comment-list 容器（它在 .comment-section 内）
+    let commentList = messageCard.querySelector(`.comment-list[data-message-id="${messageId}"]`);
+    if (!commentList) {
+        console.error('❌ 找不到评论列表 .comment-list');
+        // 尝试查找 comment-section 并打印其结构
+        const commentSection = messageCard.querySelector('.comment-section');
+        if (commentSection) {
+            console.log('📋 找到comment-section，内容:', commentSection.innerHTML.substring(0, 300));
+        } else {
+            console.log('📋 连comment-section都找不到');
+        }
+        return;
+    }
+
+    console.log('✅ 找到评论列表');
+
+    // 移除"暂无评论"提示
+    const noComments = commentList.querySelector('.no-comments');
+    if (noComments) {
+        console.log('🗑️ 移除"暂无评论"提示');
+        noComments.remove();
+    }
+
+    // 生成评论HTML
+    const mentionPrefix = (comment.parentUserName)
+        ? `<span class="comment-mention">@${escapeHTML(comment.parentUserName)}</span> `
+        : '';
+
+    const commentHTML = `
+        <div class="comment-item" data-comment-id="${comment.id}" data-message-id="${messageId}" data-can-reply="true">
+            <div class="comment-row">
+                <div class="comment-main">
+                    <div class="comment-header">
+                        <span class="comment-author">${escapeHTML(comment.name)}</span>
+                        <span class="comment-time">${comment.timestamp}</span>
+                    </div>
+                    <div class="comment-content">${mentionPrefix}${escapeHTML(comment.content)}</div>
+                </div>
+                <div class="comment-like-wrapper">
+                    <button class="comment-like-btn" onclick="handleLike('Comment', '${comment.id}', this)">
+                        <i class="far fa-heart"></i>
+                        <span class="like-count">0</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // 插入到评论列表末尾
+    console.log('📤 插入评论HTML到comment-list');
+    commentList.insertAdjacentHTML('beforeend', commentHTML);
+
+    // 重新绑定评论点击事件
+    if (typeof window.attachCommentHandlers === 'function') {
+        console.log('🔗 重新绑定评论事件');
+        window.attachCommentHandlers();
+    }
+
+    console.log('✅ 评论已插入DOM');
+}
+
+// ==================== 辅助函数：插入回复到DOM ====================
+function insertReplyToDOM(parentCommentId, reply) {
+    console.log(`📝 插入回复到DOM: parentCommentId=${parentCommentId}, replyId=${reply.id}`);
+
+    // 查找父评论元素
+    const parentCommentElem = document.querySelector(`[data-comment-id="${parentCommentId}"]`);
+    if (!parentCommentElem) {
+        console.error('找不到父评论元素');
+        return;
+    }
+
+    // 计算嵌套层级
+    const currentDepth = parentCommentElem.style.marginLeft ?
+        parseInt(parentCommentElem.style.marginLeft) / 10 : 0;
+    const newDepth = currentDepth + 1;
+    const maxDepth = 2;
+    const indentPx = Math.min(newDepth * 10, 20);
+    const canReply = newDepth < maxDepth;
+
+    // 生成回复HTML
+    const mentionPrefix = reply.parentUserName
+        ? `<span class="comment-mention">@${escapeHTML(reply.parentUserName)}</span> `
+        : '';
+
+    const replyHTML = `
+        <div class="comment-item comment-item--nested ${canReply ? 'comment-item--clickable' : ''}" 
+             style="margin-left: ${indentPx}px"
+             data-comment-id="${reply.id}" 
+             data-message-id="${reply.messageId}"
+             data-can-reply="${canReply}">
+            <div class="comment-row">
+                <div class="comment-main">
+                    <div class="comment-header">
+                        <span class="comment-author">${escapeHTML(reply.name)}</span>
+                        <span class="comment-time">${reply.timestamp}</span>
+                    </div>
+                    <div class="comment-content">${mentionPrefix}${escapeHTML(reply.content)}</div>
+                </div>
+                <div class="comment-like-wrapper">
+                    <button class="comment-like-btn" onclick="handleLike('Comment', '${reply.id}', this)">
+                        <i class="far fa-heart"></i>
+                        <span class="like-count">0</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // 插入到父评论后面
+    parentCommentElem.insertAdjacentHTML('afterend', replyHTML);
+
+    // 重新绑定评论点击事件
+    if (typeof window.attachCommentHandlers === 'function') {
+        window.attachCommentHandlers();
+    }
+
+    console.log('✅ 回复已插入DOM');
 }
 
 // ==================== 删除留言 (可选) ====================
@@ -642,64 +857,52 @@ async function toggleLike(type, id) {
         return null;
     }
 
+    const currentUserId = currentUser.id;
+
     try {
-        // 1. Check if already liked
+        // 1. 查询当前用户对该目标的点赞记录（只用userId）
         const likeQuery = new AV.Query('Like');
-        likeQuery.equalTo('user', currentUser);
         likeQuery.equalTo('targetId', id);
+        likeQuery.equalTo('userId', currentUserId);
 
-        let existingLike = null;
-        try {
-            existingLike = await likeQuery.first();
-            console.log(`🔍 [Like] Existing like found?`, !!existingLike);
-        } catch (e) {
-            if (e.code === 101 || e.message.includes('Class or object doesn\'t exists')) {
-                console.log('ℹ️ [Like] Like class does not exist yet, will create on save.');
-            } else {
-                throw e; // Rethrow other errors
-            }
-        }
+        const existingLike = await likeQuery.first();
+        console.log(`🔍 [Like] 查询到已存在的点赞?`, !!existingLike);
 
-        // 2. Get target object to update count (best effort)
-        // ⚠️ ACL 限制：普通用户无法更新 Message/Comment 的 likes 字段
-        // 所以我们不再尝试更新 targetObj，而是直接返回最新的 count
-
-        let likes = 0;
         let isLiked = false;
 
         if (existingLike) {
-            // Unlike
+            // 取消点赞
             await existingLike.destroy();
-            console.log('✅ [Like] Like object destroyed');
+            console.log('✅ [Like] 点赞已取消');
             isLiked = false;
         } else {
-            // Like
+            // 添加点赞
             const Like = AV.Object.extend('Like');
             const newLike = new Like();
-            newLike.set('user', currentUser);
+            newLike.set('userId', currentUserId);
             newLike.set('targetId', id);
             newLike.set('targetType', type);
 
-            // Set ACL: Public Read, Owner Write
+            // 设置 ACL
             const acl = new AV.ACL(currentUser);
             acl.setPublicReadAccess(true);
             newLike.setACL(acl);
 
             await newLike.save();
-            console.log('✅ [Like] New Like object saved');
+            console.log('✅ [Like] 点赞成功');
             isLiked = true;
         }
 
-        // 3. Count total likes for this target to return accurate number
+        // 2. 重新统计该目标的总点赞数
         const countQuery = new AV.Query('Like');
         countQuery.equalTo('targetId', id);
-        likes = await countQuery.count();
-        console.log(`✅ [Like] New count for ${id}: ${likes}`);
+        const likes = await countQuery.count();
+        console.log(`✅ [Like] 当前总点赞数: ${likes}`);
 
         return { likes, isLiked };
 
     } catch (error) {
-        console.error('点赞失败:', error);
+        console.error('❌ 点赞操作失败:', error);
         return null;
     }
 }
@@ -732,6 +935,260 @@ function subscribeToMessages() {
 }
 
 console.log('✅ LeanCloud 留言板函数已加载');
+
+// ==================== WebSocket实时推送 ====================
+function enableRealTimeUpdates() {
+    console.log('🔌 启用实时推送...');
+
+    // 检查 LiveQuery 是否可用
+    if (!AV.Query.prototype.subscribe) {
+        console.warn('⚠️ LiveQuery 不可用，可能需要升级SDK或开启后台功能');
+        return;
+    }
+
+    // 订阅新留言
+    const messageQuery = new AV.Query('Message');
+    messageQuery.descending('createdAt');
+
+    messageQuery.subscribe().then(liveQuery => {
+        console.log('✅ 留言实时订阅已启用');
+
+        liveQuery.on('create', async (message) => {
+            // 检查是否是当前用户发的（避免重复显示）
+            const currentUser = AV.User.current();
+            if (currentUser && message.get('user')?.id === currentUser.id) {
+                console.log('⏭️ 跳过自己发的留言');
+                return;
+            }
+
+            console.log('📩 收到新留言:', message.get('userName'));
+
+            // 格式化新留言
+            const newMessage = {
+                id: message.id,
+                name: message.get('userName'),
+                avatarUrl: message.get('userAvatar') || '',
+                content: message.get('content') || '',
+                image: message.get('imageUrl') || null,
+                likes: 0,
+                isLiked: false,
+                timestamp: new Date().toLocaleString('zh-CN', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                }),
+                rawDate: new Date(),
+                comments: []
+            };
+
+            // 插入到页面顶部
+            insertMessageToTop(newMessage);
+
+            // 显示通知
+            showNotification(`${newMessage.name} 发了新留言`);
+
+            // 更新内存和缓存
+            if (window.allMessages) {
+                window.allMessages.unshift(newMessage);
+                const CACHE_VERSION = 'v2_fix_images';
+                localStorage.setItem('cached_messages_' + CACHE_VERSION, JSON.stringify(window.allMessages));
+                localStorage.setItem('cache_time_' + CACHE_VERSION, Date.now().toString());
+            }
+        });
+
+        liveQuery.on('delete', (message) => {
+            console.log('🗑️ 留言被删除:', message.id);
+            removeMessageFromDOM(message.id);
+        });
+
+    }).catch(err => {
+        console.error('❌ 留言订阅失败:', err);
+        console.warn('💡 提示：LiveQuery 可能需要在 LeanCloud 控制台开启，或升级到商用版');
+        console.log('📝 虽然实时推送不可用，但其他功能（评论立即显示、点赞等）仍然正常');
+    });
+
+    // 订阅新评论
+    const commentQuery = new AV.Query('Comment');
+    commentQuery.include('message');
+
+    commentQuery.subscribe().then(liveQuery => {
+        console.log('✅ 评论实时订阅已启用');
+
+        liveQuery.on('create', async (comment) => {
+            const currentUser = AV.User.current();
+            if (currentUser && comment.get('user')?.id === currentUser.id) {
+                console.log('⏭️ 跳过自己发的评论');
+                return;
+            }
+
+            console.log('💬 收到新评论:', comment.get('userName'));
+
+            const messageId = comment.get('message')?.id;
+            if (!messageId) return;
+
+            // 格式化新评论
+            const newComment = {
+                id: comment.id,
+                name: comment.get('userName'),
+                content: comment.get('content'),
+                timestamp: new Date().toLocaleString('zh-CN', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                }),
+                likes: 0,
+                isLiked: false,
+                replies: [],
+                messageId: messageId,
+                parentCommentId: comment.get('parentComment')?.id || null,
+                parentUserName: comment.get('parentUserName') || null
+            };
+
+            // 插入到DOM
+            if (newComment.parentCommentId) {
+                insertReplyToDOM(newComment.parentCommentId, newComment);
+            } else {
+                insertCommentToDOM(messageId, newComment);
+            }
+
+            showNotification(`${newComment.name} 发了新评论`);
+        });
+
+    }).catch(err => {
+        console.error('❌ 评论订阅失败:', err);
+        console.warn('💡 虽然实时推送不可用，但评论仍会立即显示在你自己的页面上');
+    });
+}
+
+// ==================== 辅助函数：HTML字符串转DOM元素 ====================
+function htmlToElement(html) {
+    const template = document.createElement('template');
+    html = html.trim(); // 去除首尾空格
+    template.innerHTML = html;
+    return template.content.firstChild;
+}
+
+// ==================== 辅助函数：插入新留言到顶部 ====================
+function insertMessageToTop(msg) {
+    console.log('📝 插入新留言到页面顶部:', msg.id);
+
+    const container = document.getElementById('messageContainer');
+    if (!container) {
+        console.error('找不到留言容器');
+        return;
+    }
+
+    // 检查是否已存在
+    if (document.querySelector(`[data - message - id= "${msg.id}"]`)) {
+        console.log('留言已存在，跳过');
+        return;
+    }
+
+    // 使用guestbook.js中的createMessageCard函数
+    if (typeof window.createMessageCard === 'function') {
+        const html = window.createMessageCard(msg, 0);
+        const element = htmlToElement(html);
+
+        // 添加新消息标记和动画类
+        element.classList.add('message-new');
+
+        // 插入到第一列顶部
+        const firstColumn = container.querySelector('.masonry-column');
+        if (firstColumn) {
+            firstColumn.insertBefore(element, firstColumn.firstChild);
+
+            // 触发动画
+            setTimeout(() => {
+                element.classList.add('visible');
+            }, 50);
+        }
+    }
+
+    console.log('✅ 新留言已插入');
+}
+
+// ==================== 辅助函数：从DOM移除留言 ====================
+function removeMessageFromDOM(messageId) {
+    const elem = document.querySelector(`[data - message - id= "${messageId}"]`);
+    if (elem) {
+        elem.classList.add('message-removing');
+        setTimeout(() => elem.remove(), 300);
+    }
+}
+
+// ==================== 辅助函数：显示通知 ====================
+function showNotification(message) {
+    // 检查是否已存在通知容器
+    let container = document.getElementById('toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        container.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z - index: 10000;
+        pointer - events: none;
+        `;
+        document.body.appendChild(container);
+    }
+
+    const toast = document.createElement('div');
+    toast.className = 'toast-notification';
+    toast.style.cssText = `
+        background: linear - gradient(135deg, #667eea 0 %, #764ba2 100 %);
+        color: white;
+        padding: 12px 20px;
+        border - radius: 8px;
+        margin - bottom: 10px;
+        box - shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        display: flex;
+        align - items: center;
+        gap: 10px;
+        font - size: 14px;
+        opacity: 0;
+        transform: translateX(100px);
+        transition: all 0.3s cubic - bezier(0.34, 1.56, 0.64, 1);
+        pointer - events: auto;
+        `;
+
+    toast.innerHTML = `
+            < i class="fas fa-bell" style = "font-size: 16px;" ></i >
+                <span>${escapeHTML(message)}</span>
+        `;
+
+    container.appendChild(toast);
+
+    // 触发动画
+    setTimeout(() => {
+        toast.style.opacity = '1';
+        toast.style.transform = 'translateX(0)';
+    }, 10);
+
+    // 3秒后淡出
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(100px)';
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
+
+// ==================== 自动启用实时推送 ====================
+// 在留言板页面自动启用
+if (typeof AV !== 'undefined' && window.location.pathname.includes('guestbook.html')) {
+    // 等待DOM加载完成
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+            setTimeout(enableRealTimeUpdates, 1000);
+        });
+    } else {
+        setTimeout(enableRealTimeUpdates, 1000);
+    }
+}
 
 // ==================== 表单绑定 ====================
 document.addEventListener('DOMContentLoaded', function () {
@@ -884,7 +1341,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
                     // Check size (warn if > 500KB)
                     const sizeInKB = Math.round((compressedData.length * 3 / 4) / 1024);
-                    console.log(`压缩后图片大小: ${sizeInKB}KB`);
+                    console.log(`压缩后图片大小: ${sizeInKB} KB`);
 
                     if (sizeInKB > 500) {
                         console.warn('图片较大,可能影响性能');
