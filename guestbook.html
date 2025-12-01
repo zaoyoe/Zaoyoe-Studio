@@ -19,7 +19,7 @@
     <link rel="stylesheet" href="login_styles.css?v=DARK_BG_INPUTS_V1">
     <link rel="stylesheet" href="login_dual_mode.css?v=DARK_BG_INPUTS_V1">
     <link rel="stylesheet" href="avatar-fix.css?v=UNIFIED_HOVER_V2">
-    <link rel="stylesheet" href="style.css?v=5_COLUMNS_FIX">
+    <link rel="stylesheet" href="style.css?v=MOBILE_LAYOUT_FIX_V1">
     <style>
         /* Force 4 columns - Override any conflicts */
         .guestbook-main {
@@ -121,9 +121,19 @@
             input[type="email"],
             input[type="password"] {
                 font-size: 16px !important;
+                /* Prevents iOS zoom */
             }
         }
 
+        /* 🔧 防止移动端初始加载时布局闪烁 */
+        .message-container {
+            opacity: 1;
+            transition: opacity 0.2s ease;
+        }
+
+        .message-container:not(.loaded) {
+            min-height: 50vh;
+        }
 
         /* ⚡ CRITICAL FIX: Force dark text on white cards - 柔和配色 */
         .message-item .author-name {
