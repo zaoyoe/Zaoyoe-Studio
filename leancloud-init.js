@@ -15,8 +15,16 @@ const LEANCLOUD_CONFIG = {
         : 'https://www.zaoyoe.com/api'
 };
 
-// 初始化 LeanCloud
-AV.init(LEANCLOUD_CONFIG);
+// 🆕 LiveQuery WebSocket 服务器配置
+const REALTIME_CONFIG = {
+    RTMServerURL: 'wss://q6nh03pq.lc-ws-w1.lncldglobal.com'
+};
+
+// 初始化 LeanCloud（合并配置）
+AV.init({
+    ...LEANCLOUD_CONFIG,
+    ...REALTIME_CONFIG
+});
 
 console.log('✅ LeanCloud SDK 初始化完成');
 console.log('📡 AppID:', LEANCLOUD_CONFIG.appId);

@@ -16,6 +16,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     console.log('✅ Modal state cleaned up on page load');
 
+    // 🔧 FIX: Declare this variable early to avoid ReferenceError
+    let commentHandlersAttached = false;
 
     // Load messages from LeanCloud
     console.log('📋 加载 LeanCloud 留言...');
@@ -424,7 +426,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const messageHtml = `
             <div class="message-anim-wrapper" style="transition-delay: ${delay}s">
-                <div class="message-item" data-id="${msg.id}">
+                <div class="message-item" data-message-id="${msg.id}">
                     
                     <!-- 1. Header (Author Info & Time) -->
                     <div class="message-header">
@@ -474,7 +476,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     // Use event delegation for comment handlers to avoid duplicate listeners
-    let commentHandlersAttached = false;
 
     function attachCommentHandlers() {
         // Only attach once using event delegation
@@ -959,51 +960,44 @@ window.handleLike = async function (type, id, btn) {
 
     const icon = btn.querySelector('i');
     const countSpan = btn.querySelector('span');
-    let count = parseInt(countSpan.textContent) || 0;
 
-    // 乐观 UI 更新
-    const isLiked = btn.classList.contains('active');
-    if (isLiked) {
-        btn.classList.remove('active');
-        icon.classList.replace('fas', 'far');
-        count = Math.max(0, count - 1);
-    } else {
-        btn.classList.add('active');
-        icon.classList.replace('far', 'fas');
-        count++;
-
-        // 添加点赞动画效果
-        icon.style.transform = 'scale(1.2)';
-        setTimeout(() => icon.style.transform = 'scale(1)', 200);
-    }
-    countSpan.textContent = count;
+    // 禁用按钮，防止重复点击
+    btn.disabled = true;
+    btn.style.opacity = '0.6';
+    btn.style.cursor = 'not-allowed';
 
     // 调用后端 API
     if (typeof toggleLike === 'function') {
+        console.log(`💗 开始点赞操作...`);
         const result = await toggleLike(type, id);
+        console.log(`💗 点赞操作返回:`, result);
+
         if (result) {
-            // 确保最终状态一致
+            // 根据后端返回结果更新UI
+            console.log(`💗 更新UI: likes=${result.likes}, isLiked=${result.isLiked}`);
             countSpan.textContent = result.likes;
+
             if (result.isLiked) {
                 btn.classList.add('active');
-                icon.classList.replace('far', 'fas');
+                icon.classList.remove('far');
+                icon.classList.add('fas');
+                // 添加点赞动画
+                icon.style.transform = 'scale(1.2)';
+                setTimeout(() => icon.style.transform = 'scale(1)', 200);
             } else {
                 btn.classList.remove('active');
-                icon.classList.replace('fas', 'far');
+                icon.classList.remove('fas');
+                icon.classList.add('far');
             }
         } else {
-            // 失败回滚
-            if (isLiked) {
-                btn.classList.add('active');
-                icon.classList.replace('far', 'fas');
-                countSpan.textContent = count + 1;
-            } else {
-                btn.classList.remove('active');
-                icon.classList.replace('fas', 'far');
-                countSpan.textContent = count - 1;
-            }
+            console.error('💗 点赞操作失败');
         }
     } else {
         console.error('toggleLike function not found!');
     }
+
+    // 重新启用按钮
+    btn.disabled = false;
+    btn.style.opacity = '1';
+    btn.style.cursor = 'pointer';
 };
