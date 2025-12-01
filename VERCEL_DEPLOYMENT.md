@@ -72,35 +72,38 @@ git push -u origin main
 
 ## 🌐 配置自定义域名 (www.zaoyoe.com)
 
-### 步骤 1：在 Vercel 添加域名
+### ⚠️ 域名已被占用解决办法 (Domain Already Assigned)
 
-1. 进入项目的 Dashboard
-2. 点击 "Settings" → "Domains"
-3. 输入 `www.zaoyoe.com`
-4. 点击 "Add"
+如果添加域名时提示 **"Domain is already assigned to another project"**，请按照以下步骤操作：
 
-### 步骤 2：配置 DNS
+#### 方法 A：在当前项目强制认领（推荐）
+1. 打开 Vercel 控制台：https://vercel.com/dashboard
+2. 点击您刚部署的新项目（例如 `zaoyoe`）。
+3. 点击顶部的 **Settings** (设置) 选项卡。
+4. 点击左侧的 **Domains** (域名) 菜单。
+5. 在输入框中输入 `www.zaoyoe.com`。
+6. 点击 **Add**。
+7. Vercel 会提示域名已被占用，并显示一个错误信息。
+8. 仔细查看错误信息下方，通常会有一个 **"Move to [Project Name]"** (移动到当前项目) 的按钮。
+9. 点击该按钮确认移动。
 
-Vercel 会显示需要添加的 DNS 记录。在您的域名注册商（比如阿里云、腾讯云）添加：
+#### 方法 B：从旧项目移除（如果方法 A 不行）
+1. 在 Vercel 控制台找到**旧的**项目（之前绑定过这个域名的项目）。
+2. 进入旧项目的 **Settings** -> **Domains**。
+3. 找到 `www.zaoyoe.com`，点击右侧的 **Edit** 或 **Remove** 按钮将其删除。
+4. 回到**新项目**的 **Settings** -> **Domains**。
+5. 重新添加 `www.zaoyoe.com`。
 
-**选项 A：CNAME 记录（推荐）**
+### DNS 配置 (如果需要重新配置)
+
+如果 Vercel 提示 DNS 配置错误，请在您的域名服务商处添加：
+
+**CNAME 记录**
 ```
 类型: CNAME
 主机记录: www
 记录值: cname.vercel-dns.com
 ```
-
-**选项 B：A 记录**
-```
-类型: A
-主机记录: www
-记录值: 76.76.21.21
-```
-
-### 步骤 3：等待 DNS 生效
-
-- 通常需要 5-30 分钟
-- Vercel 会自动配置 SSL 证书（HTTPS）
 
 ## 🔐 更新 Google OAuth 配置
 
@@ -147,39 +150,3 @@ git commit -m "更新说明"
 git push
 ```
 Vercel 会自动部署！
-
-## 📝 注意事项
-
-1. **LeanCloud 配置**
-   - 确保 LeanCloud 允许来自新域名的请求
-   - 在 LeanCloud 控制台添加 `www.zaoyoe.com` 到安全域名
-
-2. **环境变量**
-   - 如果有敏感信息，在 Vercel Dashboard → Settings → Environment Variables 中配置
-
-3. **国内访问**
-   - Vercel 在国内可访问，但速度可能不如阿里云
-   - 如需更快速度，可以后续迁移到阿里云 OSS + CDN
-
-## 🆘 常见问题
-
-### 部署失败？
-- 检查 `vercel.json` 配置是否正确
-- 查看 Vercel Dashboard 的部署日志
-
-### 域名无法访问？
-- 确认 DNS 记录已添加
-- 等待 DNS 传播（最多 48 小时，通常几分钟）
-- 使用 `nslookup www.zaoyoe.com` 检查 DNS
-
-### Google 登录不工作？
-- 确认已在 Google Cloud Console 添加新域名
-- 清除浏览器缓存
-- 检查浏览器控制台的错误信息
-
-## 📞 获取帮助
-
-如遇到问题，请提供：
-- Vercel 部署日志
-- 浏览器控制台错误信息
-- DNS 配置截图

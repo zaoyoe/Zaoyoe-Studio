@@ -460,24 +460,7 @@ function startCountdown(btnElement) {
 
 
 
-// updateResetButtonCountdown function is still used by LeanCloud version
-function updateResetButtonCountdown(button, originalText) {
-    if (!button) return;
 
-    if (resetCooldownSeconds > 0) {
-        button.textContent = `已发送 (${resetCooldownSeconds}s)`;
-        button.disabled = true;
-        resetCooldownSeconds--;
-        resetCooldownTimer = setTimeout(() => updateResetButtonCountdown(button, originalText), 1000);
-    } else {
-        button.textContent = originalText;
-        button.disabled = false;
-        if (resetCooldownTimer) {
-            clearTimeout(resetCooldownTimer);
-            resetCooldownTimer = null;
-        }
-    }
-}
 
 
 
@@ -500,8 +483,16 @@ window.toggleAuthMenu = function (e) {
     if (isLoggedIn) {
         // Toggle Dropdown
         const dropdown = document.getElementById('userDropdown');
+        const overlay = document.getElementById('dropdownOverlay');
+
         if (dropdown) {
             dropdown.classList.toggle('active');
+
+            // Toggle overlay
+            if (overlay) {
+                overlay.classList.toggle('active');
+            }
+
             console.log('🔽 Dropdown toggled:', dropdown.classList.contains('active'));
         }
     } else {
@@ -518,23 +509,18 @@ window.toggleAuthMenu = function (e) {
 // Global click to close dropdown
 document.addEventListener('click', (e) => {
     const dropdown = document.getElementById('userDropdown');
+    const overlay = document.getElementById('dropdownOverlay');
     const btn = document.getElementById('authBtn');
 
     if (dropdown && dropdown.classList.contains('active')) {
         if (!dropdown.contains(e.target) && !btn.contains(e.target)) {
             dropdown.classList.remove('active');
+            if (overlay) overlay.classList.remove('active');
         }
     }
 });
 
-// Profile loading is handled by leancloud-auth-functions.js
 
-// handleAvatarUpload is now handled by leancloud-auth-functions.js
-
-
-
-// Initialize on load
-// Initialization is handled by leancloud-auth-functions.js
 
 
 
@@ -543,11 +529,28 @@ document.addEventListener('click', (e) => {
 document.addEventListener('click', (event) => {
     const topNav = document.querySelector('.top-right-nav');
     const dropdown = document.getElementById('userDropdown');
+    const overlay = document.getElementById('dropdownOverlay');
 
     if (topNav && dropdown && !topNav.contains(event.target)) {
         dropdown.classList.remove('active');
+        if (overlay) overlay.classList.remove('active');
     }
 });
+
+// Close dropdown when clicking on overlay
+document.addEventListener('DOMContentLoaded', () => {
+    const overlay = document.getElementById('dropdownOverlay');
+    if (overlay) {
+        overlay.addEventListener('click', () => {
+            const dropdown = document.getElementById('userDropdown');
+            if (dropdown) {
+                dropdown.classList.remove('active');
+                overlay.classList.remove('active');
+            }
+        });
+    }
+});
+
 
 /* =========================================
    CRITICAL FIX: Event Listeners for Modal Triggers

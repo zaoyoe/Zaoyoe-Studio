@@ -36,7 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // waitForLeanCloud(); // Moved to after renderMessages definition
+
 
     // Lazy Loading State
     let allMessages = [];
@@ -56,8 +56,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const width = window.innerWidth;
         let newCols = 2; // Default Mobile/Tablet
 
-        if (width > 1440) newCols = 5;
-        else if (width > 1024) newCols = 4;
+        // Adjusted for 4K monitors (often 1920px effective width)
+        if (width > 2400) newCols = 5;      // Ultra-wide screens only
+        else if (width > 1600) newCols = 4; // 4K with 200% scaling (1920px) gets 4 columns
+        else if (width > 900) newCols = 3;  // Standard Desktop/Laptop
+        else if (width > 600) newCols = 2;  // Tablets
+        else newCols = 1;                   // Mobile
 
         // Only re-initialize if column count changes
         if (newCols !== currentColumnCount) {
@@ -343,7 +347,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!comments || comments.length === 0) return '';
 
             const maxDepth = 2; // Limit nesting depth
-            const indentPx = Math.min(depth * 20, 40); // Max 40px indent
+            const indentPx = Math.min(depth * 10, 20); // Reduced indent: Max 20px (was 40px)
             const canReply = depth < maxDepth; // Can reply if not at max depth
 
             return comments.map((comment, idx) => {
@@ -792,11 +796,7 @@ window.openCommentModal = function (messageId, parentCommentId = null) {
         // Add body class
         document.body.classList.add('modal-active');
 
-        // Removed True Scroll Lock for iOS
-        // window.savedScrollPosition = window.pageYOffset || document.documentElement.scrollTop;
-        // document.body.style.position = 'fixed';
-        // document.body.style.top = `-${window.savedScrollPosition}px`;
-        // document.body.style.width = '100%';
+
 
         // Add active class to trigger CSS animation
         modal.classList.add('active');

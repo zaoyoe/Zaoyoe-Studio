@@ -158,6 +158,12 @@ async function handleLogin(event) {
             avatarUrl: user.get('avatarUrl') || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.get('username'))}&background=random`
         });
 
+        // 🆕 登录成功后，强制刷新留言板以更新点赞状态
+        if (typeof loadGuestbookMessages === 'function') {
+            console.log('🔄 登录成功，刷新留言板点赞状态...');
+            loadGuestbookMessages(true);
+        }
+
     } catch (error) {
         console.error('登录失败:', error);
 
@@ -181,10 +187,15 @@ function handleLogout(event) {
         event.stopPropagation();
     }
 
-    // ✅ 先关闭下拉菜单，避免 confirm() 对话框导致的焦点问题
+    // ✅ 先关闭下拉菜单和overlay，避免 confirm() 对话框导致的焦点问题
     const dropdown = document.getElementById('userDropdown');
+    const overlay = document.getElementById('dropdownOverlay');
+
     if (dropdown) {
         dropdown.classList.remove('active');
+    }
+    if (overlay) {
+        overlay.classList.remove('active');
     }
 
     // 确认对话框
@@ -253,13 +264,17 @@ function handleAuthClick(event) {
     if (currentUser) {
         // User is logged in - toggle dropdown
         const dropdown = document.getElementById('userDropdown');
+        const overlay = document.getElementById('dropdownOverlay');
+
         if (dropdown) {
             const isActive = dropdown.classList.contains('active');
             if (isActive) {
                 dropdown.classList.remove('active');
+                if (overlay) overlay.classList.remove('active');
                 console.log('🔽 Dropdown closed');
             } else {
                 dropdown.classList.add('active');
+                if (overlay) overlay.classList.add('active');
                 console.log('🔽 Dropdown opened');
             }
         } else {
@@ -845,14 +860,27 @@ function openProfileModal(event) {
 
     // 关闭下拉菜单
     const dropdown = document.getElementById('userDropdown');
+    const overlay = document.getElementById('dropdownOverlay');
     if (dropdown) {
         dropdown.classList.remove('active');
+    }
+    if (overlay) {
+        overlay.classList.remove('active');
     }
 
     // 获取当前用户信息
     const currentUser = AV.User.current();
     if (!currentUser) {
         alert('请先登录');
+        return;
+    }
+
+    // 检查是否在主页
+    const modal = document.getElementById('profileModal');
+    if (!modal) {
+        // 不在主页，跳转到主页并设置标记打开模态框
+        sessionStorage.setItem('openProfileModal', 'true');
+        window.location.href = 'index.html';
         return;
     }
 
@@ -893,7 +921,6 @@ function openProfileModal(event) {
     }
 
     // 打开模态框
-    const modal = document.getElementById('profileModal');
     if (modal) {
         modal.classList.add('active');
         // 确保可见性
@@ -1026,6 +1053,17 @@ window.handleSwitchAccount = handleSwitchAccount;
 window.openProfileModal = openProfileModal;
 window.switchProfileTab = switchProfileTab;
 window.toggleNicknameEdit = toggleNicknameEdit;
+
+// 检查是否需要自动打开个人资料模态框（从子页面跳转过来）
+if (sessionStorage.getItem('openProfileModal') === 'true') {
+    sessionStorage.removeItem('openProfileModal');
+    // 延迟打开，确保页面和用户信息完全加载
+    setTimeout(() => {
+        if (typeof openProfileModal === 'function') {
+            openProfileModal(null);
+        }
+    }, 500);
+}
 window.saveNickname = saveNickname;
 
 // ==================== Tab 切换功能 ====================
@@ -1232,6 +1270,11 @@ async function requestPhoneBindCode(phoneNumber) {
         return false;
     }
 
+    // ⚠️ 短信功能维护中
+    alert("该功能维护中，暂不可用");
+    return false;
+
+    /* 暂时禁用短信发送
     try {
         // 请求发送验证码
         await AV.Cloud.requestSmsCode({
@@ -1250,6 +1293,7 @@ async function requestPhoneBindCode(phoneNumber) {
         alert(`发送失败: ${error.message}`);
         return false;
     }
+    */
 }
 
 async function bindPhoneNumber(phoneNumber, code) {
@@ -1264,6 +1308,11 @@ async function bindPhoneNumber(phoneNumber, code) {
         return false;
     }
 
+    // ⚠️ 短信功能维护中
+    alert("该功能维护中，暂不可用");
+    return false;
+
+    /* 暂时禁用绑定功能
     try {
         console.log('🔗 正在绑定手机号:', phoneNumber);
 
@@ -1294,6 +1343,7 @@ async function bindPhoneNumber(phoneNumber, code) {
         alert(`绑定失败: ${errorMessage}`);
         return false;
     }
+    */
 }
 
 // 显式挂载所有安全函数到 window 对象
