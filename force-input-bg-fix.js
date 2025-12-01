@@ -45,8 +45,8 @@
     }
 
     function applyFocusStyles(input) {
-        input.style.setProperty('background', 'rgba(0, 0, 0, 0.5)', 'important');
-        input.style.setProperty('background-color', 'rgba(0, 0, 0, 0.5)', 'important');
+        input.style.setProperty('background', 'rgba(0, 0, 0, 0.4)', 'important');
+        input.style.setProperty('background-color', 'rgba(0, 0, 0, 0.4)', 'important');
         input.style.setProperty('border', '1px solid rgba(155, 93, 229, 0.7)', 'important');
         input.style.setProperty('border-color', 'rgba(155, 93, 229, 0.7)', 'important');
         input.style.setProperty('box-shadow', '0 0 0 3px rgba(155, 93, 229, 0.15)', 'important');
