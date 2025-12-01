@@ -53,18 +53,43 @@ document.addEventListener('DOMContentLoaded', () => {
     let masonryColumns = [];
     let currentColumnCount = 0;
 
-    // Initialize Masonry Layout
-    function initMasonry() {
-        // Use the smaller of innerWidth or clientWidth to avoid scrollbar issues or zoom quirks
-        const width = Math.min(window.innerWidth, document.documentElement.clientWidth || window.innerWidth);
-        let newCols = 1; // Default Mobile (safer default)
+    // Initialize layout
+    initMasonry();
 
-        // Adjusted breakpoints
-        if (width > 2400) newCols = 5;      // Ultra-wide
-        else if (width > 1600) newCols = 4; // 4K / Large Desktop
-        else if (width > 1024) newCols = 3;  // Standard Desktop (up from 900)
-        else if (width > 768) newCols = 2;  // Tablets (up from 600)
-        else newCols = 1;                   // Mobile (< 768px)
+    // Force re-layout after a short delay to handle potential rendering race conditions
+    setTimeout(() => {
+        if (initMasonry()) {
+            // If layout changed (e.g. scrollbar appeared), re-render
+            const currentCount = renderedCount;
+            renderedCount = 0;
+            currentColumnCount = 0;
+            initMasonry();
+            const messagesToRender = allMessages.slice(0, currentCount);
+            messagesToRender.forEach((msg, index) => {
+                const html = createMessageCard(msg, index);
+                const element = htmlToElement(html);
+                const shortest = getShortestColumn();
+                shortest.appendChild(element);
+            });
+        }
+    }, 500);
+    function initMasonry() {
+        // Use matchMedia for more reliable mobile detection
+        const isMobile = window.matchMedia('(max-width: 768px)').matches;
+        const width = Math.min(window.innerWidth, document.documentElement.clientWidth || window.innerWidth);
+
+        let newCols = 1; // Default
+
+        if (isMobile) {
+            newCols = 1; // Force 1 column on mobile
+        } else {
+            // Desktop/Tablet breakpoints
+            if (width > 2400) newCols = 5;      // Ultra-wide
+            else if (width > 1600) newCols = 4; // 4K / Large Desktop
+            else if (width > 1024) newCols = 3;  // Standard Desktop
+            else if (width > 768) newCols = 2;  // Tablets
+            else newCols = 1;                   // Fallback
+        }
 
         // Only re-initialize if column count changes
         if (newCols !== currentColumnCount) {
