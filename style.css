@@ -3680,6 +3680,19 @@ body.no-scroll {
         font-size: 0.9rem;
         word-break: break-word;
         overflow-wrap: break-word;
+        max-width: 100% !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+    }
+
+    .comment-main {
+        max-width: 100% !important;
+        overflow: hidden !important;
+    }
+
+    .comment-row {
+        max-width: 100% !important;
+        overflow: hidden !important;
     }
 }
 
