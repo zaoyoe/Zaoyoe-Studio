@@ -3,16 +3,21 @@
  * 替代 Firebase SDK
  */
 
-// ✅ LeanCloud 配置 - 国际版
+// ✅ LeanCloud 配置 - 混合模式
+// REST API: 生产环境用Vercel代理(解决CORS)，本地直连
+// WebSocket: 始终直连(LiveQuery需要)
+const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
 const LEANCLOUD_CONFIG = {
     appId: 'q6Nh03PQaIjEKthkhFGBL7AX-MdYXbMMI',
     appKey: 'sZuQhlUhkFCofqN96CLWYNyh',
-    // ✅ 使用 serverURLs（复数）- 这样才能启用 WebSocket/LiveQuery！
-    // ⚠️ 必须使用 LeanCloud 的 API 域名，不能用 www.zaoyoe.com
-    serverURLs: 'https://q6nh03pq.api.lncldglobal.com'
+    // REST API: 生产环境用代理，本地直连
+    serverURLs: isLocal
+        ? 'https://q6nh03pq.api.lncldglobal.com'
+        : 'https://www.zaoyoe.com/api'
 };
 
-// 🆕 LiveQuery WebSocket 服务器配置
+// 🆕 LiveQuery WebSocket 服务器配置 (始终直连)
 const REALTIME_CONFIG = {
     RTMServerURL: 'wss://q6nh03pq.lc-ws-w1.lncldglobal.com'
 };
