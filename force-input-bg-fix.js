@@ -74,13 +74,37 @@
         applyInputStyles();
     }
 
-    // 监听DOM变化，处理动态添加的输入框
+    // 监听DOM变化，处理动态添加的输入框 - 防抖优化
+    let debounceTimer = null;
     const observer = new MutationObserver(function (mutations) {
+        // 清除之前的定时器
+        if (debounceTimer) {
+            clearTimeout(debounceTimer);
+        }
+
+        // 只有当真正添加了新元素时才处理
+        let hasNewInputs = false;
         mutations.forEach(function (mutation) {
             if (mutation.addedNodes.length) {
-                setTimeout(applyInputStyles, 100);
+                for (let node of mutation.addedNodes) {
+                    if (node.nodeType === 1) { // Element node
+                        if (node.matches && node.matches('input[type="email"], input[type="password"], input[type="text"], input[type="tel"], textarea, .glass-input, .security-input')) {
+                            hasNewInputs = true;
+                            break;
+                        }
+                        if (node.querySelector && node.querySelector('input[type="email"], input[type="password"], input[type="text"], input[type="tel"], textarea, .glass-input, .security-input')) {
+                            hasNewInputs = true;
+                            break;
+                        }
+                    }
+                }
             }
         });
+
+        // 只有发现新输入框时才执行，且延迟300ms防抖
+        if (hasNewInputs) {
+            debounceTimer = setTimeout(applyInputStyles, 300);
+        }
     });
 
     observer.observe(document.body, {
