@@ -1009,6 +1009,12 @@ function enableRealTimeUpdates() {
 
             console.log('📩 收到新留言:', message.get('userName'));
 
+            // ✨ Phase 5: 触发智能胶囊通知
+            if (window.CapsuleManager) {
+                console.log('🔔 触发胶囊通知 - 留言ID:', message.id);
+                window.CapsuleManager.queueUpdate('message', message.id);
+            }
+
             // ✅ 收到新留言时清除缓存
             if (typeof window.invalidateGuestbookCache === 'function') {
                 window.invalidateGuestbookCache();
@@ -1104,6 +1110,12 @@ function enableRealTimeUpdates() {
                 insertReplyToDOM(newComment.parentCommentId, newComment);
             } else {
                 insertCommentToDOM(messageId, newComment);
+            }
+
+            // ✨ Phase 5: 触发智能胶囊通知
+            if (window.CapsuleManager) {
+                console.log('🔔 触发胶囊通知 - 评论ID:', comment.id);
+                window.CapsuleManager.queueUpdate('comment', comment.id);
             }
 
             showNotification(`${newComment.name} 发了新评论`);

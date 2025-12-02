@@ -100,3 +100,29 @@
         display: none;
     }
 }
+
+/* === Phase 2: 智能定位高亮动画 === */
+@keyframes focus-glow {
+
+    0%,
+    100% {
+        box-shadow: 0 0 0 0 rgba(102, 126, 234, 0);
+    }
+
+    50% {
+        box-shadow: 0 0 20px 8px rgba(102, 126, 234, 0.4);
+    }
+}
+
+.message-card.highlight-flash {
+    animation: focus-glow 1.5s ease-in-out 2;
+    border: 2px solid rgba(102, 126, 234, 0.6);
+    transition: border 0.3s ease;
+}
+
+.comment.highlight-flash {
+    animation: focus-glow 1.5s ease-in-out 2;
+    background: rgba(102, 126, 234, 0.1);
+    border-left: 3px solid rgba(102, 126, 234, 0.8);
+    transition: background 0.3s ease, border 0.3s ease;
+}
