@@ -3720,7 +3720,8 @@ body.no-scroll {
     transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1),
         opacity 0.4s ease;
     position: relative;
-    overflow: hidden;
+    overflow: visible;
+    /* ✅ 改为 visible，防止光晕被裁切 */
     /* 移除min-height避免抽搐 */
 }
 
@@ -3742,6 +3743,7 @@ body.no-scroll {
     max-height: 160px;
     /* 减小折叠高度 */
     overflow: hidden;
+    /* 折叠时才使用 hidden */
     /* 使用 mask-image 实现自然淡出 */
     -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
     mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
