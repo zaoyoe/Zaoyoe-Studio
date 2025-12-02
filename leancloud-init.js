@@ -7,11 +7,9 @@
 const LEANCLOUD_CONFIG = {
     appId: 'q6Nh03PQaIjEKthkhFGBL7AX-MdYXbMMI',
     appKey: 'sZuQhlUhkFCofqN96CLWYNyh',
-    // REST API 服务器地址
-    // 生产环境使用 Vercel 代理，本地开发直接连接
-    serverURL: window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-        ? 'https://q6nh03pq.api.lncldglobal.com'
-        : 'https://www.zaoyoe.com/api'
+    // ✅ 使用 serverURLs（复数）- 这样才能启用 WebSocket/LiveQuery！
+    // ⚠️ 必须使用 LeanCloud 的 API 域名，不能用 www.zaoyoe.com
+    serverURLs: 'https://q6nh03pq.api.lncldglobal.com'
 };
 
 // 🆕 LiveQuery WebSocket 服务器配置
@@ -28,7 +26,7 @@ AV.init({
 console.log('✅ LeanCloud SDK 初始化完成');
 console.log('📡 配置详情:');
 console.log('- AppID:', LEANCLOUD_CONFIG.appId);
-console.log('- REST API (serverURL):', LEANCLOUD_CONFIG.serverURL);
+console.log('- API 地址 (serverURLs):', LEANCLOUD_CONFIG.serverURLs);
 console.log('- WebSocket (RTMServerURL):', REALTIME_CONFIG.RTMServerURL);
 console.log('- LiveQuery 支持:', typeof AV.Query.prototype.subscribe !== 'undefined' ? '✅ 已启用' : '❌ 未启用');
 
