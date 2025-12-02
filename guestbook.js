@@ -576,8 +576,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 void commentList.offsetHeight;
                 commentList.style.maxHeight = '200px';
                 commentList.classList.add('collapsed');
-                span.textContent = '展开';
-                icon.className = 'fas fa-chevron-down';
             }
         });
 
@@ -1054,4 +1052,66 @@ window.handleLike = async function (type, id, btn) {
     btn.disabled = false;
     btn.style.opacity = '1';
     btn.style.cursor = 'pointer';
+};
+
+// === Phase 3: 智能滚动辅助函数 ===
+
+/**
+ * 智能滚动到指定元素并高亮
+ */
+window.handleSmartScroll = function(targetId, type = 'message') {
+    console.log(`🎯 开始智能定位: type=${type}, targetId=${targetId}`);
+    
+    setTimeout(() => {
+        let targetElement = null;
+        
+        if (type === 'message') {
+            targetElement = document.querySelector(`[data-message-id="${targetId}"]`);
+        } else if (type === 'comment') {
+            targetElement = document.querySelector(`[data-comment-id="${targetId}"]`);
+        }
+        
+        if (!targetElement) {
+            console.warn(`⚠️ 未找到目标元素: ${type} ${targetId}`);
+            if (window.showToast) showToast('内容未找到', 'warning');
+            return;
+        }
+        
+        console.log('✅ 找到目标元素:', targetElement);
+        
+        targetElement.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center'
+        });
+        
+        setTimeout(() => {
+            targetElement.classList.add('highlight-flash');
+            setTimeout(() => targetElement.classList.remove('highlight-flash'), 3000);
+        }, 500);
+        
+        if (window.showToast) showToast('已定位到目标内容', 'success');
+    }, 800);
+};
+
+/**
+ * 显示Toast提示
+ */
+window.showToast = function(message, type = 'info') {
+    const toast = document.createElement('div');
+    toast.textContent = message;
+    toast.style.cssText = `
+        position: fixed; top: 150px; left: 50%; transform: translateX(-50%);
+        background: ${type === 'success' ? 'rgba(72, 187, 120, 0.95)' : 
+                    type === 'warning' ? 'rgba(237, 137, 54, 0.95)' : 'rgba(66, 153, 225, 0.95)'};
+        color: white; padding: 12px 24px; border-radius: 8px;
+        font-size: 14px; font-weight: 500; z-index: 10000;
+        opacity: 0; transition: opacity 0.3s; pointer-events: none;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    `;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.style.opacity = '1', 10);
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        setTimeout(() => toast.remove(), 300);
+    }, 2000);
 };

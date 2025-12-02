@@ -12,8 +12,8 @@ function escapeHTML(str) {
 }
 
 // ==================== 加载留言板 (LeanCloud 版本) ====================
-async function loadGuestbookMessages(forceRefresh = false) {
-    console.log('📋 加载留言板消息...', forceRefresh ? '(强制刷新)' : '');
+async function loadGuestbookMessages(forceRefresh = false, scrollTargetId = null) {
+    console.log('📋 加载留言板消息...', forceRefresh ? '(强制刷新)' : '', scrollTargetId ? `(定位到: ${scrollTargetId})` : '');
 
     const container = document.getElementById('messageContainer');
     const emptyState = document.getElementById('emptyState');
@@ -332,6 +332,16 @@ async function loadGuestbookMessages(forceRefresh = false) {
 
         // Store for debugging
         window.lastLoadedMessages = formattedMessages;
+
+        // === Phase 6: 智能定位 ===
+        if (scrollTargetId && window.handleSmartScroll) {
+            console.log('🎯 Phase 6: 触发智能定位到留言:', scrollTargetId);
+            // 延迟稍长确保DOM完全渲染
+            setTimeout(() => {
+                window.handleSmartScroll(scrollTargetId, 'message');
+            }, 1200);
+        }
+
 
         return formattedMessages;
 
