@@ -3332,9 +3332,16 @@ body.no-scroll {
 
     /* Comment styling for mobile */
     .comment-item {
-        /* Inherit global flex styles */
+        display: flex;
+        flex-direction: column;
         padding: 12px 0;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+        /* 淡化分隔线颜色 */
+        animation: fadeIn 0.3s ease-in-out;
+        /* 移除固定的 data-can-reply 选择器，改为通用 class */
+        overflow-x: visible;
+        /* ✅ 改为 visible，防止光晕被裁切 */
+        overflow-y: visible;
         margin-left: 0;
         background: transparent;
         border-radius: 0;
