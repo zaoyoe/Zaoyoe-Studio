@@ -21,6 +21,7 @@
     <link rel="stylesheet" href="avatar-fix.css?v=UNIFIED_HOVER_V2">
     <!-- Custom CSS -->
     <link rel="stylesheet" href="live-like-animations.css?v=1">
+    <link rel="stylesheet" href="capsule-styles.css?v=5.2">
     <link rel="stylesheet" href="style.css?v=5_COLUMNS_FIX">
     <style>
         /* Force 4 columns - Override any conflicts */
@@ -224,6 +225,17 @@
     <a href="index.html" class="floating-back-btn">
         <i class="fa-solid fa-house"></i>
     </a>
+
+    <!-- ✨ 智能通知胶囊 (v5.2 - Fixed Refresh) -->
+    <div id="smart-capsule" class="capsule-wrapper" role="status" aria-live="polite"
+        onclick="CapsuleManager.applyUpdates()">
+        <div class="capsule-content">
+            <span class="capsule-icon">🔔</span>
+            <span id="capsule-text" class="capsule-text">有新动态</span>
+        </div>
+        <div class="capsule-close" onclick="event.stopPropagation(); CapsuleManager.hide();" aria-label="关闭提示">×</div>
+    </div>
+
     <!-- Main Content -->
     <div class="guestbook-main">
         <!-- Hidden initially to prevent FOUC/Garbage text -->
@@ -275,6 +287,9 @@
 
     <!-- LiveQuery 点赞订阅（优雅的原位心跳动画） -->
     <script src="live-like-subscription.js?v=1" defer></script>
+
+    <!-- 智能通知胶囊管理器 (v5.2 - Fixed Refresh) -->
+    <script src="capsule-manager.js?v=5.2" defer></script>
 
     <!-- 留言板 UI -->
     <script src="guestbook.js?v=FIX_LAYOUT_V5" defer></script>
