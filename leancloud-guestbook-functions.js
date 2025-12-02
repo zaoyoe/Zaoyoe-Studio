@@ -23,6 +23,14 @@ async function loadGuestbookMessages(forceRefresh = false) {
 
     // 🚀 Cache-First Strategy: Show cached content immediately
     const CACHE_VERSION = 'v2_fix_images'; // 🆕 强制刷新缓存的版本号
+
+    // ✅ 缓存失效辅助函数（提交新内容或收到实时消息时调用）
+    window.invalidateGuestbookCache = function () {
+        console.log('🗑️ 清除留言板缓存...');
+        localStorage.removeItem('cached_messages_' + CACHE_VERSION);
+        localStorage.removeItem('cache_time_' + CACHE_VERSION);
+    };
+
     if (!forceRefresh) {
         const cached = localStorage.getItem('cached_messages_' + CACHE_VERSION);
         const cacheTime = localStorage.getItem('cache_time_' + CACHE_VERSION);
@@ -590,9 +598,15 @@ async function addReplyToComment(parentCommentId, messageId, content) {
                     return false;
                 }
 
+
                 addReplyToParent(msg.comments || []);
 
-                // 更新缓存
+                // ✅ 提交评论成功后清除缓存（让其他设备刷新时能看到新评论）
+                if (typeof window.invalidateGuestbookCache === 'function') {
+                    window.invalidateGuestbookCache();
+                }
+
+                // 更新缓存（用最新数据）
                 const CACHE_VERSION = 'v2_fix_images';
                 localStorage.setItem('cached_messages_' + CACHE_VERSION, JSON.stringify(window.allMessages));
                 localStorage.setItem('cache_time_' + CACHE_VERSION, Date.now().toString());
@@ -978,6 +992,11 @@ function enableRealTimeUpdates() {
             }
 
             console.log('📩 收到新留言:', message.get('userName'));
+
+            // ✅ 收到新留言时清除缓存
+            if (typeof window.invalidateGuestbookCache === 'function') {
+                window.invalidateGuestbookCache();
+            }
 
             // 格式化新留言
             const newMessage = {
