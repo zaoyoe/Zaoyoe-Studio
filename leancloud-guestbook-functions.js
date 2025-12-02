@@ -939,6 +939,9 @@ console.log('✅ LeanCloud 留言板函数已加载');
 // ==================== WebSocket实时推送 ====================
 function enableRealTimeUpdates() {
     console.log('🔌 启用实时推送...');
+    console.log('🔍 当前URL:', window.location.pathname);
+    console.log('🔍 AV对象:', typeof AV !== 'undefined' ? '✅ 存在' : '❌ 不存在');
+    console.log('🔍 AV.Query.prototype.subscribe:', typeof AV.Query.prototype.subscribe);
 
     // 检查 LiveQuery 是否可用
     if (!AV.Query.prototype.subscribe) {
@@ -946,16 +949,29 @@ function enableRealTimeUpdates() {
         return;
     }
 
+    console.log('✅ LiveQuery 功能可用，开始订阅...');
+
     // 订阅新留言
     const messageQuery = new AV.Query('Message');
     messageQuery.descending('createdAt');
 
+    console.log('📡 创建留言 Query 订阅...');
+
     messageQuery.subscribe().then(liveQuery => {
         console.log('✅ 留言实时订阅已启用');
+        console.log('🔍 LiveQuery 对象:', liveQuery);
 
         liveQuery.on('create', async (message) => {
+            console.log('🎉 [LiveQuery] 收到 create 事件!');
+            console.log('📦 消息对象:', message);
+            console.log('👤 消息作者:', message.get('userName'));
+
             // 检查是否是当前用户发的（避免重复显示）
             const currentUser = AV.User.current();
+            console.log('🔍 当前用户:', currentUser ? currentUser.get('username') : '未登录');
+            console.log('🔍 消息用户ID:', message.get('user')?.id);
+            console.log('🔍 当前用户ID:', currentUser?.id);
+
             if (currentUser && message.get('user')?.id === currentUser.id) {
                 console.log('⏭️ 跳过自己发的留言');
                 return;
