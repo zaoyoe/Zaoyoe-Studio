@@ -95,9 +95,28 @@ async function subscribeLikeLiveQuery() {
             const countQuery = new AV.Query('Like');
             countQuery.equalTo('targetId', targetId);
             const totalLikes = await countQuery.count();
-            console.log(`💗 目标 ${targetId} 的点赞数已更新为: ${totalLikes}`);
 
-            // ✨ 优雅更新：原位心跳动画
+            // 为了 CapsuleManager 和更详细的日志，我们需要获取旧的点赞数
+            let oldCount = 0;
+            const element = document.querySelector(`.message-item[data-message-id="${targetId}"]`) || document.querySelector(`.comment-item[data-comment-id="${targetId}"]`);
+            if (element) {
+                const likeCountSpan = element.querySelector('.like-count');
+                if (likeCountSpan) {
+                    oldCount = parseInt(likeCountSpan.textContent) || 0;
+                }
+            }
+            const newCount = totalLikes;
+            const change = newCount - oldCount;
+
+            console.log(`💗 ${targetType} [${targetId}] 点赞数: ${oldCount} → ${newCount} (+${change})`);
+
+            // ✨ Phase 5: 触发智能胶囊通知（只有+1才触发）
+            if (change === 1 && window.CapsuleManager) {
+                console.log('🔔 触发胶囊通知 - 点赞 targetId:', targetId);
+                window.CapsuleManager.queueUpdate('like', targetId);
+            }
+
+            // 🎬 触发心跳动画优雅更新：原位心跳动画
             updateLikeWithAnimation(targetType, targetId, totalLikes);
         });
 
