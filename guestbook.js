@@ -53,35 +53,20 @@ document.addEventListener('DOMContentLoaded', () => {
     let masonryColumns = [];
     let currentColumnCount = 0;
 
-    // Initialize layout
-    initMasonry();
 
-    // Force re-layout after a short delay to handle potential rendering race conditions
-    setTimeout(() => {
-        if (initMasonry()) {
-            // If layout changed (e.g. scrollbar appeared), re-render
-            const currentCount = renderedCount;
-            renderedCount = 0;
-            currentColumnCount = 0;
-            initMasonry();
-            const messagesToRender = allMessages.slice(0, currentCount);
-            messagesToRender.forEach((msg, index) => {
-                const html = createMessageCard(msg, index);
-                const element = htmlToElement(html);
-                const shortest = getShortestColumn();
-                shortest.appendChild(element);
-            });
-        }
-    }, 500);
+    // Initialize Masonry Layout
     function initMasonry() {
         // Use matchMedia for more reliable mobile detection
         const isMobile = window.matchMedia('(max-width: 768px)').matches;
         const width = Math.min(window.innerWidth, document.documentElement.clientWidth || window.innerWidth);
 
+        console.log('🔍 [Masonry Debug] isMobile:', isMobile, 'width:', width, 'innerWidth:', window.innerWidth, 'clientWidth:', document.documentElement.clientWidth);
+
         let newCols = 1; // Default
 
         if (isMobile) {
             newCols = 1; // Force 1 column on mobile
+            console.log('📱 [Masonry] Mobile detected, forcing 1 column');
         } else {
             // Desktop/Tablet breakpoints
             if (width > 2400) newCols = 5;      // Ultra-wide
@@ -89,7 +74,10 @@ document.addEventListener('DOMContentLoaded', () => {
             else if (width > 1024) newCols = 3;  // Standard Desktop
             else if (width > 768) newCols = 2;  // Tablets
             else newCols = 1;                   // Fallback
+            console.log('💻 [Masonry] Desktop/Tablet mode, columns:', newCols);
         }
+
+        console.log('📊 [Masonry] Final column count:', newCols, 'Previous:', currentColumnCount);
 
         // Only re-initialize if column count changes
         if (newCols !== currentColumnCount) {
