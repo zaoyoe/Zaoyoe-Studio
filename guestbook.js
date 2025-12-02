@@ -85,11 +85,24 @@ document.addEventListener('DOMContentLoaded', () => {
             messageContainer.innerHTML = '';
             masonryColumns = [];
 
-            for (let i = 0; i < newCols; i++) {
-                const col = document.createElement('div');
-                col.className = 'masonry-column';
-                messageContainer.appendChild(col);
-                masonryColumns.push(col);
+            // 🔧 Mobile: Use simple container without flex columns
+            if (isMobile) {
+                console.log('📱 [Masonry] Creating simple mobile container');
+                messageContainer.style.display = 'block';
+                messageContainer.style.width = '100%';
+                masonryColumns.push(messageContainer);
+            } else {
+                // Desktop: Use flex columns
+                console.log('💻 [Masonry] Creating', newCols, 'flex columns');
+                messageContainer.style.display = 'flex';
+                messageContainer.style.width = '100%';
+
+                for (let i = 0; i < newCols; i++) {
+                    const col = document.createElement('div');
+                    col.className = 'masonry-column';
+                    messageContainer.appendChild(col);
+                    masonryColumns.push(col);
+                }
             }
             return true; // Layout changed
         }
