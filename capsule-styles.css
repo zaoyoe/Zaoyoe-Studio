@@ -1,0 +1,102 @@
+/* === 智能胶囊容器 (Smart Capsule v5.2) === */
+.capsule-wrapper {
+    position: fixed;
+    top: -80px;
+    left: 50%;
+    transform: translateX(-50%) translateZ(0);
+    z-index: 9999;
+
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.95) 0%, rgba(118, 75, 162, 0.95) 100%);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+
+    color: #ffffff;
+    padding: 10px 20px;
+    border-radius: 50px;
+
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15),
+        0 0 20px rgba(102, 126, 234, 0.4);
+
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+    cursor: pointer;
+
+    display: flex;
+    align-items: center;
+    gap: 12px;
+
+    transition: top 0.5s cubic-bezier(0.34, 1.56, 0.64, 1),
+        transform 0.2s ease,
+        background 0.3s ease;
+
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.capsule-wrapper.active {
+    top: 90px;
+}
+
+@media (hover: hover) {
+    .capsule-wrapper:hover {
+        transform: translateX(-50%) scale(1.03);
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2),
+            0 0 30px rgba(102, 126, 234, 0.6);
+    }
+}
+
+.capsule-wrapper.warm-theme {
+    background: linear-gradient(135deg, rgba(255, 154, 158, 0.95) 0%, rgba(254, 207, 239, 0.95) 100%);
+    color: #333333;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1),
+        0 0 20px rgba(255, 154, 158, 0.4);
+}
+
+.capsule-content {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.capsule-icon {
+    font-size: 16px;
+    line-height: 1;
+}
+
+.capsule-close {
+    opacity: 0.6;
+    padding-left: 10px;
+    margin-left: 2px;
+    border-left: 1px solid rgba(255, 255, 255, 0.2);
+    font-size: 18px;
+    line-height: 14px;
+    transition: opacity 0.2s;
+    font-family: sans-serif;
+}
+
+.warm-theme .capsule-close {
+    border-left-color: rgba(0, 0, 0, 0.1);
+}
+
+.capsule-close:hover {
+    opacity: 1;
+}
+
+@media (max-width: 768px) {
+    .capsule-wrapper {
+        padding: 8px 16px;
+        font-size: 13px;
+        top: -60px;
+        gap: 8px;
+    }
+
+    .capsule-wrapper.active {
+        top: 20px;
+    }
+
+    .capsule-close {
+        display: none;
+    }
+}
