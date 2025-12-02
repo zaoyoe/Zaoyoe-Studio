@@ -3,13 +3,16 @@
  * 替代 Firebase SDK
  */
 
-// ✅ LeanCloud 配置 - 直连模式
-// 已在 LeanCloud 后台添加 Web 安全域名，可以直接访问 API
+// ✅ LeanCloud 配置 - 混合模式（解决移动端 CORS）
+// REST API: 使用 Vercel 代理（移动端需要）
+// WebSocket: 直连（LiveQuery 需要）
 const LEANCLOUD_CONFIG = {
     appId: 'q6Nh03PQaIjEKthkhFGBL7AX-MdYXbMMI',
     appKey: 'sZuQhlUhkFCofqN96CLWYNyh',
-    // ✅ 直接使用 LeanCloud API（已配置域名白名单）
-    serverURLs: 'https://q6nh03pq.api.lncldglobal.com'
+    // 使用 Vercel 代理解决移动端 CORS 问题
+    serverURLs: window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+        ? 'https://q6nh03pq.api.lncldglobal.com'  // 本地开发直连
+        : '/api'  // 生产环境用代理
 };
 
 // 🆕 LiveQuery WebSocket 服务器配置
