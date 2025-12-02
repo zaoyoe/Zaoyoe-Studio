@@ -13,7 +13,7 @@ function escapeHTML(str) {
 
 // ==================== 加载留言板 (LeanCloud 版本) ====================
 async function loadGuestbookMessages(forceRefresh = false) {
-    console.log('📋 加载留言板消息...');
+    console.log('📋 加载留言板消息...', forceRefresh ? '(强制刷新)' : '');
 
     const container = document.getElementById('messageContainer');
     const emptyState = document.getElementById('emptyState');
@@ -30,6 +30,17 @@ async function loadGuestbookMessages(forceRefresh = false) {
         localStorage.removeItem('cached_messages_' + CACHE_VERSION);
         localStorage.removeItem('cache_time_' + CACHE_VERSION);
     };
+
+    // 🚨 强制刷新时的状态重置
+    if (forceRefresh) {
+        console.log('🔄 强制刷新：清除缓存并重置状态');
+        // 清除缓存
+        window.invalidateGuestbookCache();
+        // 重置guestbook.js中的状态（通过window对象访问）
+        if (window.resetGuestbookState) {
+            window.resetGuestbookState();
+        }
+    }
 
     if (!forceRefresh) {
         const cached = localStorage.getItem('cached_messages_' + CACHE_VERSION);

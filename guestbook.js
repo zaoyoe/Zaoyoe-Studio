@@ -58,6 +58,19 @@ document.addEventListener('DOMContentLoaded', () => {
     let isLoading = false;
     let observer = null;
 
+    // 🚨 状态重置函数（供loadGuestbookMessages调用）
+    window.resetGuestbookState = function () {
+        console.log('🔄 重置留言板状态');
+        renderedCount = 0;
+        isLoading = false;
+        allMessages = [];
+        // 如果有observer，先销毁
+        if (observer) {
+            observer.disconnect();
+            observer = null;
+        }
+    };
+
     // Make renderMessages global so it can be called by LeanCloud loader
     // Masonry Layout State
     let masonryColumns = [];
