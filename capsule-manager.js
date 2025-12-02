@@ -70,7 +70,7 @@ window.CapsuleManager = {
             text = `${queue.length} 条动态 ↻`;
         } else {
             if (msgs + cmts === 0 && likes > 0) {
-                text = `热度上升 (+${likes})`;
+                text = `点赞 +${likes}`;
             } else {
                 let parts = [];
                 if (msgs > 0) parts.push(`${msgs} 条留言`);
