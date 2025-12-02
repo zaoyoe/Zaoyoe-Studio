@@ -1074,6 +1074,34 @@ window.handleSmartScroll = function (targetId, type = 'message') {
             // 查找评论元素
             targetElement = document.querySelector(`[data-comment-id="${targetId}"]`);
             console.log('🔍 查找评论:', `[data-comment-id="${targetId}"]`, targetElement);
+
+            // ✅ 自动展开评论区（如果评论在折叠的区域内）
+            if (targetElement) {
+                const messageId = targetElement.dataset.messageId;
+                const commentList = document.querySelector(`.comment-list[data-message-id="${messageId}"]`);
+                const toggleBtn = document.querySelector(`.comment-toggle-btn[data-message-id="${messageId}"]`);
+
+                if (commentList && commentList.classList.contains('collapsed')) {
+                    console.log('📂 自动展开评论区');
+                    // 模拟点击展开按钮
+                    commentList.classList.remove('collapsed');
+                    const fullHeight = commentList.scrollHeight;
+                    commentList.style.maxHeight = fullHeight + 'px';
+
+                    if (toggleBtn) {
+                        const icon = toggleBtn.querySelector('i');
+                        const span = toggleBtn.querySelector('span');
+                        if (icon) icon.className = 'fas fa-chevron-up';
+                        if (span) span.textContent = '收起';
+                    }
+
+                    setTimeout(() => {
+                        if (!commentList.classList.contains('collapsed')) {
+                            commentList.style.maxHeight = 'none';
+                        }
+                    }, 500);
+                }
+            }
         }
 
         if (!targetElement) {
