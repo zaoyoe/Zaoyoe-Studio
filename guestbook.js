@@ -494,7 +494,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <button class="action-btn like-btn ${msg.isLiked ? 'active' : ''}" 
                                 onclick="handleLike('Message', '${msg.id}', this)">
                             <i class="${msg.isLiked ? 'fas' : 'far'} fa-heart"></i>
-                            <span>${msg.likes || 0}</span>
+                            <span class="like-count">${msg.likes || 0}</span>
                         </button>
                         
                         <button class="action-btn comment-btn" 
