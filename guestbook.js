@@ -56,7 +56,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const INITIAL_LOAD = 20; // Increased for better initial fill
     const LOAD_MORE_COUNT = 20; // Increased for smoother scrolling
     let isLoading = false;
-    let observer = null;
+    let infiniteScrollObserver = null;
 
     // 🚨 状态重置函数（供loadGuestbookMessages调用）
     window.resetGuestbookState = function () {
@@ -64,10 +64,10 @@ document.addEventListener('DOMContentLoaded', () => {
         renderedCount = 0;
         isLoading = false;
         allMessages = [];
-        // 如果有observer，先销毁
-        if (observer) {
-            observer.disconnect();
-            observer = null;
+        // 如果有infiniteScrollObserver，先销毁
+        if (infiniteScrollObserver) {
+            infiniteScrollObserver.disconnect();
+            infiniteScrollObserver = null;
         }
     };
 
@@ -276,8 +276,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }, 200);
     });
-    // Persistent observer
-    let infiniteScrollObserver = null;
 
     function setupInfiniteScroll() {
         // 1. Create Sentinel (Invisible Trigger)
