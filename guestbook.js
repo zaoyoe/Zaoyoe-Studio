@@ -34,6 +34,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (typeof AV !== 'undefined' && typeof loadGuestbookMessages === 'function') {
             console.log('✅ LeanCloud 已就绪，加载留言');
             loadGuestbookMessages();
+
+            // ✅ 启用实时推送（LiveQuery）
+            if (typeof enableRealTimeUpdates === 'function') {
+                console.log('🔌 准备启用 LiveQuery...');
+                setTimeout(enableRealTimeUpdates, 1000);
+            } else {
+                console.warn('⚠️ enableRealTimeUpdates 函数未找到');
+            }
         } else {
             console.log('⏳ 等待 LeanCloud 初始化...');
             setTimeout(waitForLeanCloud, 100);
