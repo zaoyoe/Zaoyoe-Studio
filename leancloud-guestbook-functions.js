@@ -647,6 +647,13 @@ async function addReplyToComment(parentCommentId, messageId, content) {
 function insertCommentToDOM(messageId, comment) {
     console.log(`📝 插入评论到DOM: messageId=${messageId}, commentId=${comment.id}`);
 
+    // ✅ 防止重复插入：检查评论是否已存在
+    const existingComment = document.querySelector(`[data-comment-id="${comment.id}"]`);
+    if (existingComment) {
+        console.log(`⏭️ 评论已存在，跳过插入: commentId=${comment.id}`);
+        return;
+    }
+
     // 查找对应的留言卡片
     const messageCard = document.querySelector(`[data-message-id="${messageId}"]`);
     if (!messageCard) {
@@ -721,6 +728,13 @@ function insertCommentToDOM(messageId, comment) {
 // ==================== 辅助函数：插入回复到DOM ====================
 function insertReplyToDOM(parentCommentId, reply) {
     console.log(`📝 插入回复到DOM: parentCommentId=${parentCommentId}, replyId=${reply.id}`);
+
+    // ✅ 防止重复插入：检查回复是否已存在
+    const existingReply = document.querySelector(`[data-comment-id="${reply.id}"]`);
+    if (existingReply) {
+        console.log(`⏭️ 回复已存在，跳过插入: replyId=${reply.id}`);
+        return;
+    }
 
     // 查找父评论元素
     const parentCommentElem = document.querySelector(`[data-comment-id="${parentCommentId}"]`);
