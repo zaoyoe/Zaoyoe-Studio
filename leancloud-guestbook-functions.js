@@ -1068,7 +1068,8 @@ function enableRealTimeUpdates() {
             insertMessageToTop(newMessage);
 
             // 显示通知
-            showNotification(`${newMessage.name} 发了新留言`);
+            // ✅ 已有 CapsuleManager 胶囊通知，注释掉旧的 showNotification 避免重复
+            // showNotification(`${newMessage.name} 发了新留言`);
 
             // 更新内存和缓存
             if (window.allMessages) {
@@ -1142,7 +1143,8 @@ function enableRealTimeUpdates() {
                 window.CapsuleManager.queueUpdate('comment', comment.id);
             }
 
-            showNotification(`${newComment.name} 发了新评论`);
+            // ✅ 已有 CapsuleManager 胶囊通知，注释掉旧的 showNotification 避免重复
+            // showNotification(`${newComment.name} 发了新评论`);
         });
 
     }).catch(err => {
