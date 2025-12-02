@@ -16,8 +16,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     console.log('✅ Modal state cleaned up on page load');
 
-    // 🔧 FIX: Declare this variable early to avoid ReferenceError
+    // 🔧 FIX: Declare these variables early to avoid ReferenceError
     let commentHandlersAttached = false;
+    let mobileHighlightActive = false;
+    let currentHighlightedItem = null;
 
     // Load messages from LeanCloud
     console.log('📋 加载 LeanCloud 留言...');
@@ -653,8 +655,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     // Mobile Scroll Highlight - Simplified and Immediate
-    let mobileHighlightActive = false;
-    let currentHighlightedItem = null; // Track currently highlighted item
+    // (Variables declared at top of file)
 
     function updateMobileHighlight() {
         // Only run on mobile
