@@ -134,12 +134,28 @@ window.CapsuleManager = {
 
         // 根据类型智能定位
         if (firstUpdate.type === 'message') {
-            // 留言：刷新并定位
-            if (typeof loadGuestbookMessages === 'function') {
-                console.log('📜 加载留言并定位到:', firstUpdate.id);
-                loadGuestbookMessages(true, firstUpdate.id);
+            // 留言：直接定位（LiveQuery 已实时插入）
+            console.log('📜 定位到新留言:', firstUpdate.id);
+
+            // 查找留言卡片
+            const messageCard = document.querySelector(`[data-message-id="${firstUpdate.id}"]`);
+
+            if (messageCard) {
+                // 找到了，直接定位
+                if (window.handleSmartScroll) {
+                    window.handleSmartScroll(firstUpdate.id, 'message');
+                } else {
+                    // 降级：直接滚动
+                    messageCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
             } else {
-                window.location.reload();
+                // 找不到，可能是 LiveQuery 还没触发，降级刷新
+                console.warn('⚠️ 留言卡片未找到，执行降级刷新');
+                if (typeof loadGuestbookMessages === 'function') {
+                    loadGuestbookMessages(true, firstUpdate.id);
+                } else {
+                    window.location.reload();
+                }
             }
         } else if (firstUpdate.type === 'comment') {
             // 评论：直接定位（已在页面）
