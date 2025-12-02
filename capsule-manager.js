@@ -77,9 +77,9 @@ window.CapsuleManager = {
                 if (cmts > 0) parts.push(`${cmts} 条评论`);
                 // ✅ 修复：当 parts 为空时显示通用文案
                 if (parts.length > 0) {
-                    text = `有 ${parts.join('、')} • 点击查看`;
+                    text = `有 ${parts.join('、')}`;
                 } else {
-                    text = `有 ${queue.length} 条新动态 • 点击查看`;
+                    text = `有 ${queue.length} 条新动态`;
                 }
             }
         }
