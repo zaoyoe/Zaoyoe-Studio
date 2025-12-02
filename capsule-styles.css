@@ -161,7 +161,7 @@
     }
 }
 
-/* 评论背景、边框和位移动画 */
+/* 评论背景和位移动画 */
 @keyframes comment-highlight {
     0% {
         background: rgba(102, 126, 234, 0);
@@ -181,8 +181,26 @@
     }
 }
 
+/* 明暗闪动效果 */
+@keyframes brightness-pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.85;
+        /* 轻微变暗 */
+    }
+}
+
 .message-item.highlight-flash {
-    animation: focus-glow 3s ease-in-out 2;
+    animation:
+        focus-glow 4s ease-in-out 3,
+        /* 4秒 × 3次 = 12秒 */
+        brightness-pulse 1.5s ease-in-out 8;
+    /* 1.5秒 × 8次 = 12秒 */
     border: 3px solid rgba(102, 126, 234, 0);
     border-radius: 16px;
     transition: border 0.6s ease, box-shadow 0.6s ease, border-radius 0.3s ease;
@@ -190,10 +208,12 @@
 
 .comment-item.highlight-flash {
     animation:
-        comment-glow 3s ease-in-out 2,
-        /* 只有光晕 */
-        comment-highlight 3s ease-in-out 2;
-    /* 背景+位移 */
+        comment-glow 4s ease-in-out 3,
+        /* 光晕 4秒 × 3次 */
+        comment-highlight 4s ease-in-out 3,
+        /* 背景+位移 4秒 × 3次 */
+        brightness-pulse 1.5s ease-in-out 8;
+    /* 明暗闪动 1.5秒 × 8次 */
     background: rgba(102, 126, 234, 0);
     border-radius: 8px;
     /* 移除 transition 避免动画结束时的冲突 */
