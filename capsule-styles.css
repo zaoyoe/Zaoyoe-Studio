@@ -114,7 +114,7 @@
     }
 }
 
-.message-card.highlight-flash {
+.message-item.highlight-flash {
     animation: focus-glow 1.5s ease-in-out 2;
     border: 2px solid rgba(102, 126, 234, 0.6);
     transition: border 0.3s ease;
