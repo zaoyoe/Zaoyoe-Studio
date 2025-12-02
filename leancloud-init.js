@@ -3,14 +3,13 @@
  * 替代 Firebase SDK
  */
 
-// ✅ LeanCloud 配置 - 国际版（已恢复）
-// 注意：国内用户访问可能需要科学上网
+// ✅ LeanCloud 配置 - 国际版
 const LEANCLOUD_CONFIG = {
     appId: 'q6Nh03PQaIjEKthkhFGBL7AX-MdYXbMMI',
     appKey: 'sZuQhlUhkFCofqN96CLWYNyh',
-    // 使用 Vercel 代理转发，解决国内访问问题
-    // 生产环境使用 /api，本地开发使用直接连接
-    serverURL: window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    // ⚠️ 使用 serverURLs（复数）配置 REST API 地址
+    // 生产环境使用 Vercel 代理，本地开发直接连接
+    serverURLs: window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
         ? 'https://q6nh03pq.api.lncldglobal.com'
         : 'https://www.zaoyoe.com/api'
 };
@@ -27,7 +26,11 @@ AV.init({
 });
 
 console.log('✅ LeanCloud SDK 初始化完成');
-console.log('📡 AppID:', LEANCLOUD_CONFIG.appId);
+console.log('📡 配置详情:');
+console.log('- AppID:', LEANCLOUD_CONFIG.appId);
+console.log('- REST API:', LEANCLOUD_CONFIG.serverURLs);
+console.log('- WebSocket:', REALTIME_CONFIG.RTMServerURL);
+console.log('- LiveQuery 支持:', typeof AV.Query.prototype.subscribe !== 'undefined' ? '✅ 已启用' : '❌ 未启用');
 
 console.log('⚠️ 请确保已将配置替换为您的实际 AppID/AppKey！');
 
