@@ -150,9 +150,32 @@ window.CapsuleManager = {
                 loadGuestbookMessages?.(true) || window.location.reload();
             }
         } else if (firstUpdate.type === 'like') {
-            // 点赞：刷新页面（点赞没有具体位置）
-            console.log('💗 点赞更新，刷新页面');
-            loadGuestbookMessages?.(true) || window.location.reload();
+            // 点赞：定位到被点赞的卡片（LiveQuery 已实时更新数据）
+            console.log('💗 点赞更新，定位到被点赞的卡片:', firstUpdate.id);
+
+            // 智能判断是留言还是评论
+            const isMessage = document.querySelector(`[data-message-id="${firstUpdate.id}"]`);
+            const isComment = document.querySelector(`[data-comment-id="${firstUpdate.id}"]`);
+
+            if (isMessage) {
+                // 是留言卡片
+                if (window.handleSmartScroll) {
+                    window.handleSmartScroll(firstUpdate.id, 'message');
+                } else {
+                    // 降级：直接滚动到卡片
+                    isMessage.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            } else if (isComment) {
+                // 是评论
+                if (window.handleSmartScroll) {
+                    window.handleSmartScroll(firstUpdate.id, 'comment');
+                } else {
+                    // 降级：直接滚动到评论
+                    isComment.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            } else {
+                console.warn('⚠️ 找不到被点赞的目标:', firstUpdate.id);
+            }
         }
 
         // 清空队列并隐藏
