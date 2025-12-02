@@ -122,25 +122,26 @@
 /* === Phase 2: 智能定位高亮动画 === */
 /* 改用边框 + 阴影效果，在白色卡片上更显眼 */
 
-/* 留言卡片的光晕动画（包含抬起放大） */
+/* 留言卡片的光晕动画（包含抬起） */
 @keyframes focus-glow {
     0% {
         border-color: rgba(102, 126, 234, 0);
         box-shadow: 0 0 0 0 rgba(102, 126, 234, 0);
-        transform: translateY(0) scale(1);
+        transform: translateY(0);
     }
 
     25%,
     75% {
         border-color: rgba(102, 126, 234, 1);
         box-shadow: 0 0 30px 5px rgba(102, 126, 234, 0.6);
-        transform: translateY(-4px) scale(1.02);
+        transform: translateY(-6px);
+        /* 只抬起，不放大 */
     }
 
     100% {
         border-color: rgba(102, 126, 234, 0);
         box-shadow: 0 0 0 0 rgba(102, 126, 234, 0);
-        transform: translateY(0) scale(1);
+        transform: translateY(0);
     }
 }
 
@@ -165,20 +166,21 @@
     0% {
         background: rgba(102, 126, 234, 0);
         border-left-color: rgba(102, 126, 234, 0);
-        transform: translateY(0) scale(1);
+        transform: translateY(0);
     }
 
     25%,
     75% {
         background: rgba(102, 126, 234, 0.08);
         border-left-color: rgba(102, 126, 234, 1);
-        transform: translateY(-4px) scale(1.02);
+        transform: translateY(-6px);
+        /* 只抬起，不放大 */
     }
 
     100% {
         background: rgba(102, 126, 234, 0);
         border-left-color: rgba(102, 126, 234, 0);
-        transform: translateY(0) scale(1);
+        transform: translateY(0);
     }
 }
 
