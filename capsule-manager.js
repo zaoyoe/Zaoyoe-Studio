@@ -61,7 +61,8 @@ window.CapsuleManager = {
         if (cmts > 0) icon = '💭';
         if (msgs > 0) icon = '💬';
         if ((msgs + cmts) > 0 && likes > 0) icon = '✨';
-        iconEl.innerText = icon;
+        // ✅ 修复：使用 innerHTML 防止 HTML 源码被显示为文本
+        iconEl.innerHTML = icon;
 
         // 智能文案
         let text = '';
@@ -82,7 +83,8 @@ window.CapsuleManager = {
                 }
             }
         }
-        textEl.innerText = text;
+        // ✅ 修复：使用 innerHTML 防止 HTML 源码被显示为文本
+        textEl.innerHTML = text;
 
         // 暖色模式
         if (msgs + cmts === 0 && likes > 0) wrapper.classList.add('warm-theme');
