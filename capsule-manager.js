@@ -111,16 +111,44 @@ window.CapsuleManager = {
         }
     },
 
-    // --- ✅ 应用更新（调用修复后的强制刷新）---
+    // --- ✅ Phase 4 & 6: 应用更新（智能定位）---
     applyUpdates() {
-        console.log('🚀 v5.2: 使用修复后的强制刷新');
+        console.log('🚀 v5.2 Phase 6: 使用智能定位');
 
-        if (typeof loadGuestbookMessages === 'function') {
-            loadGuestbookMessages(true); // 现在不会破坏无限滚动了！
-        } else {
-            window.location.reload();
+        if (this.state.updates.length === 0) {
+            console.warn('⚠️ 队列为空，无需定位');
+            this.hide();
+            return;
         }
 
+        // 获取第一个更新（最优先的通知）
+        const firstUpdate = this.state.updates[0];
+        console.log('🎯 定位到第一个更新:', firstUpdate);
+
+        // 根据类型智能定位
+        if (firstUpdate.type === 'message') {
+            // 留言：刷新并定位
+            if (typeof loadGuestbookMessages === 'function') {
+                console.log('📜 加载留言并定位到:', firstUpdate.id);
+                loadGuestbookMessages(true, firstUpdate.id);
+            } else {
+                window.location.reload();
+            }
+        } else if (firstUpdate.type === 'comment') {
+            // 评论：直接定位（已在页面）
+            if (window.handleSmartScroll) {
+                console.log('💬 定位到评论:', firstUpdate.id);
+                window.handleSmartScroll(firstUpdate.id, 'comment');
+            } else {
+                loadGuestbookMessages?.(true) || window.location.reload();
+            }
+        } else if (firstUpdate.type === 'like') {
+            // 点赞：刷新页面（点赞没有具体位置）
+            console.log('💗 点赞更新，刷新页面');
+            loadGuestbookMessages?.(true) || window.location.reload();
+        }
+
+        // 清空队列并隐藏
         this.state.updates = [];
         document.title = this.state.originalTitle;
         this.hide();
