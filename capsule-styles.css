@@ -186,24 +186,22 @@
 
     0%,
     100% {
-        opacity: 1;
+        filter: brightness(1);
     }
 
     50% {
-        opacity: 0.85;
-        /* 轻微变暗 */
+        filter: brightness(1.15);
+        /* 变亮 */
     }
 }
 
 .message-item.highlight-flash {
     animation:
-        focus-glow 4s ease-in-out 3,
-        /* 4秒 × 3次 = 12秒 */
         brightness-pulse 1.5s ease-in-out 8;
-    /* 1.5秒 × 8次 = 12秒 */
-    border: 3px solid rgba(102, 126, 234, 0);
+    /* 只保留明暗闪动 */
+    box-shadow: 0 0 30px 5px rgba(102, 126, 234, 0.6);
+    /* 固定光晕 */
     border-radius: 16px;
-    transition: border 0.6s ease, box-shadow 0.6s ease, border-radius 0.3s ease;
 }
 
 .comment-item.highlight-flash {
