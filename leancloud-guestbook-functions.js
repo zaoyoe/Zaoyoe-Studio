@@ -913,6 +913,11 @@ async function toggleLike(type, id) {
         const likes = await countQuery.count();
         console.log(`✅ [Like] 当前总点赞数: ${likes}`);
 
+        // ✅ 清除缓存，确保刷新页面时显示最新数据
+        if (typeof window.invalidateGuestbookCache === 'function') {
+            window.invalidateGuestbookCache();
+        }
+
         return { likes, isLiked };
 
     } catch (error) {
