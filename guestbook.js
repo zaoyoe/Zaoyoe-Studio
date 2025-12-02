@@ -1059,50 +1059,57 @@ window.handleLike = async function (type, id, btn) {
 /**
  * 智能滚动到指定元素并高亮
  */
-window.handleSmartScroll = function(targetId, type = 'message') {
+window.handleSmartScroll = function (targetId, type = 'message') {
     console.log(`🎯 开始智能定位: type=${type}, targetId=${targetId}`);
-    
+
+    // 等待DOM渲染完成 - 增加延迟确保masonry布局完成
     setTimeout(() => {
         let targetElement = null;
-        
+
         if (type === 'message') {
-            targetElement = document.querySelector(`[data-message-id="${targetId}"]`);
+            // 查找留言卡片 - 使用.message-item类
+            targetElement = document.querySelector(`.message-item[data-message-id="${targetId}"]`);
+            console.log('🔍 查找留言:', `.message-item[data-message-id="${targetId}"]`, targetElement);
         } else if (type === 'comment') {
+            // 查找评论元素
             targetElement = document.querySelector(`[data-comment-id="${targetId}"]`);
+            console.log('🔍 查找评论:', `[data-comment-id="${targetId}"]`, targetElement);
         }
-        
+
         if (!targetElement) {
             console.warn(`⚠️ 未找到目标元素: ${type} ${targetId}`);
-            if (window.showToast) showToast('内容未找到', 'warning');
+            if (window.showToast) showToast('内容未找到，可能已被删除', 'warning');
             return;
         }
-        
+
         console.log('✅ 找到目标元素:', targetElement);
-        
+
+        // 平滑滚动到目标
         targetElement.scrollIntoView({
             behavior: 'smooth',
             block: 'center'
         });
-        
+
+        // 添加高亮动画
         setTimeout(() => {
             targetElement.classList.add('highlight-flash');
             setTimeout(() => targetElement.classList.remove('highlight-flash'), 3000);
         }, 500);
-        
+
         if (window.showToast) showToast('已定位到目标内容', 'success');
-    }, 800);
+    }, 1500); // 增加到1.5秒，确保masonry布局完成
 };
 
 /**
  * 显示Toast提示
  */
-window.showToast = function(message, type = 'info') {
+window.showToast = function (message, type = 'info') {
     const toast = document.createElement('div');
     toast.textContent = message;
     toast.style.cssText = `
         position: fixed; top: 150px; left: 50%; transform: translateX(-50%);
-        background: ${type === 'success' ? 'rgba(72, 187, 120, 0.95)' : 
-                    type === 'warning' ? 'rgba(237, 137, 54, 0.95)' : 'rgba(66, 153, 225, 0.95)'};
+        background: ${type === 'success' ? 'rgba(72, 187, 120, 0.95)' :
+            type === 'warning' ? 'rgba(237, 137, 54, 0.95)' : 'rgba(66, 153, 225, 0.95)'};
         color: white; padding: 12px 24px; border-radius: 8px;
         font-size: 14px; font-weight: 500; z-index: 10000;
         opacity: 0; transition: opacity 0.3s; pointer-events: none;
