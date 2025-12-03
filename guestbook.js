@@ -1333,8 +1333,11 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
         ? `.message-item[data-message-id="${targetId}"]`
         : `[data-comment-id="${targetId}"]`;
 
+    console.log('🔍 查找选择器:', selector);
+
     // --- 2. 尝试直接寻找目标 ---
     let targetElement = document.querySelector(selector);
+    console.log('🔎 直接查找结果:', targetElement ? '✅ 找到' : '❌ 未找到');
 
     // --- 3. 如果找不到，可能父留言都不在（漏网之鱼）---
     if (!targetElement && type === 'comment' && parentMessageId) {
