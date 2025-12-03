@@ -860,36 +860,10 @@ function displayMessages(messages) {
 }
 
 // ==================== 创建留言卡片 ====================
-function createMessageCard(msg) {
-    const card = document.createElement('div');
-    card.className = 'message-item';
-    card.dataset.messageId = msg.objectId;
+// 🗑️ createMessageCard 函数已移除
+// 使用 guestbook.js 中完整版本的 window.createMessageCard
+// 该版本包含完整的评论区渲染逻辑
 
-    // 头像
-    const avatar = msg.userAvatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(msg.userName)}&background=random`;
-
-    // 时间
-    const time = msg.displayTime || new Date(msg.createdAt).toLocaleString('zh-CN');
-
-    // 检查是否是当前用户的留言
-    const currentUser = AV.User.current();
-    const isOwnMessage = currentUser && msg.user && currentUser.id === msg.user.id;
-
-    card.innerHTML = `
-        <div class="message-header">
-            <img src="${avatar}" alt="${escapeHTML(msg.userName)}" class="message-avatar">
-            <div class="message-meta">
-                <div class="message-author">${escapeHTML(msg.userName)}</div>
-                <div class="message-time">${time}</div>
-            </div>
-            ${isOwnMessage ? '<button class="delete-btn" onclick="deleteMessage(\'' + msg.objectId + '\')">删除</button>' : ''}
-        </div>
-        ${msg.content ? `<div class="message-content">${escapeHTML(msg.content)}</div>` : ''}
-        ${msg.imageUrl ? `<img src="${msg.imageUrl}" alt="留言图片" class="message-image">` : ''}
-    `;
-
-    return card;
-}
 
 // ==================== 点赞功能 (Like Class) ====================
 async function toggleLike(type, id) {
