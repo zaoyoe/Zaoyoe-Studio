@@ -1293,6 +1293,17 @@ async function fetchAndInsertSingleMessage(messageId) {
             element.classList.add('highlight-flash');
         }
 
+        // ✅ 防止重复插入：检查该留言卡片是否已存在
+        const existingCard = document.getElementById('msg-' + safeId);
+        if (existingCard) {
+            console.log('⚠️ 卡片已存在，跳过插入，直接使用现有卡片');
+            // 添加高亮效果
+            existingCard.classList.remove('highlight-flash');
+            void existingCard.offsetWidth;
+            existingCard.classList.add('highlight-flash');
+            return true; // 返回成功，使用现有卡片
+        }
+
         // 插入到容器 - 优先使用已知存在的容器
         console.log('🔍 开始查找容器...');
         const grid = document.querySelector('.message-container')  // 优先：主容器
