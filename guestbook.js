@@ -1191,6 +1191,17 @@ async function fetchAndInsertSingleMessage(messageId) {
         console.log('💬 评论数量:', message.comments?.length || 0);
         const html = createMessageCard(message, 0);
 
+        // ✅ 立即验证 HTML 字符串
+        console.log('🧩 createMessageCard 返回类型:', typeof html);
+        if (typeof html === 'string') {
+            console.log('📊 HTML字符串总长度:', html.length);
+            console.log('🔍 包含 comment-section?', html.includes('comment-section'));
+            console.log('🔍 包含 comment-list?', html.includes('comment-list'));
+            console.log('🔍 预览 (0-200):', html.substring(0, 200));
+        } else {
+            console.log('⚠️ createMessageCard 返回的不是字符串！');
+        }
+
         // 检查生成的HTML
         if (typeof html === 'string') {
             console.log('🔍 HTML片段:', html.substring(0, 300));
