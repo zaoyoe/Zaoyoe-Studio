@@ -2618,6 +2618,10 @@ button.upload-icon-btn {
 .message-container {
     /* column-count is defined in responsive media queries above */
     column-gap: 20px;
+    padding-top: 20px;
+    /* 防止第一个卡片抬起时被裁切 */
+    overflow: visible;
+    /* 允许抬起的卡片完全显示 */
 }
 
 /* Message Animation Wrapper - 防止白色闪烁 */
