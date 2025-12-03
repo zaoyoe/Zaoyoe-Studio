@@ -1173,14 +1173,22 @@ async function fetchAndInsertSingleMessage(messageId) {
             element.classList.add('highlight-flash');
         }
 
-        // 插入到第一列最前面 - 尝试多个可能的容器
-        const grid = document.querySelector('.message-container .grid-col:first-child')
-            || document.querySelector('.grid')
-            || document.querySelector('.message-container')
-            || document.querySelector('.masonry-column');
+        // 插入到容器 - 优先使用已知存在的容器
+        console.log('🔍 开始查找容器...');
+        const grid = document.querySelector('.message-container')  // 优先：主容器
+            || document.querySelector('#messageContainer')          // 其次：ID选择器
+            || document.querySelector('.masonry-column')            // 第三：列容器
+            || document.querySelector('.grid');                     // 最后：通用网格
+
+        console.log('📦 找到的容器:', grid);
 
         if (grid) {
-            grid.insertBefore(element, grid.firstChild);
+            // 如果容器有子容器（列），插入到第一列
+            const firstColumn = grid.querySelector('.masonry-column');
+            const targetContainer = firstColumn || grid;
+
+            console.log('🎯 目标容器:', targetContainer);
+            targetContainer.insertBefore(element, targetContainer.firstChild);
 
             // Masonry 支持
             if (typeof window.masonry !== 'undefined' && window.masonry.prepended) {
@@ -1204,7 +1212,10 @@ async function fetchAndInsertSingleMessage(messageId) {
             return true;
         }
 
-        console.error('❌ 无法找到网格容器 (.grid-col, .grid, .message-container, .masonry-column)');
+        console.error('❌ 无法找到网格容器');
+        console.error('📍 当前页面URL:', window.location.href);
+        console.error('📍 messageContainer存在?', !!document.querySelector('#messageContainer'));
+        console.error('📍 .message-container存在?', !!document.querySelector('.message-container'));
         return false;
     } catch (err) {
         console.error('❌ 拉取单条留言失败:', err);
