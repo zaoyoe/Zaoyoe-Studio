@@ -1502,8 +1502,8 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
                     if ((isCollapsed || isHidden) && toggleBtn) {
                         console.log('📜 自动触发展开...');
                         toggleBtn.click();  // 触发完整的展开逻辑
-                        await new Promise(r => setTimeout(r, 600));  // 等待展开动画
-                        console.log('✅ 展开动画完成');
+                        // ⚡ OPTIMIZATION: Removed await setTimeout(600) to allow simultaneous action
+                        console.log('✅ 展开触发，立即继续...');
                     } else {
                         console.log('✅ 评论区已经展开');
                     }
@@ -1515,7 +1515,7 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
             }
         }
 
-        // 等待元素出现
+        // 等待元素出现 (Keep this wait as it's for DOM rendering, not animation)
         console.log('⏳ 等待元素渲染...');
         targetElement = await waitForElement(selector, 5000);
     }
@@ -1524,7 +1524,7 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
     if (targetElement) {
         console.log('🎯 锁定目标，执行优雅滚动');
 
-        // 再次检查评论是否在折叠区域
+        // 再次检查评论是否在折叠区域 (Double check just in case)
         if (type === 'comment') {
             const commentList = targetElement.closest('.comment-list');
             if (commentList && commentList.classList.contains('collapsed')) {
@@ -1542,10 +1542,14 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
                     if (span) span.textContent = '收起';
                 }
 
-                // 给一点时间让 CSS transition 动画跑一下
-                await new Promise(r => setTimeout(r, 300));
+                // ⚡ OPTIMIZATION: Removed await setTimeout(300)
             }
         }
+
+        // ⚡ OPTIMIZATION: Trigger highlight IMMEDIATELY before/with scroll
+        targetElement.classList.remove('highlight-flash');
+        void targetElement.offsetWidth;  // Force reflow
+        targetElement.classList.add('highlight-flash');
 
         // 平滑滚动
         targetElement.scrollIntoView({
@@ -1553,40 +1557,34 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
             block: 'center'
         });
 
-        // 视觉高亮（6秒动画）
+        // ✅ 移动端不移除类名，避免闪出归位
+        const isMobile = window.matchMedia('(max-width: 768px)').matches;
+        if (isMobile) {
+            console.log('📱 移动端：保持高亮类不移除，避免闪出效果');
+            // 移动端动画会自然结束到100%状态，无需清理
+            return;
+        }
+
+        // ✅ 桌面端：分两步清理，避免突然移除will-change导致的布局抖动
+        // 步骤1：6秒后动画自然结束，保持最终状态
+        setTimeout(() => {
+            // 先清除 will-change，让浏览器知道不再需要优化
+            targetElement.style.willChange = 'auto';
+        }, 6000);
+
+        // 步骤2：给浏览器200ms缓冲期，然后再移除类名
         setTimeout(() => {
             targetElement.classList.remove('highlight-flash');
-            void targetElement.offsetWidth;  // 强制重绘
-            targetElement.classList.add('highlight-flash');
+            // 清理内联样式
+            targetElement.style.willChange = '';
+        }, 6200);
+    }, 500);
 
-            // ✅ 移动端不移除类名，避免闪出归位
-            const isMobile = window.matchMedia('(max-width: 768px)').matches;
-            if (isMobile) {
-                console.log('📱 移动端：保持高亮类不移除，避免闪出效果');
-                // 移动端动画会自然结束到100%状态，无需清理
-                return;
-            }
-
-            // ✅ 桌面端：分两步清理，避免突然移除will-change导致的布局抖动
-            // 步骤1：6秒后动画自然结束，保持最终状态
-            setTimeout(() => {
-                // 先清除 will-change，让浏览器知道不再需要优化
-                targetElement.style.willChange = 'auto';
-            }, 6000);
-
-            // 步骤2：给浏览器200ms缓冲期，然后再移除类名
-            setTimeout(() => {
-                targetElement.classList.remove('highlight-flash');
-                // 清理内联样式
-                targetElement.style.willChange = '';
-            }, 6200);
-        }, 500);
-
-        if (window.showToast) showToast('已定位到目标内容', 'success');
-    } else {
-        console.warn('⚠️ 定位失败，元素未找到');
-        if (window.showToast) showToast('定位失败，内容可能已被删除', 'warning');
-    }
+    if (window.showToast) showToast('已定位到目标内容', 'success');
+} else {
+    console.warn('⚠️ 定位失败，元素未找到');
+    if (window.showToast) showToast('定位失败，内容可能已被删除', 'warning');
+}
 };
 
 /**
