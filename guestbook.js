@@ -1521,21 +1521,18 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
             block: 'center'
         });
 
-        // 视觉高亮（保持现有的 6 秒动画）
+        // 视觉高亮（6秒动画，自然完成无需手动清理）
         setTimeout(() => {
             targetElement.classList.remove('highlight-flash');
             void targetElement.offsetWidth;  // 强制重绘
             targetElement.classList.add('highlight-flash');
 
-            // ✅ 使用 animationend 事件而不是定时器，确保动画自然结束
-            const handleAnimationEnd = (e) => {
-                // 只处理最后一个动画（brightness-pulse 共4次）
-                if (e.animationName === 'brightness-pulse') {
-                    targetElement.classList.remove('highlight-flash');
-                    targetElement.removeEventListener('animationend', handleAnimationEnd);
-                }
-            };
-            targetElement.addEventListener('animationend', handleAnimationEnd);
+            // ✅ 动画会自然完成到100%（transform: translate3d(0,0,0)），无需手动移除类
+            // 这样可以避免多个并行动画结束时机不同导致的抖动
+            // 6.5秒后移除类名（留0.5秒缓冲，确保所有动画彻底结束）
+            setTimeout(() => {
+                targetElement.classList.remove('highlight-flash');
+            }, 6500);
         }, 500);
 
         if (window.showToast) showToast('已定位到目标内容', 'success');
