@@ -3775,10 +3775,7 @@ body.no-scroll {
     /* 自定义滚动条样式 */
     scrollbar-width: thin;
     scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
-    /* ✅ 添加padding防止光晕被裁切 */
-    padding: 10px 5px;
-    margin: -10px -5px;
-    /* 抵消padding，保持布局不变 */
+    /* ✅ 移除padding和margin，保持与折叠状态一致 */
 }
 
 .comment-list:not(.collapsed)::-webkit-scrollbar {
