@@ -1451,6 +1451,9 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
 
     console.log(`🚀 [SmartScroll v6.0] 目标: ${type} #${targetId} (父ID: ${parentMessageId})`);
 
+    // ⚡ UX IMPROVEMENT: Immediate feedback
+    if (window.showToast) showToast('定位中... 🧭', 'info');
+
     // --- 1. 确定选择器 ---
     const selector = type === 'message'
         ? `.message-item[data-message-id="${targetId}"]`
