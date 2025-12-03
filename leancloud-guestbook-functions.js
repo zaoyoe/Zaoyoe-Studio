@@ -1140,7 +1140,7 @@ async function insertMessageToTop(message) {
     console.log('📝 准备插入新留言:', message.id);
 
     // ✅ 防止重复插入：检查该留言是否已存在
-    const existingMessage = document.getElementById(`msg-${message.id}`);
+    const existingMessage = document.querySelector(`.message-item[data-message-id="${message.id}"]`);
     if (existingMessage) {
         console.warn(`⚠️ [重复检查] 留言已存在，跳过插入: ${message.id}`);
         return;
