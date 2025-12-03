@@ -3737,6 +3737,8 @@ body.no-scroll {
     position: relative;
     overflow: visible;
     /* ✅ 改为 visible，防止光晕被裁切 */
+    margin-top: 10px;
+    /* 给第一条评论留出抬起空间 */
     /* 移除min-height避免抽搐 */
 }
 
