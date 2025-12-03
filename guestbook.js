@@ -610,6 +610,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 void commentList.offsetHeight;
                 commentList.style.maxHeight = '200px';
                 commentList.classList.add('collapsed');
+
+                // 🔧 FIX: Revert button text and icon
+                icon.className = 'fas fa-chevron-down';
+                span.textContent = '展开';
             }
         });
 
