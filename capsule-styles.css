@@ -207,22 +207,26 @@
 
 .message-item.highlight-flash {
     animation:
-        brightness-pulse 1.5s ease-in-out 8;
-    /* 只保留明暗闪动 */
+        brightness-pulse 1.5s ease-in-out 5;
+    /* 1.5秒 × 5次 = 7.5秒 */
     box-shadow: 0 0 30px 5px rgba(102, 126, 234, 0.6);
-    /* 固定光晕 */
-    border-radius: 16px;
+    border-radius: 16px !important;
+    /* 确保圆角保持 */
+    overflow: visible !important;
+    /* 防止阴影被裁切 */
 }
 
 .comment-item.highlight-flash {
     animation:
-        comment-glow 4s ease-in-out 3,
-        /* 光晕 4秒 × 3次 */
-        comment-highlight 4s ease-in-out 3,
-        /* 背景+位移 4秒 × 3次 */
-        brightness-pulse 1.5s ease-in-out 8;
-    /* 明暗闪动 1.5秒 × 8次 */
+        comment-glow 4s ease-in-out 2,
+        /* 光晕 4秒 × 2次 = 8秒 */
+        comment-highlight 4s ease-in-out 2,
+        /* 背景+位移 4秒 × 2次 = 8秒 */
+        brightness-pulse 1.5s ease-in-out 5;
+    /* 明暗闪动 1.5秒 × 5次 = 7.5秒 */
     background: rgba(102, 126, 234, 0);
-    border-radius: 8px;
-    /* 移除 transition 避免动画结束时的冲突 */
+    border-radius: 8px !important;
+    /* 确保圆角保持 */
+    overflow: visible !important;
+    /* 防止阴影被裁切 */
 }
