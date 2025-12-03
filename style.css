@@ -6494,10 +6494,13 @@ body {
         position: relative !important;
     }
 
-    .guestbook-content {
-        margin-top: 0 !important;
-        max-height: calc(100vh - 40px) !important;
-        overflow-y: auto !important;
+    /* .guestbook-content rule REMOVED to fix mobile scroll lock */
+    /* It was causing the content to be trapped in a small scrollable area */
+
+    .guestbook-main {
+        overflow: visible !important;
+        height: auto !important;
+        max-height: none !important;
     }
 
     /* 防止背景滚动，但不使用position:fixed避免背景跟随上移 */
