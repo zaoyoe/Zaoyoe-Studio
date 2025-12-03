@@ -1112,7 +1112,11 @@ async function fetchAndInsertSingleMessage(messageId) {
         // 2. 拉取该留言的所有评论
         console.log('📝 拉取评论数据...');
         const commentQuery = new AV.Query('Comment');
-        commentQuery.equalTo('messageId', messageId);
+
+        // ✅ 修复：使用Pointer字段查询
+        const messagePointer = AV.Object.createWithoutData('Message', messageId);
+        commentQuery.equalTo('message', messagePointer);
+
         commentQuery.include('author');
         commentQuery.ascending('createdAt');
         const avComments = await commentQuery.find();
