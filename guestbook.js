@@ -1104,19 +1104,47 @@ async function fetchAndInsertSingleMessage(messageId) {
         console.log(`🎣 拉取单条留言: ${messageId}`);
         const query = new AV.Query('Message');
         query.include('author');
-        query.include('comments');
-        query.include('comments.author');
+        query.descending('createdAt');
 
         const message = await query.get(messageId);
 
-        // 使用现有的插入函数
-        if (window.insertMessageToTop) {
-            window.insertMessageToTop(message);
+        // 检查留言是否已存在
+        const existing = document.querySelector(`.message-item[data-message-id="${messageId}"]`);
+        if (existing) {
+            console.log('✅ 留言已存在，跳过插入');
             return true;
-        } else {
-            console.error('❌ insertMessageToTop 函数不存在');
+        }
+
+        // 使用 createMessageCard 创建 HTML
+        const createMessageCard = window.createMessageCard;
+        if (!createMessageCard) {
+            console.error('❌ createMessageCard 函数不存在');
             return false;
         }
+
+        const html = createMessageCard(message, 0);
+        const element = window.htmlToElement ? window.htmlToElement(html) : (() => {
+            const div = document.createElement('div');
+            div.innerHTML = html;
+            return div.firstElementChild;
+        })();
+
+        // 插入到第一列最前面
+        const grid = document.querySelector('.message-container .grid-col:first-child');
+        if (grid && element) {
+            grid.insertBefore(element, grid.firstChild);
+
+            // 触发显示动画
+            setTimeout(() => {
+                element.classList.add('visible');
+            }, 100);
+
+            console.log('✅ 留言已插入到网格');
+            return true;
+        }
+
+        console.error('❌ 无法找到网格容器');
+        return false;
     } catch (err) {
         console.error('❌ 拉取单条留言失败:', err);
         return false;
