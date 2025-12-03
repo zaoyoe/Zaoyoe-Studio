@@ -1162,70 +1162,71 @@ function htmlToElement(html) {
 }
 
 // ==================== 辅助函数：插入新留言到顶部 ====================
-function insertMessageToTop(msg) {
-    console.log('📝 插入新留言到页面顶部:', msg.id);
+async function insertMessageToTop(message) {
+    console.log('📝 准备插入新留言:', message.id);
 
-    const container = document.getElementById('messageContainer');
-    if (!container) {
-        console.error('找不到留言容器');
-        return;
-    }
+    // 1. 生成内容 (可能是字符串，也可能是 DOM 对象)
+    const result = window.createMessageCard(message, 0);
+    let element = null;
 
-    // 检查是否已存在
-    if (document.querySelector(`[data-message-id="${msg.id}"]`)) {
-        console.log('留言已存在，跳过');
-        return;
-    }
-
-    // 使用guestbook.js中的createMessageCard函数
-    if (typeof window.createMessageCard === 'function') {
-        let element;
-
-        try {
-            const result = window.createMessageCard(msg, 0);
-            console.log('📊 createMessageCard 返回类型:', typeof result);
-
-            // 处理两种可能的返回类型
-            if (typeof result === 'string') {
-                // 返回的是 HTML 字符串
-                element = htmlToElement(result);
-            } else if (result && typeof result === 'object') {
-                // ✅ 只要是对象（DOM节点也是对象），直接通过！
-                element = result;
-            } else {
-                console.error('❌ createMessageCard 返回了不支持的类型:', result);
-                return;
-            }
-        } catch (err) {
-            console.error('❌ 创建留言卡片失败:', err);
-            console.error('错误堆栈:', err.stack);
-            return;
-        }
-
-        if (!element) {
-            console.error('❌ 无法创建留言元素');
-            return;
-        }
-
-        // 添加新消息标记和动画类
-        element.classList.add('message-new');
-
-        // 插入到第一列顶部
-        const firstColumn = container.querySelector('.masonry-column, .grid-col:first-child');
-        if (firstColumn) {
-            firstColumn.insertBefore(element, firstColumn.firstChild);
-
-            // 触发动画
-            setTimeout(() => {
-                element.classList.add('visible');
-            }, 50);
-
-            console.log('✅ 新留言已插入');
+    // 2. 万能类型转换 (防御性编程)
+    if (typeof result === 'string') {
+        // 如果是字符串，才调用 htmlToElement
+        if (typeof htmlToElement === 'function') {
+            element = htmlToElement(result);
         } else {
-            console.error('❌ 找不到目标列');
+            // 没这个函数？手动转
+            const temp = document.createElement('div');
+            temp.innerHTML = result.trim();
+            element = temp.firstElementChild;
         }
+    } else if (result && typeof result === 'object') {
+        // ✅ 如果已经是对象 (DOM节点)，直接用！绝对不要传给 htmlToElement
+        element = result;
     } else {
-        console.error('❌ window.createMessageCard 不存在');
+        console.error('❌ createMessageCard 返回了未知类型:', result);
+        return;
+    }
+
+    // 3. 确保转换成功
+    if (!element) {
+        console.error('❌ 元素生成失败');
+        return;
+    }
+
+    // 4. 高亮处理 (兼容)
+    if (element.classList) {
+        element.classList.add('message-new');
+    }
+
+    // 5. 插入 DOM - 尝试多个可能的容器
+    const container = document.querySelector('.grid')
+        || document.querySelector('.message-container')
+        || document.querySelector('#messageContainer')
+        || document.querySelector('.grid-col:first-child')
+        || document.querySelector('.masonry-column');
+
+    if (container) {
+        // 如果是用 Masonry，需要特殊处理
+        if (typeof masonry !== 'undefined' && masonry.prepended) {
+            container.insertBefore(element, container.firstChild);
+            masonry.prepended(element);
+            masonry.layout();
+        } else {
+            // 普通插入
+            container.insertBefore(element, container.firstChild);
+        }
+
+        // 触发显示动画
+        setTimeout(() => {
+            if (element.classList) {
+                element.classList.add('visible');
+            }
+        }, 50);
+
+        console.log('✅ 新留言插入成功');
+    } else {
+        console.error('❌ 找不到任何容器 (.grid, .message-container, #messageContainer, .grid-col, .masonry-column)');
     }
 }
 
