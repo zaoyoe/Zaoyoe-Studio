@@ -120,12 +120,16 @@ async function loadGuestbookMessages(forceRefresh = false, scrollTargetId = null
         commentQuery.include('parentComment');
         // 不使用 include('user') 避免 ACL 权限问题
         // 用户信息已经存储在 userName 字段中
-        commentQuery.ascending('createdAt'); // 评论按时间正序
-        commentQuery.limit(1000); // ⚡ CRITICAL FIX: Increased from 200 to 1000. 
-        // Previous limit of 200 with ascending sort caused new comments (at the end) to be cut off 
-        // if total comments exceeded 200.
+        commentQuery.descending('createdAt'); // ⚡ CRITICAL FIX: Query NEWEST comments first
+        // If we use ascending with limit, we lose the newest comments when total > limit.
+        // We will re-sort them to ascending in memory later.
+        commentQuery.limit(1000);
 
-        const comments = await commentQuery.find();
+        let comments = await commentQuery.find();
+
+        // ⚡ Re-sort to ascending order for display (oldest first)
+        comments.sort((a, b) => a.get('createdAt') - b.get('createdAt'));
+
         console.timeEnd('⏱️ Query Comments');
         console.log(`✅ 加载了 ${comments.length} 条评论`);
 
