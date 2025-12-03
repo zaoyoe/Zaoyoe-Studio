@@ -421,8 +421,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.log(`    → cleanParentUserName="${cleanParentUserName}", parentName="${parentName}", final mentionName="${mentionName}"`);
                 console.log(`    → Result: mentionName="${mentionName}", hasReplies=${hasReplies}, depth>0=${depth > 0}`);
 
-                // Add @mention if this is a nested comment and we have a parent name
-                const mentionPrefix = (depth > 0 && mentionName)
+                // ✅ 显示 @mention：只要有 mentionName 就显示（不限制 depth）
+                const mentionPrefix = mentionName
                     ? `<span class="comment-mention">@${escapeHtml(mentionName)}</span> `
                     : '';
 
