@@ -1370,17 +1370,33 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
             const parentCard = document.querySelector(parentSelector);
 
             if (parentCard) {
+                console.log('📦 找到父留言卡片');
+
                 // 检查评论区是否折叠
                 const commentList = parentCard.querySelector('.comment-list');
                 const toggleBtn = parentCard.querySelector('.comment-toggle-btn');
 
-                if (commentList && commentList.classList.contains('collapsed')) {
-                    console.log('📂 自动触发展开...');
-                    if (toggleBtn) {
+                console.log('💡 commentList存在?', !!commentList);
+                console.log('💡 toggleBtn存在?', !!toggleBtn);
+
+                if (commentList) {
+                    const isCollapsed = commentList.classList.contains('collapsed');
+                    const isHidden = commentList.style.display === 'none' || commentList.style.maxHeight === '0px';
+                    console.log('💡 评论区状态 - collapsed:', isCollapsed, 'hidden:', isHidden);
+
+                    if ((isCollapsed || isHidden) && toggleBtn) {
+                        console.log('📜 自动触发展开...');
                         toggleBtn.click();  // 触发完整的展开逻辑
-                        await new Promise(r => setTimeout(r, 400));  // 等待展开动画
+                        await new Promise(r => setTimeout(r, 600));  // 等待展开动画
+                        console.log('✅ 展开动画完成');
+                    } else {
+                        console.log('✅ 评论区已经展开');
                     }
+                } else {
+                    console.warn('⚠️ 未找到 .comment-list 元素');
                 }
+            } else {
+                console.warn('⚠️ 未找到父留言卡片');
             }
         }
 
