@@ -1167,14 +1167,32 @@ async function fetchAndInsertSingleMessage(messageId) {
             return false;
         }
 
-        // 插入到第一列最前面
-        const grid = document.querySelector('.message-container .grid-col:first-child');
+        // 标记与高亮
+        if (element.classList) {
+            element.classList.add('fetched-history');
+            element.classList.add('highlight-flash');
+        }
+
+        // 插入到第一列最前面 - 尝试多个可能的容器
+        const grid = document.querySelector('.message-container .grid-col:first-child')
+            || document.querySelector('.grid')
+            || document.querySelector('.message-container')
+            || document.querySelector('.masonry-column');
+
         if (grid) {
             grid.insertBefore(element, grid.firstChild);
 
+            // Masonry 支持
+            if (typeof window.masonry !== 'undefined' && window.masonry.prepended) {
+                window.masonry.prepended(element);
+                window.masonry.layout();
+            }
+
             // 触发显示动画
             setTimeout(() => {
-                element.classList.add('visible');
+                if (element.classList) {
+                    element.classList.add('visible');
+                }
             }, 100);
 
             // 绑定事件处理器
@@ -1186,7 +1204,7 @@ async function fetchAndInsertSingleMessage(messageId) {
             return true;
         }
 
-        console.error('❌ 无法找到网格容器');
+        console.error('❌ 无法找到网格容器 (.grid-col, .grid, .message-container, .masonry-column)');
         return false;
     } catch (err) {
         console.error('❌ 拉取单条留言失败:', err);
