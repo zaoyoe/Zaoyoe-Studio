@@ -1526,7 +1526,16 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
             targetElement.classList.remove('highlight-flash');
             void targetElement.offsetWidth;  // 强制重绘
             targetElement.classList.add('highlight-flash');
-            setTimeout(() => targetElement.classList.remove('highlight-flash'), 6000);
+
+            // ✅ 使用 animationend 事件而不是定时器，确保动画自然结束
+            const handleAnimationEnd = (e) => {
+                // 只处理最后一个动画（brightness-pulse 共4次）
+                if (e.animationName === 'brightness-pulse') {
+                    targetElement.classList.remove('highlight-flash');
+                    targetElement.removeEventListener('animationend', handleAnimationEnd);
+                }
+            };
+            targetElement.addEventListener('animationend', handleAnimationEnd);
         }, 500);
 
         if (window.showToast) showToast('已定位到目标内容', 'success');
