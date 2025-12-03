@@ -966,6 +966,13 @@ console.log('✅ LeanCloud 留言板函数已加载');
 
 // ==================== WebSocket实时推送 ====================
 function enableRealTimeUpdates() {
+    // 🛡️ 单例模式：防止重复订阅
+    if (window._liveQueryEnabled) {
+        console.warn('⚠️ LiveQuery 已启用，跳过重复订阅');
+        return;
+    }
+    window._liveQueryEnabled = true;
+    
     console.log('🔌 启用实时推送...');
     console.log('🔍 当前URL:', window.location.pathname);
     console.log('🔍 AV对象:', typeof AV !== 'undefined' ? '✅ 存在' : '❌ 不存在');
@@ -974,6 +981,7 @@ function enableRealTimeUpdates() {
     // 检查 LiveQuery 是否可用
     if (!AV.Query.prototype.subscribe) {
         console.warn('⚠️ LiveQuery 不可用，可能需要升级SDK或开启后台功能');
+        window._liveQueryEnabled = false; // 重置标志
         return;
     }
 
