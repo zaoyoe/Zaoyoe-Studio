@@ -459,7 +459,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const commentsHtml = hasComments
             ? renderCommentTree(msg.comments, 0, msg.id, null)
-            : '<div class="no-comments">暂无评论</div>';
+            : '';  // ✅ 移除"暂无评论"，留空即可
 
         console.log('🎭 commentsHtml 长度:', commentsHtml.length, '预览:', commentsHtml.substring(0, 100));
 
