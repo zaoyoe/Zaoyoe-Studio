@@ -1139,7 +1139,7 @@ async function fetchAndInsertSingleMessage(messageId) {
             const author = c.get('author');
             return {
                 id: c.id,
-                name: author ? author.get('username') : '匿名用户',
+                name: author ? (author.get('nickname') || author.get('username')) : '匿名用户',  // ✅ 优先使用昵称
                 avatarUrl: author ? author.get('avatarUrl') : null,
                 content: c.get('content') || '',
                 timestamp: c.createdAt ? c.createdAt.toLocaleString('zh-CN', {
@@ -1185,8 +1185,8 @@ async function fetchAndInsertSingleMessage(messageId) {
             avatarUrl: author ? author.get('avatarUrl') : null,
             email: author ? author.get('email') : null,
             content: avMessage.get('content') || '',
-            image: avMessage.get('image') || null,  // ✅ 图片字段
-            imageUrl: avMessage.get('imageUrl') || null,  // ✅ 图片URL字段（兼容）
+            image: avMessage.get('image') || avMessage.get('imageUrl') || null,  // ✅ 兼容两种字段
+            imageUrl: avMessage.get('imageUrl') || avMessage.get('image') || null,  // ✅ 兼容两种字段
             timestamp: avMessage.createdAt ? avMessage.createdAt.toLocaleString('zh-CN', {
                 year: 'numeric',
                 month: '2-digit',
