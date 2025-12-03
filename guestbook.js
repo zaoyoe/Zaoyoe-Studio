@@ -1197,6 +1197,21 @@ async function fetchAndInsertSingleMessage(messageId) {
             console.error('❌ 无法创建DOM元素');
             return false;
         }
+        
+        // ✅ 关键修复：提取真正的 .message-item（去掉包装层）
+        let actualCard = element;
+        if (element.classList.contains('message-anim-wrapper')) {
+            actualCard = element.querySelector('.message-item');
+            console.log('🔄 提取内部 .message-item');
+        }
+        
+        if (!actualCard) {
+            console.error('❌ 无法找到 .message-item');
+            return false;
+        }
+        
+        // 使用提取出的卡片
+        element = actualCard;
 
         // 标记与高亮
         if (element.classList) {
