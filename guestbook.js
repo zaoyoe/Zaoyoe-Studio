@@ -1502,8 +1502,9 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
                     if ((isCollapsed || isHidden) && toggleBtn) {
                         console.log('📜 自动触发展开...');
                         toggleBtn.click();  // 触发完整的展开逻辑
-                        // ⚡ OPTIMIZATION: Removed await setTimeout(600) to allow simultaneous action
-                        console.log('✅ 展开触发，立即继续...');
+                        // ⏳ WAIT: Wait for expansion animation (600ms)
+                        await new Promise(r => setTimeout(r, 600));
+                        console.log('✅ 展开动画完成');
                     } else {
                         console.log('✅ 评论区已经展开');
                     }
@@ -1542,20 +1543,24 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
                     if (span) span.textContent = '收起';
                 }
 
-                // ⚡ OPTIMIZATION: Removed await setTimeout(300)
+                // ⏳ WAIT: Ensure layout is stable before scroll
+                await new Promise(r => setTimeout(r, 300));
             }
         }
 
-        // ⚡ OPTIMIZATION: Trigger highlight IMMEDIATELY before/with scroll
-        targetElement.classList.remove('highlight-flash');
-        void targetElement.offsetWidth;  // Force reflow
-        targetElement.classList.add('highlight-flash');
-
-        // 平滑滚动
+        // 1. 先滚动
         targetElement.scrollIntoView({
             behavior: 'smooth',
             block: 'center'
         });
+
+        // 2. 等待滚动完成 (约500ms) + 0.1s 延迟 = 600ms
+        await new Promise(r => setTimeout(r, 600));
+
+        // 3. 最后闪烁
+        targetElement.classList.remove('highlight-flash');
+        void targetElement.offsetWidth;  // Force reflow
+        targetElement.classList.add('highlight-flash');
 
         // ✅ 移动端不移除类名，避免闪出归位
         const isMobile = window.matchMedia('(max-width: 768px)').matches;
@@ -1578,13 +1583,12 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
             // 清理内联样式
             targetElement.style.willChange = '';
         }, 6200);
-    }, 500);
 
-    if (window.showToast) showToast('已定位到目标内容', 'success');
-} else {
-    console.warn('⚠️ 定位失败，元素未找到');
-    if (window.showToast) showToast('定位失败，内容可能已被删除', 'warning');
-}
+        if (window.showToast) showToast('已定位到目标内容', 'success');
+    } else {
+        console.warn('⚠️ 定位失败，元素未找到');
+        if (window.showToast) showToast('定位失败，内容可能已被删除', 'warning');
+    }
 };
 
 /**
