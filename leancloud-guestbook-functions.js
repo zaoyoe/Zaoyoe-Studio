@@ -972,7 +972,7 @@ function enableRealTimeUpdates() {
         return;
     }
     window._liveQueryEnabled = true;
-    
+
     console.log('🔌 启用实时推送...');
     console.log('🔍 当前URL:', window.location.pathname);
     console.log('🔍 AV对象:', typeof AV !== 'undefined' ? '✅ 存在' : '❌ 不存在');
@@ -1026,15 +1026,17 @@ function enableRealTimeUpdates() {
                 window.invalidateGuestbookCache();
             }
 
-            // 格式化新留言
+            // 格式化新留言 - 确保字段完整
             const newMessage = {
                 id: message.id,
-                name: message.get('userName'),
+                name: message.get('userName') || '匿名用户',
                 avatarUrl: message.get('userAvatar') || '',
                 content: message.get('content') || '',
-                image: message.get('imageUrl') || null,
+                image: message.get('imageUrl') || message.get('image') || null, // 兼容两种字段名
+                imageUrl: message.get('imageUrl') || message.get('image') || null, // 兼容性
                 likes: 0,
                 isLiked: false,
+                likedBy: [], // 空数组，兼容点赞逻辑
                 timestamp: new Date().toLocaleString('zh-CN', {
                     year: 'numeric',
                     month: '2-digit',
@@ -1042,9 +1044,12 @@ function enableRealTimeUpdates() {
                     hour: '2-digit',
                     minute: '2-digit'
                 }),
+                createdAt: message.get('createdAt') || new Date(), // 添加 createdAt
                 rawDate: new Date(),
                 comments: []
             };
+
+            console.log('📝 [新留言数据]', newMessage); // 调试用
 
             // 插入到页面顶部
             insertMessageToTop(newMessage);
