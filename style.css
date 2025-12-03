@@ -3737,10 +3737,10 @@ body.no-scroll {
     position: relative;
     overflow: visible;
     /* ✅ 改为 visible，防止光晕被裁切 */
-    margin-top: 10px;
-    /* 给第一条评论留出抬起空间 */
-    padding-top: 15px;
-    /* ✅ 给首条评论光晕留出空间 */
+    margin-top: 0;
+    /* ✅ 移除顶部margin，减少间距 */
+    padding-top: 10px;
+    /* ✅ 减少padding，保持适度空间 */
     /* 移除min-height避免抽搐 */
 }
 
