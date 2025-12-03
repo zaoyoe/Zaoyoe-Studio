@@ -1189,8 +1189,8 @@ function insertMessageToTop(msg) {
             if (typeof result === 'string') {
                 // 返回的是 HTML 字符串
                 element = htmlToElement(result);
-            } else if (result && result.nodeType === 1) {
-                // 返回的是 DOM 元素
+            } else if (result && typeof result === 'object') {
+                // ✅ 只要是对象（DOM节点也是对象），直接通过！
                 element = result;
             } else {
                 console.error('❌ createMessageCard 返回了不支持的类型:', result);

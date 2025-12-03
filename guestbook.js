@@ -1146,22 +1146,19 @@ async function fetchAndInsertSingleMessage(messageId) {
         console.log('📝 生成HTML，留言对象:', message);
         const html = createMessageCard(message, 0);
 
-        // 确保 html 是字符串
-        if (typeof html !== 'string') {
-            console.error('❌ createMessageCard 返回的不是字符串:', typeof html);
-            return false;
-        }
-
-        // 创建 DOM 元素
+        // 宽容处理：字符串转DOM，对象直接用
         let element;
-        try {
+        if (typeof html === 'string') {
             element = window.htmlToElement ? window.htmlToElement(html) : (() => {
                 const div = document.createElement('div');
                 div.innerHTML = html.trim();
                 return div.firstElementChild;
             })();
-        } catch (err) {
-            console.error('❌ 转换HTML失败:', err);
+        } else if (html && typeof html === 'object') {
+            // ✅ 只要是对象就接受
+            element = html;
+        } else {
+            console.error('❌ createMessageCard 返回了不支持的类型:', typeof html);
             return false;
         }
 
