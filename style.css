@@ -6506,11 +6506,13 @@ body {
 
     /* 防止背景滚动，但不使用position:fixed避免背景跟随上移 */
     body.modal-active {
-        height: 100% !important;
+        height: 100dvh !important;
+        /* Use dynamic viewport height */
         overflow: hidden !important;
+        /* Keep hidden for modal to prevent background scroll */
         overscroll-behavior: none !important;
-        background-color: #0f0c29 !important;
-        /* Fallback color */
+        background: linear-gradient(to bottom, #0f0c29, #302b63) !important;
+        /* Gradient fallback */
     }
 }
 
@@ -6525,7 +6527,6 @@ body {
 }
 
 /* 强制修复iOS输入法导致的背景上移问题 */
-html,
 body {
     position: relative !important;
     min-height: 100vh !important;
