@@ -1197,19 +1197,19 @@ async function fetchAndInsertSingleMessage(messageId) {
             console.error('❌ 无法创建DOM元素');
             return false;
         }
-        
+
         // ✅ 关键修复：提取真正的 .message-item（去掉包装层）
         let actualCard = element;
         if (element.classList.contains('message-anim-wrapper')) {
             actualCard = element.querySelector('.message-item');
             console.log('🔄 提取内部 .message-item');
         }
-        
+
         if (!actualCard) {
             console.error('❌ 无法找到 .message-item');
             return false;
         }
-        
+
         // 使用提取出的卡片
         element = actualCard;
 
@@ -1234,8 +1234,8 @@ async function fetchAndInsertSingleMessage(messageId) {
             const targetContainer = firstColumn || grid;
 
             console.log('🎯 目标容器:', targetContainer);
-            console.log('🔧 元素class:', element.className);
-            console.log('📋 data-message-id:', element.querySelector('[data-message-id]')?.dataset.messageId);
+            console.log('🔧 插入前验证 - 元素class:', element.className);
+            console.log('🔧 插入前验证 - data-message-id:', element.dataset.messageId || element.getAttribute('data-message-id'));
             targetContainer.insertBefore(element, targetContainer.firstChild);
 
             // 验证插入
