@@ -1109,6 +1109,13 @@ async function fetchAndInsertSingleMessage(messageId) {
     try {
         console.log(`🎣 拉取单条留言: ${messageId}`);
 
+        // ✅ 首先检查是否已存在
+        const existingEarly = document.getElementById(`msg-${messageId}`);
+        if (existingEarly) {
+            console.warn(`⚠️ [早期检查] 留言已存在，直接返回: ${messageId}`);
+            return true;
+        }
+
         // 1. 拉取留言本体
         const messageQuery = new AV.Query('Message');
         messageQuery.include('author');
@@ -1184,6 +1191,8 @@ async function fetchAndInsertSingleMessage(messageId) {
         // ✅ 使用 userName 字段（数据库实际存储的字段）
         const userName = avMessage.get('userName');
         console.log('👤 userName 字段:', userName);
+        console.log('📝 content 字段:', avMessage.get('content'));
+        console.log('🔑 message ID:', avMessage.id);
 
         const message = {
             id: avMessage.id,
