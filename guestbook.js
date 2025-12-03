@@ -1521,13 +1521,21 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
             block: 'center'
         });
 
-        // 视觉高亮（6秒动画，分阶段清理避免弹动）
+        // 视觉高亮（6秒动画）
         setTimeout(() => {
             targetElement.classList.remove('highlight-flash');
             void targetElement.offsetWidth;  // 强制重绘
             targetElement.classList.add('highlight-flash');
 
-            // ✅ 分两步清理，避免突然移除will-change导致的布局抖动
+            // ✅ 移动端不移除类名，避免闪出归位
+            const isMobile = window.matchMedia('(max-width: 768px)').matches;
+            if (isMobile) {
+                console.log('📱 移动端：保持高亮类不移除，避免闪出效果');
+                // 移动端动画会自然结束到100%状态，无需清理
+                return;
+            }
+
+            // ✅ 桌面端：分两步清理，避免突然移除will-change导致的布局抖动
             // 步骤1：6秒后动画自然结束，保持最终状态
             setTimeout(() => {
                 // 先清除 will-change，让浏览器知道不再需要优化
