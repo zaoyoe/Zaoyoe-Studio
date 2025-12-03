@@ -1607,6 +1607,11 @@ window.showToast = function (message, type = 'info') {
     const toast = document.createElement('div');
     toast.className = 'capsule-wrapper toast-instance'; // Add marker class
 
+    // ⚡ CUSTOMIZATION: Green theme for success
+    if (type === 'success') {
+        toast.classList.add('success-theme');
+    }
+
     // 3. 添加内容 (带动画的 emoji)
     // 注入一个简单的旋转/呼吸动画样式
     const styleId = 'toast-anim-style';
