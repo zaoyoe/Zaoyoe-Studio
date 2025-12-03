@@ -151,14 +151,12 @@
         box-shadow: 0 0 0 0 rgba(102, 126, 234, 0);
     }
 
-    15% {
+    10% {
         box-shadow: 0 0 35px 8px rgba(102, 126, 234, 0.8);
-        /* 更亮的光晕 */
     }
 
-    85% {
+    90% {
         box-shadow: 0 0 35px 8px rgba(102, 126, 234, 0.8);
-        /* 保持高亮 */
     }
 
     100% {
@@ -173,15 +171,13 @@
         transform: translateY(0);
     }
 
-    15% {
+    10% {
         background: rgba(102, 126, 234, 0.12);
-        /* 更明显的背景 */
         transform: translateY(-6px);
     }
 
-    85% {
+    90% {
         background: rgba(102, 126, 234, 0.12);
-        /* 保持高亮 */
         transform: translateY(-6px);
     }
 
