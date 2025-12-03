@@ -403,7 +403,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const maxDepth = 2; // Limit nesting depth
             const indentPx = Math.min(depth * 10, 20); // Reduced indent: Max 20px (was 40px)
-            const canReply = depth < maxDepth; // Can reply if not at max depth
+            // ⚡ CRITICAL FIX: Always allow clicking, handle depth limit in UI
+            const canReply = true; // Always allow reply
 
             return comments.map((comment, idx) => {
                 const hasReplies = comment.replies && comment.replies.length > 0;
@@ -431,6 +432,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const html = `
                     <div class="comment-item ${depth > 0 ? 'comment-item--nested' : ''} ${canReply ? 'comment-item--clickable' : ''}"
                          style="margin-left: ${indentPx}px"
+                         data-depth="${depth}"
                          data-comment-id="${comment.id}" 
                          data-message-id="${messageId}"
                          data-can-reply="${canReply}">
