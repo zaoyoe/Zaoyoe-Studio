@@ -1193,23 +1193,27 @@ async function insertMessageToTop(message) {
         element.classList.add('message-new');
     }
 
-    // 5. 插入 DOM - 尝试多个可能的容器
-    const container = document.querySelector('.grid')
-        || document.querySelector('.message-container')
-        || document.querySelector('#messageContainer')
-        || document.querySelector('.grid-col:first-child')
-        || document.querySelector('.masonry-column');
+    // 5. 插入 DOM - 插入到第一个 Masonry 列（而不是整个容器）
+    let targetContainer = null;
 
-    if (container) {
-        // 如果是用 Masonry，需要特殊处理
-        if (typeof masonry !== 'undefined' && masonry.prepended) {
-            container.insertBefore(element, container.firstChild);
-            masonry.prepended(element);
-            masonry.layout();
-        } else {
-            // 普通插入
-            container.insertBefore(element, container.firstChild);
-        }
+    // 优先查找 Masonry 列
+    const firstColumn = document.querySelector('.masonry-column');
+    if (firstColumn) {
+        targetContainer = firstColumn;
+        console.log('📍 找到 Masonry 列，插入到第一列');
+    } else {
+        // 备选方案
+        targetContainer = document.querySelector('.grid')
+            || document.querySelector('.message-container')
+            || document.querySelector('#messageContainer');
+        console.log('📍 使用备选容器');
+    }
+
+    if (targetContainer) {
+        // 插入到容器顶部
+        targetContainer.insertBefore(element, targetContainer.firstChild);
+
+        console.log('✅ 新留言已插入 DOM');
 
         // 触发显示动画
         setTimeout(() => {
@@ -1220,7 +1224,7 @@ async function insertMessageToTop(message) {
 
         console.log('✅ 新留言插入成功');
     } else {
-        console.error('❌ 找不到任何容器 (.grid, .message-container, #messageContainer, .grid-col, .masonry-column)');
+        console.error('❌ 找不到任何容器 (.masonry-column, .grid, .message-container, #messageContainer)');
     }
 }
 
