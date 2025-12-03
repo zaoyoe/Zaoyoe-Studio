@@ -239,5 +239,13 @@
         /* ✅ 优化渲染性能 */
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
+
+        /* ✅ 关键修复：CSS containment 防止布局重排 */
+        contain: layout style paint;
+        /* 告诉浏览器：这个元素的内部布局不会影响外部 */
+
+        /* ✅ 创建独立的层叠上下文 */
+        isolation: isolate;
+        /* 防止动画影响相邻元素 */
     }
 }
