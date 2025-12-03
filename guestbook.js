@@ -1202,11 +1202,20 @@ async function fetchAndInsertSingleMessage(messageId) {
         // 宽容处理：字符串转DOM，对象直接用
         let element;
         if (typeof html === 'string') {
+            console.log('📦 HTML字符串长度:', html.length);
+            console.log('🔍 HTML包含comment-section?', html.includes('comment-section'));
+            console.log('🔍 HTML包含comment-list?', html.includes('comment-list'));
+
             element = window.htmlToElement ? window.htmlToElement(html) : (() => {
                 const div = document.createElement('div');
                 div.innerHTML = html.trim();
                 return div.firstElementChild;
             })();
+
+            console.log('⚙️ 转换后元素:', element.tagName, element.className);
+            console.log('⚙️ 转换后innerHTML长度:', element.innerHTML?.length || 0);
+            console.log('🔍 转换后包含comment-section?', element.innerHTML?.includes('comment-section'));
+            console.log('🔍 转换后包含comment-list?', element.innerHTML?.includes('comment-list'));
         } else if (html && typeof html === 'object') {
             // ✅ 只要是对象就接受
             element = html;
