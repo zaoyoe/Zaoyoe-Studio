@@ -1521,18 +1521,25 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
             block: 'center'
         });
 
-        // 视觉高亮（6秒动画，自然完成无需手动清理）
+        // 视觉高亮（6秒动画，分阶段清理避免弹动）
         setTimeout(() => {
             targetElement.classList.remove('highlight-flash');
             void targetElement.offsetWidth;  // 强制重绘
             targetElement.classList.add('highlight-flash');
 
-            // ✅ 动画会自然完成到100%（transform: translate3d(0,0,0)），无需手动移除类
-            // 这样可以避免多个并行动画结束时机不同导致的抖动
-            // 6.5秒后移除类名（留0.5秒缓冲，确保所有动画彻底结束）
+            // ✅ 分两步清理，避免突然移除will-change导致的布局抖动
+            // 步骤1：6秒后动画自然结束，保持最终状态
+            setTimeout(() => {
+                // 先清除 will-change，让浏览器知道不再需要优化
+                targetElement.style.willChange = 'auto';
+            }, 6000);
+
+            // 步骤2：给浏览器200ms缓冲期，然后再移除类名
             setTimeout(() => {
                 targetElement.classList.remove('highlight-flash');
-            }, 6500);
+                // 清理内联样式
+                targetElement.style.willChange = '';
+            }, 6200);
         }, 500);
 
         if (window.showToast) showToast('已定位到目标内容', 'success');
