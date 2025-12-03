@@ -248,15 +248,16 @@
     }
 
     .comment-item.highlight-flash {
-        /* ✅ 移动端只使用背景和明暗动画，禁用glow防止裁切 */
+        /* ✅ 重新添加光晕，但保持无transform */
         animation:
+            comment-glow 6s ease-in-out 1,
+            /* ✅ 光晕效果 */
             comment-highlight-mobile 6s ease-in-out 1,
+            /* 背景色 */
             brightness-pulse 1.5s ease-in-out 4 !important;
+        /* 明暗闪烁 */
 
-        /* ✅ 完全禁用box-shadow，防止裁切和闪出 */
-        box-shadow: none !important;
-
-        /* ✅ 确保可见性 */
+        /* ✅ 确保光晕可见，不被裁切 */
         overflow: visible !important;
 
         /* ✅ 保留原有优化 */
