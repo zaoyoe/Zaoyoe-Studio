@@ -1587,22 +1587,8 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
 
         if (window.showToast) showToast('已定位到目标内容', 'success');
     } else {
-        console.warn('⚠️ 定位失败，元素未找到');
-        if (window.showToast) showToast('定位失败，内容可能已被删除', 'warning');
     }
-    // 步骤2：给浏览器200ms缓冲期，然后再移除类名
-    setTimeout(() => {
-        targetElement.classList.remove('highlight-flash');
-        // 清理内联样式
-        targetElement.style.willChange = '';
-    }, 6200);
-
-    if (window.showToast) showToast('已定位到目标内容', 'success');
-} else {
-    console.warn('⚠️ 定位失败，元素未找到');
-    if (window.showToast) showToast('定位失败，内容可能已被删除', 'warning');
-}
-        };
+};
 
 /**
  * 显示Toast提示 (Redesigned to match Smart Capsule)
