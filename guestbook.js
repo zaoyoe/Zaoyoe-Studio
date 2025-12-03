@@ -1102,11 +1102,42 @@ function waitForElement(selector, timeout = 5000) {
 async function fetchAndInsertSingleMessage(messageId) {
     try {
         console.log(`🎣 拉取单条留言: ${messageId}`);
-        const query = new AV.Query('Message');
-        query.include('author');
-        query.descending('createdAt');
 
-        const avMessage = await query.get(messageId);
+        // 1. 拉取留言本体
+        const messageQuery = new AV.Query('Message');
+        messageQuery.include('author');
+        messageQuery.descending('createdAt');
+        const avMessage = await messageQuery.get(messageId);
+
+        // 2. 拉取该留言的所有评论
+        console.log('📝 拉取评论数据...');
+        const commentQuery = new AV.Query('Comment');
+        commentQuery.equalTo('messageId', messageId);
+        commentQuery.include('author');
+        commentQuery.ascending('createdAt');
+        const avComments = await commentQuery.find();
+
+        console.log(`✅ 找到 ${avComments.length} 条评论`);
+
+        // 3. 格式化评论数据
+        const comments = avComments.map(c => {
+            const author = c.get('author');
+            return {
+                id: c.id,
+                name: author ? author.get('username') : '匿名用户',
+                avatarUrl: author ? author.get('avatarUrl') : null,
+                content: c.get('content') || '',
+                timestamp: c.createdAt ? c.createdAt.toLocaleString('zh-CN', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                }) : '',
+                parentCommentId: c.get('parentCommentId') || null,
+                parentUserName: c.get('parentUserName') || null
+            };
+        });
 
         // 检查留言是否已存在
         const existing = document.querySelector(`.message-item[data-message-id="${messageId}"]`);
@@ -1133,7 +1164,7 @@ async function fetchAndInsertSingleMessage(messageId) {
             }) : '',
             likes: avMessage.get('likes') || 0,
             likedBy: avMessage.get('likedBy') || [],
-            comments: avMessage.get('comments') || []  // 暂时为空，稍后可以加载
+            comments: comments  // ✅ 使用刚才拉取的评论数据
         };
 
         // 使用 createMessageCard 创建 HTML
