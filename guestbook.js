@@ -1179,10 +1179,14 @@ async function fetchAndInsertSingleMessage(messageId) {
         console.log('  - image:', avMessage.get('image'));
         console.log('  - imageUrl:', avMessage.get('imageUrl'));
 
+        // ✅ 使用 userName 字段（数据库实际存储的字段）
+        const userName = avMessage.get('userName');
+        console.log('👤 userName 字段:', userName);
+
         const message = {
             id: avMessage.id,
-            name: author ? (author.get('nickname') || author.get('username')) : '匿名用户',  // ✅ 优先使用昵称
-            avatarUrl: author ? author.get('avatarUrl') : null,
+            name: userName || '匿名用户',  // ✅ 使用 userName 字段
+            avatarUrl: avMessage.get('userAvatar') || null,  // ✅ 使用 userAvatar 字段
             email: author ? author.get('email') : null,
             content: avMessage.get('content') || '',
             image: avMessage.get('image') || avMessage.get('imageUrl') || null,  // ✅ 兼容两种字段
@@ -1304,10 +1308,10 @@ async function fetchAndInsertSingleMessage(messageId) {
             console.log('🔧 [强制修复] 已补全 data-message-id:', safeId);
         }
 
-        // 标记与高亮
+        // 标记（移除highlight效果，因为评论已经有高亮）
         if (element.classList) {
             element.classList.add('fetched-history');
-            element.classList.add('highlight-flash');
+            // element.classList.add('highlight-flash');  // ✅ 移除紫色光晕
         }
 
         // ✅ 防止重复插入：检查该留言卡片是否已存在
