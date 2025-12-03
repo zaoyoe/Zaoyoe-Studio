@@ -1137,10 +1137,10 @@ function enableRealTimeUpdates() {
                 insertCommentToDOM(messageId, newComment);
             }
 
-            // ✨ Phase 5: 触发智能胶囊通知
+            // ✨ Phase 5: 触发智能胶囊通知（传入父留言ID）
             if (window.CapsuleManager) {
-                console.log('🔔 触发胶囊通知 - 评论ID:', comment.id);
-                window.CapsuleManager.queueUpdate('comment', comment.id);
+                console.log('🔔 触发胶囊通知 - 评论ID:', comment.id, '父留言ID:', messageId);
+                window.CapsuleManager.queueUpdate('comment', comment.id, messageId);
             }
 
             // ✅ 已有 CapsuleManager 胶囊通知，注释掉旧的 showNotification 避免重复

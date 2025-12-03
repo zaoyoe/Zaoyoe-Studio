@@ -17,7 +17,7 @@ window.CapsuleManager = {
     },
 
     // --- 📥 入口：推入队列（支持向后兼容）---
-    queueUpdate(type, objectId) {
+    queueUpdate(type, objectId, parentMessageId = null) {
         // ✅ 向后兼容：没有objectId也能工作
         if (!objectId) {
             console.warn('⚠️ queueUpdate without objectId, using legacy mode');
@@ -30,7 +30,13 @@ window.CapsuleManager = {
             this.state.updates.splice(existingIndex, 1);
         }
 
-        this.state.updates.push({ type, id: objectId, time: Date.now() });
+        // 存储更新信息，包括父留言ID（用于评论定位）
+        this.state.updates.push({
+            type,
+            id: objectId,
+            parentMessageId,  // 评论的父留言ID
+            time: Date.now()
+        });
         console.log('📋 队列更新:', this.state.updates);
 
         this.updateUI();
@@ -160,8 +166,8 @@ window.CapsuleManager = {
         } else if (firstUpdate.type === 'comment') {
             // 评论：直接定位（已在页面）
             if (window.handleSmartScroll) {
-                console.log('💬 定位到评论:', firstUpdate.id);
-                window.handleSmartScroll(firstUpdate.id, 'comment');
+                console.log('💬 定位到评论:', firstUpdate.id, '父留言ID:', firstUpdate.parentMessageId);
+                window.handleSmartScroll(firstUpdate.id, 'comment', firstUpdate.parentMessageId);
             } else {
                 loadGuestbookMessages?.(true) || window.location.reload();
             }
