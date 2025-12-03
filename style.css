@@ -2367,6 +2367,10 @@ button.upload-icon-btn {
     /* 极淡的边框 */
     border-radius: 8px;
     padding: 12px;
+    padding-top: 20px;
+    /* 防止第一条评论抬起时被裁切 */
+    overflow: visible;
+    /* 允许抬起的评论完全显示 */
     box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.06);
     /* 极淡的内阴影 */
 }
