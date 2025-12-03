@@ -393,8 +393,10 @@ document.addEventListener('DOMContentLoaded', () => {
         // Recursively count all comments (including nested replies)
         function countAllComments(comments) {
             if (!comments || comments.length === 0) return 0;
-            let total = comments.length;
+            let total = 0;
             comments.forEach(c => {
+                if (!c) return; // ⚡ Skip null comments
+                total++;
                 if (c.replies && c.replies.length > 0) {
                     total += countAllComments(c.replies);
                 }
@@ -419,6 +421,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const canReply = true; // Always allow reply
 
             return comments.map((comment, idx) => {
+                if (!comment) return ''; // ⚡ Skip null comments
                 const hasReplies = comment.replies && comment.replies.length > 0;
 
                 console.log(`  Comment #${idx}: id=${comment.id}, name="${comment.name}", parentUserName="${comment.parentUserName}", depth=${depth}`);
