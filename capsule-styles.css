@@ -54,6 +54,13 @@
         0 0 20px rgba(255, 154, 158, 0.4);
 }
 
+.capsule-wrapper.success-theme {
+    background: linear-gradient(135deg, rgba(66, 230, 149, 0.95) 0%, rgba(59, 178, 184, 0.95) 100%);
+    color: #ffffff;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15),
+        0 0 20px rgba(66, 230, 149, 0.4);
+}
+
 .capsule-content {
     display: flex;
     align-items: center;
