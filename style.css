@@ -6513,8 +6513,8 @@ body {
         overflow: hidden !important;
         /* Keep hidden for modal to prevent background scroll */
         overscroll-behavior: none !important;
-        background: #000000 !important;
-        /* Pure Black */
+        background: transparent !important;
+        /* Restore dynamic background */
     }
 
     /* ⚡ CRITICAL FIX: Scope Fixed Body to Guestbook Page ONLY */
@@ -6526,8 +6526,8 @@ body {
         overflow: visible !important;
         /* Allow background blobs to extend */
         overscroll-behavior: none !important;
-        background: #000000 !important;
-        /* Pure Black */
+        background: transparent !important;
+        /* Restore dynamic background */
     }
 }
 
