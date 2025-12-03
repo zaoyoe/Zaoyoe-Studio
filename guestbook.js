@@ -532,6 +532,9 @@ document.addEventListener('DOMContentLoaded', () => {
         return messageHtml;
     }
 
+    // ✅ 暴露到全局作用域，供其他文件使用
+    window.createMessageCard = createMessageCard;
+
 
     // Use event delegation for comment handlers to avoid duplicate listeners
 
