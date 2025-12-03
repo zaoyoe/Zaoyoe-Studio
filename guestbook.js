@@ -1175,6 +1175,7 @@ async function fetchAndInsertSingleMessage(messageId) {
         }
 
         console.log('📝 生成HTML，留言对象:', message);
+        console.log('🔑 验证 message.id:', message.id, typeof message.id);
         const html = createMessageCard(message, 0);
 
         // 宽容处理：字符串转DOM，对象直接用
