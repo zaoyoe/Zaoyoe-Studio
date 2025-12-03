@@ -21,8 +21,8 @@
 
 /* Base Styles */
 html {
-    background-color: #0f0c29 !important;
-    /* Dark blue to match theme-color */
+    background-color: #000000 !important;
+    /* Pure black as requested */
     /* Fix for over-scroll background */
     position: relative;
     /* Create positioning context */
