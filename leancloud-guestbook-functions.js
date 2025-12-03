@@ -475,6 +475,12 @@ async function addCommentToMessage(messageId, content) {
         comment.set('likes', 0);
         comment.set('likedBy', []);
 
+        // ⚡ CRITICAL FIX: Explicitly set ACL to Public Read, Owner Write
+        const acl = new AV.ACL(currentUser);
+        acl.setPublicReadAccess(true);
+        acl.setWriteAccess(currentUser, true);
+        comment.setACL(acl);
+
         // 3. 保存评论
         await comment.save();
         console.log('✅ 评论发送成功');
@@ -572,6 +578,13 @@ async function addReplyToComment(parentCommentId, messageId, content) {
         reply.set('content', content);
         reply.set('likes', 0);
         reply.set('likedBy', []);
+
+        // ⚡ CRITICAL FIX: Explicitly set ACL to Public Read, Owner Write
+        // This ensures the comment is readable by everyone, even if Class permissions are restrictive
+        const acl = new AV.ACL(currentUser);
+        acl.setPublicReadAccess(true);
+        acl.setWriteAccess(currentUser, true);
+        reply.setACL(acl);
 
         // 4. 保存回复
         await reply.save();
