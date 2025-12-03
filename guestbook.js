@@ -1227,6 +1227,14 @@ async function fetchAndInsertSingleMessage(messageId) {
         // 使用提取出的卡片
         element = actualCard;
 
+        // 🚨 关键修复：强制补全 data-message-id（双保险）
+        const safeId = message.id || messageId;
+        if (safeId && element) {
+            element.setAttribute('data-message-id', safeId);
+            element.id = 'msg-' + safeId;
+            console.log('🔧 [强制修复] 已补全 data-message-id:', safeId);
+        }
+
         // 标记与高亮
         if (element.classList) {
             element.classList.add('fetched-history');
