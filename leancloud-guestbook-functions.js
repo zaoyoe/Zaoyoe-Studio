@@ -22,7 +22,7 @@ async function loadGuestbookMessages(forceRefresh = false, scrollTargetId = null
     const isGuestbookPage = window.location.pathname.includes('guestbook.html');
 
     // 🚀 Cache-First Strategy: Show cached content immediately
-    const CACHE_VERSION = 'v2_fix_images'; // 🆕 强制刷新缓存的版本号
+    const CACHE_VERSION = 'v3_force_refresh_acl'; // 🆕 强制刷新缓存的版本号 (ACL修复后)
 
     // ✅ 缓存失效辅助函数（提交新内容或收到实时消息时调用）
     window.invalidateGuestbookCache = function () {
@@ -516,7 +516,7 @@ async function addCommentToMessage(messageId, content) {
                 msg.comments.push(newComment);
 
                 // 更新缓存
-                const CACHE_VERSION = 'v2_fix_images';
+                const CACHE_VERSION = 'v3_force_refresh_acl';
                 localStorage.setItem('cached_messages_' + CACHE_VERSION, JSON.stringify(window.allMessages));
                 localStorage.setItem('cache_time_' + CACHE_VERSION, Date.now().toString());
             }
@@ -1083,7 +1083,7 @@ function enableRealTimeUpdates() {
             // 更新内存和缓存
             if (window.allMessages) {
                 window.allMessages.unshift(newMessage);
-                const CACHE_VERSION = 'v2_fix_images';
+                const CACHE_VERSION = 'v3_force_refresh_acl';
                 localStorage.setItem('cached_messages_' + CACHE_VERSION, JSON.stringify(window.allMessages));
                 localStorage.setItem('cache_time_' + CACHE_VERSION, Date.now().toString());
             }
