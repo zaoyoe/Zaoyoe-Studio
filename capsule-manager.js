@@ -12,7 +12,7 @@ window.CapsuleManager = {
     },
 
     config: {
-        autoHideTime: 5000, // 5秒自动消失
+        autoHideTime: 8000, // 8秒自动消失
         clearQueueOnHide: false // 保留未读
     },
 

@@ -6511,8 +6511,8 @@ body {
         overflow: hidden !important;
         /* Keep hidden for modal to prevent background scroll */
         overscroll-behavior: none !important;
-        background: linear-gradient(to bottom, #0f0c29, #302b63) !important;
-        /* Gradient fallback */
+        background: #000000 !important;
+        /* Pure Black */
     }
 
     /* ⚡ CRITICAL FIX: Scope Fixed Body to Guestbook Page ONLY */
@@ -6524,7 +6524,8 @@ body {
         overflow: visible !important;
         /* Allow background blobs to extend */
         overscroll-behavior: none !important;
-        background: linear-gradient(to bottom, #0f0c29, #302b63) !important;
+        background: #000000 !important;
+        /* Pure Black */
     }
 }
 
