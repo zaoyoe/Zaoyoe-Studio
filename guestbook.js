@@ -606,10 +606,15 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 // Collapse
                 const currentHeight = commentList.scrollHeight;
+
+                // ⚡ OPTIMIZATION: Force reflow then collapse in next frame
                 commentList.style.maxHeight = currentHeight + 'px';
-                void commentList.offsetHeight;
-                commentList.style.maxHeight = '200px';
-                commentList.classList.add('collapsed');
+                void commentList.offsetHeight; // Force reflow
+
+                requestAnimationFrame(() => {
+                    commentList.style.maxHeight = '200px';
+                    commentList.classList.add('collapsed');
+                });
 
                 // 🔧 FIX: Revert button text and icon
                 icon.className = 'fas fa-chevron-down';
