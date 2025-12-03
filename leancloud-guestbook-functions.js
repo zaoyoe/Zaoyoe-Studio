@@ -1172,21 +1172,46 @@ function insertMessageToTop(msg) {
     }
 
     // 检查是否已存在
-    if (document.querySelector(`[data - message - id= "${msg.id}"]`)) {
+    if (document.querySelector(`[data-message-id="${msg.id}"]`)) {
         console.log('留言已存在，跳过');
         return;
     }
 
     // 使用guestbook.js中的createMessageCard函数
     if (typeof window.createMessageCard === 'function') {
-        const html = window.createMessageCard(msg, 0);
-        const element = htmlToElement(html);
+        let element;
+
+        try {
+            const result = window.createMessageCard(msg, 0);
+            console.log('📊 createMessageCard 返回类型:', typeof result);
+
+            // 处理两种可能的返回类型
+            if (typeof result === 'string') {
+                // 返回的是 HTML 字符串
+                element = htmlToElement(result);
+            } else if (result && result.nodeType === 1) {
+                // 返回的是 DOM 元素
+                element = result;
+            } else {
+                console.error('❌ createMessageCard 返回了不支持的类型:', result);
+                return;
+            }
+        } catch (err) {
+            console.error('❌ 创建留言卡片失败:', err);
+            console.error('错误堆栈:', err.stack);
+            return;
+        }
+
+        if (!element) {
+            console.error('❌ 无法创建留言元素');
+            return;
+        }
 
         // 添加新消息标记和动画类
         element.classList.add('message-new');
 
         // 插入到第一列顶部
-        const firstColumn = container.querySelector('.masonry-column');
+        const firstColumn = container.querySelector('.masonry-column, .grid-col:first-child');
         if (firstColumn) {
             firstColumn.insertBefore(element, firstColumn.firstChild);
 
@@ -1194,15 +1219,19 @@ function insertMessageToTop(msg) {
             setTimeout(() => {
                 element.classList.add('visible');
             }, 50);
-        }
-    }
 
-    console.log('✅ 新留言已插入');
+            console.log('✅ 新留言已插入');
+        } else {
+            console.error('❌ 找不到目标列');
+        }
+    } else {
+        console.error('❌ window.createMessageCard 不存在');
+    }
 }
 
 // ==================== 辅助函数：从DOM移除留言 ====================
 function removeMessageFromDOM(messageId) {
-    const elem = document.querySelector(`[data - message - id= "${messageId}"]`);
+    const elem = document.querySelector(`[data-message-id="${messageId}"]`);
     if (elem) {
         elem.classList.add('message-removing');
         setTimeout(() => elem.remove(), 300);
