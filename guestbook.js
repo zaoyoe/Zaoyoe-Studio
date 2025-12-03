@@ -1219,7 +1219,15 @@ async function fetchAndInsertSingleMessage(messageId) {
             const targetContainer = firstColumn || grid;
 
             console.log('🎯 目标容器:', targetContainer);
+            console.log('🔧 元素class:', element.className);
+            console.log('📋 data-message-id:', element.querySelector('[data-message-id]')?.dataset.messageId);
             targetContainer.insertBefore(element, targetContainer.firstChild);
+
+            // 验证插入
+            setTimeout(() => {
+                const check = document.querySelector(`[data-message-id="${messageId}"]`);
+                console.log(check ? '✅ 卡片仍存在' : '❌ 卡片已消失！');
+            }, 500);
 
             // Masonry 支持
             if (typeof window.masonry !== 'undefined' && window.masonry.prepended) {
