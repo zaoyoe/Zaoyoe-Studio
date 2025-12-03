@@ -1590,7 +1590,7 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
             targetElement.style.willChange = '';
         }, 6200);
 
-        if (window.showToast) showToast('已定位到目标内容', 'success');
+        if (window.showToast) showToast('已定位', 'success');
     } else {
     }
 };
