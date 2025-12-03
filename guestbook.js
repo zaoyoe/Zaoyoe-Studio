@@ -1106,7 +1106,7 @@ async function fetchAndInsertSingleMessage(messageId) {
         query.include('author');
         query.descending('createdAt');
 
-        const message = await query.get(messageId);
+        const avMessage = await query.get(messageId);
 
         // 检查留言是否已存在
         const existing = document.querySelector(`.message-item[data-message-id="${messageId}"]`);
@@ -1115,6 +1115,27 @@ async function fetchAndInsertSingleMessage(messageId) {
             return true;
         }
 
+        // 格式化留言对象，确保所有必要字段都存在
+        const author = avMessage.get('author');
+        const message = {
+            id: avMessage.id,
+            name: author ? author.get('username') : '匿名用户',
+            avatarUrl: author ? author.get('avatarUrl') : null,
+            email: author ? author.get('email') : null,
+            content: avMessage.get('content') || '',
+            image: avMessage.get('image') || null,
+            timestamp: avMessage.createdAt ? avMessage.createdAt.toLocaleString('zh-CN', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            }) : '',
+            likes: avMessage.get('likes') || 0,
+            likedBy: avMessage.get('likedBy') || [],
+            comments: avMessage.get('comments') || []  // 暂时为空，稍后可以加载
+        };
+
         // 使用 createMessageCard 创建 HTML
         const createMessageCard = window.createMessageCard;
         if (!createMessageCard) {
@@ -1122,22 +1143,47 @@ async function fetchAndInsertSingleMessage(messageId) {
             return false;
         }
 
+        console.log('📝 生成HTML，留言对象:', message);
         const html = createMessageCard(message, 0);
-        const element = window.htmlToElement ? window.htmlToElement(html) : (() => {
-            const div = document.createElement('div');
-            div.innerHTML = html;
-            return div.firstElementChild;
-        })();
+
+        // 确保 html 是字符串
+        if (typeof html !== 'string') {
+            console.error('❌ createMessageCard 返回的不是字符串:', typeof html);
+            return false;
+        }
+
+        // 创建 DOM 元素
+        let element;
+        try {
+            element = window.htmlToElement ? window.htmlToElement(html) : (() => {
+                const div = document.createElement('div');
+                div.innerHTML = html.trim();
+                return div.firstElementChild;
+            })();
+        } catch (err) {
+            console.error('❌ 转换HTML失败:', err);
+            return false;
+        }
+
+        if (!element) {
+            console.error('❌ 无法创建DOM元素');
+            return false;
+        }
 
         // 插入到第一列最前面
         const grid = document.querySelector('.message-container .grid-col:first-child');
-        if (grid && element) {
+        if (grid) {
             grid.insertBefore(element, grid.firstChild);
 
             // 触发显示动画
             setTimeout(() => {
                 element.classList.add('visible');
             }, 100);
+
+            // 绑定事件处理器
+            if (typeof window.attachCommentHandlers === 'function') {
+                window.attachCommentHandlers();
+            }
 
             console.log('✅ 留言已插入到网格');
             return true;
@@ -1147,6 +1193,7 @@ async function fetchAndInsertSingleMessage(messageId) {
         return false;
     } catch (err) {
         console.error('❌ 拉取单条留言失败:', err);
+        console.error('错误堆栈:', err.stack);
         return false;
     }
 }
