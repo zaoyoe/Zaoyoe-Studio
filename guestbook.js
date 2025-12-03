@@ -209,18 +209,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Render batch
         batch.forEach((msg, index) => {
-            const html = createMessageCard(msg, startIndex + index);
-            const element = htmlToElement(html);
+            try {
+                const html = createMessageCard(msg, startIndex + index);
+                if (!html) {
+                    console.error('❌ createMessageCard returned null for msg:', msg.id);
+                    return;
+                }
+                const element = htmlToElement(html);
+                if (!element) {
+                    console.error('❌ htmlToElement failed for msg:', msg.id);
+                    return;
+                }
 
-            // Find shortest column and append
-            const targetCol = getShortestColumn();
-            targetCol.appendChild(element);
+                // Find shortest column and append
+                const targetCol = getShortestColumn();
+                targetCol.appendChild(element);
 
-            // Trigger animation with delay
-            const delay = Math.min(index * 0.05, 0.5);
-            setTimeout(() => {
-                element.classList.add('visible');
-            }, delay * 1000);
+                // Trigger animation with delay
+                const delay = Math.min(index * 0.05, 0.5);
+                setTimeout(() => {
+                    element.classList.add('visible');
+                }, delay * 1000);
+            } catch (err) {
+                console.error('❌ Error rendering message:', msg.id, err);
+            }
         });
 
         renderedCount = endIndex;
