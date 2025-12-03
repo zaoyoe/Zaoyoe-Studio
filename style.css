@@ -3772,9 +3772,15 @@ body.no-scroll {
     /* 限制最大高度为视口高度的60% */
     overflow-y: auto;
     /* 允许内部滚动 */
+    overflow-x: visible;
+    /* ✅ 允许横向光晕显示 */
     /* 自定义滚动条样式 */
     scrollbar-width: thin;
     scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+    /* ✅ 添加padding防止光晕被裁切 */
+    padding: 10px 5px;
+    margin: -10px -5px;
+    /* 抵消padding，保持布局不变 */
 }
 
 .comment-list:not(.collapsed)::-webkit-scrollbar {
