@@ -1199,10 +1199,17 @@ async function fetchAndInsertSingleMessage(messageId) {
         }
 
         // ✅ 关键修复：提取真正的 .message-item（去掉包装层）
+        console.log('🔍 原始元素:', element.tagName, element.className);
+        console.log('🔍 classList:', element.classList);
+        console.log('🔍 是否包含 message-anim-wrapper:', element.classList?.contains('message-anim-wrapper'));
+
         let actualCard = element;
-        if (element.classList.contains('message-anim-wrapper')) {
+        if (element.classList && element.classList.contains('message-anim-wrapper')) {
+            console.log('🔄 检测到包装层，提取内部 .message-item');
             actualCard = element.querySelector('.message-item');
-            console.log('🔄 提取内部 .message-item');
+            console.log('🔄 提取结果:', actualCard);
+        } else {
+            console.log('✅ 不是包装层，直接使用');
         }
 
         if (!actualCard) {
