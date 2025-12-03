@@ -121,7 +121,9 @@ async function loadGuestbookMessages(forceRefresh = false, scrollTargetId = null
         // 不使用 include('user') 避免 ACL 权限问题
         // 用户信息已经存储在 userName 字段中
         commentQuery.ascending('createdAt'); // 评论按时间正序
-        commentQuery.limit(200); // 减少评论查询限制以提升速度
+        commentQuery.limit(1000); // ⚡ CRITICAL FIX: Increased from 200 to 1000. 
+        // Previous limit of 200 with ascending sort caused new comments (at the end) to be cut off 
+        // if total comments exceeded 200.
 
         const comments = await commentQuery.find();
         console.timeEnd('⏱️ Query Comments');
