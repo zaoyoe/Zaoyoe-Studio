@@ -6514,6 +6514,18 @@ body {
         background: linear-gradient(to bottom, #0f0c29, #302b63) !important;
         /* Gradient fallback */
     }
+
+    /* ⚡ CRITICAL FIX: Scope Fixed Body to Guestbook Page ONLY */
+    /* This restores native scrolling for the main page */
+    body.guestbook-page {
+        position: fixed !important;
+        width: 100% !important;
+        height: 100dvh !important;
+        overflow: visible !important;
+        /* Allow background blobs to extend */
+        overscroll-behavior: none !important;
+        background: linear-gradient(to bottom, #0f0c29, #302b63) !important;
+    }
 }
 
 /* Make the main container the scrollable area */
@@ -6527,6 +6539,8 @@ body {
 }
 
 /* 强制修复iOS输入法导致的背景上移问题 */
+/* Revert to global defaults for main page */
+html,
 body {
     position: relative !important;
     min-height: 100vh !important;
