@@ -3270,8 +3270,9 @@ body.no-scroll {
 @media (max-width: 640px) {
     .guestbook-main {
         max-width: 100%;
-        padding: 0 20px;
-        margin: 80px auto 20px;
+        padding: 80px 20px 20px;
+        /* ⚡ Use padding for top spacing to prevent margin collapse */
+        margin: 0 auto;
     }
 
     /* Reset body layout for guestbook page to prevent crash */
