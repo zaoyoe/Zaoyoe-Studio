@@ -1262,26 +1262,33 @@ async function fetchAndInsertSingleMessage(messageId) {
             console.log('🎯 目标容器:', targetContainer);
             console.log('🔧 插入前验证 - 元素class:', element.className);
             console.log('🔧 插入前验证 - data-message-id:', element.dataset.messageId || element.getAttribute('data-message-id'));
+
+            // 1. 先设置为不可见（防止闪烁）
+            element.style.opacity = '0';
+
+            // 2. 插入DOM
             targetContainer.insertBefore(element, targetContainer.firstChild);
 
-            // 验证插入
-            setTimeout(() => {
-                const check = document.querySelector(`[data-message-id="${messageId}"]`);
-                console.log(check ? '✅ 卡片仍存在' : '❌ 卡片已消失！');
-            }, 500);
-
-            // Masonry 支持
+            // 3. 🚨 立即通知 Masonry
             if (typeof window.masonry !== 'undefined' && window.masonry.prepended) {
+                console.log('📐 通知 Masonry 接收新卡片...');
                 window.masonry.prepended(element);
                 window.masonry.layout();
+                console.log('✅ Masonry 布局完成');
+            } else {
+                element.style.opacity = '1';
             }
 
-            // 触发显示动画
+            // 4. 延迟验证元素是否存活
             setTimeout(() => {
-                if (element.classList) {
+                if (document.body.contains(element)) {
+                    console.log('✨ 卡片存活确认，ID:', element.id);
+                    element.style.opacity = '1';
                     element.classList.add('visible');
+                } else {
+                    console.error('💀 卡片被删除了！');
                 }
-            }, 100);
+            }, 200);
 
             // 绑定事件处理器
             if (typeof window.attachCommentHandlers === 'function') {
