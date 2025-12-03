@@ -1590,27 +1590,71 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
         console.warn('⚠️ 定位失败，元素未找到');
         if (window.showToast) showToast('定位失败，内容可能已被删除', 'warning');
     }
-};
+    // 步骤2：给浏览器200ms缓冲期，然后再移除类名
+    setTimeout(() => {
+        targetElement.classList.remove('highlight-flash');
+        // 清理内联样式
+        targetElement.style.willChange = '';
+    }, 6200);
+
+    if (window.showToast) showToast('已定位到目标内容', 'success');
+} else {
+    console.warn('⚠️ 定位失败，元素未找到');
+    if (window.showToast) showToast('定位失败，内容可能已被删除', 'warning');
+}
+        };
 
 /**
- * 显示Toast提示
+ * 显示Toast提示 (Redesigned to match Smart Capsule)
  */
 window.showToast = function (message, type = 'info') {
+    // 1. 清除旧的 Toast
+    const existingToast = document.querySelector('.capsule-wrapper.toast-instance');
+    if (existingToast) existingToast.remove();
+
+    // 2. 创建新 Toast (复用 Smart Capsule 样式)
     const toast = document.createElement('div');
-    toast.textContent = message;
-    toast.style.cssText = `
-        position: fixed; top: 150px; left: 50%; transform: translateX(-50%);
-        background: ${type === 'success' ? 'rgba(72, 187, 120, 0.95)' :
-            type === 'warning' ? 'rgba(237, 137, 54, 0.95)' : 'rgba(66, 153, 225, 0.95)'};
-        color: white; padding: 12px 24px; border-radius: 8px;
-        font-size: 14px; font-weight: 500; z-index: 10000;
-        opacity: 0; transition: opacity 0.3s; pointer-events: none;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    toast.className = 'capsule-wrapper toast-instance'; // Add marker class
+
+    // 3. 添加内容 (带动画的 emoji)
+    // 注入一个简单的旋转/呼吸动画样式
+    const styleId = 'toast-anim-style';
+    if (!document.getElementById(styleId)) {
+        const style = document.createElement('style');
+        style.id = styleId;
+        style.textContent = `
+            @keyframes compass-pulse {
+                0% { transform: scale(1) rotate(0deg); }
+                50% { transform: scale(1.2) rotate(15deg); }
+                100% { transform: scale(1) rotate(0deg); }
+            }
+            .toast-icon-anim {
+                display: inline-block;
+                animation: compass-pulse 2s infinite ease-in-out;
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    // 解析 emoji 和 文本 (假设 message 包含 emoji，或者我们强制加一个)
+    // 用户现在的 message 是 "定位中... 🧭"
+    // 我们把它拆分一下，或者直接用 innerHTML
+    toast.innerHTML = `
+        <span class="toast-icon-anim">🧭</span>
+        <span>${message.replace('🧭', '').trim()}</span>
     `;
+
+    // 4. 添加到页面
     document.body.appendChild(toast);
-    setTimeout(() => toast.style.opacity = '1', 10);
+
+    // 5. 触发进场动画 (Slide Down)
+    requestAnimationFrame(() => {
+        toast.classList.add('active');
+    });
+
+    // 6. 自动消失 (3秒后)
     setTimeout(() => {
-        toast.style.opacity = '0';
-        setTimeout(() => toast.remove(), 300);
-    }, 2000);
+        toast.classList.remove('active'); // Slide Up
+        setTimeout(() => toast.remove(), 500); // Wait for transition then remove
+    }, 3000);
 };
