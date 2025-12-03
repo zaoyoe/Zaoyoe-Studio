@@ -6454,13 +6454,19 @@ input[type="submit"],
 }
 
 /* 强制禁止移动端页面缩放 */
+/* 强制禁止移动端页面缩放 - 但允许滚动 */
 html,
 body {
-    touch-action: pan-y !important;
-    -ms-touch-action: pan-y !important;
+    /* touch-action: pan-y !important;  <-- Removed to prevent scroll locking */
+    -webkit-text-size-adjust: 100%;
 }
 
-/* 图片预览模态框也禁止缩放，避免触发页面缩放 */
+/* Ensure comments are always clickable */
+.comment-item {
+    pointer-events: auto !important;
+}
+
+/* 图片预览模态框禁止缩放 */
 .image-modal,
 .image-modal * {
     touch-action: none !important;
