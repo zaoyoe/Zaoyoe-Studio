@@ -377,6 +377,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function createMessageCard(msg, index = 0) {
         const hasComments = msg.comments && msg.comments.length > 0;
+        console.log('💬 [createMessageCard] hasComments:', hasComments, 'count:', msg.comments?.length);
         // Recursively count all comments (including nested replies)
         function countAllComments(comments) {
             if (!comments || comments.length === 0) return 0;
@@ -459,6 +460,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const commentsHtml = hasComments
             ? renderCommentTree(msg.comments, 0, msg.id, null)
             : '<div class="no-comments">暂无评论</div>';
+
+        console.log('🎭 commentsHtml 长度:', commentsHtml.length, '预览:', commentsHtml.substring(0, 100));
 
         const toggleButtonHtml = shouldCollapse
             ? `<button class="comment-toggle-btn" data-message-id="${msg.id}" data-count="${commentCount}">
