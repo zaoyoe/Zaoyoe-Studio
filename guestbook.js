@@ -1551,14 +1551,12 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
             }
         }
 
-        // 1. 先滚动
-        targetElement.scrollIntoView({
-            behavior: 'smooth',
-            block: 'center'
-        });
+        // 1. 先滚动 (使用自定义平滑滚动)
+        // targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        await smoothScrollTo(targetElement, 1000);
 
-        // 2. 等待滚动完成 (约500ms) + 0.1s 延迟 = 600ms
-        await new Promise(r => setTimeout(r, 600));
+        // 2. 等待滚动完成 (已在 smoothScrollTo 中 await) + 0.1s 延迟
+        await new Promise(r => setTimeout(r, 100));
 
         // 3. 最后闪烁
         targetElement.classList.remove('highlight-flash');
