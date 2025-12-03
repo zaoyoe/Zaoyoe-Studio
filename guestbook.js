@@ -1121,7 +1121,7 @@ window.handleSmartScroll = function (targetId, type = 'message') {
         // 添加高亮动画
         setTimeout(() => {
             targetElement.classList.add('highlight-flash');
-            setTimeout(() => targetElement.classList.remove('highlight-flash'), 8000);  // 8秒，匹配动画时长
+            setTimeout(() => targetElement.classList.remove('highlight-flash'), 6000);  // 6秒，单次循环
         }, 500);
 
         if (window.showToast) showToast('已定位到目标内容', 'success');
