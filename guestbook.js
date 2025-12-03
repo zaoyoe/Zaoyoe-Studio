@@ -1057,75 +1057,185 @@ window.handleLike = async function (type, id, btn) {
 // === Phase 3: 智能滚动辅助函数 ===
 
 /**
- * 智能滚动到指定元素并高亮
+ * 🧠 辅助函数：等待元素出现（基于 MutationObserver）
+ * @param {string} selector - CSS 选择器
+ * @param {number} timeout - 超时时间（毫秒）
+ * @returns {Promise<Element|null>} 找到的元素或 null
  */
-window.handleSmartScroll = function (targetId, type = 'message') {
-    console.log(`🎯 开始智能定位: type=${type}, targetId=${targetId}`);
+function waitForElement(selector, timeout = 5000) {
+    return new Promise((resolve) => {
+        // 1. 立即查找，可能已存在
+        const existingElement = document.querySelector(selector);
+        if (existingElement) {
+            return resolve(existingElement);
+        }
 
-    // 等待DOM渲染完成 - 增加延迟确保masonry布局完成
-    setTimeout(() => {
-        let targetElement = null;
+        // 2. 不存在，启动观察者
+        const observer = new MutationObserver((mutations, obs) => {
+            const element = document.querySelector(selector);
+            if (element) {
+                obs.disconnect();
+                resolve(element);
+            }
+        });
 
-        if (type === 'message') {
-            // 查找留言卡片 - 使用.message-item类
-            targetElement = document.querySelector(`.message-item[data-message-id="${targetId}"]`);
-            console.log('🔍 查找留言:', `.message-item[data-message-id="${targetId}"]`, targetElement);
-        } else if (type === 'comment') {
-            // 查找评论元素
-            targetElement = document.querySelector(`[data-comment-id="${targetId}"]`);
-            console.log('🔍 查找评论:', `[data-comment-id="${targetId}"]`, targetElement);
+        // 3. 只监听主要容器，提升性能
+        const container = document.querySelector('.message-container') || document.body;
+        observer.observe(container, {
+            childList: true,
+            subtree: true
+        });
 
-            // ✅ 自动展开评论区（如果评论在折叠的区域内）
-            if (targetElement) {
-                const messageId = targetElement.dataset.messageId;
-                const commentList = document.querySelector(`.comment-list[data-message-id="${messageId}"]`);
-                const toggleBtn = document.querySelector(`.comment-toggle-btn[data-message-id="${messageId}"]`);
+        // 4. 超时保险
+        setTimeout(() => {
+            observer.disconnect();
+            resolve(null);
+        }, timeout);
+    });
+}
+
+/**
+ * 🎣 辅助函数：拉取单条留言并插入
+ * @param {string} messageId - 留言 ID
+ * @returns {Promise<boolean>} 是否成功
+ */
+async function fetchAndInsertSingleMessage(messageId) {
+    try {
+        console.log(`🎣 拉取单条留言: ${messageId}`);
+        const query = new AV.Query('Message');
+        query.include('author');
+        query.include('comments');
+        query.include('comments.author');
+
+        const message = await query.get(messageId);
+
+        // 使用现有的插入函数
+        if (window.insertMessageToTop) {
+            window.insertMessageToTop(message);
+            return true;
+        } else {
+            console.error('❌ insertMessageToTop 函数不存在');
+            return false;
+        }
+    } catch (err) {
+        console.error('❌ 拉取单条留言失败:', err);
+        return false;
+    }
+}
+
+/**
+ * 🚀 智能滚动到指定元素并高亮（v6.0 Ultimate - Observer Pattern）
+ * @param {string} targetId - 目标元素 ID
+ * @param {string} type - 类型：'message' 或 'comment'
+ * @param {string} parentMessageId - 评论的父留言 ID（可选）
+ */
+window.handleSmartScroll = async function (targetId, type = 'message', parentMessageId = null) {
+    if (!targetId) return;
+
+    // 特殊处理：滚动到顶部
+    if (targetId === 'TOP') {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+    }
+
+    console.log(`🚀 [SmartScroll v6.0] 目标: ${type} #${targetId} (父ID: ${parentMessageId})`);
+
+    // --- 1. 确定选择器 ---
+    const selector = type === 'message'
+        ? `.message-item[data-message-id="${targetId}"]`
+        : `[data-comment-id="${targetId}"]`;
+
+    // --- 2. 尝试直接寻找目标 ---
+    let targetElement = document.querySelector(selector);
+
+    // --- 3. 如果找不到，可能父留言都不在（漏网之鱼）---
+    if (!targetElement && type === 'comment' && parentMessageId) {
+        const parentSelector = `.message-item[data-message-id="${parentMessageId}"]`;
+        const parentCard = document.querySelector(parentSelector);
+
+        if (!parentCard) {
+            console.log('🎣 父留言不在当前视图，启动局部打捞...');
+            const success = await fetchAndInsertSingleMessage(parentMessageId);
+            if (success) {
+                // 等待插入完成
+                await new Promise(r => setTimeout(r, 500));
+            }
+        }
+    }
+
+    // --- 4. 启动"守株待兔"（MutationObserver）---
+    if (!targetElement) {
+        // 如果是评论，尝试自动展开父留言的评论区
+        if (type === 'comment' && parentMessageId) {
+            const parentSelector = `.message-item[data-message-id="${parentMessageId}"]`;
+            const parentCard = document.querySelector(parentSelector);
+
+            if (parentCard) {
+                // 检查评论区是否折叠
+                const commentList = parentCard.querySelector('.comment-list');
+                const toggleBtn = parentCard.querySelector('.comment-toggle-btn');
 
                 if (commentList && commentList.classList.contains('collapsed')) {
-                    console.log('📂 自动展开评论区');
-                    // 模拟点击展开按钮
-                    commentList.classList.remove('collapsed');
-                    const fullHeight = commentList.scrollHeight;
-                    commentList.style.maxHeight = fullHeight + 'px';
-
+                    console.log('📂 自动触发展开...');
                     if (toggleBtn) {
-                        const icon = toggleBtn.querySelector('i');
-                        const span = toggleBtn.querySelector('span');
-                        if (icon) icon.className = 'fas fa-chevron-up';
-                        if (span) span.textContent = '收起';
+                        toggleBtn.click();  // 触发完整的展开逻辑
+                        await new Promise(r => setTimeout(r, 400));  // 等待展开动画
                     }
-
-                    setTimeout(() => {
-                        if (!commentList.classList.contains('collapsed')) {
-                            commentList.style.maxHeight = 'none';
-                        }
-                    }, 500);
                 }
             }
         }
 
-        if (!targetElement) {
-            console.warn(`⚠️ 未找到目标元素: ${type} ${targetId}`);
-            if (window.showToast) showToast('内容未找到，可能已被删除', 'warning');
-            return;
+        // 等待元素出现
+        console.log('⏳ 等待元素渲染...');
+        targetElement = await waitForElement(selector, 5000);
+    }
+
+    // --- 5. 最终执行滚动与高亮 ---
+    if (targetElement) {
+        console.log('🎯 锁定目标，执行优雅滚动');
+
+        // 再次检查评论是否在折叠区域
+        if (type === 'comment') {
+            const commentList = targetElement.closest('.comment-list');
+            if (commentList && commentList.classList.contains('collapsed')) {
+                commentList.classList.remove('collapsed');
+                const fullHeight = commentList.scrollHeight;
+                commentList.style.maxHeight = fullHeight + 'px';
+
+                // 更新按钮状态
+                const messageId = targetElement.dataset.messageId;
+                const toggleBtn = document.querySelector(`.comment-toggle-btn[data-message-id="${messageId}"]`);
+                if (toggleBtn) {
+                    const icon = toggleBtn.querySelector('i');
+                    const span = toggleBtn.querySelector('span');
+                    if (icon) icon.className = 'fas fa-chevron-up';
+                    if (span) span.textContent = '收起';
+                }
+
+                // 给一点时间让 CSS transition 动画跑一下
+                await new Promise(r => setTimeout(r, 300));
+            }
         }
 
-        console.log('✅ 找到目标元素:', targetElement);
-
-        // 平滑滚动到目标
+        // 平滑滚动
         targetElement.scrollIntoView({
             behavior: 'smooth',
             block: 'center'
         });
 
-        // 添加高亮动画
+        // 视觉高亮（保持现有的 6 秒动画）
         setTimeout(() => {
+            targetElement.classList.remove('highlight-flash');
+            void targetElement.offsetWidth;  // 强制重绘
             targetElement.classList.add('highlight-flash');
-            setTimeout(() => targetElement.classList.remove('highlight-flash'), 6000);  // 6秒，单次循环
+            setTimeout(() => targetElement.classList.remove('highlight-flash'), 6000);
         }, 500);
 
         if (window.showToast) showToast('已定位到目标内容', 'success');
-    }, 1500); // 增加到1.5秒，确保masonry布局完成
+    } else {
+        console.warn('⚠️ 定位失败，元素未找到');
+        if (window.showToast) showToast('定位失败，内容可能已被删除', 'warning');
+    }
 };
 
 /**
