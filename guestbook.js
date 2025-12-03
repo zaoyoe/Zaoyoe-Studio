@@ -1136,11 +1136,12 @@ async function fetchAndInsertSingleMessage(messageId) {
 
         // 3. 格式化评论数据
         const comments = avComments.map(c => {
-            const author = c.get('author');
+            // ✅ 使用 userName 字段（评论也直接存储用户名）
+            const userName = c.get('userName');
             return {
                 id: c.id,
-                name: author ? (author.get('nickname') || author.get('username')) : '匿名用户',  // ✅ 优先使用昵称
-                avatarUrl: author ? author.get('avatarUrl') : null,
+                name: userName || '匿名用户',  // ✅ 使用 userName 字段
+                avatarUrl: c.get('userAvatar') || null,  // ✅ 使用 userAvatar 字段
                 content: c.get('content') || '',
                 timestamp: c.createdAt ? c.createdAt.toLocaleString('zh-CN', {
                     year: 'numeric',
@@ -1153,6 +1154,7 @@ async function fetchAndInsertSingleMessage(messageId) {
                 parentUserName: c.get('parentUserName') || null
             };
         });
+
 
         // 检查留言是否已存在
         const existing = document.querySelector(`.message-item[data-message-id="${messageId}"]`);
