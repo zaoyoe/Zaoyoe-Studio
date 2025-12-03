@@ -224,3 +224,20 @@
     border-radius: 8px !important;
     overflow: visible !important;
 }
+
+/* 移动端专用优化 - 防止归位弹动 */
+@media (max-width: 768px) {
+    .comment-item.highlight-flash {
+        /* ✅ 强制 GPU 加速，创建独立合成层 */
+        backface-visibility: hidden;
+        -webkit-backface-visibility: hidden;
+        perspective: 1000px;
+        -webkit-perspective: 1000px;
+        /* ✅ 隔离变换上下文，防止影响父元素 */
+        transform-style: preserve-3d;
+        -webkit-transform-style: preserve-3d;
+        /* ✅ 优化渲染性能 */
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+    }
+}
