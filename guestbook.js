@@ -1123,6 +1123,11 @@ async function fetchAndInsertSingleMessage(messageId) {
 
         console.log(`✅ 找到 ${avComments.length} 条评论`);
 
+        // 验证第一条评论的ID
+        if (avComments.length > 0) {
+            console.log('🔑 第一条评论 ID:', avComments[0].id);
+        }
+
         // 3. 格式化评论数据
         const comments = avComments.map(c => {
             const author = c.get('author');
@@ -1180,12 +1185,15 @@ async function fetchAndInsertSingleMessage(messageId) {
 
         console.log('📝 生成HTML，留言对象:', message);
         console.log('🔑 验证 message.id:', message.id, typeof message.id);
+        console.log('💬 评论数量:', message.comments?.length || 0);
         const html = createMessageCard(message, 0);
 
         // 检查生成的HTML
         if (typeof html === 'string') {
             console.log('🔍 HTML片段:', html.substring(0, 300));
             console.log(html.includes('data-message-id') ? '✅ 包含data-message-id' : '❌ 不包含data-message-id');
+            const commentCount = (html.match(/data-comment-id/g) || []).length;
+            console.log(`💬 HTML中的评论元素数: ${commentCount}`);
         }
 
         // 宽容处理：字符串转DOM，对象直接用
