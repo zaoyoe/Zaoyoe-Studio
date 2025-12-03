@@ -3739,8 +3739,8 @@ body.no-scroll {
     /* ✅ 改为 visible，防止光晕被裁切 */
     margin-top: 0;
     /* ✅ 移除顶部margin，减少间距 */
-    padding-top: 30px;
-    /* ✅ 增加至30px，容纳35px光晕扩散 */
+    padding-top: 20px;
+    /* ✅ 调整至20px，匹配光晕扩散 */
     /* 移除min-height避免抽搐 */
 }
 
