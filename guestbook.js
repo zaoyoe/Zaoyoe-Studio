@@ -1163,6 +1163,22 @@ async function fetchAndInsertSingleMessage(messageId) {
 
         // 格式化留言对象，确保所有必要字段都存在
         const author = avMessage.get('author');
+
+        // 🔍 详细日志：追踪 author 对象
+        console.log('📊 Author 对象:', author);
+        if (author) {
+            console.log('  - nickname:', author.get('nickname'));
+            console.log('  - username:', author.get('username'));
+            console.log('  - avatarUrl:', author.get('avatarUrl'));
+        } else {
+            console.warn('⚠️ author 为 null！');
+        }
+
+        // 🔍 详细日志：追踪图片字段
+        console.log('🖼️ 图片字段:');
+        console.log('  - image:', avMessage.get('image'));
+        console.log('  - imageUrl:', avMessage.get('imageUrl'));
+
         const message = {
             id: avMessage.id,
             name: author ? (author.get('nickname') || author.get('username')) : '匿名用户',  // ✅ 优先使用昵称
