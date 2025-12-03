@@ -1178,6 +1178,12 @@ async function fetchAndInsertSingleMessage(messageId) {
         console.log('🔑 验证 message.id:', message.id, typeof message.id);
         const html = createMessageCard(message, 0);
 
+        // 检查生成的HTML
+        if (typeof html === 'string') {
+            console.log('🔍 HTML片段:', html.substring(0, 300));
+            console.log(html.includes('data-message-id') ? '✅ 包含data-message-id' : '❌ 不包含data-message-id');
+        }
+
         // 宽容处理：字符串转DOM，对象直接用
         let element;
         if (typeof html === 'string') {
