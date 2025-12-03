@@ -1139,6 +1139,13 @@ function htmlToElement(html) {
 async function insertMessageToTop(message) {
     console.log('📝 准备插入新留言:', message.id);
 
+    // ✅ 防止重复插入：检查该留言是否已存在
+    const existingMessage = document.getElementById(`msg-${message.id}`);
+    if (existingMessage) {
+        console.warn(`⚠️ [重复检查] 留言已存在，跳过插入: ${message.id}`);
+        return;
+    }
+
     // 1. 生成内容 (可能是字符串，也可能是 DOM 对象)
     const result = window.createMessageCard(message, 0);
     let element = null;
