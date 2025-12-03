@@ -227,25 +227,38 @@
 
 /* 移动端专用优化 - 防止归位弹动 */
 @media (max-width: 768px) {
+
+    /* ✅ 移动端专用动画 - 移除transform，只保留背景色变化 */
+    @keyframes comment-highlight-mobile {
+        0% {
+            background: rgba(102, 126, 234, 0);
+        }
+
+        10% {
+            background: rgba(102, 126, 234, 0.12);
+        }
+
+        90% {
+            background: rgba(102, 126, 234, 0.12);
+        }
+
+        100% {
+            background: rgba(102, 126, 234, 0);
+        }
+    }
+
     .comment-item.highlight-flash {
-        /* ✅ 强制 GPU 加速，创建独立合成层 */
+        /* ✅ 使用无transform的移动端动画 */
+        animation:
+            comment-glow 6s ease-in-out 1,
+            comment-highlight-mobile 6s ease-in-out 1,
+            /* ✅ 移动端专用 */
+            brightness-pulse 1.5s ease-in-out 4 !important;
+
+        /* ✅ 保留原有优化 */
         backface-visibility: hidden;
         -webkit-backface-visibility: hidden;
-        perspective: 1000px;
-        -webkit-perspective: 1000px;
-        /* ✅ 隔离变换上下文，防止影响父元素 */
-        transform-style: preserve-3d;
-        -webkit-transform-style: preserve-3d;
-        /* ✅ 优化渲染性能 */
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
-
-        /* ✅ 关键修复：CSS containment 防止布局重排 */
-        contain: layout style paint;
-        /* 告诉浏览器：这个元素的内部布局不会影响外部 */
-
-        /* ✅ 创建独立的层叠上下文 */
-        isolation: isolate;
-        /* 防止动画影响相邻元素 */
     }
 }
