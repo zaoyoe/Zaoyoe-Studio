@@ -6506,8 +6506,21 @@ body {
 
     /* 防止背景滚动，但不使用position:fixed避免背景跟随上移 */
     body.modal-active {
+        height: 100% !important;
         overflow: hidden !important;
-        /* 移除 position: fixed，它会导致背景跟随弹窗上移 */
+        overscroll-behavior: none !important;
+        background-color: #0f0c29 !important;
+        /* Fallback color */
+    }
+}
+
+/* Make the main container the scrollable area */
+@media (max-width: 640px) {
+    .guestbook-main {
+        height: 100% !important;
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+        padding-bottom: 120px !important;
     }
 }
 
@@ -6519,23 +6532,43 @@ body {
     overflow-x: hidden !important;
 }
 
-/* 确保background-blobs完全固定 */
+/* 确保background-blobs完全固定且覆盖所有回弹区域 */
 .background-blobs {
     position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
-    right: 0 !important;
-    bottom: 0 !important;
-    width: 100% !important;
-    height: auto !important;
-    /* Allow it to fill top-to-bottom */
-    min-height: 100% !important;
-    /* Ensure it covers at least full height */
+    top: -50vh !important;
+    bottom: -50vh !important;
+    left: -50vw !important;
+    right: -50vw !important;
+    width: 200vw !important;
+    height: 200vh !important;
+    min-height: 200% !important;
     z-index: -1 !important;
     pointer-events: none !important;
-    /* 使用transform: translateZ(0)创建新的stacking context */
     transform: translateZ(0) !important;
     will-change: auto !important;
+}
+
+/* 调整 Blob 位置以适应 200% 大小的容器，使其视觉上保持在屏幕中央 */
+/* Formula: New% = 25% + (Old% / 2) */
+.blob-1 {
+    top: 27.5% !important;
+    /* Was 5% */
+    left: 20% !important;
+    /* Was -10% -> 25 + (-5) = 20% */
+}
+
+.blob-2 {
+    bottom: 27.5% !important;
+    /* Was 5% */
+    right: 20% !important;
+    /* Was -10% -> 20% */
+}
+
+.blob-3 {
+    top: 42.5% !important;
+    /* Was 35% -> 25 + 17.5 = 42.5% */
+    left: 40% !important;
+    /* Was 30% -> 25 + 15 = 40% */
 }
 
 /* blob使用fixed相对于viewport */
