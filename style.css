@@ -3709,6 +3709,19 @@ body.no-scroll {
         max-width: 100% !important;
         overflow: hidden !important;
     }
+
+    /* ✅ 移动端强制显示光晕，防止被裁切 */
+    .comment-list {
+        overflow: visible !important;
+        /* 确保光晕不被裁切 */
+        padding: 15px !important;
+        /* 四周留出光晕空间 */
+    }
+
+    .comment-item.highlight-flash {
+        overflow: visible !important;
+        /* 高亮时强制可见 */
+    }
 }
 
 /* @mention styling */
