@@ -1230,8 +1230,22 @@ async function fetchAndInsertSingleMessage(messageId) {
             console.log('🔄 检测到包装层，提取内部 .message-item');
             actualCard = element.querySelector('.message-item');
             console.log('🔄 提取结果:', actualCard);
+
+            // 验证子元素
+            if (actualCard) {
+                const commentSection = actualCard.querySelector('.comment-section');
+                const commentList = actualCard.querySelector('.comment-list');
+                console.log('🔍 提取后验证 - .comment-section:', !!commentSection);
+                console.log('🔍 提取后验证 - .comment-list:', !!commentList);
+            }
         } else {
             console.log('✅ 不是包装层，直接使用');
+
+            // 直接使用的也验证一下
+            const commentSection = element.querySelector('.comment-section');
+            const commentList = element.querySelector('.comment-list');
+            console.log('🔍 直接使用验证 - .comment-section:', !!commentSection);
+            console.log('🔍 直接使用验证 - .comment-list:', !!commentList);
         }
 
         if (!actualCard) {
