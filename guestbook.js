@@ -770,15 +770,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     }
-    console.log('📱 [Mobile Highlight] Calling init from observeNewItems');
-    initMobileHighlight();
-} else {
-    // Update highlight for new items
-    console.log('📱 [Mobile Highlight] Updating for new items');
-    updateMobileHighlight();
-}
-        }
-    }
 
     // Mobile highlight will be initialized by observeNewItems() when first batch renders
 });
