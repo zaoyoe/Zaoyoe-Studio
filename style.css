@@ -6441,7 +6441,7 @@ input[type="submit"],
         transform: scale(1.02) translateY(-3px);
 
         /* 完全不透明 -> 改为 90% 透明度保留磨砂感 */
-        background: rgba(255, 255, 255, 0.9) !important;
+        background: #ffffff !important;
 
         /* 更深的阴影 - 去掉紫色光晕 */
         box-shadow:
