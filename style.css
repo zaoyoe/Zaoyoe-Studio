@@ -6457,8 +6457,8 @@ input[type="submit"],
         /* position: relative; */
 
         /* ⚡ NEW STRATEGY: Increase margin to push next card away */
-        /* Normal margin is 40px. We increase it to 60px (was 80px) to accommodate lift effect */
-        margin-bottom: 60px !important;
+        /* Normal margin is 40px. We increase it to 45px to accommodate lift effect */
+        margin-bottom: 45px !important;
     }
 }
 
