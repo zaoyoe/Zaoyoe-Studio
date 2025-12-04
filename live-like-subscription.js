@@ -110,10 +110,33 @@ async function subscribeLikeLiveQuery() {
 
             console.log(`💗 ${targetType} [${targetId}] 点赞数: ${oldCount} → ${newCount} (+${change})`);
 
-            // ✨ Phase 5: 触发智能胶囊通知（只有+1才触发）
-            if (change === 1 && window.CapsuleManager) {
+            // ✨ Phase 5: 触发智能胶囊通知（只有+1才触发，或者元素不在屏幕上时触发）
+            // ⚡ FIX: Allow notification if element is missing (grave-digging) OR if change is +1
+            if ((change === 1 || !element) && window.CapsuleManager) {
                 console.log('🔔 触发胶囊通知 - 点赞 targetId:', targetId);
-                window.CapsuleManager.queueUpdate('like', targetId);
+
+                // 如果是评论，我们需要获取 parentMessageId 才能定位
+                if (targetType === 'Comment') {
+                    try {
+                        const cQuery = new AV.Query('Comment');
+                        // 只获取 message 字段以减少流量
+                        cQuery.select(['message']);
+                        const commentObj = await cQuery.get(targetId);
+                        const parentMsg = commentObj.get('message');
+                        if (parentMsg) {
+                            console.log('🔗 获取到父留言ID:', parentMsg.id);
+                            window.CapsuleManager.queueUpdate('like', targetId, parentMsg.id);
+                        } else {
+                            window.CapsuleManager.queueUpdate('like', targetId);
+                        }
+                    } catch (e) {
+                        console.warn('⚠️ 获取评论父ID失败:', e);
+                        window.CapsuleManager.queueUpdate('like', targetId);
+                    }
+                } else {
+                    // 留言点赞，直接传
+                    window.CapsuleManager.queueUpdate('like', targetId);
+                }
             }
 
             // 🎬 触发心跳动画优雅更新：原位心跳动画
