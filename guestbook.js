@@ -1683,20 +1683,22 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
         // ✅ 显示定位成功提示（移动端和桌面端通用）
         if (window.showToast) showToast('已定位', 'success');
 
-        // ✅ 移动端不移除类名，避免闪出归位
-        // (reuse isMobile from above)
+        // ✅ 移动端：延迟清理，避免归位弹动，但必须清理类名
         if (isMobile) {
-            console.log('📱 移动端：保持高亮类不移除，避免闪出效果');
+            console.log('📱 移动端：延迟清理高亮类，避免闪出效果');
 
-            // 定位完成后，恢复 content-visibility 优化（2秒后）
+            // 移动端延迟清理（动画 3.5s + 缓冲 0.5s）
             setTimeout(() => {
+                targetElement.classList.remove('highlight-flash');
+                targetElement.style.willChange = '';
+
+                // 定位完成后，恢复 content-visibility 优化
                 targetElement.style.contentVisibility = '';
                 targetElement.style.containIntrinsicSize = '';
                 if (parentCard) parentCard.style.contentVisibility = '';
                 if (commentsSection) commentsSection.style.contentVisibility = '';
-            }, 2000);
+            }, 4000);
 
-            // 移动端动画会自然结束到100%状态，无需清理
             return;
         }
 

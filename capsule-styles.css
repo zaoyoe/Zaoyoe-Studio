@@ -175,6 +175,16 @@
     will-change: transform, box-shadow, background-color;
     z-index: 10;
     position: relative;
+    border-radius: 8px !important;
+    /* 匹配主评论容器的 8px 圆角 */
+}
+
+/* 嵌套评论高亮：微过渡至 4px 圆角，淡化左边框但保留层级感 */
+.comment-item--nested.highlight-flash {
+    border-radius: 4px !important;
+    /* 从 0 微过渡到 4px */
+    border-left-color: rgba(0, 0, 0, 0.05) !important;
+    /* 淡化但不移除，保持宽度 */
 }
 
 /* 改用边框 + 阴影效果，在白色卡片上更显眼 */
@@ -230,11 +240,19 @@
         z-index: 10;
         position: relative;
         overflow: visible !important;
+        border-radius: 8px !important;
+        /* 匹配桌面端 */
 
         /* 性能优化 */
         backface-visibility: hidden;
         -webkit-backface-visibility: hidden;
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* 移动端嵌套评论高亮处理 */
+    .comment-item--nested.highlight-flash {
+        border-radius: 4px !important;
+        border-left-color: rgba(0, 0, 0, 0.05) !important;
     }
 }
