@@ -52,12 +52,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Lazy Loading State
     // ⚡ PERF: Adaptive Pagination Strategy
-    // Mobile: 5 items (Lightweight DOM)
+    // Mobile: 10 items (Balanced load)
     // Desktop: 15 items (Fill screen)
-    const getBatchSize = () => window.innerWidth <= 768 ? 5 : 15;
+    const getBatchSize = () => window.innerWidth <= 768 ? 10 : 15;
 
     // Initial load uses the same logic
-    const getInitialLoadSize = () => window.innerWidth <= 768 ? 5 : 15;
+    const getInitialLoadSize = () => window.innerWidth <= 768 ? 10 : 15;
 
     let allMessages = [];
     let renderedCount = 0;
