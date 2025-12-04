@@ -109,6 +109,51 @@
 }
 
 /* === Phase 2: 智能定位高亮动画 === */
+/* 优雅的呼吸高亮动画 - GPU 加速，性能友好 */
+@keyframes highlight-flash {
+    0% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(102, 126, 234, 0);
+        background-color: transparent;
+    }
+
+    /* 吸气：轻微放大 + 光晕初现 */
+    15% {
+        transform: scale(1.02);
+        box-shadow: 0 0 15px 5px rgba(102, 126, 234, 0.7);
+        background-color: rgba(102, 126, 234, 0.08);
+    }
+
+    /* 呼气：恢复 + 光晕扩散 */
+    40% {
+        transform: scale(1);
+        box-shadow: 0 0 25px 10px rgba(102, 126, 234, 0.4);
+        background-color: rgba(102, 126, 234, 0.04);
+    }
+
+    /* 第二次呼吸 */
+    65% {
+        transform: scale(1.015);
+        box-shadow: 0 0 20px 8px rgba(102, 126, 234, 0.5);
+        background-color: rgba(102, 126, 234, 0.06);
+    }
+
+    /* 渐渐消散 */
+    100% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(102, 126, 234, 0);
+        background-color: transparent;
+    }
+}
+
+.message-item.highlight-flash,
+.comment-item.highlight-flash {
+    animation: highlight-flash 2.5s cubic-bezier(0.4, 0, 0.2, 1);
+    will-change: transform, box-shadow, background-color;
+    z-index: 10;
+    position: relative;
+}
+
 /* 改用边框 + 阴影效果，在白色卡片上更显眼 */
 
 /* 留言卡片的光晕动画（包含抬起，GPU加速） */
