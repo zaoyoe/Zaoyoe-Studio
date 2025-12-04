@@ -1687,16 +1687,17 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
         if (isMobile) {
             console.log('📱 移动端：延迟清理高亮类，避免闪出效果');
 
-            // 移动端延迟清理（动画 3.5s + 缓冲 0.2s = 3700ms）
-            // ⚡ FIX: 基于历史成功模式 (3bea7c7)，精准匹配时序
+            // 移动端延迟清理（动画 3.5s + 缓冲 0.5s）
             setTimeout(() => {
-                // 仅移除类名和清理 will-change
                 targetElement.classList.remove('highlight-flash');
                 targetElement.style.willChange = '';
 
-                // ❌ 彻底移除 content-visibility 恢复逻辑
-                // 历史教训 (ec8562c): 恢复优化会导致布局重算，引发闪回
-            }, 3700);
+                // 定位完成后，恢复 content-visibility 优化
+                targetElement.style.contentVisibility = '';
+                targetElement.style.containIntrinsicSize = '';
+                if (parentCard) parentCard.style.contentVisibility = '';
+                if (commentsSection) commentsSection.style.contentVisibility = '';
+            }, 4000);
 
             return;
         }
