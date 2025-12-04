@@ -1689,13 +1689,14 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
 
             // 移动端延迟清理（动画 3.5s + 缓冲 0.5s）
             setTimeout(() => {
-                // 仅移除类名和清理 will-change
                 targetElement.classList.remove('highlight-flash');
                 targetElement.style.willChange = '';
 
-                // ❌ 彻底移除 content-visibility 恢复逻辑
-                // 既然元素已经在视口内被用户看到，就不需要再恢复优化了
-                // 恢复优化会导致浏览器重新计算高度，引发"闪回"Bug
+                // 定位完成后，恢复 content-visibility 优化
+                targetElement.style.contentVisibility = '';
+                targetElement.style.containIntrinsicSize = '';
+                if (parentCard) parentCard.style.contentVisibility = '';
+                if (commentsSection) commentsSection.style.contentVisibility = '';
             }, 4000);
 
             return;
