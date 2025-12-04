@@ -618,7 +618,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     // ⚡ PERF: Resume highlight observer
                     initMobileHighlight();
-                }, 500);
+                }, 600);
             } else {
                 // Collapse
                 // ⚡ PERF: Pause highlight observer during massive layout shift
