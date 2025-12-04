@@ -277,6 +277,8 @@ window.CapsuleManager = {
 
         // touchstart：仅记录初始状态
         const handleTouchStart = (e) => {
+            // ✅ 只处理通知胶囊，不处理 toast
+            if (e.currentTarget.id !== 'smart-capsule') return;
             if (!this.state.isVisible) return;
 
             const touch = e.touches[0];
@@ -383,14 +385,14 @@ window.CapsuleManager = {
             }
         };
 
-        // 绑定事件（使用 passive: false 以允许 preventDefault）
+        // ✅ 只绑定到通知胶囊，使用 passive: false 以允许 preventDefault
         capsule.addEventListener('touchstart', handleTouchStart, { passive: true });
         capsule.addEventListener('touchmove', handleTouchMove, { passive: false });
         capsule.addEventListener('touchend', handleTouchEnd, { passive: true });
         capsule.addEventListener('click', handleClick, { capture: true });
 
         this._swipeInitialized = true;
-        console.log('✅ 手势功能已初始化（健壮版）');
+        console.log('✅ 手势功能已初始化（健壮版，仅限通知胶囊）');
     }
 };
 
