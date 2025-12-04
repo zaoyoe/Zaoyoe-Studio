@@ -250,9 +250,8 @@
         -moz-osx-font-smoothing: grayscale;
     }
 
-    /* 移动端嵌套评论高亮处理 */
+    /* 移动端嵌套评论高亮处理：仅淡化边框，不改变圆角 */
     .comment-item--nested.highlight-flash {
-        border-radius: 4px !important;
         border-left-color: rgba(0, 0, 0, 0.05) !important;
     }
 }
