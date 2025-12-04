@@ -603,7 +603,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // ⚡ FIX: Raise z-index of expanded card
                 if (messageItem) messageItem.classList.add('expanded');
 
-                commentList.style.maxHeight = '200px';
+                commentList.style.maxHeight = '160px';
                 void commentList.offsetHeight;
                 commentList.classList.remove('collapsed');
                 const fullHeight = commentList.scrollHeight;
@@ -641,7 +641,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 void commentList.offsetHeight; // Force reflow
 
                 requestAnimationFrame(() => {
-                    commentList.style.maxHeight = '200px';
+                    commentList.style.maxHeight = '160px';
                     commentList.classList.add('collapsed');
                 });
 
