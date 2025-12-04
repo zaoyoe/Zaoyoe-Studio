@@ -70,23 +70,21 @@ window.CapsuleManager = {
         // ✅ 修复：使用 innerHTML 防止 HTML 源码被显示为文本
         iconEl.innerHTML = icon;
 
-        // 智能文案
+        // 智能文案 (移动端和电脑端统一)
         let text = '';
-        if (window.innerWidth <= 768) {
-            text = `${queue.length} 条动态 ↻`;
+        if (msgs + cmts === 0 && likes > 0) {
+            // 纯点赞通知
+            text = `点赞 (+${likes})`;
         } else {
-            if (msgs + cmts === 0 && likes > 0) {
-                text = `热度上升 (+${likes})`;
+            let parts = [];
+            if (msgs > 0) parts.push(`${msgs} 条留言`);
+            if (cmts > 0) parts.push(`${cmts} 条评论`);
+            if (likes > 0) parts.push(`${likes} 个赞`);
+            // ✅ 修复：当 parts 为空时显示通用文案
+            if (parts.length > 0) {
+                text = `有 ${parts.join('、')}`;
             } else {
-                let parts = [];
-                if (msgs > 0) parts.push(`${msgs} 条留言`);
-                if (cmts > 0) parts.push(`${cmts} 条评论`);
-                // ✅ 修复：当 parts 为空时显示通用文案
-                if (parts.length > 0) {
-                    text = `有 ${parts.join('、')}`;
-                } else {
-                    text = `有 ${queue.length} 条新动态`;
-                }
+                text = `有 ${queue.length} 条新动态`;
             }
         }
         // ✅ 修复：使用 innerHTML 防止 HTML 源码被显示为文本
