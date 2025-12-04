@@ -1652,6 +1652,9 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
         void targetElement.offsetWidth;  // Force reflow
         targetElement.classList.add('highlight-flash');
 
+        // ✅ 显示定位成功提示（移动端和桌面端通用）
+        if (window.showToast) showToast('已定位', 'success');
+
         // ✅ 移动端不移除类名，避免闪出归位
         const isMobile = window.matchMedia('(max-width: 768px)').matches;
         if (isMobile) {
@@ -1673,8 +1676,6 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
             // 清理内联样式
             targetElement.style.willChange = '';
         }, 6200);
-
-        if (window.showToast) showToast('已定位', 'success');
     } else {
     }
 };
