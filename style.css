@@ -2664,7 +2664,7 @@ button.upload-icon-btn {
 }
 
 .message-item:hover {
-    background: rgba(255, 255, 255, 1);
+    background: rgba(255, 255, 255, 0.9);
     border-color: rgba(0, 0, 0, 0.08);
     transform: translateY(-2px);
 
