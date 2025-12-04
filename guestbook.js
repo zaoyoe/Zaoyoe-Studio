@@ -607,19 +607,36 @@ document.addEventListener('DOMContentLoaded', () => {
                 void commentList.offsetHeight;
                 commentList.classList.remove('collapsed');
                 const fullHeight = commentList.scrollHeight;
+
+                // ⚡ PERF: Adaptive animation speed based on content height
+                // Formula: Height / 1500 (seconds), clamped between 0.4s and 0.8s
+                const duration = Math.min(Math.max(fullHeight / 1500, 0.4), 0.8);
+
+                // Apply dynamic duration to both content and card container
+                commentList.style.transitionDuration = `${duration}s`;
+                if (messageItem) {
+                    messageItem.style.transitionDuration = `${duration}s`;
+                }
+
                 // ⚡ FIX: Add 50px buffer to prevent snap at end of animation
                 commentList.style.maxHeight = (fullHeight + 50) + 'px';
                 icon.className = 'fas fa-chevron-up';
                 span.textContent = '收起';
+
+                // Timeout = duration + 0.2s buffer
                 setTimeout(() => {
                     if (!commentList.classList.contains('collapsed')) {
                         commentList.style.maxHeight = 'none';
                         // ⚡ FIX: Restore visible overflow for glow effects after animation
                         commentList.style.overflow = 'visible';
+
+                        // Reset inline styles to allow CSS to take over (optional, but good practice)
+                        // commentList.style.transitionDuration = '';
+                        // if (messageItem) messageItem.style.transitionDuration = '';
                     }
                     // ⚡ PERF: Resume highlight observer
                     initMobileHighlight();
-                }, 700);
+                }, (duration * 1000) + 200);
             } else {
                 // Collapse
                 // ⚡ PERF: Pause highlight observer during massive layout shift
@@ -635,6 +652,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (messageItem) messageItem.classList.remove('expanded');
 
                 const currentHeight = commentList.scrollHeight;
+
+                // ⚡ PERF: Adaptive animation speed based on content height
+                // Formula: Height / 1500 (seconds), clamped between 0.4s and 0.8s
+                const duration = Math.min(Math.max(currentHeight / 1500, 0.4), 0.8);
+
+                // Apply dynamic duration to both content and card container
+                commentList.style.transitionDuration = `${duration}s`;
+                if (messageItem) {
+                    messageItem.style.transitionDuration = `${duration}s`;
+                }
 
                 // ⚡ OPTIMIZATION: Force reflow then collapse in next frame
                 commentList.style.maxHeight = currentHeight + 'px';
