@@ -1,10 +1,14 @@
-/* === 智能胶囊容器 (Smart Capsule v5.2) === */
+/* === 智能胶囊容器 (Smart Capsule v5.4 - Ghost Fix) === */
 .capsule-wrapper {
     position: fixed;
     top: -80px;
     left: 50%;
     transform: translateX(-50%) translateZ(0);
     z-index: 9999;
+
+    /* 🛡️ 终极保险：没有 active 类时强制隐藏，防止幽灵胶囊 */
+    opacity: 0;
+    pointer-events: none;
 
     background: linear-gradient(135deg, rgba(102, 126, 234, 0.95) 0%, rgba(118, 75, 162, 0.95) 100%);
     backdrop-filter: blur(10px);
@@ -37,6 +41,8 @@
 
 .capsule-wrapper.active {
     top: 90px;
+    opacity: 1;
+    pointer-events: auto;
 }
 
 @media (hover: hover) {
@@ -108,6 +114,8 @@
 
     .capsule-wrapper.active {
         top: 20px;
+        opacity: 1;
+        pointer-events: auto;
         /* 距离顶部留出一点空间 */
     }
 }
