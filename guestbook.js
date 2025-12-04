@@ -591,6 +591,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (commentList.classList.contains('collapsed')) {
                 // Expand
+                // ⚡ PERF: Pause highlight observer during massive layout shift
+                if (mobileHighlightObserver) {
+                    mobileHighlightObserver.disconnect();
+                    mobileHighlightActive = false;
+                }
+
                 // ⚡ FIX: Prevent overlap by clipping content during animation
                 commentList.style.overflow = 'hidden';
 
@@ -610,9 +616,17 @@ document.addEventListener('DOMContentLoaded', () => {
                         // ⚡ FIX: Restore visible overflow for glow effects after animation
                         commentList.style.overflow = 'visible';
                     }
+                    // ⚡ PERF: Resume highlight observer
+                    initMobileHighlight();
                 }, 500);
             } else {
                 // Collapse
+                // ⚡ PERF: Pause highlight observer during massive layout shift
+                if (mobileHighlightObserver) {
+                    mobileHighlightObserver.disconnect();
+                    mobileHighlightActive = false;
+                }
+
                 // ⚡ FIX: Clip immediately to prevent spillover
                 commentList.style.overflow = 'hidden';
 
