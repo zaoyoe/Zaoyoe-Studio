@@ -171,31 +171,10 @@
 
 .message-item.highlight-flash,
 .comment-item.highlight-flash {
-    animation: highlight-flash 3.5s cubic-bezier(0.4, 0, 0.2, 1) 1.5;
+    animation: highlight-flash 3.5s cubic-bezier(0.4, 0, 0.2, 1);
     will-change: transform, box-shadow, background-color;
     z-index: 10;
     position: relative;
-    border-radius: 16px !important;
-}
-
-/* C+ 嵌套评论的极致优雅形态变化 */
-.comment-item--nested.highlight-flash {
-    /* 圆角弹性过渡：先超调到 18px，营造"吸气感" */
-    border-radius: 18px !important;
-
-    /* 边框透明化，但保持宽度（避免布局突变） */
-    border-left-color: transparent !important;
-
-    /* 左侧微光接替：用内阴影暗示层级关系 */
-    box-shadow: inset 1px 0 0 rgba(102, 126, 234, 0.1),
-        0 0 30px 12px rgba(102, 126, 234, 0.85),
-        0 0 15px 5px rgba(155, 93, 229, 0.6) !important;
-
-    /* Padding 补偿：边框淡出时增加内边距，视觉更紧凑 */
-    padding-left: 14px !important;
-
-    /* 背景微调：与光晕呼应 */
-    background-color: rgba(102, 126, 234, 0.02) !important;
 }
 
 /* 改用边框 + 阴影效果，在白色卡片上更显眼 */
@@ -246,28 +225,16 @@
     }
 
     .comment-item.highlight-flash {
-        animation: highlight-flash-mobile 3.5s cubic-bezier(0.4, 0, 0.2, 1) 1.5 !important;
+        animation: highlight-flash-mobile 3.5s cubic-bezier(0.4, 0, 0.2, 1) !important;
         will-change: box-shadow, background-color;
         z-index: 10;
         position: relative;
         overflow: visible !important;
-        border-radius: 16px !important;
 
         /* 性能优化 */
         backface-visibility: hidden;
         -webkit-backface-visibility: hidden;
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
-    }
-
-    /* 移动端 C+ 嵌套评论形态变化 */
-    .comment-item--nested.highlight-flash {
-        border-radius: 18px !important;
-        border-left-color: transparent !important;
-        box-shadow: inset 1px 0 0 rgba(102, 126, 234, 0.1),
-            0 0 30px 12px rgba(102, 126, 234, 0.85),
-            0 0 15px 5px rgba(155, 93, 229, 0.6) !important;
-        padding-left: 14px !important;
-        background-color: rgba(102, 126, 234, 0.02) !important;
     }
 }
