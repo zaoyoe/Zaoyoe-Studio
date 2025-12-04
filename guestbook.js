@@ -1175,9 +1175,11 @@ function waitForElement(selector, timeout = 5000) {
 /**
  * 🎣 辅助函数：拉取单条留言并插入
  * @param {string} messageId - 留言 ID
+ * @param {string} targetId - (可选) 触发拉取的目标ID（可能是评论ID）
+ * @param {string} type - (可选) 类型 'message' | 'comment'
  * @returns {Promise<boolean>} 是否成功
  */
-async function fetchAndInsertSingleMessage(messageId) {
+async function fetchAndInsertSingleMessage(messageId, targetId = null, type = 'message') {
     try {
         console.log(`🎣 拉取单条留言: ${messageId}`);
 
@@ -1264,7 +1266,21 @@ async function fetchAndInsertSingleMessage(messageId) {
         const userName = avMessage.get('userName');
         console.log('👤 userName 字段:', userName);
         console.log('📝 content 字段:', avMessage.get('content'));
+        console.log('👤 userName 字段:', userName);
+        console.log('📝 content 字段:', avMessage.get('content'));
         console.log('🔑 message ID:', avMessage.id);
+
+        // ⚡ FIX: Fetch real-time like count from Like table (Ensure count is fresh)
+        let realTimeLikes = avMessage.get('likes') || 0;
+        try {
+            const likeQuery = new AV.Query('Like');
+            likeQuery.equalTo('targetId', avMessage.id);
+            const count = await likeQuery.count();
+            console.log(`💗 [RealTime] ID: ${avMessage.id} Likes: ${realTimeLikes} -> ${count}`);
+            realTimeLikes = count;
+        } catch (e) {
+            console.warn('⚠️ Failed to fetch real-time likes, using cached value:', e);
+        }
 
         const message = {
             id: avMessage.id,
@@ -1281,7 +1297,7 @@ async function fetchAndInsertSingleMessage(messageId) {
                 hour: '2-digit',
                 minute: '2-digit'
             }) : '',
-            likes: avMessage.get('likes') || 0,
+            likes: realTimeLikes, // ✅ Use real-time count
             likedBy: avMessage.get('likedBy') || [],
             comments: comments  // ✅ 使用刚才拉取的评论数据
         };
@@ -1512,11 +1528,23 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
 
         if (!parentCard) {
             console.log('🎣 父留言不在当前视图，启动局部打捞...');
-            const success = await fetchAndInsertSingleMessage(parentMessageId);
+            // ⚡ FIX: Pass targetId and type to ensure comment like count is updated
+            const success = await fetchAndInsertSingleMessage(parentMessageId, targetId, 'comment');
             if (success) {
                 // 等待插入完成
                 await new Promise(r => setTimeout(r, 500));
             }
+        }
+    }
+
+    // Case B: 留言本身不在 (挖坟点赞)
+    if (!targetElement && type === 'message') {
+        console.log('🎣 留言不在当前视图，启动局部打捞...');
+        // ⚡ FIX: Pass targetId and type explicitly
+        const success = await fetchAndInsertSingleMessage(targetId, targetId, 'message');
+        if (success) {
+            // 等待插入完成
+            await new Promise(r => setTimeout(r, 500));
         }
     }
 
@@ -1593,6 +1621,15 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
 
         // 1. 先滚动 (使用自定义平滑滚动)
         // targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+        // ⚡ FIX: Mobile content-visibility issue
+        // 移动端开启了 content-visibility: auto，可能导致高度计算为0，定位不准
+        // 在滚动前临时移除该属性
+        if (window.matchMedia('(max-width: 768px)').matches) {
+            targetElement.style.contentVisibility = 'visible';
+            targetElement.style.containIntrinsicSize = 'auto';
+        }
+
         await smoothScrollTo(targetElement, 1000);
 
         // 2. 等待滚动完成 (已在 smoothScrollTo 中 await) + 0.1s 延迟

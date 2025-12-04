@@ -180,23 +180,35 @@ window.CapsuleManager = {
             const isComment = document.querySelector(`[data-comment-id="${firstUpdate.id}"]`);
 
             if (isMessage) {
-                // 是留言卡片
+                // 是留言卡片 (已存在)
                 if (window.handleSmartScroll) {
                     window.handleSmartScroll(firstUpdate.id, 'message');
                 } else {
-                    // 降级：直接滚动到卡片
                     isMessage.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 }
             } else if (isComment) {
-                // 是评论
+                // 是评论 (已存在)
                 if (window.handleSmartScroll) {
-                    window.handleSmartScroll(firstUpdate.id, 'comment');
+                    window.handleSmartScroll(firstUpdate.id, 'comment', firstUpdate.parentMessageId);
                 } else {
-                    // 降级：直接滚动到评论
                     isComment.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 }
             } else {
-                console.warn('⚠️ 找不到被点赞的目标:', firstUpdate.id);
+                // ⚠️ 挖坟场景：元素不存在
+                console.warn('⚠️ 找不到被点赞的目标，尝试打捞:', firstUpdate.id);
+
+                if (window.handleSmartScroll) {
+                    // 如果有 parentMessageId，说明是评论
+                    if (firstUpdate.parentMessageId) {
+                        console.log('🎣 这是一个评论点赞，尝试打捞父留言:', firstUpdate.parentMessageId);
+                        window.handleSmartScroll(firstUpdate.id, 'comment', firstUpdate.parentMessageId);
+                    } else {
+                        // 否则假设是留言（或者没有父ID的评论，但也无法定位）
+                        // 尝试作为留言打捞
+                        console.log('🎣 这是一个留言点赞，尝试打捞:', firstUpdate.id);
+                        window.handleSmartScroll(firstUpdate.id, 'message');
+                    }
+                }
             }
         }
 
