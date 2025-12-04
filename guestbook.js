@@ -778,10 +778,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // Throttled scroll listener
         let ticking = false;
 
-        // ⚡ FIX: Listen to the actual scrollable container
-        const scrollContainer = document.querySelector('.guestbook-main') || window;
-
-        scrollContainer.addEventListener('scroll', () => {
+        // ⚡ FIX: Revert to window listener for native scroll
+        window.addEventListener('scroll', () => {
             if (!ticking) {
                 window.requestAnimationFrame(() => {
                     updateMobileHighlight();

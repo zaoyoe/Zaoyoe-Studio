@@ -6517,26 +6517,22 @@ body {
         /* Restore dynamic background */
     }
 
-    /* ⚡ CRITICAL FIX: Scope Fixed Body to Guestbook Page ONLY */
-    /* This restores native scrolling for the main page */
+    /* ⚡ CRITICAL FIX: Restore Native Scroll for Address Bar Collapse */
     body.guestbook-page {
-        position: fixed !important;
+        position: relative !important;
         width: 100% !important;
-        height: 100dvh !important;
+        height: auto !important;
         overflow: visible !important;
-        /* Allow background blobs to extend */
-        overscroll-behavior: none !important;
+        overscroll-behavior: auto !important;
         background: transparent !important;
-        /* Restore dynamic background */
     }
 }
 
 /* Make the main container the scrollable area */
 @media (max-width: 640px) {
     .guestbook-main {
-        height: 100% !important;
-        overflow-y: auto !important;
-        -webkit-overflow-scrolling: touch !important;
+        height: auto !important;
+        overflow: visible !important;
         padding-bottom: 120px !important;
     }
 }
