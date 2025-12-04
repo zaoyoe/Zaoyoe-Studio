@@ -3299,16 +3299,16 @@ body.no-scroll {
 
     .message-item {
         padding: 16px 20px;
-        margin-bottom: 0;
-        /* Remove bottom margin */
+        margin-bottom: 20px;
+        /* Restore bottom margin to prevent overlap */
         /* Keep translucent white background from base style */
         background: rgba(255, 255, 255, 0.75);
         backdrop-filter: blur(12px);
         -webkit-backdrop-filter: blur(12px);
         border: none;
         /* Remove border */
-        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-        /* Divider line */
+        border-bottom: none;
+        /* Remove divider line */
         break-inside: avoid;
         /* Prevent column breaks */
     }
