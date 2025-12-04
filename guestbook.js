@@ -1669,16 +1669,11 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
         await new Promise(resolve => requestAnimationFrame(resolve));
         await new Promise(resolve => requestAnimationFrame(resolve));
 
-        // 4. 执行滚动定位
+        // 4. 执行平滑滚动定位（等待动画完成）
         await smoothScrollTo(targetElement, 1000);
 
-        // 5. 二次校正（防止字体/图片加载导致的偏移）
-        setTimeout(() => {
-            targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }, 500);
-
-        // 6. 等待滚动完成 + 短暂延迟
-        await new Promise(r => setTimeout(r, 100));
+        // 5. 等待滚动完成后的短暂缓冲（让用户视线稳定）
+        await new Promise(r => setTimeout(r, 200));
 
         // 3. 最后闪烁
         targetElement.classList.remove('highlight-flash');
