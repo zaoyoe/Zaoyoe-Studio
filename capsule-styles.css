@@ -179,8 +179,10 @@
     /* 匹配主评论容器的 8px 圆角 */
 }
 
-/* 嵌套评论高亮：仅淡化左边框，保持直角避免布局抖动 */
+/* 嵌套评论高亮：微过渡至 4px 圆角，淡化左边框但保留层级感 */
 .comment-item--nested.highlight-flash {
+    border-radius: 4px !important;
+    /* 从 0 微过渡到 4px */
     border-left-color: rgba(0, 0, 0, 0.05) !important;
     /* 淡化但不移除，保持宽度 */
 }
