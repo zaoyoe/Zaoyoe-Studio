@@ -226,21 +226,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 targetCol.appendChild(element);
 
                 // Trigger animation with delay
-                // ⚡ CRITICAL FIX: Cap delay at 0.5s and ensure visibility
-                // If index is large (infinite scroll), show immediately to prevent "empty space"
-                const isInitialLoad = startIndex === 0;
-                if (isInitialLoad) {
-                    const delay = Math.min(index * 0.05, 0.5);
-                    setTimeout(() => {
-                        element.classList.add('visible');
-                    }, delay * 1000);
-                } else {
-                    // For infinite scroll items, show immediately (or very short delay)
-                    // to prevent user from scrolling into invisible area
-                    requestAnimationFrame(() => {
-                        element.classList.add('visible');
-                    });
-                }
+                // ⚡ CRITICAL FIX: Always use staggered animation for "cascading" effect
+                // This restores the "obvious" animation user requested
+                const delay = Math.min(index * 0.1, 1.0); // 100ms stagger, capped at 1s
+
+                setTimeout(() => {
+                    element.classList.add('visible');
+                }, delay * 1000);
             } catch (err) {
                 console.error('❌ Error rendering message:', msg.id, err);
             }
