@@ -18,6 +18,9 @@ window.CapsuleManager = {
 
     // --- 📥 入口：推入队列（支持向后兼容）---
     queueUpdate(type, objectId, parentMessageId = null) {
+        // 🔍 调试日志：追踪调用堆栈
+        console.trace('🚨 queueUpdate 被调用', { type, objectId, parentMessageId });
+
         // ✅ 向后兼容：没有objectId也能工作
         if (!objectId) {
             console.warn('⚠️ queueUpdate without objectId, using legacy mode');
@@ -99,9 +102,16 @@ window.CapsuleManager = {
 
     // --- 🚀 显示动画 ---
     show(el) {
+        // 🛡️ 状态同步检查：如果DOM有active类但JS认为不可见，清理残留
+        if (el.classList.contains('active') && !this.state.isVisible) {
+            console.warn('⚠️ 检测到状态不同步，清理残留 active 类');
+            el.classList.remove('active');
+        }
+
         // 逻辑优化：如果已经在显示中，不要轻易重置主计时器，防止被连续消息无限延长
         // 只有当不可见时，才设置全新的计时器
         if (!this.state.isVisible) {
+            console.log('✅ show() 添加 active 类');
             el.classList.add('active');
             this.state.isVisible = true;
 
@@ -111,6 +121,7 @@ window.CapsuleManager = {
             // 设置自动隐藏
             this.state.timer = setTimeout(() => this.hide(), this.config.autoHideTime);
         } else {
+            console.log('ℹ️ 胶囊已可见，只播放抖动动画');
             // 如果已经可见，只播放强调动画
             el.style.transform = 'translateX(-50%) scale(1.05) translateZ(0)';
             setTimeout(() => el.style.transform = 'translateX(-50%) scale(1) translateZ(0)', 200);
@@ -458,5 +469,5 @@ document.addEventListener('DOMContentLoaded', () => {
     CapsuleManager.initSwipeGesture();
 });
 
-console.log('✅ CapsuleManager v5.4 (Swipe Gesture Robust) 已加载');
+console.log('✅ CapsuleManager v5.5 (Triple Insurance - Ghost Fix) 已加载');
 
