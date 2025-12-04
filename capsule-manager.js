@@ -251,6 +251,146 @@ window.CapsuleManager = {
             const AC = window.AudioContext || window.webkitAudioContext;
             if (AC) this.state.audioCtx = new AC();
         } catch (e) { console.warn('Audio API not supported'); }
+    },
+
+    // --- 📱 移动端上划手势关闭 (健壮版 v2.0) ---
+    initSwipeGesture() {
+        // 防止重复初始化
+        if (this._swipeInitialized) return;
+
+        const capsule = document.getElementById('smart-capsule');
+        if (!capsule) return;
+
+        // 检测触摸支持
+        if (!('ontouchstart' in window)) {
+            console.log('⚠️ 设备不支持触摸，跳过手势初始化');
+            return;
+        }
+
+        let startY = 0;
+        let startX = 0;
+        let currentY = 0;
+        let startTime = 0;
+        let isDragging = false;
+        let isValidSwipe = false; // 标记是否为有效滑动
+        let shouldBlockClick = false; // 标记是否需要阻止后续 click
+
+        // touchstart：仅记录初始状态
+        const handleTouchStart = (e) => {
+            if (!this.state.isVisible) return;
+
+            const touch = e.touches[0];
+            if (!touch) return;
+
+            startY = touch.clientY;
+            startX = touch.clientX;
+            currentY = startY;
+            startTime = Date.now();
+            isDragging = true;
+            isValidSwipe = false;
+            shouldBlockClick = false;
+
+            // 暂时不阻止事件，等待判断
+        };
+
+        // touchmove：智能判断并渐进式阻止
+        const handleTouchMove = (e) => {
+            if (!isDragging) return;
+
+            const touch = e.touches[0];
+            if (!touch) return;
+
+            currentY = touch.clientY;
+            const deltaY = currentY - startY;
+            const deltaX = Math.abs(touch.clientX - startX);
+
+            // 判断是否为有效的向上滑动（距离 > 10px 且主要是垂直方向）
+            if (Math.abs(deltaY) > 10 && Math.abs(deltaY) > deltaX) {
+                if (!isValidSwipe) {
+                    // 第一次识别为有效滑动，开始阻止事件
+                    isValidSwipe = true;
+                    capsule.style.transition = 'none';
+                }
+
+                // 阻止默认滚动和事件冒泡
+                if (e.cancelable) e.preventDefault();
+                e.stopPropagation();
+
+                // 只允许向上滑动
+                if (deltaY < 0) {
+                    // 使用 requestAnimationFrame 优化性能
+                    requestAnimationFrame(() => {
+                        capsule.style.transform = `translateX(-50%) translateY(${deltaY}px)`;
+                    });
+                }
+            }
+        };
+
+        // touchend：根据判断结果决定行为
+        const handleTouchEnd = (e) => {
+            if (!isDragging) return;
+
+            e.stopPropagation(); // 始终阻止冒泡
+
+            const deltaY = currentY - startY;
+            const duration = Date.now() - startTime;
+
+            isDragging = false;
+            capsule.style.transition = '';
+
+            // 判断是点击还是滑动
+            if (!isValidSwipe || (Math.abs(deltaY) < 10 && duration < 200)) {
+                // 这是一个点击，不干涉，重置状态
+                capsule.style.transform = 'translateX(-50%) translateY(0)';
+                return;
+            }
+
+            // 这是一个滑动，需要阻止后续的 click 事件
+            shouldBlockClick = true;
+
+            // 如果上划距离超过 50px，关闭胶囊
+            if (deltaY < -50) {
+                requestAnimationFrame(() => {
+                    capsule.style.transform = 'translateX(-50%) translateY(-100px)';
+                });
+                setTimeout(() => {
+                    this.hide();
+                    setTimeout(() => {
+                        requestAnimationFrame(() => {
+                            capsule.style.transform = 'translateX(-50%) translateY(0)';
+                        });
+                        shouldBlockClick = false;
+                    }, 300);
+                }, 300);
+            } else {
+                // 回弹
+                requestAnimationFrame(() => {
+                    capsule.style.transform = 'translateX(-50%) translateY(0)';
+                });
+                setTimeout(() => {
+                    shouldBlockClick = false;
+                }, 100);
+            }
+        };
+
+        // 拦截 click 事件（防止滑动后误触发点击）
+        const handleClick = (e) => {
+            if (shouldBlockClick) {
+                e.preventDefault();
+                e.stopPropagation();
+                shouldBlockClick = false;
+                console.log('🛡️ 阻止了滑动后的点击事件');
+            }
+        };
+
+        // 绑定事件（使用 passive: false 以允许 preventDefault）
+        capsule.addEventListener('touchstart', handleTouchStart, { passive: true });
+        capsule.addEventListener('touchmove', handleTouchMove, { passive: false });
+        capsule.addEventListener('touchend', handleTouchEnd, { passive: true });
+        capsule.addEventListener('click', handleClick, { capture: true });
+
+        this._swipeInitialized = true;
+        console.log('✅ 手势功能已初始化（健壮版）');
     }
 };
 
@@ -259,4 +399,10 @@ document.addEventListener('visibilitychange', () => {
     if (!document.hidden) document.title = CapsuleManager.state.originalTitle;
 });
 
-console.log('✅ CapsuleManager v5.2 (Phase 1 - Fixed Refresh) 已加载');
+// 初始化移动端手势（健壮版）
+document.addEventListener('DOMContentLoaded', () => {
+    CapsuleManager.initSwipeGesture();
+});
+
+console.log('✅ CapsuleManager v5.4 (Swipe Gesture Robust) 已加载');
+
