@@ -282,8 +282,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     const element = htmlToElement(html);
                     const targetCol = getShortestColumn();
                     targetCol.appendChild(element);
-                    element.classList.add('visible'); // No animation on resize
-                    element.style.transitionDelay = '0s';
+
+                    // ⚡ VISUALS FIRST: Enable staggered animation on resize
+                    // Using slightly faster stagger (50ms) for resize to feel responsive but fluid
+                    const delay = Math.min(index * 0.05, 1.0);
+                    setTimeout(() => {
+                        element.classList.add('visible');
+                    }, delay * 1000);
                 });
 
                 renderedCount = currentCount;
