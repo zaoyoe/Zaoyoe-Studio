@@ -72,23 +72,9 @@
     line-height: 1;
 }
 
+/* 移除关闭按钮 - 所有平台统一不显示 */
 .capsule-close {
-    opacity: 0.6;
-    padding-left: 10px;
-    margin-left: 2px;
-    border-left: 1px solid rgba(255, 255, 255, 0.2);
-    font-size: 18px;
-    line-height: 14px;
-    transition: opacity 0.2s;
-    font-family: sans-serif;
-}
-
-.warm-theme .capsule-close {
-    border-left-color: rgba(0, 0, 0, 0.1);
-}
-
-.capsule-close:hover {
-    opacity: 1;
+    display: none;
 }
 
 @media (max-width: 768px) {
@@ -119,10 +105,6 @@
     .capsule-wrapper.active {
         top: 20px;
         /* 距离顶部留出一点空间 */
-    }
-
-    .capsule-close {
-        display: none;
     }
 }
 
