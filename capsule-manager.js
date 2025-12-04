@@ -299,6 +299,14 @@ window.CapsuleManager = {
         const capsule = document.getElementById('smart-capsule');
         if (!capsule) return;
 
+        // 🛡️ 强制重置初始状态：移除 active 类，防止页面加载时出现幽灵胶囊
+        capsule.classList.remove('active');
+        this.state.isVisible = false;
+        if (this.state.timer) {
+            clearTimeout(this.state.timer);
+            this.state.timer = null;
+        }
+
         // 检测触摸支持
         if (!('ontouchstart' in window)) {
             console.log('⚠️ 设备不支持触摸，跳过手势初始化');
