@@ -503,7 +503,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const imageHtml = hasValidImage
             ? `<div class="message-image">
-            <img src="${msg.image}" alt="用户上传图片" loading="lazy" onclick="openImageModal(this.src)" onerror="this.style.display='none'; this.parentElement.style.display='none';">
+            <img src="${msg.image}" alt="用户上传图片" loading="lazy" decoding="async" onclick="openImageModal(this.src)" onerror="this.style.display='none'; this.parentElement.style.display='none';">
            </div>`
             : '';
 
@@ -515,7 +515,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="message-header">
                         <div class="author-info">
                             ${msg.avatarUrl
-                ? `<img src="${msg.avatarUrl}" alt="${escapeHtml(msg.name)}" class="author-avatar">`
+                ? `<img src="${msg.avatarUrl}" alt="${escapeHtml(msg.name)}" class="author-avatar" loading="lazy" decoding="async">`
                 : '<i class="fas fa-user-circle author-avatar-placeholder"></i>'}
                             <span class="author-name">${escapeHtml(msg.name)}</span>
                         </div>
