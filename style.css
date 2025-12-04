@@ -2789,7 +2789,7 @@ button.upload-icon-btn {
     width: 100%;
     /* Moved styles from comment-item to comment-row */
     padding: 8px 12px;
-    border-radius: 12px;
+    border-radius: 16px;
     transition: background 0.2s ease;
     position: relative;
 }
@@ -3610,6 +3610,8 @@ body.no-scroll {
     padding: 4px 12px !important;
     /* More compact padding */
     min-height: auto;
+    border-radius: 10px;
+    /* Smaller radius for hierarchy, avoids conflict with parent */
 }
 
 /* Hover state for nested comments */

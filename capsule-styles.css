@@ -171,10 +171,16 @@
 
 .message-item.highlight-flash,
 .comment-item.highlight-flash {
-    animation: highlight-flash 3.5s cubic-bezier(0.4, 0, 0.2, 1);
+    animation: highlight-flash 3.5s cubic-bezier(0.4, 0, 0.2, 1) 1.5;
     will-change: transform, box-shadow, background-color;
     z-index: 10;
     position: relative;
+    border-radius: 16px !important;
+}
+
+/* Nested comments: remove border-left during highlight to avoid conflict */
+.comment-item--nested.highlight-flash {
+    border-left: none !important;
 }
 
 /* 改用边框 + 阴影效果，在白色卡片上更显眼 */
@@ -225,16 +231,22 @@
     }
 
     .comment-item.highlight-flash {
-        animation: highlight-flash-mobile 3.5s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        animation: highlight-flash-mobile 3.5s cubic-bezier(0.4, 0, 0.2, 1) 1.5 !important;
         will-change: box-shadow, background-color;
         z-index: 10;
         position: relative;
         overflow: visible !important;
+        border-radius: 16px !important;
 
         /* 性能优化 */
         backface-visibility: hidden;
         -webkit-backface-visibility: hidden;
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* 移动端嵌套评论高亮时移除左边框 */
+    .comment-item--nested.highlight-flash {
+        border-left: none !important;
     }
 }
