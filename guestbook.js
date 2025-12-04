@@ -586,10 +586,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
+            // Find parent message item
+            const messageItem = toggleBtn.closest('.message-item');
+
             if (commentList.classList.contains('collapsed')) {
                 // Expand
                 // ⚡ FIX: Prevent overlap by clipping content during animation
                 commentList.style.overflow = 'hidden';
+
+                // ⚡ FIX: Raise z-index of expanded card
+                if (messageItem) messageItem.classList.add('expanded');
 
                 commentList.style.maxHeight = '200px';
                 void commentList.offsetHeight;
@@ -609,6 +615,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Collapse
                 // ⚡ FIX: Clip immediately to prevent spillover
                 commentList.style.overflow = 'hidden';
+
+                // ⚡ FIX: Reset z-index when collapsed
+                if (messageItem) messageItem.classList.remove('expanded');
 
                 const currentHeight = commentList.scrollHeight;
 

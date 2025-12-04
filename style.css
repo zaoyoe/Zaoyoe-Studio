@@ -6450,6 +6450,12 @@ input[type="submit"],
 
         z-index: 10;
     }
+
+    /* ⚡ FIX: Expanded cards must be higher than highlighted ones */
+    .message-item.expanded {
+        z-index: 20 !important;
+        position: relative;
+    }
 }
 
 /* 强制禁止移动端页面缩放 */
