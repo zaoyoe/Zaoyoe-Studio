@@ -1215,27 +1215,75 @@ async function fetchAndInsertSingleMessage(messageId, targetId = null, type = 'm
             console.log('🔑 第一条评论 ID:', avComments[0].id);
         }
 
-        // 3. 格式化评论数据
-        const comments = avComments.map(c => {
-            // ✅ 使用 userName 字段（评论也直接存储用户名）
-            const userName = c.get('userName');
-            return {
+        // 3. 数据完整性处理 (Batch Likes & Tree Build) ---
+
+        // 3.1 收集所有 ID (留言 + 评论) 用于批量查询点赞
+        const allTargetIds = [messageId, ...avComments.map(c => c.id)];
+        const likeCounts = {};
+        const userLikedSet = new Set();
+        const currentUserId = AV.User.current()?.id;
+
+        if (allTargetIds.length > 0) {
+            try {
+                const likeQuery = new AV.Query('Like');
+                likeQuery.containedIn('targetId', allTargetIds);
+                likeQuery.limit(1000); // Max limit
+                const allLikes = await likeQuery.find();
+
+                allLikes.forEach(like => {
+                    const tid = like.get('targetId');
+                    likeCounts[tid] = (likeCounts[tid] || 0) + 1;
+                    const likeUserId = like.get('userId') || like.get('user')?.id;
+                    if (currentUserId && likeUserId === currentUserId) {
+                        userLikedSet.add(tid);
+                    }
+                });
+                console.log(`✅ 批量获取点赞成功: ${allLikes.length} 条记录`);
+            } catch (e) {
+                console.warn('⚠️ 批量获取点赞失败:', e);
+            }
+        }
+
+        // 3.2 格式化评论并构建树
+        const commentMap = new Map();
+        const topLevelComments = [];
+
+        avComments.forEach(c => {
+            // 处理 parentCommentId 为字符串 "null" 的情况
+            let pId = c.get('parentCommentId');
+            if (pId === 'null' || pId === 'undefined') pId = null;
+
+            const formattedComment = {
                 id: c.id,
-                name: userName || '匿名用户',  // ✅ 使用 userName 字段
-                avatarUrl: c.get('userAvatar') || null,  // ✅ 使用 userAvatar 字段
+                name: c.get('userName') || '匿名用户',
+                avatarUrl: c.get('userAvatar') || null,
                 content: c.get('content') || '',
                 timestamp: c.createdAt ? c.createdAt.toLocaleString('zh-CN', {
-                    year: 'numeric',
-                    month: '2-digit',
-                    day: '2-digit',
-                    hour: '2-digit',
-                    minute: '2-digit'
+                    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
                 }) : '',
-                parentCommentId: c.get('parentCommentId') || null,
-                parentUserName: c.get('parentUserName') || null
+                rawDate: c.createdAt, // ✅ 补充 rawDate
+                parentCommentId: pId,
+                parentUserName: c.get('parentUserName') || null,
+                likes: likeCounts[c.id] || 0, // ✅ 填充点赞数
+                isLiked: userLikedSet.has(c.id), // ✅ 填充点赞状态
+                replies: [] // 准备存放子评论
             };
+            commentMap.set(c.id, formattedComment);
         });
 
+        // 构建树
+        commentMap.forEach(comment => {
+            if (comment.parentCommentId && commentMap.has(comment.parentCommentId)) {
+                const parent = commentMap.get(comment.parentCommentId);
+                parent.replies.push(comment);
+                // 补充 parentUserName 如果缺失
+                if (!comment.parentUserName) comment.parentUserName = parent.name;
+            } else {
+                topLevelComments.push(comment);
+            }
+        });
+
+        console.log(`🌳 评论树构建完成: ${topLevelComments.length} 条顶级评论`);
 
         // 检查留言是否已存在
         const existing = document.querySelector(`.message-item[data-message-id="${messageId}"]`);
@@ -1246,60 +1294,24 @@ async function fetchAndInsertSingleMessage(messageId, targetId = null, type = 'm
 
         // 格式化留言对象，确保所有必要字段都存在
         const author = avMessage.get('author');
-
-        // 🔍 详细日志：追踪 author 对象
-        console.log('📊 Author 对象:', author);
-        if (author) {
-            console.log('  - nickname:', author.get('nickname'));
-            console.log('  - username:', author.get('username'));
-            console.log('  - avatarUrl:', author.get('avatarUrl'));
-        } else {
-            console.warn('⚠️ author 为 null！');
-        }
-
-        // 🔍 详细日志：追踪图片字段
-        console.log('🖼️ 图片字段:');
-        console.log('  - image:', avMessage.get('image'));
-        console.log('  - imageUrl:', avMessage.get('imageUrl'));
-
-        // ✅ 使用 userName 字段（数据库实际存储的字段）
         const userName = avMessage.get('userName');
-        console.log('👤 userName 字段:', userName);
-        console.log('📝 content 字段:', avMessage.get('content'));
-        console.log('👤 userName 字段:', userName);
-        console.log('📝 content 字段:', avMessage.get('content'));
-        console.log('🔑 message ID:', avMessage.id);
-
-        // ⚡ FIX: Fetch real-time like count from Like table (Ensure count is fresh)
-        let realTimeLikes = avMessage.get('likes') || 0;
-        try {
-            const likeQuery = new AV.Query('Like');
-            likeQuery.equalTo('targetId', avMessage.id);
-            const count = await likeQuery.count();
-            console.log(`💗 [RealTime] ID: ${avMessage.id} Likes: ${realTimeLikes} -> ${count}`);
-            realTimeLikes = count;
-        } catch (e) {
-            console.warn('⚠️ Failed to fetch real-time likes, using cached value:', e);
-        }
 
         const message = {
             id: avMessage.id,
-            name: userName || '匿名用户',  // ✅ 使用 userName 字段
-            avatarUrl: avMessage.get('userAvatar') || null,  // ✅ 使用 userAvatar 字段
+            name: userName || '匿名用户',
+            avatarUrl: avMessage.get('userAvatar') || (author ? author.get('avatarUrl') : null),
             email: author ? author.get('email') : null,
             content: avMessage.get('content') || '',
-            image: avMessage.get('image') || avMessage.get('imageUrl') || null,  // ✅ 兼容两种字段
-            imageUrl: avMessage.get('imageUrl') || avMessage.get('image') || null,  // ✅ 兼容两种字段
+            image: avMessage.get('image') || avMessage.get('imageUrl') || null,
+            imageUrl: avMessage.get('imageUrl') || avMessage.get('image') || null,
             timestamp: avMessage.createdAt ? avMessage.createdAt.toLocaleString('zh-CN', {
-                year: 'numeric',
-                month: '2-digit',
-                day: '2-digit',
-                hour: '2-digit',
-                minute: '2-digit'
+                year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
             }) : '',
-            likes: realTimeLikes, // ✅ Use real-time count
-            likedBy: avMessage.get('likedBy') || [],
-            comments: comments  // ✅ 使用刚才拉取的评论数据
+            rawDate: avMessage.createdAt, // ✅ 补充 rawDate
+            likes: likeCounts[avMessage.id] || 0, // ✅ 使用批量查询的结果
+            isLiked: userLikedSet.has(avMessage.id), // ✅ 填充点赞状态
+            likedBy: [], // 兼容旧逻辑
+            comments: topLevelComments // ✅ 传入构建好的顶级评论（包含嵌套子评论）
         };
 
         // 使用 createMessageCard 创建 HTML
