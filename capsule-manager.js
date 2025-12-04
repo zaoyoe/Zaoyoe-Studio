@@ -99,17 +99,26 @@ window.CapsuleManager = {
 
     // --- 🚀 显示动画 ---
     show(el) {
-        if (this.state.timer) clearTimeout(this.state.timer);
-
+        // 逻辑优化：如果已经在显示中，不要轻易重置主计时器，防止被连续消息无限延长
+        // 只有当不可见时，才设置全新的计时器
         if (!this.state.isVisible) {
             el.classList.add('active');
             this.state.isVisible = true;
+
+            // 清除旧计时器（如果有）
+            if (this.state.timer) clearTimeout(this.state.timer);
+
+            // 设置自动隐藏
+            this.state.timer = setTimeout(() => this.hide(), this.config.autoHideTime);
         } else {
+            // 如果已经可见，只播放强调动画
             el.style.transform = 'translateX(-50%) scale(1.05) translateZ(0)';
             setTimeout(() => el.style.transform = 'translateX(-50%) scale(1) translateZ(0)', 200);
-        }
 
-        this.state.timer = setTimeout(() => this.hide(), this.config.autoHideTime);
+            // 可选：稍微延长一点点时间（例如 +2秒），而不是重置整整 8秒
+            // 这里为了防止幽灵胶囊，我们选择不重置，或者只在剩余时间极短时重置
+            // 简单起见，保持当前计时器，确保它最终会消失
+        }
     },
 
     // --- 🙈 隐藏 ---
@@ -118,8 +127,37 @@ window.CapsuleManager = {
         if (el) {
             el.classList.remove('active');
             this.state.isVisible = false;
+
+            // 强制清理计时器
+            if (this.state.timer) {
+                clearTimeout(this.state.timer);
+                this.state.timer = null;
+            }
+
             if (this.config.clearQueueOnHide) this.state.updates = [];
         }
+    },
+
+    // --- 🔊 播放声音 ---
+    playSound() {
+        if (!this.state.audioCtx) return;
+        if (this.state.audioCtx.state === 'suspended') {
+            this.state.audioCtx.resume();
+        }
+        try {
+            const ctx = this.state.audioCtx;
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(800, ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(300, ctx.currentTime + 0.15);
+            gain.gain.setValueAtTime(0.05, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+            osc.start(ctx.currentTime);
+            osc.stop(ctx.currentTime + 0.15);
+        } catch (e) { }
     },
 
     // --- ✅ Phase 4 & 6: 应用更新（智能定位）---
@@ -372,6 +410,12 @@ window.CapsuleManager = {
                 setTimeout(() => {
                     shouldBlockClick = false;
                 }, 100);
+
+                // 🛡️ 安全网：如果回弹后发现计时器没了（可能被意外清除），补一个
+                if (this.state.isVisible && !this.state.timer) {
+                    console.log('🛡️ 补救计时器');
+                    this.state.timer = setTimeout(() => this.hide(), 3000);
+                }
             }
         };
 
