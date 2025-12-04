@@ -607,7 +607,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 void commentList.offsetHeight;
                 commentList.classList.remove('collapsed');
                 const fullHeight = commentList.scrollHeight;
-                commentList.style.maxHeight = fullHeight + 'px';
+                // ⚡ FIX: Add 50px buffer to prevent snap at end of animation
+                commentList.style.maxHeight = (fullHeight + 50) + 'px';
                 icon.className = 'fas fa-chevron-up';
                 span.textContent = '收起';
                 setTimeout(() => {
