@@ -2778,6 +2778,8 @@ button.upload-icon-btn {
     /* Removed padding from container to fix nested alignment */
     padding: 0;
     margin-bottom: 12px;
+    /* 渐进式圆角方案：主评论容器添加8px圆角，避免高亮启动时的"直角→圆角"闪烁 */
+    border-radius: 8px;
 }
 
 .comment-row {
@@ -2789,7 +2791,8 @@ button.upload-icon-btn {
     width: 100%;
     /* Moved styles from comment-item to comment-row */
     padding: 8px 12px;
-    border-radius: 12px;
+    border-radius: 6px;
+    /* 从 12px 改为 6px，配合容器的 8px 形成层次感 */
     transition: background 0.2s ease;
     position: relative;
 }
@@ -3610,6 +3613,8 @@ body.no-scroll {
     padding: 4px 12px !important;
     /* More compact padding */
     min-height: auto;
+    border-radius: 4px;
+    /* 最小圆角，体现最深层级 */
 }
 
 /* Hover state for nested comments */
