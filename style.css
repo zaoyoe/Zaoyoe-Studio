@@ -6434,6 +6434,12 @@ input[type="submit"],
         border: 1px solid rgba(0, 0, 0, 0.06);
         transform: scale(1);
         /* Reset scale */
+
+        /* ⚡ PERF: Optimize rendering performance */
+        /* content-visibility: auto skips rendering off-screen content */
+        content-visibility: auto;
+        /* contain-intrinsic-size prevents scrollbar jumping */
+        contain-intrinsic-size: auto 100px;
     }
 
     .message-item.active-focus {
