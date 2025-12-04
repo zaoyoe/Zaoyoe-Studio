@@ -1631,20 +1631,53 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
             }
         }
 
-        // 1. 先滚动 (使用自定义平滑滚动)
-        // targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // 1. ⚡ FIX: Mobile content-visibility comprehensive handling
+        const isMobile = window.matchMedia('(max-width: 768px)').matches;
+        let parentCard = null;
+        let commentsSection = null;
 
-        // ⚡ FIX: Mobile content-visibility issue
-        // 移动端开启了 content-visibility: auto，可能导致高度计算为0，定位不准
-        // 在滚动前临时移除该属性
-        if (window.matchMedia('(max-width: 768px)').matches) {
+        if (isMobile) {
+            // 禁用目标元素的 content-visibility
             targetElement.style.contentVisibility = 'visible';
             targetElement.style.containIntrinsicSize = 'auto';
+
+            // 如果是评论，还需要禁用父卡片和评论区的 content-visibility
+            if (type === 'comment' && parentMessageId) {
+                parentCard = document.querySelector(`.message-item[data-message-id="${parentMessageId}"]`);
+                if (parentCard) {
+                    console.log('📱 移动端评论定位：禁用父卡片和评论区的 content-visibility');
+                    parentCard.style.contentVisibility = 'visible';
+
+                    commentsSection = parentCard.querySelector('.comment-list');
+                    if (commentsSection) {
+                        commentsSection.style.contentVisibility = 'visible';
+                    }
+                }
+            }
+
+            // 强制重排，确保高度正确计算
+            void targetElement.offsetHeight;
+            void targetElement.getBoundingClientRect();
+            if (parentCard) void parentCard.offsetHeight;
+            if (commentsSection) void commentsSection.offsetHeight;
         }
 
+        // 2. 等待足够长的时间（覆盖所有动画 + 缓冲）
+        await new Promise(r => setTimeout(r, 350)); // 300ms 动画 + 50ms 缓冲
+
+        // 3. 使用双 rAF 确保在下一渲染帧执行
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        await new Promise(resolve => requestAnimationFrame(resolve));
+
+        // 4. 执行滚动定位
         await smoothScrollTo(targetElement, 1000);
 
-        // 2. 等待滚动完成 (已在 smoothScrollTo 中 await) + 0.1s 延迟
+        // 5. 二次校正（防止字体/图片加载导致的偏移）
+        setTimeout(() => {
+            targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 500);
+
+        // 6. 等待滚动完成 + 短暂延迟
         await new Promise(r => setTimeout(r, 100));
 
         // 3. 最后闪烁
@@ -1656,9 +1689,18 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
         if (window.showToast) showToast('已定位', 'success');
 
         // ✅ 移动端不移除类名，避免闪出归位
-        const isMobile = window.matchMedia('(max-width: 768px)').matches;
+        // (reuse isMobile from above)
         if (isMobile) {
             console.log('📱 移动端：保持高亮类不移除，避免闪出效果');
+
+            // 定位完成后，恢复 content-visibility 优化（2秒后）
+            setTimeout(() => {
+                targetElement.style.contentVisibility = '';
+                targetElement.style.containIntrinsicSize = '';
+                if (parentCard) parentCard.style.contentVisibility = '';
+                if (commentsSection) commentsSection.style.contentVisibility = '';
+            }, 2000);
+
             // 移动端动画会自然结束到100%状态，无需清理
             return;
         }
