@@ -1689,14 +1689,17 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
 
             // 移动端延迟清理（动画 3.5s + 缓冲 0.5s）
             setTimeout(() => {
+                // 第一步：移除类名（处理 z-index 和样式）
                 targetElement.classList.remove('highlight-flash');
                 targetElement.style.willChange = '';
 
-                // 定位完成后，恢复 content-visibility 优化
-                targetElement.style.contentVisibility = '';
-                targetElement.style.containIntrinsicSize = '';
-                if (parentCard) parentCard.style.contentVisibility = '';
-                if (commentsSection) commentsSection.style.contentVisibility = '';
+                // 第二步：延迟 200ms 后恢复 content-visibility，错开重绘高峰
+                setTimeout(() => {
+                    targetElement.style.contentVisibility = '';
+                    targetElement.style.containIntrinsicSize = '';
+                    if (parentCard) parentCard.style.contentVisibility = '';
+                    if (commentsSection) commentsSection.style.contentVisibility = '';
+                }, 200);
             }, 4000);
 
             return;
