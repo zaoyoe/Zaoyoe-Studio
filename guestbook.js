@@ -588,6 +588,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (commentList.classList.contains('collapsed')) {
                 // Expand
+                // ⚡ FIX: Prevent overlap by clipping content during animation
+                commentList.style.overflow = 'hidden';
+
                 commentList.style.maxHeight = '200px';
                 void commentList.offsetHeight;
                 commentList.classList.remove('collapsed');
@@ -598,10 +601,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 setTimeout(() => {
                     if (!commentList.classList.contains('collapsed')) {
                         commentList.style.maxHeight = 'none';
+                        // ⚡ FIX: Restore visible overflow for glow effects after animation
+                        commentList.style.overflow = 'visible';
                     }
                 }, 500);
             } else {
                 // Collapse
+                // ⚡ FIX: Clip immediately to prevent spillover
+                commentList.style.overflow = 'hidden';
+
                 const currentHeight = commentList.scrollHeight;
 
                 // ⚡ OPTIMIZATION: Force reflow then collapse in next frame
