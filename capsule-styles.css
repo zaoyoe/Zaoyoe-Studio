@@ -179,145 +179,59 @@
 
 /* 改用边框 + 阴影效果，在白色卡片上更显眼 */
 
-/* 留言卡片的光晕动画（包含抬起，GPU加速） */
-@keyframes focus-glow {
-    0% {
-        border-color: rgba(102, 126, 234, 0);
-        box-shadow: 0 0 0 0 rgba(102, 126, 234, 0);
-        transform: translate3d(0, 0, 0);
-    }
-
-    25%,
-    75% {
-        border-color: rgba(102, 126, 234, 1);
-        box-shadow: 0 0 30px 5px rgba(102, 126, 234, 0.6);
-        transform: translate3d(0, -6px, 0);
-        /* 只抬起，不放大 */
-    }
-
-    100% {
-        border-color: rgba(102, 126, 234, 0);
-        box-shadow: 0 0 0 0 rgba(102, 126, 234, 0);
-        transform: translate3d(0, 0, 0);
-    }
-}
-
-/* 评论的光晕动画（不含 transform，避免与 comment-highlight 冲突） */
-@keyframes comment-glow {
-    0% {
-        box-shadow: 0 0 0 0 rgba(102, 126, 234, 0);
-    }
-
-    10% {
-        box-shadow: 0 0 15px 4px rgba(102, 126, 234, 0.8);
-    }
-
-    90% {
-        box-shadow: 0 0 15px 4px rgba(102, 126, 234, 0.8);
-    }
-
-    100% {
-        box-shadow: 0 0 0 0 rgba(102, 126, 234, 0);
-    }
-}
-
-/* 评论背景和位移动画（GPU加速优化） */
-@keyframes comment-highlight {
-    0% {
-        background: rgba(102, 126, 234, 0);
-        transform: translate3d(0, 0, 0);
-    }
-
-    10% {
-        background: rgba(102, 126, 234, 0.12);
-        transform: translate3d(0, -6px, 0);
-    }
-
-    90% {
-        background: rgba(102, 126, 234, 0.12);
-        transform: translate3d(0, -6px, 0);
-    }
-
-    100% {
-        background: rgba(102, 126, 234, 0);
-        transform: translate3d(0, 0, 0);
-    }
-}
-
-/* 明暗闪动效果 */
-@keyframes brightness-pulse {
-
-    0%,
-    100% {
-        filter: brightness(1);
-    }
-
-    50% {
-        filter: brightness(1.15);
-        /* 变亮 */
-    }
-}
-
-.message-item.highlight-flash {
-    will-change: transform, box-shadow, filter;
-    animation:
-        brightness-pulse 1.5s ease-in-out 4;
-    /* 1.5秒 × 4次 = 6秒 */
-    box-shadow: 0 0 30px 5px rgba(102, 126, 234, 0.6);
-    border-radius: 16px !important;
-    overflow: visible !important;
-}
-
-.comment-item.highlight-flash {
-    will-change: transform, background, box-shadow, filter;
-    animation:
-        comment-glow 6s ease-in-out 1,
-        /* 光晕 6秒 × 1次 */
-        comment-highlight 6s ease-in-out 1,
-        /* 背景+位移 6秒 × 1次 */
-        brightness-pulse 1.5s ease-in-out 4;
-    /* 明暗闪动 1.5秒 × 4次 = 6秒 */
-    background: rgba(102, 126, 234, 0);
-    border-radius: 8px !important;
-    overflow: visible !important;
-}
-
-/* 移动端专用优化 - 防止归位弹动 */
+/* === 移动端专用优化 - 防止归位弹动 === */
 @media (max-width: 768px) {
 
-    /* ✅ 移动端专用动画 - 移除transform，只保留背景色变化 */
-    @keyframes comment-highlight-mobile {
+    /* 移动端版本：无 transform，避免与滚动归位冲突 */
+    @keyframes highlight-flash-mobile {
+
+        /* 初始状态：完全隐藏 */
         0% {
-            background: rgba(102, 126, 234, 0);
+            box-shadow: 0 0 0 0 rgba(102, 126, 234, 0);
+            background-color: transparent;
         }
 
-        10% {
-            background: rgba(102, 126, 234, 0.12);
+        /* 第一次亮起：强烈的紫色光晕（无 scale） */
+        20% {
+            box-shadow: 0 0 30px 12px rgba(102, 126, 234, 0.85),
+                0 0 15px 5px rgba(155, 93, 229, 0.6);
+            background-color: rgba(102, 126, 234, 0.12);
         }
 
-        90% {
-            background: rgba(102, 126, 234, 0.12);
+        /* 缓慢熄灭：光晕几乎消失 */
+        45% {
+            box-shadow: 0 0 8px 2px rgba(102, 126, 234, 0.2);
+            background-color: rgba(102, 126, 234, 0.02);
         }
 
+        /* 第二次亮起：中等强度 */
+        65% {
+            box-shadow: 0 0 25px 10px rgba(102, 126, 234, 0.7),
+                0 0 12px 4px rgba(155, 93, 229, 0.5);
+            background-color: rgba(102, 126, 234, 0.08);
+        }
+
+        /* 再次熄灭 */
+        85% {
+            box-shadow: 0 0 5px 1px rgba(102, 126, 234, 0.15);
+            background-color: rgba(102, 126, 234, 0.01);
+        }
+
+        /* 完全消散 */
         100% {
-            background: rgba(102, 126, 234, 0);
+            box-shadow: 0 0 0 0 rgba(102, 126, 234, 0);
+            background-color: transparent;
         }
     }
 
     .comment-item.highlight-flash {
-        /* ✅ 重新添加光晕，但保持无transform */
-        animation:
-            comment-glow 6s ease-in-out 1,
-            /* ✅ 光晕效果 */
-            comment-highlight-mobile 6s ease-in-out 1,
-            /* 背景色 */
-            brightness-pulse 1.5s ease-in-out 4 !important;
-        /* 明暗闪烁 */
-
-        /* ✅ 确保光晕可见，不被裁切 */
+        animation: highlight-flash-mobile 3.5s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        will-change: box-shadow, background-color;
+        z-index: 10;
+        position: relative;
         overflow: visible !important;
 
-        /* ✅ 保留原有优化 */
+        /* 性能优化 */
         backface-visibility: hidden;
         -webkit-backface-visibility: hidden;
         -webkit-font-smoothing: antialiased;

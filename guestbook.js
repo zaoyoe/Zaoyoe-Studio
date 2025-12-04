@@ -1701,18 +1701,18 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
         }
 
         // ✅ 桌面端：分两步清理，避免突然移除will-change导致的布局抖动
-        // 步骤1：6秒后动画自然结束，保持最终状态
+        // 步骤1：3.5秒后动画自然结束，保持最终状态
         setTimeout(() => {
             // 先清除 will-change，让浏览器知道不再需要优化
             targetElement.style.willChange = 'auto';
-        }, 6000);
+        }, 3500);
 
         // 步骤2：给浏览器200ms缓冲期，然后再移除类名
         setTimeout(() => {
             targetElement.classList.remove('highlight-flash');
             // 清理内联样式
             targetElement.style.willChange = '';
-        }, 6200);
+        }, 3700);
     } else {
     }
 };
