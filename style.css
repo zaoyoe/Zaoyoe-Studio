@@ -3299,8 +3299,8 @@ body.no-scroll {
 
     .message-item {
         padding: 16px 20px;
-        margin-bottom: 20px;
-        /* Restore bottom margin to prevent overlap */
+        margin-bottom: 40px;
+        /* Increase margin to 40px for lift effect */
         /* Keep translucent white background from base style */
         background: rgba(255, 255, 255, 0.75);
         backdrop-filter: blur(12px);
