@@ -6451,10 +6451,14 @@ input[type="submit"],
         z-index: 10;
     }
 
-    /* ⚡ FIX: Expanded cards must be higher than highlighted ones */
+    /* ⚡ FIX: Expanded cards push the next card down further */
     .message-item.expanded {
-        z-index: 20 !important;
-        position: relative;
+        /* z-index: 20 !important; <--- Removed z-index fix */
+        /* position: relative; */
+
+        /* ⚡ NEW STRATEGY: Increase margin to push next card away */
+        /* Normal margin is 40px. We double it to 80px to accommodate lift effect */
+        margin-bottom: 80px !important;
     }
 }
 
