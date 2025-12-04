@@ -6459,6 +6459,9 @@ input[type="submit"],
         /* ⚡ NEW STRATEGY: Increase margin to push next card away */
         /* Normal margin is 40px. We increase it to 45px to accommodate lift effect */
         margin-bottom: 45px !important;
+
+        /* ⚡ FIX: Add top margin to prevent overlapping the card above when lifted */
+        margin-top: 20px !important;
     }
 }
 
