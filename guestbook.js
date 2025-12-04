@@ -51,10 +51,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     // Lazy Loading State
+    // ⚡ PERF: Adaptive Pagination Strategy
+    // Mobile: 5 items (Lightweight DOM)
+    // Desktop: 15 items (Fill screen)
+    const getBatchSize = () => window.innerWidth <= 768 ? 5 : 15;
+
+    // Initial load uses the same logic
+    const getInitialLoadSize = () => window.innerWidth <= 768 ? 5 : 15;
+
     let allMessages = [];
     let renderedCount = 0;
-    const INITIAL_LOAD = 20; // Increased for better initial fill
-    const LOAD_MORE_COUNT = 20; // Increased for smoother scrolling
+    // const INITIAL_LOAD = 20; // <-- Replaced by dynamic logic
+    // const LOAD_MORE_COUNT = 20; // <-- Replaced by dynamic logic
     let isLoading = false;
     let infiniteScrollObserver = null;
 
@@ -188,8 +196,10 @@ document.addEventListener('DOMContentLoaded', () => {
         currentColumnCount = 0; // Reset to force init
         initMasonry();
 
-        // Render initial batch
-        renderBatch(INITIAL_LOAD);
+        // Initial render
+        const initialCount = getInitialLoadSize();
+        console.log(`🚀 Initial render count: ${initialCount} (Mobile: ${window.innerWidth <= 768})`);
+        renderBatch(initialCount);
 
         // Set up infinite scroll
         if (renderedCount < allMessages.length) {
@@ -358,7 +368,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     // Simulate delay
                     setTimeout(() => {
-                        renderBatch(LOAD_MORE_COUNT);
+                        // Load more
+                        const batchSize = getBatchSize();
+                        console.log(`📜 Loading more: ${batchSize} items`);
+                        renderBatch(batchSize);
                         isLoading = false;
                     }, 500);
                 }
