@@ -6440,8 +6440,8 @@ input[type="submit"],
         /* 优雅的抬起效果 */
         transform: scale(1.02) translateY(-3px);
 
-        /* 完全不透明 */
-        background: rgba(255, 255, 255, 1) !important;
+        /* 完全不透明 -> 改为 90% 透明度保留磨砂感 */
+        background: rgba(255, 255, 255, 0.9) !important;
 
         /* 紫色边框 */
         border-color: rgba(139, 92, 246, 0.3) !important;
