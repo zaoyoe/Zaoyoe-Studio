@@ -399,7 +399,7 @@ const templateID = "template_ieu7m97"; // Replace with your Template ID
 
 // Function 1: Send Verification Code
 function sendVerificationCode() {
-    const emailInput = document.getElementById('reg-email');
+    const emailInput = document.getElementById('reg-mail');
     const sendBtn = document.getElementById('sendBtn');
     const email = emailInput.value;
 
