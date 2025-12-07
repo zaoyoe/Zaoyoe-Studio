@@ -59,12 +59,7 @@ async function handleRegister(event) {
 
         console.log('✅ 注册成功:', user.toJSON());
 
-        // 提示用户
-        if (aclFixed) {
-            alert(`注册成功！欢迎，${username || email.split('@')[0]}！\n现在可以上传头像了。`);
-        } else {
-            alert(`注册成功！欢迎，${username || email.split('@')[0]}！\n\n⚠️ 提示：首次上传头像可能需要管理员手动授权。\n如果上传失败，请联系管理员修复权限。`);
-        }
+        // 静默成功，无弹窗
 
         // 关闭模态框
         toggleLoginModal();
