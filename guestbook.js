@@ -1608,29 +1608,6 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
     if (targetElement) {
         console.log('🎯 锁定目标，执行优雅滚动');
 
-        // 再次检查评论是否在折叠区域 (Double check just in case)
-        if (type === 'comment') {
-            const commentList = targetElement.closest('.comment-list');
-            if (commentList && commentList.classList.contains('collapsed')) {
-                commentList.classList.remove('collapsed');
-                const fullHeight = commentList.scrollHeight;
-                commentList.style.maxHeight = fullHeight + 'px';
-
-                // 更新按钮状态
-                const messageId = targetElement.dataset.messageId;
-                const toggleBtn = document.querySelector(`.comment-toggle-btn[data-message-id="${messageId}"]`);
-                if (toggleBtn) {
-                    const icon = toggleBtn.querySelector('i');
-                    const span = toggleBtn.querySelector('span');
-                    if (icon) icon.className = 'fas fa-chevron-up';
-                    if (span) span.textContent = '收起';
-                }
-
-                // ⏳ WAIT: Ensure layout is stable before scroll
-                await new Promise(r => setTimeout(r, 300));
-            }
-        }
-
         // 1. ⚡ FIX: Mobile content-visibility comprehensive handling
         const isMobile = window.matchMedia('(max-width: 768px)').matches;
         let parentCard = null;
@@ -1662,20 +1639,52 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
             if (commentsSection) void commentsSection.offsetHeight;
         }
 
-        // 2. 等待足够长的时间（覆盖所有动画 + 缓冲）
-        await new Promise(r => setTimeout(r, 350)); // 300ms 动画 + 50ms 缓冲
-
-        // 3. 使用双 rAF 确保在下一渲染帧执行
-        await new Promise(resolve => requestAnimationFrame(resolve));
+        // 2. 等待渲染稳定
+        await new Promise(r => setTimeout(r, 100));
         await new Promise(resolve => requestAnimationFrame(resolve));
 
-        // 4. 执行平滑滚动定位（等待动画完成）
-        await smoothScrollTo(targetElement, 1000);
+        // 3. ✅ 新逻辑：如果是评论，先滚动到父卡片位置
+        if (type === 'comment' && parentMessageId) {
+            const parentCardForScroll = document.querySelector(`.message-item[data-message-id="${parentMessageId}"]`);
+            if (parentCardForScroll) {
+                console.log('📜 Step 1: 先滚动到父卡片');
+                await smoothScrollTo(parentCardForScroll, 600);
+                await new Promise(r => setTimeout(r, 200));
+            }
+        }
 
-        // 5. 等待滚动完成后的短暂缓冲（让用户视线稳定）
+        // 4. ✅ 新逻辑：展开评论区（此时用户能看到展开动画）
+        if (type === 'comment') {
+            const commentList = targetElement.closest('.comment-list');
+            if (commentList && commentList.classList.contains('collapsed')) {
+                console.log('📜 Step 2: 展开评论区');
+                commentList.classList.remove('collapsed');
+                const fullHeight = commentList.scrollHeight;
+                commentList.style.maxHeight = fullHeight + 'px';
+
+                // 更新按钮状态
+                const messageId = targetElement.closest('.message-item')?.dataset?.messageId;
+                const toggleBtn = document.querySelector(`.comment-toggle-btn[data-message-id="${messageId}"]`);
+                if (toggleBtn) {
+                    const icon = toggleBtn.querySelector('i');
+                    const span = toggleBtn.querySelector('span');
+                    if (icon) icon.className = 'fas fa-chevron-up';
+                    if (span) span.textContent = '收起';
+                }
+
+                // ⏳ 等待展开动画完成（让用户看到）
+                await new Promise(r => setTimeout(r, 600));
+                console.log('✅ 展开动画完成');
+            }
+        }
+
+        // 5. ✅ 新逻辑：滚动到目标评论并高亮
+        console.log('📜 Step 3: 滚动到目标评论');
+        await smoothScrollTo(targetElement, 800);
         await new Promise(r => setTimeout(r, 200));
 
-        // 3. 最后闪烁
+        // 6. 最后闪烁高亮
+        console.log('📜 Step 4: 高亮目标');
         targetElement.classList.remove('highlight-flash');
         void targetElement.offsetWidth;  // Force reflow
         targetElement.classList.add('highlight-flash');
