@@ -214,9 +214,14 @@ async function loadGuestbookMessages(forceRefresh = false, scrollTargetId = null
             // 过滤无效 ID
             if (pId === 'null' || pId === 'undefined') pId = null;
 
+            // 获取评论作者指针
+            const commentUserPointer = comment.get('user');
+            const commentAuthorId = commentUserPointer ? commentUserPointer.id : null;
+
             const formattedComment = {
                 id: comment.id,
                 name: comment.get('userName') || '匿名用户', // Fallback for legacy comments
+                authorId: commentAuthorId, // ✅ 用于头像同步
                 content: comment.get('content'),
                 timestamp: comment.get('createdAt').toLocaleString('zh-CN', {
                     year: 'numeric',
@@ -273,24 +278,31 @@ async function loadGuestbookMessages(forceRefresh = false, scrollTargetId = null
 
         // 4. 将评论分配给对应的消息
         // 🆕 Now we format messages, AFTER we have like counts
-        const formattedMessages = messages.map(msg => ({
-            id: msg.id,
-            name: msg.get('userName'),
-            avatarUrl: msg.get('userAvatar') || '',
-            content: msg.get('content') || '',
-            image: msg.get('imageUrl') || null,
-            likes: likeCounts[msg.id] || 0, // 🆕 Use calculated count
-            isLiked: userLikedSet.has(msg.id), // 🆕 Check if liked
-            timestamp: msg.get('createdAt').toLocaleString('zh-CN', {
-                year: 'numeric',
-                month: '2-digit',
-                day: '2-digit',
-                hour: '2-digit',
-                minute: '2-digit'
-            }),
-            rawDate: msg.get('createdAt'), // 🆕 用于排序
-            comments: [] // 初始为空，稍后填充
-        }));
+        const formattedMessages = messages.map(msg => {
+            // 获取作者指针
+            const userPointer = msg.get('user');
+            const authorId = userPointer ? userPointer.id : null;
+
+            return {
+                id: msg.id,
+                name: msg.get('userName'),
+                avatarUrl: msg.get('userAvatar') || '',
+                authorId: authorId, // ✅ 用于头像同步
+                content: msg.get('content') || '',
+                image: msg.get('imageUrl') || null,
+                likes: likeCounts[msg.id] || 0, // 🆕 Use calculated count
+                isLiked: userLikedSet.has(msg.id), // 🆕 Check if liked
+                timestamp: msg.get('createdAt').toLocaleString('zh-CN', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                }),
+                rawDate: msg.get('createdAt'), // 🆕 用于排序
+                comments: [] // 初始为空，稍后填充
+            };
+        });
 
         formattedMessages.forEach(msg => {
             msg.comments = topLevelComments.filter(c => c.messageId === msg.id);
