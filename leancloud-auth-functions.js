@@ -27,6 +27,14 @@ async function handleRegister(event) {
         user.set('nickname', username || email.split('@')[0]);
         user.set('avatarUrl', `https://ui-avatars.com/api/?name=${encodeURIComponent(username || email.split('@')[0])}&background=random`);
 
+        // ✅ 关键修复：在 signUp 之前设置 ACL
+        // 使用 AV.ACL() 不传参数，稍后在 signUp 成功后 LeanCloud 会自动填充 owner
+        const acl = new AV.ACL();
+        acl.setPublicReadAccess(true);
+        // 注意：这里不能设置 setWriteAccess(user) 因为 user 还没有 id
+        // LeanCloud 会在 signUp 时自动将创建者设为 owner
+        user.setACL(acl);
+
         // 注册用户
         await user.signUp();
         console.log('✅ User created:', user.id);
