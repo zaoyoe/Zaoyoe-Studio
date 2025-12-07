@@ -131,30 +131,55 @@
 /* === Phase 2: 智能定位高亮动画 (v2.0 - 伪元素重构版) === */
 /* 核心原理：使用 ::after 伪元素承载光晕，元素本身完全不修改，杜绝闪回 */
 
-/* 光晕呼吸动画 - 仅修改 opacity */
+/* 光晕呼吸动画 - 更自然的渐进式消散 */
 @keyframes glow-pulse {
+
+    /* 初始：完全透明 */
     0% {
         opacity: 0;
+        filter: blur(0px);
     }
 
-    15% {
+    /* 快速亮起 */
+    10% {
+        opacity: 0.9;
+        filter: blur(0px);
+    }
+
+    /* 保持高亮一段时间 */
+    25% {
         opacity: 1;
+        filter: blur(0px);
     }
 
-    40% {
-        opacity: 0.15;
+    /* 第一次缓慢减弱 */
+    45% {
+        opacity: 0.4;
+        filter: blur(2px);
     }
 
-    60% {
-        opacity: 0.85;
+    /* 第二次亮起（较弱） */
+    55% {
+        opacity: 0.7;
+        filter: blur(1px);
     }
 
-    80% {
+    /* 开始最终消散 */
+    70% {
+        opacity: 0.35;
+        filter: blur(3px);
+    }
+
+    /* 几乎消失 */
+    85% {
         opacity: 0.1;
+        filter: blur(5px);
     }
 
+    /* 完全消散 */
     100% {
         opacity: 0;
+        filter: blur(8px);
     }
 }
 
