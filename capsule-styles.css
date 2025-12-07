@@ -131,30 +131,55 @@
 /* === Phase 2: 智能定位高亮动画 (v2.0 - 伪元素重构版) === */
 /* 核心原理：使用 ::after 伪元素承载光晕，元素本身完全不修改，杜绝闪回 */
 
-/* 光晕呼吸动画 - 仅修改 opacity */
+/* 光晕呼吸动画 - 阴影尺寸与透明度同步变化，消散更自然 */
 @keyframes glow-pulse {
     0% {
         opacity: 0;
+        box-shadow:
+            0 0 0 0 rgba(102, 126, 234, 0),
+            0 0 0 0 rgba(155, 93, 229, 0);
     }
 
-    15% {
+    12% {
         opacity: 1;
+        box-shadow:
+            0 0 40px 16px rgba(102, 126, 234, 0.85),
+            0 0 20px 8px rgba(155, 93, 229, 0.6);
     }
 
-    40% {
-        opacity: 0.15;
+    30% {
+        opacity: 0.95;
+        box-shadow:
+            0 0 35px 14px rgba(102, 126, 234, 0.75),
+            0 0 18px 6px rgba(155, 93, 229, 0.5);
     }
 
-    60% {
-        opacity: 0.85;
+    50% {
+        opacity: 0.3;
+        box-shadow:
+            0 0 20px 8px rgba(102, 126, 234, 0.35),
+            0 0 10px 4px rgba(155, 93, 229, 0.25);
+    }
+
+    65% {
+        opacity: 0.7;
+        box-shadow:
+            0 0 30px 12px rgba(102, 126, 234, 0.6),
+            0 0 15px 5px rgba(155, 93, 229, 0.4);
     }
 
     80% {
-        opacity: 0.1;
+        opacity: 0.2;
+        box-shadow:
+            0 0 15px 5px rgba(102, 126, 234, 0.2),
+            0 0 8px 3px rgba(155, 93, 229, 0.15);
     }
 
     100% {
         opacity: 0;
+        box-shadow:
+            0 0 0 0 rgba(102, 126, 234, 0),
+            0 0 0 0 rgba(155, 93, 229, 0);
     }
 }
 
@@ -173,13 +198,10 @@
     inset: -10px;
     border-radius: 16px;
     background: transparent;
-    box-shadow:
-        0 0 35px 14px rgba(102, 126, 234, 0.8),
-        0 0 18px 6px rgba(155, 93, 229, 0.55);
     opacity: 0;
     pointer-events: none;
     z-index: -1;
-    animation: glow-pulse 3.5s cubic-bezier(0.4, 0, 0.2, 1);
+    animation: glow-pulse 3.5s ease-in-out;
 }
 
 /* 嵌套评论：缩小光晕范围 */
