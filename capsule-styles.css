@@ -89,169 +89,115 @@
         white-space: nowrap;
 
         /* 调整位置，避免遮挡 */
-        top: -60px;
+        top: -50px;
 
-        /* ✅ 加大点击区域，提升移动端可用性 */
-        padding: 12px 20px;
-        gap: 10px;
-        font-size: 15px;
-        min-height: 44px;
-        /* Apple 推荐的最小触摸目标 */
+        /* ✅ 移动端适配：缩小尺寸，更精致 */
+        padding: 8px 16px;
+        gap: 6px;
+        font-size: 13px;
+        min-height: 36px;
+        border-radius: 20px;
 
         /* 增强背景不透明度，防止透出下面的怪东西 */
         background: rgba(102, 126, 234, 0.98);
         backdrop-filter: none;
         /* 移动端性能优化，有时磨砂会导致渲染错误 */
 
+        /* 更轻盈的阴影 */
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12),
+            0 0 15px rgba(102, 126, 234, 0.3);
+
         /* 确保层级最高 */
         z-index: 10000 !important;
 
         /* 限制最大宽度 */
-        max-width: 90vw;
+        max-width: 85vw;
         overflow: hidden;
         text-overflow: ellipsis;
     }
 
     .capsule-wrapper.active {
-        top: 20px;
+        top: 16px;
         opacity: 1;
         pointer-events: auto;
         /* 距离顶部留出一点空间 */
     }
+
+    .capsule-icon {
+        font-size: 14px;
+    }
 }
 
-/* === Phase 2: 智能定位高亮动画 === */
-/* 优雅的呼吸高亮动画 - GPU 加速，性能友好 */
-@keyframes highlight-flash {
+/* === Phase 2: 智能定位高亮动画 (v2.0 - 伪元素重构版) === */
+/* 核心原理：使用 ::after 伪元素承载光晕，元素本身完全不修改，杜绝闪回 */
 
-    /* 初始状态：完全隐藏 */
+/* 光晕呼吸动画 - 仅修改 opacity */
+@keyframes glow-pulse {
     0% {
-        transform: scale(1);
-        box-shadow: 0 0 0 0 rgba(102, 126, 234, 0);
-        background-color: transparent;
+        opacity: 0;
     }
 
-    /* 第一次亮起：强烈的紫色光晕 */
-    20% {
-        transform: scale(1.025);
-        box-shadow: 0 0 30px 12px rgba(102, 126, 234, 0.85),
-            0 0 15px 5px rgba(155, 93, 229, 0.6);
-        background-color: rgba(102, 126, 234, 0.12);
+    15% {
+        opacity: 1;
     }
 
-    /* 缓慢熄灭：光晕几乎消失 */
-    45% {
-        transform: scale(1);
-        box-shadow: 0 0 8px 2px rgba(102, 126, 234, 0.2);
-        background-color: rgba(102, 126, 234, 0.02);
+    40% {
+        opacity: 0.15;
     }
 
-    /* 第二次亮起：中等强度 */
-    65% {
-        transform: scale(1.02);
-        box-shadow: 0 0 25px 10px rgba(102, 126, 234, 0.7),
-            0 0 12px 4px rgba(155, 93, 229, 0.5);
-        background-color: rgba(102, 126, 234, 0.08);
+    60% {
+        opacity: 0.85;
     }
 
-    /* 再次熄灭 */
-    85% {
-        transform: scale(1);
-        box-shadow: 0 0 5px 1px rgba(102, 126, 234, 0.15);
-        background-color: rgba(102, 126, 234, 0.01);
+    80% {
+        opacity: 0.1;
     }
 
-    /* 完全消散 */
     100% {
-        transform: scale(1);
-        box-shadow: 0 0 0 0 rgba(102, 126, 234, 0);
-        background-color: transparent;
+        opacity: 0;
     }
 }
 
+/* 高亮基础样式 - 仅设置相对定位，完全不修改 transform/box-shadow */
 .message-item.highlight-flash,
 .comment-item.highlight-flash {
-    animation: highlight-flash 3.5s cubic-bezier(0.4, 0, 0.2, 1);
-    will-change: transform, box-shadow, background-color;
-    z-index: 10;
     position: relative;
-    border-radius: 8px !important;
-    /* 匹配主评论容器的 8px 圆角 */
+    z-index: 10;
 }
 
-/* 嵌套评论高亮：微过渡至 4px 圆角，淡化左边框但保留层级感 */
-.comment-item--nested.highlight-flash {
-    border-radius: 4px !important;
-    /* 从 0 微过渡到 4px */
-    border-left-color: rgba(0, 0, 0, 0.05) !important;
-    /* 淡化但不移除，保持宽度 */
+/* 伪元素光晕层 - 所有动画效果都在这里 */
+.message-item.highlight-flash::after,
+.comment-item.highlight-flash::after {
+    content: '';
+    position: absolute;
+    inset: -6px;
+    border-radius: 12px;
+    background: transparent;
+    box-shadow:
+        0 0 25px 10px rgba(102, 126, 234, 0.75),
+        0 0 12px 4px rgba(155, 93, 229, 0.5);
+    opacity: 0;
+    pointer-events: none;
+    z-index: -1;
+    animation: glow-pulse 3.5s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* 改用边框 + 阴影效果，在白色卡片上更显眼 */
+/* 嵌套评论：缩小光晕范围 */
+.comment-item--nested.highlight-flash::after {
+    inset: -4px;
+    border-radius: 8px;
+}
 
-/* === 移动端专用优化 - 防止归位弹动 === */
+/* === 移动端优化 === */
 @media (max-width: 768px) {
 
-    /* 移动端版本：无 transform，避免与滚动归位冲突 */
-    @keyframes highlight-flash-mobile {
-
-        /* 初始状态：完全隐藏 */
-        0% {
-            box-shadow: 0 0 0 0 rgba(102, 126, 234, 0);
-            background-color: transparent;
-        }
-
-        /* 第一次亮起：强烈的紫色光晕（无 scale） */
-        20% {
-            box-shadow: 0 0 30px 12px rgba(102, 126, 234, 0.85),
-                0 0 15px 5px rgba(155, 93, 229, 0.6);
-            background-color: rgba(102, 126, 234, 0.12);
-        }
-
-        /* 缓慢熄灭：光晕几乎消失 */
-        45% {
-            box-shadow: 0 0 8px 2px rgba(102, 126, 234, 0.2);
-            background-color: rgba(102, 126, 234, 0.02);
-        }
-
-        /* 第二次亮起：中等强度 */
-        65% {
-            box-shadow: 0 0 25px 10px rgba(102, 126, 234, 0.7),
-                0 0 12px 4px rgba(155, 93, 229, 0.5);
-            background-color: rgba(102, 126, 234, 0.08);
-        }
-
-        /* 再次熄灭 */
-        85% {
-            box-shadow: 0 0 5px 1px rgba(102, 126, 234, 0.15);
-            background-color: rgba(102, 126, 234, 0.01);
-        }
-
-        /* 完全消散 */
-        100% {
-            box-shadow: 0 0 0 0 rgba(102, 126, 234, 0);
-            background-color: transparent;
-        }
-    }
-
-    .comment-item.highlight-flash {
-        animation: highlight-flash-mobile 3.5s cubic-bezier(0.4, 0, 0.2, 1) !important;
-        will-change: box-shadow, background-color;
-        z-index: 10;
-        position: relative;
-        overflow: visible !important;
-        border-radius: 8px !important;
-        /* 匹配桌面端 */
-
-        /* 性能优化 */
-        backface-visibility: hidden;
-        -webkit-backface-visibility: hidden;
-        -webkit-font-smoothing: antialiased;
-        -moz-osx-font-smoothing: grayscale;
-    }
-
-    /* 移动端嵌套评论高亮处理：仅淡化边框，不改变圆角 */
-    .comment-item--nested.highlight-flash {
-        border-left-color: rgba(0, 0, 0, 0.05) !important;
+    /* 移动端使用相同的伪元素方案，无需特殊处理 */
+    .message-item.highlight-flash::after,
+    .comment-item.highlight-flash::after {
+        /* 稍微减小光晕范围，适配小屏幕 */
+        inset: -4px;
+        box-shadow:
+            0 0 20px 8px rgba(102, 126, 234, 0.7),
+            0 0 10px 3px rgba(155, 93, 229, 0.45);
     }
 }
