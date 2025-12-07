@@ -444,3 +444,29 @@
     color: white !important;
     border-color: rgba(155, 93, 229, 0.7) !important;
 }
+
+/* ✅ 隐藏 Safari/Chrome 的密码自动填充图标 */
+input::-webkit-credentials-auto-fill-button,
+input::-webkit-contacts-auto-fill-button,
+input::-webkit-textfield-decoration-container {
+    visibility: hidden !important;
+    display: none !important;
+    pointer-events: none !important;
+    position: absolute !important;
+    right: 0 !important;
+}
+
+/* 隐藏 Safari 密码钥匙图标 */
+input::-webkit-strong-password-auto-fill-button {
+    visibility: hidden !important;
+    display: none !important;
+}
+
+/* 注册表单专用 - 确保完全禁用自动填充图标 */
+#registerForm input {
+    background-image: none !important;
+}
+
+#registerForm input::-webkit-credentials-auto-fill-button {
+    visibility: hidden !important;
+}
