@@ -409,6 +409,13 @@ function sendVerificationCode() {
         return;
     }
 
+    // ✅ 检查 EmailJS 是否已加载
+    if (typeof emailjs === 'undefined') {
+        alert("邮件服务加载中，请稍后再试...");
+        console.error('❌ EmailJS not loaded');
+        return;
+    }
+
     // 2. Generate 6-digit random number
     generatedCode = Math.floor(100000 + Math.random() * 900000).toString();
     console.log("Debug: Verification Code is " + generatedCode); // For debugging
@@ -416,6 +423,16 @@ function sendVerificationCode() {
     // 3. Change button state (prevent duplicate clicks)
     sendBtn.disabled = true;
     sendBtn.innerText = "发送中...";
+
+    // ✅ 添加超时处理 (30秒后自动恢复按钮)
+    const timeoutId = setTimeout(() => {
+        if (sendBtn.innerText === "发送中...") {
+            console.warn('⚠️ 验证码发送超时');
+            alert("发送超时，请检查网络后重试。");
+            sendBtn.disabled = false;
+            sendBtn.innerText = "重新获取";
+        }
+    }, 30000);
 
     // 4. Call EmailJS to send
     const templateParams = {
@@ -425,12 +442,14 @@ function sendVerificationCode() {
 
     emailjs.send(serviceID, templateID, templateParams)
         .then(function (response) {
+            clearTimeout(timeoutId); // 清除超时
             console.log('SUCCESS!', response.status, response.text);
             alert(`验证码已发送至 ${email}，请查收！`);
             startCountdown(sendBtn); // Start countdown
         }, function (error) {
+            clearTimeout(timeoutId); // 清除超时
             console.log('FAILED...', error);
-            alert("发送失败，请检查网络或配置。");
+            alert("发送失败，请检查网络或稍后重试。");
             sendBtn.disabled = false;
             sendBtn.innerText = "重新获取";
         });
