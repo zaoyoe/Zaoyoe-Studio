@@ -194,7 +194,7 @@
     opacity: 0;
     pointer-events: none;
     z-index: -1;
-    animation: glow-pulse 3.5s ease-in-out;
+    animation: glow-pulse 4.5s ease-in-out;
 }
 
 /* 嵌套评论：缩小光晕范围 */
