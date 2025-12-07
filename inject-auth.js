@@ -101,24 +101,24 @@
                 <h2 class="card-title">创建账号</h2>
                 <p class="card-subtitle">加入我们以获取更多高级功能</p>
 
-                <form id="registerForm" onsubmit="handleRegister(event)">
+                <form id="registerForm" onsubmit="handleRegister(event)" autocomplete="off">
                     <div class="input-group">
-                        <input type="text" id="reg-username" class="glass-input" placeholder="用户名" autocomplete="new-username" required>
+                        <input type="text" id="reg-username" class="glass-input" placeholder="用户名" autocomplete="off" data-form-type="other" required>
                     </div>
 
                     <div class="input-group">
-                        <input type="email" id="reg-email" class="glass-input" placeholder="邮箱地址" autocomplete="new-email" required>
+                        <input type="text" id="reg-email" class="glass-input" placeholder="邮箱地址" autocomplete="off" data-form-type="other" required>
                     </div>
 
                     <div class="input-group input-with-action">
-                        <input type="text" id="reg-code" class="glass-input" placeholder="输入6位验证码" maxlength="6" required>
+                        <input type="text" id="reg-code" class="glass-input" placeholder="输入6位验证码" maxlength="6" autocomplete="off" data-form-type="other" required>
                         <button type="button" class="verify-code-btn" id="sendBtn" onclick="sendVerificationCode()">
                             获取验证码
                         </button>
                     </div>
 
                     <div class="input-group">
-                        <input type="password" id="reg-password" class="glass-input" placeholder="设置密码" autocomplete="new-password" required>
+                        <input type="password" id="reg-password" class="glass-input" placeholder="设置密码" autocomplete="new-password" data-form-type="other" required>
                     </div>
 
                     <button type="submit" class="login-submit-btn">创建账号</button>
