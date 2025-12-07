@@ -345,11 +345,20 @@
                 }
             };
 
+            // 记录 mousedown 是否发生在 overlay 上
+            let mouseDownOnOverlay = false;
+
             window.handleLoginOverlayClick = function (event) {
-                if (event.target.classList.contains('login-overlay')) {
-                    if (event.type === 'mouseup') {
+                const isOverlay = event.target.classList.contains('login-overlay');
+
+                if (event.type === 'mousedown') {
+                    mouseDownOnOverlay = isOverlay;
+                } else if (event.type === 'mouseup') {
+                    // 只有当 mousedown 和 mouseup 都在 overlay 上时才关闭
+                    if (mouseDownOnOverlay && isOverlay) {
                         toggleLoginModal();
                     }
+                    mouseDownOnOverlay = false;
                 }
             };
 
