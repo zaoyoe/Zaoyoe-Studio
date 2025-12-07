@@ -19,6 +19,16 @@ async function handleRegister(event) {
     }
 
     try {
+        // ✅ 检查用户名是否已被使用
+        const nicknameQuery = new AV.Query('_User');
+        nicknameQuery.equalTo('nickname', username);
+        const existingUser = await nicknameQuery.first();
+
+        if (existingUser) {
+            alert("该用户名已被使用，请选择其他用户名。");
+            return;
+        }
+
         // 创建新用户
         const user = new AV.User();
         user.setUsername(email);  // 使用邮箱作为用户名
