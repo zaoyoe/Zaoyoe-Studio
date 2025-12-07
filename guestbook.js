@@ -263,6 +263,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Trigger scroll highlight (Mobile)
         observeNewItems();
+
+        // ✅ 同步用户最新头像
+        syncUserAvatars();
     }
 
     // Handle Resize
@@ -471,6 +474,7 @@ document.addEventListener('DOMContentLoaded', () => {
                          data-depth="${depth}"
                          data-comment-id="${comment.id}" 
                          data-message-id="${messageId}"
+                         data-author-id="${comment.authorId || ''}"
                          data-can-reply="${canReply}">
                         <div class="comment-row">
                             <div class="comment-main">
@@ -522,7 +526,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const messageHtml = `
             <div class="message-anim-wrapper" style="transition-delay: ${delay}s">
-                <div class="message-item" data-message-id="${msg.id}">
+                <div class="message-item" data-message-id="${msg.id}" data-author-id="${msg.authorId || ''}">
                     
                     <!-- 1. Header (Author Info & Time) -->
                     <div class="message-header">
@@ -1786,4 +1790,94 @@ window.showToast = function (message, type = 'info') {
         toast.classList.remove('active'); // Slide Up
         setTimeout(() => toast.remove(), 500); // Wait for transition then remove
     }, 3000);
+};
+
+/**
+ * ✅ 头像同步功能
+ * 页面加载后批量查询用户最新头像并更新 DOM
+ */
+window.syncUserAvatars = async function () {
+    console.log('🔄 开始同步用户最新头像...');
+
+    try {
+        // 1. 收集所有留言/评论中的 userId
+        const avatarElements = document.querySelectorAll('.author-avatar[data-user-id], .comment-avatar[data-user-id]');
+        const messageItems = document.querySelectorAll('.message-item[data-author-id]');
+        const commentItems = document.querySelectorAll('.comment-item[data-author-id]');
+
+        // 收集所有 authorId
+        const userIds = new Set();
+
+        messageItems.forEach(item => {
+            const authorId = item.dataset.authorId;
+            if (authorId) userIds.add(authorId);
+        });
+
+        commentItems.forEach(item => {
+            const authorId = item.dataset.authorId;
+            if (authorId) userIds.add(authorId);
+        });
+
+        // 也从 img 的 data-user-id 收集
+        avatarElements.forEach(img => {
+            const userId = img.dataset.userId;
+            if (userId) userIds.add(userId);
+        });
+
+        if (userIds.size === 0) {
+            console.log('ℹ️ 没有需要同步头像的用户');
+            return;
+        }
+
+        console.log(`📋 准备同步 ${userIds.size} 个用户的头像`);
+
+        // 2. 批量查询用户最新信息
+        const userQuery = new AV.Query('_User');
+        userQuery.containedIn('objectId', Array.from(userIds));
+        userQuery.select(['objectId', 'avatarUrl', 'username', 'email']);
+
+        const users = await userQuery.find();
+        console.log(`✅ 查询到 ${users.length} 个用户`);
+
+        // 3. 构建 userId -> avatarUrl 映射
+        const avatarMap = new Map();
+        users.forEach(user => {
+            const avatarUrl = user.get('avatarUrl');
+            if (avatarUrl) {
+                avatarMap.set(user.id, avatarUrl);
+            }
+        });
+
+        // 4. 更新 DOM 中的头像
+        let updatedCount = 0;
+
+        // 更新留言头像
+        messageItems.forEach(item => {
+            const authorId = item.dataset.authorId;
+            if (authorId && avatarMap.has(authorId)) {
+                const avatarImg = item.querySelector('.author-avatar');
+                if (avatarImg && avatarImg.src !== avatarMap.get(authorId)) {
+                    avatarImg.src = avatarMap.get(authorId);
+                    updatedCount++;
+                }
+            }
+        });
+
+        // 更新评论头像
+        commentItems.forEach(item => {
+            const authorId = item.dataset.authorId;
+            if (authorId && avatarMap.has(authorId)) {
+                const avatarImg = item.querySelector('.comment-avatar');
+                if (avatarImg && avatarImg.src !== avatarMap.get(authorId)) {
+                    avatarImg.src = avatarMap.get(authorId);
+                    updatedCount++;
+                }
+            }
+        });
+
+        console.log(`✅ 头像同步完成，更新了 ${updatedCount} 个头像`);
+
+    } catch (error) {
+        console.error('❌ 头像同步失败:', error);
+    }
 };
