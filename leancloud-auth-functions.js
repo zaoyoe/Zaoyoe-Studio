@@ -7,9 +7,9 @@
 async function handleRegister(event) {
     event.preventDefault();
 
-    const inputCode = document.getElementById('reg-vcode').value;
+    const inputCode = document.getElementById('reg-code').value;
     const password = document.getElementById('reg-password').value;
-    const email = document.getElementById('reg-mail').value.trim();  // ✅ 添加 .trim()
+    const email = document.getElementById('reg-email').value.trim();  // ✅ 添加 .trim()
     const username = document.getElementById('reg-username').value.trim();  // ✅ 添加 .trim()
 
     // 验证码检查

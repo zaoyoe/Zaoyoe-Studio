@@ -107,11 +107,11 @@
                     </div>
 
                     <div class="input-group">
-                        <input type="text" id="reg-mail" class="glass-input" placeholder="请输入邮箱" autocomplete="off" data-form-type="other" data-lpignore="true" required>
+                        <input type="text" id="reg-email" class="glass-input" placeholder="邮箱地址" autocomplete="off" data-form-type="other" required>
                     </div>
 
                     <div class="input-group input-with-action">
-                        <input type="text" id="reg-vcode" class="glass-input" placeholder="6位验证码" maxlength="6" autocomplete="off" data-form-type="other" data-lpignore="true" required>
+                        <input type="text" id="reg-code" class="glass-input" placeholder="输入6位验证码" maxlength="6" autocomplete="off" data-form-type="other" required>
                         <button type="button" class="verify-code-btn" id="sendBtn" onclick="sendVerificationCode()">
                             获取验证码
                         </button>
