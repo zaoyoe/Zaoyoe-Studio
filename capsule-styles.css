@@ -140,32 +140,32 @@
             0 0 0 0 rgba(155, 93, 229, 0);
     }
 
-    15% {
+    12% {
         opacity: 1;
         box-shadow:
-            0 0 12px 5px rgba(102, 126, 234, 0.65),
-            0 0 6px 2px rgba(155, 93, 229, 0.4);
+            0 0 15px 6px rgba(102, 126, 234, 0.75),
+            0 0 8px 3px rgba(155, 93, 229, 0.5);
     }
 
-    35% {
-        opacity: 0.3;
+    32% {
+        opacity: 0.15;
         box-shadow:
-            0 0 6px 2px rgba(102, 126, 234, 0.25),
-            0 0 3px 1px rgba(155, 93, 229, 0.15);
+            0 0 4px 1px rgba(102, 126, 234, 0.1),
+            0 0 2px 0px rgba(155, 93, 229, 0.05);
     }
 
-    55% {
-        opacity: 0.9;
+    52% {
+        opacity: 1;
         box-shadow:
-            0 0 10px 4px rgba(102, 126, 234, 0.55),
-            0 0 5px 2px rgba(155, 93, 229, 0.35);
+            0 0 14px 5px rgba(102, 126, 234, 0.7),
+            0 0 7px 2px rgba(155, 93, 229, 0.45);
     }
 
-    75% {
-        opacity: 0.2;
+    72% {
+        opacity: 0.1;
         box-shadow:
-            0 0 5px 2px rgba(102, 126, 234, 0.2),
-            0 0 2px 1px rgba(155, 93, 229, 0.1);
+            0 0 3px 1px rgba(102, 126, 234, 0.08),
+            0 0 1px 0px rgba(155, 93, 229, 0.04);
     }
 
     100% {
@@ -194,7 +194,7 @@
     opacity: 0;
     pointer-events: none;
     z-index: -1;
-    animation: glow-pulse 2.5s ease-out;
+    animation: glow-pulse 3.5s ease-in-out;
 }
 
 /* 嵌套评论：缩小光晕范围 */
