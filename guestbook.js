@@ -1800,46 +1800,103 @@ window.syncUserAvatars = async function () {
     console.log('🔄 开始同步用户最新头像...');
 
     try {
-        // 1. 收集所有留言/评论中的 userId
-        const avatarElements = document.querySelectorAll('.author-avatar[data-user-id], .comment-avatar[data-user-id]');
+        // 1. 首先处理当前登录用户的头像（最重要）
+        const currentUser = AV.User.current();
+        if (currentUser) {
+            const currentAvatarUrl = currentUser.get('avatarUrl');
+            const currentNickname = currentUser.get('nickname') || currentUser.get('username');
+            const currentUserId = currentUser.id;
+
+            if (currentAvatarUrl) {
+                let selfUpdatedCount = 0;
+
+                // 更新自己的所有留言头像（通过 data-author-id 匹配）
+                document.querySelectorAll(`.message-item[data-author-id="${currentUserId}"]`).forEach(item => {
+                    const avatarImg = item.querySelector('.author-avatar');
+                    if (avatarImg && avatarImg.src !== currentAvatarUrl) {
+                        avatarImg.src = currentAvatarUrl;
+                        selfUpdatedCount++;
+                    }
+                });
+
+                // 也通过用户名匹配（备用方案，用于旧数据）
+                document.querySelectorAll('.message-item').forEach(item => {
+                    const authorName = item.querySelector('.author-name');
+                    if (authorName && authorName.textContent === currentNickname) {
+                        const avatarImg = item.querySelector('.author-avatar');
+                        if (avatarImg && avatarImg.src !== currentAvatarUrl) {
+                            avatarImg.src = currentAvatarUrl;
+                            selfUpdatedCount++;
+                        }
+                    }
+                });
+
+                // 更新自己的所有评论头像
+                document.querySelectorAll(`.comment-item[data-author-id="${currentUserId}"]`).forEach(item => {
+                    const avatarImg = item.querySelector('.comment-avatar');
+                    if (avatarImg && avatarImg.src !== currentAvatarUrl) {
+                        avatarImg.src = currentAvatarUrl;
+                        selfUpdatedCount++;
+                    }
+                });
+
+                // 也通过评论作者名匹配
+                document.querySelectorAll('.comment-item').forEach(item => {
+                    const authorName = item.querySelector('.comment-author');
+                    if (authorName && authorName.textContent === currentNickname) {
+                        const avatarImg = item.querySelector('.comment-avatar');
+                        if (avatarImg && avatarImg.src !== currentAvatarUrl) {
+                            avatarImg.src = currentAvatarUrl;
+                            selfUpdatedCount++;
+                        }
+                    }
+                });
+
+                console.log(`✅ 已更新当前用户(${currentNickname})的 ${selfUpdatedCount} 个头像`);
+            }
+        }
+
+        // 2. 收集所有有 authorId 的留言/评论
         const messageItems = document.querySelectorAll('.message-item[data-author-id]');
         const commentItems = document.querySelectorAll('.comment-item[data-author-id]');
 
-        // 收集所有 authorId
         const userIds = new Set();
 
         messageItems.forEach(item => {
             const authorId = item.dataset.authorId;
-            if (authorId) userIds.add(authorId);
+            if (authorId && authorId !== '' && authorId !== 'null') {
+                userIds.add(authorId);
+            }
         });
 
         commentItems.forEach(item => {
             const authorId = item.dataset.authorId;
-            if (authorId) userIds.add(authorId);
+            if (authorId && authorId !== '' && authorId !== 'null') {
+                userIds.add(authorId);
+            }
         });
 
-        // 也从 img 的 data-user-id 收集
-        avatarElements.forEach(img => {
-            const userId = img.dataset.userId;
-            if (userId) userIds.add(userId);
-        });
+        // 排除当前用户（已经处理过了）
+        if (currentUser) {
+            userIds.delete(currentUser.id);
+        }
 
         if (userIds.size === 0) {
-            console.log('ℹ️ 没有需要同步头像的用户');
+            console.log('ℹ️ 没有其他用户需要同步头像');
             return;
         }
 
-        console.log(`📋 准备同步 ${userIds.size} 个用户的头像`);
+        console.log(`📋 准备同步其他 ${userIds.size} 个用户的头像`);
 
-        // 2. 批量查询用户最新信息
+        // 3. 批量查询其他用户最新信息
         const userQuery = new AV.Query('_User');
         userQuery.containedIn('objectId', Array.from(userIds));
-        userQuery.select(['objectId', 'avatarUrl', 'username', 'email']);
+        userQuery.select(['objectId', 'avatarUrl', 'username', 'nickname']);
 
         const users = await userQuery.find();
         console.log(`✅ 查询到 ${users.length} 个用户`);
 
-        // 3. 构建 userId -> avatarUrl 映射
+        // 4. 构建 userId -> avatarUrl 映射
         const avatarMap = new Map();
         users.forEach(user => {
             const avatarUrl = user.get('avatarUrl');
@@ -1848,10 +1905,9 @@ window.syncUserAvatars = async function () {
             }
         });
 
-        // 4. 更新 DOM 中的头像
+        // 5. 更新 DOM 中的头像
         let updatedCount = 0;
 
-        // 更新留言头像
         messageItems.forEach(item => {
             const authorId = item.dataset.authorId;
             if (authorId && avatarMap.has(authorId)) {
@@ -1863,7 +1919,6 @@ window.syncUserAvatars = async function () {
             }
         });
 
-        // 更新评论头像
         commentItems.forEach(item => {
             const authorId = item.dataset.authorId;
             if (authorId && avatarMap.has(authorId)) {
@@ -1875,7 +1930,7 @@ window.syncUserAvatars = async function () {
             }
         });
 
-        console.log(`✅ 头像同步完成，更新了 ${updatedCount} 个头像`);
+        console.log(`✅ 头像同步完成，更新了其他用户 ${updatedCount} 个头像`);
 
     } catch (error) {
         console.error('❌ 头像同步失败:', error);
