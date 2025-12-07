@@ -4,6 +4,17 @@
     font-size: 1.8rem !important;
 }
 
+/* 确保未登录时按钮也是透明背景，无正方形色块 */
+.login-trigger-btn,
+button.login-trigger-btn,
+#authBtn {
+    background: transparent !important;
+    background-color: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    outline: none !important;
+}
+
 /* Default icon hover - HIGHEST PRIORITY */
 #defaultAuthIcon:hover,
 .login-trigger-btn:hover #defaultAuthIcon {
