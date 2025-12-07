@@ -259,6 +259,16 @@
                 await loadScript('https://cdn.jsdelivr.net/npm/leancloud-storage@4.15.2/dist/av-min.js');
             }
 
+            // ✅ 加载 EmailJS (用于验证码)
+            if (typeof emailjs === 'undefined') {
+                await loadScript('https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js');
+                // 初始化 EmailJS
+                if (typeof emailjs !== 'undefined') {
+                    emailjs.init("vawaxLVEzJMAVbut0");
+                    console.log('✅ EmailJS initialized');
+                }
+            }
+
             // 🆕 Inject missing CSS files for Login Modal
             function loadCSS(href) {
                 if (!document.querySelector(`link[href^="${href.split('?')[0]}"]`)) {
@@ -277,6 +287,9 @@
             await loadScript('./leancloud-init.js?v=20251125_ACL_FIX');
             await loadScript('./leancloud-auth-functions.js?v=20251125_ACL_FIX');
             await loadScript('./google-oauth.js?v=20251126_CORRECT_CLIENT_ID');
+
+            // ✅ 加载 script.js (包含 sendVerificationCode 函数)
+            await loadScript('./script.js?v=EMAIL_FIX_V1');
 
             // Initialize UI
             if (typeof AV !== 'undefined' && AV.User) {
