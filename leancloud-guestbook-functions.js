@@ -712,7 +712,7 @@ function insertCommentToDOM(messageId, comment) {
         : '';
 
     const commentHTML = `
-        <div class="comment-item" data-comment-id="${comment.id}" data-message-id="${messageId}" data-can-reply="true">
+        <div class="comment-item comment-item--clickable" data-comment-id="${comment.id}" data-message-id="${messageId}" data-can-reply="true">
             <div class="comment-row">
                 <div class="comment-main">
                     <div class="comment-header">
