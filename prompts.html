@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Banana Pro Gallery | Light Poetry</title>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Outfit:wght@300;400;600&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
+    <!-- Styles -->
+    <link rel="stylesheet" href="prompts-poetry.css">
+
+    <!-- Prevent flash of wrong theme -->
+    <script>
+        (function () {
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme === 'dark') {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            }
+        })();
+    </script>
+</head>
+
+<body>
+
+
+    <!-- Dark Mode Toggle -->
+    <button id="themeToggle" class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle dark mode">
+        <i class="fas fa-sun sun-icon"></i>
+        <i class="fas fa-moon moon-icon"></i>
+    </button>
+
+    <!-- Navigation / Categories -->
+    <div class="poetry-nav-container">
+        <div class="spotlight-overlay"></div>
+        <div class="nav-items">
+            <div class="nav-item active" data-filter="all">
+                <span class="en">All</span>
+                <span class="cn">全部</span>
+            </div>
+            <div class="nav-item" data-filter="Miniature">
+                <span class="en">Miniature</span>
+                <span class="cn">微缩</span>
+            </div>
+            <div class="nav-item" data-filter="Photography">
+                <span class="en">Photography</span>
+                <span class="cn">摄影</span>
+            </div>
+            <div class="nav-item" data-filter="Illustration">
+                <span class="en">Illustration</span>
+                <span class="cn">插画</span>
+            </div>
+            <div class="nav-item" data-filter="3D Art">
+                <span class="en">3D Art</span>
+                <span class="cn">3D艺术</span>
+            </div>
+            <div class="nav-item" data-filter="Creative">
+                <span class="en">Creative</span>
+                <span class="cn">创意</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Gallery Grid -->
+    <div class="gallery-container">
+        <!-- Content injected by JS -->
+    </div>
+
+    <!-- Detail Modal -->
+    <div id="promptModal" class="poetry-modal">
+        <button class="close-modal-btn" onclick="closePromptModal()">
+            <i class="fas fa-times"></i>
+        </button>
+
+        <div class="modal-inner">
+            <div class="modal-image-col">
+                <img id="modalImg" src="" alt="Prompt Visual">
+
+                <!-- Image Navigation -->
+                <button id="modalImgNavLeft" class="modal-img-nav left" onclick="navigateModalImage('prev')">
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+                <button id="modalImgNavRight" class="modal-img-nav right" onclick="navigateModalImage('next')">
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+                <div id="modalImgCounter" class="modal-img-counter">1 / 1</div>
+            </div>
+            <div class="modal-content-col">
+                <div class="modal-header">
+                    <div id="modalTitle" class="modal-title-large">Title</div>
+                    <div id="modalTags" class="modal-meta">
+                        <!-- Tags injected here -->
+                    </div>
+                </div>
+
+                <p id="modalDesc" class="modal-description">
+                    Description goes here...
+                </p>
+
+                <div class="prompt-area">
+                    <button class="copy-btn" onclick="copyPromptText(this)">
+                        <i class="fas fa-copy"></i> Copy
+                    </button>
+                    <span class="prompt-label">Prompt</span>
+                    <div id="modalPromptText" class="prompt-text">
+                        Loading prompt...
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Disclaimer Footer -->
+    <footer class="disclaimer-footer">
+        <div class="disclaimer-content">
+            <p class="disclaimer-title">✦ 免责声明 Disclaimer</p>
+            <p class="disclaimer-text">
+                本页面展示的图片及提示词均来源于互联网公开分享，仅供学习和参考使用。
+                如有侵权，请联系删除。所有内容版权归原作者所有。
+            </p>
+            <p class="disclaimer-text-en">
+                Images and prompts displayed on this page are collected from public internet sources for educational
+                purposes only.
+                If any content infringes your rights, please contact us for removal. All rights belong to original
+                creators.
+            </p>
+        </div>
+    </footer>
+
+    <!-- Scripts -->
+    <script src="prompts-data.js"></script>
+    <script src="prompts-poetry.js"></script>
+
+</body>
+
+</html>
