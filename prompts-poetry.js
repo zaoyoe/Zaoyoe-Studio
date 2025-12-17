@@ -392,3 +392,39 @@ window.onclick = function (event) {
         closePromptModal();
     }
 }
+
+// --- Keyboard Navigation ---
+document.addEventListener('keydown', (e) => {
+    const modal = document.getElementById('promptModal');
+    if (!modal || !modal.classList.contains('active')) return;
+
+    switch (e.key) {
+        case 'ArrowLeft':
+            // Previous image
+            if (currentModalImages.length > 1 && currentModalImageIndex > 0) {
+                updateModalImage(currentModalImageIndex - 1);
+            }
+            e.preventDefault();
+            break;
+
+        case 'ArrowRight':
+            // Next image
+            if (currentModalImages.length > 1 && currentModalImageIndex < currentModalImages.length - 1) {
+                updateModalImage(currentModalImageIndex + 1);
+            }
+            e.preventDefault();
+            break;
+
+        case 'Escape':
+            closePromptModal();
+            e.preventDefault();
+            break;
+
+        case 'Enter':
+            // Copy prompt text
+            const copyBtn = document.querySelector('.copy-btn');
+            if (copyBtn) copyPromptText(copyBtn);
+            e.preventDefault();
+            break;
+    }
+});
