@@ -131,11 +131,19 @@ function loadMoreCards() {
         card.className = 'prompt-card card-enter';
         card.dataset.tags = item.tags.join(','); // For CSS filtering
         card.dataset.id = item.id;
+        card.dataset.images = JSON.stringify(item.images); // Store all images
         card.style.animationDelay = `${index * 0.05}s`; // Stagger effect
         card.onclick = () => openPromptModal(item.id);
 
+        // Generate image indicator dots if multiple images
+        const hasMultiple = item.images.length > 1;
+        const indicators = hasMultiple
+            ? `<div class="card-indicators">${item.images.map((_, i) => `<span class="indicator-dot${i === 0 ? ' active' : ''}"></span>`).join('')}</div>`
+            : '';
+
         card.innerHTML = `
             <img src="${item.images[0]}" class="card-image" loading="lazy" alt="${item.title}">
+            ${indicators}
             <div class="card-overlay">
                 <div class="card-title">${item.title}</div>
                 <div class="card-tags">
@@ -143,6 +151,34 @@ function loadMoreCards() {
                 </div>
             </div>
         `;
+
+        // Add hover carousel for cards with multiple images
+        if (hasMultiple) {
+            let hoverInterval = null;
+            let currentIndex = 0;
+
+            card.addEventListener('mouseenter', () => {
+                const img = card.querySelector('.card-image');
+                const dots = card.querySelectorAll('.indicator-dot');
+                const images = JSON.parse(card.dataset.images);
+
+                hoverInterval = setInterval(() => {
+                    currentIndex = (currentIndex + 1) % images.length;
+                    img.src = images[currentIndex];
+                    dots.forEach((dot, i) => dot.classList.toggle('active', i === currentIndex));
+                }, 1500);
+            });
+
+            card.addEventListener('mouseleave', () => {
+                clearInterval(hoverInterval);
+                currentIndex = 0;
+                const img = card.querySelector('.card-image');
+                const dots = card.querySelectorAll('.indicator-dot');
+                const images = JSON.parse(card.dataset.images);
+                img.src = images[0];
+                dots.forEach((dot, i) => dot.classList.toggle('active', i === 0));
+            });
+        }
 
         grid.appendChild(card);
 
