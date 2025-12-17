@@ -92,10 +92,22 @@ function renderGallery(filter, reset = true) {
 // Filter cards using CSS display instead of re-rendering
 function filterCardsCSS(filter) {
     const cards = document.querySelectorAll('.prompt-card');
+    let visibleIndex = 0;
+
     cards.forEach(card => {
         const cardTags = card.dataset.tags ? card.dataset.tags.split(',') : [];
         if (filter === 'all' || cardTags.includes(filter)) {
             card.style.display = '';
+            // Re-trigger animation with stagger
+            card.classList.remove('card-visible');
+            card.style.animationDelay = `${visibleIndex * 0.03}s`;
+            visibleIndex++;
+
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    card.classList.add('card-visible');
+                });
+            });
         } else {
             card.style.display = 'none';
         }
