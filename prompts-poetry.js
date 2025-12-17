@@ -62,24 +62,44 @@ let currentFilter = 'all';
 let currentPage = 0;
 let isLoading = false;
 let allFilteredItems = [];
+let allCardsRendered = false; // Track if all cards have been rendered
+let renderedCards = new Map(); // Cache rendered cards by id
 
 // --- Render Gallery ---
 function renderGallery(filter, reset = true) {
     const grid = document.querySelector('.gallery-container');
     if (!grid) return;
 
+    currentFilter = filter;
+
+    // If cards already exist, just filter them via CSS
+    if (allCardsRendered) {
+        filterCardsCSS(filter);
+        return;
+    }
+
     if (reset) {
         grid.innerHTML = '';
-        currentFilter = filter;
         currentPage = 0;
 
-        // Get filtered items
-        allFilteredItems = filter === 'all'
-            ? [...PROMPTS]
-            : PROMPTS.filter(p => p.tags.includes(filter));
+        // Always load ALL prompts into filtered items
+        allFilteredItems = [...PROMPTS];
     }
 
     loadMoreCards();
+}
+
+// Filter cards using CSS display instead of re-rendering
+function filterCardsCSS(filter) {
+    const cards = document.querySelectorAll('.prompt-card');
+    cards.forEach(card => {
+        const cardTags = card.dataset.tags ? card.dataset.tags.split(',') : [];
+        if (filter === 'all' || cardTags.includes(filter)) {
+            card.style.display = '';
+        } else {
+            card.style.display = 'none';
+        }
+    });
 }
 
 function loadMoreCards() {
@@ -97,6 +117,8 @@ function loadMoreCards() {
     itemsToLoad.forEach((item, index) => {
         const card = document.createElement('div');
         card.className = 'prompt-card card-enter';
+        card.dataset.tags = item.tags.join(','); // For CSS filtering
+        card.dataset.id = item.id;
         card.style.animationDelay = `${index * 0.05}s`; // Stagger effect
         card.onclick = () => openPromptModal(item.id);
 
@@ -129,6 +151,11 @@ function loadMoreCards() {
             grid.classList.add('visible');
         });
     }
+
+    // Check if all cards are rendered
+    if (currentPage * CARDS_PER_PAGE >= PROMPTS.length) {
+        allCardsRendered = true;
+    }
 }
 
 // --- Infinite Scroll ---
@@ -159,13 +186,13 @@ function setupFilters() {
             // Apply Filter (getting from data-filter attribute)
             const filterType = item.getAttribute('data-filter');
 
-            // Reset grid animation
-            const grid = document.querySelector('.gallery-container');
-            grid.classList.remove('visible');
-
-            setTimeout(() => {
+            // If all cards rendered, just filter instantly
+            if (allCardsRendered) {
+                filterCardsCSS(filterType);
+            } else {
+                // Still loading, re-render with filter
                 renderGallery(filterType);
-            }, 300); // Wait for fade out
+            }
         });
     });
 }
