@@ -396,6 +396,27 @@ window.onclick = function (event) {
 // --- Keyboard Navigation ---
 document.addEventListener('keydown', (e) => {
     const modal = document.getElementById('promptModal');
+    const fullscreen = document.getElementById('fullscreenGallery');
+
+    // If fullscreen is active, handle it first
+    if (fullscreen && fullscreen.classList.contains('active')) {
+        switch (e.key) {
+            case 'ArrowLeft':
+                navigateFullscreen('prev');
+                e.preventDefault();
+                break;
+            case 'ArrowRight':
+                navigateFullscreen('next');
+                e.preventDefault();
+                break;
+            case 'Escape':
+                closeFullscreen(e);
+                e.preventDefault();
+                break;
+        }
+        return;
+    }
+
     if (!modal || !modal.classList.contains('active')) return;
 
     switch (e.key) {
@@ -427,4 +448,51 @@ document.addEventListener('keydown', (e) => {
             e.preventDefault();
             break;
     }
+});
+
+// --- Fullscreen Gallery ---
+function openFullscreen() {
+    const fullscreen = document.getElementById('fullscreenGallery');
+    const fullscreenImg = document.getElementById('fullscreenImg');
+    const counter = document.getElementById('fullscreenCounter');
+
+    fullscreenImg.src = currentModalImages[currentModalImageIndex];
+    counter.textContent = `${currentModalImageIndex + 1} / ${currentModalImages.length}`;
+
+    fullscreen.classList.add('active');
+}
+
+function closeFullscreen(event) {
+    if (event) event.stopPropagation();
+    const fullscreen = document.getElementById('fullscreenGallery');
+    fullscreen.classList.remove('active');
+}
+
+function navigateFullscreen(direction) {
+    if (currentModalImages.length <= 1) return;
+
+    if (direction === 'next' && currentModalImageIndex < currentModalImages.length - 1) {
+        currentModalImageIndex++;
+    } else if (direction === 'prev' && currentModalImageIndex > 0) {
+        currentModalImageIndex--;
+    }
+
+    const fullscreenImg = document.getElementById('fullscreenImg');
+    const counter = document.getElementById('fullscreenCounter');
+
+    fullscreenImg.src = currentModalImages[currentModalImageIndex];
+    counter.textContent = `${currentModalImageIndex + 1} / ${currentModalImages.length}`;
+
+    // Also update the modal image
+    updateModalImage(currentModalImageIndex);
+}
+
+// Make modal image clickable to open fullscreen
+document.addEventListener('DOMContentLoaded', () => {
+    // Delegate click on modal image
+    document.querySelector('.modal-image-col')?.addEventListener('click', (e) => {
+        if (e.target.tagName === 'IMG' && currentModalImages.length > 0) {
+            openFullscreen();
+        }
+    });
 });
