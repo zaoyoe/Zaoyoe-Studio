@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>Layout Debug</title>
+    <style>
+        body {
+            background: #1a1a2e;
+            color: white;
+            padding: 20px;
+        }
+
+        #messageContainer {
+            background: rgba(255, 255, 255, 0.1);
+            min-height: 200px;
+            padding: 20px;
+        }
+
+        .masonry-column {
+            background: rgba(255, 0, 0, 0.2);
+            margin: 5px;
+            padding: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Guestbook Layout Debug</h1>
+    <p>Screen width: <span id="width"></span></p>
+    <p>Masonry columns: <span id="cols"></span></p>
+    <div id="messageContainer"></div>
+
+    <script>
+        const container = document.getElementById('messageContainer');
+        const widthSpan = document.getElementById('width');
+        const colsSpan = document.getElementById('cols');
+
+        function checkLayout() {
+            const width = window.innerWidth;
+            const isMobile = width <= 768;
+
+            widthSpan.textContent = width + 'px';
+            colsSpan.textContent = isMobile ? '1 (Mobile)' : 'Multiple (Desktop)';
+
+            // Check masonry columns
+            const columns = container.querySelectorAll('.masonry-column');
+            console.log('Masonry columns found:', columns.length);
+
+            if (columns.length === 0) {
+                container.innerHTML = '<p style="color:red">No masonry columns found!</p>';
+            }
+        }
+
+        checkLayout();
+        window.addEventListener('resize', checkLayout);
+
+        // Check after 2 seconds to see if guestbook.js added columns
+        setTimeout(() => {
+            console.log('Checking again after 2s...');
+            checkLayout();
+        }, 2000);
+    </script>
+</body>
+
+</html>

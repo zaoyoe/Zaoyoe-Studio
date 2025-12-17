@@ -254,11 +254,6 @@
 
     async function initAuth() {
         try {
-            // Load dependencies in order
-            if (typeof AV === 'undefined') {
-                await loadScript('https://cdn.jsdelivr.net/npm/leancloud-storage@4.15.2/dist/av-min.js');
-            }
-
             // ✅ 加载 EmailJS (用于验证码)
             if (typeof emailjs === 'undefined') {
                 await loadScript('https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js');
@@ -282,25 +277,28 @@
             loadCSS(`login_styles.css?v=DARK_BG_INPUTS_V12`);
             loadCSS(`login_dual_mode.css?v=DARK_BG_INPUTS_V12`);
 
-            // Check if init script is loaded (it might be deferred)
-            // We can check if AV is initialized or just load our init script
-            await loadScript('./leancloud-init.js?v=20251125_ACL_FIX');
-            await loadScript('./leancloud-auth-functions.js?v=20251125_ACL_FIX');
-            await loadScript('./google-oauth.js?v=20251126_CORRECT_CLIENT_ID');
+            // Supabase Auth
+            await loadScript('./supabase-auth-functions.js?v=INITIAL');
 
             // ✅ 加载 script.js (包含 sendVerificationCode 函数)
             await loadScript('./script.js?v=EMAIL_FIX_V1');
 
-            // Initialize UI
-            if (typeof AV !== 'undefined' && AV.User) {
-                const currentUser = AV.User.current();
-                if (currentUser && typeof updateUserUI === 'function') {
+            // Initialize UI - now using Supabase
+            if (window.supabaseClient) {
+                const { data: { user } } = await window.supabaseClient.auth.getUser();
+                if (user && typeof updateUserUI === 'function') {
+                    const { data: profile } = await window.supabaseClient
+                        .from('profiles')
+                        .select('*')
+                        .eq('id', user.id)
+                        .single();
+
                     updateUserUI({
-                        objectId: currentUser.id,
-                        username: currentUser.get('username'),
-                        email: currentUser.get('email'),
-                        nickname: currentUser.get('nickname') || currentUser.get('username'),
-                        avatarUrl: currentUser.get('avatarUrl')
+                        objectId: user.id,
+                        username: user.email,
+                        email: user.email,
+                        nickname: profile?.username || user.user_metadata?.full_name || user.email.split('@')[0],
+                        avatarUrl: profile?.avatar_url || user.user_metadata?.avatar_url
                     });
                 }
             }

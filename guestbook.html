@@ -20,7 +20,6 @@
     <link rel="stylesheet" href="login_dual_mode.css?v=DARK_BG_INPUTS_V1">
     <link rel="stylesheet" href="avatar-fix.css?v=UNIFIED_HOVER_V2">
     <!-- Custom CSS -->
-    <link rel="stylesheet" href="live-like-animations.css?v=1">
     <link rel="stylesheet" href="capsule-styles.css?v=GLOW_V3">
     <link rel="stylesheet" href="style.css?v=RADIUS_GRADIENT_V1">
     <style>
@@ -272,20 +271,22 @@
     <!-- Force Input Background Fix -->
     <script src="./force-input-bg-fix.js?v=3" defer></script>
 
-    <!-- LeanCloud SDK -->
-    <!-- LeanCloud SDK with LiveQuery support -->
-    <script src="https://cdn.jsdelivr.net/npm/leancloud-storage@4.15.2/dist/av-live-query-min.js"></script>
-    <script src="./leancloud-init.js?v=20251125_ACL_FIX" defer></script>
-    <script src="./leancloud-auth-functions.js?v=20251125_ACL_FIX" defer></script>
-    <!-- LeanCloud Functions -->
-    <script src="./leancloud-guestbook-functions.js?v=NESTED_COMMENTS_V2" defer></script>
+    <!-- Supabase Client (CDN for browser) -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+        const SUPABASE_URL = 'https://mmkugdibsaeoevliebzk.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_lwkiF-sQ80z8e9oMcejFPQ_j7oezjcF';
+        window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        console.log('Supabase browser client initialized');
+    </script>
+
+
+    <!-- Supabase Auth -->
+    <script src="./supabase-auth-functions.js?v=GUESTBOOK_MIGRATION" defer></script>
+
+    <!-- Supabase Guestbook -->
+    <script src="./supabase-guestbook-functions.js?v=INITIAL" defer></script>
     <script src="script.js?v=20251125_ACL_FIX" defer></script>
-
-    <!-- 页面可见性监听（防止 LiveQuery 断线） -->
-    <script src="guestbook-visibility-listener.js?v=1" defer></script>
-
-    <!-- LiveQuery 点赞订阅（优雅的原位心跳动画） -->
-    <script src="live-like-subscription.js?v=1" defer></script>
 
     <!-- 智能通知胶囊管理器 (v5.5 - Triple Insurance) -->
     <script src="capsule-manager.js?v=5.5" defer></script>

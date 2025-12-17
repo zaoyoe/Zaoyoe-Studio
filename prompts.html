@@ -40,6 +40,13 @@
     <!-- Navigation / Categories -->
     <div class="poetry-nav-container">
         <div class="spotlight-overlay"></div>
+
+        <!-- Search Bar (Pinterest-style) -->
+        <div class="nav-search">
+            <i class="fas fa-search"></i>
+            <input type="text" id="gallerySearch" placeholder="Search prompts..." autocomplete="off">
+        </div>
+
         <div class="nav-items">
             <div class="nav-item active" data-filter="all">
                 <span class="en">All</span>
@@ -64,6 +71,10 @@
             <div class="nav-item" data-filter="Creative">
                 <span class="en">Creative</span>
                 <span class="cn">创意</span>
+            </div>
+            <div class="nav-item favorites-tab" data-filter="favorites">
+                <span class="en">Saved</span>
+                <span class="cn">收藏</span>
             </div>
         </div>
     </div>
@@ -117,21 +128,6 @@
         </div>
     </div>
 
-    <!-- Fullscreen Gallery Modal -->
-    <div id="fullscreenGallery" class="fullscreen-gallery" onclick="closeFullscreen(event)">
-        <img id="fullscreenImg" class="fullscreen-img" src="" alt="Fullscreen view">
-        <button class="fullscreen-nav left" onclick="event.stopPropagation(); navigateFullscreen('prev')">
-            <i class="fas fa-chevron-left"></i>
-        </button>
-        <button class="fullscreen-nav right" onclick="event.stopPropagation(); navigateFullscreen('next')">
-            <i class="fas fa-chevron-right"></i>
-        </button>
-        <div class="fullscreen-counter" id="fullscreenCounter">1 / 1</div>
-        <button class="fullscreen-close" onclick="closeFullscreen(event)">
-            <i class="fas fa-times"></i>
-        </button>
-    </div>
-
     <!-- Disclaimer Footer -->
     <footer class="disclaimer-footer">
         <div class="disclaimer-content">
@@ -150,6 +146,15 @@
     </footer>
 
     <!-- Scripts -->
+    <!-- Supabase Client (CDN for browser) -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+        // Initialize Supabase client for browser
+        const SUPABASE_URL = 'https://mmkugdibsaeoevliebzk.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_lwkiF-sQ80z8e9oMcejFPQ_j7oezjcF';
+        window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        console.log('Supabase browser client initialized');
+    </script>
     <script src="prompts-data.js"></script>
     <script src="prompts-poetry.js"></script>
 

@@ -23,10 +23,14 @@ function toggleTheme() {
 initTheme();
 
 document.addEventListener('DOMContentLoaded', () => {
+    // Assign IDs to PROMPTS for favorites to work
+    PROMPTS.forEach((p, i) => p.id = i);
+
     initSpotlight();
     renderGallery('all');
     setupFilters();
     setupInfiniteScroll();
+    setupSearch(); // Pinterest-style search
 
     // Fade in nav after fonts load (or timeout)
     if (document.fonts && document.fonts.ready) {
@@ -65,6 +69,40 @@ let allFilteredItems = [];
 let allCardsRendered = false; // Track if all cards have been rendered
 let renderedCards = new Map(); // Cache rendered cards by id
 
+// --- Favorites System (Pinterest-style) ---
+let favorites = new Set(JSON.parse(localStorage.getItem('promptFavorites') || '[]'));
+
+function saveFavorites() {
+    localStorage.setItem('promptFavorites', JSON.stringify([...favorites]));
+}
+
+function toggleFavorite(id, btn, e) {
+    e.stopPropagation();
+    e.stopImmediatePropagation(); // Ensure no other click listeners fire
+
+    // Trigger bounce animation
+    btn.classList.add('animating');
+    setTimeout(() => btn.classList.remove('animating'), 400);
+
+    if (favorites.has(id)) {
+        favorites.delete(id);
+        btn.classList.remove('saved');
+    } else {
+        favorites.add(id);
+        btn.classList.add('saved');
+    }
+    saveFavorites();
+
+    // If viewing favorites, remove card if unsaved
+    if (currentFilter === 'favorites' && !favorites.has(id)) {
+        const card = btn.closest('.prompt-card');
+        card.style.transition = 'transform 0.3s ease, opacity 0.3s ease';
+        card.style.transform = 'scale(0.9)';
+        card.style.opacity = '0';
+        setTimeout(() => card.style.display = 'none', 300);
+    }
+}
+
 // --- Render Gallery ---
 function renderGallery(filter, reset = true) {
     const grid = document.querySelector('.gallery-container');
@@ -82,8 +120,12 @@ function renderGallery(filter, reset = true) {
         grid.innerHTML = '';
         currentPage = 0;
 
-        // Always load ALL prompts into filtered items
-        allFilteredItems = [...PROMPTS];
+        // Filter items based on current filter
+        if (filter === 'favorites') {
+            allFilteredItems = PROMPTS.filter(p => favorites.has(p.id));
+        } else {
+            allFilteredItems = [...PROMPTS];
+        }
     }
 
     loadMoreCards();
@@ -96,17 +138,35 @@ function filterCardsCSS(filter) {
 
     cards.forEach(card => {
         const cardTags = card.dataset.tags ? card.dataset.tags.split(',') : [];
-        if (filter === 'all' || cardTags.includes(filter)) {
+        const cardId = parseInt(card.dataset.id);
+
+        let isVisible = false;
+        if (filter === 'all') {
+            isVisible = true;
+        } else if (filter === 'favorites') {
+            isVisible = favorites.has(cardId);
+        } else {
+            isVisible = cardTags.includes(filter);
+        }
+
+        if (isVisible) {
             card.style.display = '';
             // Re-trigger animation with stagger
+
+            // 1. Reset state instantly
+            card.style.transition = 'none';
             card.classList.remove('card-visible');
+
+            // 2. Force reflow
+            void card.offsetHeight;
+
+            // 3. Restore transition and trigger animation
+            card.style.transition = '';
             card.style.animationDelay = `${visibleIndex * 0.03}s`;
             visibleIndex++;
 
             requestAnimationFrame(() => {
-                requestAnimationFrame(() => {
-                    card.classList.add('card-visible');
-                });
+                card.classList.add('card-visible');
             });
         } else {
             card.style.display = 'none';
@@ -141,7 +201,13 @@ function loadMoreCards() {
             ? `<div class="card-indicators">${item.images.map((_, i) => `<span class="indicator-dot${i === 0 ? ' active' : ''}"></span>`).join('')}</div>`
             : '';
 
+        // Check if item is already saved
+        const isSaved = favorites.has(item.id);
+
         card.innerHTML = `
+            <button class="card-fav-btn ${isSaved ? 'saved' : ''}" onclick="toggleFavorite(${item.id}, this, event)">
+                <i class="fas fa-heart"></i>
+            </button>
             <img src="${item.images[0]}" class="card-image" loading="lazy" alt="${item.title}">
             ${indicators}
             <div class="card-overlay">
@@ -156,60 +222,27 @@ function loadMoreCards() {
         if (hasMultiple) {
             let hoverInterval = null;
             let currentIndex = 0;
-            let isAnimating = false;
-
-            const updateImageCrossFade = (nextIndex) => {
-                if (isAnimating) return;
-                isAnimating = true;
-
-                const baseImg = card.querySelector('.card-image');
-                const dots = card.querySelectorAll('.indicator-dot');
-                const images = JSON.parse(card.dataset.images);
-                const nextSrc = images[nextIndex];
-
-                // 1. Create temporary overlay image
-                const transitionImg = document.createElement('img');
-                transitionImg.src = nextSrc;
-                transitionImg.className = 'card-image-transition';
-
-                // Insert before overlay content but after base image
-                card.insertBefore(transitionImg, card.querySelector('.card-overlay'));
-
-                transitionImg.onload = () => {
-                    // 2. Fade in overlay
-                    requestAnimationFrame(() => {
-                        transitionImg.style.opacity = '1';
-                    });
-
-                    // 3. Update dots
-                    dots.forEach((dot, i) => dot.classList.toggle('active', i === nextIndex));
-
-                    // 4. Cleanup after transition
-                    setTimeout(() => {
-                        baseImg.src = nextSrc;
-                        transitionImg.remove();
-                        isAnimating = false;
-                        currentIndex = nextIndex;
-                    }, 600); // Match CSS transition duration
-                };
-            };
 
             card.addEventListener('mouseenter', () => {
+                const img = card.querySelector('.card-image');
+                const dots = card.querySelectorAll('.indicator-dot');
                 const images = JSON.parse(card.dataset.images);
 
                 hoverInterval = setInterval(() => {
-                    const nextIndex = (currentIndex + 1) % images.length;
-                    updateImageCrossFade(nextIndex);
-                }, 2000); // 2 seconds per image
+                    currentIndex = (currentIndex + 1) % images.length;
+                    img.src = images[currentIndex];
+                    dots.forEach((dot, i) => dot.classList.toggle('active', i === currentIndex));
+                }, 1500);
             });
 
             card.addEventListener('mouseleave', () => {
                 clearInterval(hoverInterval);
-
-                // Cross-fade back to first image if not already there
-                if (currentIndex !== 0) {
-                    updateImageCrossFade(0);
-                }
+                currentIndex = 0;
+                const img = card.querySelector('.card-image');
+                const dots = card.querySelectorAll('.indicator-dot');
+                const images = JSON.parse(card.dataset.images);
+                img.src = images[0];
+                dots.forEach((dot, i) => dot.classList.toggle('active', i === 0));
             });
         }
 
@@ -264,6 +297,10 @@ function setupFilters() {
             navItems.forEach(n => n.classList.remove('active'));
             item.classList.add('active');
 
+            // Clear search input when switching filters
+            const searchInput = document.getElementById('gallerySearch');
+            if (searchInput) searchInput.value = '';
+
             // Apply Filter (getting from data-filter attribute)
             const filterType = item.getAttribute('data-filter');
 
@@ -276,6 +313,113 @@ function setupFilters() {
             }
         });
     });
+}
+
+// --- Pinterest-style Search ---
+function setupSearch() {
+    const searchInput = document.getElementById('gallerySearch');
+    if (!searchInput) return;
+
+    let debounceTimer;
+
+    searchInput.addEventListener('input', (e) => {
+        const query = e.target.value.toLowerCase().trim();
+
+        // Debounce for performance
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+            filterBySearch(query);
+        }, 200);
+    });
+
+    // Clear search on ESC
+    searchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            searchInput.value = '';
+            filterBySearch('');
+            searchInput.blur();
+        }
+    });
+}
+
+async function filterBySearch(query) {
+    const cards = document.querySelectorAll('.prompt-card');
+
+    // If no query, show all cards
+    if (!query) {
+        let visibleIndex = 0;
+        cards.forEach(card => {
+            card.style.display = '';
+            card.classList.remove('card-visible');
+            card.style.animationDelay = `${visibleIndex * 0.03}s`;
+            visibleIndex++;
+            requestAnimationFrame(() => {
+                card.classList.add('card-visible');
+            });
+        });
+        // Re-select "All" when search cleared
+        const allItem = document.querySelector('.nav-item[data-filter="all"]');
+        if (allItem) allItem.classList.add('active');
+        return;
+    }
+
+    // Try Supabase Full-Text Search first
+    let matchedIds = null;
+    if (window.supabaseClient) {
+        try {
+            const { data, error } = await window.supabaseClient
+                .from('prompts')
+                .select('id')
+                .textSearch('fts', query, {
+                    type: 'websearch',
+                    config: 'english'
+                });
+
+            if (!error && data) {
+                matchedIds = new Set(data.map(p => p.id));
+                console.log(`🔍 Supabase FTS: Found ${matchedIds.size} results for "${query}"`);
+            }
+        } catch (e) {
+            console.warn('Supabase search failed, falling back to local:', e);
+        }
+    }
+
+    // Filter cards based on results
+    let visibleIndex = 0;
+    cards.forEach(card => {
+        const cardId = parseInt(card.dataset.id);
+        const item = PROMPTS[cardId];
+        if (!item) return;
+
+        let isVisible = false;
+
+        if (matchedIds !== null) {
+            // Use Supabase results (ID is 1-indexed in DB, 0-indexed in PROMPTS array)
+            isVisible = matchedIds.has(cardId + 1);
+        } else {
+            // Fallback to local search
+            const titleMatch = item.title.toLowerCase().includes(query);
+            const tagMatch = item.tags.some(t => t.toLowerCase().includes(query));
+            const descMatch = item.description && item.description.toLowerCase().includes(query);
+            const promptMatch = item.prompt && item.prompt.toLowerCase().includes(query);
+            isVisible = titleMatch || tagMatch || descMatch || promptMatch;
+        }
+
+        if (isVisible) {
+            card.style.display = '';
+            card.classList.remove('card-visible');
+            card.style.animationDelay = `${visibleIndex * 0.03}s`;
+            visibleIndex++;
+            requestAnimationFrame(() => {
+                card.classList.add('card-visible');
+            });
+        } else {
+            card.style.display = 'none';
+        }
+    });
+
+    // Update nav items - deselect all when searching
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
 }
 
 // --- Modal Logic ---
@@ -338,13 +482,9 @@ function openPromptModal(id) {
     document.body.style.overflow = 'hidden'; // Prevent background scroll
 }
 
-let isUpdatingImage = false; // Prevent race conditions
-
 function updateModalImage(index) {
     if (currentModalImages.length === 0) return;
-    if (isUpdatingImage) return; // Skip if already updating
 
-    isUpdatingImage = true;
     currentModalImageIndex = index;
 
     const imgContainer = document.querySelector('.modal-image-col');
@@ -373,7 +513,6 @@ function updateModalImage(index) {
                 newImg.id = 'modalImg';
                 newImg.classList.remove('modal-next-image', 'animate-in');
                 newImg.className = 'active';
-                isUpdatingImage = false; // Allow next update
             }, 300); // Slightly faster cleanup
         });
     };
@@ -430,107 +569,3 @@ window.onclick = function (event) {
         closePromptModal();
     }
 }
-
-// --- Keyboard Navigation ---
-document.addEventListener('keydown', (e) => {
-    const modal = document.getElementById('promptModal');
-    const fullscreen = document.getElementById('fullscreenGallery');
-
-    // If fullscreen is active, handle it first
-    if (fullscreen && fullscreen.classList.contains('active')) {
-        switch (e.key) {
-            case 'ArrowLeft':
-                navigateFullscreen('prev');
-                e.preventDefault();
-                break;
-            case 'ArrowRight':
-                navigateFullscreen('next');
-                e.preventDefault();
-                break;
-            case 'Escape':
-                closeFullscreen(e);
-                e.preventDefault();
-                break;
-        }
-        return;
-    }
-
-    if (!modal || !modal.classList.contains('active')) return;
-
-    switch (e.key) {
-        case 'ArrowLeft':
-            // Previous image
-            if (currentModalImages.length > 1 && currentModalImageIndex > 0) {
-                updateModalImage(currentModalImageIndex - 1);
-            }
-            e.preventDefault();
-            break;
-
-        case 'ArrowRight':
-            // Next image
-            if (currentModalImages.length > 1 && currentModalImageIndex < currentModalImages.length - 1) {
-                updateModalImage(currentModalImageIndex + 1);
-            }
-            e.preventDefault();
-            break;
-
-        case 'Escape':
-            closePromptModal();
-            e.preventDefault();
-            break;
-
-        case 'Enter':
-            // Copy prompt text
-            const copyBtn = document.querySelector('.copy-btn');
-            if (copyBtn) copyPromptText(copyBtn);
-            e.preventDefault();
-            break;
-    }
-});
-
-// --- Fullscreen Gallery ---
-function openFullscreen() {
-    const fullscreen = document.getElementById('fullscreenGallery');
-    const fullscreenImg = document.getElementById('fullscreenImg');
-    const counter = document.getElementById('fullscreenCounter');
-
-    fullscreenImg.src = currentModalImages[currentModalImageIndex];
-    counter.textContent = `${currentModalImageIndex + 1} / ${currentModalImages.length}`;
-
-    fullscreen.classList.add('active');
-}
-
-function closeFullscreen(event) {
-    if (event) event.stopPropagation();
-    const fullscreen = document.getElementById('fullscreenGallery');
-    fullscreen.classList.remove('active');
-}
-
-function navigateFullscreen(direction) {
-    if (currentModalImages.length <= 1) return;
-
-    if (direction === 'next' && currentModalImageIndex < currentModalImages.length - 1) {
-        currentModalImageIndex++;
-    } else if (direction === 'prev' && currentModalImageIndex > 0) {
-        currentModalImageIndex--;
-    }
-
-    const fullscreenImg = document.getElementById('fullscreenImg');
-    const counter = document.getElementById('fullscreenCounter');
-
-    fullscreenImg.src = currentModalImages[currentModalImageIndex];
-    counter.textContent = `${currentModalImageIndex + 1} / ${currentModalImages.length}`;
-
-    // Also update the modal image
-    updateModalImage(currentModalImageIndex);
-}
-
-// Make modal image clickable to open fullscreen
-document.addEventListener('DOMContentLoaded', () => {
-    // Delegate click on modal image
-    document.querySelector('.modal-image-col')?.addEventListener('click', (e) => {
-        if (e.target.tagName === 'IMG' && currentModalImages.length > 0) {
-            openFullscreen();
-        }
-    });
-});

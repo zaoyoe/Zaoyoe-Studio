@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Supabase Auth Test</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: white;
+            min-height: 100vh;
+            padding: 40px;
+            margin: 0;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: #4ade80;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 20px;
+            backdrop-filter: blur(10px);
+        }
+
+        .card h2 {
+            margin-top: 0;
+            font-size: 18px;
+        }
+
+        input,
+        button {
+            width: 100%;
+            padding: 12px 16px;
+            border-radius: 8px;
+            border: none;
+            margin-bottom: 12px;
+            font-size: 14px;
+        }
+
+        input {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+        }
+
+        input::placeholder {
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        button {
+            background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
+            color: black;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+        }
+
+        button.google {
+            background: white;
+            color: #333;
+        }
+
+        button.logout {
+            background: #ef4444;
+            color: white;
+        }
+
+        .status {
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .status.logged-in {
+            background: rgba(74, 222, 128, 0.2);
+            border: 1px solid #4ade80;
+        }
+
+        .status.logged-out {
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid #ef4444;
+        }
+
+        .user-info {
+            font-size: 14px;
+            line-height: 1.8;
+        }
+
+        .divider {
+            text-align: center;
+            margin: 20px 0;
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        #log {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 16px;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .log-entry {
+            margin-bottom: 4px;
+        }
+
+        .log-success {
+            color: #4ade80;
+        }
+
+        .log-error {
+            color: #ef4444;
+        }
+
+        .log-info {
+            color: #60a5fa;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🧪 Supabase Auth 测试页</h1>
+
+        <!-- Status -->
+        <div id="authStatus" class="status logged-out">
+            <strong>状态：</strong> 检查中...
+        </div>
+
+        <!-- Logged Out View -->
+        <div id="loggedOutView">
+            <!-- Login Card -->
+            <div class="card">
+                <h2>📧 邮箱登录</h2>
+                <input type="email" id="loginEmail" placeholder="邮箱">
+                <input type="password" id="loginPassword" placeholder="密码">
+                <button onclick="testLogin()">登录</button>
+            </div>
+
+            <!-- Register Card -->
+            <div class="card">
+                <h2>📝 注册新账号</h2>
+                <input type="email" id="regEmail" placeholder="邮箱">
+                <input type="text" id="regUsername" placeholder="用户名">
+                <input type="password" id="regPassword" placeholder="密码">
+                <button onclick="testRegister()">注册</button>
+            </div>
+
+            <!-- Google Login -->
+            <div class="card">
+                <h2>🔵 Google 登录</h2>
+                <button class="google" onclick="testGoogleLogin()">
+                    使用 Google 登录
+                </button>
+            </div>
+        </div>
+
+        <!-- Logged In View -->
+        <div id="loggedInView" style="display: none;">
+            <div class="card">
+                <h2>👤 用户信息</h2>
+                <div id="userInfo" class="user-info"></div>
+                <button class="logout" onclick="testLogout()">退出登录</button>
+            </div>
+        </div>
+
+        <!-- Log -->
+        <div class="card">
+            <h2>📋 日志</h2>
+            <div id="log"></div>
+        </div>
+    </div>
+
+    <!-- Supabase Client -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+        const SUPABASE_URL = 'https://mmkugdibsaeoevliebzk.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_lwkiF-sQ80z8e9oMcejFPQ_j7oezjcF';
+        window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.className = 'log-entry log-' + type;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logDiv.insertBefore(entry, logDiv.firstChild);
+            console.log(message);
+        }
+
+        async function updateUI() {
+            const { data: { user } } = await window.supabaseClient.auth.getUser();
+            const statusDiv = document.getElementById('authStatus');
+            const loggedOutView = document.getElementById('loggedOutView');
+            const loggedInView = document.getElementById('loggedInView');
+            const userInfoDiv = document.getElementById('userInfo');
+
+            if (user) {
+                statusDiv.className = 'status logged-in';
+                statusDiv.innerHTML = '<strong>状态：</strong> ✅ 已登录';
+                loggedOutView.style.display = 'none';
+                loggedInView.style.display = 'block';
+
+                // Get profile
+                const { data: profile } = await window.supabaseClient
+                    .from('profiles')
+                    .select('*')
+                    .eq('id', user.id)
+                    .single();
+
+                userInfoDiv.innerHTML = `
+                    <strong>ID:</strong> ${user.id}<br>
+                    <strong>Email:</strong> ${user.email}<br>
+                    <strong>Username:</strong> ${profile?.username || user.user_metadata?.full_name || 'N/A'}<br>
+                    <strong>Provider:</strong> ${user.app_metadata?.provider || 'email'}<br>
+                    <strong>Created:</strong> ${new Date(user.created_at).toLocaleString()}
+                `;
+
+                log('用户已登录: ' + user.email, 'success');
+            } else {
+                statusDiv.className = 'status logged-out';
+                statusDiv.innerHTML = '<strong>状态：</strong> ❌ 未登录';
+                loggedOutView.style.display = 'block';
+                loggedInView.style.display = 'none';
+                log('用户未登录', 'info');
+            }
+        }
+
+        async function testLogin() {
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+
+            if (!email || !password) {
+                alert('请填写邮箱和密码');
+                return;
+            }
+
+            log('尝试登录: ' + email, 'info');
+
+            try {
+                const { data, error } = await window.supabaseClient.auth.signInWithPassword({
+                    email, password
+                });
+
+                if (error) throw error;
+
+                log('登录成功!', 'success');
+                updateUI();
+            } catch (error) {
+                log('登录失败: ' + error.message, 'error');
+                alert('登录失败: ' + error.message);
+            }
+        }
+
+        async function testRegister() {
+            const email = document.getElementById('regEmail').value;
+            const username = document.getElementById('regUsername').value;
+            const password = document.getElementById('regPassword').value;
+
+            if (!email || !password) {
+                alert('请填写邮箱和密码');
+                return;
+            }
+
+            log('尝试注册: ' + email, 'info');
+
+            try {
+                const { data, error } = await window.supabaseClient.auth.signUp({
+                    email,
+                    password,
+                    options: {
+                        data: {
+                            full_name: username || email.split('@')[0],
+                            avatar_url: `https://ui-avatars.com/api/?name=${encodeURIComponent(username || email.split('@')[0])}&background=random`
+                        }
+                    }
+                });
+
+                if (error) throw error;
+
+                log('注册成功! 请检查邮箱确认链接', 'success');
+                alert('注册成功！请检查邮箱确认链接后再登录。');
+                updateUI();
+            } catch (error) {
+                log('注册失败: ' + error.message, 'error');
+                alert('注册失败: ' + error.message);
+            }
+        }
+
+        async function testGoogleLogin() {
+            log('发起 Google 登录...', 'info');
+
+            try {
+                const { data, error } = await window.supabaseClient.auth.signInWithOAuth({
+                    provider: 'google',
+                    options: {
+                        redirectTo: window.location.href
+                    }
+                });
+
+                if (error) throw error;
+
+                log('重定向到 Google...', 'info');
+            } catch (error) {
+                log('Google 登录失败: ' + error.message, 'error');
+                alert('Google 登录失败: ' + error.message);
+            }
+        }
+
+        async function testLogout() {
+            log('退出登录...', 'info');
+
+            try {
+                await window.supabaseClient.auth.signOut();
+                log('已退出登录', 'success');
+                updateUI();
+            } catch (error) {
+                log('退出失败: ' + error.message, 'error');
+            }
+        }
+
+        // Initialize
+        log('Supabase 客户端初始化完成', 'success');
+        updateUI();
+
+        // Listen for auth changes (handles OAuth redirect)
+        window.supabaseClient.auth.onAuthStateChange((event, session) => {
+            log('Auth 状态变化: ' + event, 'info');
+            if (event === 'SIGNED_IN') {
+                updateUI();
+            }
+        });
+    </script>
+</body>
+
+</html>

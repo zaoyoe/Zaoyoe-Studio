@@ -21,30 +21,30 @@ document.addEventListener('DOMContentLoaded', () => {
     let mobileHighlightActive = false;
     let currentHighlightedItem = null;
 
-    // Load messages from LeanCloud
-    console.log('📋 加载 LeanCloud 留言...');
+    // Load messages from Supabase
+    console.log('📋 加载 Supabase 留言...');
 
     // Show loading state
     if (messageContainer) {
         messageContainer.innerHTML = '<div style="text-align:center; padding:20px; color:rgba(255,255,255,0.5); font-size:0.9rem;">加载中...</div>';
     }
 
-    // Wait for LeanCloud to be ready, then load messages
-    function waitForLeanCloud() {
-        if (typeof AV !== 'undefined' && typeof loadGuestbookMessages === 'function') {
-            console.log('✅ LeanCloud 已就绪，加载留言');
+    // Wait for Supabase to be ready, then load messages
+    function waitForSupabase() {
+        if (typeof window.supabaseClient !== 'undefined' && typeof loadGuestbookMessages === 'function') {
+            console.log('✅ Supabase 已就绪，加载留言');
             loadGuestbookMessages();
 
-            // ✅ 启用实时推送（LiveQuery）
+            // ✅ 启用实时推送（Supabase Realtime）
             if (typeof enableRealTimeUpdates === 'function') {
-                console.log('🔌 准备启用 LiveQuery...');
+                console.log('🔌 准备启用 Supabase Realtime...');
                 setTimeout(enableRealTimeUpdates, 1000);
             } else {
                 console.warn('⚠️ enableRealTimeUpdates 函数未找到');
             }
         } else {
-            console.log('⏳ 等待 LeanCloud 初始化...');
-            setTimeout(waitForLeanCloud, 100);
+            console.log('⏳ 等待 Supabase 初始化...');
+            setTimeout(waitForSupabase, 100);
         }
     }
 
@@ -79,7 +79,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // Make renderMessages global so it can be called by LeanCloud loader
+    // Make renderMessages global so it can be called by Supabase loader
     // Masonry Layout State
     let masonryColumns = [];
     let currentColumnCount = 0;
@@ -409,7 +409,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Call this AFTER defining renderMessages to avoid race condition
-    waitForLeanCloud();
+    waitForSupabase();
 
     function createMessageCard(msg, index = 0) {
         const hasComments = msg.comments && msg.comments.length > 0;
@@ -724,12 +724,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Handle Comment Submission
     if (commentForm) {
-        commentForm.addEventListener('submit', (e) => {
+        commentForm.addEventListener('submit', async (e) => {
             e.preventDefault();
 
-            // Check Auth - LeanCloud
-            const currentUser = AV.User.current();
-            if (!currentUser) {
+            // Check Auth - Supabase
+            const { data: { user } } = await window.supabaseClient.auth.getUser();
+            if (!user) {
                 alert("请先登录后再评论");
                 if (typeof toggleLoginModal === 'function') {
                     toggleLoginModal();
@@ -763,7 +763,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function addComment(messageId, name, content) {
-        // Use LeanCloud function if available
+        // Use Supabase function if available
         if (typeof addCommentToMessage === 'function') {
             const success = await addCommentToMessage(messageId, content);
             if (success) {
@@ -852,32 +852,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // --- Global Modal Functions (Must be outside DOMContentLoaded) ---
 
-window.openCommentModal = function (messageId, parentCommentId = null) {
+window.openCommentModal = async function (messageId, parentCommentId = null) {
     console.log('=== openCommentModal called ===');
     console.log('Message ID:', messageId);
     console.log('Parent Comment ID:', parentCommentId);
-    console.log('typeof AV:', typeof AV);
 
-    // Check if AV SDK is loaded
-    if (typeof AV === 'undefined') {
-        console.error('❌ LeanCloud SDK not loaded yet');
-        alert("系统加载中，请稍后再试\n\n调试信息: LeanCloud SDK未加载");
-        return;
-    }
-
-    console.log('✅ AV SDK loaded');
-
-    // Check Auth First - LeanCloud
-    let currentUser;
+    // Check Auth First - Supabase
+    let user;
     try {
-        currentUser = AV.User.current();
-        console.log('AV.User.current() result:', currentUser);
+        const { data: { user: currentUser }, error } = await window.supabaseClient.auth.getUser();
+        user = currentUser;
+        console.log('Supabase user:', user);
 
-        if (currentUser) {
-            console.log('✅ User object exists');
-            console.log('User ID:', currentUser.id);
-            console.log('Username:', currentUser.get('username'));
-            console.log('Email:', currentUser.get('email'));
+        if (user) {
+            console.log('✅ User authenticated');
+            console.log('User ID:', user.id);
+            console.log('Email:', user.email);
         } else {
             console.log('❌ No current user');
         }
@@ -887,7 +877,7 @@ window.openCommentModal = function (messageId, parentCommentId = null) {
         return;
     }
 
-    if (!currentUser) {
+    if (!user) {
         console.warn('⚠️ No user logged in, showing login prompt');
         alert("请先登录后再评论");
         // Trigger login modal
