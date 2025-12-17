@@ -156,27 +156,60 @@ function loadMoreCards() {
         if (hasMultiple) {
             let hoverInterval = null;
             let currentIndex = 0;
+            let isAnimating = false;
+
+            const updateImageCrossFade = (nextIndex) => {
+                if (isAnimating) return;
+                isAnimating = true;
+
+                const baseImg = card.querySelector('.card-image');
+                const dots = card.querySelectorAll('.indicator-dot');
+                const images = JSON.parse(card.dataset.images);
+                const nextSrc = images[nextIndex];
+
+                // 1. Create temporary overlay image
+                const transitionImg = document.createElement('img');
+                transitionImg.src = nextSrc;
+                transitionImg.className = 'card-image-transition';
+
+                // Insert before overlay content but after base image
+                card.insertBefore(transitionImg, card.querySelector('.card-overlay'));
+
+                transitionImg.onload = () => {
+                    // 2. Fade in overlay
+                    requestAnimationFrame(() => {
+                        transitionImg.style.opacity = '1';
+                    });
+
+                    // 3. Update dots
+                    dots.forEach((dot, i) => dot.classList.toggle('active', i === nextIndex));
+
+                    // 4. Cleanup after transition
+                    setTimeout(() => {
+                        baseImg.src = nextSrc;
+                        transitionImg.remove();
+                        isAnimating = false;
+                        currentIndex = nextIndex;
+                    }, 600); // Match CSS transition duration
+                };
+            };
 
             card.addEventListener('mouseenter', () => {
-                const img = card.querySelector('.card-image');
-                const dots = card.querySelectorAll('.indicator-dot');
                 const images = JSON.parse(card.dataset.images);
 
                 hoverInterval = setInterval(() => {
-                    currentIndex = (currentIndex + 1) % images.length;
-                    img.src = images[currentIndex];
-                    dots.forEach((dot, i) => dot.classList.toggle('active', i === currentIndex));
-                }, 1500);
+                    const nextIndex = (currentIndex + 1) % images.length;
+                    updateImageCrossFade(nextIndex);
+                }, 2000); // 2 seconds per image
             });
 
             card.addEventListener('mouseleave', () => {
                 clearInterval(hoverInterval);
-                currentIndex = 0;
-                const img = card.querySelector('.card-image');
-                const dots = card.querySelectorAll('.indicator-dot');
-                const images = JSON.parse(card.dataset.images);
-                img.src = images[0];
-                dots.forEach((dot, i) => dot.classList.toggle('active', i === 0));
+
+                // Cross-fade back to first image if not already there
+                if (currentIndex !== 0) {
+                    updateImageCrossFade(0);
+                }
             });
         }
 
@@ -305,9 +338,13 @@ function openPromptModal(id) {
     document.body.style.overflow = 'hidden'; // Prevent background scroll
 }
 
+let isUpdatingImage = false; // Prevent race conditions
+
 function updateModalImage(index) {
     if (currentModalImages.length === 0) return;
+    if (isUpdatingImage) return; // Skip if already updating
 
+    isUpdatingImage = true;
     currentModalImageIndex = index;
 
     const imgContainer = document.querySelector('.modal-image-col');
@@ -336,6 +373,7 @@ function updateModalImage(index) {
                 newImg.id = 'modalImg';
                 newImg.classList.remove('modal-next-image', 'animate-in');
                 newImg.className = 'active';
+                isUpdatingImage = false; // Allow next update
             }, 300); // Slightly faster cleanup
         });
     };
