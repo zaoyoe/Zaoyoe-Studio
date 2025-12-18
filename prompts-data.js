@@ -10,7 +10,90 @@ const PROMPTS = [
         "images": [
             "assets/prompts/3D_chibi_style______1_1.png",
             "assets/prompts/3D_chibi_style______1_2.png"
-        ]
+        ],
+        "dominantColors": [
+            "gray",
+            "black",
+            "white"
+        ],
+        "aiTags": {
+            "objects": {
+                "en": [
+                    "coffee cup building",
+                    "people",
+                    "street lamp",
+                    "bench",
+                    "potted plants",
+                    "straw",
+                    "coffee shop interior",
+                    "buildings"
+                ],
+                "zh": [
+                    "咖啡杯建筑",
+                    "人物",
+                    "路灯",
+                    "长凳",
+                    "盆栽",
+                    "吸管",
+                    "咖啡店内部",
+                    "建筑物"
+                ]
+            },
+            "scenes": {
+                "en": [
+                    "city street",
+                    "coffee shop",
+                    "urban environment",
+                    "storefront"
+                ],
+                "zh": [
+                    "城市街道",
+                    "咖啡店",
+                    "城市环境",
+                    "店面"
+                ]
+            },
+            "styles": {
+                "en": [
+                    "3D render",
+                    "cartoon",
+                    "stylized",
+                    "miniature",
+                    "whimsical",
+                    "isometric perspective",
+                    "chibi art"
+                ],
+                "zh": [
+                    "3D渲染",
+                    "卡通",
+                    "风格化",
+                    "微缩模型",
+                    "异想天开",
+                    "等距视角",
+                    "Q版艺术"
+                ]
+            },
+            "mood": {
+                "en": [
+                    "cheerful",
+                    "inviting",
+                    "cozy",
+                    "playful",
+                    "peaceful",
+                    "cute",
+                    "whimsical"
+                ],
+                "zh": [
+                    "开朗",
+                    "诱人",
+                    "舒适",
+                    "好玩",
+                    "宁静",
+                    "可爱",
+                    "异想天开"
+                ]
+            }
+        }
     },
     {
         "id": "prompt-2",
@@ -27,7 +110,90 @@ const PROMPTS = [
             "assets/prompts/9_____3D_2_4.png",
             "assets/prompts/9_____3D_2_5.png",
             "assets/prompts/9_____3D_2_6.png"
-        ]
+        ],
+        "dominantColors": [
+            "gray",
+            "black",
+            "orange"
+        ],
+        "aiTags": {
+            "objects": {
+                "en": [
+                    "woman",
+                    "sweater",
+                    "pants",
+                    "shoes",
+                    "magazine covers",
+                    "clothing",
+                    "fashion accessories",
+                    "logos"
+                ],
+                "zh": [
+                    "女人",
+                    "毛衣",
+                    "裤子",
+                    "鞋子",
+                    "杂志封面",
+                    "服装",
+                    "时尚配饰",
+                    "标志"
+                ]
+            },
+            "scenes": {
+                "en": [
+                    "photoshoot",
+                    "studio",
+                    "fashion shoot",
+                    "minimalist background",
+                    "urban backdrop"
+                ],
+                "zh": [
+                    "拍摄",
+                    "摄影棚",
+                    "时尚摄影",
+                    "极简背景",
+                    "都市背景"
+                ]
+            },
+            "styles": {
+                "en": [
+                    "fashion photography",
+                    "editorial",
+                    "modern",
+                    "minimalist",
+                    "clean aesthetic",
+                    "casual chic",
+                    "commercial photography"
+                ],
+                "zh": [
+                    "时尚摄影",
+                    "编辑",
+                    "现代",
+                    "极简主义",
+                    "简洁美学",
+                    "休闲别致",
+                    "商业摄影"
+                ]
+            },
+            "mood": {
+                "en": [
+                    "confident",
+                    "chic",
+                    "stylish",
+                    "poised",
+                    "calm",
+                    "professional"
+                ],
+                "zh": [
+                    "自信",
+                    "时尚",
+                    "有型",
+                    "沉着",
+                    "平静",
+                    "专业"
+                ]
+            }
+        }
     },
     {
         "id": "prompt-3",
@@ -42,7 +208,96 @@ const PROMPTS = [
             "assets/prompts/Ai_______3_2.png",
             "assets/prompts/Ai_______3_3.png",
             "assets/prompts/Ai_______3_4.png"
-        ]
+        ],
+        "dominantColors": [
+            "black",
+            "red",
+            "orange"
+        ],
+        "aiTags": {
+            "objects": {
+                "en": [
+                    "Pepsi can",
+                    "miniature figures",
+                    "scaffolding",
+                    "checkered tablecloth",
+                    "paint cans",
+                    "ladder",
+                    "truck",
+                    "condiment bottles"
+                ],
+                "zh": [
+                    "百事可乐罐",
+                    "微型人偶",
+                    "脚手架",
+                    "方格桌布",
+                    "油漆罐",
+                    "梯子",
+                    "卡车",
+                    "调味瓶"
+                ]
+            },
+            "scenes": {
+                "en": [
+                    "diner",
+                    "tabletop",
+                    "indoor",
+                    "restaurant",
+                    "miniature world",
+                    "diorama"
+                ],
+                "zh": [
+                    "快餐店",
+                    "桌面",
+                    "室内",
+                    "餐厅",
+                    "微观世界",
+                    "场景模型"
+                ]
+            },
+            "styles": {
+                "en": [
+                    "macro photography",
+                    "3D render",
+                    "photorealistic",
+                    "conceptual art",
+                    "miniature art",
+                    "playful",
+                    "detailed"
+                ],
+                "zh": [
+                    "微距摄影",
+                    "3D渲染",
+                    "超写实",
+                    "概念艺术",
+                    "微型艺术",
+                    "俏皮",
+                    "精细"
+                ]
+            },
+            "mood": {
+                "en": [
+                    "playful",
+                    "creative",
+                    "imaginative",
+                    "industrious",
+                    "humorous",
+                    "whimsical",
+                    "warm",
+                    "busy"
+                ],
+                "zh": [
+                    "俏皮",
+                    "创意",
+                    "富想象力",
+                    "勤奋",
+                    "幽默",
+                    "异想天开",
+                    "温馨",
+                    "忙碌"
+                ]
+            }
+        }
     },
     {
         "id": "prompt-4",
@@ -56,7 +311,92 @@ const PROMPTS = [
             "assets/prompts/Capture_the_romance_4_1.png",
             "assets/prompts/Capture_the_romance_4_2.png",
             "assets/prompts/Capture_the_romance_4_3.png"
-        ]
+        ],
+        "dominantColors": [
+            "orange",
+            "black",
+            "green"
+        ],
+        "aiTags": {
+            "objects": {
+                "en": [
+                    "girl figure",
+                    "bicycle",
+                    "leaves",
+                    "flowers",
+                    "berries",
+                    "water droplets",
+                    "twigs"
+                ],
+                "zh": [
+                    "女孩形象",
+                    "自行车",
+                    "叶子",
+                    "花朵",
+                    "浆果",
+                    "水滴",
+                    "树枝"
+                ]
+            },
+            "scenes": {
+                "en": [
+                    "nature",
+                    "outdoor",
+                    "garden",
+                    "forest",
+                    "woodland"
+                ],
+                "zh": [
+                    "大自然",
+                    "户外",
+                    "花园",
+                    "森林",
+                    "林地"
+                ]
+            },
+            "styles": {
+                "en": [
+                    "botanical art",
+                    "leaf art",
+                    "assemblage art",
+                    "craft",
+                    "nature photography",
+                    "whimsical art",
+                    "still life"
+                ],
+                "zh": [
+                    "植物艺术",
+                    "树叶艺术",
+                    "组合艺术",
+                    "工艺品",
+                    "自然摄影",
+                    "异想天开的艺术",
+                    "静物"
+                ]
+            },
+            "mood": {
+                "en": [
+                    "peaceful",
+                    "whimsical",
+                    "serene",
+                    "natural",
+                    "joyful",
+                    "tranquil",
+                    "refreshing",
+                    "dreamlike"
+                ],
+                "zh": [
+                    "宁静",
+                    "异想天开",
+                    "平静",
+                    "自然",
+                    "快乐",
+                    "安详",
+                    "清新",
+                    "梦幻"
+                ]
+            }
+        }
     },
     {
         "id": "prompt-5",
@@ -68,7 +408,88 @@ const PROMPTS = [
         "prompt": "# KDA 风\n- \n    LOVE this one bro! Here's my take at it, Taylor Swift concert scene.  Scene prompt: SCENE: Inside a vast open-air stadium at night during a high-energy Taylor Swift concert. Tens of thousands of fans fill the stands and floor, illuminated by a sea of synchronized LED wristbands glowing in shifting waves of pink, lavender, and electric blue. The enormous stage stretches outward with towering screens, glittering spotlights, cascading holographic projections, and swirling confetti suspended in midair. Taylor stands center-stage, mid-performance, surrounded by dancers, musicians, and beams of radiant light cutting through the drifting haze. The atmosphere is charged with motion, color, and emotion—an immersive moment where music, crowd energy, and lights merge into a single shimmering spectacle.",
         "images": [
             "assets/prompts/KDA___5_1.png"
-        ]
+        ],
+        "dominantColors": [
+            "blue",
+            "purple",
+            "black"
+        ],
+        "aiTags": {
+            "objects": {
+                "en": [
+                    "singer",
+                    "performer",
+                    "audience",
+                    "stage",
+                    "confetti",
+                    "spotlights",
+                    "stadium",
+                    "musical instruments"
+                ],
+                "zh": [
+                    "歌手",
+                    "表演者",
+                    "观众",
+                    "舞台",
+                    "五彩纸屑",
+                    "聚光灯",
+                    "体育场",
+                    "乐器"
+                ]
+            },
+            "scenes": {
+                "en": [
+                    "music concert",
+                    "stadium",
+                    "live performance",
+                    "event venue"
+                ],
+                "zh": [
+                    "音乐会",
+                    "体育场",
+                    "现场表演",
+                    "活动场地"
+                ]
+            },
+            "styles": {
+                "en": [
+                    "neon art",
+                    "futuristic",
+                    "digital art",
+                    "3D render",
+                    "glow-in-the-dark",
+                    "cyberpunk elements"
+                ],
+                "zh": [
+                    "霓虹艺术",
+                    "未来主义",
+                    "数字艺术",
+                    "3D渲染",
+                    "夜光",
+                    "赛博朋克元素"
+                ]
+            },
+            "mood": {
+                "en": [
+                    "energetic",
+                    "vibrant",
+                    "exciting",
+                    "thrilling",
+                    "joyful",
+                    "electrifying",
+                    "lively"
+                ],
+                "zh": [
+                    "活力",
+                    "充满活力",
+                    "激动人心",
+                    "惊险",
+                    "欢乐",
+                    "电气化",
+                    "热闹"
+                ]
+            }
+        }
     },
     {
         "id": "prompt-6",
@@ -81,7 +502,102 @@ const PROMPTS = [
         "images": [
             "assets/prompts/Q_______6_1.png",
             "assets/prompts/Q_______6_2.png"
-        ]
+        ],
+        "dominantColors": [
+            "yellow",
+            "orange",
+            "gray"
+        ],
+        "aiTags": {
+            "objects": {
+                "en": [
+                    "child",
+                    "Forbidden City",
+                    "Great Wall",
+                    "Temple of Heaven",
+                    "Panda",
+                    "Peking duck",
+                    "tanghulu",
+                    "boat"
+                ],
+                "zh": [
+                    "小孩",
+                    "故宫",
+                    "长城",
+                    "天坛",
+                    "熊猫",
+                    "北京烤鸭",
+                    "冰糖葫芦",
+                    "船"
+                ]
+            },
+            "scenes": {
+                "en": [
+                    "historic sites",
+                    "cityscape",
+                    "park",
+                    "zoo",
+                    "hutong",
+                    "lake",
+                    "restaurant",
+                    "travel route"
+                ],
+                "zh": [
+                    "历史遗迹",
+                    "城市风光",
+                    "公园",
+                    "动物园",
+                    "胡同",
+                    "湖泊",
+                    "餐厅",
+                    "旅行路线"
+                ]
+            },
+            "styles": {
+                "en": [
+                    "cartoon",
+                    "hand-drawn",
+                    "illustration",
+                    "whimsical",
+                    "childlike",
+                    "doodle",
+                    "vibrant colors",
+                    "flat design"
+                ],
+                "zh": [
+                    "卡通",
+                    "手绘",
+                    "插画",
+                    "异想天开",
+                    "稚气",
+                    "涂鸦",
+                    "鲜艳色彩",
+                    "扁平设计"
+                ]
+            },
+            "mood": {
+                "en": [
+                    "joyful",
+                    "adventurous",
+                    "cheerful",
+                    "playful",
+                    "lively",
+                    "informative",
+                    "whimsical",
+                    "lighthearted"
+                ],
+                "zh": [
+                    "欢乐",
+                    "冒险",
+                    "开朗",
+                    "好玩",
+                    "活泼",
+                    "信息丰富",
+                    "异想天开",
+                    "轻松"
+                ]
+            }
+        }
     },
     {
         "id": "prompt-7",
@@ -93,7 +609,84 @@ const PROMPTS = [
         "prompt": "# Small body, Lion heart.\n- Prompt Template\n    prompt: A small, reddish-brown poodle with curly fur and expressive dark eyes is standing on a quiet street, looking into a puddle. In the water’s reflection, he sees a proud, majestic lion with a flowing mane. The reflection is realistically distorted by soft ripples in the puddle, giving the scene a dreamlike, metaphorical quality. The lighting is soft and natural, with a hint of golden hour. The image captures the contrast between Vin’s small size and his inner strength, courage, and determination. --ar 1:1",
         "images": [
             "assets/prompts/Small_body__Lion_heart_7_1.png"
-        ]
+        ],
+        "dominantColors": [
+            "brown",
+            "black",
+            "orange"
+        ],
+        "aiTags": {
+            "objects": {
+                "en": [
+                    "poodle",
+                    "lion (reflection)",
+                    "puddle",
+                    "cobblestone street",
+                    "old buildings",
+                    "autumn leaves"
+                ],
+                "zh": [
+                    "贵宾犬",
+                    "狮子 (倒影)",
+                    "水坑",
+                    "鹅卵石街道",
+                    "老建筑",
+                    "秋叶"
+                ]
+            },
+            "scenes": {
+                "en": [
+                    "old town",
+                    "cobblestone street",
+                    "outdoor",
+                    "autumn",
+                    "golden hour"
+                ],
+                "zh": [
+                    "老城区",
+                    "鹅卵石街道",
+                    "户外",
+                    "秋季",
+                    "黄金时段"
+                ]
+            },
+            "styles": {
+                "en": [
+                    "photography",
+                    "surrealism",
+                    "realistic",
+                    "warm lighting",
+                    "creative composition"
+                ],
+                "zh": [
+                    "摄影",
+                    "超现实主义",
+                    "写实",
+                    "暖光",
+                    "创意构图"
+                ]
+            },
+            "mood": {
+                "en": [
+                    "magical",
+                    "whimsical",
+                    "contemplative",
+                    "warm",
+                    "enchanting",
+                    "dreamlike",
+                    "peaceful"
+                ],
+                "zh": [
+                    "神奇",
+                    "异想天开",
+                    "沉思",
+                    "温馨",
+                    "迷人",
+                    "梦幻",
+                    "宁静"
+                ]
+            }
+        }
     },
     {
         "id": "prompt-8",
@@ -105,7 +698,100 @@ const PROMPTS = [
         "prompt": "# children's book\n- Prompt Template\n    Double page spread illustration for a children's book.\n    A sprawling, vibrant, chaotic landscape filling both pages. Tim and Sora are in the center, painting together actively. The world is full of funny \"mistakes\": houses built of gigantic fruits, clouds shaped like teapots raining lemonade, animals with mismatched body parts playing happily, flowers with smiling faces. Everything is colorful, messy, imperfect, but joyful.\n    Text across the top in playful font: \"And so, they drew a messy, wonderfully happy world together.\"\n    Style: Whimsical watercolor and crayon texture, explosion of color and imagination, detailed and full of life.\n    --ar 4:3",
         "images": [
             "assets/prompts/children_s_book_8_1.png"
-        ]
+        ],
+        "dominantColors": [
+            "white",
+            "gray",
+            "yellow"
+        ],
+        "aiTags": {
+            "objects": {
+                "en": [
+                    "boy",
+                    "winged elephant",
+                    "mermaid giraffe",
+                    "dog",
+                    "chicken",
+                    "smiling flowers",
+                    "fruit houses",
+                    "rainbow paintbrush"
+                ],
+                "zh": [
+                    "男孩",
+                    "带翅膀的大象",
+                    "美人鱼长颈鹿",
+                    "狗",
+                    "鸡",
+                    "微笑的花朵",
+                    "水果房屋",
+                    "彩虹画笔"
+                ]
+            },
+            "scenes": {
+                "en": [
+                    "outdoor",
+                    "fantasy landscape",
+                    "imaginary world",
+                    "storybook scene",
+                    "lush greenery",
+                    "artistic play area",
+                    "daytime"
+                ],
+                "zh": [
+                    "户外",
+                    "奇幻风景",
+                    "想象世界",
+                    "童话场景",
+                    "郁郁葱葱的绿色",
+                    "艺术游乐区",
+                    "白天"
+                ]
+            },
+            "styles": {
+                "en": [
+                    "children's illustration",
+                    "watercolor",
+                    "cartoon",
+                    "whimsical",
+                    "hand-drawn",
+                    "vibrant colors",
+                    "fantasy art",
+                    "storybook art"
+                ],
+                "zh": [
+                    "儿童插画",
+                    "水彩",
+                    "卡通",
+                    "异想天开",
+                    "手绘",
+                    "鲜艳色彩",
+                    "奇幻艺术",
+                    "故事书艺术"
+                ]
+            },
+            "mood": {
+                "en": [
+                    "happy",
+                    "joyful",
+                    "playful",
+                    "creative",
+                    "whimsical",
+                    "cheerful",
+                    "imaginative",
+                    "optimistic"
+                ],
+                "zh": [
+                    "快乐",
+                    "喜悦",
+                    "顽皮",
+                    "创意",
+                    "异想天开",
+                    "开朗",
+                    "富有想象力",
+                    "乐观"
+                ]
+            }
+        }
     },
     {
         "id": "prompt-9",
@@ -119,7 +805,89 @@ const PROMPTS = [
             "assets/prompts/______9_1.png",
             "assets/prompts/______9_2.png",
             "assets/prompts/______9_3.png"
-        ]
+        ],
+        "dominantColors": [
+            "orange",
+            "gray"
+        ],
+        "aiTags": {
+            "objects": {
+                "en": [
+                    "maple leaf",
+                    "water droplets",
+                    "cherry blossoms",
+                    "couple silhouette",
+                    "tree silhouette",
+                    "water surface",
+                    "falling petals"
+                ],
+                "zh": [
+                    "枫叶",
+                    "水滴",
+                    "樱花",
+                    "情侣剪影",
+                    "树木剪影",
+                    "水面",
+                    "飘落的花瓣"
+                ]
+            },
+            "scenes": {
+                "en": [
+                    "garden",
+                    "pond",
+                    "outdoor",
+                    "nature",
+                    "spring landscape",
+                    "fantasy setting"
+                ],
+                "zh": [
+                    "花园",
+                    "池塘",
+                    "户外",
+                    "自然",
+                    "春日风景",
+                    "奇幻场景"
+                ]
+            },
+            "styles": {
+                "en": [
+                    "digital art",
+                    "romantic realism",
+                    "fantasy art",
+                    "dreamlike",
+                    "luminous",
+                    "surreal"
+                ],
+                "zh": [
+                    "数字艺术",
+                    "浪漫写实",
+                    "奇幻艺术",
+                    "梦幻",
+                    "明亮",
+                    "超现实"
+                ]
+            },
+            "mood": {
+                "en": [
+                    "romantic",
+                    "peaceful",
+                    "dreamy",
+                    "serene",
+                    "hopeful",
+                    "enchanting",
+                    "tender"
+                ],
+                "zh": [
+                    "浪漫",
+                    "宁静",
+                    "梦幻",
+                    "安详",
+                    "充满希望",
+                    "迷人",
+                    "温柔"
+                ]
+            }
+        }
     },
     {
         "id": "prompt-10",
@@ -131,7 +899,86 @@ const PROMPTS = [
         "prompt": "# 冷暖对比风\n- -- Prompt ---\n    - \n    A horizontal split-screen cinematic shot of {Scene}, seamlessly blending two different eras: {Era_A} on the left and {Era_B} on the right (default: about 100 years ago vs. present day).\n    On the left side ({Era_A}): show era-appropriate architecture, interior or environment design, materials, vehicles, and props that clearly belong to that historical period. People wear authentic clothing from {Era_A}, including hairstyles, accessories, and typical items in their hands (such as books, umbrellas, instruments, letters, newspapers, etc.). The overall mood feels nostalgic and historically accurate.\n    On the right side ({Era_B}): show the same {Scene} in the modern era, with updated architecture or renovated structures, contemporary materials (glass, steel, LED screens, modern furniture), modern vehicles or equipment, and current technology (smartphones, laptops, cameras, etc.). People wear contemporary fashion that matches today’s style in this setting.\n    In the center: the two eras merge and overlap organically, without a hard dividing line. Elements from {Era_A} and {Era_B} visually interact: people from different times look at each other, walk through each other’s space, or seem surprised by the other era’s technology and objects. Architecture and environment smoothly morph from old to new (for example, stone gates turning into modern campus gates, classical concert hall décor fading into a futuristic stage, old street shops transforming into neon-lit storefronts).\n    Make sure the scene is not just a simple left/right comparison but a dynamic time-travel interaction where buildings, clothing, props, and human gestures clearly emphasize the contrast and fusion between the two eras. Photorealistic, 8k resolution, cinematic lighting, wide angle, highly detailed textures, rich sense of time-travel storytelling.\n    ---\n    SCENE: Times Square, New York\n    Era Comparison: 1920s and present day\n    Aspect Ratio: 4:3",
         "images": [
             "assets/prompts/______10_1.png"
-        ]
+        ],
+        "dominantColors": [
+            "gray",
+            "orange",
+            "blue"
+        ],
+        "aiTags": {
+            "objects": {
+                "en": [
+                    "people",
+                    "vehicles",
+                    "city buildings",
+                    "billboards",
+                    "streetlights",
+                    "theater",
+                    "newspaper",
+                    "mobile phones"
+                ],
+                "zh": [
+                    "人群",
+                    "车辆",
+                    "城市建筑",
+                    "广告牌",
+                    "路灯",
+                    "剧院",
+                    "报纸",
+                    "手机"
+                ]
+            },
+            "scenes": {
+                "en": [
+                    "city street",
+                    "urban area",
+                    "bustling intersection",
+                    "public space",
+                    "times square"
+                ],
+                "zh": [
+                    "城市街道",
+                    "都市区",
+                    "繁忙的十字路口",
+                    "公共场所",
+                    "时代广场"
+                ]
+            },
+            "styles": {
+                "en": [
+                    "photorealistic",
+                    "photo manipulation",
+                    "anachronistic",
+                    "digital art",
+                    "juxtaposed realities"
+                ],
+                "zh": [
+                    "写实主义",
+                    "照片合成",
+                    "时代错乱",
+                    "数字艺术",
+                    "现实并置"
+                ]
+            },
+            "mood": {
+                "en": [
+                    "energetic",
+                    "vibrant",
+                    "contrasting",
+                    "lively",
+                    "curious",
+                    "nostalgic"
+                ],
+                "zh": [
+                    "活力四射",
+                    "充满活力的",
+                    "对比鲜明",
+                    "活泼",
+                    "好奇",
+                    "怀旧"
+                ]
+            }
+        }
     },
     {
         "id": "prompt-11",
@@ -146,7 +993,82 @@ const PROMPTS = [
             "assets/prompts/________11_2.png",
             "assets/prompts/________11_3.png",
             "assets/prompts/________11_4.png"
-        ]
+        ],
+        "dominantColors": [
+            "gray"
+        ],
+        "aiTags": {
+            "objects": {
+                "en": [
+                    "kraft paper bags",
+                    "product packaging",
+                    "stickers",
+                    "cat illustrations",
+                    "baked goods",
+                    "technical drawings",
+                    "text",
+                    "chef hats"
+                ],
+                "zh": [
+                    "牛皮纸袋",
+                    "产品包装",
+                    "贴纸",
+                    "猫咪插画",
+                    "烘焙食品",
+                    "技术图纸",
+                    "文字",
+                    "厨师帽"
+                ]
+            },
+            "scenes": {
+                "en": [
+                    "studio",
+                    "white background",
+                    "product display"
+                ],
+                "zh": [
+                    "影棚",
+                    "白色背景",
+                    "产品展示"
+                ]
+            },
+            "styles": {
+                "en": [
+                    "product photography",
+                    "technical illustration",
+                    "graphic design",
+                    "minimalist",
+                    "cute",
+                    "commercial"
+                ],
+                "zh": [
+                    "产品摄影",
+                    "技术插图",
+                    "平面设计",
+                    "极简主义",
+                    "可爱风格",
+                    "商业风格"
+                ]
+            },
+            "mood": {
+                "en": [
+                    "informative",
+                    "professional",
+                    "clean",
+                    "appealing",
+                    "friendly",
+                    "playful"
+                ],
+                "zh": [
+                    "信息丰富",
+                    "专业",
+                    "整洁",
+                    "吸引人的",
+                    "友善的",
+                    "俏皮的"
+                ]
+            }
+        }
     },
     {
         "id": "prompt-12",
@@ -159,7 +1081,98 @@ const PROMPTS = [
         "images": [
             "assets/prompts/_____12_1.png",
             "assets/prompts/_____12_2.png"
-        ]
+        ],
+        "dominantColors": [
+            "brown",
+            "orange",
+            "gray"
+        ],
+        "aiTags": {
+            "objects": {
+                "en": [
+                    "scroll map",
+                    "imperial palace",
+                    "Temple of Heaven",
+                    "Great Wall",
+                    "mountains",
+                    "traditional buildings",
+                    "miniature people",
+                    "wooden table",
+                    "Chinese calligraphy",
+                    "red seals"
+                ],
+                "zh": [
+                    "画卷地图",
+                    "故宫",
+                    "天坛",
+                    "长城",
+                    "山脉",
+                    "传统建筑",
+                    "微缩人物",
+                    "木桌",
+                    "中国书法",
+                    "红色印章"
+                ]
+            },
+            "scenes": {
+                "en": [
+                    "ancient city",
+                    "mountain landscape",
+                    "indoor setting",
+                    "historical site",
+                    "cultural heritage",
+                    "architectural model display"
+                ],
+                "zh": [
+                    "古城",
+                    "山水景观",
+                    "室内场景",
+                    "历史遗迹",
+                    "文化遗产",
+                    "建筑模型展示"
+                ]
+            },
+            "styles": {
+                "en": [
+                    "traditional Chinese painting",
+                    "ink wash painting",
+                    "3D illustration",
+                    "isometric perspective",
+                    "historical rendering",
+                    "detailed art",
+                    "cultural art"
+                ],
+                "zh": [
+                    "中国传统绘画",
+                    "水墨画",
+                    "3D插画",
+                    "等距视角",
+                    "历史渲染",
+                    "精细艺术",
+                    "文化艺术"
+                ]
+            },
+            "mood": {
+                "en": [
+                    "majestic",
+                    "historical",
+                    "peaceful",
+                    "grand",
+                    "serene",
+                    "evocative",
+                    "reverent"
+                ],
+                "zh": [
+                    "雄伟",
+                    "历史悠久",
+                    "宁静",
+                    "宏伟",
+                    "安详",
+                    "引人遐想",
+                    "崇敬"
+                ]
+            }
+        }
     },
     {
         "id": "prompt-13",
@@ -172,7 +1185,97 @@ const PROMPTS = [
         "images": [
             "assets/prompts/_____13_1.png",
             "assets/prompts/_____13_2.png"
-        ]
+        ],
+        "dominantColors": [
+            "gray",
+            "black"
+        ],
+        "aiTags": {
+            "objects": {
+                "en": [
+                    "floating island",
+                    "castle",
+                    "Big Ben",
+                    "Tower Bridge",
+                    "Houses of Parliament",
+                    "river",
+                    "waterfalls",
+                    "Stonehenge",
+                    "cliffs",
+                    "clouds",
+                    "United Kingdom text",
+                    "map"
+                ],
+                "zh": [
+                    "浮岛",
+                    "城堡",
+                    "大本钟",
+                    "伦敦塔桥",
+                    "议会大厦",
+                    "河流",
+                    "瀑布",
+                    "巨石阵",
+                    "悬崖",
+                    "云朵",
+                    "英国文字",
+                    "地图"
+                ]
+            },
+            "scenes": {
+                "en": [
+                    "fantasy landscape",
+                    "aerial view",
+                    "sky",
+                    "floating landmass",
+                    "mythical realm"
+                ],
+                "zh": [
+                    "奇幻景观",
+                    "航拍视角",
+                    "天空",
+                    "漂浮陆地",
+                    "神话境界"
+                ]
+            },
+            "styles": {
+                "en": [
+                    "digital art",
+                    "photorealistic",
+                    "surrealism",
+                    "concept art",
+                    "fantasy art",
+                    "landscape art"
+                ],
+                "zh": [
+                    "数字艺术",
+                    "照片级写实",
+                    "超现实主义",
+                    "概念艺术",
+                    "奇幻艺术",
+                    "风景画"
+                ]
+            },
+            "mood": {
+                "en": [
+                    "majestic",
+                    "dreamlike",
+                    "awe-inspiring",
+                    "grand",
+                    "serene",
+                    "epic",
+                    "whimsical"
+                ],
+                "zh": [
+                    "雄伟",
+                    "梦幻",
+                    "令人敬畏",
+                    "宏伟",
+                    "宁静",
+                    "史诗",
+                    "异想天开"
+                ]
+            }
+        }
     },
     {
         "id": "prompt-14",
@@ -187,7 +1290,88 @@ const PROMPTS = [
             "assets/prompts/_____14_2.png",
             "assets/prompts/_____14_3.png",
             "assets/prompts/_____14_4.png"
-        ]
+        ],
+        "dominantColors": [
+            "red",
+            "black",
+            "gray"
+        ],
+        "aiTags": {
+            "objects": {
+                "en": [
+                    "Coca-Cola can",
+                    "soda can",
+                    "beverage can",
+                    "condensation",
+                    "organic structures",
+                    "root-like structures",
+                    "tendrils"
+                ],
+                "zh": [
+                    "可口可乐罐",
+                    "汽水罐",
+                    "饮料罐",
+                    "冷凝水",
+                    "有机结构",
+                    "根状结构",
+                    "卷须"
+                ]
+            },
+            "scenes": {
+                "en": [
+                    "abstract background",
+                    "stylized environment",
+                    "surreal setting",
+                    "biological landscape"
+                ],
+                "zh": [
+                    "抽象背景",
+                    "风格化环境",
+                    "超现实场景",
+                    "生物景观"
+                ]
+            },
+            "styles": {
+                "en": [
+                    "3D render",
+                    "digital art",
+                    "photorealistic",
+                    "surrealism",
+                    "high contrast",
+                    "dramatic lighting",
+                    "product photography"
+                ],
+                "zh": [
+                    "3D渲染",
+                    "数字艺术",
+                    "超写实",
+                    "超现实主义",
+                    "高对比度",
+                    "戏剧性灯光",
+                    "产品摄影"
+                ]
+            },
+            "mood": {
+                "en": [
+                    "intense",
+                    "dramatic",
+                    "energetic",
+                    "powerful",
+                    "vibrant",
+                    "dynamic",
+                    "fiery"
+                ],
+                "zh": [
+                    "强烈",
+                    "戏剧性",
+                    "活力",
+                    "强大",
+                    "鲜艳",
+                    "动感",
+                    "炽热"
+                ]
+            }
+        }
     },
     {
         "id": "prompt-15",
@@ -204,7 +1388,95 @@ const PROMPTS = [
             "assets/prompts/_____15_4.png",
             "assets/prompts/_____15_5.png",
             "assets/prompts/_____15_6.png"
-        ]
+        ],
+        "dominantColors": [
+            "gray",
+            "black"
+        ],
+        "aiTags": {
+            "objects": {
+                "en": [
+                    "floating island",
+                    "clouds",
+                    "castle",
+                    "Big Ben",
+                    "Tower Bridge",
+                    "Stonehenge",
+                    "waterfalls",
+                    "green hills"
+                ],
+                "zh": [
+                    "浮岛",
+                    "云朵",
+                    "城堡",
+                    "大本钟",
+                    "伦敦塔桥",
+                    "巨石阵",
+                    "瀑布",
+                    "绿山"
+                ]
+            },
+            "scenes": {
+                "en": [
+                    "fantasy landscape",
+                    "aerial view",
+                    "sky",
+                    "riverscape",
+                    "countryside",
+                    "historic landmarks"
+                ],
+                "zh": [
+                    "奇幻风景",
+                    "鸟瞰",
+                    "天空",
+                    "河畔风光",
+                    "乡村",
+                    "历史地标"
+                ]
+            },
+            "styles": {
+                "en": [
+                    "digital art",
+                    "photorealism",
+                    "fantasy art",
+                    "surrealism",
+                    "landscape art",
+                    "concept art",
+                    "matte painting"
+                ],
+                "zh": [
+                    "数字艺术",
+                    "超写实主义",
+                    "奇幻艺术",
+                    "超现实主义",
+                    "风景艺术",
+                    "概念艺术",
+                    "艺术合成"
+                ]
+            },
+            "mood": {
+                "en": [
+                    "majestic",
+                    "dreamlike",
+                    "epic",
+                    "grand",
+                    "imaginative",
+                    "ethereal",
+                    "serene",
+                    "whimsical"
+                ],
+                "zh": [
+                    "雄伟",
+                    "梦幻",
+                    "史诗",
+                    "宏大",
+                    "富有想象力",
+                    "空灵",
+                    "宁静",
+                    "异想天开"
+                ]
+            }
+        }
     },
     {
         "id": "prompt-16",
@@ -216,7 +1488,89 @@ const PROMPTS = [
         "prompt": "# 小说海报\n- Prompt Template\n    请为影视剧/小说《需要添加的名称》设计一张高品质的3D海报，需要先检索影视剧/小说信息和著名的片段场景。\n    首先，请利用你的知识库检索这个影视剧/小说的内容，找出一个最具代表性的名场面或核心地点。在画面中央，将这个场景构建为一个精致的轴侧视角3D微缩模型。风格要采用梦工厂动画那种细腻、柔和的渲染风格。你需要还原当时的建筑细节、人物动态以及环境氛围，无论是暴风雨还是宁静的午后，都要自然地融合在模型的光影里。\n    关于背景，不要使用简单的纯白底。请在模型周围营造一种带有淡淡水墨晕染和流动光雾的虚空环境，色调雅致，让画面看起来有呼吸感和纵深感，衬托出中央模型的珍贵。\n    最后是底部的排版，请生成中文文字。居中写上小说名称，字体要有与原著风格匹配的设计感。在书名下方，自动检索并排版一句原著中关于该场景的经典描写或台词，字体使用优雅的衬线体。整体布局要像一个高级的博物馆藏品铭牌那样精致平衡。",
         "images": [
             "assets/prompts/_____16_1.png"
-        ]
+        ],
+        "dominantColors": [
+            "gray",
+            "black"
+        ],
+        "aiTags": {
+            "objects": {
+                "en": [
+                    "ship in a bottle",
+                    "pirate ship",
+                    "glass bottle",
+                    "cork",
+                    "ocean waves",
+                    "sky",
+                    "sun",
+                    "wooden surface"
+                ],
+                "zh": [
+                    "瓶中船",
+                    "海盗船",
+                    "玻璃瓶",
+                    "软木塞",
+                    "海浪",
+                    "天空",
+                    "太阳",
+                    "木质表面"
+                ]
+            },
+            "scenes": {
+                "en": [
+                    "miniature world",
+                    "seascape",
+                    "outdoor",
+                    "still life",
+                    "fantasy scene"
+                ],
+                "zh": [
+                    "微缩世界",
+                    "海景",
+                    "户外",
+                    "静物",
+                    "奇幻场景"
+                ]
+            },
+            "styles": {
+                "en": [
+                    "photorealistic",
+                    "miniature art",
+                    "fantasy art",
+                    "diorama",
+                    "hyperrealism"
+                ],
+                "zh": [
+                    "超现实主义",
+                    "微缩艺术",
+                    "奇幻艺术",
+                    "立体模型",
+                    "高保真"
+                ]
+            },
+            "mood": {
+                "en": [
+                    "adventurous",
+                    "whimsical",
+                    "dreamy",
+                    "magical",
+                    "nostalgic",
+                    "serene",
+                    "imaginative",
+                    "sunny"
+                ],
+                "zh": [
+                    "冒险",
+                    "异想天开",
+                    "梦幻",
+                    "神奇",
+                    "怀旧",
+                    "宁静",
+                    "富有想象力",
+                    "阳光"
+                ]
+            }
+        }
     },
     {
         "id": "prompt-17",
@@ -231,7 +1585,94 @@ const PROMPTS = [
             "assets/prompts/_____17_2.png",
             "assets/prompts/_____17_3.png",
             "assets/prompts/_____17_4.png"
-        ]
+        ],
+        "dominantColors": [
+            "gray",
+            "yellow",
+            "brown"
+        ],
+        "aiTags": {
+            "objects": {
+                "en": [
+                    "Totoro",
+                    "tree",
+                    "cabin",
+                    "umbrella",
+                    "soot sprites",
+                    "acorn",
+                    "bus stop",
+                    "grass"
+                ],
+                "zh": [
+                    "龙猫",
+                    "树",
+                    "小木屋",
+                    "雨伞",
+                    "煤炭精灵",
+                    "橡子",
+                    "巴士站",
+                    "草地"
+                ]
+            },
+            "scenes": {
+                "en": [
+                    "forest",
+                    "rural landscape",
+                    "fantasy world",
+                    "yin and yang",
+                    "miniature diorama",
+                    "daytime",
+                    "nighttime"
+                ],
+                "zh": [
+                    "森林",
+                    "乡村风光",
+                    "奇幻世界",
+                    "阴阳",
+                    "微缩模型",
+                    "白天",
+                    "夜晚"
+                ]
+            },
+            "styles": {
+                "en": [
+                    "3D illustration",
+                    "cartoon",
+                    "whimsical",
+                    "Studio Ghibli style",
+                    "stylized",
+                    "fantasy art"
+                ],
+                "zh": [
+                    "3D插画",
+                    "卡通",
+                    "异想天开",
+                    "吉卜力风格",
+                    "风格化",
+                    "奇幻艺术"
+                ]
+            },
+            "mood": {
+                "en": [
+                    "peaceful",
+                    "magical",
+                    "serene",
+                    "tranquil",
+                    "dreamlike",
+                    "enchanting",
+                    "cozy"
+                ],
+                "zh": [
+                    "宁静",
+                    "神奇",
+                    "安详",
+                    "平和",
+                    "梦幻",
+                    "迷人",
+                    "舒适"
+                ]
+            }
+        }
     },
     {
         "id": "prompt-18",
@@ -248,7 +1689,102 @@ const PROMPTS = [
             "assets/prompts/_____18_4.png",
             "assets/prompts/_____18_5.png",
             "assets/prompts/_____18_6.png"
-        ]
+        ],
+        "dominantColors": [
+            "gray",
+            "yellow",
+            "blue"
+        ],
+        "aiTags": {
+            "objects": {
+                "en": [
+                    "Totoro",
+                    "Catbus",
+                    "Satsuki",
+                    "Mei",
+                    "Soot sprites",
+                    "Trees",
+                    "Acorns",
+                    "Umbrella"
+                ],
+                "zh": [
+                    "龙猫",
+                    "猫巴士",
+                    "小月",
+                    "小梅",
+                    "煤炭精灵",
+                    "树木",
+                    "橡子",
+                    "雨伞"
+                ]
+            },
+            "scenes": {
+                "en": [
+                    "Forest",
+                    "Rural landscape",
+                    "Rice paddies",
+                    "Day scene",
+                    "Night scene",
+                    "Fantasy world",
+                    "Bus stop",
+                    "Path"
+                ],
+                "zh": [
+                    "森林",
+                    "乡村风光",
+                    "稻田",
+                    "白天场景",
+                    "夜晚场景",
+                    "幻想世界",
+                    "公交车站",
+                    "小径"
+                ]
+            },
+            "styles": {
+                "en": [
+                    "Anime illustration",
+                    "Cartoon",
+                    "Studio Ghibli style",
+                    "Whimsical",
+                    "Fantasy art",
+                    "Vibrant colors",
+                    "Hand-drawn aesthetic",
+                    "Narrative art"
+                ],
+                "zh": [
+                    "动漫插画",
+                    "卡通",
+                    "吉卜力风格",
+                    "异想天开",
+                    "奇幻艺术",
+                    "鲜艳色彩",
+                    "手绘美学",
+                    "叙事艺术"
+                ]
+            },
+            "mood": {
+                "en": [
+                    "Joyful",
+                    "Peaceful",
+                    "Magical",
+                    "Whimsical",
+                    "Nostalgic",
+                    "Dreamlike",
+                    "Adventurous",
+                    "Gentle"
+                ],
+                "zh": [
+                    "欢乐",
+                    "宁静",
+                    "神奇",
+                    "异想天开",
+                    "怀旧",
+                    "梦幻",
+                    "冒险",
+                    "温和"
+                ]
+            }
+        }
     },
     {
         "id": "prompt-19",
@@ -260,7 +1796,86 @@ const PROMPTS = [
         "prompt": "# 文章变成卡通信息图\n- Prompt Template\n    请根据输入内容提取核心主题与要点，生成一张卡通风格的信息图：\n    - 采用手绘风格，横版（16:9）构图。\n    - 加入少量简洁的卡通元素、图标或名人画像，增强趣味性和视觉记忆。\n    - 如果有敏感人物或者版权内容，画一个相似替代，但是不要拒绝生成\n    - 所有图像、文字必须使用手绘风格，没有写实风格图画元素\n    - 除非特别要求，否则语言与输入内容语言一致。\n    - 信息精简，突出关键词与核心概念，多留白，易于一眼抓住重点。\n    请根据输入的内容使用 nano banana pro 画图：",
         "images": [
             "assets/prompts/__________19_1.png"
-        ]
+        ],
+        "dominantColors": [
+            "gray"
+        ],
+        "aiTags": {
+            "objects": {
+                "en": [
+                    "robot",
+                    "man",
+                    "computer servers",
+                    "hard drives",
+                    "lightbulb",
+                    "brain",
+                    "human hand",
+                    "robot hand"
+                ],
+                "zh": [
+                    "机器人",
+                    "男人",
+                    "电脑服务器",
+                    "硬盘",
+                    "灯泡",
+                    "大脑",
+                    "人手",
+                    "机械手"
+                ]
+            },
+            "scenes": {
+                "en": [
+                    "conceptual space",
+                    "infographic",
+                    "diagram",
+                    "educational setting",
+                    "abstract representation"
+                ],
+                "zh": [
+                    "概念空间",
+                    "信息图",
+                    "图表",
+                    "教育场景",
+                    "抽象表现"
+                ]
+            },
+            "styles": {
+                "en": [
+                    "cartoon",
+                    "illustration",
+                    "hand-drawn",
+                    "line art",
+                    "explanatory graphic",
+                    "doodle"
+                ],
+                "zh": [
+                    "卡通",
+                    "插画",
+                    "手绘",
+                    "线条艺术",
+                    "解释性图表",
+                    "涂鸦"
+                ]
+            },
+            "mood": {
+                "en": [
+                    "informative",
+                    "analytical",
+                    "forward-thinking",
+                    "conceptual",
+                    "optimistic",
+                    "thought-provoking"
+                ],
+                "zh": [
+                    "信息丰富",
+                    "分析性",
+                    "前瞻性",
+                    "概念性",
+                    "乐观",
+                    "发人深省"
+                ]
+            }
+        }
     },
     {
         "id": "prompt-20",
@@ -275,7 +1890,100 @@ const PROMPTS = [
             "assets/prompts/____20_2.png",
             "assets/prompts/____20_3.png",
             "assets/prompts/____20_4.png"
-        ]
+        ],
+        "dominantColors": [
+            "gray"
+        ],
+        "aiTags": {
+            "objects": {
+                "en": [
+                    "person",
+                    "ring",
+                    "hood",
+                    "cloak",
+                    "tower",
+                    "mountain",
+                    "forest",
+                    "river"
+                ],
+                "zh": [
+                    "人物",
+                    "戒指",
+                    "兜帽",
+                    "斗篷",
+                    "塔",
+                    "山脉",
+                    "森林",
+                    "河流"
+                ]
+            },
+            "scenes": {
+                "en": [
+                    "fantasy landscape",
+                    "forest",
+                    "mountain range",
+                    "river valley",
+                    "volcanic landscape",
+                    "dark fortress",
+                    "quest",
+                    "outdoor"
+                ],
+                "zh": [
+                    "奇幻风景",
+                    "森林",
+                    "山脉",
+                    "河谷",
+                    "火山地貌",
+                    "黑暗要塞",
+                    "任务旅程",
+                    "户外"
+                ]
+            },
+            "styles": {
+                "en": [
+                    "fantasy art",
+                    "movie poster",
+                    "digital art",
+                    "photomontage",
+                    "epic",
+                    "dramatic",
+                    "dark fantasy",
+                    "double exposure"
+                ],
+                "zh": [
+                    "奇幻艺术",
+                    "电影海报",
+                    "数字艺术",
+                    "照片蒙太奇",
+                    "史诗",
+                    "戏剧性",
+                    "黑暗奇幻",
+                    "双重曝光"
+                ]
+            },
+            "mood": {
+                "en": [
+                    "epic",
+                    "mysterious",
+                    "somber",
+                    "adventurous",
+                    "foreboding",
+                    "determined",
+                    "perilous",
+                    "sense of journey"
+                ],
+                "zh": [
+                    "史诗",
+                    "神秘",
+                    "阴郁",
+                    "冒险",
+                    "不祥",
+                    "坚定",
+                    "危机四伏",
+                    "旅途感"
+                ]
+            }
+        }
     },
     {
         "id": "prompt-21",
@@ -290,7 +1998,90 @@ const PROMPTS = [
             "assets/prompts/_____21_2.png",
             "assets/prompts/_____21_3.png",
             "assets/prompts/_____21_4.png"
-        ]
+        ],
+        "dominantColors": [
+            "white",
+            "gray",
+            "orange"
+        ],
+        "aiTags": {
+            "objects": {
+                "en": [
+                    "girl",
+                    "beanie hat",
+                    "scarf",
+                    "sweater",
+                    "tote bag",
+                    "coffee cup",
+                    "pumpkin",
+                    "boots",
+                    "calendar text",
+                    "Chinese characters"
+                ],
+                "zh": [
+                    "女孩",
+                    "毛线帽",
+                    "围巾",
+                    "毛衣",
+                    "手提袋",
+                    "咖啡杯",
+                    "南瓜",
+                    "靴子",
+                    "日历文字",
+                    "汉字"
+                ]
+            },
+            "scenes": {
+                "en": [
+                    "calendar illustration",
+                    "clean background",
+                    "seasonal theme"
+                ],
+                "zh": [
+                    "日历插画",
+                    "简洁背景",
+                    "季节主题"
+                ]
+            },
+            "styles": {
+                "en": [
+                    "cartoon",
+                    "illustration",
+                    "hand-drawn",
+                    "watercolor",
+                    "cute style",
+                    "digital art"
+                ],
+                "zh": [
+                    "卡通",
+                    "插画",
+                    "手绘",
+                    "水彩",
+                    "可爱风格",
+                    "数字艺术"
+                ]
+            },
+            "mood": {
+                "en": [
+                    "cozy",
+                    "festive",
+                    "cheerful",
+                    "warm",
+                    "grateful",
+                    "autumnal",
+                    "peaceful"
+                ],
+                "zh": [
+                    "温馨",
+                    "节日",
+                    "愉悦",
+                    "温暖",
+                    "感恩",
+                    "秋季",
+                    "宁静"
+                ]
+            }
+        }
     },
     {
         "id": "prompt-22",
@@ -302,7 +2093,96 @@ const PROMPTS = [
         "prompt": "# 瓶内世界\n- Prompt\n    A detailed photograph captures a glass bottle containing a miniature scene. Inside is the 'Black Pearl,' a weathered pirate ship with torn black sails and Jolly Roger flags, sailing on rough turquoise waves.\n    Above is a sunny sky with white clouds, a bright sun flare, and flying seagulls. The exterior of the glass bottle is covered in water droplets. It rests on a rustic, wet wooden surface with sunlight reflecting off the glass and water. The scene is photorealistic and highly detailed. --ar 3:2",
         "images": [
             "assets/prompts/_____22_1.png"
-        ]
+        ],
+        "dominantColors": [
+            "gray",
+            "brown",
+            "orange"
+        ],
+        "aiTags": {
+            "objects": {
+                "en": [
+                    "Traditional Chinese architecture",
+                    "Scroll",
+                    "Calligraphy",
+                    "Ink wash landscape",
+                    "Clouds",
+                    "Mountains",
+                    "Pine trees",
+                    "Red seals"
+                ],
+                "zh": [
+                    "中国传统建筑",
+                    "卷轴",
+                    "书法",
+                    "水墨山水画",
+                    "云朵",
+                    "山脉",
+                    "松树",
+                    "红色印章"
+                ]
+            },
+            "scenes": {
+                "en": [
+                    "Celestial",
+                    "Fantasy landscape",
+                    "Ancient China",
+                    "Cultural heritage",
+                    "Dreamscape",
+                    "Aerial view"
+                ],
+                "zh": [
+                    "天界",
+                    "奇幻山水",
+                    "古代中国",
+                    "文化遗产",
+                    "梦境",
+                    "鸟瞰"
+                ]
+            },
+            "styles": {
+                "en": [
+                    "Traditional Chinese ink painting",
+                    "3D rendering",
+                    "Surrealism",
+                    "Cultural art",
+                    "Classical Chinese art",
+                    "Fantasy art",
+                    "Miniature art"
+                ],
+                "zh": [
+                    "中国水墨画",
+                    "3D渲染",
+                    "超现实主义",
+                    "文化艺术",
+                    "中国古典艺术",
+                    "奇幻艺术",
+                    "微缩艺术"
+                ]
+            },
+            "mood": {
+                "en": [
+                    "Majestic",
+                    "Serene",
+                    "Evocative",
+                    "Peaceful",
+                    "Cultural",
+                    "Ethereal",
+                    "Grand",
+                    "Harmonious"
+                ],
+                "zh": [
+                    "庄严",
+                    "宁静",
+                    "引人遐想",
+                    "平和",
+                    "文化气息",
+                    "飘渺",
+                    "宏伟",
+                    "和谐"
+                ]
+            }
+        }
     },
     {
         "id": "prompt-23",
@@ -314,7 +2194,97 @@ const PROMPTS = [
         "prompt": "# 穿越\n- Prompt\n    A glowing oval portal stands between {Real_World_Scene} and {Portal_Inner_Scene}.\n    Outside the portal, the real-world environment is {Real_World_Scene}, depicted with realistic textures, grounded atmosphere, and gritty or natural tones.\n    Inside the portal lies {Portal_Inner_Scene}, vibrant, imaginative, and contrasting sharply with the real world.\n    {Portal_Inner_Character} is stepping through the portal, turning back with a dynamic glance while holding the viewer’s hand, as if guiding them into the other world.\n    The portal emits mystical blue-purple light, drawn with clean outlines and soft shading consistent with the character’s style.\n    Optional overall visual style: {Art_Style} (defaults to a bold contrast between anime and reality).\n    Camera angle: third-person perspective, clearly showing the viewer’s hand being pulled into the new world.\n    No blur; sharp visual distinction between the two worlds.\n    Aspect ratio: 2:3.\n    ---\n    Real_World_Scene: A winter street in Tokyo, low-saturation neon lights with a faint snowy haze\n    Portal_Inner_Scene:  A futuristic city street glowing with blue holograms, neon refracting through the air\n    Portal_Inner_Character: A cyborg girl with mechanical limbs wearing a semi-armored exosuit",
         "images": [
             "assets/prompts/___23_1.png"
-        ]
+        ],
+        "dominantColors": [
+            "gray",
+            "blue"
+        ],
+        "aiTags": {
+            "objects": {
+                "en": [
+                    "cyborg",
+                    "human hand",
+                    "neon signs",
+                    "portal",
+                    "rain",
+                    "skyscrapers",
+                    "buildings",
+                    "umbrella"
+                ],
+                "zh": [
+                    "赛博格",
+                    "人手",
+                    "霓虹灯牌",
+                    "传送门",
+                    "雨水",
+                    "摩天大楼",
+                    "建筑物",
+                    "雨伞"
+                ]
+            },
+            "scenes": {
+                "en": [
+                    "cyberpunk city",
+                    "rainy street",
+                    "futuristic cityscape",
+                    "urban street",
+                    "hong kong",
+                    "dystopian urban",
+                    "parallel worlds"
+                ],
+                "zh": [
+                    "赛博朋克城市",
+                    "雨中街道",
+                    "未来都市景观",
+                    "城市街道",
+                    "香港",
+                    "反乌托邦都市",
+                    "平行世界"
+                ]
+            },
+            "styles": {
+                "en": [
+                    "cyberpunk",
+                    "sci-fi",
+                    "digital art",
+                    "photo manipulation",
+                    "gritty realism",
+                    "futuristic",
+                    "dark fantasy"
+                ],
+                "zh": [
+                    "赛博朋克",
+                    "科幻",
+                    "数字艺术",
+                    "照片处理",
+                    "粗犷写实",
+                    "未来主义",
+                    "黑暗奇幻"
+                ]
+            },
+            "mood": {
+                "en": [
+                    "mysterious",
+                    "intriguing",
+                    "gritty",
+                    "futuristic",
+                    "transitional",
+                    "tense",
+                    "awe-inspiring",
+                    "enigmatic"
+                ],
+                "zh": [
+                    "神秘",
+                    "引人入胜",
+                    "粗犷",
+                    "未来感",
+                    "过渡",
+                    "紧张",
+                    "令人敬畏",
+                    "费解"
+                ]
+            }
+        }
     },
     {
         "id": "prompt-24",
@@ -329,7 +2299,73 @@ const PROMPTS = [
             "assets/prompts/____24_2.png",
             "assets/prompts/____24_3.png",
             "assets/prompts/____24_4.png"
-        ]
+        ],
+        "dominantColors": [
+            "gray",
+            "red"
+        ],
+        "aiTags": {
+            "objects": {
+                "en": [
+                    "Spiderman",
+                    "balloon",
+                    "drawing"
+                ],
+                "zh": [
+                    "蜘蛛侠",
+                    "气球",
+                    "画作"
+                ]
+            },
+            "scenes": {
+                "en": [
+                    "indoor",
+                    "plain background",
+                    "studio"
+                ],
+                "zh": [
+                    "室内",
+                    "纯色背景",
+                    "工作室"
+                ]
+            },
+            "styles": {
+                "en": [
+                    "illustration",
+                    "hand-drawn",
+                    "stippling",
+                    "chibi art",
+                    "cartoon",
+                    "minimalist"
+                ],
+                "zh": [
+                    "插画",
+                    "手绘",
+                    "点画法",
+                    "Q版艺术",
+                    "卡通",
+                    "极简主义"
+                ]
+            },
+            "mood": {
+                "en": [
+                    "playful",
+                    "cute",
+                    "joyful",
+                    "whimsical",
+                    "lighthearted",
+                    "happy"
+                ],
+                "zh": [
+                    "俏皮",
+                    "可爱",
+                    "欢乐",
+                    "异想天开",
+                    "轻松愉快",
+                    "幸福"
+                ]
+            }
+        }
     },
     {
         "id": "prompt-25",
@@ -341,7 +2377,85 @@ const PROMPTS = [
         "prompt": "# 老照片修复\n- Prompt Template\n    Restore and enhance this photograph to professional portrait quality comparable to a Canon EOS R5 capture. Repair all scratches, folds, stains, discoloration, and missing details with high-precision reconstruction while preserving the subject's natural Filipino facial features, skin texture, and lighting. Vivid Colourful.",
         "images": [
             "assets/prompts/______25_1.png"
-        ]
+        ],
+        "dominantColors": [
+            "gray",
+            "black"
+        ],
+        "aiTags": {
+            "objects": {
+                "en": [
+                    "children",
+                    "boy",
+                    "girl",
+                    "baby",
+                    "siblings",
+                    "clothing"
+                ],
+                "zh": [
+                    "孩子",
+                    "男孩",
+                    "女孩",
+                    "婴儿",
+                    "兄弟姐妹",
+                    "服装"
+                ]
+            },
+            "scenes": {
+                "en": [
+                    "indoor",
+                    "studio",
+                    "home",
+                    "portrait session"
+                ],
+                "zh": [
+                    "室内",
+                    "摄影棚",
+                    "家",
+                    "肖像摄影"
+                ]
+            },
+            "styles": {
+                "en": [
+                    "vintage photography",
+                    "old photo",
+                    "damaged photo",
+                    "contemporary photography",
+                    "comparison photo",
+                    "before and after",
+                    "portrait"
+                ],
+                "zh": [
+                    "复古摄影",
+                    "旧照片",
+                    "损坏照片",
+                    "现代摄影",
+                    "对比照片",
+                    "前后对比",
+                    "肖像"
+                ]
+            },
+            "mood": {
+                "en": [
+                    "nostalgic",
+                    "innocent",
+                    "heartwarming",
+                    "sweet",
+                    "joyful",
+                    "affectionate",
+                    "endearing"
+                ],
+                "zh": [
+                    "怀旧",
+                    "天真",
+                    "温暖人心",
+                    "甜蜜",
+                    "快乐",
+                    "亲昵",
+                    "可爱"
+                ]
+            }
+        }
     },
     {
         "id": "prompt-26",
@@ -353,6 +2467,91 @@ const PROMPTS = [
         "prompt": "# 无标题\n- 提示词（需要上传一张照片）\n    A meticulously crafted, vertically composed artistic Christmas portrait.\n    A real person stands bathed in soft, warm holiday glow, cradling a transparent glass jar close to their face as if holding a gentle star.\n    Inside the jar resides a miniature version of their younger self—the same individual—standing alone within a self-contained, snow-covered microcosm.\n    These two \"selves\" are not mirror images; instead, their gazes intersect, initiating a silent dialogue between reality and distilled identity.\n    The real figure is illuminated by gentle amber Christmas lights, their radiance dissolving softly into the background like a diffused constellation. The glass surface dances with fragmented reflections, splintering the true visage into layered shards that gradually fade along the jar’s curvature—forming a visual bridge between the outer world and the inner realm.\n    Within the jar, snow is sculpted into evocative, lunar-like contours. Beside the tiny figure stands a solitary bottlebrush tree. The miniature self wears intricately detailed festive attire: woven textures, tufted wool fibers, and the plush tactility of winter garments are rendered with astonishing clarity. A serene luminescence glows from deep within the snow, casting an upward light upon the small figure—as if the snow itself still holds the memory of light.\n    Frost patterns crystallize on the jar’s surface—not random snowflakes, but symbolic constellations echoing the twinkling lights behind the figure. Warm-toned fairy lights wrap around the vessel in abstract spirals, transforming it into a quiet cosmic nucleus.\n    The real person’s expression is contemplative, almost cinematic in its depth. Their breath condenses into a delicate mist along the glass rim, adding a fleeting tenderness to the scene.\n    The entire composition evokes layered universes: the external world lush and warm, the internal world refined, suspended, and sacred.\n    For visual cohesion, costumes and props should remain consistent between the inner and outer figures.\n    Rendered in 8K ultra-photorealistic quality, with masterful artistic lighting, sculptural reflections, and poetic textural detail—this image embodies an intimate, symbolic, and quietly supernatural Christmas aesthetic.",
         "images": [
             "assets/prompts/snow_globe_portrait_26_1.png"
-        ]
+        ],
+        "dominantColors": [
+            "black",
+            "orange",
+            "brown"
+        ],
+        "aiTags": {
+            "objects": {
+                "en": [
+                    "woman",
+                    "girl",
+                    "glass jar",
+                    "Christmas tree",
+                    "snow",
+                    "fairy lights",
+                    "earrings",
+                    "constellations"
+                ],
+                "zh": [
+                    "女人",
+                    "女孩",
+                    "玻璃罐",
+                    "圣诞树",
+                    "雪",
+                    "小彩灯",
+                    "耳环",
+                    "星座"
+                ]
+            },
+            "scenes": {
+                "en": [
+                    "indoor",
+                    "Christmas setting",
+                    "fantasy scene",
+                    "dreamscape",
+                    "miniature world"
+                ],
+                "zh": [
+                    "室内",
+                    "圣诞场景",
+                    "奇幻场景",
+                    "梦幻世界",
+                    "微缩世界"
+                ]
+            },
+            "styles": {
+                "en": [
+                    "digital art",
+                    "photo manipulation",
+                    "realistic",
+                    "surrealism",
+                    "festive",
+                    "portrait"
+                ],
+                "zh": [
+                    "数字艺术",
+                    "照片处理",
+                    "写实",
+                    "超现实主义",
+                    "节日",
+                    "肖像"
+                ]
+            },
+            "mood": {
+                "en": [
+                    "magical",
+                    "dreamy",
+                    "peaceful",
+                    "enchanting",
+                    "whimsical",
+                    "warm",
+                    "nostalgic",
+                    "festive"
+                ],
+                "zh": [
+                    "魔幻",
+                    "梦幻",
+                    "宁静",
+                    "迷人",
+                    "异想天开",
+                    "温馨",
+                    "怀旧",
+                    "节日"
+                ]
+            }
+        }
     }
 ];

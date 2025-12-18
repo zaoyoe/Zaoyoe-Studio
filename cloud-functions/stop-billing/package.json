@@ -1,0 +1,12 @@
+{
+    "name": "stop-billing-function",
+    "version": "1.0.0",
+    "description": "预算超限自动停止计费的 Cloud Function",
+    "main": "index.js",
+    "dependencies": {
+        "@google-cloud/billing": "^4.0.0"
+    },
+    "engines": {
+        "node": ">=18"
+    }
+}

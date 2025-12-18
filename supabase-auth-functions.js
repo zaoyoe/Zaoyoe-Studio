@@ -272,6 +272,8 @@ async function checkAuthState() {
 }
 
 // ==================== 更新用户UI ====================
+const ADMIN_EMAILS = ['zaoyoe@gmail.com'];
+
 function updateUserUI(user) {
     const defaultIcon = document.getElementById('defaultAuthIcon');
     const navAvatar = document.getElementById('navUserAvatar');
@@ -279,9 +281,13 @@ function updateUserUI(user) {
     const userDropdown = document.getElementById('userDropdown');
     const profileModalEmail = document.getElementById('profileModalEmail');
     const profileModalAvatar = document.getElementById('profileModalAvatar');
+    const enterStudioBtn = document.getElementById('enterStudioBtn');
 
     if (user) {
         console.log('👤 updateUserUI: 用户已登录', user);
+
+        // Check if user is admin
+        const isAdmin = ADMIN_EMAILS.includes(user.email);
 
         if (defaultIcon) defaultIcon.style.display = 'none';
         if (navAvatar) {
@@ -311,12 +317,16 @@ function updateUserUI(user) {
         if (profileModalAvatar && user.avatarUrl) profileModalAvatar.src = user.avatarUrl;
         if (userDropdown) userDropdown.style.display = '';
 
+        // Show Enter Studio for admin only
+        if (enterStudioBtn) enterStudioBtn.style.display = isAdmin ? 'flex' : 'none';
+
         localStorage.setItem('cached_user_profile', JSON.stringify(user));
     } else {
         if (defaultIcon) defaultIcon.style.display = 'inline';
         if (navAvatar) navAvatar.style.display = 'none';
         if (btnText) btnText.textContent = 'Sign In';
         if (userDropdown) userDropdown.classList.remove('active');
+        if (enterStudioBtn) enterStudioBtn.style.display = 'none';
 
         localStorage.removeItem('cached_user_profile');
     }
@@ -399,11 +409,14 @@ function updateResetButtonCountdown(button, originalText) {
 async function handleGoogleLogin() {
     console.log('🔵 Google Login button clicked');
 
+    const redirectUrl = window.location.href.split('?')[0];
+    console.log('🔗 Redirect URL:', redirectUrl);
+
     try {
         const { data, error } = await window.supabaseClient.auth.signInWithOAuth({
             provider: 'google',
             options: {
-                redirectTo: window.location.origin
+                redirectTo: redirectUrl
             }
         });
 
@@ -556,6 +569,26 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     // 检查登录状态
     await checkAuthState();
+
+    // Check sessionStorage for modal flags (from Gallery navigation)
+    if (sessionStorage.getItem('openProfileModal') === 'true') {
+        sessionStorage.removeItem('openProfileModal');
+        setTimeout(() => {
+            if (typeof openProfileModal === 'function') {
+                openProfileModal();
+            }
+        }, 300);
+    }
+
+    if (sessionStorage.getItem('openLoginModal') === 'true') {
+        sessionStorage.removeItem('openLoginModal');
+        setTimeout(() => {
+            const loginModal = document.getElementById('loginModal');
+            if (loginModal) {
+                loginModal.classList.add('active');
+            }
+        }, 300);
+    }
 
     // 监听邮箱输入变化，自动填充密码
     const loginEmailInput = document.getElementById('login-email');

@@ -17,7 +17,7 @@
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
 
-    <!-- Prevent flash of wrong theme -->
+    <!-- Prevent flash of wrong theme - Critical CSS -->
     <script>
         (function () {
             const savedTheme = localStorage.getItem('theme');
@@ -26,16 +26,86 @@
             }
         })();
     </script>
+    <style>
+        /* Critical CSS - Nav instant, content fades in */
+        html {
+            background-color: #ffffff;
+        }
+
+        html[data-theme="dark"] {
+            background-color: #0f172a;
+        }
+
+        body {
+            background-color: inherit;
+            margin: 0;
+        }
+
+        /* Content areas start hidden, fade in when ready */
+        .featured-banner {
+            display: none;
+            /* Hidden until JS shows it */
+        }
+
+        .gallery-container {
+            opacity: 0;
+            transition: opacity 0.4s ease 0.1s;
+        }
+
+        body.loaded .gallery-container {
+            opacity: 1;
+        }
+    </style>
 </head>
 
 <body>
 
+    <!-- Ambient Light Canvas (Living Background) -->
+    <canvas id="ambientCanvas"></canvas>
+    <!-- Starry Sky Canvas (Dark Mode Only) -->
+    <canvas id="starryCanvas"></canvas>
 
-    <!-- Dark Mode Toggle -->
-    <button id="themeToggle" class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle dark mode">
-        <i class="fas fa-sun sun-icon"></i>
-        <i class="fas fa-moon moon-icon"></i>
-    </button>
+    <!-- User Avatar Menu -->
+    <div class="user-avatar-container" id="userAvatarContainer">
+        <button class="user-avatar-btn" id="userAvatarBtn" onclick="toggleAvatarMenu()">
+            <i class="fas fa-user"></i>
+        </button>
+
+        <!-- Glassmorphism Dropdown -->
+        <div class="avatar-dropdown" id="avatarDropdown">
+            <div class="dropdown-header">
+                <span class="identity-name">Guest</span>
+                <button class="theme-toggle-btn" id="themeToggleBtn" onclick="toggleTheme(event)">
+                    <span class="theme-icon sun-icon">☀️</span>
+                    <span class="theme-icon moon-icon">🌙</span>
+                </button>
+            </div>
+
+            <div class="dropdown-actions">
+                <!-- Profile (logged in users) -->
+                <button class="dropdown-action" id="profileBtn" style="display: none;" onclick="openGalleryProfile()">
+                    <i class="fas fa-user"></i>
+                    <span>个人资料</span>
+                </button>
+                <!-- Switch Account (logged in users) -->
+                <button class="dropdown-action" id="switchAccountBtn" style="display: none;"
+                    onclick="switchGalleryAccount()">
+                    <i class="fas fa-exchange-alt"></i>
+                    <span>切换账户</span>
+                </button>
+                <!-- Enter Studio (admin only) -->
+                <button class="dropdown-action" id="adminStudioBtn" style="display: none;" onclick="enterAdminStudio()">
+                    <i class="fas fa-palette"></i>
+                    <span>Enter Studio</span>
+                </button>
+                <!-- Logout (logged in users) -->
+                <button class="dropdown-action" id="logoutBtn" style="display: none;" onclick="logoutUser()">
+                    <i class="fas fa-sign-out-alt"></i>
+                    <span>Logout</span>
+                </button>
+            </div>
+        </div>
+    </div>
 
     <!-- Navigation / Categories -->
     <div class="poetry-nav-container">
@@ -47,37 +117,23 @@
             <input type="text" id="gallerySearch" placeholder="Search prompts..." autocomplete="off">
         </div>
 
-        <div class="nav-items">
-            <div class="nav-item active" data-filter="all">
-                <span class="en">All</span>
-                <span class="cn">全部</span>
-            </div>
-            <div class="nav-item" data-filter="Miniature">
-                <span class="en">Miniature</span>
-                <span class="cn">微缩</span>
-            </div>
-            <div class="nav-item" data-filter="Photography">
-                <span class="en">Photography</span>
-                <span class="cn">摄影</span>
-            </div>
-            <div class="nav-item" data-filter="Illustration">
-                <span class="en">Illustration</span>
-                <span class="cn">插画</span>
-            </div>
-            <div class="nav-item" data-filter="3D Art">
-                <span class="en">3D Art</span>
-                <span class="cn">3D艺术</span>
-            </div>
-            <div class="nav-item" data-filter="Creative">
-                <span class="en">Creative</span>
-                <span class="cn">创意</span>
-            </div>
-            <div class="nav-item favorites-tab" data-filter="favorites">
-                <span class="en">Saved</span>
-                <span class="cn">收藏</span>
-            </div>
+        <div class="nav-items" id="navItems">
+            <!-- Dynamically generated from PROMPTS data -->
         </div>
     </div>
+
+    <!-- Featured Banner -->
+    <section class="featured-banner" id="featuredBanner">
+        <div class="featured-image-container">
+            <img id="featuredImage" src="" alt="Featured Artwork" loading="eager">
+            <div class="featured-overlay"></div>
+        </div>
+        <div class="featured-content">
+            <span class="featured-label">✦ Featured</span>
+            <h2 class="featured-title" id="featuredTitle"></h2>
+            <p class="featured-description" id="featuredDescription"></p>
+        </div>
+    </section>
 
     <!-- Gallery Grid -->
     <div class="gallery-container">
@@ -145,6 +201,160 @@
         </div>
     </footer>
 
+    <!-- Admin Login Modal -->
+    <div id="adminLoginModal" class="admin-login-modal">
+        <div class="admin-login-content">
+            <button class="admin-login-close" onclick="closeAdminLoginModal()">
+                <i class="fas fa-times"></i>
+            </button>
+            <div class="admin-login-header">
+                <i class="fas fa-palette"></i>
+                <h2>Admin Access</h2>
+                <p>Sign in to access the Studio</p>
+            </div>
+            <button class="google-login-btn" onclick="handleGoogleLogin()">
+                <svg viewBox="0 0 24 24" width="20" height="20">
+                    <path fill="#4285F4"
+                        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                    <path fill="#34A853"
+                        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                    <path fill="#FBBC05"
+                        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                    <path fill="#EA4335"
+                        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+                </svg>
+                <span>Continue with Google</span>
+            </button>
+            <p class="admin-login-note">Only administrators can access the Studio</p>
+        </div>
+    </div>
+
+    <style>
+        /* Admin Login Modal Styles */
+        .admin-login-modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 10000;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(8px);
+            align-items: center;
+            justify-content: center;
+        }
+
+        .admin-login-modal.active {
+            display: flex;
+        }
+
+        .admin-login-content {
+            background: var(--card-bg, #ffffff);
+            border-radius: 20px;
+            padding: 40px;
+            width: 90%;
+            max-width: 380px;
+            text-align: center;
+            position: relative;
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.25);
+        }
+
+        [data-theme="dark"] .admin-login-content {
+            background: rgba(30, 41, 59, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .admin-login-close {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            background: none;
+            border: none;
+            font-size: 20px;
+            color: var(--text-muted, #64748b);
+            cursor: pointer;
+            padding: 8px;
+            border-radius: 50%;
+            transition: all 0.2s;
+        }
+
+        .admin-login-close:hover {
+            background: rgba(0, 0, 0, 0.05);
+            color: var(--text-primary, #1e293b);
+        }
+
+        [data-theme="dark"] .admin-login-close:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+        }
+
+        .admin-login-header {
+            margin-bottom: 30px;
+        }
+
+        .admin-login-header i {
+            font-size: 48px;
+            background: linear-gradient(135deg, #8b5cf6, #ec4899);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 16px;
+        }
+
+        .admin-login-header h2 {
+            font-family: 'Playfair Display', serif;
+            font-size: 28px;
+            margin: 0 0 8px 0;
+            color: var(--text-primary, #1e293b);
+        }
+
+        [data-theme="dark"] .admin-login-header h2 {
+            color: #f8fafc;
+        }
+
+        .admin-login-header p {
+            color: var(--text-muted, #64748b);
+            margin: 0;
+            font-size: 14px;
+        }
+
+        .google-login-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            width: 100%;
+            padding: 14px 24px;
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 500;
+            color: #1e293b;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .google-login-btn:hover {
+            background: #f8fafc;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            transform: translateY(-1px);
+        }
+
+        [data-theme="dark"] .google-login-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.2);
+            color: #f8fafc;
+        }
+
+        [data-theme="dark"] .google-login-btn:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .admin-login-note {
+            margin-top: 20px;
+            font-size: 12px;
+            color: var(--text-muted, #64748b);
+        }
+    </style>
+
     <!-- Scripts -->
     <!-- Supabase Client (CDN for browser) -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -157,6 +367,10 @@
     </script>
     <script src="prompts-data.js"></script>
     <script src="prompts-poetry.js"></script>
+    <script>
+        // Reveal page after content is ready
+        document.body.classList.add('loaded');
+    </script>
 
 </body>
 

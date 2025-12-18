@@ -1,5 +1,10 @@
 {
   "dependencies": {
     "@supabase/supabase-js": "^2.88.0"
+  },
+  "devDependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "get-pixels": "^3.3.3",
+    "quantize": "^1.0.2"
   }
 }

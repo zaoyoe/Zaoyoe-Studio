@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Studio | Prompt Gallery</title>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Outfit:wght@300;400;600&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
+    <!-- Styles -->
+    <link rel="stylesheet" href="prompts-poetry.css">
+    <link rel="stylesheet" href="admin-studio.css?v=3">
+
+    <!-- Prevent flash of wrong theme -->
+    <script>
+        document.documentElement.setAttribute('data-theme', 'dark');
+    </script>
+</head>
+
+<body style="background-color: #0f172a; color: #f8fafc;">
+    <!-- Ambient Light Canvas -->
+    <canvas id="ambientCanvas"></canvas>
+
+    <!-- Header -->
+    <header class="studio-header">
+        <a href="prompts.html" class="back-link">
+            <i class="fas fa-arrow-left"></i>
+            <span>Back to Gallery</span>
+        </a>
+        <h1 class="studio-title">
+            <i class="fas fa-palette"></i>
+            Admin Studio
+        </h1>
+        <div class="header-right">
+            <div id="apiKeySelector" class="api-key-selector">
+                <!-- Rendered by JavaScript -->
+            </div>
+            <div class="studio-status" id="studioStatus">
+                <span class="status-dot"></span>
+                <span class="status-text">Ready</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Tab Navigation -->
+    <nav class="admin-tabs">
+        <button class="admin-tab active" data-view="create" onclick="switchView('create')">Create</button>
+        <button class="admin-tab" data-view="manage" onclick="switchView('manage')">Manage</button>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="studio-main">
+        <!-- CREATE VIEW -->
+        <div id="view-create" class="view-section active">
+            <!-- Upload Section -->
+            <section class="upload-section glass-panel">
+                <h2 class="section-title">
+                    <i class="fas fa-cloud-upload-alt"></i>
+                    Upload Images
+                </h2>
+
+                <div class="upload-zone" id="uploadZone">
+                    <div class="upload-icon">
+                        <i class="fas fa-images"></i>
+                    </div>
+                    <p class="upload-text">Drag & drop images here</p>
+                    <p class="upload-subtext">or click to browse</p>
+                    <input type="file" id="fileInput" multiple accept="image/*" hidden>
+                </div>
+
+                <!-- Image Preview Grid -->
+                <div class="preview-grid" id="previewGrid">
+                    <!-- Dynamically populated -->
+                </div>
+            </section>
+
+            <!-- AI Analysis Section -->
+            <section class="analysis-section glass-panel">
+                <h2 class="section-title">
+                    <i class="fas fa-robot"></i>
+                    AI Analysis
+                    <button class="analyze-btn" id="analyzeBtn" disabled>Analyze</button>
+                </h2>
+
+                <!-- Loading State - Elegant Neural Animation -->
+                <div class="analysis-loading" id="analysisLoading" style="display: none;">
+                    <div class="neural-loader">
+                        <div class="neural-dot"></div>
+                        <div class="neural-dot"></div>
+                        <div class="neural-dot"></div>
+                        <div class="neural-dot"></div>
+                        <div class="neural-dot"></div>
+                    </div>
+                </div>
+
+                <!-- Results Form -->
+                <form class="prompt-form" id="promptForm" style="display: none;">
+                    <!-- Title -->
+                    <div class="form-group">
+                        <label for="promptTitle">
+                            <i class="fas fa-heading"></i>
+                            Title
+                            <span class="ai-badge">AI Generated</span>
+                            <!-- Last Edited Info (shown only in edit mode) -->
+                            <span class="last-edited-info" id="lastEditedInfo" style="display: none;">
+                                <i class="fas fa-clock"></i>
+                                <time id="lastEditedTime"></time>
+                            </span>
+                        </label>
+                        <input type="text" id="promptTitle" placeholder="Enter prompt title...">
+                    </div>
+
+                    <!-- Category -->
+                    <div class="form-group">
+                        <label for="promptCategory">
+                            <i class="fas fa-folder"></i>
+                            Category
+                            <span class="ai-badge">AI Detected</span>
+                        </label>
+                        <!-- Custom Dropdown -->
+                        <div class="custom-select" id="categoryDropdown">
+                            <input type="hidden" id="promptCategory" name="promptCategory" value="">
+                            <div class="select-display" id="categoryDisplay">
+                                <span class="select-text">Select category...</span>
+                                <i class="fas fa-chevron-down select-arrow"></i>
+                            </div>
+                            <div class="select-options" id="categoryOptions">
+                                <div class="select-option" data-value="">Select category...</div>
+                                <div class="select-option" data-value="Photography">Photography</div>
+                                <div class="select-option" data-value="Illustration">Illustration</div>
+                                <div class="select-option" data-value="3D Art">3D Art</div>
+                                <div class="select-option" data-value="Miniature">Miniature</div>
+                                <div class="select-option" data-value="Creative">Creative</div>
+                                <div class="select-option" data-value="Animation">Animation</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Prompt Text -->
+                    <div class="form-group">
+                        <label for="promptText">
+                            <i class="fas fa-terminal"></i>
+                            Prompt Text
+                        </label>
+                        <textarea id="promptText" rows="6"
+                            placeholder="Enter the prompt text used to generate this image..."></textarea>
+                    </div>
+
+                    <!-- Description (Hidden - still analyzed in background) -->
+                    <div class="form-group" style="display: none;">
+                        <label for="promptDescription">
+                            <i class="fas fa-align-left"></i>
+                            Description
+                            <span class="ai-badge">AI Generated</span>
+                        </label>
+                        <textarea id="promptDescription" rows="3" placeholder="Brief description..."></textarea>
+                    </div>
+
+                    <!-- AI Tags Display (Hidden - still analyzed in background) -->
+                    <div class="form-group" style="display: none;">
+                        <label>
+                            <i class="fas fa-tags"></i>
+                            AI Tags
+                            <span class="ai-badge">Auto-generated</span>
+                        </label>
+                        <div class="tags-container">
+                            <div class="tag-category">
+                                <span class="tag-label">Objects:</span>
+                                <div class="tag-list" id="tagObjects"></div>
+                            </div>
+                            <div class="tag-category">
+                                <span class="tag-label">Scenes:</span>
+                                <div class="tag-list" id="tagScenes"></div>
+                            </div>
+                            <div class="tag-category">
+                                <span class="tag-label">Styles:</span>
+                                <div class="tag-list" id="tagStyles"></div>
+                            </div>
+                            <div class="tag-category">
+                                <span class="tag-label">Mood:</span>
+                                <div class="tag-list" id="tagMood"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Dominant Colors (Hidden - still analyzed in background) -->
+                    <div class="form-group" style="display: none;">
+                        <label>
+                            <i class="fas fa-palette"></i>
+                            Dominant Colors
+                            <span class="ai-badge">Extracted</span>
+                        </label>
+                        <div class="color-swatches" id="colorSwatches"></div>
+                    </div>
+
+                    <!-- Submit Button -->
+                    <div class="form-actions">
+                        <button type="button" class="btn-secondary" onclick="resetForm()">
+                            <i class="fas fa-undo"></i>
+                            Reset
+                        </button>
+                        <button type="submit" class="btn-primary" id="saveBtn">
+                            <span class="btn-text">
+                                <i class="fas fa-save"></i>
+                                Save to Gallery
+                            </span>
+                            <div class="dot-matrix-container">
+                                <div class="dot-matrix" id="dotMatrix">
+                                    <!-- 30 dots: 10 columns x 3 rows -->
+                                </div>
+                            </div>
+                        </button>
+                    </div>
+                </form>
+            </section>
+        </div>
+        <!-- END CREATE VIEW -->
+
+        <!-- MANAGE VIEW -->
+        <div id="view-manage" class="view-section">
+            <!-- Search Toolbar -->
+            <div class="manage-toolbar">
+                <div class="admin-search">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="adminSearchInput" placeholder="Search prompts..." autocomplete="off">
+                    <span class="search-status" id="searchStatus"></span>
+                </div>
+                <div class="filter-group">
+                    <!-- Category Filter - Custom Dropdown -->
+                    <div class="custom-select filter-custom-select" id="categoryFilterDropdown">
+                        <input type="hidden" id="categoryFilter" name="categoryFilter" value="">
+                        <div class="select-display">
+                            <span class="select-text">All</span>
+                            <i class="fas fa-chevron-down select-arrow"></i>
+                        </div>
+                        <div class="select-options">
+                            <div class="select-option selected" data-value="">All</div>
+                            <div class="select-option" data-value="Photography">Photography</div>
+                            <div class="select-option" data-value="3D Art">3D Art</div>
+                            <div class="select-option" data-value="Illustration">Illustration</div>
+                            <div class="select-option" data-value="Creative">Creative</div>
+                            <div class="select-option" data-value="Miniature">Miniature</div>
+                            <div class="select-option" data-value="Animation">Animation</div>
+                        </div>
+                    </div>
+                    <!-- Date Filter - Custom Dropdown -->
+                    <div class="custom-select filter-custom-select" id="dateFilterDropdown">
+                        <input type="hidden" id="dateFilter" name="dateFilter" value="">
+                        <div class="select-display">
+                            <span class="select-text">All</span>
+                            <i class="fas fa-chevron-down select-arrow"></i>
+                        </div>
+                        <div class="select-options">
+                            <div class="select-option selected" data-value="">All</div>
+                            <div class="select-option" data-value="today">Today</div>
+                            <div class="select-option" data-value="week">This Week</div>
+                            <div class="select-option" data-value="month">This Month</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="prompt-count"><span id="promptCount">0</span> prompts</div>
+            </div>
+            <div class="admin-grid" id="adminGrid">
+                <!-- Dynamically loaded -->
+            </div>
+        </div>
+        <!-- END MANAGE VIEW -->
+    </main>
+
+    <!-- Toast Notifications -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+        // Initialize Supabase client
+        const SUPABASE_URL = 'https://mmkugdibsaeoevliebzk.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_lwkiF-sQ80z8e9oMcejFPQ_j7oezjcF';
+        window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    </script>
+    <script src="admin-studio.js"></script>
+</body>
+
+</html>
