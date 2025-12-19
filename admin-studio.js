@@ -553,6 +553,33 @@ function setCustomDropdownValue(dropdownId, value) {
 }
 
 // ========================================
+// WEBP CONVERSION
+// ========================================
+
+// Convert image to WebP format for smaller file sizes
+async function convertToWebP(dataUrl, quality = 0.85) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+
+            // Convert to WebP
+            const webpDataUrl = canvas.toDataURL('image/webp', quality);
+            resolve({
+                dataUrl: webpDataUrl,
+                base64: webpDataUrl.split(',')[1]
+            });
+        };
+        img.onerror = () => reject(new Error('Failed to load image for WebP conversion'));
+        img.src = dataUrl;
+    });
+}
+
+// ========================================
 // UPLOAD ZONE
 // ========================================
 function initUploadZone() {
@@ -584,7 +611,7 @@ function initUploadZone() {
     });
 }
 
-function handleFiles(files) {
+async function handleFiles(files) {
     const validFiles = Array.from(files).filter(file =>
         file.type.startsWith('image/')
     );
@@ -594,19 +621,40 @@ function handleFiles(files) {
         return;
     }
 
-    validFiles.forEach(file => {
+    for (const file of validFiles) {
         const reader = new FileReader();
-        reader.onload = (e) => {
-            uploadedFiles.push({
-                file: file,
-                dataUrl: e.target.result,
-                base64: e.target.result.split(',')[1]
-            });
-            renderPreviews();
-            updateAnalyzeButton();
-        };
-        reader.readAsDataURL(file);
-    });
+
+        await new Promise((resolve) => {
+            reader.onload = async (e) => {
+                try {
+                    // Convert to WebP automatically
+                    const webp = await convertToWebP(e.target.result);
+
+                    uploadedFiles.push({
+                        file: file,               // Keep original file reference
+                        dataUrl: webp.dataUrl,    // Use WebP for display
+                        base64: webp.base64,      // Use WebP for upload
+                        originalDataUrl: e.target.result  // Preserve original
+                    });
+
+                    console.log(`✅ Converted ${file.name} to WebP`);
+                } catch (err) {
+                    console.warn('WebP conversion failed, using original:', err);
+                    // Fallback to original if WebP conversion fails
+                    uploadedFiles.push({
+                        file: file,
+                        dataUrl: e.target.result,
+                        base64: e.target.result.split(',')[1]
+                    });
+                }
+
+                renderPreviews();
+                updateAnalyzeButton();
+                resolve();
+            };
+            reader.readAsDataURL(file);
+        });
+    }
 }
 
 function renderPreviews() {
@@ -1040,12 +1088,24 @@ async function uploadImages() {
     const urls = [];
 
     for (let i = 0; i < uploadedFiles.length; i++) {
-        const file = uploadedFiles[i].file;
-        const fileName = `${Date.now()}_${i}_${file.name.replace(/[^a-zA-Z0-9.]/g, '_')}`;
+        const item = uploadedFiles[i];
+
+        // Create WebP blob from base64
+        const base64 = item.base64;
+        const isWebP = item.dataUrl?.startsWith('data:image/webp');
+        const mimeType = isWebP ? 'image/webp' : 'image/jpeg';
+        const extension = isWebP ? '.webp' : '.jpg';
+
+        // Convert base64 to blob
+        const blob = await fetch(`data:${mimeType};base64,${base64}`).then(r => r.blob());
+
+        // Generate filename with WebP extension
+        const baseName = item.file?.name?.replace(/\.[^.]+$/, '') || 'image';
+        const fileName = `${Date.now()}_${i}_${baseName.replace(/[^a-zA-Z0-9]/g, '_')}${extension}`;
 
         const { data, error } = await supabaseClient.storage
             .from('prompt-images')
-            .upload(fileName, file);
+            .upload(fileName, blob, { contentType: mimeType });
 
         if (error) throw error;
 
@@ -1055,6 +1115,7 @@ async function uploadImages() {
             .getPublicUrl(fileName);
 
         urls.push(urlData.publicUrl);
+        console.log(`📤 Uploaded ${fileName} (${isWebP ? 'WebP' : 'Original'})`);
     }
 
     return urls;

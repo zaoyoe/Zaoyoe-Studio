@@ -1,6 +1,3 @@
-// Modal visibility is now handled entirely by CSS :not(.active) rules
-// No JavaScript initialization needed
-
 document.addEventListener('DOMContentLoaded', () => {
     const costInput = document.getElementById('cost');
     const shippingInput = document.getElementById('shipping');
@@ -474,23 +471,6 @@ function startCountdown(btnElement) {
     }, 1000);
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 // ✅ 全局函数：处理 Auth 按钮点击
 window.toggleAuthMenu = function (e) {
     console.log('🔘 toggleAuthMenu called');
@@ -538,10 +518,6 @@ document.addEventListener('click', (e) => {
         }
     }
 });
-
-
-
-
 
 
 // Close dropdown when clicking outside

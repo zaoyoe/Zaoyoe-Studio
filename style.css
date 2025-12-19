@@ -3245,8 +3245,8 @@ body.no-scroll {
 #navUserAvatar:hover,
 .nav-user-avatar:hover {
     transform: scale(1.1);
-    /* Stronger glowing frame effect */
-    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.9), 0 0 15px rgba(255, 255, 255, 0.7) !important;
+    /* Enhanced shadow without white ring */
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4) !important;
     background: transparent !important;
     border: none !important;
     outline: none !important;
@@ -4135,9 +4135,9 @@ label[for],
 /* Top Right Trigger Button */
 .top-right-nav {
     position: fixed;
-    top: 30px;
-    right: 100px;
-    /* 进一步向左移动，确保下拉菜单完全显示 */
+    top: 28px;
+    right: 30px;
+    /* 统一与 prompts.html 的 .user-avatar-container 位置一致 */
     z-index: 2100;
     /* Higher than login-overlay (2000) to ensure user menu is always accessible */
 }
@@ -4619,8 +4619,8 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
 
 .profile-avatar-section:hover {
     transform: scale(1.05);
-    /* Combined shadow: White glowing frame + Deep drop shadow */
-    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.9), 0 0 20px rgba(255, 255, 255, 0.6), 0 12px 32px rgba(0, 0, 0, 0.5) !important;
+    /* Enhanced shadow without white ring */
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5) !important;
 }
 
 .profile-avatar-section img {

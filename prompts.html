@@ -112,9 +112,27 @@
         <div class="spotlight-overlay"></div>
 
         <!-- Search Bar (Pinterest-style) -->
-        <div class="nav-search">
-            <i class="fas fa-search"></i>
-            <input type="text" id="gallerySearch" placeholder="Search prompts..." autocomplete="off">
+        <div class="nav-search-wrapper">
+            <div class="nav-search">
+                <i class="fas fa-search"></i>
+                <input type="text" id="gallerySearch" placeholder="Search prompts..." autocomplete="off">
+            </div>
+
+            <!-- Search Dropdown -->
+            <div class="search-dropdown" id="searchDropdown">
+                <!-- Hot Tags (shown when empty) -->
+                <div class="search-hot-tags" id="searchHotTags">
+                    <div class="dropdown-section-label">热门搜索</div>
+                    <div class="hot-tags-list" id="hotTagsList">
+                        <!-- Dynamically generated -->
+                    </div>
+                </div>
+
+                <!-- Autocomplete Suggestions (shown when typing) -->
+                <div class="search-suggestions" id="searchSuggestions" style="display: none;">
+                    <!-- Dynamically generated -->
+                </div>
+            </div>
         </div>
 
         <div class="nav-items" id="navItems">

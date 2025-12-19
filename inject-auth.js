@@ -1,15 +1,29 @@
 (function () {
     console.log('🔧 Injecting Auth UI...');
 
+    // 🆕 Check for cached user profile to prevent avatar flashing
+    let cachedProfile = null;
+    try {
+        const cached = localStorage.getItem('cached_user_profile');
+        if (cached) cachedProfile = JSON.parse(cached);
+    } catch (e) { /* ignore */ }
+
+    const isLoggedIn = !!cachedProfile;
+    const avatarUrl = cachedProfile?.avatarUrl || '';
+    const defaultIconDisplay = isLoggedIn ? 'none' : 'inline';
+    const avatarDisplay = isLoggedIn ? 'inline-block' : 'none';
+    const avatarOpacity = isLoggedIn ? '1' : '0';
+
     // 1. Define HTML Structure
     const authHTML = `
     <!-- Auth Button (Top Right) -->
-    <div class="top-right-nav" style="position: fixed; top: 30px; right: 40px; z-index: 2100;">
-        <button id="authBtn" class="login-trigger-btn" onclick="handleAuthClick(event)">
-            <i id="defaultAuthIcon" class="fas fa-user-circle"></i>
-            <img id="navUserAvatar" class="nav-user-avatar" src="" alt="Avatar" style="display: none;">
+    <div class="top-right-nav" style="position: fixed; top: 28px; right: 30px; z-index: 2100;">
+        <button id="authBtn" class="login-trigger-btn${isLoggedIn ? ' logged-in' : ''}" onclick="handleAuthClick(event)">
+            <i id="defaultAuthIcon" class="fas fa-user-circle" style="display: ${defaultIconDisplay};"></i>
+            <img id="navUserAvatar" class="nav-user-avatar show" src="${avatarUrl}" alt="Avatar" style="display: ${avatarDisplay}; opacity: ${avatarOpacity};">
             <span id="authBtnText" style="display: none;">Sign In</span>
         </button>
+
 
         <div id="userDropdown" class="user-dropdown" style="z-index: 2100;">
             <div class="menu-item profile-menu-item" onclick="window.openProfileModal(event)">
@@ -169,8 +183,8 @@
             /* Force avatar position */
             .top-right-nav {
                 position: fixed !important;
-                top: 30px !important;
-                right: 40px !important;
+                top: 28px !important;
+                right: 30px !important;
                 z-index: 2100 !important;
             }
             

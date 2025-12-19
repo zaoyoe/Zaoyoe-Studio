@@ -291,20 +291,24 @@ function updateUserUI(user) {
 
         if (defaultIcon) defaultIcon.style.display = 'none';
         if (navAvatar) {
-            navAvatar.classList.remove('animate-in');
+            const newAvatarUrl = user.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.nickname || user.username || 'User')}&background=random`;
+
+            // 🆕 只在头像 URL 变化时才更新，避免闪烁
+            const currentSrc = navAvatar.src;
+            const urlChanged = !currentSrc || !currentSrc.includes(newAvatarUrl.split('?')[0]);
+
             navAvatar.style.display = 'inline-block';
             navAvatar.style.visibility = 'visible';
             navAvatar.style.opacity = '1';
+            navAvatar.classList.add('show');
 
-            if (user.avatarUrl) {
-                navAvatar.src = user.avatarUrl;
-            } else {
-                navAvatar.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.nickname || user.username || 'User')}&background=random`;
+            if (urlChanged) {
+                navAvatar.classList.remove('animate-in');
+                navAvatar.src = newAvatarUrl;
+                setTimeout(() => {
+                    navAvatar.classList.add('animate-in');
+                }, 50);
             }
-
-            setTimeout(() => {
-                navAvatar.classList.add('animate-in');
-            }, 50);
         }
         if (btnText) {
             btnText.textContent = user.nickname || user.username || 'User';
@@ -627,13 +631,35 @@ document.addEventListener('DOMContentLoaded', async function () {
     });
 
     // 监听 Supabase Auth 状态变化
+    // 使用标志位避免页面加载时的重复检查
+    let authStateInitialized = false;
+    let authCheckDebounceTimer = null;
+
     window.supabaseClient.auth.onAuthStateChange((event, session) => {
         console.log('🔔 Auth state changed:', event);
-        if (event === 'SIGNED_IN' && session) {
-            checkAuthState();
-        } else if (event === 'SIGNED_OUT') {
-            updateUserUI(null);
+
+        // 跳过初始的 INITIAL_SESSION 事件，因为我们已经在 checkAuthState 中处理了
+        if (event === 'INITIAL_SESSION') {
+            authStateInitialized = true;
+            return;
         }
+
+        // 防抖：避免短时间内多次触发
+        if (authCheckDebounceTimer) {
+            clearTimeout(authCheckDebounceTimer);
+        }
+
+        authCheckDebounceTimer = setTimeout(() => {
+            if (event === 'SIGNED_IN' && session) {
+                // 只有在非初始化阶段才重新检查状态
+                if (authStateInitialized) {
+                    checkAuthState();
+                }
+            } else if (event === 'SIGNED_OUT') {
+                updateUserUI(null);
+            }
+            authStateInitialized = true;
+        }, 100);
     });
 });
 

@@ -159,6 +159,20 @@
         // Page load animation trigger
         document.addEventListener('DOMContentLoaded', function () {
             console.log('🚀 Page loaded');
+
+            // 🆕 Set cached avatar URL immediately to prevent flashing
+            if (window.__cachedAvatarUrl) {
+                var navAvatar = document.getElementById('navUserAvatar');
+                var authBtn = document.getElementById('authBtn');
+                if (navAvatar) {
+                    navAvatar.src = window.__cachedAvatarUrl;
+                    navAvatar.classList.add('show');
+                    console.log('✅ Avatar initialized from cache');
+                }
+                if (authBtn) {
+                    authBtn.classList.add('logged-in');
+                }
+            }
         });
 
         // FORCE FIX: Robust Logout Function (Inline)
@@ -403,19 +417,11 @@
 
             <div class="modal-title">Gemini 专区</div>
             <p class="modal-subtitle">
-                探索 Gemini 的无限可能
+                探索 Gemini 的无限可能（教程已迁移至店铺）
             </p>
 
-            <div class="modal-grid">
-                <a href="gemini_guide.html" class="modal-link-card">
-                    <i class="fa-solid fa-book"></i>
-                    <div class="link-title">使用规范</div>
-                </a>
-
-                <a href="gemini_binding.html" class="modal-link-card">
-                    <i class="fa-solid fa-credit-card"></i>
-                    <div class="link-title">绑卡教程</div>
-                </a>
+            <div class="modal-grid" style="text-align: center; padding: 20px;">
+                <p style="color: rgba(255,255,255,0.6);">相关教程请访问我们的店铺获取</p>
             </div>
         </div>
     </div>
@@ -432,20 +438,42 @@
 
             <div class="modal-title">Google 邮箱专区</div>
             <p class="modal-subtitle">
-                高质量谷歌账号服务
+                高质量谷歌账号服务（教程已迁移至店铺）
             </p>
 
-            <div class="modal-grid" style="display: flex; justify-content: center;">
-                <a href="google_guide.html" class="modal-link-card">
-                    <i class="fa-solid fa-book"></i>
-                    <div class="link-title">使用规范</div>
-                </a>
+            <div class="modal-grid" style="text-align: center; padding: 20px;">
+                <p style="color: rgba(255,255,255,0.6);">相关教程请访问我们的店铺获取</p>
             </div>
         </div>
     </div>
 
+    <!-- 🆕 Immediate Avatar Initialization Script (Prevent flashing on navigation) -->
+    <script>
+        (function () {
+            // Check for cached user profile immediately
+            try {
+                var cached = localStorage.getItem('cached_user_profile');
+                if (cached) {
+                    var profile = JSON.parse(cached);
+                    if (profile && profile.avatarUrl) {
+                        // Write inline styles directly to prevent FOUC and disable all transitions
+                        document.write('<style>' +
+                            '#defaultAuthIcon{display:none!important}' +
+                            '#navUserAvatar{display:inline-block!important;opacity:1!important;transition:none!important;animation:none!important}' +
+                            '.nav-user-avatar{opacity:1!important;transition:none!important;animation:none!important}' +
+                            '#authBtn.logged-in{transition:none!important}' +
+                            '.login-trigger-btn.logged-in{transition:none!important}' +
+                            '</style>');
+                        window.__cachedAvatarUrl = profile.avatarUrl;
+                        window.__isLoggedIn = true;
+                    }
+                }
+            } catch (e) { /* ignore */ }
+        })();
+    </script>
+
     <!-- Login Trigger Button (Top Right) -->
-    <div class="top-right-nav" style="position: fixed; top: 30px; right: 40px; z-index: 2100;">
+    <div class="top-right-nav" style="position: fixed; top: 28px; right: 30px; z-index: 2100;">
         <button id="authBtn" class="login-trigger-btn" onclick="window.toggleAuthMenu(event)">
             <!-- Default Icon (shown when logged out) -->
             <i id="defaultAuthIcon" class="fas fa-user-circle" style="font-size: 1.2rem;"></i>

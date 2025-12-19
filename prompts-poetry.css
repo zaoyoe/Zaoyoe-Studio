@@ -187,6 +187,7 @@ body,
     top: 28px;
     right: 30px;
     z-index: 100;
+    cursor: pointer;
 }
 
 .user-avatar-btn {
@@ -216,6 +217,7 @@ body,
     width: 100%;
     height: 100%;
     object-fit: cover;
+    border-radius: 50%;
 }
 
 /* Glassmorphism Dropdown */
@@ -491,13 +493,13 @@ body {
 /* --- Spotlight Navigation --- */
 .poetry-nav-container {
     position: relative;
+    z-index: 10;
+    /* Ensure search dropdown can appear above featured-banner */
     padding: 8vh 5vw 4vh;
     /* Reduced bottom padding */
     text-align: center;
     cursor: default;
-    /* Soft fade out to white */
-    mask-image: linear-gradient(to bottom, black 80%, transparent 100%);
-    -webkit-mask-image: linear-gradient(to bottom, black 80%, transparent 100%);
+    /* Note: mask-image removed - it was clipping the search dropdown */
 }
 
 /* The spotlight effect overlay - Darker trace on white */
@@ -524,6 +526,14 @@ body {
 }
 
 /* Pinterest-style Search Bar */
+.nav-search-wrapper {
+    position: relative;
+    max-width: 400px;
+    margin: 0 auto 24px;
+    z-index: 100;
+    /* High z-index to stay above featured banner */
+}
+
 .nav-search {
     display: flex;
     align-items: center;
@@ -532,22 +542,45 @@ body {
     border: 1px solid var(--card-border);
     border-radius: 24px;
     padding: 12px 20px;
-    margin-bottom: 24px;
-    max-width: 400px;
-    margin-left: auto;
-    margin-right: auto;
-    transition: all 0.3s ease;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.6s ease, box-shadow 0.6s ease;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+    /* Softer shadow */
+    --mood-color: rgba(139, 92, 246, 0.5);
+    /* Default mood color */
 }
 
 .nav-search:focus-within {
-    border-color: rgba(139, 92, 246, 0.5);
-    box-shadow: 0 4px 20px rgba(139, 92, 246, 0.15);
-    transform: scale(1.02);
+    border-color: color-mix(in srgb, var(--mood-color) 60%, transparent);
+    box-shadow:
+        0 0 0 1px color-mix(in srgb, var(--mood-color) 30%, transparent),
+        0 0 20px color-mix(in srgb, var(--mood-color) 15%, transparent),
+        0 0 40px color-mix(in srgb, var(--mood-color) 8%, transparent);
+    transform: scale(1.01);
+}
+
+/* Mood lighting breathing animation - subtle pulse */
+@keyframes moodBreathing {
+
+    0%,
+    100% {
+        box-shadow:
+            0 0 0 1px color-mix(in srgb, var(--mood-color) 25%, transparent),
+            0 0 15px color-mix(in srgb, var(--mood-color) 10%, transparent);
+    }
+
+    50% {
+        box-shadow:
+            0 0 0 1px color-mix(in srgb, var(--mood-color) 35%, transparent),
+            0 0 25px color-mix(in srgb, var(--mood-color) 18%, transparent);
+    }
+}
+
+.nav-search.mood-active:focus-within {
+    animation: moodBreathing 3s ease-in-out infinite;
 }
 
 .nav-search i {
-    color: var(--text-secondary);
+    color: var(--text-dim);
     font-size: 0.95rem;
 }
 
@@ -557,13 +590,248 @@ body {
     background: transparent;
     outline: none;
     font-size: 1rem;
-    color: var(--text-primary);
-    font-family: var(--font-primary);
+    color: var(--text-main);
+    font-family: var(--font-sans);
 }
 
 .nav-search input::placeholder {
-    color: var(--text-secondary);
+    color: var(--text-dim);
     opacity: 0.7;
+}
+
+/* Search Dropdown (Glassmorphism) */
+.search-dropdown {
+    position: absolute;
+    top: calc(100% + 12px);
+    /* Increased spacing slightly */
+    left: 0;
+    right: 0;
+    background: rgba(255, 255, 255, 0.85);
+    /* More transparent */
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    /* Glass border */
+    border-radius: 20px;
+    /* Rounder corners */
+    padding: 20px;
+    box-shadow:
+        0 20px 50px -10px rgba(0, 0, 0, 0.1),
+        0 0 0 1px rgba(255, 255, 255, 0.5) inset;
+    /* Inner light frame */
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-8px) scale(0.98);
+    /* Slight scale for elegance */
+    transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+    transform-origin: top center;
+}
+
+.search-dropdown.active {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0) scale(1);
+}
+
+[data-theme="dark"] .search-dropdown {
+    background: rgba(15, 23, 42, 0.8);
+    /* Elegant dark glass */
+    border-color: rgba(255, 255, 255, 0.08);
+    box-shadow:
+        0 20px 50px -10px rgba(0, 0, 0, 0.3),
+        0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+}
+
+.dropdown-section-label {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    margin-bottom: 16px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    opacity: 0.8;
+}
+
+/* Hot Tags Animation - 大小不一的圆形标签 */
+.hot-tags-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: center;
+    padding: 8px 0;
+}
+
+.hot-tag {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    /* 固定中等尺寸圆形 - 保证完美圆形 */
+    width: 72px;
+    height: 72px;
+    min-width: unset;
+    min-height: unset;
+    padding: 8px;
+    aspect-ratio: 1;
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.12) 0%, rgba(99, 102, 241, 0.08) 100%);
+    border: 1.5px solid rgba(139, 92, 246, 0.2);
+    border-radius: 50%;
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: var(--text-main);
+    cursor: pointer;
+    text-align: center;
+    line-height: 1.15;
+    /* 文本溢出处理 */
+    overflow: hidden;
+    word-break: break-word;
+    hyphens: auto;
+    /* GPU 加速 */
+    will-change: transform, opacity;
+    transform: translateZ(0);
+    /* 初始隐藏状态 */
+    opacity: 0;
+    transition:
+        background 0.3s ease,
+        border-color 0.3s ease,
+        box-shadow 0.3s ease,
+        transform 0.3s ease;
+}
+
+/* 大小不一的圆形 - 小 (更明显的尺寸差异) */
+.hot-tag:nth-child(2),
+.hot-tag:nth-child(5) {
+    width: 56px;
+    height: 56px;
+    font-size: 0.65rem;
+    padding: 6px;
+}
+
+/* 大小不一的圆形 - 大 (更明显的尺寸差异) */
+.hot-tag:nth-child(1),
+.hot-tag:nth-child(4) {
+    width: 88px;
+    height: 88px;
+    font-size: 0.78rem;
+    padding: 10px;
+}
+
+/* 大小不一的圆形 - 中等偏小 */
+.hot-tag:nth-child(3) {
+    width: 66px;
+    height: 66px;
+    font-size: 0.7rem;
+    padding: 7px;
+}
+
+/* 入场动画 + 呼吸动画 - 单一简化动画 */
+.search-dropdown.active .hot-tag {
+    animation: orbPulse 4s ease-in-out infinite;
+    animation-delay: var(--delay, 0s);
+}
+
+/* 错开延迟让动画更自然 */
+.search-dropdown.active .hot-tag:nth-child(1) {
+    --delay: 0s;
+}
+
+.search-dropdown.active .hot-tag:nth-child(2) {
+    --delay: 0.6s;
+}
+
+.search-dropdown.active .hot-tag:nth-child(3) {
+    --delay: 1.2s;
+}
+
+.search-dropdown.active .hot-tag:nth-child(4) {
+    --delay: 0.3s;
+}
+
+.search-dropdown.active .hot-tag:nth-child(5) {
+    --delay: 0.9s;
+}
+
+.search-dropdown.active .hot-tag:nth-child(6) {
+    --delay: 1.5s;
+}
+
+/* 圆形呼吸动画 - GPU加速，包含入场 */
+@keyframes orbPulse {
+    0% {
+        opacity: 0;
+        transform: translateZ(0) scale(0.8) translateY(8px);
+    }
+
+    10% {
+        opacity: 1;
+        transform: translateZ(0) scale(1) translateY(0);
+    }
+
+    50% {
+        opacity: 1;
+        transform: translateZ(0) scale(1.03) translateY(-2px);
+    }
+
+    100% {
+        opacity: 1;
+        transform: translateZ(0) scale(1) translateY(0);
+    }
+}
+
+/* 悬停效果 */
+.hot-tag:hover {
+    background: linear-gradient(135deg, var(--accent-purple) 0%, rgba(99, 102, 241, 0.9) 100%);
+    color: #ffffff;
+    border-color: transparent;
+    box-shadow:
+        0 4px 20px rgba(139, 92, 246, 0.35),
+        0 0 0 3px rgba(139, 92, 246, 0.1);
+    animation-play-state: paused;
+}
+
+/* 暗色主题 */
+[data-theme="dark"] .hot-tag {
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.12) 0%, rgba(99, 102, 241, 0.08) 100%);
+    border-color: rgba(139, 92, 246, 0.2);
+}
+
+[data-theme="dark"] .hot-tag:hover {
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.9) 0%, rgba(99, 102, 241, 0.85) 100%);
+    color: #ffffff;
+    box-shadow:
+        0 4px 25px rgba(139, 92, 246, 0.5),
+        0 0 0 3px rgba(139, 92, 246, 0.15);
+}
+
+/* Autocomplete Suggestions */
+.search-suggestions {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.suggestion-item {
+    padding: 10px 14px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    color: var(--text-main);
+    font-size: 0.95rem;
+    font-family: var(--font-sans);
+}
+
+.suggestion-item:hover,
+.suggestion-item.keyboard-active {
+    background: rgba(139, 92, 246, 0.1);
+    color: var(--accent-purple);
+}
+
+.suggestion-item.keyboard-active {
+    background: rgba(139, 92, 246, 0.15);
+}
+
+[data-theme="dark"] .suggestion-item:hover,
+[data-theme="dark"] .suggestion-item.keyboard-active {
+    background: rgba(139, 92, 246, 0.2);
 }
 
 /* Favorites Tab Styling */

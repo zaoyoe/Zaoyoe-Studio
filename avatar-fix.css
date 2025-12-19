@@ -60,7 +60,6 @@ button.login-trigger-btn.logged-in {
 .login-trigger-btn:hover .nav-user-avatar,
 .login-trigger-btn.logged-in:hover .nav-user-avatar {
     transform: scale(1.1) !important;
-    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.9),
-        0 0 15px rgba(255, 255, 255, 0.7) !important;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4) !important;
     transition: all 0.3s ease !important;
 }

@@ -61,8 +61,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let allMessages = [];
     let renderedCount = 0;
-    // const INITIAL_LOAD = 20; // <-- Replaced by dynamic logic
-    // const LOAD_MORE_COUNT = 20; // <-- Replaced by dynamic logic
     let isLoading = false;
     let infiniteScrollObserver = null;
 

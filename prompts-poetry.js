@@ -1440,21 +1440,160 @@ function returnToMainNav() {
     }, 250);
 }
 
-// --- Pinterest-style Search ---
+// --- Pinterest-style Search with Dropdown ---
 function setupSearch() {
     const searchInput = document.getElementById('gallerySearch');
-    if (!searchInput) return;
+    const dropdown = document.getElementById('searchDropdown');
+    const hotTagsList = document.getElementById('hotTagsList');
+    const hotTagsSection = document.getElementById('searchHotTags');
+    const suggestionsSection = document.getElementById('searchSuggestions');
+
+    if (!searchInput || !dropdown) return;
 
     let debounceTimer;
+    let isDropdownActive = false;
 
+    // Generate hot tags from PROMPTS data
+    function generateHotTags() {
+        if (!hotTagsList || typeof PROMPTS === 'undefined') return;
+
+        // Collect all tags with frequency
+        const tagFreq = {};
+        PROMPTS.forEach(p => {
+            if (p.tags) {
+                p.tags.forEach(tag => {
+                    tagFreq[tag] = (tagFreq[tag] || 0) + 1;
+                });
+            }
+            // Also include AI tags
+            if (p.aiTags) {
+                const aiTagSources = ['styles', 'mood', 'scenes'];
+                aiTagSources.forEach(source => {
+                    const tags = p.aiTags[source];
+                    if (tags && tags.en) {
+                        tags.en.forEach(t => {
+                            tagFreq[t] = (tagFreq[t] || 0) + 1;
+                        });
+                    }
+                });
+            }
+        });
+
+        // Sort by frequency and take top 6
+        const topTags = Object.entries(tagFreq)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 6)
+            .map(([tag]) => tag);
+
+        // Render hot tags as circular elements
+        hotTagsList.innerHTML = topTags.map((tag, i) =>
+            `<span class="hot-tag" data-tag="${tag}" style="--delay: ${i * 0.15}s">${tag}</span>`
+        ).join('');
+
+        // Add mousedown handlers to hot tags (mousedown fires before document mousedown)
+        hotTagsList.querySelectorAll('.hot-tag').forEach(tagEl => {
+            tagEl.addEventListener('mousedown', (e) => {
+                e.preventDefault(); // Prevent text selection
+                e.stopPropagation(); // Prevent dropdown from closing
+                const tag = tagEl.dataset.tag;
+                searchInput.value = tag;
+                filterBySearch(tag.toLowerCase());
+                hideDropdown();
+            });
+        });
+    }
+
+    // Show dropdown
+    function showDropdown() {
+        if (isDropdownActive) return;
+        isDropdownActive = true;
+        dropdown.classList.add('active');
+
+        // Show hot tags if search is empty
+        const query = searchInput.value.trim();
+        if (!query) {
+            if (hotTagsSection) hotTagsSection.style.display = 'block';
+            if (suggestionsSection) suggestionsSection.style.display = 'none';
+            generateHotTags();
+        }
+    }
+
+    // Hide dropdown
+    function hideDropdown() {
+        isDropdownActive = false;
+        dropdown.classList.remove('active');
+    }
+
+    // Show suggestions based on query
+    function showSuggestions(query) {
+        if (!suggestionsSection || !query) {
+            if (hotTagsSection) hotTagsSection.style.display = 'block';
+            if (suggestionsSection) suggestionsSection.style.display = 'none';
+            return;
+        }
+
+        // Collect matching suggestions
+        const suggestions = new Set();
+        const lowerQuery = query.toLowerCase();
+
+        PROMPTS.forEach(p => {
+            // Match titles
+            if (p.title && p.title.toLowerCase().includes(lowerQuery)) {
+                suggestions.add(p.title);
+            }
+            // Match tags
+            if (p.tags) {
+                p.tags.forEach(tag => {
+                    if (tag.toLowerCase().includes(lowerQuery)) {
+                        suggestions.add(tag);
+                    }
+                });
+            }
+        });
+
+        const suggestionArray = Array.from(suggestions).slice(0, 6);
+
+        if (suggestionArray.length > 0) {
+            if (hotTagsSection) hotTagsSection.style.display = 'none';
+            suggestionsSection.style.display = 'flex';
+            suggestionsSection.innerHTML = suggestionArray.map(s =>
+                `<div class="suggestion-item">${s}</div>`
+            ).join('');
+
+            // Add mousedown handlers (mousedown fires before document mousedown)
+            suggestionsSection.querySelectorAll('.suggestion-item').forEach(item => {
+                item.addEventListener('mousedown', (e) => {
+                    e.preventDefault(); // Prevent text selection
+                    e.stopPropagation();
+                    searchInput.value = item.textContent;
+                    filterBySearch(item.textContent.toLowerCase());
+                    hideDropdown();
+                });
+            });
+        } else {
+            // No suggestions, show hot tags
+            if (hotTagsSection) hotTagsSection.style.display = 'block';
+            suggestionsSection.style.display = 'none';
+        }
+    }
+
+    // Input event
     searchInput.addEventListener('input', (e) => {
-        const query = e.target.value.toLowerCase().trim();
+        const query = e.target.value.trim();
+
+        // Show suggestions in dropdown
+        showSuggestions(query);
 
         // Debounce for performance
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
-            filterBySearch(query);
+            filterBySearch(query.toLowerCase());
         }, 200);
+    });
+
+    // Focus event - show dropdown
+    searchInput.addEventListener('focus', () => {
+        showDropdown();
     });
 
     // Clear search on ESC
@@ -1462,8 +1601,23 @@ function setupSearch() {
         if (e.key === 'Escape') {
             searchInput.value = '';
             filterBySearch('');
+            hideDropdown();
             searchInput.blur();
         }
+    });
+
+    // Click outside to close dropdown
+    // CRITICAL: Use mousedown instead of click to prevent issues with element removal
+    document.addEventListener('mousedown', (e) => {
+        const searchWrapper = document.querySelector('.nav-search-wrapper');
+        if (searchWrapper && !searchWrapper.contains(e.target)) {
+            hideDropdown();
+        }
+    });
+
+    // Prevent dropdown from closing when clicking inside it
+    dropdown.addEventListener('mousedown', (e) => {
+        e.stopPropagation();
     });
 }
 
