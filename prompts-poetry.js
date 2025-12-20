@@ -1479,10 +1479,10 @@ function setupSearch() {
             }
         });
 
-        // Sort by frequency and take top 8
+        // Sort by frequency and take top 6
         const topTags = Object.entries(tagFreq)
             .sort((a, b) => b[1] - a[1])
-            .slice(0, 8)
+            .slice(0, 6)
             .map(([tag]) => tag);
 
         // Render hot tags as pill-shaped elements
