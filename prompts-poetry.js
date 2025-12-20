@@ -30,6 +30,200 @@ function toggleTheme(event) {
 const ADMIN_EMAIL = 'zaoyoe@gmail.com';
 let isAdmin = false;
 
+// ========================================
+// SEARCH OPTIMIZATION CONFIG
+// ========================================
+// Gemini 2.0 Flash for semantic search (high RPD: 1,500/day)
+const GEMINI_2_0_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+
+// AI Search Rate Limiting
+const AI_SEARCH_RATE_LIMIT = {
+    maxPerMinute: 3,           // Max AI searches per minute for regular users
+    windowMs: 60000,           // 1 minute window
+    userSearchHistory: [],     // Timestamps of AI searches
+    cooldownShown: false       // Prevent duplicate cooldown messages
+};
+
+// Hot tags cache (computed once on init)
+let HOT_TAGS_CACHE = null;
+
+// Inverted search index for O(1) tag lookups (built on init)
+// Structure: { "tag_lowercase": [promptIndex1, promptIndex2, ...] }
+let SEARCH_INDEX = null;
+
+/**
+ * Build inverted search index for all searchable content
+ * Called once during initialization for O(1) lookups
+ */
+function buildSearchIndex() {
+    if (SEARCH_INDEX || typeof PROMPTS === 'undefined') return;
+
+    console.log('🔍 Building search index...');
+    SEARCH_INDEX = {};
+
+    PROMPTS.forEach((p, id) => {
+        if (!p) return;
+
+        const addToIndex = (term) => {
+            if (!term || term.length < 2) return;
+            const key = term.toLowerCase().trim();
+            if (!SEARCH_INDEX[key]) SEARCH_INDEX[key] = [];
+            if (!SEARCH_INDEX[key].includes(id)) {
+                SEARCH_INDEX[key].push(id);
+            }
+        };
+
+        // Index title words
+        if (p.title) {
+            p.title.split(/\s+/).forEach(addToIndex);
+            addToIndex(p.title); // Also index full title
+        }
+
+        // Index tags
+        if (p.tags) {
+            p.tags.forEach(addToIndex);
+        }
+
+        // Index AI tags (all categories, both languages)
+        if (p.aiTags) {
+            ['objects', 'scenes', 'styles', 'mood'].forEach(category => {
+                const tagData = p.aiTags[category];
+                if (tagData?.en) tagData.en.forEach(addToIndex);
+                if (tagData?.zh) tagData.zh.forEach(addToIndex);
+            });
+
+            // Index useCase (platform, purpose, format)
+            if (p.aiTags.useCase) {
+                if (p.aiTags.useCase.platform) p.aiTags.useCase.platform.forEach(addToIndex);
+                if (p.aiTags.useCase.purpose) p.aiTags.useCase.purpose.forEach(addToIndex);
+                if (p.aiTags.useCase.format) p.aiTags.useCase.format.forEach(addToIndex);
+            }
+
+            // Index commercial (niche, targetAudience)
+            if (p.aiTags.commercial) {
+                if (p.aiTags.commercial.niche) p.aiTags.commercial.niche.forEach(addToIndex);
+                if (p.aiTags.commercial.targetAudience) p.aiTags.commercial.targetAudience.forEach(addToIndex);
+            }
+
+            // Index difficulty
+            if (p.aiTags.difficulty) addToIndex(p.aiTags.difficulty);
+        }
+
+        // Index dominant colors
+        if (p.dominantColors) {
+            p.dominantColors.forEach(addToIndex);
+        }
+    });
+
+    console.log(`✅ Search index built: ${Object.keys(SEARCH_INDEX).length} terms`);
+}
+
+/**
+ * Fast index-based search (O(1) per term)
+ * @param {string} query - Search query
+ * @returns {Set<number>} - Set of matching prompt indices
+ */
+function searchByIndex(query) {
+    if (!SEARCH_INDEX) buildSearchIndex();
+
+    const terms = query.toLowerCase().trim().split(/\s+/);
+    let results = null;
+
+    terms.forEach(term => {
+        // Direct match
+        const directMatches = new Set(SEARCH_INDEX[term] || []);
+
+        // Partial match (for terms that are substrings)
+        Object.keys(SEARCH_INDEX).forEach(indexedTerm => {
+            if (indexedTerm.includes(term) || term.includes(indexedTerm)) {
+                SEARCH_INDEX[indexedTerm].forEach(id => directMatches.add(id));
+            }
+        });
+
+        if (results === null) {
+            results = directMatches;
+        } else {
+            // Intersect for multi-word queries
+            results = new Set([...results].filter(id => directMatches.has(id)));
+        }
+    });
+
+    return results || new Set();
+}
+
+// Synonym dictionary for enhanced local search
+const SYNONYM_DICTIONARY = {
+    // === Style synonyms ===
+    'cute': ['adorable', 'kawaii', 'lovely', 'charming', '可爱', '萌', 'かわいい'],
+    'vintage': ['retro', 'classic', 'nostalgic', 'old-fashioned', '复古', '怀旧', '经典'],
+    'minimalist': ['minimal', 'simple', 'clean', '极简', '简约', '简洁'],
+    'futuristic': ['sci-fi', 'cyberpunk', 'tech', 'future', '科幻', '未来感', '赛博朋克'],
+    'dreamy': ['ethereal', 'soft', 'hazy', 'fairytale', '梦幻', '朦胧', '童话'],
+    'dramatic': ['intense', 'powerful', 'bold', 'cinematic', '戏剧性', '张力', '电影感'],
+    'whimsical': ['playful', 'whimsy', 'fantastical', '异想天开', '俏皮', '奇幻'],
+
+    // === Subject synonyms ===
+    'portrait': ['headshot', 'face', 'person', '人像', '头像', '肖像', '人物'],
+    'landscape': ['scenery', 'nature', 'view', '风景', '山水', '自然', '风光'],
+    'food': ['cuisine', 'dish', 'meal', 'culinary', '美食', '食物', '料理'],
+    'animal': ['pet', 'creature', 'wildlife', '动物', '宠物', '生物'],
+
+    // === Platform/Use case synonyms ===
+    '小红书': ['xiaohongshu', 'xhs', 'red', '种草', 'rednote', '小红书封面'],
+    'instagram': ['ins', 'ig', 'insta', 'gram'],
+    'wallpaper': ['壁纸', 'background', '背景图', '锁屏', '桌面', '手机壁纸'],
+    'avatar': ['头像', 'profile picture', 'pfp', '头图', 'icon'],
+    'poster': ['海报', 'banner', '宣传图', '封面'],
+    'cover': ['封面', 'thumbnail', '首图', '缩略图'],
+    '抖音': ['douyin', 'tiktok', '抖音头图', '短视频'],
+    '公众号': ['wechat', 'weixin', '微信公众号', '公众号配图'],
+    '淘宝': ['taobao', 'ecommerce', '电商', '淘宝主图', '主图'],
+
+    // === Purpose/Use synonyms ===
+    '电商卖货': ['ecommerce', 'selling', '卖货', '带货', '商品'],
+    '品牌营销': ['branding', 'marketing', '品牌', '营销推广'],
+    '个人IP': ['personal brand', 'ip', '人设', '自媒体'],
+    '知识付费': ['course', 'education', '课程', '付费内容'],
+    '表情包': ['sticker', 'emoji', 'meme', '贴纸'],
+    '自媒体配图': ['blog', 'article', '文章配图', '推文'],
+
+    // === Commercial niche synonyms ===
+    '母婴': ['baby', 'parenting', 'mom', '宝宝', '育儿', '亲子'],
+    '美妆': ['beauty', 'makeup', 'cosmetic', '化妆', '护肤', '彩妆'],
+    '健身': ['fitness', 'gym', 'workout', '运动', '减肥', '塑形'],
+    '旅游': ['travel', 'trip', 'vacation', '旅行', '出游', '度假'],
+    '教育': ['education', 'learning', 'study', '学习', '培训', '考试'],
+    '宠物': ['pet', 'cat', 'dog', '猫', '狗', '萌宠'],
+    '家居': ['home', 'interior', 'decor', '装修', '居家', '生活'],
+    '时尚': ['fashion', 'style', 'outfit', '穿搭', '潮流', '服饰'],
+    '游戏': ['game', 'gaming', 'esports', '电竞', '玩家'],
+    '情感': ['emotion', 'love', 'relationship', '恋爱', '情侣', '心理'],
+
+    // === Target audience synonyms ===
+    'Z世代': ['gen z', 'genz', '00后', '年轻人', '学生'],
+    '职场女性': ['career woman', 'office', '白领', '打工人'],
+    '新手妈妈': ['new mom', 'mommy', '宝妈', '准妈妈'],
+    '文艺青年': ['artsy', 'artistic', '文青', '小众'],
+    '二次元': ['anime', 'acg', '动漫', '宅'],
+
+    // === Difficulty synonyms ===
+    '新手友好': ['beginner', 'easy', 'simple', '入门', '简单'],
+    '进阶': ['intermediate', 'advanced', '中级', '提高'],
+    '专业级': ['professional', 'expert', 'pro', '高级', '专业'],
+
+    // === Mood synonyms ===
+    'peaceful': ['serene', 'tranquil', 'calm', 'quiet', '平静', '安宁', '治愈', '宁静'],
+    'cozy': ['warm', 'comfortable', 'homey', '温馨', '舒适', '暖心'],
+    'mysterious': ['mystic', 'enigmatic', 'dark', '神秘', '迷幻', '暗黑'],
+    'elegant': ['graceful', 'refined', 'sophisticated', '优雅', '典雅', '精致'],
+
+    // === Technique synonyms ===
+    'miniature': ['mini', 'tiny', 'micro', 'small', '微缩', '迷你', '微观'],
+    '3d': ['three-dimensional', '3d art', '3d render', '三维', '立体'],
+    'illustration': ['illustrate', 'drawing', 'artwork', '插画', '插图', '绘画'],
+    'photography': ['photo', 'photograph', 'camera', '摄影', '照片', '拍摄']
+};
+
 function toggleAvatarMenu() {
     const dropdown = document.getElementById('avatarDropdown');
     dropdown.classList.toggle('active');
@@ -230,6 +424,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Assign IDs to PROMPTS for favorites to work
     PROMPTS.forEach((p, i) => p.id = i);
+
+    // Build search index for fast lookups
+    buildSearchIndex();
 
     initSpotlight();
     initAmbientLight(); // New: Living background
@@ -441,9 +638,95 @@ const TAG_TRANSLATIONS = {
     'Experimental': '实验性'
 };
 
+// ========================================
+// SEASONAL TAGS CONFIGURATION
+// ========================================
+const SEASONAL_HOLIDAYS = [
+    // Format: { name, nameZh, month, day, icon, keywords }
+    // month: 1-12, day: 1-31
+    // For lunar calendar holidays, we pre-calculate dates for current/next years
+    { name: 'Christmas', nameZh: '圣诞', month: 12, day: 25, icon: '🎄', keywords: ['christmas', 'xmas', 'santa', '圣诞', '圣诞节'] },
+    { name: 'New Year', nameZh: '元旦', month: 1, day: 1, icon: '🎆', keywords: ['new year', 'newyear', '元旦', '新年', '跨年'] },
+    { name: 'Valentine', nameZh: '情人节', month: 2, day: 14, icon: '💕', keywords: ['valentine', 'love', 'heart', '情人节', '爱情', '浪漫'] },
+    { name: 'Halloween', nameZh: '万圣节', month: 10, day: 31, icon: '🎃', keywords: ['halloween', 'spooky', 'ghost', '万圣节', '鬼', '南瓜'] },
+    { name: 'Mid-Autumn', nameZh: '中秋', month: 9, day: 17, icon: '🌕', keywords: ['mid-autumn', 'moon', 'mooncake', '中秋', '月饼', '赏月'] }, // 2024 date, update yearly
+    { name: 'Dragon Boat', nameZh: '端午', month: 6, day: 10, icon: '🐲', keywords: ['dragon boat', '端午', '粽子', '龙舟'] }, // 2024 date
+    { name: 'Labor Day', nameZh: '劳动节', month: 5, day: 1, icon: '👷', keywords: ['labor', 'may day', '劳动节', '五一'] },
+    { name: 'Children', nameZh: '儿童节', month: 6, day: 1, icon: '🧸', keywords: ['children', 'kids', '儿童节', '六一', '童趣'] },
+    { name: 'National Day', nameZh: '国庆', month: 10, day: 1, icon: '🇨🇳', keywords: ['national day', '国庆', '国庆节', '十一'] },
+    { name: 'Thanksgiving', nameZh: '感恩节', month: 11, day: 28, icon: '🦃', keywords: ['thanksgiving', 'thanks', '感恩节', '感恩'] }, // Approximate
+    { name: 'Mother Day', nameZh: '母亲节', month: 5, day: 12, icon: '💐', keywords: ['mother', 'mom', '母亲节', '妈妈'] }, // 2024 date
+    { name: 'Father Day', nameZh: '父亲节', month: 6, day: 16, icon: '👔', keywords: ['father', 'dad', '父亲节', '爸爸'] }, // 2024 date
+];
+
+// Spring Festival dates (Lunar New Year - changes yearly)
+// Pre-calculated for 2024-2026
+const SPRING_FESTIVAL_DATES = {
+    2024: { month: 2, day: 10 },
+    2025: { month: 1, day: 29 },
+    2026: { month: 2, day: 17 },
+    2027: { month: 2, day: 6 },
+};
+
+/**
+ * Get active seasonal holiday if within range (2 days before to day of)
+ * @returns {Object|null} Holiday object or null
+ */
+function getActiveSeasonalHoliday() {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1; // 1-12
+    const currentDay = now.getDate();
+
+    // Check Spring Festival first (special handling for lunar calendar)
+    const springFestival = SPRING_FESTIVAL_DATES[currentYear];
+    if (springFestival) {
+        const daysUntil = getDaysUntil(currentMonth, currentDay, springFestival.month, springFestival.day);
+        if (daysUntil >= 0 && daysUntil <= 2) {
+            return {
+                name: 'Spring Festival',
+                nameZh: '春节',
+                icon: '🧧',
+                keywords: ['spring festival', 'chinese new year', 'lunar', '春节', '新春', '过年', '红包', '年味'],
+                daysUntil
+            };
+        }
+    }
+
+    // Check other holidays
+    for (const holiday of SEASONAL_HOLIDAYS) {
+        const daysUntil = getDaysUntil(currentMonth, currentDay, holiday.month, holiday.day);
+        if (daysUntil >= 0 && daysUntil <= 2) {
+            return { ...holiday, daysUntil };
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Calculate days until a target date (same year, simple calculation)
+ */
+function getDaysUntil(currentMonth, currentDay, targetMonth, targetDay) {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+
+    const current = new Date(currentYear, currentMonth - 1, currentDay);
+    let target = new Date(currentYear, targetMonth - 1, targetDay);
+
+    // If target has passed this year, check if we're still "on" the day
+    const diffTime = target - current;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    return diffDays;
+}
+
 function generateDynamicNav() {
     const navContainer = document.getElementById('navItems');
     if (!navContainer || !PROMPTS) return;
+
+    // Check for active seasonal holiday
+    const activeHoliday = getActiveSeasonalHoliday();
 
     // Count tag frequency
     const tagCounts = {};
@@ -455,10 +738,12 @@ function generateDynamicNav() {
         }
     });
 
-    // Sort by frequency and take top categories (max 6)
+    // Sort by frequency and take top categories
+    // If seasonal holiday is active, take 5 regular tags; otherwise take 6
+    const maxRegularTags = activeHoliday ? 5 : 6;
     const topTags = Object.entries(tagCounts)
         .sort((a, b) => b[1] - a[1])
-        .slice(0, 6)
+        .slice(0, maxRegularTags)
         .map(([tag]) => tag);
 
     // Build nav HTML
@@ -468,6 +753,18 @@ function generateDynamicNav() {
             <span class="cn">全部</span>
         </div>
     `;
+
+    // Add seasonal tag first (if active) with special styling
+    if (activeHoliday) {
+        const statusText = activeHoliday.daysUntil === 0 ? '今天!' :
+            activeHoliday.daysUntil === 1 ? '明天' : '即将';
+        navHTML += `
+            <div class="nav-item seasonal-tag" data-filter="seasonal:${activeHoliday.name}" data-keywords="${activeHoliday.keywords.join(',')}">
+                <span class="en">${activeHoliday.icon} ${activeHoliday.name}</span>
+                <span class="cn">${activeHoliday.nameZh} <small>${statusText}</small></span>
+            </div>
+        `;
+    }
 
     topTags.forEach(tag => {
         const cn = TAG_TRANSLATIONS[tag] || tag;
@@ -1019,6 +1316,28 @@ function filterCardsCSS(filter) {
             isVisible = true;
         } else if (filter === 'favorites') {
             isVisible = favorites.has(cardId);
+        } else if (filter.startsWith('seasonal:')) {
+            // Seasonal filter - search by keywords
+            const seasonalName = filter.replace('seasonal:', '');
+            const navItem = document.querySelector(`[data-filter="${filter}"]`);
+            const keywords = navItem?.dataset.keywords?.split(',') || [];
+
+            if (item) {
+                const searchText = [
+                    item.title || '',
+                    item.description || '',
+                    item.prompt || '',
+                    ...(item.tags || []),
+                    ...(item.aiTags?.styles?.en || []),
+                    ...(item.aiTags?.styles?.zh || []),
+                    ...(item.aiTags?.mood?.en || []),
+                    ...(item.aiTags?.mood?.zh || []),
+                    ...(item.aiTags?.scenes?.en || []),
+                    ...(item.aiTags?.scenes?.zh || []),
+                ].join(' ').toLowerCase();
+
+                isVisible = keywords.some(kw => searchText.includes(kw.toLowerCase()));
+            }
         } else if (cardTags.includes(filter)) {
             isVisible = true;
         } else if (item && item.aiTags) {
@@ -1453,9 +1772,15 @@ function setupSearch() {
     let debounceTimer;
     let isDropdownActive = false;
 
-    // Generate hot tags from PROMPTS data
+    // Generate hot tags from PROMPTS data (with caching)
     function generateHotTags() {
         if (!hotTagsList || typeof PROMPTS === 'undefined') return;
+
+        // Use cached tags if available
+        if (HOT_TAGS_CACHE) {
+            renderHotTags(HOT_TAGS_CACHE, hotTagsList, searchInput);
+            return;
+        }
 
         // Collect all tags with frequency
         const tagFreq = {};
@@ -1480,18 +1805,22 @@ function setupSearch() {
         });
 
         // Sort by frequency and take top 6
-        const topTags = Object.entries(tagFreq)
+        HOT_TAGS_CACHE = Object.entries(tagFreq)
             .sort((a, b) => b[1] - a[1])
             .slice(0, 6)
             .map(([tag]) => tag);
 
-        // Render hot tags as pill-shaped elements
-        hotTagsList.innerHTML = topTags.map((tag, i) =>
+        renderHotTags(HOT_TAGS_CACHE, hotTagsList, searchInput);
+    }
+
+    // Render hot tags helper function
+    function renderHotTags(topTags, container, searchInput) {
+        container.innerHTML = topTags.map((tag, i) =>
             `<span class="hot-tag" data-tag="${tag}" style="--delay: ${i * 0.03}s">${tag}</span>`
         ).join('');
 
         // Add mousedown handlers to hot tags (mousedown fires before document mousedown)
-        hotTagsList.querySelectorAll('.hot-tag').forEach(tagEl => {
+        container.querySelectorAll('.hot-tag').forEach(tagEl => {
             tagEl.addEventListener('mousedown', (e) => {
                 e.preventDefault(); // Prevent text selection
                 e.stopPropagation(); // Prevent dropdown from closing
@@ -1505,17 +1834,17 @@ function setupSearch() {
 
     // Show dropdown
     function showDropdown() {
+        // Only show dropdown when user starts typing (handled by showSuggestions)
+        // Don't show on empty focus
+        const query = searchInput.value.trim();
+        if (!query) {
+            // Don't show dropdown when empty
+            return;
+        }
+
         if (isDropdownActive) return;
         isDropdownActive = true;
         dropdown.classList.add('active');
-
-        // Show hot tags if search is empty
-        const query = searchInput.value.trim();
-        if (!query) {
-            if (hotTagsSection) hotTagsSection.style.display = 'block';
-            if (suggestionsSection) suggestionsSection.style.display = 'none';
-            generateHotTags();
-        }
     }
 
     // Hide dropdown
@@ -1526,10 +1855,20 @@ function setupSearch() {
 
     // Show suggestions based on query
     function showSuggestions(query) {
-        if (!suggestionsSection || !query) {
-            if (hotTagsSection) hotTagsSection.style.display = 'block';
-            if (suggestionsSection) suggestionsSection.style.display = 'none';
+        if (!suggestionsSection) return;
+
+        // If no query, hide dropdown entirely (no more hot tags panel on focus)
+        if (!query) {
+            if (hotTagsSection) hotTagsSection.style.display = 'none';
+            suggestionsSection.style.display = 'none';
+            hideDropdown();
             return;
+        }
+
+        // Activate dropdown when typing
+        if (!isDropdownActive) {
+            isDropdownActive = true;
+            dropdown.classList.add('active');
         }
 
         // Collect matching suggestions
@@ -1551,30 +1890,86 @@ function setupSearch() {
             }
         });
 
-        const suggestionArray = Array.from(suggestions).slice(0, 6);
+        const suggestionArray = Array.from(suggestions).slice(0, 5); // Reduced to 5 for inline tags
 
-        if (suggestionArray.length > 0) {
-            if (hotTagsSection) hotTagsSection.style.display = 'none';
-            suggestionsSection.style.display = 'flex';
-            suggestionsSection.innerHTML = suggestionArray.map(s =>
-                `<div class="suggestion-item"><i class="fas fa-search"></i>${s}</div>`
-            ).join('');
+        // Always hide the old hot tags section
+        if (hotTagsSection) hotTagsSection.style.display = 'none';
+        suggestionsSection.style.display = 'flex';
 
-            // Add mousedown handlers (mousedown fires before document mousedown)
-            suggestionsSection.querySelectorAll('.suggestion-item').forEach(item => {
-                item.addEventListener('mousedown', (e) => {
-                    e.preventDefault(); // Prevent text selection
-                    e.stopPropagation();
-                    searchInput.value = item.textContent;
-                    filterBySearch(item.textContent.toLowerCase());
-                    hideDropdown();
-                });
-            });
-        } else {
-            // No suggestions, show hot tags
-            if (hotTagsSection) hotTagsSection.style.display = 'block';
-            suggestionsSection.style.display = 'none';
+        // Build suggestions HTML
+        let html = suggestionArray.map(s =>
+            `<div class="suggestion-item"><i class="fas fa-search"></i>${s}</div>`
+        ).join('');
+
+        // Add 3 inline hot tag hints at the bottom
+        const hotTags = getInlineHotTags(3);
+        if (hotTags.length > 0) {
+            // Add 'with-suggestions' class only when there are suggestions above
+            const borderClass = suggestionArray.length > 0 ? 'with-suggestions' : '';
+            html += `
+                <div class="inline-hot-tags ${borderClass}">
+                    <span class="inline-label">热门</span>
+                    <div class="inline-hot-tags-list">
+                        ${hotTags.map(tag => `<span class="inline-hot-tag" data-tag="${tag}">${tag}</span>`).join('')}
+                    </div>
+                </div>
+            `;
         }
+
+        suggestionsSection.innerHTML = html;
+
+        // Add mousedown handlers for suggestions
+        suggestionsSection.querySelectorAll('.suggestion-item').forEach(item => {
+            item.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                searchInput.value = item.textContent;
+                filterBySearch(item.textContent.toLowerCase());
+                hideDropdown();
+            });
+        });
+
+        // Add mousedown handlers for inline hot tags
+        suggestionsSection.querySelectorAll('.inline-hot-tag').forEach(tagEl => {
+            tagEl.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const tag = tagEl.dataset.tag;
+                searchInput.value = tag;
+                filterBySearch(tag.toLowerCase());
+                hideDropdown();
+            });
+        });
+    }
+
+    // Get inline hot tags (returns top N hot tags not matching current query)
+    function getInlineHotTags(count) {
+        if (!HOT_TAGS_CACHE) {
+            // Generate cache if not available
+            const tagFreq = {};
+            PROMPTS.forEach(p => {
+                if (p.tags) {
+                    p.tags.forEach(tag => {
+                        tagFreq[tag] = (tagFreq[tag] || 0) + 1;
+                    });
+                }
+                if (p.aiTags) {
+                    ['styles', 'mood', 'scenes'].forEach(source => {
+                        const tags = p.aiTags[source];
+                        if (tags && tags.en) {
+                            tags.en.forEach(t => {
+                                tagFreq[t] = (tagFreq[t] || 0) + 1;
+                            });
+                        }
+                    });
+                }
+            });
+            HOT_TAGS_CACHE = Object.entries(tagFreq)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 6)
+                .map(([tag]) => tag);
+        }
+        return HOT_TAGS_CACHE.slice(0, count);
     }
 
     // Input event
@@ -1667,64 +2062,265 @@ async function filterBySearch(query) {
         }
     }
 
-    // Try Supabase Full-Text Search first (only if not pure color search)
-    let supabaseMatchedIds = null;
-    if (window.supabaseClient && !searchingForColor) {
-        try {
-            const { data, error } = await window.supabaseClient
-                .from('prompts')
-                .select('id')
-                .textSearch('fts', query, {
-                    type: 'websearch',
-                    config: 'english'
-                });
+    // === 3-LAYER SEARCH STRATEGY ===
 
-            if (!error && data && data.length > 0) {
-                supabaseMatchedIds = new Set(data.map(p => p.id));
-                console.log(`🔍 Supabase FTS: Found ${supabaseMatchedIds.size} results for "${query}"`);
-            }
-        } catch (e) {
-            console.warn('Supabase search failed, falling back to local:', e);
+    // Layer 1 & 2: Local search (instant, no network)
+    const localResults = performLocalSearch(query, searchingForColor);
+    console.log(`🔍 Local search: found ${localResults.size} results for "${query}"`);
+
+    // If local search found results, use them directly
+    if (localResults.size > 0) {
+        applySearchResults(cards, localResults, searchingForColor);
+        return;
+    }
+
+    // Layer 3: AI Semantic Search (only if local search failed)
+    // Check rate limit for non-admin users
+    if (!isAdmin && !checkAISearchRateLimit()) {
+        console.log('⏳ AI search rate limited');
+        showSearchCooldownMessage();
+        applySearchResults(cards, new Set(), searchingForColor); // Show no results
+        return;
+    }
+
+    // Trigger AI semantic search
+    console.log('🔍 Local search: 0 results, triggering AI semantic search...');
+    const aiResults = await performAISemanticSearch(query);
+
+    if (aiResults.size > 0) {
+        console.log(`✨ AI search: found ${aiResults.size} results`);
+        applySearchResults(cards, aiResults, searchingForColor);
+    } else {
+        console.log('❌ AI search: no results found');
+        applySearchResults(cards, new Set(), searchingForColor);
+    }
+}
+
+// Expand query using synonym dictionary
+function expandSynonyms(query) {
+    const q = query.toLowerCase();
+    const expanded = new Set([q]);
+
+    for (const [key, synonyms] of Object.entries(SYNONYM_DICTIONARY)) {
+        const allTerms = [key, ...synonyms].map(s => s.toLowerCase());
+        if (allTerms.some(term => q.includes(term) || term.includes(q))) {
+            allTerms.forEach(s => expanded.add(s.toLowerCase()));
         }
     }
 
-    // Filter cards based on results
+    return Array.from(expanded);
+}
+
+// Layer 1 & 2: Local search with synonym expansion + index optimization
+function performLocalSearch(query, searchingForColor) {
+    const matchedIds = new Set();
+    const expandedTerms = expandSynonyms(query);
+
+    console.log(`🔄 Expanded terms: [${expandedTerms.slice(0, 5).join(', ')}${expandedTerms.length > 5 ? '...' : ''}]`);
+
+    // Color search - still uses linear scan (color-specific)
+    if (searchingForColor) {
+        PROMPTS.forEach((item, index) => {
+            if (item?.dominantColors?.includes(searchingForColor)) {
+                matchedIds.add(index);
+            }
+        });
+        return matchedIds;
+    }
+
+    // Use index-based search for each expanded term
+    expandedTerms.forEach(term => {
+        const indexResults = searchByIndex(term);
+        indexResults.forEach(id => matchedIds.add(id));
+    });
+
+    // If index search found nothing, fall back to linear search for fuzzy matching
+    if (matchedIds.size === 0) {
+        console.log('📝 Index miss, using linear fallback...');
+        PROMPTS.forEach((item, index) => {
+            if (!item) return;
+
+            for (const term of expandedTerms) {
+                // Check description and prompt text (not indexed)
+                const descMatch = item.description?.toLowerCase().includes(term);
+                const promptMatch = item.prompt?.toLowerCase().includes(term);
+
+                if (descMatch || promptMatch) {
+                    matchedIds.add(index);
+                    break;
+                }
+            }
+        });
+    }
+
+    return matchedIds;
+}
+
+// Check AI search rate limit (returns true if allowed)
+function checkAISearchRateLimit() {
+    const now = Date.now();
+    const windowStart = now - AI_SEARCH_RATE_LIMIT.windowMs;
+
+    // Clean up old entries
+    AI_SEARCH_RATE_LIMIT.userSearchHistory = AI_SEARCH_RATE_LIMIT.userSearchHistory.filter(
+        ts => ts > windowStart
+    );
+
+    // Check if under limit
+    if (AI_SEARCH_RATE_LIMIT.userSearchHistory.length >= AI_SEARCH_RATE_LIMIT.maxPerMinute) {
+        return false;
+    }
+
+    // Record this search
+    AI_SEARCH_RATE_LIMIT.userSearchHistory.push(now);
+    AI_SEARCH_RATE_LIMIT.cooldownShown = false;
+    return true;
+}
+
+// Show cooldown message
+function showSearchCooldownMessage() {
+    if (AI_SEARCH_RATE_LIMIT.cooldownShown) return;
+    AI_SEARCH_RATE_LIMIT.cooldownShown = true;
+
+    // Show toast or inline message
+    const searchWrapper = document.querySelector('.nav-search-wrapper');
+    if (searchWrapper) {
+        const existingMsg = searchWrapper.querySelector('.search-cooldown-msg');
+        if (existingMsg) existingMsg.remove();
+
+        const msg = document.createElement('div');
+        msg.className = 'search-cooldown-msg';
+        msg.innerHTML = '<i class="fas fa-clock"></i> AI 搜索冷却中，请稍后再试';
+        msg.style.cssText = `
+            position: absolute;
+            bottom: -30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(239, 68, 68, 0.9);
+            color: white;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            white-space: nowrap;
+            z-index: 100;
+            animation: fadeIn 0.3s ease;
+        `;
+        searchWrapper.appendChild(msg);
+
+        setTimeout(() => msg.remove(), 3000);
+    }
+}
+
+// Layer 3: AI Semantic Search using Gemini 2.0 Flash
+async function performAISemanticSearch(query) {
+    const matchedIds = new Set();
+
+    // Get API key from localStorage (same as admin-studio)
+    const storedKeys = localStorage.getItem('gemini_api_keys');
+    let apiKey = null;
+
+    if (storedKeys) {
+        try {
+            const keys = JSON.parse(storedKeys);
+            const activeKey = keys.find(k => k.active);
+            if (activeKey) apiKey = activeKey.key;
+        } catch (e) {
+            console.warn('Failed to parse stored API keys');
+        }
+    }
+
+    if (!apiKey) {
+        console.log('⚠️ No Gemini API key available for semantic search');
+        return matchedIds;
+    }
+
+    try {
+        // Build prompt for intent understanding
+        const prompt = `You are a search intent analyzer for an AI art gallery.
+User searched: "${query}"
+
+Extract 5-8 specific English tags that match this search intent.
+Consider: art styles, moods, subjects, colors, techniques, scenes.
+
+Return ONLY a JSON array of lowercase tags, no explanation:
+["tag1", "tag2", ...]`;
+
+        const response = await fetch(`${GEMINI_2_0_URL}?key=${apiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: {
+                    temperature: 0.3,
+                    maxOutputTokens: 256
+                }
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        let text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+
+        if (!text) return matchedIds;
+
+        // Parse JSON response
+        if (text.startsWith('```')) {
+            text = text.replace(/```json?\n?/g, '').replace(/```$/g, '').trim();
+        }
+
+        const aiTags = JSON.parse(text);
+        console.log(`🤖 AI extracted tags: [${aiTags.join(', ')}]`);
+
+        // Search for these AI-extracted tags locally
+        if (Array.isArray(aiTags)) {
+            for (const tag of aiTags) {
+                const tagLower = tag.toLowerCase();
+                PROMPTS.forEach((item, index) => {
+                    if (!item) return;
+
+                    // Check title, tags, aiTags
+                    const titleMatch = item.title?.toLowerCase().includes(tagLower);
+                    const tagMatch = item.tags?.some(t => t.toLowerCase().includes(tagLower));
+
+                    let aiMatch = false;
+                    if (item.aiTags) {
+                        const searchIn = (arr) => arr && arr.some(t => t && t.toLowerCase().includes(tagLower));
+                        aiMatch = searchIn(item.aiTags.objects?.en) ||
+                            searchIn(item.aiTags.styles?.en) ||
+                            searchIn(item.aiTags.scenes?.en) ||
+                            searchIn(item.aiTags.mood?.en);
+                    }
+
+                    if (titleMatch || tagMatch || aiMatch) {
+                        matchedIds.add(index);
+                    }
+                });
+            }
+        }
+    } catch (e) {
+        console.error('AI semantic search error:', e);
+    }
+
+    return matchedIds;
+}
+
+// Apply search results to cards with animation
+function applySearchResults(cards, matchedIds, searchingForColor) {
     let visibleIndex = 0;
+
     cards.forEach(card => {
         const cardId = parseInt(card.dataset.id);
         const item = PROMPTS[cardId];
         if (!item) return;
 
-        let isVisible = false;
+        let isVisible = matchedIds.has(cardId);
 
-        // If searching for a color, only match by color
-        if (searchingForColor) {
+        // For color searches with no AI semantic involvement, also check colors
+        if (searchingForColor && !isVisible) {
             isVisible = item.dominantColors && item.dominantColors.includes(searchingForColor);
-        } else {
-            // Always do local search (including AI tags)
-            const titleMatch = item.title.toLowerCase().includes(query);
-            const tagMatch = item.tags.some(t => t.toLowerCase().includes(query));
-            const descMatch = item.description && item.description.toLowerCase().includes(query);
-            const promptMatch = item.prompt && item.prompt.toLowerCase().includes(query);
-
-            // AI Smart Search (Objects, Scenes, Styles, Mood)
-            let aiMatch = false;
-            if (item.aiTags) {
-                const searchIn = (arr) => arr && arr.some(t => t && t.toLowerCase().includes(query));
-                aiMatch = searchIn(item.aiTags.objects?.en) ||
-                    searchIn(item.aiTags.objects?.zh) ||
-                    searchIn(item.aiTags.scenes?.en) ||
-                    searchIn(item.aiTags.scenes?.zh) ||
-                    searchIn(item.aiTags.styles?.en) ||
-                    searchIn(item.aiTags.styles?.zh) ||
-                    searchIn(item.aiTags.mood?.en) ||
-                    searchIn(item.aiTags.mood?.zh);
-            }
-
-            // Supabase FTS match (if available)
-            const supabaseMatch = supabaseMatchedIds && supabaseMatchedIds.has(cardId + 1);
-
-            isVisible = titleMatch || tagMatch || descMatch || promptMatch || aiMatch || supabaseMatch;
         }
 
         if (isVisible) {

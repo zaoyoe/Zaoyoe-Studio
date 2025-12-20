@@ -226,7 +226,7 @@ body,
     top: calc(100% + 12px);
     right: 0;
     min-width: 220px;
-    background: rgba(255, 255, 255, 0.85);
+    background: rgba(255, 255, 255, 0.70);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     border: 1px solid rgba(255, 255, 255, 0.3);
@@ -246,7 +246,7 @@ body,
 }
 
 [data-theme="dark"] .avatar-dropdown {
-    background: rgba(30, 41, 59, 0.9);
+    background: rgba(30, 41, 59, 0.65);
     border-color: rgba(255, 255, 255, 0.1);
 }
 
@@ -295,6 +295,11 @@ body,
     border-color: rgba(155, 93, 229, 0.4);
 }
 
+[data-theme="dark"] .theme-toggle-btn:hover {
+    box-shadow: 0 4px 12px rgba(93, 159, 216, 0.25);
+    border-color: rgba(93, 159, 216, 0.5);
+}
+
 .theme-toggle-btn:active {
     transform: scale(0.95);
 }
@@ -339,7 +344,7 @@ body,
 }
 
 [data-theme="dark"] .theme-toggle-btn::after {
-    background: radial-gradient(circle, rgba(139, 92, 246, 0.3) 0%, transparent 70%);
+    background: radial-gradient(circle, rgba(93, 159, 216, 0.35) 0%, transparent 70%);
 }
 
 .theme-toggle-btn:hover::after {
@@ -406,7 +411,7 @@ body,
 }
 
 [data-theme="dark"] .capsule-icon.moon {
-    background: rgba(139, 92, 246, 0.3);
+    background: rgba(93, 159, 216, 0.25);
 }
 
 .capsule-slider {
@@ -439,6 +444,15 @@ body,
 .dropdown-action:hover {
     background: rgba(155, 93, 229, 0.1);
     color: var(--accent-purple);
+}
+
+[data-theme="dark"] .dropdown-action:hover {
+    background: rgba(93, 159, 216, 0.12);
+    color: #5d9fd8;
+}
+
+[data-theme="dark"] .dropdown-action:hover i {
+    color: #5d9fd8;
 }
 
 .dropdown-action i {
@@ -579,6 +593,24 @@ body {
     animation: moodBreathing 3s ease-in-out infinite;
 }
 
+/* Dark mode: use starry blue instead of purple for search focus */
+[data-theme="dark"] .nav-search {
+    --mood-color: rgba(93, 159, 216, 0.5);
+    background: rgba(20, 30, 50, 0.6);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-color: rgba(255, 255, 255, 0.12);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+[data-theme="dark"] .nav-search:focus-within {
+    border-color: rgba(93, 159, 216, 0.45);
+    box-shadow:
+        0 0 0 1px rgba(93, 159, 216, 0.25),
+        0 0 20px rgba(93, 159, 216, 0.12),
+        0 0 40px rgba(93, 159, 216, 0.06);
+}
+
 .nav-search i {
     color: var(--text-dim);
     font-size: 0.95rem;
@@ -606,7 +638,7 @@ body {
     /* Increased spacing slightly */
     left: 0;
     right: 0;
-    background: rgba(255, 255, 255, 0.85);
+    background: rgba(255, 255, 255, 0.70);
     /* More transparent */
     backdrop-filter: blur(24px);
     -webkit-backdrop-filter: blur(24px);
@@ -634,7 +666,7 @@ body {
 }
 
 [data-theme="dark"] .search-dropdown {
-    background: rgba(15, 23, 42, 0.8);
+    background: rgba(15, 23, 42, 0.65);
     /* Elegant dark glass */
     border-color: rgba(255, 255, 255, 0.08);
     box-shadow:
@@ -749,9 +781,9 @@ body {
 }
 
 [data-theme="dark"] .hot-tag:hover {
-    background: rgba(139, 92, 246, 0.2);
-    border-color: rgba(139, 92, 246, 0.4);
-    color: var(--accent-purple);
+    background: rgba(93, 159, 216, 0.15);
+    border-color: rgba(93, 159, 216, 0.35);
+    color: #5d9fd8;
 }
 
 /* Autocomplete Suggestions */
@@ -796,7 +828,79 @@ body {
 
 [data-theme="dark"] .suggestion-item:hover,
 [data-theme="dark"] .suggestion-item.keyboard-active {
-    background: rgba(139, 92, 246, 0.15);
+    background: rgba(93, 159, 216, 0.12);
+}
+
+[data-theme="dark"] .suggestion-item:hover i {
+    color: #5d9fd8;
+}
+
+/* Inline Hot Tags (subtle hints at bottom of suggestions) */
+.inline-hot-tags {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 12px 14px;
+    margin-top: 0;
+    margin-bottom: 0;
+}
+
+/* When there are suggestions above, adjust spacing to center between divider and bottom */
+.inline-hot-tags.with-suggestions {
+    border-top: 1px solid var(--card-border);
+    margin-top: 6px;
+    padding-top: 10px;
+    padding-bottom: 8px;
+    /* Extend more into dropdown's bottom padding (20px) to center visually */
+    margin-bottom: -12px;
+}
+
+.inline-label {
+    font-size: 0.75rem;
+    color: var(--text-main);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    opacity: 0.5;
+    flex-shrink: 0;
+}
+
+.inline-hot-tags-list {
+    display: flex;
+    gap: 8px;
+}
+
+.inline-hot-tag {
+    padding: 5px 12px;
+    background: rgba(0, 0, 0, 0.04);
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 12px;
+    font-size: 0.85rem;
+    color: var(--text-main);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    opacity: 0.7;
+}
+
+/* Light mode: purple hover */
+.inline-hot-tag:hover {
+    background: rgba(155, 93, 229, 0.1);
+    border-color: rgba(155, 93, 229, 0.3);
+    color: var(--accent-purple);
+    opacity: 1;
+}
+
+/* Dark mode styles */
+[data-theme="dark"] .inline-hot-tag {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Dark mode: blue hover */
+[data-theme="dark"] .inline-hot-tag:hover {
+    background: rgba(93, 159, 216, 0.15);
+    border-color: rgba(93, 159, 216, 0.3);
+    color: #5d9fd8;
 }
 
 /* Favorites Tab Styling */
@@ -838,6 +942,63 @@ body {
 .nav-item.sub-tag {
     opacity: 0;
     animation: fadeInUp 0.4s ease forwards;
+}
+
+/* ========================================
+   SEASONAL TAG STYLING
+   ======================================== */
+.nav-item.seasonal-tag {
+    background: linear-gradient(135deg, rgba(255, 107, 107, 0.15), rgba(255, 193, 7, 0.15));
+    border: 1px solid rgba(255, 107, 107, 0.3);
+    border-radius: 20px;
+    padding: 8px 16px;
+    margin: -8px 0;
+    position: relative;
+    animation: seasonalPulse 3s ease-in-out infinite;
+}
+
+.nav-item.seasonal-tag .en {
+    font-size: 1.2rem;
+}
+
+.nav-item.seasonal-tag .cn small {
+    font-size: 0.65rem;
+    opacity: 0.8;
+    margin-left: 4px;
+    color: #ff6b6b;
+}
+
+.nav-item.seasonal-tag:hover {
+    background: linear-gradient(135deg, rgba(255, 107, 107, 0.25), rgba(255, 193, 7, 0.25));
+    border-color: rgba(255, 107, 107, 0.5);
+    transform: translateY(-3px) scale(1.02);
+}
+
+.nav-item.seasonal-tag.active {
+    background: linear-gradient(135deg, rgba(255, 107, 107, 0.3), rgba(255, 193, 7, 0.3));
+    border-color: rgba(255, 107, 107, 0.6);
+}
+
+@keyframes seasonalPulse {
+
+    0%,
+    100% {
+        box-shadow: 0 0 0 0 rgba(255, 107, 107, 0);
+    }
+
+    50% {
+        box-shadow: 0 0 15px 2px rgba(255, 107, 107, 0.2);
+    }
+}
+
+/* Dark mode seasonal tag */
+[data-theme="dark"] .nav-item.seasonal-tag {
+    background: linear-gradient(135deg, rgba(255, 107, 107, 0.1), rgba(255, 193, 7, 0.1));
+    border-color: rgba(255, 107, 107, 0.25);
+}
+
+[data-theme="dark"] .nav-item.seasonal-tag:hover {
+    background: linear-gradient(135deg, rgba(255, 107, 107, 0.2), rgba(255, 193, 7, 0.2));
 }
 
 @keyframes navTagFadeIn {
@@ -1000,6 +1161,11 @@ body {
 .nav-item.active .cn {
     opacity: 1;
     color: var(--accent-purple);
+}
+
+/* Dark mode: softer starry blue for active nav */
+[data-theme="dark"] .nav-item.active .cn {
+    color: #5d9fd8;
 }
 
 /* --- Gallery Grid --- */

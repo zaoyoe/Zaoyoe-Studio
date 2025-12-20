@@ -580,6 +580,95 @@ async function convertToWebP(dataUrl, quality = 0.85) {
 }
 
 // ========================================
+// IMAGE GRID COMPOSITION (for multi-image analysis)
+// ========================================
+
+/**
+ * Creates a grid image from multiple images for unified AI analysis.
+ * Supports up to 6 images with adaptive layouts.
+ * @param {Array} images - Array of image objects with dataUrl property
+ * @returns {Promise<{dataUrl: string, base64: string}>} - Grid image as WebP
+ */
+async function createImageGrid(images) {
+    if (images.length === 0) return null;
+    if (images.length === 1) {
+        // Single image - return as-is
+        return { dataUrl: images[0].dataUrl, base64: images[0].base64 };
+    }
+
+    return new Promise((resolve, reject) => {
+        // Max 6 images for 2x3 grid
+        const gridImages = images.slice(0, 6);
+
+        // Determine grid layout based on image count
+        // 2 images: 1x2, 3-4 images: 2x2, 5-6 images: 2x3
+        let cols, rows;
+        if (gridImages.length <= 2) {
+            cols = gridImages.length;
+            rows = 1;
+        } else if (gridImages.length <= 4) {
+            cols = 2;
+            rows = 2;
+        } else {
+            cols = 2;
+            rows = 3;
+        }
+
+        // Target size for each cell (maintaining reasonable resolution)
+        const cellSize = 512;
+        const canvasWidth = cellSize * cols;
+        const canvasHeight = cellSize * rows;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = canvasWidth;
+        canvas.height = canvasHeight;
+        const ctx = canvas.getContext('2d');
+
+        // Fill with neutral gray background
+        ctx.fillStyle = '#404040';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        let loadedCount = 0;
+        const imageElements = [];
+
+        gridImages.forEach((imgData, index) => {
+            const img = new Image();
+            img.onload = () => {
+                imageElements[index] = img;
+                loadedCount++;
+
+                if (loadedCount === gridImages.length) {
+                    // All images loaded, draw grid
+                    imageElements.forEach((imgEl, i) => {
+                        // Calculate position based on cols
+                        const x = (i % cols) * cellSize;
+                        const y = Math.floor(i / cols) * cellSize;
+
+                        // Draw image centered in cell with cover behavior
+                        const scale = Math.max(cellSize / imgEl.width, cellSize / imgEl.height);
+                        const scaledWidth = imgEl.width * scale;
+                        const scaledHeight = imgEl.height * scale;
+                        const offsetX = (cellSize - scaledWidth) / 2;
+                        const offsetY = (cellSize - scaledHeight) / 2;
+
+                        ctx.drawImage(imgEl, x + offsetX, y + offsetY, scaledWidth, scaledHeight);
+                    });
+
+                    // Convert to WebP
+                    const webpDataUrl = canvas.toDataURL('image/webp', 0.85);
+                    resolve({
+                        dataUrl: webpDataUrl,
+                        base64: webpDataUrl.split(',')[1]
+                    });
+                }
+            };
+            img.onerror = () => reject(new Error('Failed to load image for grid'));
+            img.src = imgData.dataUrl;
+        });
+    });
+}
+
+// ========================================
 // UPLOAD ZONE
 // ========================================
 function initUploadZone() {
@@ -699,9 +788,18 @@ async function analyzeImages() {
     updateStatus('Analyzing...', 'processing');
 
     try {
-        // Use first image for analysis
-        const imageData = uploadedFiles[0].base64;
-        const result = await callGeminiVision(imageData);
+        // Create grid image from all uploaded images (max 6)
+        const gridImage = await createImageGrid(uploadedFiles);
+
+        if (!gridImage) {
+            throw new Error('无法处理图片');
+        }
+
+        // Log grid info
+        const imageCount = Math.min(uploadedFiles.length, 6);
+        console.log(`🖼️ Analyzing ${imageCount} image(s) as ${imageCount > 1 ? 'grid' : 'single'}`);
+
+        const result = await callGeminiVision(gridImage.base64);
 
         analysisResult = result;
         populateForm(result);
@@ -709,7 +807,7 @@ async function analyzeImages() {
         loadingEl.style.display = 'none';
         formEl.style.display = 'flex';
         updateStatus('Analysis Complete', 'ready');
-        showToast('AI 分析完成！', 'success');
+        showToast(`AI 分析完成！(${imageCount} 张图片)`, 'success');
 
     } catch (error) {
         console.error('Analysis error:', error);
@@ -746,7 +844,17 @@ async function callGeminiVision(imageBase64) {
         "en": ["5-7 mood or atmosphere words"],
         "zh": ["对应的中文翻译"]
     },
-    "dominantColors": ["3-5 color names in English, e.g., 'blue', 'golden', 'dark gray'"]
+    "dominantColors": ["3-5 color names in English, e.g., 'blue', 'golden', 'dark gray'"],
+    "useCase": {
+        "platform": ["Best 2-3 platforms: 小红书封面, 抖音头图, 公众号配图, Instagram帖子, 淘宝主图, 手机壁纸, 头像, 海报"],
+        "purpose": ["Best 1-2 purposes: 电商卖货, 品牌营销, 个人IP, 知识付费, 虚拟产品, 自媒体配图, 表情包"],
+        "format": ["Recommended 1-2 formats: 9:16竖版, 1:1方图, 16:9横版, 3:4小红书, 手机壁纸尺寸"]
+    },
+    "commercial": {
+        "niche": ["Best 1-3 niches: 母婴, 美妆, 健身, 美食, 旅游, 教育, 宠物, 家居, 时尚, 科技, 游戏, 情感"],
+        "targetAudience": ["Target 1-2 audiences: Z世代, 职场女性, 新手妈妈, 中产家庭, 学生党, 二次元, 文艺青年"]
+    },
+    "difficulty": "One of: 新手友好, 进阶, 专业级"
 }
 
 IMPORTANT: Return ONLY valid JSON, no markdown formatting, no code blocks, no explanation.`;
