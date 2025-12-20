@@ -1479,15 +1479,15 @@ function setupSearch() {
             }
         });
 
-        // Sort by frequency and take top 6
+        // Sort by frequency and take top 8
         const topTags = Object.entries(tagFreq)
             .sort((a, b) => b[1] - a[1])
-            .slice(0, 6)
+            .slice(0, 8)
             .map(([tag]) => tag);
 
-        // Render hot tags as circular elements
+        // Render hot tags as pill-shaped elements
         hotTagsList.innerHTML = topTags.map((tag, i) =>
-            `<span class="hot-tag" data-tag="${tag}" style="--delay: ${i * 0.15}s">${tag}</span>`
+            `<span class="hot-tag" data-tag="${tag}" style="--delay: ${i * 0.03}s">${tag}</span>`
         ).join('');
 
         // Add mousedown handlers to hot tags (mousedown fires before document mousedown)
@@ -1557,7 +1557,7 @@ function setupSearch() {
             if (hotTagsSection) hotTagsSection.style.display = 'none';
             suggestionsSection.style.display = 'flex';
             suggestionsSection.innerHTML = suggestionArray.map(s =>
-                `<div class="suggestion-item">${s}</div>`
+                `<div class="suggestion-item"><i class="fas fa-search"></i>${s}</div>`
             ).join('');
 
             // Add mousedown handlers (mousedown fires before document mousedown)

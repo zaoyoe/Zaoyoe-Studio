@@ -652,154 +652,100 @@ body {
     opacity: 0.8;
 }
 
-/* Hot Tags Animation - 大小不一的圆形标签 */
+/* Hot Tags - 简洁药丸状标签 */
 .hot-tags-list {
     display: flex;
     flex-wrap: wrap;
-    gap: 12px;
-    justify-content: center;
-    padding: 8px 0;
+    gap: 10px;
+    justify-content: flex-start;
+    padding: 4px 0;
 }
 
 .hot-tag {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    /* 固定中等尺寸圆形 - 保证完美圆形 */
-    width: 72px;
-    height: 72px;
-    min-width: unset;
-    min-height: unset;
-    padding: 8px;
-    aspect-ratio: 1;
-    background: linear-gradient(135deg, rgba(139, 92, 246, 0.12) 0%, rgba(99, 102, 241, 0.08) 100%);
-    border: 1.5px solid rgba(139, 92, 246, 0.2);
-    border-radius: 50%;
-    font-size: 0.72rem;
-    font-weight: 500;
+    padding: 8px 18px;
+    background: rgba(0, 0, 0, 0.04);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-radius: 20px;
+    font-size: 0.9rem;
+    font-weight: 400;
     color: var(--text-main);
     cursor: pointer;
-    text-align: center;
-    line-height: 1.15;
-    /* 文本溢出处理 */
-    overflow: hidden;
-    word-break: break-word;
-    hyphens: auto;
-    /* GPU 加速 */
-    will-change: transform, opacity;
-    transform: translateZ(0);
-    /* 初始隐藏状态 */
-    opacity: 0;
-    transition:
-        background 0.3s ease,
-        border-color 0.3s ease,
-        box-shadow 0.3s ease,
-        transform 0.3s ease;
+    white-space: nowrap;
+    opacity: 1;
+    transition: all 0.2s ease;
 }
 
-/* 大小不一的圆形 - 小 (更明显的尺寸差异) */
-.hot-tag:nth-child(2),
-.hot-tag:nth-child(5) {
-    width: 56px;
-    height: 56px;
-    font-size: 0.65rem;
-    padding: 6px;
-}
-
-/* 大小不一的圆形 - 大 (更明显的尺寸差异) */
-.hot-tag:nth-child(1),
-.hot-tag:nth-child(4) {
-    width: 88px;
-    height: 88px;
-    font-size: 0.78rem;
-    padding: 10px;
-}
-
-/* 大小不一的圆形 - 中等偏小 */
-.hot-tag:nth-child(3) {
-    width: 66px;
-    height: 66px;
-    font-size: 0.7rem;
-    padding: 7px;
-}
-
-/* 入场动画 + 呼吸动画 - 单一简化动画 */
+/* 入场动画 - 简洁淡入 */
 .search-dropdown.active .hot-tag {
-    animation: orbPulse 4s ease-in-out infinite;
+    animation: tagFadeIn 0.3s ease forwards;
     animation-delay: var(--delay, 0s);
+    opacity: 0;
 }
 
-/* 错开延迟让动画更自然 */
 .search-dropdown.active .hot-tag:nth-child(1) {
     --delay: 0s;
 }
 
 .search-dropdown.active .hot-tag:nth-child(2) {
-    --delay: 0.6s;
+    --delay: 0.03s;
 }
 
 .search-dropdown.active .hot-tag:nth-child(3) {
-    --delay: 1.2s;
+    --delay: 0.06s;
 }
 
 .search-dropdown.active .hot-tag:nth-child(4) {
-    --delay: 0.3s;
+    --delay: 0.09s;
 }
 
 .search-dropdown.active .hot-tag:nth-child(5) {
-    --delay: 0.9s;
+    --delay: 0.12s;
 }
 
 .search-dropdown.active .hot-tag:nth-child(6) {
-    --delay: 1.5s;
+    --delay: 0.15s;
 }
 
-/* 圆形呼吸动画 - GPU加速，包含入场 */
-@keyframes orbPulse {
-    0% {
+.search-dropdown.active .hot-tag:nth-child(7) {
+    --delay: 0.18s;
+}
+
+.search-dropdown.active .hot-tag:nth-child(8) {
+    --delay: 0.21s;
+}
+
+@keyframes tagFadeIn {
+    from {
         opacity: 0;
-        transform: translateZ(0) scale(0.8) translateY(8px);
+        transform: translateY(4px);
     }
 
-    10% {
+    to {
         opacity: 1;
-        transform: translateZ(0) scale(1) translateY(0);
-    }
-
-    50% {
-        opacity: 1;
-        transform: translateZ(0) scale(1.03) translateY(-2px);
-    }
-
-    100% {
-        opacity: 1;
-        transform: translateZ(0) scale(1) translateY(0);
+        transform: translateY(0);
     }
 }
 
 /* 悬停效果 */
 .hot-tag:hover {
-    background: linear-gradient(135deg, var(--accent-purple) 0%, rgba(99, 102, 241, 0.9) 100%);
-    color: #ffffff;
-    border-color: transparent;
-    box-shadow:
-        0 4px 20px rgba(139, 92, 246, 0.35),
-        0 0 0 3px rgba(139, 92, 246, 0.1);
-    animation-play-state: paused;
+    background: rgba(139, 92, 246, 0.1);
+    border-color: rgba(139, 92, 246, 0.3);
+    color: var(--accent-purple);
 }
 
 /* 暗色主题 */
 [data-theme="dark"] .hot-tag {
-    background: linear-gradient(135deg, rgba(139, 92, 246, 0.12) 0%, rgba(99, 102, 241, 0.08) 100%);
-    border-color: rgba(139, 92, 246, 0.2);
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.1);
 }
 
 [data-theme="dark"] .hot-tag:hover {
-    background: linear-gradient(135deg, rgba(139, 92, 246, 0.9) 0%, rgba(99, 102, 241, 0.85) 100%);
-    color: #ffffff;
-    box-shadow:
-        0 4px 25px rgba(139, 92, 246, 0.5),
-        0 0 0 3px rgba(139, 92, 246, 0.15);
+    background: rgba(139, 92, 246, 0.2);
+    border-color: rgba(139, 92, 246, 0.4);
+    color: var(--accent-purple);
 }
 
 /* Autocomplete Suggestions */
@@ -810,7 +756,10 @@ body {
 }
 
 .suggestion-item {
-    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
     border-radius: 10px;
     cursor: pointer;
     transition: all 0.15s ease;
@@ -819,19 +768,29 @@ body {
     font-family: var(--font-sans);
 }
 
+.suggestion-item i {
+    color: var(--text-dim);
+    font-size: 0.9rem;
+    opacity: 0.6;
+}
+
 .suggestion-item:hover,
 .suggestion-item.keyboard-active {
-    background: rgba(139, 92, 246, 0.1);
+    background: rgba(139, 92, 246, 0.08);
+}
+
+.suggestion-item:hover i {
     color: var(--accent-purple);
+    opacity: 0.8;
 }
 
 .suggestion-item.keyboard-active {
-    background: rgba(139, 92, 246, 0.15);
+    background: rgba(139, 92, 246, 0.12);
 }
 
 [data-theme="dark"] .suggestion-item:hover,
 [data-theme="dark"] .suggestion-item.keyboard-active {
-    background: rgba(139, 92, 246, 0.2);
+    background: rgba(139, 92, 246, 0.15);
 }
 
 /* Favorites Tab Styling */
