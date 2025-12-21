@@ -1372,7 +1372,187 @@ function resetForm() {
 // HYBRID SEARCH: Local first, AI fallback
 // ========================================
 let searchDebounce = null;
-// [DELETED] Old search system removed - replaced by Gallery search logic below
+let searchInitialized = false;
+
+// DEPRECATED: Old setupAdminSearch - replaced by new version at end of file
+// function setupAdminSearch() {
+//     if (searchInitialized) return;
+//     const searchInput = document.getElementById('adminSearchInput');
+//     ...
+// }
+// Keeping performSearch and other helpers for backward compatibility
+
+// Hybrid search: local first, then AI
+async function performSearch(query) {
+    const statusEl = document.getElementById('searchStatus');
+
+    if (!query) {
+        statusEl.textContent = '';
+        applyFilters();
+        return;
+    }
+
+    // Step 1: Local search (instant)
+    const localResults = localSearch(query);
+
+    if (localResults.length > 0) {
+        statusEl.textContent = '';
+        applyFiltersToResults(localResults);
+        return;
+    }
+
+    // Step 2: No local results → AI semantic search
+    statusEl.textContent = '🔍 AI...';
+
+    try {
+        const aiResults = await aiSemanticSearch(query);
+        statusEl.textContent = aiResults.length ? '✨ AI' : '';
+
+        if (aiResults.length > 0) {
+            applyFiltersToResults(aiResults);
+        } else {
+            renderFilteredCards([]);
+        }
+    } catch (err) {
+        statusEl.textContent = '';
+        console.error('AI search failed:', err);
+        renderFilteredCards([]);
+    }
+}
+
+// Local search (title + tags + colors + ai_tags)
+function localSearch(query) {
+    const q = query.toLowerCase();
+
+    // Color name mapping (English ↔ Chinese)
+    const colorMap = {
+        'red': '红', '红': 'red', '红色': 'red',
+        'blue': '蓝', '蓝': 'blue', '蓝色': 'blue',
+        'green': '绿', '绿': 'green', '绿色': 'green',
+        'yellow': '黄', '黄': 'yellow', '黄色': 'yellow',
+        'orange': '橙', '橙': 'orange', '橙色': 'orange',
+        'purple': '紫', '紫': 'purple', '紫色': 'purple',
+        'pink': '粉', '粉': 'pink', '粉色': 'pink',
+        'black': '黑', '黑': 'black', '黑色': 'black',
+        'white': '白', '白': 'white', '白色': 'white',
+        'gold': '金', '金': 'gold', '金色': 'gold',
+        'golden': '金', 'silver': '银', '银': 'silver', '银色': 'silver',
+        'brown': '棕', '棕': 'brown', '棕色': 'brown',
+        'gray': '灰', 'grey': '灰', '灰': 'gray', '灰色': 'gray',
+        'cyan': '青', '青': 'cyan', '青色': 'cyan',
+        'teal': '蓝绿', 'coral': '珊瑚'
+    };
+
+    // Get possible color translations
+    const colorSearch = colorMap[q] || q;
+
+    return allPrompts.filter(p => {
+        // Search title, tags, description
+        if (p.title?.toLowerCase().includes(q)) return true;
+        if (p.tags?.some(t => t.toLowerCase().includes(q))) return true;
+        if (p.description?.toLowerCase().includes(q)) return true;
+
+        // Search dominant colors
+        if (p.dominant_colors?.some(c =>
+            c.toLowerCase().includes(q) ||
+            c.toLowerCase().includes(colorSearch)
+        )) return true;
+
+        // Search ai_tags (objects, scenes, styles, mood)
+        const aiTags = p.ai_tags;
+        if (aiTags) {
+            // Search English and Chinese arrays
+            for (const category of ['objects', 'scenes', 'styles', 'mood']) {
+                const tagData = aiTags[category];
+                if (tagData?.en?.some(t => t.toLowerCase().includes(q))) return true;
+                if (tagData?.zh?.some(t => t.includes(q))) return true;
+            }
+        }
+
+        return false;
+    });
+}
+
+// AI semantic search via Supabase FTS
+async function aiSemanticSearch(query) {
+    try {
+        // First try PostgreSQL Full-Text Search if available
+        const { data, error } = await supabaseClient
+            .from('prompts')
+            .select('*')
+            .or(`title.ilike.%${query}%,description.ilike.%${query}%`)
+            .order('created_at', { ascending: false })
+            .limit(50);
+
+        if (error) throw error;
+        return data || [];
+    } catch (err) {
+        console.error('AI search error:', err);
+        return [];
+    }
+}
+
+// Apply category + date filters
+function applyFilters() {
+    const searchQuery = document.getElementById('adminSearchInput')?.value.trim() || '';
+
+    if (searchQuery) {
+        performSearch(searchQuery);
+    } else {
+        applyFiltersToResults(allPrompts);
+    }
+}
+
+// Apply filters to a set of results
+function applyFiltersToResults(results) {
+    const category = document.getElementById('categoryFilter')?.value || '';
+    const dateRange = document.getElementById('dateFilter')?.value || '';
+
+    let filtered = [...results];
+
+    // Category filter
+    if (category) {
+        filtered = filtered.filter(p => p.tags?.includes(category));
+    }
+
+    // Date filter
+    if (dateRange) {
+        const now = new Date();
+        let cutoff;
+
+        if (dateRange === 'today') {
+            cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        } else if (dateRange === 'week') {
+            cutoff = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        } else if (dateRange === 'month') {
+            cutoff = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+        }
+
+        if (cutoff) {
+            filtered = filtered.filter(p => new Date(p.created_at) >= cutoff);
+        }
+    }
+
+    renderFilteredCards(filtered);
+}
+
+// Render filtered cards
+function renderFilteredCards(prompts) {
+    const grid = document.getElementById('adminGrid');
+    const countEl = document.getElementById('promptCount');
+
+    countEl.textContent = prompts.length;
+
+    if (prompts.length > 0) {
+        grid.innerHTML = prompts.map(p => renderAdminCard(p)).join('');
+        // Re-attach selection mode event listeners if in select mode
+        if (isSelectMode) {
+            attachCardSelectionListeners();
+        }
+    } else {
+        grid.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: var(--text-dim); padding: 2rem;">No matching prompts found</p>';
+    }
+}
 
 // ========================================
 // BATCH OPERATIONS
@@ -1457,12 +1637,11 @@ function closeBatchMenu() {
     document.getElementById('batchMenuContainer')?.classList.remove('open');
 }
 
-// Select all prompts (only visible cards)
+// Select all prompts
 function selectAllPrompts() {
-    // Only select cards that are NOT hidden by search filter
-    const cards = document.querySelectorAll('.admin-card:not([style*="display: none"])');
+    const cards = document.querySelectorAll('.admin-card');
     cards.forEach(card => {
-        const id = card.dataset.id; // UUID string, not parseInt
+        const id = parseInt(card.dataset.id);
         if (!selectedPrompts.has(id)) {
             selectedPrompts.add(id);
             card.classList.add('selected');
@@ -1514,7 +1693,7 @@ function attachCardSelectionListeners() {
             // Don't select if clicking on action buttons (though they're hidden in select mode)
             if (e.target.closest('.admin-card-actions')) return;
 
-            const id = card.dataset.id; // UUID string
+            const id = parseInt(card.dataset.id);
             if (selectedPrompts.has(id)) {
                 selectedPrompts.delete(id);
                 card.classList.remove('selected');
@@ -1534,7 +1713,7 @@ function handleCardSelection(e) {
     if (e.target.closest('.admin-card-actions')) return;
 
     const card = e.currentTarget;
-    const id = card.dataset.id; // UUID string
+    const id = parseInt(card.dataset.id);
 
     if (selectedPrompts.has(id)) {
         selectedPrompts.delete(id);
@@ -1566,7 +1745,7 @@ function updateBatchButtonStates() {
 
 // Get selected prompts data
 function getSelectedPromptsData() {
-    return allPrompts.filter(p => selectedPrompts.has(String(p.id))); // 将ID转为字符串比较
+    return allPrompts.filter(p => selectedPrompts.has(p.id));
 }
 
 // ========================================
@@ -1949,129 +2128,28 @@ function closeLightbox() {
     document.getElementById('lightboxOverlay').style.display = 'none';
 }
 
-// ========================================
-// IMAGE CROP FUNCTIONALITY (Cropper.js)
-// ========================================
+// Crop functionality (basic - can be enhanced with a library)
 let cropImageIndex = null;
-let cropperInstance = null;
 
 function openCropModal(index) {
     cropImageIndex = index;
     const file = uploadedFiles[index];
     if (!file) return;
 
-    const cropImage = document.getElementById('cropImage');
-    cropImage.src = file.dataUrl;
+    document.getElementById('cropImage').src = file.dataUrl;
     document.getElementById('cropModalOverlay').style.display = 'flex';
-
-    // Wait for image to load before initializing Cropper
-    cropImage.onload = function () {
-        // Destroy previous instance if exists
-        if (cropperInstance) {
-            cropperInstance.destroy();
-        }
-
-        // Initialize Cropper.js
-        cropperInstance = new Cropper(cropImage, {
-            viewMode: 1,
-            dragMode: 'move',
-            aspectRatio: NaN, // Free aspect ratio by default
-            autoCropArea: 0.8,
-            restore: false,
-            guides: true,
-            center: true,
-            highlight: true,
-            cropBoxMovable: true,
-            cropBoxResizable: true,
-            toggleDragModeOnDblclick: false,
-            responsive: true,
-            background: true,
-        });
-
-        // Reset aspect ratio buttons
-        document.querySelectorAll('.crop-aspect-btn').forEach(btn => {
-            btn.classList.remove('active');
-            if (btn.dataset.aspect === 'free') {
-                btn.classList.add('active');
-            }
-        });
-    };
 }
 
 function closeCropModal() {
     document.getElementById('cropModalOverlay').style.display = 'none';
     cropImageIndex = null;
-
-    // Destroy Cropper instance
-    if (cropperInstance) {
-        cropperInstance.destroy();
-        cropperInstance = null;
-    }
 }
 
 function applyCrop() {
-    if (!cropperInstance || cropImageIndex === null) {
-        showToast('请先选择裁切区域', 'error');
-        return;
-    }
-
-    try {
-        // Get cropped canvas
-        const croppedCanvas = cropperInstance.getCroppedCanvas({
-            maxWidth: 2048,
-            maxHeight: 2048,
-            imageSmoothingEnabled: true,
-            imageSmoothingQuality: 'high',
-        });
-
-        if (!croppedCanvas) {
-            showToast('裁切失败，请重试', 'error');
-            return;
-        }
-
-        // Convert to data URL
-        const croppedDataUrl = croppedCanvas.toDataURL('image/png', 1.0);
-
-        // Update the file in uploadedFiles array
-        const originalFile = uploadedFiles[cropImageIndex];
-        uploadedFiles[cropImageIndex] = {
-            ...originalFile,
-            dataUrl: croppedDataUrl,
-            cropped: true
-        };
-
-        // Update preview thumbnail
-        const previewItems = document.querySelectorAll('.preview-item img');
-        if (previewItems[cropImageIndex]) {
-            previewItems[cropImageIndex].src = croppedDataUrl;
-        }
-
-        showToast('裁切成功！', 'success');
-        closeCropModal();
-
-    } catch (err) {
-        console.error('Crop error:', err);
-        showToast('裁切失败: ' + err.message, 'error');
-    }
+    // Basic implementation - in production, use a library like cropperjs
+    showToast('裁切功能开发中...', 'info');
+    closeCropModal();
 }
-
-// Aspect ratio button handler
-document.addEventListener('click', (e) => {
-    const aspectBtn = e.target.closest('.crop-aspect-btn');
-    if (aspectBtn && cropperInstance) {
-        // Update active state
-        document.querySelectorAll('.crop-aspect-btn').forEach(btn => btn.classList.remove('active'));
-        aspectBtn.classList.add('active');
-
-        // Set aspect ratio
-        const aspect = aspectBtn.dataset.aspect;
-        if (aspect === 'free') {
-            cropperInstance.setAspectRatio(NaN);
-        } else {
-            cropperInstance.setAspectRatio(parseFloat(aspect));
-        }
-    }
-});
 
 // Attach click-to-crop on preview items
 document.addEventListener('click', (e) => {
@@ -2274,502 +2352,17 @@ function initStarrySky() {
 }
 
 // ========================================
-// SEARCH & DROPDOWN LOGIC (Migrated from Gallery)
+// SEARCH & DROPDOWN LOGIC (Ported from Gallery)
 // ========================================
 
-// Hot tags cache
 let HOT_TAGS_CACHE = null;
 
-// Inverted search index for O(1) lookups
-let SEARCH_INDEX = null;
-
-// Synonym dictionary for enhanced local search
-const SYNONYM_DICTIONARY = {
-    // === Style synonyms ===
-    'cute': ['adorable', 'kawaii', 'lovely', 'charming', '可爱', '萌', 'かわいい'],
-    'vintage': ['retro', 'classic', 'nostalgic', 'old-fashioned', '复古', '怀旧', '经典'],
-    'minimalist': ['minimal', 'simple', 'clean', '极简', '简约', '简洁'],
-    'futuristic': ['sci-fi', 'cyberpunk', 'tech', 'future', '科幻', '未来感', '赛博朋克'],
-    'dreamy': ['ethereal', 'soft', 'hazy', 'fairytale', '梦幻', '朦胧', '童话'],
-    'dramatic': ['intense', 'powerful', 'bold', 'cinematic', '戏剧性', '张力', '电影感'],
-    'whimsical': ['playful', 'whimsy', 'fantastical', '异想天开', '俏皮', '奇幻'],
-
-    // === Subject synonyms ===
-    'portrait': ['headshot', 'face', 'person', '人像', '头像', '肖像', '人物'],
-    'landscape': ['scenery', 'nature', 'view', '风景', '山水', '自然', '风光'],
-    'food': ['cuisine', 'dish', 'meal', 'culinary', '美食', '食物', '料理'],
-    'animal': ['pet', 'creature', 'wildlife', '动物', '宠物', '生物'],
-
-    // === Platform/Use case synonyms ===
-    '小红书': ['xiaohongshu', 'xhs', 'red', '种草', 'rednote', '小红书封面'],
-    'instagram': ['ins', 'ig', 'insta', 'gram'],
-    'wallpaper': ['壁纸', 'background', '背景图', '锁屏', '桌面', '手机壁纸'],
-    'avatar': ['头像', 'profile picture', 'pfp', '头图', 'icon'],
-    'poster': ['海报', 'banner', '宣传图', '封面'],
-
-    // === Mood synonyms ===
-    'peaceful': ['serene', 'tranquil', 'calm', 'quiet', '平静', '安宁', '治愈', '宁静'],
-    'cozy': ['warm', 'comfortable', 'homey', '温馨', '舒适', '暖心'],
-    'mysterious': ['mystic', 'enigmatic', 'dark', '神秘', '迷幻', '暗黑'],
-    'elegant': ['graceful', 'refined', 'sophisticated', '优雅', '典雅', '精致'],
-
-    // === Technique synonyms ===
-    'miniature': ['mini', 'tiny', 'micro', 'small', '微缩', '迷你', '微观'],
-    '3d': ['three-dimensional', '3d art', '3d render', '三维', '立体'],
-    'illustration': ['illustrate', 'drawing', 'artwork', '插画', '插图', '绘画'],
-    'photography': ['photo', 'photograph', 'camera', '摄影', '照片', '拍摄'],
-
-    // === Transport ===
-    'bicycle': ['bike', 'cycling', '自行车', '单车', '脚踏车', '骑行'],
-    'car': ['vehicle', 'auto', '汽车', '轿车', '车'],
-    'train': ['midjourney train', 'railway', '火车', '列车', '高铁'],
-    'plane': ['airplane', 'aircraft', 'flight', '飞机', '航班'],
-
-    // === Nature ===
-    'flower': ['floral', 'bloom', 'blossom', '花', '花卉', '鲜花'],
-    'tree': ['forest', 'woods', 'nature', '树', '森林', '树木'],
-    'mountain': ['hill', 'peak', 'landscape', '山', '山脉', '峰'],
-    'ocean': ['sea', 'water', 'wave', 'beach', '海', '海洋', '海浪', '海滩'],
-    'sky': ['cloud', 'blue sky', 'starry', '天空', '云', '星空'],
-    'water': ['river', 'lake', 'stream', '水', '河流', '湖泊'],
-    'snow': ['winter', 'ice', 'cold', '雪', '冬', '冰'],
-    'rain': ['rainy', 'wet', 'storm', '雨', '下雨'],
-    'fire': ['flame', 'burning', 'hot', '火', '火焰'],
-
-    // === People ===
-    'girl': ['woman', 'female', 'lady', '女孩', '女生', '女性', '美女'],
-    'boy': ['man', 'male', 'guy', '男孩', '男生', '男性', '帅哥'],
-    'child': ['kid', 'baby', 'toddler', '儿童', '小孩', '宝宝'],
-
-    // === Fantasy ===
-    'dragon': ['monster', 'beast', 'mythical', '龙', '神兽'],
-    'robot': ['cyborg', 'android', 'mech', '机器人', '机甲'],
-    'alien': ['ufo', 'extraterrestrial', '外星人', '异形'],
-    'magic': ['spell', 'wizard', 'witch', '魔法', '法术', '巫师'],
-};
-
-// Color mapping for color search
-const COLOR_MAP = {
-    'red': '红', '红': 'red', '红色': 'red',
-    'blue': '蓝', '蓝': 'blue', '蓝色': 'blue',
-    'green': '绿', '绿': 'green', '绿色': 'green',
-    'yellow': '黄', '黄': 'yellow', '黄色': 'yellow',
-    'orange': '橙', '橙': 'orange', '橙色': 'orange',
-    'purple': '紫', '紫': 'purple', '紫色': 'purple',
-    'pink': '粉', '粉': 'pink', '粉色': 'pink',
-    'black': '黑', '黑': 'black', '黑色': 'black',
-    'white': '白', '白': 'white', '白色': 'white',
-    'gold': '金', '金': 'gold', '金色': 'gold',
-    'golden': '金', 'silver': '银', '银': 'silver', '银色': 'silver',
-    'brown': '棕', '棕': 'brown', '棕色': 'brown',
-    'gray': '灰', 'grey': '灰', '灰': 'gray', '灰色': 'gray',
-    'cyan': '青', '青': 'cyan', '青色': 'cyan',
-    'teal': '蓝绿', 'coral': '珊瑚'
-};
-
-// Gemini API for semantic search
-const GEMINI_2_0_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
-
-/**
- * Normalize prompt data from Supabase format
- * Handles field name differences (ai_tags vs aiTags, dominant_colors vs dominantColors)
- */
-function normalizePromptData() {
-    allPrompts.forEach(p => {
-        // Normalize ai_tags → aiTags
-        if (p.ai_tags && !p.aiTags) {
-            p.aiTags = p.ai_tags;
-        }
-        // Normalize dominant_colors → dominantColors
-        if (p.dominant_colors && !p.dominantColors) {
-            p.dominantColors = p.dominant_colors;
-        }
-        // Ensure arrays exist
-        if (!Array.isArray(p.tags)) p.tags = [];
-        if (!Array.isArray(p.dominantColors)) p.dominantColors = [];
-    });
-    console.log('✅ Prompt data normalized');
-}
-
-/**
- * Build inverted search index for all searchable content
- * Uses prompt.id (UUID) as the identifier
- */
-function buildSearchIndex() {
-    if (SEARCH_INDEX || !allPrompts || allPrompts.length === 0) return;
-
-    console.log('🔍 Building search index...');
-    SEARCH_INDEX = {};
-
-    allPrompts.forEach(p => {
-        if (!p) return;
-        const id = String(p.id); // 强制转为字符串，确保与 DOM dataset.id 一致
-
-        const addToIndex = (term) => {
-            if (!term || term.length < 2) return;
-            const key = term.toLowerCase().trim();
-            if (!SEARCH_INDEX[key]) SEARCH_INDEX[key] = [];
-            if (!SEARCH_INDEX[key].includes(id)) {
-                SEARCH_INDEX[key].push(id);
-            }
-        };
-
-        // Index title words
-        if (p.title) {
-            p.title.split(/\s+/).forEach(addToIndex);
-            addToIndex(p.title);
-        }
-
-        // Index tags
-        if (p.tags) {
-            p.tags.forEach(addToIndex);
-        }
-
-        // Index AI tags (all categories, both languages)
-        const aiTags = p.aiTags || p.ai_tags;
-        if (aiTags) {
-            // 基础标签类别
-            ['objects', 'scenes', 'styles', 'mood'].forEach(category => {
-                const tagData = aiTags[category];
-                if (tagData?.en) tagData.en.forEach(addToIndex);
-                if (tagData?.zh) tagData.zh.forEach(addToIndex);
-            });
-
-            // 【新增】索引 useCase (platform, purpose, format)
-            if (aiTags.useCase) {
-                if (aiTags.useCase.platform) aiTags.useCase.platform.forEach(addToIndex);
-                if (aiTags.useCase.purpose) aiTags.useCase.purpose.forEach(addToIndex);
-                if (aiTags.useCase.format) aiTags.useCase.format.forEach(addToIndex);
-            }
-
-            // 【新增】索引 commercial (niche, targetAudience)
-            if (aiTags.commercial) {
-                if (aiTags.commercial.niche) aiTags.commercial.niche.forEach(addToIndex);
-                if (aiTags.commercial.targetAudience) aiTags.commercial.targetAudience.forEach(addToIndex);
-            }
-
-            // 【新增】索引 difficulty
-            if (aiTags.difficulty) addToIndex(aiTags.difficulty);
-        }
-
-        // Index dominant colors
-        const colors = p.dominantColors || p.dominant_colors;
-        if (colors) {
-            colors.forEach(addToIndex);
-        }
-    });
-
-    console.log(`✅ Search index built: ${Object.keys(SEARCH_INDEX).length} terms`);
-}
-
-/**
- * Expand query using synonym dictionary
- */
-function expandSynonyms(query) {
-    const q = query.toLowerCase();
-    const expanded = new Set([q]);
-
-    for (const [key, synonyms] of Object.entries(SYNONYM_DICTIONARY)) {
-        const allTerms = [key, ...synonyms].map(s => s.toLowerCase());
-        if (allTerms.some(term => q.includes(term) || term.includes(q))) {
-            allTerms.forEach(s => expanded.add(s.toLowerCase()));
-        }
-    }
-
-    return Array.from(expanded);
-}
-
-/**
- * Perform local search with synonym expansion + index optimization
- * 【重写】使用 AND 交集策略（与 Gallery 一致）
- * Returns Set of matching prompt IDs (UUIDs)
- */
-function performLocalSearch(query, searchingForColor) {
-    // 初始化结果集
-    let results = null;
-
-    console.log(`🔍 Searching for: "${query}"`);
-
-    // 颜色搜索 - 独立处理
-    if (searchingForColor) {
-        const colorMatches = new Set();
-        allPrompts.forEach(p => {
-            const colors = p.dominantColors || p.dominant_colors || [];
-            if (colors.some(c => c.toLowerCase().includes(searchingForColor))) {
-                colorMatches.add(String(p.id));
-            }
-        });
-        if (colorMatches.size > 0) {
-            return colorMatches;
-        }
-    }
-
-    // 将查询按空格分割为多个词
-    const terms = query.toLowerCase().trim().split(/\s+/).filter(t => t.length > 0);
-
-    if (terms.length === 0) {
-        return new Set();
-    }
-
-    console.log(`🔄 Search terms: [${terms.join(', ')}]`);
-
-    // 对每个词进行搜索，使用 AND 交集策略
-    for (const term of terms) {
-        // 展开同义词
-        const expandedTerms = expandSynonyms(term);
-        const termMatches = new Set();
-
-        // 搜索索引
-        if (SEARCH_INDEX) {
-            // === 策略1：原始搜索词 - 精确匹配 + 部分匹配 ===
-            // 直接精确匹配
-            if (SEARCH_INDEX[term]) {
-                SEARCH_INDEX[term].forEach(id => termMatches.add(id));
-            }
-            // 部分匹配 - 只对原始搜索词进行
-            if (term.length >= 2) {
-                Object.keys(SEARCH_INDEX).forEach(indexedTerm => {
-                    // 索引词包含搜索词（如搜"自行"匹配"自行车"）
-                    if (indexedTerm.includes(term)) {
-                        SEARCH_INDEX[indexedTerm].forEach(id => termMatches.add(id));
-                    }
-                });
-            }
-
-            // === 策略2：同义词 - 只做精确匹配，不做部分匹配 ===
-            // 这避免了 "bike" 等短词产生大量噪音
-            for (const expandedTerm of expandedTerms) {
-                if (expandedTerm !== term && SEARCH_INDEX[expandedTerm]) {
-                    SEARCH_INDEX[expandedTerm].forEach(id => termMatches.add(id));
-                }
-            }
-        }
-
-        // 第一个词：直接赋值
-        // 后续词：取交集（AND策略）
-        if (results === null) {
-            results = termMatches;
-        } else {
-            // 交集 - 只保留两个集合都有的ID
-            results = new Set([...results].filter(id => termMatches.has(id)));
-        }
-
-        // 如果交集已空，提前退出
-        if (results.size === 0) {
-            break;
-        }
-    }
-
-    // 如果索引搜索无结果，尝试线性扫描 description 和 prompt_text
-    if (!results || results.size === 0) {
-        console.log('🔍 Index search: 0 results, trying linear scan...');
-        const fallbackResults = new Set();
-
-        allPrompts.forEach(p => {
-            const searchable = [
-                p.title || '',
-                p.description || '',
-                p.prompt_text || '',
-                (p.tags || []).join(' ')
-            ].join(' ').toLowerCase();
-
-            // 所有词都必须匹配（AND策略）
-            const allTermsMatch = terms.every(term => searchable.includes(term));
-            if (allTermsMatch) {
-                fallbackResults.add(String(p.id));
-            }
-        });
-
-        return fallbackResults;
-    }
-
-    console.log(`✅ Local search: found ${results.size} results`);
-    return results;
-}
-
-/**
- * AI Semantic Search using Gemini 2.0 Flash
- * Returns Set of matching prompt IDs
- */
-async function performAISemanticSearch(query) {
-    const matchedIds = new Set();
-
-    // Get API key
-    const apiKey = window.GEMINI_API_KEY;
-    if (!apiKey) {
-        console.log('⚠️ No Gemini API key available for semantic search');
-        return matchedIds;
-    }
-
-    try {
-        const prompt = `You are a search intent analyzer for an AI art gallery.
-User searched: "${query}"
-
-Extract 5-8 specific English tags that match this search intent.
-Consider: art styles, moods, subjects, colors, techniques, scenes.
-
-Return ONLY a JSON array of lowercase tags, no explanation:
-["tag1", "tag2", ...]`;
-
-        const response = await fetch(`${GEMINI_2_0_URL}?key=${apiKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: {
-                    temperature: 0.3,
-                    maxOutputTokens: 256
-                }
-            })
-        });
-
-        if (!response.ok) {
-            throw new Error(`API error: ${response.status}`);
-        }
-
-        const data = await response.json();
-        let text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-
-        if (!text) return matchedIds;
-
-        // Parse JSON response
-        if (text.startsWith('```')) {
-            text = text.replace(/```json?\n?/g, '').replace(/```$/g, '').trim();
-        }
-
-        const aiTags = JSON.parse(text);
-        console.log(`🤖 AI extracted tags: [${aiTags.join(', ')}]`);
-
-        // Search for these AI-extracted tags locally
-        if (Array.isArray(aiTags)) {
-            for (const tag of aiTags) {
-                const tagLower = tag.toLowerCase();
-                allPrompts.forEach(item => {
-                    if (!item) return;
-
-                    const titleMatch = item.title?.toLowerCase().includes(tagLower);
-                    const tagMatch = item.tags?.some(t => t.toLowerCase().includes(tagLower));
-
-                    let aiMatch = false;
-                    const aiTagData = item.aiTags || item.ai_tags;
-                    if (aiTagData) {
-                        const searchIn = (arr) => arr && arr.some(t => t && t.toLowerCase().includes(tagLower));
-                        aiMatch = searchIn(aiTagData.objects?.en) ||
-                            searchIn(aiTagData.styles?.en) ||
-                            searchIn(aiTagData.scenes?.en) ||
-                            searchIn(aiTagData.mood?.en);
-                    }
-
-                    if (titleMatch || tagMatch || aiMatch) {
-                        matchedIds.add(String(item.id)); // 强制转为字符串
-                    }
-                });
-            }
-        }
-    } catch (e) {
-        console.error('AI semantic search error:', e);
-    }
-
-    return matchedIds;
-}
-
-/**
- * Apply search results to cards
- * Uses display:none approach for performance
- */
-function applySearchResults(matchedIds) {
-    const grid = document.getElementById('adminGrid');
-    const cards = grid.querySelectorAll('.admin-card');
-    let visibleCount = 0;
-
-    cards.forEach(card => {
-        const cardId = card.dataset.id;
-        const isVisible = matchedIds.has(cardId);
-
-        if (isVisible) {
-            card.style.display = '';
-            visibleCount++;
-        } else {
-            card.style.display = 'none';
-        }
-    });
-
-    // Update count
-    const countEl = document.getElementById('promptCount');
-    if (countEl) countEl.textContent = visibleCount;
-
-    // Show empty message if no results
-    if (visibleCount === 0) {
-        const existingMsg = grid.querySelector('.no-results-message');
-        if (!existingMsg) {
-            const msg = document.createElement('p');
-            msg.className = 'no-results-message';
-            msg.style.cssText = 'grid-column: 1/-1; text-align: center; color: var(--text-dim); padding: 2rem;';
-            msg.textContent = 'No prompts found matching your search.';
-            grid.appendChild(msg);
-        }
-    } else {
-        const existingMsg = grid.querySelector('.no-results-message');
-        if (existingMsg) existingMsg.remove();
-    }
-}
-
-/**
- * Main search function - 3 layer strategy
- * Layer 1 & 2: Local search with synonym expansion
- * Layer 3: AI semantic search (if local fails)
- */
-async function filterBySearch(query) {
-    const cards = document.querySelectorAll('.admin-card');
-
-    // If no query, show all cards
-    if (!query) {
-        cards.forEach(card => card.style.display = '');
-        const countEl = document.getElementById('promptCount');
-        if (countEl) countEl.textContent = allPrompts.length;
-        const existingMsg = document.querySelector('.no-results-message');
-        if (existingMsg) existingMsg.remove();
-        return;
-    }
-
-    // Check if query is a color search
-    let searchingForColor = null;
-    const queryLower = query.toLowerCase();
-    if (COLOR_MAP[queryLower]) {
-        searchingForColor = COLOR_MAP[queryLower];
-    }
-
-    // === 3-LAYER SEARCH STRATEGY ===
-    // Layer 1 & 2: Local search (instant, no network)
-    const localResults = performLocalSearch(query, searchingForColor);
-    console.log(`🔍 Local search: found ${localResults.size} results for "${query}"`);
-
-    // If local search found results, use them directly
-    if (localResults.size > 0) {
-        applySearchResults(localResults);
-        return;
-    }
-
-    // Layer 3: AI Semantic Search (only if local search failed)
-    console.log('🔍 Local search: 0 results, triggering AI semantic search...');
-    const aiResults = await performAISemanticSearch(query);
-
-    if (aiResults.size > 0) {
-        console.log(`✨ AI search: found ${aiResults.size} results`);
-        applySearchResults(aiResults);
-    } else {
-        console.log('❌ AI search: no results found');
-        applySearchResults(new Set());
-    }
-}
-
-/**
- * Setup search UI and event listeners
- */
 function setupAdminSearch() {
-    console.log('🔍 setupAdminSearch initialized (Gallery version)');
+    console.log('🔍 setupAdminSearch initialized');
     const searchInput = document.getElementById('adminSearchInput');
     const dropdown = document.getElementById('adminSearchDropdown');
+    const hotTagsList = document.getElementById('hotTagsList');
+    const hotTagsSection = document.getElementById('searchHotTags');
     const suggestionsSection = document.getElementById('searchSuggestions');
 
     if (!searchInput || !dropdown) {
@@ -2777,27 +2370,39 @@ function setupAdminSearch() {
         return;
     }
 
-    // Normalize data and build index
-    normalizePromptData();
-    buildSearchIndex();
-
     let debounceTimer;
     let isDropdownActive = false;
 
     // Generate hot tags from allPrompts
-    function generateHotTags() {
-        if (HOT_TAGS_CACHE) return;
+    function generateAdminHotTags() {
+        if (!hotTagsList || !allPrompts) return;
+
+        // Use cached if available
+        if (HOT_TAGS_CACHE) {
+            renderAdminHotTags(HOT_TAGS_CACHE, hotTagsList, searchInput);
+            return;
+        }
 
         const tagFreq = {};
         allPrompts.forEach(p => {
+            // Tags
             if (Array.isArray(p.tags)) {
                 p.tags.forEach(tag => tagFreq[tag] = (tagFreq[tag] || 0) + 1);
             }
-            const aiTags = p.aiTags || p.ai_tags;
-            if (aiTags) {
+            // AI Tags
+            if (p.ai_tags) {
                 ['styles', 'mood', 'scenes'].forEach(source => {
-                    const tags = aiTags[source];
-                    if (tags?.en) {
+                    const tags = p.ai_tags[source];
+                    if (tags && tags.en) {
+                        tags.en.forEach(t => tagFreq[t] = (tagFreq[t] || 0) + 1);
+                    }
+                });
+            }
+            // CamelCase fallback
+            if (p.aiTags) {
+                ['styles', 'mood', 'scenes'].forEach(source => {
+                    const tags = p.aiTags[source];
+                    if (tags && tags.en) {
                         tags.en.forEach(t => tagFreq[t] = (tagFreq[t] || 0) + 1);
                     }
                 });
@@ -2808,14 +2413,35 @@ function setupAdminSearch() {
             .sort((a, b) => b[1] - a[1])
             .slice(0, 6)
             .map(([tag]) => tag);
+
+        renderAdminHotTags(HOT_TAGS_CACHE, hotTagsList, searchInput);
     }
 
-    function getInlineHotTags(count) {
-        if (!HOT_TAGS_CACHE) generateHotTags();
-        return HOT_TAGS_CACHE ? HOT_TAGS_CACHE.slice(0, count) : [];
+    // Render hot tags
+    function renderAdminHotTags(topTags, container, input) {
+        container.innerHTML = topTags.map((tag, i) =>
+            `<span class="hot-tag" data-tag="${tag}">${tag}</span>`
+        ).join('');
+
+        container.querySelectorAll('.hot-tag').forEach(tagEl => {
+            tagEl.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                input.value = tagEl.dataset.tag;
+                filterAdminCards(tagEl.dataset.tag.toLowerCase());
+                hideDropdown();
+            });
+        });
     }
 
     function showDropdown() {
+        // Only show dropdown when user is typing (matching Gallery behavior)
+        const query = searchInput.value.trim();
+        if (!query) {
+            // Don't show dropdown when empty - matching Gallery
+            return;
+        }
+
         if (isDropdownActive) return;
         isDropdownActive = true;
         dropdown.classList.add('active');
@@ -2824,25 +2450,23 @@ function setupAdminSearch() {
     function hideDropdown() {
         isDropdownActive = false;
         dropdown.classList.remove('active');
+        // Let CSS transition handle visibility hidden
     }
 
-    // 简化的搜索建议函数 - 仅在输入时显示建议，不显示 Hot Search
     function showSuggestions(query) {
         if (!suggestionsSection) return;
 
-        // 无查询时不显示下拉菜单
         if (!query) {
             suggestionsSection.style.display = 'none';
             hideDropdown();
             return;
         }
 
-        // 有查询时显示匹配建议
         const suggestions = new Set();
         const lowerQuery = query.toLowerCase();
 
         allPrompts.forEach(p => {
-            if (p.title?.toLowerCase().includes(lowerQuery)) {
+            if (p.title && p.title.toLowerCase().includes(lowerQuery)) {
                 suggestions.add(p.title);
             }
             if (Array.isArray(p.tags)) {
@@ -2854,48 +2478,86 @@ function setupAdminSearch() {
 
         const suggestionArray = Array.from(suggestions).slice(0, 5);
 
+        // If no suggestions found, hide dropdown
         if (suggestionArray.length === 0) {
             suggestionsSection.style.display = 'none';
             hideDropdown();
             return;
         }
 
-        showDropdown();
+        // Show dropdown with suggestions
+        if (!isDropdownActive) {
+            isDropdownActive = true;
+            dropdown.classList.add('active');
+        }
+
         suggestionsSection.style.display = 'flex';
 
-        const html = suggestionArray.map(s =>
+        let html = suggestionArray.map(s =>
             `<div class="suggestion-item"><i class="fas fa-search"></i>${s}</div>`
         ).join('');
 
+        // Inline Hot Tags
+        const hotTags = getAdminInlineHotTags(3);
+        if (hotTags.length > 0) {
+            const borderClass = suggestionArray.length > 0 ? 'with-suggestions' : '';
+            html += `
+                <div class="inline-hot-tags ${borderClass}">
+                    <span class="inline-label">热门</span>
+                    <div class="inline-hot-tags-list">
+                        ${hotTags.map(tag => `<span class="inline-hot-tag" data-tag="${tag}">${tag}</span>`).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
         suggestionsSection.innerHTML = html;
 
-        // 添加点击事件
+        // Add handlers
         suggestionsSection.querySelectorAll('.suggestion-item').forEach(item => {
             item.addEventListener('mousedown', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 searchInput.value = item.textContent;
-                filterBySearch(item.textContent.toLowerCase());
+                filterAdminCards(item.textContent.toLowerCase());
+                hideDropdown();
+            });
+        });
+
+        suggestionsSection.querySelectorAll('.inline-hot-tag').forEach(tagEl => {
+            tagEl.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                searchInput.value = tagEl.dataset.tag;
+                filterAdminCards(tagEl.dataset.tag.toLowerCase());
                 hideDropdown();
             });
         });
     }
 
-    // Event Listeners - 移除 focus 事件（不再显示 Hot Search）
+    function getAdminInlineHotTags(count) {
+        if (HOT_TAGS_CACHE) return HOT_TAGS_CACHE.slice(0, count);
+        return [];
+    }
+
+    // Event Listeners
     searchInput.addEventListener('input', (e) => {
         const query = e.target.value.trim();
         showSuggestions(query);
 
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
-            filterBySearch(query.toLowerCase());
+            filterAdminCards(query.toLowerCase());
         }, 200);
     });
+
+    // Focus doesn't show dropdown (matching Gallery behavior)
+    // Dropdown only appears when user types
 
     searchInput.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
             searchInput.value = '';
-            filterBySearch('');
+            filterAdminCards('');
             hideDropdown();
             searchInput.blur();
         }
@@ -2914,121 +2576,47 @@ function setupAdminSearch() {
     });
 
     // Generate initial hot tags
-    generateHotTags();
+    generateAdminHotTags();
+}
 
-    // === 分类和日期筛选器 ===
-    const categoryFilterInput = document.getElementById('categoryFilter');
-    const dateFilterInput = document.getElementById('dateFilter');
+function filterAdminCards(query) {
+    const grid = document.getElementById('adminGrid');
+    if (!grid) return;
 
-    // 综合过滤函数 - 结合搜索、分类和日期
-    // 【重写】搜索部分使用 performLocalSearch 统一入口
-    function applyAllFilters() {
-        const searchQuery = searchInput.value.trim().toLowerCase();
-        const categoryValue = categoryFilterInput?.value || '';
-        const dateValue = dateFilterInput?.value || '';
+    if (!query) {
+        // Show all
+        grid.innerHTML = allPrompts.map(p => renderAdminCard(p)).join('');
+        return;
+    }
 
-        const cards = document.querySelectorAll('.admin-card');
-        let visibleCount = 0;
+    const lowerQuery = query.toLowerCase();
 
-        // 日期计算
-        const now = new Date();
-        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        const weekStart = new Date(todayStart);
-        weekStart.setDate(weekStart.getDate() - 7);
-        const monthStart = new Date(todayStart);
-        monthStart.setMonth(monthStart.getMonth() - 1);
+    // Simple local search
+    const filtered = allPrompts.filter(p => {
+        const title = p.title ? p.title.toLowerCase() : '';
+        const tags = Array.isArray(p.tags) ? p.tags.join(' ').toLowerCase() : '';
+        const promptText = p.prompt_text ? p.prompt_text.toLowerCase() : '';
 
-        // 【统一入口】如果有搜索词，使用 performLocalSearch 获取匹配ID集合
-        let searchMatchedIds = null;
-        if (searchQuery) {
-            // 检查是否是颜色搜索
-            let searchingForColor = null;
-            if (COLOR_MAP[searchQuery]) {
-                searchingForColor = COLOR_MAP[searchQuery];
-            }
-            searchMatchedIds = performLocalSearch(searchQuery, searchingForColor);
-            console.log(`📊 Search matched ${searchMatchedIds.size} IDs`);
+        let aiTagsText = '';
+        const aiData = p.ai_tags || p.aiTags;
+        if (aiData) {
+            // Aggregate simplified logic
+            ['styles', 'mood', 'scenes'].forEach(source => {
+                if (aiData[source] && aiData[source].en) {
+                    aiTagsText += ' ' + aiData[source].en.join(' ');
+                }
+            });
         }
 
-        cards.forEach(card => {
-            const cardId = card.dataset.id;
-            const prompt = allPrompts.find(p => String(p.id) === cardId);
-            if (!prompt) {
-                card.style.display = 'none';
-                return;
-            }
+        return title.includes(lowerQuery) ||
+            tags.includes(lowerQuery) ||
+            promptText.includes(lowerQuery) ||
+            aiTagsText.toLowerCase().includes(lowerQuery);
+    });
 
-            let visible = true;
-
-            // 1. 分类筛选
-            if (categoryValue) {
-                const tags = prompt.tags || [];
-                const hasCategory = tags.some(t => t.toLowerCase() === categoryValue.toLowerCase());
-                if (!hasCategory) visible = false;
-            }
-
-            // 2. 日期筛选
-            if (visible && dateValue) {
-                const createdAt = new Date(prompt.created_at);
-                switch (dateValue) {
-                    case 'today':
-                        if (createdAt < todayStart) visible = false;
-                        break;
-                    case 'week':
-                        if (createdAt < weekStart) visible = false;
-                        break;
-                    case 'month':
-                        if (createdAt < monthStart) visible = false;
-                        break;
-                }
-            }
-
-            // 3. 搜索筛选 - 使用统一的 performLocalSearch 结果
-            if (visible && searchMatchedIds !== null) {
-                if (!searchMatchedIds.has(cardId)) {
-                    visible = false;
-                }
-            }
-
-            card.style.display = visible ? '' : 'none';
-            if (visible) visibleCount++;
-        });
-
-        // 更新计数
-        const countEl = document.getElementById('promptCount');
-        if (countEl) countEl.textContent = visibleCount;
-
-        // 显示/移除无结果消息
-        const grid = document.getElementById('adminGrid');
-        const existingMsg = grid.querySelector('.no-results-message');
-        if (visibleCount === 0) {
-            if (!existingMsg) {
-                const msg = document.createElement('p');
-                msg.className = 'no-results-message';
-                msg.style.cssText = 'grid-column: 1/-1; text-align: center; color: var(--text-dim); padding: 2rem;';
-                msg.textContent = '没有找到匹配的提示词';
-                grid.appendChild(msg);
-            }
-        } else if (existingMsg) {
-            existingMsg.remove();
-        }
+    if (filtered.length > 0) {
+        grid.innerHTML = filtered.map(p => renderAdminCard(p)).join('');
+    } else {
+        grid.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: var(--text-dim);">No prompts found matching your search.</p>';
     }
-
-    // 监听分类筛选器变化
-    if (categoryFilterInput) {
-        categoryFilterInput.addEventListener('change', () => {
-            console.log('📂 Category filter changed:', categoryFilterInput.value);
-            applyAllFilters();
-        });
-    }
-
-    // 监听日期筛选器变化
-    if (dateFilterInput) {
-        dateFilterInput.addEventListener('change', () => {
-            console.log('📅 Date filter changed:', dateFilterInput.value);
-            applyAllFilters();
-        });
-    }
-
-    console.log('✅ Admin search setup complete');
 }

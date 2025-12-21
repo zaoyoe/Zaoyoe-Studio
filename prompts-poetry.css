@@ -843,7 +843,8 @@ body {
     gap: 10px;
     padding: 12px 14px;
     margin-top: 0;
-    margin-bottom: 0;
+    /* Small compensation for border-radius visual effect */
+    margin-bottom: -3px;
 }
 
 /* When there are suggestions above, adjust spacing to center between divider and bottom */
@@ -851,9 +852,9 @@ body {
     border-top: 1px solid var(--card-border);
     margin-top: 6px;
     padding-top: 10px;
-    padding-bottom: 8px;
-    /* Extend more into dropdown's bottom padding (20px) to center visually */
-    margin-bottom: -12px;
+    padding-bottom: 6px;
+    /* Extend more into dropdown's bottom padding (20px) + compensate for border-radius visual effect */
+    margin-bottom: -16px;
 }
 
 .inline-label {

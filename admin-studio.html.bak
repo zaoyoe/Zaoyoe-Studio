@@ -17,8 +17,6 @@
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
     <link rel="stylesheet" href="admin-studio.css?v=3">
-    <!-- Cropper.js CSS -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.css">
 
     <!-- Prevent flash of wrong theme -->
     <script>
@@ -298,8 +296,8 @@
                         <div class="select-options">
                             <div class="select-option selected" data-value="">All</div>
                             <div class="select-option" data-value="today">Today</div>
-                            <div class="select-option" data-value="week">Week</div>
-                            <div class="select-option" data-value="month">Month</div>
+                            <div class="select-option" data-value="week">This Week</div>
+                            <div class="select-option" data-value="month">This Month</div>
                         </div>
                     </div>
                 </div>
@@ -396,14 +394,6 @@
         <div class="batch-modal-overlay" id="cropModalOverlay" style="display: none;">
             <div class="batch-modal crop-modal">
                 <h3 class="batch-modal-title">✂️ 裁切图片</h3>
-                <div class="crop-aspect-buttons">
-                    <button class="crop-aspect-btn active" data-aspect="free">自由</button>
-                    <button class="crop-aspect-btn" data-aspect="1">1:1</button>
-                    <button class="crop-aspect-btn" data-aspect="0.75">3:4</button>
-                    <button class="crop-aspect-btn" data-aspect="1.333">4:3</button>
-                    <button class="crop-aspect-btn" data-aspect="0.5625">9:16</button>
-                    <button class="crop-aspect-btn" data-aspect="1.777">16:9</button>
-                </div>
                 <div class="crop-container" id="cropContainer">
                     <img id="cropImage" src="" alt="Crop">
                 </div>
@@ -419,8 +409,6 @@
 
         <!-- Scripts -->
         <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-        <!-- Cropper.js -->
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.js"></script>
         <script>
             // Initialize Supabase client
             const SUPABASE_URL = 'https://mmkugdibsaeoevliebzk.supabase.co';

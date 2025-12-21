@@ -728,21 +728,21 @@ body {
     background: rgba(93, 159, 216, 0.5);
 }
 
-/* Filter dropdowns - 自适应宽度 */
+/* Filter dropdowns - smaller variant for toolbar */
 .filter-custom-select {
-    min-width: auto;
-    width: auto;
+    min-width: 100px;
+    /* Reduced from 140px */
 }
 
 .filter-custom-select .select-display {
     padding: 8px 12px;
+    /* Reduced from 10px 16px */
+    padding-right: 32px;
     background: var(--card-bg);
     border-color: var(--card-border);
     font-size: 0.85rem;
-    gap: 10px;
-    /* 文字和箭头的固定间距 */
-    white-space: nowrap;
-    /* 防止文字换行 */
+    /* Slightly smaller font */
+    gap: 8px;
 }
 
 .filter-custom-select .select-display:hover {
@@ -754,16 +754,14 @@ body {
 }
 
 .filter-custom-select .select-arrow {
-    position: static;
-    /* 移除绝对定位，使用flexbox */
-    flex-shrink: 0;
-    /* 箭头不收缩 */
-    transform: none;
-    transition: transform 0.3s ease;
+    position: absolute;
+    right: 14px;
+    top: 50%;
+    transform: translateY(-50%);
 }
 
 .filter-custom-select.open .select-arrow {
-    transform: rotate(180deg);
+    transform: translateY(-50%) rotate(180deg);
 }
 
 .filter-custom-select .select-options {
@@ -2146,47 +2144,15 @@ body {
 
 /* Crop Modal */
 .crop-modal {
-    max-width: 700px;
-    width: 90vw;
-}
-
-.crop-aspect-buttons {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 16px;
-    flex-wrap: wrap;
-    justify-content: center;
-}
-
-.crop-aspect-btn {
-    padding: 8px 16px;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    background: rgba(255, 255, 255, 0.05);
-    color: var(--text-dim);
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    font-size: 0.85rem;
-}
-
-.crop-aspect-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
-    border-color: rgba(255, 255, 255, 0.3);
-}
-
-.crop-aspect-btn.active {
-    background: var(--accent-color);
-    border-color: var(--accent-color);
-    color: white;
+    max-width: 600px;
 }
 
 .crop-container {
-    background: rgba(0, 0, 0, 0.5);
+    background: rgba(0, 0, 0, 0.3);
     border-radius: 8px;
     overflow: hidden;
     margin-bottom: 20px;
-    max-height: 500px;
-    min-height: 300px;
+    max-height: 400px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2194,22 +2160,6 @@ body {
 
 .crop-container img {
     max-width: 100%;
-    display: block;
-}
-
-/* Cropper.js overrides for dark theme */
-.cropper-view-box,
-.cropper-face {
-    border-radius: 0;
-}
-
-.cropper-line {
-    background-color: var(--accent-color);
-}
-
-.cropper-point {
-    background-color: var(--accent-color);
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
+    max-height: 400px;
+    object-fit: contain;
 }

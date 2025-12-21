@@ -1,56 +1,72 @@
 /**
  * AI Smart Search - Gemini Vision Analysis Script
  * Analyzes images to extract: objects, scenes, styles, mood
- * Uses Gemini 2.0 Flash for cost-effective analysis
+ * Uses Gemini 2.5 Flash for cost-effective analysis
  */
 
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const fs = require('fs');
 const path = require('path');
+const readline = require('readline');
 
 // ===== CONFIGURATION =====
-// Set your API key here or use environment variable
-const API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyBEypLb4JZKxsQlWI56gzE_WtM19kXv7NU';
+let API_KEY = process.env.GEMINI_API_KEY;
 
-if (API_KEY === 'YOUR_API_KEY_HERE') {
-    console.error('❌ Please set your Gemini API key!');
-    console.log('   Option 1: Set environment variable: export GEMINI_API_KEY="your-key"');
-    console.log('   Option 2: Edit this file and replace YOUR_API_KEY_HERE');
-    console.log('\n   Get your key at: https://aistudio.google.com/app/apikey');
-    process.exit(1);
+async function getApiKey() {
+    if (API_KEY) return API_KEY;
+
+    const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout
+    });
+
+    return new Promise(resolve => {
+        rl.question('🔑 Please enter your Gemini API Key: ', (key) => {
+            rl.close();
+            resolve(key.trim());
+        });
+    });
 }
 
-const genAI = new GoogleGenerativeAI(API_KEY);
+const ANALYSIS_PROMPT = `You are analyzing an image for a bilingual (English + Chinese) art gallery search system.
 
-// Use Gemini 2.5 Flash (latest and fastest model)
-const model = genAI.getGenerativeModel({
-    model: 'gemini-2.5-flash',
-});
-
-const ANALYSIS_PROMPT = `Analyze this image and provide structured tags in JSON format.
+CRITICAL: For each category, provide BOTH English and Chinese tags that are EXACT translations of each other.
+- English tags should be common, searchable terms
+- Chinese tags (中文) should be the most natural, commonly-used translations
+- Each English tag MUST have a corresponding Chinese translation at the SAME position in the array
 
 RESPOND ONLY WITH VALID JSON, no markdown, no explanation.
 
 {
   "objects": {
-    "en": ["list of objects in English, e.g. bicycle, cat, coffee cup"],
-    "zh": ["对应的中文物体名称，如 自行车, 猫, 咖啡杯"]
+    "en": ["bicycle", "girl", "leaves", "flowers", "butterfly"],
+    "zh": ["自行车", "女孩", "树叶", "花朵", "蝴蝶"]
   },
   "scenes": {
-    "en": ["scene/location types, e.g. beach, city, forest, indoor"],
-    "zh": ["场景中文，如 海滩, 城市, 森林, 室内"]
+    "en": ["garden", "autumn", "outdoor", "nature"],
+    "zh": ["花园", "秋天", "户外", "自然"]
   },
   "styles": {
-    "en": ["art styles, e.g. watercolor, 3D render, minimalist, cyberpunk"],
-    "zh": ["风格中文，如 水彩, 3D渲染, 极简主义, 赛博朋克"]
+    "en": ["3D art", "miniature", "whimsical", "colorful"],
+    "zh": ["3D艺术", "微缩", "奇幻", "多彩"]
   },
   "mood": {
-    "en": ["emotional atmosphere, e.g. warm, mysterious, energetic, peaceful"],
-    "zh": ["情绪氛围中文，如 温馨, 神秘, 活力, 宁静"]
+    "en": ["romantic", "dreamy", "peaceful", "joyful"],
+    "zh": ["浪漫", "梦幻", "宁静", "欢快"]
   }
 }
 
-Be comprehensive but concise. Maximum 8 items per category.`;
+IMPORTANT TRANSLATION GUIDELINES:
+- "leaf/leaves" → "树叶/叶子" (NOT "页")
+- "bicycle/bike" → "自行车/单车"  
+- "girl/woman" → "女孩/女性"
+- "flower" → "花/花朵" (NOT just "华")
+- "tree" → "树/树木"
+- "sky" → "天空"
+- "water" → "水/水面"
+- "mountain" → "山/山脉"
+
+Be comprehensive. Maximum 10 items per category. Ensure 1:1 English-Chinese correspondence.`;
 
 // Convert image to base64
 function imageToBase64(imagePath) {
@@ -71,10 +87,17 @@ function getMimeType(imagePath) {
     return mimeTypes[ext] || 'image/png';
 }
 
+// Rate limiting helper
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 // Analyze a single image with Gemini (with retry logic)
 async function analyzeImage(imagePath, retries = 3) {
     const base64 = imageToBase64(imagePath);
     const mimeType = getMimeType(imagePath);
+    // Use the model initialized globally in main
+    const model = global.geminiModel;
 
     for (let attempt = 1; attempt <= retries; attempt++) {
         try {
@@ -113,13 +136,22 @@ async function analyzeImage(imagePath, retries = 3) {
     };
 }
 
-// Rate limiting helper
-function sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
-
 // Main function
 async function main() {
+    const key = await getApiKey();
+    if (!key) {
+        console.error('❌ API Key is required!');
+        process.exit(1);
+    }
+
+    console.log('✅ API Key received. Initializing Gemini...');
+    const genAI = new GoogleGenerativeAI(key);
+    // Use gemini-2.5-flash for best performance as requested by user
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
+
+    // Make model available to analyzeImage
+    global.geminiModel = model;
+
     const promptsDataPath = path.join(__dirname, 'prompts-data.js');
 
     // Read current prompts data
@@ -142,8 +174,9 @@ async function main() {
     for (let i = 0; i < prompts.length; i++) {
         const prompt = prompts[i];
 
-        // Skip if already analyzed
-        if (prompt.aiTags && prompt.aiTags.objects) {
+        // Skip if already analyzed - checks if we have valid tags
+        if (prompt.aiTags && prompt.aiTags.objects &&
+            prompt.aiTags.objects.en && prompt.aiTags.objects.en.length > 0) {
             console.log(`[${i + 1}/${prompts.length}] ⏭️  ${prompt.title} - Already analyzed, skipping`);
             continue;
         }
@@ -166,18 +199,14 @@ async function main() {
 
             successCount++;
 
-            // Rate limiting: wait 10 seconds between requests
+            // Rate limiting: wait 2 seconds between requests (2.0 Flash has high limit)
             if (i < prompts.length - 1) {
-                await sleep(10000); // 10 seconds between requests
+                await sleep(2000);
             }
         } catch (err) {
             console.error(`   ❌ Error: ${err.message}`);
-            prompt.aiTags = {
-                objects: { en: [], zh: [] },
-                scenes: { en: [], zh: [] },
-                styles: { en: [], zh: [] },
-                mood: { en: [], zh: [] },
-            };
+            // Keep old tags if analysis failed, or set strict empty structure
+            // prompt.aiTags = ...
             errorCount++;
         }
 

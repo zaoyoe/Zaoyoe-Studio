@@ -56,7 +56,10 @@ let SEARCH_INDEX = null;
  * Called once during initialization for O(1) lookups
  */
 function buildSearchIndex() {
-    if (SEARCH_INDEX || typeof PROMPTS === 'undefined') return;
+    // 如果索引已存在且数据量合理，跳过重建
+    // 否则重建（处理数据更新后索引过期的情况）
+    if (SEARCH_INDEX && Object.keys(SEARCH_INDEX).length > 50) return;
+    if (typeof PROMPTS === 'undefined' || PROMPTS.length === 0) return;
 
     console.log('🔍 Building search index...');
     SEARCH_INDEX = {};
@@ -85,28 +88,30 @@ function buildSearchIndex() {
         }
 
         // Index AI tags (all categories, both languages)
-        if (p.aiTags) {
+        // 兼容 aiTags 和 ai_tags 两种字段名
+        const aiTags = p.aiTags || p.ai_tags;
+        if (aiTags) {
             ['objects', 'scenes', 'styles', 'mood'].forEach(category => {
-                const tagData = p.aiTags[category];
+                const tagData = aiTags[category];
                 if (tagData?.en) tagData.en.forEach(addToIndex);
                 if (tagData?.zh) tagData.zh.forEach(addToIndex);
             });
 
             // Index useCase (platform, purpose, format)
-            if (p.aiTags.useCase) {
-                if (p.aiTags.useCase.platform) p.aiTags.useCase.platform.forEach(addToIndex);
-                if (p.aiTags.useCase.purpose) p.aiTags.useCase.purpose.forEach(addToIndex);
-                if (p.aiTags.useCase.format) p.aiTags.useCase.format.forEach(addToIndex);
+            if (aiTags.useCase) {
+                if (aiTags.useCase.platform) aiTags.useCase.platform.forEach(addToIndex);
+                if (aiTags.useCase.purpose) aiTags.useCase.purpose.forEach(addToIndex);
+                if (aiTags.useCase.format) aiTags.useCase.format.forEach(addToIndex);
             }
 
             // Index commercial (niche, targetAudience)
-            if (p.aiTags.commercial) {
-                if (p.aiTags.commercial.niche) p.aiTags.commercial.niche.forEach(addToIndex);
-                if (p.aiTags.commercial.targetAudience) p.aiTags.commercial.targetAudience.forEach(addToIndex);
+            if (aiTags.commercial) {
+                if (aiTags.commercial.niche) aiTags.commercial.niche.forEach(addToIndex);
+                if (aiTags.commercial.targetAudience) aiTags.commercial.targetAudience.forEach(addToIndex);
             }
 
             // Index difficulty
-            if (p.aiTags.difficulty) addToIndex(p.aiTags.difficulty);
+            if (aiTags.difficulty) addToIndex(aiTags.difficulty);
         }
 
         // Index dominant colors
@@ -221,7 +226,26 @@ const SYNONYM_DICTIONARY = {
     'miniature': ['mini', 'tiny', 'micro', 'small', '微缩', '迷你', '微观'],
     '3d': ['three-dimensional', '3d art', '3d render', '三维', '立体'],
     'illustration': ['illustrate', 'drawing', 'artwork', '插画', '插图', '绘画'],
-    'photography': ['photo', 'photograph', 'camera', '摄影', '照片', '拍摄']
+    'photography': ['photo', 'photograph', 'camera', '摄影', '照片', '拍摄'],
+
+    // === Nature synonyms ===
+    'leaf': ['leaves', 'foliage', '树叶', '叶子', '叶片', '绿叶'],
+    'flower': ['floral', 'bloom', 'blossom', '花', '花卉', '鲜花'],
+    'tree': ['forest', 'woods', '树', '森林', '树木'],
+    'mountain': ['hill', 'peak', '山', '山脉', '峰'],
+    'ocean': ['sea', 'water', 'wave', 'beach', '海', '海洋', '海浪', '海滩'],
+    'sky': ['cloud', 'starry', '天空', '云', '星空'],
+    'snow': ['winter', 'ice', '雪', '冬', '冰'],
+    'rain': ['rainy', '雨', '下雨'],
+
+    // === Transport synonyms ===
+    'bicycle': ['bike', 'cycling', '自行车', '单车', '脚踏车', '骑行'],
+    'car': ['vehicle', 'auto', '汽车', '轿车', '车'],
+
+    // === People synonyms ===
+    'girl': ['woman', 'female', 'lady', '女孩', '女生', '女性'],
+    'boy': ['man', 'male', 'guy', '男孩', '男生', '男性'],
+    'child': ['kid', 'baby', '儿童', '小孩', '宝宝']
 };
 
 function toggleAvatarMenu() {
@@ -2112,8 +2136,10 @@ function expandSynonyms(query) {
 }
 
 // Layer 1 & 2: Local search with synonym expansion + index optimization
+// 【优化】原始词做精确+部分匹配，同义词只做精确匹配
 function performLocalSearch(query, searchingForColor) {
     const matchedIds = new Set();
+    const originalQuery = query.toLowerCase().trim();
     const expandedTerms = expandSynonyms(query);
 
     console.log(`🔄 Expanded terms: [${expandedTerms.slice(0, 5).join(', ')}${expandedTerms.length > 5 ? '...' : ''}]`);
@@ -2128,10 +2154,34 @@ function performLocalSearch(query, searchingForColor) {
         return matchedIds;
     }
 
-    // Use index-based search for each expanded term
+    if (!SEARCH_INDEX) buildSearchIndex();
+
+    console.log(`📊 Index size: ${Object.keys(SEARCH_INDEX).length} terms`);
+
+    // === 策略1：原始搜索词 - 精确匹配 + 部分匹配 ===
+    if (SEARCH_INDEX[originalQuery]) {
+        console.log(`✅ Direct match for "${originalQuery}":`, SEARCH_INDEX[originalQuery]);
+        SEARCH_INDEX[originalQuery].forEach(id => matchedIds.add(id));
+    }
+    // 部分匹配 - 只对原始搜索词进行
+    if (originalQuery.length >= 2) {
+        const partialMatches = [];
+        Object.keys(SEARCH_INDEX).forEach(indexedTerm => {
+            if (indexedTerm.includes(originalQuery)) {
+                partialMatches.push(indexedTerm);
+                SEARCH_INDEX[indexedTerm].forEach(id => matchedIds.add(id));
+            }
+        });
+        if (partialMatches.length > 0) {
+            console.log(`🔍 Partial matches for "${originalQuery}":`, partialMatches);
+        }
+    }
+
+    // === 策略2：同义词 - 只做精确匹配 ===
     expandedTerms.forEach(term => {
-        const indexResults = searchByIndex(term);
-        indexResults.forEach(id => matchedIds.add(id));
+        if (term !== originalQuery && SEARCH_INDEX[term]) {
+            SEARCH_INDEX[term].forEach(id => matchedIds.add(id));
+        }
     });
 
     // If index search found nothing, fall back to linear search for fuzzy matching

@@ -19,78 +19,88 @@ const PROMPTS = [
         "aiTags": {
             "objects": {
                 "en": [
-                    "coffee cup building",
-                    "people",
+                    "giant coffee cup",
+                    "Starbucks",
+                    "characters",
+                    "barista",
+                    "potted plants",
                     "street lamp",
                     "bench",
-                    "potted plants",
-                    "straw",
-                    "coffee shop interior",
-                    "buildings"
+                    "buildings",
+                    "coffee cup",
+                    "straw"
                 ],
                 "zh": [
-                    "咖啡杯建筑",
+                    "巨型咖啡杯",
+                    "星巴克",
                     "人物",
+                    "咖啡师",
+                    "盆栽植物",
                     "路灯",
-                    "长凳",
-                    "盆栽",
-                    "吸管",
-                    "咖啡店内部",
-                    "建筑物"
+                    "长椅",
+                    "建筑物",
+                    "咖啡杯",
+                    "吸管"
                 ]
             },
             "scenes": {
                 "en": [
                     "city street",
-                    "coffee shop",
-                    "urban environment",
-                    "storefront"
+                    "cafe",
+                    "outdoor",
+                    "daytime",
+                    "street view",
+                    "urban scene"
                 ],
                 "zh": [
                     "城市街道",
-                    "咖啡店",
-                    "城市环境",
-                    "店面"
+                    "咖啡馆",
+                    "户外",
+                    "白天",
+                    "街景",
+                    "都市场景"
                 ]
             },
             "styles": {
                 "en": [
-                    "3D render",
-                    "cartoon",
-                    "stylized",
+                    "3D art",
                     "miniature",
                     "whimsical",
-                    "isometric perspective",
-                    "chibi art"
+                    "cartoon style",
+                    "cute",
+                    "digital art",
+                    "rendered",
+                    "stylized"
                 ],
                 "zh": [
-                    "3D渲染",
-                    "卡通",
-                    "风格化",
-                    "微缩模型",
-                    "异想天开",
-                    "等距视角",
-                    "Q版艺术"
+                    "3D艺术",
+                    "微缩",
+                    "奇幻",
+                    "卡通风格",
+                    "可爱",
+                    "数字艺术",
+                    "渲染",
+                    "风格化"
                 ]
             },
             "mood": {
                 "en": [
-                    "cheerful",
-                    "inviting",
-                    "cozy",
                     "playful",
+                    "cheerful",
+                    "cozy",
+                    "inviting",
                     "peaceful",
-                    "cute",
-                    "whimsical"
+                    "lively",
+                    "pleasant"
                 ],
                 "zh": [
-                    "开朗",
-                    "诱人",
+                    "俏皮",
+                    "欢快",
                     "舒适",
-                    "好玩",
+                    "诱人",
                     "宁静",
-                    "可爱",
-                    "异想天开"
+                    "活泼",
+                    "愉悦"
                 ]
             }
         }
@@ -119,78 +129,76 @@ const PROMPTS = [
         "aiTags": {
             "objects": {
                 "en": [
+                    "model",
                     "woman",
                     "sweater",
                     "pants",
                     "shoes",
-                    "magazine covers",
-                    "clothing",
-                    "fashion accessories",
-                    "logos"
+                    "magazine logo"
                 ],
                 "zh": [
-                    "女人",
+                    "模特",
+                    "女性",
                     "毛衣",
                     "裤子",
                     "鞋子",
-                    "杂志封面",
-                    "服装",
-                    "时尚配饰",
-                    "标志"
+                    "杂志标志"
                 ]
             },
             "scenes": {
                 "en": [
-                    "photoshoot",
                     "studio",
-                    "fashion shoot",
-                    "minimalist background",
-                    "urban backdrop"
+                    "fashion editorial",
+                    "photoshoot",
+                    "magazine cover",
+                    "urban background",
+                    "plain background"
                 ],
                 "zh": [
+                    "影棚",
+                    "时尚大片",
                     "拍摄",
-                    "摄影棚",
-                    "时尚摄影",
-                    "极简背景",
-                    "都市背景"
+                    "杂志封面",
+                    "都市背景",
+                    "纯色背景"
                 ]
             },
             "styles": {
                 "en": [
                     "fashion photography",
-                    "editorial",
-                    "modern",
+                    "editorial style",
                     "minimalist",
-                    "clean aesthetic",
+                    "modern",
                     "casual chic",
-                    "commercial photography"
+                    "monochromatic",
+                    "clean aesthetic"
                 ],
                 "zh": [
                     "时尚摄影",
-                    "编辑",
+                    "编辑风格",
+                    "简约",
                     "现代",
-                    "极简主义",
-                    "简洁美学",
-                    "休闲别致",
-                    "商业摄影"
+                    "休闲时尚",
+                    "单色",
+                    "干净美学"
                 ]
             },
             "mood": {
                 "en": [
                     "confident",
-                    "chic",
                     "stylish",
-                    "poised",
                     "calm",
-                    "professional"
+                    "elegant",
+                    "professional",
+                    "chic"
                 ],
                 "zh": [
                     "自信",
                     "时尚",
-                    "有型",
-                    "沉着",
                     "平静",
-                    "专业"
+                    "优雅",
+                    "专业",
+                    "别致"
                 ]
             }
         }
@@ -217,84 +225,88 @@ const PROMPTS = [
         "aiTags": {
             "objects": {
                 "en": [
-                    "Pepsi can",
-                    "miniature figures",
+                    "soda can",
+                    "miniature workers",
                     "scaffolding",
-                    "checkered tablecloth",
-                    "paint cans",
                     "ladder",
-                    "truck",
-                    "condiment bottles"
+                    "checkered tablecloth",
+                    "water droplets",
+                    "paint cans",
+                    "condiment bottles",
+                    "Pepsi logo",
+                    "toy truck"
                 ],
                 "zh": [
-                    "百事可乐罐",
-                    "微型人偶",
+                    "汽水罐",
+                    "微缩工人",
                     "脚手架",
-                    "方格桌布",
-                    "油漆罐",
                     "梯子",
-                    "卡车",
-                    "调味瓶"
+                    "格子桌布",
+                    "水珠",
+                    "油漆桶",
+                    "调味瓶",
+                    "百事可乐标志",
+                    "玩具卡车"
                 ]
             },
             "scenes": {
                 "en": [
-                    "diner",
+                    "diner interior",
+                    "indoors",
                     "tabletop",
-                    "indoor",
-                    "restaurant",
-                    "miniature world",
-                    "diorama"
+                    "warm lighting",
+                    "construction scene",
+                    "urban setting"
                 ],
                 "zh": [
-                    "快餐店",
-                    "桌面",
+                    "餐厅内部",
                     "室内",
-                    "餐厅",
-                    "微观世界",
-                    "场景模型"
+                    "桌面",
+                    "暖色灯光",
+                    "施工场景",
+                    "城市环境"
                 ]
             },
             "styles": {
                 "en": [
-                    "macro photography",
-                    "3D render",
-                    "photorealistic",
-                    "conceptual art",
-                    "miniature art",
-                    "playful",
+                    "miniature",
+                    "diorama",
+                    "surreal",
+                    "whimsical",
+                    "3D art",
+                    "hyperrealistic",
+                    "creative photography",
                     "detailed"
                 ],
                 "zh": [
-                    "微距摄影",
-                    "3D渲染",
+                    "微缩",
+                    "立体模型",
+                    "超现实",
+                    "奇幻",
+                    "3D艺术",
                     "超写实",
-                    "概念艺术",
-                    "微型艺术",
-                    "俏皮",
-                    "精细"
+                    "创意摄影",
+                    "细节丰富"
                 ]
             },
             "mood": {
                 "en": [
                     "playful",
-                    "creative",
                     "imaginative",
-                    "industrious",
                     "humorous",
-                    "whimsical",
-                    "warm",
-                    "busy"
+                    "lively",
+                    "busy",
+                    "intriguing",
+                    "lighthearted"
                 ],
                 "zh": [
                     "俏皮",
-                    "创意",
-                    "富想象力",
-                    "勤奋",
+                    "富有想象力",
                     "幽默",
-                    "异想天开",
-                    "温馨",
-                    "忙碌"
+                    "生动活泼",
+                    "忙碌",
+                    "引人入胜",
+                    "轻松愉快"
                 ]
             }
         }
@@ -320,80 +332,100 @@ const PROMPTS = [
         "aiTags": {
             "objects": {
                 "en": [
-                    "girl figure",
                     "bicycle",
+                    "girl",
                     "leaves",
                     "flowers",
                     "berries",
                     "water droplets",
-                    "twigs"
+                    "artwork",
+                    "figure",
+                    "nature elements",
+                    "sculpture"
                 ],
                 "zh": [
-                    "女孩形象",
                     "自行车",
-                    "叶子",
+                    "女孩",
+                    "树叶",
                     "花朵",
                     "浆果",
                     "水滴",
-                    "树枝"
+                    "艺术品",
+                    "人物",
+                    "自然元素",
+                    "雕塑"
                 ]
             },
             "scenes": {
                 "en": [
-                    "nature",
                     "outdoor",
+                    "nature",
                     "garden",
                     "forest",
-                    "woodland"
+                    "autumn",
+                    "daylight",
+                    "natural setting",
+                    "greenery"
                 ],
                 "zh": [
-                    "大自然",
                     "户外",
+                    "自然",
                     "花园",
                     "森林",
-                    "林地"
+                    "秋天",
+                    "日光",
+                    "自然场景",
+                    "绿植"
                 ]
             },
             "styles": {
                 "en": [
-                    "botanical art",
                     "leaf art",
-                    "assemblage art",
-                    "craft",
-                    "nature photography",
-                    "whimsical art",
-                    "still life"
+                    "nature art",
+                    "3D art",
+                    "mixed media",
+                    "collage",
+                    "whimsical",
+                    "creative",
+                    "handmade",
+                    "figurative",
+                    "craft"
                 ],
                 "zh": [
-                    "植物艺术",
                     "树叶艺术",
-                    "组合艺术",
-                    "工艺品",
-                    "自然摄影",
-                    "异想天开的艺术",
-                    "静物"
+                    "自然艺术",
+                    "3D艺术",
+                    "混合媒体",
+                    "拼贴画",
+                    "奇幻",
+                    "创意",
+                    "手工",
+                    "具象艺术",
+                    "工艺品"
                 ]
             },
             "mood": {
                 "en": [
                     "peaceful",
                     "whimsical",
-                    "serene",
-                    "natural",
+                    "dreamy",
                     "joyful",
-                    "tranquil",
-                    "refreshing",
-                    "dreamlike"
+                    "delicate",
+                    "vibrant",
+                    "magical",
+                    "idyllic",
+                    "harmonious"
                 ],
                 "zh": [
                     "宁静",
-                    "异想天开",
-                    "平静",
-                    "自然",
-                    "快乐",
-                    "安详",
-                    "清新",
-                    "梦幻"
+                    "奇幻",
+                    "梦幻",
+                    "欢乐",
+                    "精致",
+                    "充满活力",
+                    "神奇",
+                    "田园风光",
+                    "和谐"
                 ]
             }
         }
@@ -418,75 +450,105 @@ const PROMPTS = [
             "objects": {
                 "en": [
                     "singer",
-                    "performer",
                     "audience",
                     "stage",
-                    "confetti",
-                    "spotlights",
                     "stadium",
-                    "musical instruments"
+                    "spotlight",
+                    "neon lights",
+                    "confetti",
+                    "microphone",
+                    "band",
+                    "holographic figures"
                 ],
                 "zh": [
                     "歌手",
-                    "表演者",
                     "观众",
                     "舞台",
-                    "五彩纸屑",
-                    "聚光灯",
                     "体育场",
-                    "乐器"
+                    "聚光灯",
+                    "霓虹灯",
+                    "五彩纸屑",
+                    "麦克风",
+                    "乐队",
+                    "全息人物"
                 ]
             },
             "scenes": {
                 "en": [
-                    "music concert",
-                    "stadium",
+                    "concert",
                     "live performance",
-                    "event venue"
+                    "arena",
+                    "night scene",
+                    "music festival",
+                    "stage show",
+                    "large venue",
+                    "crowd scene",
+                    "event",
+                    "nightlife"
                 ],
                 "zh": [
-                    "音乐会",
-                    "体育场",
-                    "现场表演",
-                    "活动场地"
+                    "演唱会",
+                    "现场演出",
+                    "竞技场",
+                    "夜景",
+                    "音乐节",
+                    "舞台表演",
+                    "大型场馆",
+                    "人群场景",
+                    "活动",
+                    "夜生活"
                 ]
             },
             "styles": {
                 "en": [
-                    "neon art",
-                    "futuristic",
+                    "3D art",
                     "digital art",
-                    "3D render",
-                    "glow-in-the-dark",
-                    "cyberpunk elements"
+                    "futuristic",
+                    "neon art",
+                    "holographic",
+                    "glowing",
+                    "vibrant",
+                    "dynamic",
+                    "sci-fi",
+                    "surreal"
                 ],
                 "zh": [
-                    "霓虹艺术",
-                    "未来主义",
+                    "3D艺术",
                     "数字艺术",
-                    "3D渲染",
-                    "夜光",
-                    "赛博朋克元素"
+                    "未来主义",
+                    "霓虹艺术",
+                    "全息",
+                    "发光",
+                    "充满活力",
+                    "动感",
+                    "科幻",
+                    "超现实"
                 ]
             },
             "mood": {
                 "en": [
                     "energetic",
-                    "vibrant",
                     "exciting",
+                    "euphoric",
+                    "festive",
                     "thrilling",
-                    "joyful",
-                    "electrifying",
-                    "lively"
+                    "lively",
+                    "immersive",
+                    "dreamy",
+                    "spectacular",
+                    "celebratory"
                 ],
                 "zh": [
-                    "活力",
                     "充满活力",
                     "激动人心",
-                    "惊险",
-                    "欢乐",
-                    "电气化",
-                    "热闹"
+                    "狂喜",
+                    "欢快",
+                    "令人兴奋",
+                    "活泼",
+                    "身临其境",
+                    "梦幻",
+                    "壮观",
+                    "庆祝的"
                 ]
             }
         }
@@ -512,89 +574,105 @@ const PROMPTS = [
             "objects": {
                 "en": [
                     "child",
-                    "Forbidden City",
+                    "backpack",
+                    "camera",
+                    "traditional architecture",
                     "Great Wall",
-                    "Temple of Heaven",
-                    "Panda",
+                    "boat",
+                    "panda",
                     "Peking duck",
-                    "tanghulu",
-                    "boat"
+                    "noodles",
+                    "tanghulu"
                 ],
                 "zh": [
                     "小孩",
-                    "故宫",
+                    "背包",
+                    "相机",
+                    "传统建筑",
                     "长城",
-                    "天坛",
+                    "船",
                     "熊猫",
                     "北京烤鸭",
-                    "冰糖葫芦",
-                    "船"
+                    "面条",
+                    "糖葫芦"
                 ]
             },
             "scenes": {
                 "en": [
-                    "historic sites",
-                    "cityscape",
+                    "Beijing",
+                    "historic site",
+                    "city street",
+                    "hutong",
                     "park",
                     "zoo",
-                    "hutong",
-                    "lake",
+                    "outdoor",
+                    "tourism",
                     "restaurant",
-                    "travel route"
+                    "lake"
                 ],
                 "zh": [
+                    "北京",
                     "历史遗迹",
-                    "城市风光",
+                    "城市街道",
+                    "胡同",
                     "公园",
                     "动物园",
-                    "胡同",
-                    "湖泊",
+                    "户外",
+                    "旅游",
                     "餐厅",
-                    "旅行路线"
+                    "湖泊"
                 ]
             },
             "styles": {
                 "en": [
                     "cartoon",
-                    "hand-drawn",
                     "illustration",
-                    "whimsical",
-                    "childlike",
-                    "doodle",
-                    "vibrant colors",
-                    "flat design"
+                    "hand-drawn",
+                    "cute",
+                    "infographic",
+                    "travel guide",
+                    "bright colors",
+                    "simple",
+                    "educational",
+                    "whimsical"
                 ],
                 "zh": [
                     "卡通",
-                    "手绘",
                     "插画",
-                    "异想天开",
-                    "稚气",
-                    "涂鸦",
-                    "鲜艳色彩",
-                    "扁平设计"
+                    "手绘",
+                    "可爱",
+                    "信息图",
+                    "旅行指南",
+                    "色彩鲜艳",
+                    "简洁",
+                    "教育性",
+                    "奇趣"
                 ]
             },
             "mood": {
                 "en": [
                     "joyful",
                     "adventurous",
-                    "cheerful",
-                    "playful",
                     "lively",
-                    "informative",
-                    "whimsical",
-                    "lighthearted"
+                    "childlike",
+                    "optimistic",
+                    "friendly",
+                    "curious",
+                    "exciting",
+                    "relaxing",
+                    "memorable"
                 ],
                 "zh": [
                     "欢乐",
                     "冒险",
-                    "开朗",
-                    "好玩",
                     "活泼",
-                    "信息丰富",
-                    "异想天开",
-                    "轻松"
+                    "童真",
+                    "乐观",
+                    "友好",
+                    "好奇",
+                    "令人兴奋",
+                    "轻松",
+                    "难忘"
                 ]
             }
         }
@@ -618,72 +696,90 @@ const PROMPTS = [
         "aiTags": {
             "objects": {
                 "en": [
-                    "poodle",
-                    "lion (reflection)",
+                    "dog",
+                    "lion",
                     "puddle",
-                    "cobblestone street",
-                    "old buildings",
-                    "autumn leaves"
+                    "leaves",
+                    "cobblestone",
+                    "building",
+                    "reflection",
+                    "water"
                 ],
                 "zh": [
-                    "贵宾犬",
-                    "狮子 (倒影)",
+                    "狗",
+                    "狮子",
                     "水坑",
-                    "鹅卵石街道",
-                    "老建筑",
-                    "秋叶"
+                    "树叶",
+                    "鹅卵石",
+                    "建筑",
+                    "倒影",
+                    "水"
                 ]
             },
             "scenes": {
                 "en": [
+                    "street",
                     "old town",
-                    "cobblestone street",
                     "outdoor",
                     "autumn",
-                    "golden hour"
+                    "wet ground",
+                    "golden hour",
+                    "urban setting",
+                    "after rain"
                 ],
                 "zh": [
-                    "老城区",
-                    "鹅卵石街道",
+                    "街道",
+                    "老城",
                     "户外",
-                    "秋季",
-                    "黄金时段"
+                    "秋天",
+                    "潮湿地面",
+                    "黄金时段",
+                    "城市环境",
+                    "雨后"
                 ]
             },
             "styles": {
                 "en": [
-                    "photography",
                     "surrealism",
-                    "realistic",
+                    "creative photography",
+                    "reflection photography",
+                    "photo manipulation",
                     "warm lighting",
-                    "creative composition"
+                    "animal photography",
+                    "fantasy",
+                    "magical realism"
                 ],
                 "zh": [
-                    "摄影",
                     "超现实主义",
-                    "写实",
+                    "创意摄影",
+                    "倒影摄影",
+                    "照片处理",
                     "暖光",
-                    "创意构图"
+                    "动物摄影",
+                    "奇幻",
+                    "魔幻现实主义"
                 ]
             },
             "mood": {
                 "en": [
                     "magical",
                     "whimsical",
-                    "contemplative",
-                    "warm",
-                    "enchanting",
-                    "dreamlike",
-                    "peaceful"
+                    "mysterious",
+                    "dreamy",
+                    "thought-provoking",
+                    "inspiring",
+                    "empowering",
+                    "brave"
                 ],
                 "zh": [
                     "神奇",
                     "异想天开",
-                    "沉思",
-                    "温馨",
-                    "迷人",
+                    "神秘",
                     "梦幻",
-                    "宁静"
+                    "引人深思",
+                    "鼓舞人心",
+                    "赋能",
+                    "勇敢"
                 ]
             }
         }
@@ -708,65 +804,65 @@ const PROMPTS = [
             "objects": {
                 "en": [
                     "boy",
-                    "winged elephant",
-                    "mermaid giraffe",
-                    "dog",
-                    "chicken",
-                    "smiling flowers",
-                    "fruit houses",
-                    "rainbow paintbrush"
+                    "paintbrush",
+                    "crayons",
+                    "flowers",
+                    "animals",
+                    "elephant",
+                    "giraffe",
+                    "house",
+                    "fruit",
+                    "cloud"
                 ],
                 "zh": [
                     "男孩",
-                    "带翅膀的大象",
-                    "美人鱼长颈鹿",
-                    "狗",
-                    "鸡",
-                    "微笑的花朵",
-                    "水果房屋",
-                    "彩虹画笔"
+                    "画笔",
+                    "蜡笔",
+                    "花朵",
+                    "动物",
+                    "大象",
+                    "长颈鹿",
+                    "房子",
+                    "水果",
+                    "云朵"
                 ]
             },
             "scenes": {
                 "en": [
+                    "fantasy world",
                     "outdoor",
-                    "fantasy landscape",
-                    "imaginary world",
-                    "storybook scene",
-                    "lush greenery",
-                    "artistic play area",
-                    "daytime"
+                    "garden",
+                    "fairytale scene",
+                    "imaginary landscape",
+                    "dreamland"
                 ],
                 "zh": [
+                    "奇幻世界",
                     "户外",
-                    "奇幻风景",
-                    "想象世界",
+                    "花园",
                     "童话场景",
-                    "郁郁葱葱的绿色",
-                    "艺术游乐区",
-                    "白天"
+                    "想象景观",
+                    "梦幻世界"
                 ]
             },
             "styles": {
                 "en": [
                     "children's illustration",
                     "watercolor",
-                    "cartoon",
+                    "cartoon style",
+                    "colorful",
                     "whimsical",
                     "hand-drawn",
-                    "vibrant colors",
-                    "fantasy art",
-                    "storybook art"
+                    "bright colors"
                 ],
                 "zh": [
                     "儿童插画",
-                    "水彩",
-                    "卡通",
-                    "异想天开",
+                    "水彩画",
+                    "卡通风格",
+                    "多彩",
+                    "奇幻",
                     "手绘",
-                    "鲜艳色彩",
-                    "奇幻艺术",
-                    "故事书艺术"
+                    "鲜艳色彩"
                 ]
             },
             "mood": {
@@ -775,20 +871,18 @@ const PROMPTS = [
                     "joyful",
                     "playful",
                     "creative",
-                    "whimsical",
-                    "cheerful",
                     "imaginative",
-                    "optimistic"
+                    "whimsical",
+                    "cheerful"
                 ],
                 "zh": [
                     "快乐",
-                    "喜悦",
-                    "顽皮",
+                    "欢快",
+                    "活泼",
                     "创意",
-                    "异想天开",
-                    "开朗",
                     "富有想象力",
-                    "乐观"
+                    "奇幻",
+                    "愉悦"
                 ]
             }
         }
@@ -814,57 +908,69 @@ const PROMPTS = [
             "objects": {
                 "en": [
                     "maple leaf",
-                    "water droplets",
+                    "couple",
                     "cherry blossoms",
-                    "couple silhouette",
-                    "tree silhouette",
-                    "water surface",
-                    "falling petals"
+                    "tree",
+                    "water droplets",
+                    "flower petals",
+                    "silhouette"
                 ],
                 "zh": [
                     "枫叶",
-                    "水滴",
+                    "情侣",
                     "樱花",
-                    "情侣剪影",
-                    "树木剪影",
-                    "水面",
-                    "飘落的花瓣"
+                    "树",
+                    "水滴",
+                    "花瓣",
+                    "剪影"
                 ]
             },
             "scenes": {
                 "en": [
-                    "garden",
-                    "pond",
                     "outdoor",
                     "nature",
-                    "spring landscape",
-                    "fantasy setting"
+                    "garden",
+                    "pond",
+                    "spring",
+                    "sunset",
+                    "reflections",
+                    "golden hour"
                 ],
                 "zh": [
-                    "花园",
-                    "池塘",
                     "户外",
                     "自然",
-                    "春日风景",
-                    "奇幻场景"
+                    "花园",
+                    "池塘",
+                    "春天",
+                    "日落",
+                    "倒影",
+                    "黄金时段"
                 ]
             },
             "styles": {
                 "en": [
+                    "3D art",
                     "digital art",
-                    "romantic realism",
+                    "silhouette art",
+                    "whimsical",
+                    "dreamy",
+                    "surreal",
+                    "colorful",
                     "fantasy art",
-                    "dreamlike",
-                    "luminous",
-                    "surreal"
+                    "photorealistic",
+                    "illustrative"
                 ],
                 "zh": [
+                    "3D艺术",
                     "数字艺术",
-                    "浪漫写实",
-                    "奇幻艺术",
+                    "剪影艺术",
+                    "奇幻",
                     "梦幻",
-                    "明亮",
-                    "超现实"
+                    "超现实",
+                    "多彩",
+                    "幻想艺术",
+                    "照片写实",
+                    "插画风"
                 ]
             },
             "mood": {
@@ -872,19 +978,21 @@ const PROMPTS = [
                     "romantic",
                     "peaceful",
                     "dreamy",
+                    "loving",
                     "serene",
-                    "hopeful",
-                    "enchanting",
-                    "tender"
+                    "magical",
+                    "joyful",
+                    "hopeful"
                 ],
                 "zh": [
                     "浪漫",
                     "宁静",
                     "梦幻",
-                    "安详",
-                    "充满希望",
-                    "迷人",
-                    "温柔"
+                    "有爱",
+                    "平静",
+                    "神奇",
+                    "欢快",
+                    "充满希望"
                 ]
             }
         }
@@ -909,73 +1017,99 @@ const PROMPTS = [
             "objects": {
                 "en": [
                     "people",
-                    "vehicles",
-                    "city buildings",
-                    "billboards",
-                    "streetlights",
+                    "man",
+                    "woman",
+                    "vintage car",
+                    "modern car",
+                    "billboard",
+                    "digital billboard",
+                    "building",
                     "theater",
-                    "newspaper",
-                    "mobile phones"
+                    "streetcar"
                 ],
                 "zh": [
                     "人群",
-                    "车辆",
-                    "城市建筑",
+                    "男人",
+                    "女人",
+                    "老爷车",
+                    "现代汽车",
                     "广告牌",
-                    "路灯",
+                    "数字广告牌",
+                    "建筑",
                     "剧院",
-                    "报纸",
-                    "手机"
+                    "有轨电车"
                 ]
             },
             "scenes": {
                 "en": [
                     "city street",
-                    "urban area",
-                    "bustling intersection",
-                    "public space",
-                    "times square"
+                    "urban",
+                    "Times Square",
+                    "dusk",
+                    "outdoor",
+                    "bustling street",
+                    "street scene",
+                    "road",
+                    "sidewalk"
                 ],
                 "zh": [
                     "城市街道",
-                    "都市区",
-                    "繁忙的十字路口",
-                    "公共场所",
-                    "时代广场"
+                    "都市",
+                    "时代广场",
+                    "黄昏",
+                    "户外",
+                    "繁忙街道",
+                    "街景",
+                    "道路",
+                    "人行道"
                 ]
             },
             "styles": {
                 "en": [
                     "photorealistic",
-                    "photo manipulation",
-                    "anachronistic",
-                    "digital art",
-                    "juxtaposed realities"
+                    "time blend",
+                    "surreal",
+                    "cinematic",
+                    "retro-futurism",
+                    "juxtaposition",
+                    "realistic",
+                    "mixed eras"
                 ],
                 "zh": [
-                    "写实主义",
-                    "照片合成",
-                    "时代错乱",
-                    "数字艺术",
-                    "现实并置"
+                    "超写实",
+                    "时代融合",
+                    "超现实",
+                    "电影感",
+                    "复古未来主义",
+                    "并置",
+                    "写实",
+                    "时代混搭"
                 ]
             },
             "mood": {
                 "en": [
-                    "energetic",
                     "vibrant",
-                    "contrasting",
                     "lively",
-                    "curious",
-                    "nostalgic"
+                    "energetic",
+                    "busy",
+                    "nostalgic",
+                    "modern",
+                    "contrasting",
+                    "dynamic",
+                    "exciting",
+                    "futuristic"
                 ],
                 "zh": [
-                    "活力四射",
-                    "充满活力的",
-                    "对比鲜明",
+                    "充满活力",
                     "活泼",
-                    "好奇",
-                    "怀旧"
+                    "精力充沛",
+                    "忙碌",
+                    "怀旧",
+                    "现代",
+                    "对比鲜明",
+                    "动态",
+                    "激动人心",
+                    "未来感"
                 ]
             }
         }
@@ -1000,72 +1134,88 @@ const PROMPTS = [
         "aiTags": {
             "objects": {
                 "en": [
-                    "kraft paper bags",
-                    "product packaging",
-                    "stickers",
-                    "cat illustrations",
-                    "baked goods",
-                    "technical drawings",
-                    "text",
-                    "chef hats"
+                    "packaging bag",
+                    "kraft paper bag",
+                    "cat",
+                    "pastry",
+                    "sticker",
+                    "logo",
+                    "PET window",
+                    "design diagram",
+                    "chef's hat",
+                    "food packaging"
                 ],
                 "zh": [
+                    "包装袋",
                     "牛皮纸袋",
-                    "产品包装",
+                    "猫",
+                    "糕点",
                     "贴纸",
-                    "猫咪插画",
-                    "烘焙食品",
-                    "技术图纸",
-                    "文字",
-                    "厨师帽"
+                    "标志",
+                    "PET窗口",
+                    "设计图",
+                    "厨师帽",
+                    "食品包装"
                 ]
             },
             "scenes": {
                 "en": [
-                    "studio",
+                    "studio shot",
+                    "product photography",
                     "white background",
-                    "product display"
+                    "commercial setting",
+                    "indoor"
                 ],
                 "zh": [
-                    "影棚",
+                    "工作室拍摄",
+                    "产品摄影",
                     "白色背景",
-                    "产品展示"
+                    "商业场景",
+                    "室内"
                 ]
             },
             "styles": {
                 "en": [
-                    "product photography",
-                    "technical illustration",
-                    "graphic design",
-                    "minimalist",
-                    "cute",
-                    "commercial"
+                    "packaging design",
+                    "minimalist design",
+                    "cute style",
+                    "modern design",
+                    "clean aesthetic",
+                    "product mockup",
+                    "branding",
+                    "infographic",
+                    "realistic rendering"
                 ],
                 "zh": [
-                    "产品摄影",
-                    "技术插图",
-                    "平面设计",
-                    "极简主义",
+                    "包装设计",
+                    "极简设计",
                     "可爱风格",
-                    "商业风格"
+                    "现代设计",
+                    "简洁美学",
+                    "产品样机",
+                    "品牌设计",
+                    "信息图表",
+                    "写实渲染"
                 ]
             },
             "mood": {
                 "en": [
-                    "informative",
+                    "playful",
                     "professional",
-                    "clean",
-                    "appealing",
+                    "cute",
                     "friendly",
-                    "playful"
+                    "appetizing",
+                    "creative",
+                    "clean"
                 ],
                 "zh": [
-                    "信息丰富",
+                    "俏皮",
                     "专业",
-                    "整洁",
-                    "吸引人的",
-                    "友善的",
-                    "俏皮的"
+                    "可爱",
+                    "友好",
+                    "开胃",
+                    "创意",
+                    "整洁"
                 ]
             }
         }
@@ -1090,86 +1240,106 @@ const PROMPTS = [
         "aiTags": {
             "objects": {
                 "en": [
-                    "scroll map",
-                    "imperial palace",
+                    "scroll",
+                    "miniature city",
+                    "Chinese architecture",
+                    "Forbidden City",
                     "Temple of Heaven",
                     "Great Wall",
                     "mountains",
-                    "traditional buildings",
-                    "miniature people",
-                    "wooden table",
-                    "Chinese calligraphy",
-                    "red seals"
+                    "trees",
+                    "people",
+                    "wooden table"
                 ],
                 "zh": [
-                    "画卷地图",
+                    "画卷",
+                    "微缩城市",
+                    "中国建筑",
                     "故宫",
                     "天坛",
                     "长城",
                     "山脉",
-                    "传统建筑",
-                    "微缩人物",
-                    "木桌",
-                    "中国书法",
-                    "红色印章"
+                    "树木",
+                    "人物",
+                    "木桌"
                 ]
             },
             "scenes": {
                 "en": [
+                    "indoor",
                     "ancient city",
                     "mountain landscape",
-                    "indoor setting",
                     "historical site",
                     "cultural heritage",
-                    "architectural model display"
+                    "traditional Chinese setting",
+                    "misty mountains",
+                    "bird's-eye view",
+                    "study room",
+                    "desk scene"
                 ],
                 "zh": [
+                    "室内",
                     "古城",
-                    "山水景观",
-                    "室内场景",
+                    "山水画",
                     "历史遗迹",
                     "文化遗产",
-                    "建筑模型展示"
+                    "中国传统场景",
+                    "雾山",
+                    "鸟瞰图",
+                    "书房",
+                    "案头场景"
                 ]
             },
             "styles": {
                 "en": [
+                    "3D art",
+                    "miniature",
+                    "isometric view",
                     "traditional Chinese painting",
-                    "ink wash painting",
-                    "3D illustration",
-                    "isometric perspective",
-                    "historical rendering",
-                    "detailed art",
-                    "cultural art"
+                    "digital art",
+                    "detailed",
+                    "realistic",
+                    "diorama",
+                    "classical",
+                    "architectural model"
                 ],
                 "zh": [
-                    "中国传统绘画",
-                    "水墨画",
-                    "3D插画",
-                    "等距视角",
-                    "历史渲染",
-                    "精细艺术",
-                    "文化艺术"
+                    "3D艺术",
+                    "微缩",
+                    "等轴视角",
+                    "中国山水画",
+                    "数字艺术",
+                    "精致",
+                    "写实",
+                    "立体模型",
+                    "古典",
+                    "建筑模型"
                 ]
             },
             "mood": {
                 "en": [
-                    "majestic",
                     "historical",
-                    "peaceful",
                     "grand",
                     "serene",
-                    "evocative",
-                    "reverent"
+                    "artistic",
+                    "intricate",
+                    "reverent",
+                    "nostalgic",
+                    "contemplative",
+                    "majestic",
+                    "cultural"
                 ],
                 "zh": [
-                    "雄伟",
-                    "历史悠久",
-                    "宁静",
+                    "历史感",
                     "宏伟",
-                    "安详",
-                    "引人遐想",
-                    "崇敬"
+                    "宁静",
+                    "艺术性",
+                    "精巧",
+                    "庄重",
+                    "怀旧",
+                    "沉思",
+                    "雄伟",
+                    "文化气息"
                 ]
             }
         }
@@ -1193,86 +1363,106 @@ const PROMPTS = [
         "aiTags": {
             "objects": {
                 "en": [
-                    "floating island",
                     "castle",
-                    "Big Ben",
-                    "Tower Bridge",
-                    "Houses of Parliament",
+                    "bridge",
+                    "buildings",
+                    "cliffs",
                     "river",
                     "waterfalls",
-                    "Stonehenge",
-                    "cliffs",
                     "clouds",
-                    "United Kingdom text",
-                    "map"
+                    "trees",
+                    "island",
+                    "mountains"
                 ],
                 "zh": [
-                    "浮岛",
                     "城堡",
-                    "大本钟",
-                    "伦敦塔桥",
-                    "议会大厦",
+                    "桥梁",
+                    "建筑",
+                    "悬崖",
                     "河流",
                     "瀑布",
-                    "巨石阵",
-                    "悬崖",
                     "云朵",
-                    "英国文字",
-                    "地图"
+                    "树木",
+                    "岛屿",
+                    "山脉"
                 ]
             },
             "scenes": {
                 "en": [
-                    "fantasy landscape",
-                    "aerial view",
+                    "floating island",
                     "sky",
-                    "floating landmass",
-                    "mythical realm"
+                    "cloudscape",
+                    "fantasy landscape",
+                    "United Kingdom",
+                    "outdoors",
+                    "nature",
+                    "aerial view",
+                    "panoramic",
+                    "imaginary world"
                 ],
                 "zh": [
-                    "奇幻景观",
-                    "航拍视角",
+                    "浮岛",
                     "天空",
-                    "漂浮陆地",
-                    "神话境界"
+                    "云海",
+                    "奇幻景观",
+                    "英国",
+                    "户外",
+                    "自然",
+                    "航拍视角",
+                    "全景",
+                    "想象世界"
                 ]
             },
             "styles": {
                 "en": [
                     "digital art",
-                    "photorealistic",
-                    "surrealism",
-                    "concept art",
+                    "photo manipulation",
                     "fantasy art",
-                    "landscape art"
+                    "surrealism",
+                    "detailed",
+                    "photorealistic",
+                    "conceptual art",
+                    "matte painting",
+                    "epic",
+                    "artistic composition"
                 ],
                 "zh": [
                     "数字艺术",
-                    "照片级写实",
-                    "超现实主义",
-                    "概念艺术",
+                    "图像合成",
                     "奇幻艺术",
-                    "风景画"
+                    "超现实主义",
+                    "细节丰富",
+                    "照片般逼真",
+                    "概念艺术",
+                    "背景绘画",
+                    "史诗",
+                    "艺术构图"
                 ]
             },
             "mood": {
                 "en": [
                     "majestic",
                     "dreamlike",
+                    "mysterious",
                     "awe-inspiring",
+                    "fantastical",
+                    "peaceful",
                     "grand",
-                    "serene",
-                    "epic",
-                    "whimsical"
+                    "ethereal",
+                    "wondrous",
+                    "evocative"
                 ],
                 "zh": [
                     "雄伟",
                     "梦幻",
-                    "令人敬畏",
-                    "宏伟",
+                    "神秘",
+                    "令人惊叹",
+                    "奇幻",
                     "宁静",
-                    "史诗",
-                    "异想天开"
+                    "宏伟",
+                    "飘渺",
+                    "奇妙",
+                    "引人联想"
                 ]
             }
         }
@@ -1300,75 +1490,79 @@ const PROMPTS = [
             "objects": {
                 "en": [
                     "Coca-Cola can",
-                    "soda can",
                     "beverage can",
-                    "condensation",
-                    "organic structures",
-                    "root-like structures",
-                    "tendrils"
+                    "water droplets",
+                    "tendrils",
+                    "liquid",
+                    "metal can"
                 ],
                 "zh": [
                     "可口可乐罐",
-                    "汽水罐",
                     "饮料罐",
-                    "冷凝水",
-                    "有机结构",
-                    "根状结构",
-                    "卷须"
+                    "水滴",
+                    "触手",
+                    "液体",
+                    "金属罐"
                 ]
             },
             "scenes": {
                 "en": [
-                    "abstract background",
-                    "stylized environment",
-                    "surreal setting",
-                    "biological landscape"
+                    "abstract",
+                    "surreal",
+                    "fantasy",
+                    "studio shot",
+                    "red background",
+                    "macro shot"
                 ],
                 "zh": [
-                    "抽象背景",
-                    "风格化环境",
-                    "超现实场景",
-                    "生物景观"
+                    "抽象",
+                    "超现实",
+                    "奇幻",
+                    "影棚拍摄",
+                    "红色背景",
+                    "微距拍摄"
                 ]
             },
             "styles": {
                 "en": [
-                    "3D render",
+                    "3D art",
                     "digital art",
                     "photorealistic",
-                    "surrealism",
-                    "high contrast",
-                    "dramatic lighting",
-                    "product photography"
+                    "hyperrealistic",
+                    "product photography",
+                    "advertising photography",
+                    "dynamic composition"
                 ],
                 "zh": [
-                    "3D渲染",
+                    "3D艺术",
                     "数字艺术",
-                    "超写实",
-                    "超现实主义",
-                    "高对比度",
-                    "戏剧性灯光",
-                    "产品摄影"
+                    "写实主义",
+                    "超写实主义",
+                    "产品摄影",
+                    "广告摄影",
+                    "动态构图"
                 ]
             },
             "mood": {
                 "en": [
-                    "intense",
                     "dramatic",
-                    "energetic",
+                    "intense",
+                    "mysterious",
+                    "ominous",
+                    "visceral",
                     "powerful",
-                    "vibrant",
-                    "dynamic",
-                    "fiery"
+                    "captivating",
+                    "unsettling"
                 ],
                 "zh": [
-                    "强烈",
                     "戏剧性",
-                    "活力",
+                    "强烈",
+                    "神秘",
+                    "不祥",
+                    "内脏感",
                     "强大",
-                    "鲜艳",
-                    "动感",
-                    "炽热"
+                    "引人入胜",
+                    "令人不安"
                 ]
             }
         }
@@ -1397,83 +1591,105 @@ const PROMPTS = [
             "objects": {
                 "en": [
                     "floating island",
-                    "clouds",
                     "castle",
-                    "Big Ben",
-                    "Tower Bridge",
-                    "Stonehenge",
-                    "waterfalls",
-                    "green hills"
+                    "landmarks",
+                    "river",
+                    "waterfall",
+                    "cliffs",
+                    "clouds",
+                    "mountains",
+                    "buildings",
+                    "trees"
                 ],
                 "zh": [
                     "浮岛",
-                    "云朵",
                     "城堡",
-                    "大本钟",
-                    "伦敦塔桥",
-                    "巨石阵",
+                    "地标",
+                    "河流",
                     "瀑布",
-                    "绿山"
+                    "悬崖",
+                    "云朵",
+                    "山脉",
+                    "建筑",
+                    "树木"
                 ]
             },
             "scenes": {
                 "en": [
                     "fantasy landscape",
-                    "aerial view",
+                    "United Kingdom",
                     "sky",
-                    "riverscape",
                     "countryside",
-                    "historic landmarks"
+                    "aerial view",
+                    "dreamscape",
+                    "surreal scene",
+                    "mythical place",
+                    "nature",
+                    "epic view"
                 ],
                 "zh": [
                     "奇幻风景",
-                    "鸟瞰",
+                    "英国",
                     "天空",
-                    "河畔风光",
                     "乡村",
-                    "历史地标"
+                    "俯瞰",
+                    "梦境",
+                    "超现实场景",
+                    "神话之地",
+                    "自然",
+                    "史诗景观"
                 ]
             },
             "styles": {
                 "en": [
                     "digital art",
-                    "photorealism",
-                    "fantasy art",
+                    "photomanipulation",
                     "surrealism",
+                    "fantasy art",
                     "landscape art",
                     "concept art",
-                    "matte painting"
+                    "realistic",
+                    "detailed",
+                    "panoramic",
+                    "high fantasy"
                 ],
                 "zh": [
                     "数字艺术",
-                    "超写实主义",
-                    "奇幻艺术",
+                    "照片处理",
                     "超现实主义",
+                    "奇幻艺术",
                     "风景艺术",
                     "概念艺术",
-                    "艺术合成"
+                    "写实",
+                    "细致",
+                    "全景",
+                    "史诗奇幻"
                 ]
             },
             "mood": {
                 "en": [
                     "majestic",
-                    "dreamlike",
-                    "epic",
+                    "dreamy",
+                    "fantastical",
+                    "awe-inspiring",
+                    "mysterious",
                     "grand",
-                    "imaginative",
                     "ethereal",
                     "serene",
-                    "whimsical"
+                    "enchanting",
+                    "hopeful"
                 ],
                 "zh": [
                     "雄伟",
                     "梦幻",
-                    "史诗",
-                    "宏大",
-                    "富有想象力",
-                    "空灵",
+                    "奇幻",
+                    "令人敬畏",
+                    "神秘",
+                    "宏伟",
+                    "飘渺",
                     "宁静",
-                    "异想天开"
+                    "迷人",
+                    "充满希望"
                 ]
             }
         }
@@ -1496,78 +1712,92 @@ const PROMPTS = [
         "aiTags": {
             "objects": {
                 "en": [
-                    "ship in a bottle",
+                    "bottle",
+                    "ship",
                     "pirate ship",
-                    "glass bottle",
                     "cork",
-                    "ocean waves",
-                    "sky",
+                    "water",
+                    "waves",
+                    "clouds",
                     "sun",
+                    "sky",
                     "wooden surface"
                 ],
                 "zh": [
-                    "瓶中船",
+                    "瓶子",
+                    "船",
                     "海盗船",
-                    "玻璃瓶",
                     "软木塞",
-                    "海浪",
-                    "天空",
+                    "水",
+                    "波浪",
+                    "云",
                     "太阳",
-                    "木质表面"
+                    "天空",
+                    "木制表面"
                 ]
             },
             "scenes": {
                 "en": [
-                    "miniature world",
+                    "ship in a bottle",
                     "seascape",
+                    "miniature world",
+                    "ocean",
                     "outdoor",
-                    "still life",
-                    "fantasy scene"
+                    "daytime",
+                    "fantasy world"
                 ],
                 "zh": [
-                    "微缩世界",
+                    "瓶中船",
                     "海景",
+                    "微缩世界",
+                    "海洋",
                     "户外",
-                    "静物",
-                    "奇幻场景"
+                    "白天",
+                    "奇幻世界"
                 ]
             },
             "styles": {
                 "en": [
-                    "photorealistic",
                     "miniature art",
-                    "fantasy art",
                     "diorama",
-                    "hyperrealism"
+                    "craft",
+                    "whimsical",
+                    "fantasy art",
+                    "realistic",
+                    "conceptual",
+                    "detailed"
                 ],
                 "zh": [
-                    "超现实主义",
                     "微缩艺术",
-                    "奇幻艺术",
                     "立体模型",
-                    "高保真"
+                    "手工艺",
+                    "奇幻",
+                    "奇幻艺术",
+                    "写实",
+                    "观念",
+                    "精致"
                 ]
             },
             "mood": {
                 "en": [
                     "adventurous",
-                    "whimsical",
-                    "dreamy",
                     "magical",
-                    "nostalgic",
-                    "serene",
-                    "imaginative",
-                    "sunny"
+                    "dreamy",
+                    "mysterious",
+                    "whimsical",
+                    "peaceful",
+                    "captivating",
+                    "imaginative"
                 ],
                 "zh": [
-                    "冒险",
-                    "异想天开",
+                    "冒险的",
+                    "神奇的",
                     "梦幻",
-                    "神奇",
-                    "怀旧",
-                    "宁静",
-                    "富有想象力",
-                    "阳光"
+                    "神秘的",
+                    "奇幻",
+                    "宁静的",
+                    "引人入胜",
+                    "富有想象力"
                 ]
             }
         }
@@ -1596,80 +1826,104 @@ const PROMPTS = [
                 "en": [
                     "Totoro",
                     "tree",
-                    "cabin",
+                    "house",
                     "umbrella",
-                    "soot sprites",
-                    "acorn",
                     "bus stop",
-                    "grass"
+                    "acorn",
+                    "path",
+                    "bench",
+                    "grass",
+                    "leaves"
                 ],
                 "zh": [
                     "龙猫",
                     "树",
-                    "小木屋",
-                    "雨伞",
-                    "煤炭精灵",
-                    "橡子",
+                    "房子",
+                    "伞",
                     "巴士站",
-                    "草地"
+                    "橡子",
+                    "小路",
+                    "长凳",
+                    "草地",
+                    "树叶"
                 ]
             },
             "scenes": {
                 "en": [
                     "forest",
-                    "rural landscape",
+                    "nature",
+                    "outdoor",
                     "fantasy world",
-                    "yin and yang",
-                    "miniature diorama",
-                    "daytime",
-                    "nighttime"
+                    "miniature world",
+                    "countryside",
+                    "magical landscape",
+                    "Yin and Yang",
+                    "dream world",
+                    "sky"
                 ],
                 "zh": [
                     "森林",
-                    "乡村风光",
+                    "自然",
+                    "户外",
                     "奇幻世界",
+                    "微缩世界",
+                    "乡村",
+                    "魔法景观",
                     "阴阳",
-                    "微缩模型",
-                    "白天",
-                    "夜晚"
+                    "梦境世界",
+                    "天空"
                 ]
             },
             "styles": {
                 "en": [
-                    "3D illustration",
-                    "cartoon",
+                    "3D art",
+                    "digital art",
+                    "illustration",
+                    "cartoon style",
+                    "cute",
                     "whimsical",
-                    "Studio Ghibli style",
+                    "miniature",
                     "stylized",
-                    "fantasy art"
+                    "fantasy art",
+                    "detailed"
                 ],
                 "zh": [
-                    "3D插画",
-                    "卡通",
-                    "异想天开",
-                    "吉卜力风格",
+                    "3D艺术",
+                    "数字艺术",
+                    "插画",
+                    "卡通风格",
+                    "可爱",
+                    "奇幻",
+                    "微缩",
                     "风格化",
-                    "奇幻艺术"
+                    "奇幻艺术",
+                    "细节丰富"
                 ]
             },
             "mood": {
                 "en": [
                     "peaceful",
+                    "dreamy",
+                    "calm",
+                    "joyful",
+                    "whimsical",
                     "magical",
+                    "relaxing",
                     "serene",
-                    "tranquil",
-                    "dreamlike",
                     "enchanting",
-                    "cozy"
+                    "harmonious"
                 ],
                 "zh": [
                     "宁静",
-                    "神奇",
-                    "安详",
-                    "平和",
                     "梦幻",
+                    "平静",
+                    "欢快",
+                    "奇幻",
+                    "神奇",
+                    "轻松",
+                    "祥和",
                     "迷人",
-                    "舒适"
+                    "和谐"
                 ]
             }
         }
@@ -1698,90 +1952,106 @@ const PROMPTS = [
         "aiTags": {
             "objects": {
                 "en": [
+                    "girl",
+                    "catbus",
                     "Totoro",
-                    "Catbus",
-                    "Satsuki",
-                    "Mei",
-                    "Soot sprites",
-                    "Trees",
-                    "Acorns",
-                    "Umbrella"
+                    "umbrella",
+                    "tree",
+                    "house",
+                    "rice paddies",
+                    "acorns",
+                    "leaves",
+                    "soot sprites"
                 ],
                 "zh": [
-                    "龙猫",
+                    "女孩",
                     "猫巴士",
-                    "小月",
-                    "小梅",
-                    "煤炭精灵",
-                    "树木",
+                    "龙猫",
+                    "雨伞",
+                    "树",
+                    "房屋",
+                    "稻田",
                     "橡子",
-                    "雨伞"
+                    "树叶",
+                    "煤炭精灵"
                 ]
             },
             "scenes": {
                 "en": [
-                    "Forest",
-                    "Rural landscape",
-                    "Rice paddies",
-                    "Day scene",
-                    "Night scene",
-                    "Fantasy world",
-                    "Bus stop",
-                    "Path"
+                    "countryside",
+                    "forest",
+                    "daytime",
+                    "nighttime",
+                    "paddy field",
+                    "rural setting",
+                    "path",
+                    "sky",
+                    "clouds",
+                    "moon"
                 ],
                 "zh": [
+                    "乡村",
                     "森林",
-                    "乡村风光",
+                    "白天",
+                    "夜晚",
                     "稻田",
-                    "白天场景",
-                    "夜晚场景",
-                    "幻想世界",
-                    "公交车站",
-                    "小径"
+                    "田园风光",
+                    "小路",
+                    "天空",
+                    "云朵",
+                    "月亮"
                 ]
             },
             "styles": {
                 "en": [
-                    "Anime illustration",
-                    "Cartoon",
-                    "Studio Ghibli style",
-                    "Whimsical",
-                    "Fantasy art",
-                    "Vibrant colors",
-                    "Hand-drawn aesthetic",
-                    "Narrative art"
+                    "anime art",
+                    "illustration",
+                    "fantasy art",
+                    "whimsical",
+                    "colorful",
+                    "Ghibli style",
+                    "cartoon",
+                    "narrative art",
+                    "day and night",
+                    "detailed"
                 ],
                 "zh": [
-                    "动漫插画",
-                    "卡通",
-                    "吉卜力风格",
-                    "异想天开",
+                    "动漫艺术",
+                    "插画",
                     "奇幻艺术",
-                    "鲜艳色彩",
-                    "手绘美学",
-                    "叙事艺术"
+                    "异想天开",
+                    "多彩",
+                    "吉卜力风格",
+                    "卡通",
+                    "叙事艺术",
+                    "日夜交替",
+                    "细节丰富"
                 ]
             },
             "mood": {
                 "en": [
-                    "Joyful",
-                    "Peaceful",
-                    "Magical",
-                    "Whimsical",
-                    "Nostalgic",
-                    "Dreamlike",
-                    "Adventurous",
-                    "Gentle"
+                    "joyful",
+                    "dreamy",
+                    "peaceful",
+                    "magical",
+                    "nostalgic",
+                    "enchanting",
+                    "hopeful",
+                    "warm",
+                    "childhood",
+                    "adventurous"
                 ],
                 "zh": [
-                    "欢乐",
+                    "欢快",
+                    "梦幻",
                     "宁静",
                     "神奇",
-                    "异想天开",
                     "怀旧",
-                    "梦幻",
-                    "冒险",
-                    "温和"
+                    "迷人",
+                    "充满希望",
+                    "温馨",
+                    "童真",
+                    "冒险"
                 ]
             }
         }
@@ -1804,75 +2074,95 @@ const PROMPTS = [
             "objects": {
                 "en": [
                     "robot",
-                    "man",
-                    "computer servers",
-                    "hard drives",
+                    "human",
+                    "computer",
                     "lightbulb",
                     "brain",
-                    "human hand",
-                    "robot hand"
+                    "heart",
+                    "book",
+                    "wrench",
+                    "software bug",
+                    "server stack"
                 ],
                 "zh": [
                     "机器人",
-                    "男人",
-                    "电脑服务器",
-                    "硬盘",
+                    "人物",
+                    "电脑",
                     "灯泡",
                     "大脑",
-                    "人手",
-                    "机械手"
+                    "心",
+                    "书",
+                    "扳手",
+                    "软件错误",
+                    "服务器堆栈"
                 ]
             },
             "scenes": {
                 "en": [
-                    "conceptual space",
-                    "infographic",
-                    "diagram",
-                    "educational setting",
-                    "abstract representation"
+                    "conceptual diagram",
+                    "information visualization",
+                    "abstract setting",
+                    "research process",
+                    "visual explanation"
                 ],
                 "zh": [
-                    "概念空间",
-                    "信息图",
-                    "图表",
-                    "教育场景",
-                    "抽象表现"
+                    "概念图",
+                    "信息可视化",
+                    "抽象场景",
+                    "研究过程",
+                    "视觉解释"
                 ]
             },
             "styles": {
                 "en": [
-                    "cartoon",
                     "illustration",
+                    "cartoon",
                     "hand-drawn",
+                    "infographic",
+                    "diagrammatic",
+                    "conceptual",
                     "line art",
-                    "explanatory graphic",
-                    "doodle"
+                    "clean",
+                    "explanatory",
+                    "technical illustration"
                 ],
                 "zh": [
-                    "卡通",
                     "插画",
+                    "卡通",
                     "手绘",
-                    "线条艺术",
-                    "解释性图表",
-                    "涂鸦"
+                    "信息图",
+                    "图解式",
+                    "概念性",
+                    "线条画",
+                    "简洁",
+                    "说明性",
+                    "技术插画"
                 ]
             },
             "mood": {
                 "en": [
                     "informative",
+                    "thought-provoking",
+                    "innovative",
+                    "futuristic",
                     "analytical",
-                    "forward-thinking",
+                    "hopeful",
+                    "educational",
                     "conceptual",
-                    "optimistic",
-                    "thought-provoking"
+                    "curious",
+                    "strategic"
                 ],
                 "zh": [
-                    "信息丰富",
+                    "信息性",
+                    "引人深思",
+                    "创新",
+                    "未来感",
                     "分析性",
-                    "前瞻性",
+                    "充满希望",
+                    "教育性",
                     "概念性",
-                    "乐观",
-                    "发人深省"
+                    "好奇",
+                    "战略性"
                 ]
             }
         }
@@ -1897,90 +2187,106 @@ const PROMPTS = [
         "aiTags": {
             "objects": {
                 "en": [
-                    "person",
-                    "ring",
-                    "hood",
-                    "cloak",
-                    "tower",
-                    "mountain",
+                    "hooded figure",
+                    "magic ring",
+                    "mountains",
+                    "river",
                     "forest",
-                    "river"
+                    "tower",
+                    "travelers",
+                    "glowing eyes",
+                    "cloak",
+                    "Eye of Sauron"
                 ],
                 "zh": [
-                    "人物",
-                    "戒指",
-                    "兜帽",
-                    "斗篷",
-                    "塔",
+                    "戴兜帽的人",
+                    "魔戒",
                     "山脉",
+                    "河流",
                     "森林",
-                    "河流"
+                    "塔楼",
+                    "旅行者",
+                    "发光的眼睛",
+                    "斗篷",
+                    "索伦之眼"
                 ]
             },
             "scenes": {
                 "en": [
-                    "fantasy landscape",
-                    "forest",
-                    "mountain range",
-                    "river valley",
-                    "volcanic landscape",
-                    "dark fortress",
-                    "quest",
-                    "outdoor"
+                    "fantasy world",
+                    "epic journey",
+                    "wilderness",
+                    "mountain landscape",
+                    "riverbank",
+                    "misty forest",
+                    "twilight",
+                    "mystical scene",
+                    "Middle-earth",
+                    "ominous landscape"
                 ],
                 "zh": [
-                    "奇幻风景",
-                    "森林",
-                    "山脉",
-                    "河谷",
-                    "火山地貌",
-                    "黑暗要塞",
-                    "任务旅程",
-                    "户外"
+                    "奇幻世界",
+                    "史诗旅程",
+                    "荒野",
+                    "山地景观",
+                    "河岸",
+                    "迷雾森林",
+                    "黄昏",
+                    "神秘场景",
+                    "中土世界",
+                    "不祥景观"
                 ]
             },
             "styles": {
                 "en": [
                     "fantasy art",
-                    "movie poster",
                     "digital art",
-                    "photomontage",
-                    "epic",
-                    "dramatic",
+                    "photo manipulation",
+                    "double exposure",
+                    "cinematic",
+                    "dramatic lighting",
+                    "epic art",
                     "dark fantasy",
-                    "double exposure"
+                    "composite image",
+                    "illustrative"
                 ],
                 "zh": [
                     "奇幻艺术",
-                    "电影海报",
                     "数字艺术",
-                    "照片蒙太奇",
-                    "史诗",
-                    "戏剧性",
+                    "照片处理",
+                    "双重曝光",
+                    "电影感",
+                    "戏剧性光照",
+                    "史诗艺术",
                     "黑暗奇幻",
-                    "双重曝光"
+                    "合成图像",
+                    "插画风格"
                 ]
             },
             "mood": {
                 "en": [
                     "epic",
                     "mysterious",
-                    "somber",
                     "adventurous",
-                    "foreboding",
+                    "ominous",
                     "determined",
-                    "perilous",
-                    "sense of journey"
+                    "hopeful",
+                    "solemn",
+                    "powerful",
+                    "dark",
+                    "magical"
                 ],
                 "zh": [
-                    "史诗",
-                    "神秘",
-                    "阴郁",
-                    "冒险",
-                    "不祥",
-                    "坚定",
-                    "危机四伏",
-                    "旅途感"
+                    "史诗般的",
+                    "神秘的",
+                    "冒险的",
+                    "不祥的",
+                    "坚定的",
+                    "充满希望的",
+                    "庄严的",
+                    "强大的",
+                    "黑暗的",
+                    "魔法的"
                 ]
             }
         }
@@ -2008,77 +2314,81 @@ const PROMPTS = [
             "objects": {
                 "en": [
                     "girl",
-                    "beanie hat",
+                    "beanie",
                     "scarf",
                     "sweater",
-                    "tote bag",
-                    "coffee cup",
                     "pumpkin",
+                    "coffee cup",
+                    "tote bag",
                     "boots",
-                    "calendar text",
-                    "Chinese characters"
+                    "gloves",
+                    "skirt"
                 ],
                 "zh": [
                     "女孩",
                     "毛线帽",
                     "围巾",
                     "毛衣",
-                    "手提袋",
-                    "咖啡杯",
                     "南瓜",
+                    "咖啡杯",
+                    "帆布包",
                     "靴子",
-                    "日历文字",
-                    "汉字"
+                    "手套",
+                    "裙子"
                 ]
             },
             "scenes": {
                 "en": [
-                    "calendar illustration",
-                    "clean background",
-                    "seasonal theme"
+                    "autumn",
+                    "Thanksgiving",
+                    "holiday",
+                    "calendar page",
+                    "white background"
                 ],
                 "zh": [
-                    "日历插画",
-                    "简洁背景",
-                    "季节主题"
+                    "秋天",
+                    "感恩节",
+                    "节日",
+                    "日历页",
+                    "白色背景"
                 ]
             },
             "styles": {
                 "en": [
-                    "cartoon",
                     "illustration",
+                    "cartoon",
+                    "cute",
+                    "colorful",
                     "hand-drawn",
-                    "watercolor",
-                    "cute style",
-                    "digital art"
+                    "character art"
                 ],
                 "zh": [
-                    "卡通",
                     "插画",
+                    "卡通",
+                    "可爱",
+                    "多彩",
                     "手绘",
-                    "水彩",
-                    "可爱风格",
-                    "数字艺术"
+                    "人物画"
                 ]
             },
             "mood": {
                 "en": [
+                    "joyful",
+                    "peaceful",
+                    "warm",
                     "cozy",
                     "festive",
-                    "cheerful",
-                    "warm",
-                    "grateful",
-                    "autumnal",
-                    "peaceful"
+                    "happy",
+                    "sweet"
                 ],
                 "zh": [
-                    "温馨",
-                    "节日",
-                    "愉悦",
+                    "欢快",
+                    "宁静",
                     "温暖",
-                    "感恩",
-                    "秋季",
-                    "宁静"
+                    "舒适",
+                    "节日气氛",
+                    "快乐",
+                    "甜美"
                 ]
             }
         }
@@ -2101,86 +2411,20 @@ const PROMPTS = [
         ],
         "aiTags": {
             "objects": {
-                "en": [
-                    "Traditional Chinese architecture",
-                    "Scroll",
-                    "Calligraphy",
-                    "Ink wash landscape",
-                    "Clouds",
-                    "Mountains",
-                    "Pine trees",
-                    "Red seals"
-                ],
-                "zh": [
-                    "中国传统建筑",
-                    "卷轴",
-                    "书法",
-                    "水墨山水画",
-                    "云朵",
-                    "山脉",
-                    "松树",
-                    "红色印章"
-                ]
+                "en": ["glass bottle", "ship", "sea", "boat", "water"],
+                "zh": ["玻璃瓶", "船", "海", "小船", "水"]
             },
             "scenes": {
-                "en": [
-                    "Celestial",
-                    "Fantasy landscape",
-                    "Ancient China",
-                    "Cultural heritage",
-                    "Dreamscape",
-                    "Aerial view"
-                ],
-                "zh": [
-                    "天界",
-                    "奇幻山水",
-                    "古代中国",
-                    "文化遗产",
-                    "梦境",
-                    "鸟瞰"
-                ]
+                "en": ["miniature world", "ocean", "fantasy"],
+                "zh": ["微缩世界", "海洋", "奇幻"]
             },
             "styles": {
-                "en": [
-                    "Traditional Chinese ink painting",
-                    "3D rendering",
-                    "Surrealism",
-                    "Cultural art",
-                    "Classical Chinese art",
-                    "Fantasy art",
-                    "Miniature art"
-                ],
-                "zh": [
-                    "中国水墨画",
-                    "3D渲染",
-                    "超现实主义",
-                    "文化艺术",
-                    "中国古典艺术",
-                    "奇幻艺术",
-                    "微缩艺术"
-                ]
+                "en": ["realistic", "miniature", "3D"],
+                "zh": ["写实", "微缩", "3D"]
             },
             "mood": {
-                "en": [
-                    "Majestic",
-                    "Serene",
-                    "Evocative",
-                    "Peaceful",
-                    "Cultural",
-                    "Ethereal",
-                    "Grand",
-                    "Harmonious"
-                ],
-                "zh": [
-                    "庄严",
-                    "宁静",
-                    "引人遐想",
-                    "平和",
-                    "文化气息",
-                    "飘渺",
-                    "宏伟",
-                    "和谐"
-                ]
+                "en": ["mysterious", "adventurous", "magical"],
+                "zh": ["神秘", "冒险", "奇幻"]
             }
         }
     },
@@ -2201,88 +2445,20 @@ const PROMPTS = [
         ],
         "aiTags": {
             "objects": {
-                "en": [
-                    "cyborg",
-                    "human hand",
-                    "neon signs",
-                    "portal",
-                    "rain",
-                    "skyscrapers",
-                    "buildings",
-                    "umbrella"
-                ],
-                "zh": [
-                    "赛博格",
-                    "人手",
-                    "霓虹灯牌",
-                    "传送门",
-                    "雨水",
-                    "摩天大楼",
-                    "建筑物",
-                    "雨伞"
-                ]
+                "en": ["dinosaur", "city", "people", "street"],
+                "zh": ["恐龙", "城市", "人", "街道"]
             },
             "scenes": {
-                "en": [
-                    "cyberpunk city",
-                    "rainy street",
-                    "futuristic cityscape",
-                    "urban street",
-                    "hong kong",
-                    "dystopian urban",
-                    "parallel worlds"
-                ],
-                "zh": [
-                    "赛博朋克城市",
-                    "雨中街道",
-                    "未来都市景观",
-                    "城市街道",
-                    "香港",
-                    "反乌托邦都市",
-                    "平行世界"
-                ]
+                "en": ["urban", "fantasy", "past and future"],
+                "zh": ["城市", "奇幻", "穿越"]
             },
             "styles": {
-                "en": [
-                    "cyberpunk",
-                    "sci-fi",
-                    "digital art",
-                    "photo manipulation",
-                    "gritty realism",
-                    "futuristic",
-                    "dark fantasy"
-                ],
-                "zh": [
-                    "赛博朋克",
-                    "科幻",
-                    "数字艺术",
-                    "照片处理",
-                    "粗犷写实",
-                    "未来主义",
-                    "黑暗奇幻"
-                ]
+                "en": ["surreal", "photorealistic", "cinematic"],
+                "zh": ["超现实", "写实", "电影感"]
             },
             "mood": {
-                "en": [
-                    "mysterious",
-                    "intriguing",
-                    "gritty",
-                    "futuristic",
-                    "transitional",
-                    "tense",
-                    "awe-inspiring",
-                    "enigmatic"
-                ],
-                "zh": [
-                    "神秘",
-                    "引人入胜",
-                    "粗犷",
-                    "未来感",
-                    "过渡",
-                    "紧张",
-                    "令人敬畏",
-                    "费解"
-                ]
+                "en": ["shocking", "dramatic", "chaotic"],
+                "zh": ["震撼", "戏剧性", "混乱"]
             }
         }
     },
@@ -2306,64 +2482,20 @@ const PROMPTS = [
         ],
         "aiTags": {
             "objects": {
-                "en": [
-                    "Spiderman",
-                    "balloon",
-                    "drawing"
-                ],
-                "zh": [
-                    "蜘蛛侠",
-                    "气球",
-                    "画作"
-                ]
+                "en": ["paper", "layers", "landscape", "mountains"],
+                "zh": ["纸", "层叠", "风景", "山"]
             },
             "scenes": {
-                "en": [
-                    "indoor",
-                    "plain background",
-                    "studio"
-                ],
-                "zh": [
-                    "室内",
-                    "纯色背景",
-                    "工作室"
-                ]
+                "en": ["nature", "abstract landscape"],
+                "zh": ["自然", "抽象风景"]
             },
             "styles": {
-                "en": [
-                    "illustration",
-                    "hand-drawn",
-                    "stippling",
-                    "chibi art",
-                    "cartoon",
-                    "minimalist"
-                ],
-                "zh": [
-                    "插画",
-                    "手绘",
-                    "点画法",
-                    "Q版艺术",
-                    "卡通",
-                    "极简主义"
-                ]
+                "en": ["paper cut", "layered", "minimalist", "craft"],
+                "zh": ["剪纸", "层叠", "极简", "手工"]
             },
             "mood": {
-                "en": [
-                    "playful",
-                    "cute",
-                    "joyful",
-                    "whimsical",
-                    "lighthearted",
-                    "happy"
-                ],
-                "zh": [
-                    "俏皮",
-                    "可爱",
-                    "欢乐",
-                    "异想天开",
-                    "轻松愉快",
-                    "幸福"
-                ]
+                "en": ["calm", "artistic", "soft"],
+                "zh": ["平静", "艺术", "柔和"]
             }
         }
     },
@@ -2384,76 +2516,20 @@ const PROMPTS = [
         ],
         "aiTags": {
             "objects": {
-                "en": [
-                    "children",
-                    "boy",
-                    "girl",
-                    "baby",
-                    "siblings",
-                    "clothing"
-                ],
-                "zh": [
-                    "孩子",
-                    "男孩",
-                    "女孩",
-                    "婴儿",
-                    "兄弟姐妹",
-                    "服装"
-                ]
+                "en": ["face", "woman", "vintage photo", "scratch"],
+                "zh": ["脸", "女性", "老照片", "划痕"]
             },
             "scenes": {
-                "en": [
-                    "indoor",
-                    "studio",
-                    "home",
-                    "portrait session"
-                ],
-                "zh": [
-                    "室内",
-                    "摄影棚",
-                    "家",
-                    "肖像摄影"
-                ]
+                "en": ["studio", "portrait", "past"],
+                "zh": ["工作室", "肖像", "过去"]
             },
             "styles": {
-                "en": [
-                    "vintage photography",
-                    "old photo",
-                    "damaged photo",
-                    "contemporary photography",
-                    "comparison photo",
-                    "before and after",
-                    "portrait"
-                ],
-                "zh": [
-                    "复古摄影",
-                    "旧照片",
-                    "损坏照片",
-                    "现代摄影",
-                    "对比照片",
-                    "前后对比",
-                    "肖像"
-                ]
+                "en": ["restoration", "vintage", "black and white"],
+                "zh": ["修复", "复古", "黑白"]
             },
             "mood": {
-                "en": [
-                    "nostalgic",
-                    "innocent",
-                    "heartwarming",
-                    "sweet",
-                    "joyful",
-                    "affectionate",
-                    "endearing"
-                ],
-                "zh": [
-                    "怀旧",
-                    "天真",
-                    "温暖人心",
-                    "甜蜜",
-                    "快乐",
-                    "亲昵",
-                    "可爱"
-                ]
+                "en": ["nostalgic", "precious", "historical"],
+                "zh": ["怀旧", "珍贵", "历史"]
             }
         }
     },
@@ -2475,82 +2551,20 @@ const PROMPTS = [
         ],
         "aiTags": {
             "objects": {
-                "en": [
-                    "woman",
-                    "girl",
-                    "glass jar",
-                    "Christmas tree",
-                    "snow",
-                    "fairy lights",
-                    "earrings",
-                    "constellations"
-                ],
-                "zh": [
-                    "女人",
-                    "女孩",
-                    "玻璃罐",
-                    "圣诞树",
-                    "雪",
-                    "小彩灯",
-                    "耳环",
-                    "星座"
-                ]
+                "en": ["snow globe", "portrait", "girl", "snow"],
+                "zh": ["水晶球", "肖像", "女孩", "雪"]
             },
             "scenes": {
-                "en": [
-                    "indoor",
-                    "Christmas setting",
-                    "fantasy scene",
-                    "dreamscape",
-                    "miniature world"
-                ],
-                "zh": [
-                    "室内",
-                    "圣诞场景",
-                    "奇幻场景",
-                    "梦幻世界",
-                    "微缩世界"
-                ]
+                "en": ["winter", "fantasy", "magical"],
+                "zh": ["冬天", "奇幻", "魔法"]
             },
             "styles": {
-                "en": [
-                    "digital art",
-                    "photo manipulation",
-                    "realistic",
-                    "surrealism",
-                    "festive",
-                    "portrait"
-                ],
-                "zh": [
-                    "数字艺术",
-                    "照片处理",
-                    "写实",
-                    "超现实主义",
-                    "节日",
-                    "肖像"
-                ]
+                "en": ["3D render", "cute", "cartoon"],
+                "zh": ["3D渲染", "可爱", "卡通"]
             },
             "mood": {
-                "en": [
-                    "magical",
-                    "dreamy",
-                    "peaceful",
-                    "enchanting",
-                    "whimsical",
-                    "warm",
-                    "nostalgic",
-                    "festive"
-                ],
-                "zh": [
-                    "魔幻",
-                    "梦幻",
-                    "宁静",
-                    "迷人",
-                    "异想天开",
-                    "温馨",
-                    "怀旧",
-                    "节日"
-                ]
+                "en": ["dreamy", "peaceful", "wintery"],
+                "zh": ["梦幻", "宁静", "寒冷"]
             }
         }
     }
