@@ -69,28 +69,30 @@ button.login-trigger-btn.logged-in {
    Targeting .user-avatar-btn structure
    ========================================================================== */
 
-/* 1. Ensure the container button is circular and doesn't shrink */
+/* 1. Ensure the container button matches main page size (48px, avatar 40px centered inside) */
 .user-avatar-btn {
-    width: 44px !important;
-    height: 44px !important;
-    min-width: 44px !important;
-    min-height: 44px !important;
+    width: 48px !important;
+    height: 48px !important;
+    min-width: 48px !important;
+    min-height: 48px !important;
     border-radius: 50% !important;
     padding: 0 !important;
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
-    background: var(--card-bg) !important;
-    overflow: hidden !important;
+    background: transparent !important;
+    overflow: visible !important;
     flex-shrink: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
 }
 
-/* 2. Force the image to cover exactly */
+/* 2. Force the image to cover exactly - match main page avatar size */
 .user-avatar-btn img {
-    width: 100% !important;
-    height: 100% !important;
-    min-width: 100% !important;
-    min-height: 100% !important;
+    width: 40px !important;
+    height: 40px !important;
+    min-width: 40px !important;
+    min-height: 40px !important;
     object-fit: cover !important;
     border-radius: 50% !important;
     display: block !important;

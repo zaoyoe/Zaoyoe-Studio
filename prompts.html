@@ -16,7 +16,7 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
-    <link rel="stylesheet" href="avatar-fix.css?v=2">
+    <link rel="stylesheet" href="avatar-fix.css?v=4">
 
     <!-- Prevent flash of wrong theme - Critical CSS -->
     <script>
@@ -25,6 +25,21 @@
             if (savedTheme === 'dark') {
                 document.documentElement.setAttribute('data-theme', 'dark');
             }
+        })();
+    </script>
+    <!-- Prevent avatar flash - Pre-render from cache -->
+    <script>
+        (function () {
+            try {
+                const cached = localStorage.getItem('cached_user_profile');
+                if (cached) {
+                    const profile = JSON.parse(cached);
+                    if (profile && profile.avatarUrl) {
+                        // Store for use after DOM ready
+                        window.__cachedUserProfile = profile;
+                    }
+                }
+            } catch (e) { /* ignore */ }
         })();
     </script>
     <style>
@@ -57,6 +72,12 @@
             opacity: 1;
         }
     </style>
+    <!-- Pre-show logged-in buttons if cache exists -->
+    <script>
+        if (window.__cachedUserProfile) {
+            document.write('<style>#profileBtn, #switchAccountBtn, #logoutBtn { display: flex !important; }</style>');
+        }
+    </script>
 </head>
 
 <body>
@@ -69,13 +90,22 @@
     <!-- User Avatar Menu -->
     <div class="user-avatar-container" id="userAvatarContainer">
         <button class="user-avatar-btn" id="userAvatarBtn" onclick="toggleAvatarMenu()">
-            <i class="fas fa-user"></i>
+            <script>
+                // Inline script to prevent flash - render avatar or icon based on cache
+                if (window.__cachedUserProfile && window.__cachedUserProfile.avatarUrl) {
+                    document.write('<img src="' + window.__cachedUserProfile.avatarUrl + '" alt="Avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">');
+                } else {
+                    document.write('<i class="fas fa-user"></i>');
+                }
+            </script>
         </button>
 
         <!-- Glassmorphism Dropdown -->
         <div class="avatar-dropdown" id="avatarDropdown">
             <div class="dropdown-header">
-                <span class="identity-name">Guest</span>
+                <span class="identity-name">
+                    <script>document.write(window.__cachedUserProfile ? (window.__cachedUserProfile.nickname || window.__cachedUserProfile.username || 'Guest') : 'Guest');</script>
+                </span>
                 <button class="theme-toggle-btn" id="themeToggleBtn" onclick="toggleTheme(event)">
                     <span class="theme-icon sun-icon">☀️</span>
                     <span class="theme-icon moon-icon">🌙</span>
@@ -177,7 +207,11 @@
                     <i class="fas fa-chevron-right"></i>
                 </button>
                 <div id="modalImgCounter" class="modal-img-counter">1 / 1</div>
+
+                <!-- Target Area for Prompt Docking (FLIP Animation Destination) -->
+                <div id="promptDockTarget" class="prompt-dock-target"></div>
             </div>
+
             <div class="modal-content-col">
                 <div class="modal-header">
                     <div id="modalTitle" class="modal-title-large">Title</div>
@@ -190,13 +224,43 @@
                     Description goes here...
                 </p>
 
-                <div class="prompt-area">
-                    <button class="copy-btn" onclick="copyPromptText(this)">
-                        <i class="fas fa-copy"></i> Copy
-                    </button>
-                    <span class="prompt-label">Prompt</span>
-                    <div id="modalPromptText" class="prompt-text">
-                        Loading prompt...
+                <!-- Prompt Area (FLIP Animation Source) -->
+                <div id="promptArea" class="prompt-area">
+                    <div class="prompt-content-wrapper">
+                        <span class="prompt-label">Prompt</span>
+                        <div id="modalPromptText" class="prompt-text blur-masked">
+                            Loading prompt...
+                        </div>
+                    </div>
+
+                    <!-- Action Bar: Unlock & Comment Trigger -->
+                    <div class="prompt-action-bar">
+                        <div class="action-left">
+                            <button id="unlockPromptBtn" class="unlock-btn" onclick="handleUnlockPrompt()">
+                                <i class="fas fa-gem"></i> 10
+                            </button>
+                        </div>
+                        <div class="action-right">
+                            <button id="commentTriggerBtn" class="comment-trigger-btn" onclick="toggleCommentMode()">
+                                <i class="fas fa-comment-dots"></i>
+                                <span id="commentCountBadge" class="comment-count">0</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Comment Section (Initially Hidden) -->
+                <div id="commentSection" class="comment-section">
+                    <div class="comment-list" id="commentList">
+                        <!-- Comments injected here -->
+                    </div>
+
+                    <div class="comment-input-area">
+                        <input type="text" id="commentInput" placeholder="Add a comment (+5 pts)..."
+                            onkeydown="handleCommentKeydown(event)">
+                        <button id="sendCommentBtn" class="send-comment-btn" onclick="submitComment()">
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
                     </div>
                 </div>
             </div>

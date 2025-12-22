@@ -258,12 +258,25 @@ async function checkAuthState() {
             .eq('id', user.id)
             .single();
 
+        // Validate custom avatar (same logic as prompts-poetry.js)
+        let validCustomAvatar = null;
+        const MIN_BASE64_LENGTH = 100;
+
+        if (profile?.avatar_url) {
+            const url = profile.avatar_url.trim();
+            if (url.startsWith('http')) {
+                validCustomAvatar = url;
+            } else if (url.startsWith('data:') && url.length > MIN_BASE64_LENGTH) {
+                validCustomAvatar = url;
+            }
+        }
+
         updateUserUI({
             objectId: user.id,
             username: user.email,
             email: user.email,
             nickname: profile?.username || user.user_metadata?.full_name || user.email.split('@')[0],
-            avatarUrl: profile?.avatar_url || user.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.email)}&background=random`
+            avatarUrl: validCustomAvatar || user.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.email)}&background=6b9ece&color=fff`
         });
     } else {
         console.log('❌ 用户未登录');
@@ -292,6 +305,7 @@ function updateUserUI(user) {
         if (defaultIcon) defaultIcon.style.display = 'none';
         if (navAvatar) {
             const newAvatarUrl = user.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.nickname || user.username || 'User')}&background=random`;
+            const fallbackUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.nickname || user.username || 'User')}&background=6b9ece&color=fff`;
 
             // 🆕 只在头像 URL 变化时才更新，避免闪烁
             const currentSrc = navAvatar.src;
@@ -301,6 +315,13 @@ function updateUserUI(user) {
             navAvatar.style.visibility = 'visible';
             navAvatar.style.opacity = '1';
             navAvatar.classList.add('show');
+
+            // 🆕 Add error handler for when Google CDN is rate-limited (429) or unavailable
+            navAvatar.onerror = function () {
+                console.warn('⚠️ Avatar load failed (possibly rate limited), using fallback');
+                this.onerror = null; // Prevent infinite loop
+                this.src = fallbackUrl;
+            };
 
             if (urlChanged) {
                 navAvatar.classList.remove('animate-in');

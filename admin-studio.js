@@ -240,7 +240,8 @@ async function editPrompt(id) {
                             uploadedFiles.push({
                                 file: null,
                                 dataUrl: reader.result,
-                                base64: reader.result.split(',')[1]
+                                base64: reader.result.split(',')[1],
+                                url: imageUrl  // Store original URL to reuse in uploadImages
                             });
                             resolve();
                         };
@@ -1254,16 +1255,41 @@ async function uploadImages() {
     for (let i = 0; i < uploadedFiles.length; i++) {
         const item = uploadedFiles[i];
 
-        // Create WebP blob from base64
-        const base64 = item.base64;
-        const isWebP = item.dataUrl?.startsWith('data:image/webp');
-        const mimeType = isWebP ? 'image/webp' : 'image/jpeg';
-        const extension = isWebP ? '.webp' : '.jpg';
+        // If item already has a public URL (existing image in edit mode), just use it
+        if (item.url && item.url.startsWith('http')) {
+            urls.push(item.url);
+            console.log(`♻️ Reusing existing URL: ${item.url.substring(0, 50)}...`);
+            continue;
+        }
 
-        // Convert base64 to blob
+        // Determine mime type from dataUrl (handles PNG from crop, WebP, JPEG, etc.)
+        let mimeType = 'image/jpeg';
+        let extension = '.jpg';
+
+        if (item.dataUrl) {
+            if (item.dataUrl.startsWith('data:image/png')) {
+                mimeType = 'image/png';
+                extension = '.png';
+            } else if (item.dataUrl.startsWith('data:image/webp')) {
+                mimeType = 'image/webp';
+                extension = '.webp';
+            } else if (item.dataUrl.startsWith('data:image/gif')) {
+                mimeType = 'image/gif';
+                extension = '.gif';
+            }
+        }
+
+        // Get base64 data
+        const base64 = item.base64;
+        if (!base64) {
+            console.warn(`⚠️ No base64 data for image ${i}, skipping`);
+            continue;
+        }
+
+        // Convert base64 to blob with correct mime type
         const blob = await fetch(`data:${mimeType};base64,${base64}`).then(r => r.blob());
 
-        // Generate filename with WebP extension
+        // Generate filename
         const baseName = item.file?.name?.replace(/\.[^.]+$/, '') || 'image';
         const fileName = `${Date.now()}_${i}_${baseName.replace(/[^a-zA-Z0-9]/g, '_')}${extension}`;
 
@@ -1279,7 +1305,7 @@ async function uploadImages() {
             .getPublicUrl(fileName);
 
         urls.push(urlData.publicUrl);
-        console.log(`📤 Uploaded ${fileName} (${isWebP ? 'WebP' : 'Original'})`);
+        console.log(`📤 Uploaded ${fileName} (${mimeType})`);
     }
 
     return urls;
@@ -2032,11 +2058,16 @@ function applyCrop() {
         // Convert to data URL
         const croppedDataUrl = croppedCanvas.toDataURL('image/png', 1.0);
 
-        // Update the file in uploadedFiles array
+        // Extract base64 data (remove the data:image/png;base64, prefix)
+        const croppedBase64 = croppedDataUrl.split(',')[1];
+
+        // Update the file in uploadedFiles array - IMPORTANT: update both dataUrl AND base64
         const originalFile = uploadedFiles[cropImageIndex];
         uploadedFiles[cropImageIndex] = {
             ...originalFile,
             dataUrl: croppedDataUrl,
+            base64: croppedBase64,  // This is what uploadImages() uses!
+            url: null,  // CLEAR url so this cropped image gets uploaded as new!
             cropped: true
         };
 

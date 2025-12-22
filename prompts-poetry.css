@@ -130,6 +130,8 @@
     --modal-bg: #1e293b;
     --modal-overlay: rgba(0, 0, 0, 0.65);
     --footer-border: rgba(255, 255, 255, 0.05);
+    --accent-starry: #6b9ece;
+    /* Starry blue for dark mode accents */
 }
 
 /* Dark mode: remove card borders, update modal */
@@ -1435,7 +1437,7 @@ body {
 }
 
 .modal-image-col {
-    flex: 1.2;
+    flex: 1;
     background: var(--modal-img-bg, #f1f5f9);
     position: relative;
     overflow: hidden;
@@ -1599,44 +1601,553 @@ body {
 .prompt-label {
     font-size: 0.8rem;
     text-transform: uppercase;
+    display: block;
+    margin-bottom: 12px;
     letter-spacing: 0.1em;
     color: var(--accent-purple);
-    margin-bottom: 10px;
-    display: block;
+    font-weight: 600;
 }
 
 .prompt-text {
-    font-family: monospace;
+    font-size: 0.95rem;
     line-height: 1.6;
     color: var(--text-main);
-    max-height: 200px;
+    word-break: break-all;
+    max-height: 120px;
     overflow-y: auto;
-    font-size: 0.95rem;
+    padding-right: 10px;
 }
 
-.copy-btn {
-    position: absolute;
-    top: 15px;
-    right: 15px;
-    background: var(--card-bg);
-    border: 1px solid var(--card-border);
-    color: #64748b;
-    padding: 6px 12px;
-    border-radius: 20px;
-    cursor: pointer;
-    font-size: 0.8rem;
-    transition: all 0.2s;
+/* --- Gallery 4.0 Spatial Flow & Comment System --- */
+
+/* 1. Prompt Blur Mask (The Mystery) */
+.prompt-text.blur-masked {
+    mask-image: linear-gradient(to bottom, black 40%, transparent 95%);
+    -webkit-mask-image: linear-gradient(to bottom, black 40%, transparent 95%);
+    /* Prevent scrolling when masked to keep the mystery static */
+    overflow: hidden;
+    pointer-events: none;
+    /* Prevent text selection cheaters */
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+/* 2. Action Bar & Trigger Buttons */
+.prompt-action-bar {
     display: flex;
     align-items: center;
-    gap: 6px;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+    justify-content: space-between;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--card-border);
 }
 
-.copy-btn:hover {
-    background: var(--accent-purple);
-    border-color: var(--accent-purple);
-    color: white;
+.unlock-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    background: rgba(139, 92, 246, 0.1);
+    color: var(--accent-purple);
+    border: 1px solid rgba(139, 92, 246, 0.2);
+    border-radius: 20px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
 }
+
+.unlock-btn:hover {
+    background: rgba(139, 92, 246, 0.2);
+    transform: translateY(-1px);
+}
+
+/* The Subtle "Ripple" Trigger */
+.comment-trigger-btn {
+    position: relative;
+    width: 36px;
+    height: 36px;
+    border: none;
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+.comment-trigger-btn i {
+    font-size: 1.1rem;
+}
+
+.comment-trigger-btn:hover {
+    background: rgba(0, 0, 0, 0.05);
+    color: var(--text-main);
+    transform: scale(1.05);
+}
+
+/* Ripple effect (simulated with shadow) */
+.comment-trigger-btn::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.4);
+    opacity: 0;
+    transition: all 0.6s ease;
+    pointer-events: none;
+}
+
+.comment-trigger-btn:hover::after {
+    animation: simpleRipple 1.5s infinite;
+}
+
+@keyframes simpleRipple {
+    0% {
+        box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.4);
+        opacity: 0.8;
+    }
+
+    100% {
+        box-shadow: 0 0 0 15px rgba(139, 92, 246, 0);
+        opacity: 0;
+    }
+}
+
+/* Dark Mode: Starry Blue for Prompt Area Elements */
+[data-theme="dark"] .prompt-label {
+    color: var(--accent-starry);
+}
+
+[data-theme="dark"] .unlock-btn {
+    background: rgba(107, 158, 206, 0.15);
+    color: var(--accent-starry);
+    border-color: rgba(107, 158, 206, 0.3);
+}
+
+[data-theme="dark"] .unlock-btn:hover {
+    background: rgba(107, 158, 206, 0.25);
+}
+
+/* Dark mode ripple uses starry blue */
+[data-theme="dark"] .comment-trigger-btn::after {
+    box-shadow: 0 0 0 0 rgba(107, 158, 206, 0.4);
+}
+
+@keyframes simpleRippleStarry {
+    0% {
+        box-shadow: 0 0 0 0 rgba(107, 158, 206, 0.4);
+        opacity: 0.8;
+    }
+
+    100% {
+        box-shadow: 0 0 0 15px rgba(107, 158, 206, 0);
+        opacity: 0;
+    }
+}
+
+[data-theme="dark"] .comment-trigger-btn:hover::after {
+    animation: simpleRippleStarry 1.5s infinite;
+}
+
+.comment-count {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    background: #ef4444;
+    color: white;
+    font-size: 0.6rem;
+    padding: 2px 5px;
+    border-radius: 10px;
+    min-width: 16px;
+    text-align: center;
+    border: 2px solid var(--card-bg);
+    /* Cutout effect */
+}
+
+/* 3. Spatial Flow Layout States */
+
+/* Target dock space in the left column - use calc to stay within bounds */
+.prompt-dock-target {
+    position: absolute;
+    bottom: 16px;
+    left: 16px;
+    width: calc(100% - 32px);
+    height: auto;
+    z-index: 10;
+    pointer-events: none;
+    /* Let clicks pass through if empty */
+}
+
+/* When in Comment Mode:
+   - Image moves up
+   - Prompt Area is moved to left column (handled by JS reparenting usually, but we define styles here)
+*/
+.modal-inner.comment-mode .modal-image-col img {
+    /* Image moves up */
+    top: 35% !important;
+    transform: translate(-50%, -50%) scale(0.85);
+}
+
+/* DOCKED Prompt Styling (When prompt is in the left column) */
+.prompt-area.docked {
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    border-radius: 12px;
+    padding: 12px;
+    margin: 0;
+    width: 100%;
+    box-sizing: border-box;
+    animation: promptDockIn 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+/* Limit prompt text height when docked */
+.prompt-area.docked .prompt-text {
+    max-height: 80px;
+}
+
+[data-theme="dark"] .prompt-area.docked {
+    background: rgba(30, 41, 59, 0.85);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+@keyframes promptDockIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* 4. Clean Stream Comment Section */
+.modal-inner.comment-mode .modal-content-col {
+    overflow: hidden;
+    /* Lock outer scroll, enable inner scroll */
+}
+
+.comment-section {
+    position: relative;
+    /* Catch absolute input bar */
+    display: none;
+    /* Initially hidden */
+    flex: 1;
+    overflow: hidden;
+    /* Manage scroll internally */
+    flex-direction: column;
+    margin-top: 20px;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 0.4s ease, transform 0.4s ease;
+}
+
+.modal-inner.comment-mode .comment-section {
+    display: flex;
+    opacity: 1;
+    transform: translateY(0);
+    animation: commentsFadeIn 0.4s ease 0.2s backwards;
+    /* Staggered delay */
+}
+
+@keyframes commentsFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.comment-list {
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 8px;
+    /* Room for scrollbar */
+    margin-bottom: 60px;
+    /* Space for input bar */
+}
+
+/* Custom Scrollbar for comments */
+.comment-list::-webkit-scrollbar {
+    width: 4px;
+}
+
+.comment-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.comment-list::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.1);
+    border-radius: 4px;
+}
+
+/* Single Comment Item */
+.comment-item {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    font-size: 0.95rem;
+    position: relative;
+}
+
+/* Only show separator in light mode */
+[data-theme="light"] .comment-item {
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.comment-item:last-child {
+    margin-bottom: 8px;
+}
+
+/* Reply Comments - Thread Styling */
+.comment-item.comment-reply {
+    margin-left: 24px;
+    padding-left: 20px;
+}
+
+/* Thread Line - Vertical connector */
+.comment-item.comment-reply .thread-line {
+    position: absolute;
+    left: 0;
+    top: -8px;
+    bottom: 0;
+    width: 1px;
+    background: var(--card-border);
+}
+
+/* For the last reply, shorter thread line */
+.comment-item.comment-reply.last-reply .thread-line {
+    bottom: auto;
+    height: 26px;
+}
+
+/* "Replying to @username" text */
+.comment-replying-to {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+}
+
+/* Light mode thread line - uses same --card-border variable */
+
+.comment-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.comment-body {
+    flex: 1;
+    min-width: 0;
+    /* Prevent content overflow */
+}
+
+.comment-header {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 6px;
+}
+
+.comment-author {
+    font-weight: 600;
+    color: var(--text-main);
+    font-size: 0.9rem;
+}
+
+.comment-time {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    opacity: 0.7;
+}
+
+.comment-content {
+    color: var(--text-main);
+    line-height: 1.6;
+    margin-bottom: 10px;
+}
+
+/* Comment @mentions */
+.comment-mention {
+    color: var(--accent-starry, #6b9ece);
+    font-weight: 500;
+}
+
+[data-theme="light"] .comment-mention {
+    color: var(--accent-purple, #8b5cf6);
+}
+
+/* Comment Actions - Hidden by default, show on hover */
+.comment-actions {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    font-size: 0.8rem;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.comment-item:hover .comment-actions {
+    opacity: 1;
+}
+
+/* Action Button - Pill style with soft hover */
+.comment-action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 6px 12px;
+    border-radius: 16px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    transition: all 0.25s ease;
+}
+
+.comment-action-btn:hover {
+    background: rgba(107, 158, 206, 0.12);
+    color: var(--accent-starry, #6b9ece);
+}
+
+[data-theme="light"] .comment-action-btn:hover {
+    background: rgba(139, 92, 246, 0.1);
+    color: var(--accent-purple, #8b5cf6);
+}
+
+.comment-action-btn i {
+    font-size: 0.85rem;
+}
+
+/* Liked state */
+.comment-action-btn.liked {
+    color: #ef4444;
+}
+
+.comment-action-btn.liked:hover {
+    background: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+}
+
+/* 5. Floating Input Bar */
+.comment-input-area {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    /* Relative to content-col */
+    padding: 20px 40px;
+    /* Match modal padding */
+    background: linear-gradient(to top, var(--modal-bg) 80%, transparent 100%);
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+#commentInput {
+    flex: 1;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--card-border);
+    padding: 10px 0;
+    color: var(--text-main);
+    font-size: 0.95rem;
+    transition: border-color 0.3s ease;
+}
+
+#commentInput:focus {
+    outline: none;
+    border-bottom-color: var(--accent-purple);
+}
+
+.send-comment-btn {
+    background: transparent;
+    border: none;
+    color: var(--accent-purple);
+    font-size: 1.2rem;
+    cursor: pointer;
+    opacity: 0.6;
+    transition: all 0.3s ease;
+}
+
+.send-comment-btn:hover {
+    opacity: 1;
+    transform: translateX(3px);
+}
+
+/* Dark Mode: Starry Blue for Comment Section */
+[data-theme="dark"] #commentInput:focus {
+    border-bottom-color: var(--accent-starry);
+}
+
+[data-theme="dark"] .send-comment-btn {
+    color: var(--accent-starry);
+}
+
+[data-theme="dark"] .comment-action-btn.reply-btn {
+    color: var(--accent-starry);
+}
+
+/* @mention styling for both themes */
+.mention {
+    color: var(--accent-purple);
+    font-weight: 500;
+}
+
+[data-theme="dark"] .mention {
+    color: var(--accent-starry);
+}
+
+/* Mobile Fallback: Bottom Sheet (Optional override) */
+@media (max-width: 768px) {
+    .modal-inner {
+        flex-direction: column;
+        overflow-y: auto;
+        /* Let layout flow naturally */
+    }
+
+    .modal-image-col {
+        height: 40vh;
+        /* Shorter image area */
+    }
+
+    .prompt-dock-target {
+        display: none;
+        /* No docking on mobile */
+    }
+
+    .modal-content-col {
+        padding: 24px;
+    }
+
+    /* Mobile comment mode: just expand */
+    .modal-inner.comment-mode .modal-image-col img {
+        top: 50% !important;
+        transform: translate(-50%, -50%) !important;
+    }
+}
+
+
 
 .close-modal-btn {
     position: fixed;

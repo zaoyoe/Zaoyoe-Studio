@@ -287,8 +287,76 @@ async function checkAuthState() {
                     : displayName;
             }
 
-            if (avatarBtn && user.user_metadata?.avatar_url) {
-                avatarBtn.innerHTML = `<img src="${user.user_metadata.avatar_url}" alt="Avatar">`;
+            // 🆕 Fetch profile from database to get custom avatar
+            let customAvatarUrl = null;
+            try {
+                const { data: profile, error } = await window.supabaseClient
+                    .from('profiles')
+                    .select('avatar_url')
+                    .eq('id', user.id)
+                    .single();
+
+                console.log('📷 Profile avatar check:', {
+                    hasProfile: !!profile,
+                    avatarUrl: profile?.avatar_url ? profile.avatar_url.substring(0, 50) + '...' : 'NULL',
+                    error: error?.message
+                });
+
+                // Check if avatar is valid AND has sufficient data content (prevent 1x1 pixel images)
+                // A 1x1 pixel base64 png is usually very short (~60-80 chars). A real avatar is much larger.
+                const MIN_BASE64_LENGTH = 100;
+
+                if (!error && profile?.avatar_url && profile.avatar_url.trim() !== '') {
+                    const url = profile.avatar_url;
+                    let isValid = false;
+
+                    if (url.startsWith('http')) {
+                        isValid = true;
+                    } else if (url.startsWith('data:')) {
+                        // Check base64 length to filter out broken/empty images
+                        if (url.length > MIN_BASE64_LENGTH) {
+                            isValid = true;
+                        } else {
+                            console.warn('⚠️ Ignored invalid/too small base64 avatar:', url.substring(0, 50) + '...');
+                        }
+                    }
+
+                    if (isValid) {
+                        customAvatarUrl = url;
+                        console.log('✅ Using custom avatar from profiles table');
+                    }
+                }
+            } catch (e) {
+                console.warn('Could not fetch profile avatar:', e);
+            }
+
+            if (avatarBtn) {
+                // Priority: 1. Custom avatar from profiles table, 2. Google avatar, 3. Default
+                const avatarUrl = customAvatarUrl || user.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.email)}&background=6b9ece&color=fff`;
+                const fallbackUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.email)}&background=6b9ece&color=fff`;
+
+                // Create image with proper error handling
+                const img = document.createElement('img');
+                img.alt = 'Avatar';
+                img.onerror = function () {
+                    console.warn('⚠️ Avatar load failed, using fallback');
+                    this.onerror = null;
+                    this.src = fallbackUrl;
+                };
+                img.src = avatarUrl;
+
+                // Clear and append
+                avatarBtn.innerHTML = '';
+                avatarBtn.appendChild(img);
+
+                // 🆕 Update localStorage cache with correct avatar to prevent flash on next load
+                const cachedProfile = {
+                    avatarUrl: avatarUrl,
+                    nickname: displayName,
+                    username: user.email
+                };
+                localStorage.setItem('cached_user_profile', JSON.stringify(cachedProfile));
+                console.log('💾 Updated cached_user_profile with correct avatar');
             }
 
             // Show Profile and Switch Account for all logged-in users
@@ -1299,8 +1367,33 @@ function renderGallery(filter, reset = true) {
         // Filter items based on current filter
         if (filter === 'favorites') {
             allFilteredItems = PROMPTS.filter(p => favorites.has(p.id));
-        } else {
+        } else if (filter === 'all') {
             allFilteredItems = [...PROMPTS];
+        } else {
+            // Filter by category tag OR AI tags (for sub-tag filtering)
+            const filterLower = filter.toLowerCase();
+            allFilteredItems = PROMPTS.filter(p => {
+                // Check main tags array
+                if (p.tags && p.tags.some(t => t.toLowerCase() === filterLower)) {
+                    return true;
+                }
+                // Check AI tags (styles, mood, scenes, objects)
+                if (p.aiTags) {
+                    const checkTags = (tags) => {
+                        if (!tags) return false;
+                        return ['en', 'zh'].some(lang =>
+                            tags[lang] && tags[lang].some(t => t.toLowerCase().includes(filterLower))
+                        );
+                    };
+                    if (checkTags(p.aiTags.styles) ||
+                        checkTags(p.aiTags.mood) ||
+                        checkTags(p.aiTags.scenes) ||
+                        checkTags(p.aiTags.objects)) {
+                        return true;
+                    }
+                }
+                return false;
+            });
         }
     }
 
@@ -2393,27 +2486,56 @@ function applySearchResults(cards, matchedIds, searchingForColor) {
 // --- Modal Logic ---
 let currentModalImageIndex = 0;
 let currentModalImages = [];
+let isCommentMode = false;
+let currentPromptId = null;
 
 function openPromptModal(id) {
     const item = PROMPTS.find(p => p.id === id);
     if (!item) return;
 
+    currentPromptId = item.supabaseId || item.id; // Prefer persistent UUID if available
     const modal = document.getElementById('promptModal');
+
+    // Reset State
+    isCommentMode = false;
+    modal.querySelector('.modal-inner').classList.remove('comment-mode');
+
+    // Reset Prompt Area (in case it was docked/moved)
+    const promptArea = document.getElementById('promptArea');
+    const contentCol = document.querySelector('.modal-content-col');
+    if (promptArea.parentNode !== contentCol) {
+        // Move back to original column
+        promptArea.classList.remove('docked');
+        contentCol.appendChild(promptArea);
+        // Correct insertion order: before comment section
+        const commentSection = document.getElementById('commentSection');
+        contentCol.insertBefore(promptArea, commentSection);
+    }
+
+    // Reset Unlock State
+    const unlockBtn = document.getElementById('unlockPromptBtn');
+    const promptText = document.getElementById('modalPromptText');
+    promptText.classList.add('blur-masked');
+    unlockBtn.innerHTML = '<i class="fas fa-gem"></i> 10';
+    unlockBtn.onclick = handleUnlockPrompt;
+    unlockBtn.className = 'unlock-btn'; // remove 'copy' style
 
     // Store images for navigation
     currentModalImages = item.images || [];
     currentModalImageIndex = 0;
 
-    // Reset Image Container
+    // Reset Image Container - remove ALL images (including leftovers from transitions)
     const imgContainer = document.querySelector('.modal-image-col');
-    // Keep navigation buttons, remove old images
-    const oldImg = document.getElementById('modalImg');
-    if (oldImg) oldImg.remove();
+    const allImages = imgContainer.querySelectorAll('img');
+    allImages.forEach(img => img.remove());
+
+    // Reset animation lock
+    isModalImageAnimating = false;
 
     // Create fresh image
     const newImg = document.createElement('img');
     newImg.id = 'modalImg';
-    newImg.className = 'active'; // Visible by default
+    newImg.className = 'active';
     newImg.src = currentModalImages[0];
     newImg.alt = item.title;
 
@@ -2424,10 +2546,13 @@ function openPromptModal(id) {
     // Populate Data
     document.getElementById('modalTitle').textContent = item.title;
     document.getElementById('modalDesc').textContent = item.description;
-    document.getElementById('modalPromptText').textContent = item.prompt;
 
+    // Set prompt text (ensure clean connection)
+    promptText.textContent = item.prompt;
+
+    // Tags hidden as per user request
     const tagsContainer = document.getElementById('modalTags');
-    tagsContainer.innerHTML = item.tags.map(t => `<span style="padding:4px 10px; border:1px solid rgba(0,0,0,0.2); border-radius:12px;">${t}</span>`).join('');
+    tagsContainer.innerHTML = ''; // Hidden
 
     // Show/hide navigation arrows and counter
     const hasMultipleImages = currentModalImages.length > 1;
@@ -2446,22 +2571,616 @@ function openPromptModal(id) {
         counter.style.display = 'none';
     }
 
+    // Reset Comments
+    document.getElementById('commentList').innerHTML = '';
+    document.getElementById('commentCountBadge').textContent = '0';
+
+    // Check unlock status (if logged in)
+    checkUnlockStatus(currentPromptId);
+
+    // Fetch comment count
+    fetchCommentCount(currentPromptId);
+
     modal.classList.add('active');
-    document.body.style.overflow = 'hidden'; // Prevent background scroll
+    document.body.style.overflow = 'hidden';
 }
+
+// --- Spatial Flow & Comment Logic ---
+
+function toggleCommentMode() {
+    const modalInner = document.querySelector('.modal-inner');
+    const promptArea = document.getElementById('promptArea');
+    const dockTarget = document.getElementById('promptDockTarget');
+    const contentCol = document.querySelector('.modal-content-col');
+
+    if (isCommentMode) {
+        // CLOSE COMMENTS (Revert to default)
+        isCommentMode = false;
+        modalInner.classList.remove('comment-mode');
+
+        // FLIP: Move Prompt back to Right Column
+        // 1. First: Measure current position (docked)
+        const first = promptArea.getBoundingClientRect();
+
+        // 2. State: Move DOM
+        promptArea.classList.remove('docked');
+        const commentSection = document.getElementById('commentSection');
+        contentCol.insertBefore(promptArea, commentSection); // Insert before comments
+
+        // 3. Last: Measure new position
+        const last = promptArea.getBoundingClientRect();
+
+        // 4. Invert & Play
+        const dx = first.left - last.left;
+        const dy = first.top - last.top;
+
+        promptArea.style.transform = `translate(${dx}px, ${dy}px)`;
+        promptArea.style.width = `${first.width}px`; // Maintain width during transition
+
+        requestAnimationFrame(() => {
+            promptArea.style.transition = 'transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1), width 0.5s ease';
+            promptArea.style.transform = '';
+            promptArea.style.width = '';
+
+            setTimeout(() => {
+                promptArea.style.transition = '';
+            }, 500);
+        });
+
+    } else {
+        // OPEN COMMENTS (Activate Spatial Flow)
+        isCommentMode = true;
+        modalInner.classList.add('comment-mode');
+
+        // Fetch comments
+        fetchComments(currentPromptId);
+
+        // FLIP: Move Prompt to Left Column Dock
+        // 1. First: Measure current position
+        const first = promptArea.getBoundingClientRect();
+
+        // 2. State: Move DOM to Dock Target
+        // We append it to the dock target container
+        dockTarget.appendChild(promptArea);
+        promptArea.classList.add('docked');
+
+        // 3. Last: Measure new position
+        const last = promptArea.getBoundingClientRect();
+
+        // 4. Invert & Play
+        const dx = first.left - last.left;
+        const dy = first.top - last.top;
+        const wRatio = first.width / last.width;
+
+        promptArea.style.transform = `translate(${dx}px, ${dy}px) scale(${wRatio})`;
+        promptArea.style.transformOrigin = 'top left';
+
+        requestAnimationFrame(() => {
+            // Apply transition
+            promptArea.style.transition = 'transform 0.6s cubic-bezier(0.19, 1, 0.22, 1)';
+            promptArea.style.transform = ''; // Animate to zero
+
+            setTimeout(() => {
+                promptArea.style.transition = '';
+            }, 600);
+        });
+    }
+}
+
+// --- Unlock & Points Logic ---
+
+async function checkUnlockStatus(promptId) {
+    if (!window.supabaseClient) return;
+    const { data: { user } } = await window.supabaseClient.auth.getUser();
+    if (!user) return; // Not logged in
+
+    try {
+        // Check if unlocked in DB
+        const { data, error } = await window.supabaseClient
+            .from('prompt_unlocks')
+            .select('*')
+            .eq('user_id', user.id)
+            .eq('prompt_id', promptId) // Assuming promptId matches bigInt logic
+            .maybeSingle();
+
+        if (data) {
+            setPromptUnlocked();
+        }
+    } catch (err) {
+        console.error("Unlock check failed", err);
+    }
+}
+
+async function handleUnlockPrompt() {
+    if (!window.supabaseClient) {
+        alert("Please connect to database for points system.");
+        return;
+    }
+
+    // 1. Check Auth
+    const { data: { user } } = await window.supabaseClient.auth.getUser();
+    if (!user) {
+        // Trigger login modal
+        showLoginModal();
+        return;
+    }
+
+    const unlockBtn = document.getElementById('unlockPromptBtn');
+
+    // 2. Optimistic UI update (optional, but safer to wait for RPC)
+    unlockBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+    // 3. Call RPC
+    try {
+        const { data, error } = await window.supabaseClient
+            .rpc('unlock_prompt', {
+                p_prompt_id: currentPromptId,
+                p_cost: 10
+            });
+
+        if (error) throw error;
+
+        if (data.success) {
+            setPromptUnlocked();
+            // Show toast or confetti?
+            console.log("Unlocked! New Balance:", data.new_balance);
+        } else {
+            alert(data.error || "Unlock failed");
+            unlockBtn.innerHTML = '<i class="fas fa-gem"></i> 10';
+        }
+    } catch (err) {
+        console.error(err);
+        alert("Transaction failed");
+        unlockBtn.innerHTML = '<i class="fas fa-gem"></i> 10';
+    }
+}
+
+function setPromptUnlocked() {
+    const promptText = document.getElementById('modalPromptText');
+    const unlockBtn = document.getElementById('unlockPromptBtn');
+
+    // Remove blur
+    promptText.classList.remove('blur-masked');
+
+    // Transform button to Copy
+    unlockBtn.innerHTML = '<i class="fas fa-copy"></i> Copy';
+    unlockBtn.className = 'copy-btn'; // Switch to simple style
+    unlockBtn.onclick = function () { copyPromptText(this); };
+}
+
+function copyPromptText(btn) {
+    const text = document.getElementById('modalPromptText').textContent;
+    navigator.clipboard.writeText(text).then(() => {
+        const originalContent = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-check"></i> Copied';
+        setTimeout(() => {
+            btn.innerHTML = originalContent;
+        }, 2000);
+    });
+}
+
+// --- Comment System (Supabase) ---
+
+async function fetchCommentCount(promptId) {
+    if (!window.supabaseClient) return;
+    const { count } = await window.supabaseClient
+        .from('prompt_comments')
+        .select('*', { count: 'exact', head: true })
+        .eq('prompt_id', promptId);
+
+    document.getElementById('commentCountBadge').textContent = count || 0;
+}
+
+async function fetchComments(promptId) {
+    if (!window.supabaseClient) return;
+    const list = document.getElementById('commentList');
+    list.innerHTML = '<div style="padding:20px; text-align:center; color:#999;">Loading...</div>';
+
+    // Start all queries in parallel for faster loading
+    const [userResult, commentsResult] = await Promise.all([
+        window.supabaseClient.auth.getUser(),
+        window.supabaseClient
+            .from('prompt_comments')
+            .select(`
+                *,
+                profiles:user_id (id, username, avatar_url)
+            `)
+            .eq('prompt_id', promptId)
+            .order('created_at', { ascending: true })
+    ]);
+
+    const currentUser = userResult.data?.user;
+    const currentUserId = currentUser?.id || null;
+    const { data, error } = commentsResult;
+
+    if (error) {
+        console.error("Comment Load Error:", error);
+        list.innerHTML = '<div style="padding:20px; text-align:center; color:red;">Failed to load comments</div>';
+        return;
+    }
+
+    // Parallel fetch: user profile avatar AND likes for all comments
+    const commentIds = data.map(c => c.id);
+
+    const [profileResult, likesResult] = await Promise.all([
+        // Fetch current user's avatar (only if logged in)
+        currentUserId
+            ? window.supabaseClient.from('profiles').select('avatar_url').eq('id', currentUserId).single()
+            : Promise.resolve({ data: null }),
+        // Fetch all likes for these comments (only if there are comments)
+        commentIds.length > 0
+            ? window.supabaseClient.from('comment_likes').select('comment_id, user_id').in('comment_id', commentIds)
+            : Promise.resolve({ data: [] })
+    ]);
+
+    // Process user avatar
+    let currentUserAvatar = null;
+    const dbAvatar = profileResult.data?.avatar_url;
+    if (dbAvatar && dbAvatar.trim() !== '' &&
+        (dbAvatar.startsWith('http') || (dbAvatar.startsWith('data:') && dbAvatar.length > 100))) {
+        currentUserAvatar = dbAvatar;
+    }
+
+    // Process likes
+    let userLikedCommentIds = new Set();
+    let commentLikeCounts = new Map();
+
+    if (likesResult.data) {
+        likesResult.data.forEach(like => {
+            if (like.user_id === currentUserId) {
+                userLikedCommentIds.add(like.comment_id);
+            }
+            commentLikeCounts.set(
+                like.comment_id,
+                (commentLikeCounts.get(like.comment_id) || 0) + 1
+            );
+        });
+    }
+
+    list.innerHTML = '';
+    if (data.length === 0) {
+        list.innerHTML = '<div style="padding:40px; text-align:center; color:#999; font-style:italic;">No comments yet. Be the first to analyze this art.</div>';
+        return;
+    }
+
+    // Build comment lookup map for finding parent info
+    const commentMap = new Map();
+    data.forEach(c => commentMap.set(c.id, c));
+
+    // Build reply map: parent_id -> [replies]
+    const replyMap = new Map();
+    data.filter(c => c.parent_id).forEach(reply => {
+        if (!replyMap.has(reply.parent_id)) {
+            replyMap.set(reply.parent_id, []);
+        }
+        replyMap.get(reply.parent_id).push(reply);
+    });
+
+    // Get root-level comments (no parent)
+    const rootComments = data.filter(c => !c.parent_id);
+
+    // Recursive function to render a comment and all its nested replies
+    const renderThread = (comment, isReply = false, isLastInThread = false) => {
+        const overrideAvatar = (comment.user_id === currentUserId) ? currentUserAvatar : null;
+        const replies = replyMap.get(comment.id) || [];
+        const hasReplies = replies.length > 0;
+
+        // Get parent profile for "Replying to" display
+        const parentProfile = comment.parent_id ? commentMap.get(comment.parent_id)?.profiles : null;
+
+        // Check if current user has liked this comment
+        const isLiked = userLikedCommentIds.has(comment.id);
+
+        // Get like count from our fresh count map
+        const likeCount = commentLikeCounts.get(comment.id) || 0;
+
+        renderComment(comment, overrideAvatar, parentProfile, hasReplies, isLastInThread && !hasReplies, isLiked, likeCount);
+
+        // Render all nested replies
+        replies.forEach((reply, index) => {
+            const isLast = index === replies.length - 1;
+            renderThread(reply, true, isLast);
+        });
+    };
+
+    // Render all root comments and their threads
+    rootComments.forEach(rootComment => {
+        renderThread(rootComment, false, false);
+    });
+
+    // Scroll to top to show first comments
+    setTimeout(() => {
+        list.scrollTop = 0;
+    }, 100);
+}
+
+function renderComment(comment, overrideAvatar = null, replyToProfile = null, hasReplies = false, isLastReply = false, isLiked = false, likeCount = 0) {
+    const list = document.getElementById('commentList');
+    // Handle various profile structures (standard vs metadata)
+    const profile = comment.profiles || {};
+
+    // Priority: Profile username -> Metadata name -> Email prefix -> 'Anonymous'
+    const name = profile.username || (profile.email ? profile.email.split('@')[0] : 'Anonymous');
+
+    // Robust Avatar Resolution - prioritize override from session
+    const avatarUrl = overrideAvatar || getAvatarUrl(profile);
+    const fallbackUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=6b9ece&color=fff`;
+
+    // Determine if this is a reply
+    const isReply = !!comment.parent_id;
+    const replyToName = replyToProfile?.username || 'someone';
+
+    // Build "Replying to" HTML if this is a reply
+    const replyingToHtml = isReply
+        ? `<div class="comment-replying-to">Replying to <span class="comment-mention">@${escapeHtml(replyToName)}</span></div>`
+        : '';
+
+    // Remove leading @replyToName from content if it duplicates the "Replying to" display
+    let displayContent = comment.content;
+    if (isReply && replyToName) {
+        // Match @username (case insensitive) at the start of content
+        const mentionPattern = new RegExp(`^@${replyToName}\\s*`, 'i');
+        displayContent = displayContent.replace(mentionPattern, '').trim();
+    }
+
+    // Determine heart icon class and style based on isLiked
+    const heartIconClass = isLiked ? 'fas fa-heart' : 'far fa-heart';
+    const heartStyle = isLiked ? 'style="color: #e74c3c;"' : '';
+
+    const div = document.createElement('div');
+    div.className = 'comment-item' + (isReply ? ' comment-reply' : '') + (hasReplies ? ' has-replies' : '') + (isLastReply ? ' last-reply' : '');
+    div.dataset.commentId = comment.id;
+    div.innerHTML = `
+        ${isReply ? '<div class="thread-line"></div>' : ''}
+        <img src="${avatarUrl}" class="comment-avatar" alt="${name}" onerror="this.onerror=null;this.src='${fallbackUrl}';">
+        <div class="comment-body">
+            ${replyingToHtml}
+            <div class="comment-header">
+                <span class="comment-author">${escapeHtml(name)} ${isAdminUser(comment.profiles?.email) ? '✨' : ''}</span>
+                <span class="comment-time">${new Date(comment.created_at).toLocaleDateString()}</span>
+            </div>
+            <div class="comment-content">${formatMentions(displayContent)}</div>
+            <div class="comment-actions">
+                <button class="comment-action-btn like-btn" data-liked="${isLiked}">
+                    <i class="${heartIconClass}" ${heartStyle}></i> <span class="like-count">${likeCount}</span>
+                </button>
+                <button class="comment-action-btn reply-btn">Reply</button>
+            </div>
+        </div>
+    `;
+
+    // Add event listeners
+    const likeBtn = div.querySelector('.like-btn');
+    const replyBtn = div.querySelector('.reply-btn');
+
+    likeBtn.addEventListener('click', () => handleLikeComment(comment.id, likeBtn));
+    replyBtn.addEventListener('click', () => handleReplyComment(comment.id, name));
+
+    list.appendChild(div);
+}
+
+async function handleLikeComment(commentId, button) {
+    if (!window.supabaseClient) {
+        alert('请登录后点赞');
+        return;
+    }
+
+    const { data: { user } } = await window.supabaseClient.auth.getUser();
+    if (!user) {
+        showLoginModal();
+        return;
+    }
+
+    const isLiked = button.dataset.liked === 'true';
+    const icon = button.querySelector('i');
+    const countSpan = button.querySelector('.like-count');
+    let currentCount = parseInt(countSpan.textContent) || 0;
+
+    // Optimistic UI update
+    if (isLiked) {
+        // Unlike
+        icon.className = 'far fa-heart';
+        icon.style.color = '';
+        countSpan.textContent = Math.max(0, currentCount - 1);
+        button.dataset.liked = 'false';
+    } else {
+        // Like
+        icon.className = 'fas fa-heart';
+        icon.style.color = '#e74c3c';
+        countSpan.textContent = currentCount + 1;
+        button.dataset.liked = 'true';
+    }
+
+    // Update database - only manage comment_likes table, count is derived from there
+    try {
+        if (isLiked) {
+            // Remove like from comment_likes table
+            await window.supabaseClient
+                .from('comment_likes')
+                .delete()
+                .eq('comment_id', commentId)
+                .eq('user_id', user.id);
+        } else {
+            // Add like to comment_likes table
+            await window.supabaseClient
+                .from('comment_likes')
+                .insert({ comment_id: commentId, user_id: user.id });
+        }
+    } catch (err) {
+        console.error('Like error:', err);
+        // Revert on error
+        countSpan.textContent = currentCount;
+        button.dataset.liked = isLiked ? 'true' : 'false';
+        icon.className = isLiked ? 'fas fa-heart' : 'far fa-heart';
+        icon.style.color = isLiked ? '#e74c3c' : '';
+    }
+}
+
+function handleReplyComment(commentId, authorName) {
+    const input = document.getElementById('commentInput');
+    if (input) {
+        input.value = `@${authorName} `;
+        input.focus();
+        input.dataset.replyTo = commentId;
+    }
+}
+
+function getAvatarUrl(profile) {
+    // Consistent fallback for all avatars (Starry Blue)
+    const getDefaultAvatar = (identifier) =>
+        `https://ui-avatars.com/api/?name=${encodeURIComponent(identifier || 'User')}&background=6b9ece&color=fff`;
+
+    // Identifier for fallback (prefer username or nothing)
+    const identifier = profile?.username || profile?.user_metadata?.full_name || 'User';
+    const DEFAULT_AVATAR = getDefaultAvatar(identifier);
+
+    // Helper to validate avatar URL
+    const isValidUrl = (url) => {
+        if (!url || typeof url !== 'string') return false;
+        const trimmed = url.trim();
+        if (trimmed === '' || trimmed === 'null' || trimmed === 'undefined') return false;
+
+        if (trimmed.startsWith('data:')) {
+            // Check base64 length (prevent 1x1 pixel images)
+            return trimmed.length > 100;
+        }
+
+        return trimmed.startsWith('http');
+    };
+
+    if (!profile) return DEFAULT_AVATAR;
+
+    // DEBUG: trace what profile data we receive
+    console.log('🔍 getAvatarUrl debug:', {
+        profileAvatarUrl: profile.avatar_url ? profile.avatar_url.substring(0, 60) + '...' : 'NULL',
+        userMetadataAvatar: profile.user_metadata?.avatar_url ? profile.user_metadata.avatar_url.substring(0, 60) + '...' : 'NULL',
+        isValidDbAvatar: isValidUrl(profile.avatar_url)
+    });
+
+    // 1. Try direct avatar_url from profile (DB)
+    if (isValidUrl(profile.avatar_url)) return profile.avatar_url.trim();
+
+    // 2. Try metadata avatar (Auth)
+    const meta = profile.user_metadata || {};
+    if (isValidUrl(meta.avatar_url)) return meta.avatar_url.trim();
+
+    // 3. Fallback
+    return DEFAULT_AVATAR;
+}
+
+function isAdminUser(email) {
+    return email === 'zaoyoe@gmail.com'; // Hardcoded check matching existing logic
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function formatMentions(text) {
+    // First escape HTML, then wrap @mentions in styled spans
+    const escaped = escapeHtml(text);
+    return escaped.replace(/@(\w+)/g, '<span class="mention">@$1</span>');
+}
+
+function handleCommentKeydown(e) {
+    if (e.key === 'Enter') {
+        submitComment();
+    }
+}
+
+async function submitComment() {
+    if (!window.supabaseClient) return;
+
+    const input = document.getElementById('commentInput');
+    const content = input.value.trim();
+    if (!content) return;
+
+    // Check auth
+    const { data: { user } } = await window.supabaseClient.auth.getUser();
+    if (!user) {
+        showLoginModal();
+        return;
+    }
+
+    // Get parent_id if this is a reply
+    const parentId = input.dataset.replyTo || null;
+
+    // Build insert data
+    const insertData = {
+        prompt_id: currentPromptId,
+        user_id: user.id,
+        content: content
+    };
+
+    // Only add parent_id if it's a reply
+    if (parentId) {
+        insertData.parent_id = parentId;
+    }
+
+    // Insert to DB
+    const { data, error } = await window.supabaseClient
+        .from('prompt_comments')
+        .insert(insertData)
+        .select()
+        .single();
+
+    if (error) {
+        alert("Failed to post comment");
+        return;
+    }
+
+    // Clear input and reply state
+    input.value = '';
+    delete input.dataset.replyTo;
+
+    // Refresh comments to show proper threading
+    fetchComments(currentPromptId);
+
+    // Add points logic implies call to server or trigger, handled by DB trigger? 
+    // We update UI badge
+    const badge = document.getElementById('commentCountBadge');
+    badge.textContent = parseInt(badge.textContent) + 1;
+}
+
+// Animation lock to prevent rapid click issues
+let isModalImageAnimating = false;
 
 function updateModalImage(index) {
     if (currentModalImages.length === 0) return;
+
+    // Prevent rapid clicks from causing issues
+    if (isModalImageAnimating) {
+        console.log('⏳ Image transition in progress, ignoring click');
+        return;
+    }
+    isModalImageAnimating = true;
+
+    // Safety timeout: release lock after 5 seconds in case image never loads
+    const safetyTimeout = setTimeout(() => {
+        if (isModalImageAnimating) {
+            console.warn('⚠️ Image load timeout, releasing animation lock');
+            isModalImageAnimating = false;
+        }
+    }, 5000);
 
     currentModalImageIndex = index;
 
     const imgContainer = document.querySelector('.modal-image-col');
     const currentImg = document.getElementById('modalImg');
 
+    // Remove any leftover transition images first
+    const leftoverImages = imgContainer.querySelectorAll('.modal-next-image');
+    leftoverImages.forEach(img => img.remove());
+
     // 1. Create new image (hidden)
     const newImg = document.createElement('img');
     newImg.src = currentModalImages[index];
     newImg.className = 'modal-next-image'; // Position absolute, opacity 0
+
+    // Important: if in comment mode, new image also needs top:35% style? 
+    // Handled by CSS selector .modal-inner.comment-mode .modal-image-col img
 
     // Insert after current image
     imgContainer.insertBefore(newImg, currentImg.nextSibling);
@@ -2474,6 +3193,9 @@ function updateModalImage(index) {
             currentImg.classList.add('animate-out'); // Add fade out to old image
 
             setTimeout(() => {
+                // Clear safety timeout since load was successful
+                clearTimeout(safetyTimeout);
+
                 // Remove old image and clean up new one
                 if (currentImg && currentImg.parentNode) {
                     currentImg.remove();
@@ -2481,8 +3203,18 @@ function updateModalImage(index) {
                 newImg.id = 'modalImg';
                 newImg.classList.remove('modal-next-image', 'animate-in');
                 newImg.className = 'active';
+
+                // Release the lock
+                isModalImageAnimating = false;
             }, 300); // Slightly faster cleanup
         });
+    };
+
+    // Fallback: release lock if image fails to load
+    newImg.onerror = () => {
+        console.warn('⚠️ Modal image failed to load, releasing lock');
+        clearTimeout(safetyTimeout);
+        isModalImageAnimating = false;
     };
 
     updateModalCounter();
@@ -2509,25 +3241,31 @@ function navigateModalImage(direction) {
 
 function closePromptModal() {
     const modal = document.getElementById('promptModal');
+
+    // If closing while in comment mode, revert DOM first to prevent glitches next time
+    if (isCommentMode) {
+        // Simple revert without animation
+        const promptArea = document.getElementById('promptArea');
+        const contentCol = document.querySelector('.modal-content-col');
+        const commentSection = document.getElementById('commentSection');
+        if (promptArea.parentNode !== contentCol) {
+            promptArea.classList.remove('docked');
+            contentCol.insertBefore(promptArea, commentSection);
+        }
+    }
+
+    // Reset image state to prevent issues when reopening
+    isModalImageAnimating = false;
+
+    // Clean up any leftover images in the modal
+    const imgContainer = document.querySelector('.modal-image-col');
+    if (imgContainer) {
+        const allImages = imgContainer.querySelectorAll('img');
+        allImages.forEach(img => img.remove());
+    }
+
     modal.classList.remove('active');
     document.body.style.overflow = '';
-}
-
-// --- Copy Functionality ---
-function copyPromptText(btn) {
-    const text = document.getElementById('modalPromptText').textContent;
-    navigator.clipboard.writeText(text).then(() => {
-        const originalContent = btn.innerHTML;
-        btn.innerHTML = '<i class="fas fa-check"></i> Copied';
-        btn.style.color = '#4ade80';
-        btn.style.borderColor = '#4ade80';
-
-        setTimeout(() => {
-            btn.innerHTML = originalContent;
-            btn.style.color = '';
-            btn.style.borderColor = '';
-        }, 2000);
-    });
 }
 
 // Close modal on outside click
