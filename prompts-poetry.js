@@ -2500,6 +2500,14 @@ function openPromptModal(id) {
     isCommentMode = false;
     modal.querySelector('.modal-inner').classList.remove('comment-mode');
 
+    // Reset comment button state to match
+    const triggerBtn = document.getElementById('commentTriggerBtn');
+    if (triggerBtn) {
+        triggerBtn.classList.remove('active');
+        const icon = triggerBtn.querySelector('i');
+        if (icon) icon.className = 'fas fa-comment-dots';
+    }
+
     // Reset Prompt Area (in case it was docked/moved)
     const promptArea = document.getElementById('promptArea');
     const contentCol = document.querySelector('.modal-content-col');
@@ -2593,46 +2601,54 @@ function toggleCommentMode() {
     const dockTarget = document.getElementById('promptDockTarget');
     const contentCol = document.querySelector('.modal-content-col');
 
+
     if (isCommentMode) {
         // CLOSE COMMENTS (Revert to default)
         isCommentMode = false;
         modalInner.classList.remove('comment-mode');
 
-        // FLIP: Move Prompt back to Right Column
-        // 1. First: Measure current position (docked)
-        const first = promptArea.getBoundingClientRect();
+        // Update toggle button - revert to comment icon
+        const triggerBtn = document.getElementById('commentTriggerBtn');
+        if (triggerBtn) {
+            triggerBtn.classList.remove('active');
+            triggerBtn.querySelector('i').className = 'fas fa-comment-dots';
+        }
 
-        // 2. State: Move DOM
+        // FLIP: Move Prompt back to Right Column
+        // 1. Move DOM
         promptArea.classList.remove('docked');
         const commentSection = document.getElementById('commentSection');
-        contentCol.insertBefore(promptArea, commentSection); // Insert before comments
+        contentCol.insertBefore(promptArea, commentSection);
 
-        // 3. Last: Measure new position
-        const last = promptArea.getBoundingClientRect();
+        // 2. Apply "Return" Animation (Slide from Left)
+        promptArea.classList.remove('returning');
+        void promptArea.offsetWidth; // Trigger reflow
+        promptArea.classList.add('returning');
 
-        // 4. Invert & Play
-        const dx = first.left - last.left;
-        const dy = first.top - last.top;
+        // Motion Blur for Image
+        const img = document.querySelector('.modal-image-col img');
+        if (img) img.classList.add('blur-motion');
 
-        promptArea.style.transform = `translate(${dx}px, ${dy}px)`;
-        promptArea.style.width = `${first.width}px`; // Maintain width during transition
-
-        requestAnimationFrame(() => {
-            promptArea.style.transition = 'transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1), width 0.5s ease';
-            promptArea.style.transform = '';
-            promptArea.style.width = '';
-
-            setTimeout(() => {
-                promptArea.style.transition = '';
-            }, 500);
-        });
+        setTimeout(() => {
+            promptArea.classList.remove('returning');
+            if (img) img.classList.remove('blur-motion');
+        }, 500);
 
     } else {
         // OPEN COMMENTS (Activate Spatial Flow)
         isCommentMode = true;
         modalInner.classList.add('comment-mode');
 
+        // Update toggle button - change to close icon
+        const triggerBtn = document.getElementById('commentTriggerBtn');
+        if (triggerBtn) {
+            triggerBtn.classList.add('active');
+            triggerBtn.querySelector('i').className = 'fas fa-chevron-right';
+        }
+
         // Fetch comments
+
+
         fetchComments(currentPromptId);
 
         // FLIP: Move Prompt to Left Column Dock
@@ -2657,12 +2673,17 @@ function toggleCommentMode() {
 
         requestAnimationFrame(() => {
             // Apply transition
-            promptArea.style.transition = 'transform 0.6s cubic-bezier(0.19, 1, 0.22, 1)';
+            promptArea.style.transition = 'transform 0.5s ease-in-out';
             promptArea.style.transform = ''; // Animate to zero
+
+            // Motion Blur for Image
+            const img = document.querySelector('.modal-image-col img');
+            if (img) img.classList.add('blur-motion');
 
             setTimeout(() => {
                 promptArea.style.transition = '';
-            }, 600);
+                if (img) img.classList.remove('blur-motion');
+            }, 500);
         });
     }
 }
@@ -2771,26 +2792,138 @@ async function fetchCommentCount(promptId) {
     document.getElementById('commentCountBadge').textContent = count || 0;
 }
 
-async function fetchComments(promptId) {
+// Comment cache to avoid re-fetching
+const commentCache = new Map();
+const COMMENT_CACHE_TTL = 30000; // 30 seconds
+
+// Render comments from cache (instant, no network)
+function renderCommentsFromCache(cached, list) {
+    const { data, currentUserId, currentUserAvatar, userLikedCommentIds, commentLikeCounts } = cached;
+    const likedSet = new Set(userLikedCommentIds);
+    const countMap = new Map(Object.entries(commentLikeCounts));
+
+    list.innerHTML = '';
+    if (data.length === 0) {
+        list.innerHTML = '<div style="padding:40px; text-align:center; color:#999; font-style:italic;">No comments yet. Be the first to analyze this art.</div>';
+        return;
+    }
+
+    const commentMap = new Map();
+    data.forEach(c => commentMap.set(c.id, c));
+
+    const replyMap = new Map();
+    data.filter(c => c.parent_id).forEach(reply => {
+        if (!replyMap.has(reply.parent_id)) {
+            replyMap.set(reply.parent_id, []);
+        }
+        replyMap.get(reply.parent_id).push(reply);
+    });
+
+    const rootComments = data.filter(c => !c.parent_id);
+
+    // Recursive function to collect all replies in a thread (flattened)
+    const collectAllReplies = (commentId, collected = []) => {
+        const directReplies = replyMap.get(commentId) || [];
+        directReplies.forEach(reply => {
+            collected.push(reply);
+            collectAllReplies(reply.id, collected);
+        });
+        return collected;
+    };
+
+    // Render a single comment
+    const renderSingleComment = (comment, isReply, isLastInThread) => {
+        const overrideAvatar = (comment.user_id === currentUserId) ? currentUserAvatar : null;
+        const hasReplies = (replyMap.get(comment.id) || []).length > 0;
+        const parentProfile = comment.parent_id ? commentMap.get(comment.parent_id)?.profiles : null;
+        const isLiked = likedSet.has(comment.id);
+        const likeCount = countMap.get(comment.id) || 0;
+
+        renderComment(comment, overrideAvatar, parentProfile, hasReplies, isLastInThread, isLiked, likeCount);
+    };
+
+    // Render all root comments and their flattened replies
+    rootComments.forEach(rootComment => {
+        renderSingleComment(rootComment, false, false);
+
+        const allReplies = collectAllReplies(rootComment.id);
+        allReplies.forEach((reply, index) => {
+            const isLast = index === allReplies.length - 1;
+            renderSingleComment(reply, true, isLast);
+        });
+    });
+}
+
+async function fetchComments(promptId, forceRefresh = false) {
     if (!window.supabaseClient) return;
     const list = document.getElementById('commentList');
-    list.innerHTML = '<div style="padding:20px; text-align:center; color:#999;">Loading...</div>';
 
-    // Start all queries in parallel for faster loading
-    const [userResult, commentsResult] = await Promise.all([
-        window.supabaseClient.auth.getUser(),
+    // Check cache first
+    const cached = commentCache.get(promptId);
+    const isCacheValid = cached && (Date.now() - cached.timestamp < COMMENT_CACHE_TTL);
+
+    // Strategy: Stale-While-Revalidate
+    // - If cache is valid: use it immediately, no network
+    // - If cache is stale but exists: show stale data first, refresh in background
+    // - If no cache: show loading, fetch fresh data
+
+    if (!forceRefresh && isCacheValid) {
+        // Fresh cache: use it and return
+        renderCommentsFromCache(cached, list);
+        return;
+    }
+
+    if (!forceRefresh && cached) {
+        // Stale cache: show it immediately (no loading flash)
+        renderCommentsFromCache(cached, list);
+        // Continue to refresh in background (don't return)
+    } else {
+        // No cache: show loading
+        list.innerHTML = '<div style="padding:20px; text-align:center; color:#999;">Loading...</div>';
+    }
+
+    // Get cached user ID if available (avoid re-calling getUser if we have it)
+    let currentUserId = window._cachedUserId;
+    let currentUserAvatar = window._cachedUserAvatar;
+
+    // Single Promise.all with ALL queries for minimal latency
+    const [userResult, commentsResult, allLikes] = await Promise.all([
+        // Only fetch user if not cached
+        !currentUserId ? window.supabaseClient.auth.getUser() : Promise.resolve({ data: { user: { id: currentUserId } } }),
+        // Fetch comments with profiles
         window.supabaseClient
             .from('prompt_comments')
-            .select(`
-                *,
-                profiles:user_id (id, username, avatar_url)
-            `)
+            .select(`*, profiles:user_id (id, username, avatar_url)`)
             .eq('prompt_id', promptId)
-            .order('created_at', { ascending: true })
+            .order('created_at', { ascending: true }),
+        // Fetch ALL likes for this prompt's comments in one query
+        window.supabaseClient
+            .from('comment_likes')
+            .select('comment_id, user_id')
     ]);
 
-    const currentUser = userResult.data?.user;
-    const currentUserId = currentUser?.id || null;
+    // Process user
+    if (!currentUserId && userResult.data?.user) {
+        currentUserId = userResult.data.user.id;
+        window._cachedUserId = currentUserId;
+
+        // Fetch user avatar only once and cache it
+        if (!currentUserAvatar && currentUserId) {
+            const { data: profile } = await window.supabaseClient
+                .from('profiles')
+                .select('avatar_url')
+                .eq('id', currentUserId)
+                .single();
+
+            const dbAvatar = profile?.avatar_url;
+            if (dbAvatar && dbAvatar.trim() !== '' &&
+                (dbAvatar.startsWith('http') || (dbAvatar.startsWith('data:') && dbAvatar.length > 100))) {
+                currentUserAvatar = dbAvatar;
+                window._cachedUserAvatar = currentUserAvatar;
+            }
+        }
+    }
+
     const { data, error } = commentsResult;
 
     if (error) {
@@ -2799,43 +2932,34 @@ async function fetchComments(promptId) {
         return;
     }
 
-    // Parallel fetch: user profile avatar AND likes for all comments
-    const commentIds = data.map(c => c.id);
-
-    const [profileResult, likesResult] = await Promise.all([
-        // Fetch current user's avatar (only if logged in)
-        currentUserId
-            ? window.supabaseClient.from('profiles').select('avatar_url').eq('id', currentUserId).single()
-            : Promise.resolve({ data: null }),
-        // Fetch all likes for these comments (only if there are comments)
-        commentIds.length > 0
-            ? window.supabaseClient.from('comment_likes').select('comment_id, user_id').in('comment_id', commentIds)
-            : Promise.resolve({ data: [] })
-    ]);
-
-    // Process user avatar
-    let currentUserAvatar = null;
-    const dbAvatar = profileResult.data?.avatar_url;
-    if (dbAvatar && dbAvatar.trim() !== '' &&
-        (dbAvatar.startsWith('http') || (dbAvatar.startsWith('data:') && dbAvatar.length > 100))) {
-        currentUserAvatar = dbAvatar;
-    }
-
-    // Process likes
+    // Filter likes to only those for this prompt's comments
+    const commentIds = new Set(data.map(c => c.id));
     let userLikedCommentIds = new Set();
     let commentLikeCounts = new Map();
 
-    if (likesResult.data) {
-        likesResult.data.forEach(like => {
-            if (like.user_id === currentUserId) {
-                userLikedCommentIds.add(like.comment_id);
+    if (allLikes.data) {
+        allLikes.data.forEach(like => {
+            if (commentIds.has(like.comment_id)) {
+                if (like.user_id === currentUserId) {
+                    userLikedCommentIds.add(like.comment_id);
+                }
+                commentLikeCounts.set(
+                    like.comment_id,
+                    (commentLikeCounts.get(like.comment_id) || 0) + 1
+                );
             }
-            commentLikeCounts.set(
-                like.comment_id,
-                (commentLikeCounts.get(like.comment_id) || 0) + 1
-            );
         });
     }
+
+    // Cache the results
+    commentCache.set(promptId, {
+        timestamp: Date.now(),
+        data,
+        currentUserId,
+        currentUserAvatar,
+        userLikedCommentIds: [...userLikedCommentIds],
+        commentLikeCounts: Object.fromEntries(commentLikeCounts)
+    });
 
     list.innerHTML = '';
     if (data.length === 0) {
@@ -2859,11 +2983,20 @@ async function fetchComments(promptId) {
     // Get root-level comments (no parent)
     const rootComments = data.filter(c => !c.parent_id);
 
-    // Recursive function to render a comment and all its nested replies
-    const renderThread = (comment, isReply = false, isLastInThread = false) => {
+    // Recursive function to collect all replies in a thread (flattened)
+    const collectAllReplies = (commentId, collected = []) => {
+        const directReplies = replyMap.get(commentId) || [];
+        directReplies.forEach(reply => {
+            collected.push(reply);
+            collectAllReplies(reply.id, collected); // Recursively collect nested replies
+        });
+        return collected;
+    };
+
+    // Render a single comment
+    const renderSingleComment = (comment, isReply, isLastInThread) => {
         const overrideAvatar = (comment.user_id === currentUserId) ? currentUserAvatar : null;
-        const replies = replyMap.get(comment.id) || [];
-        const hasReplies = replies.length > 0;
+        const hasReplies = (replyMap.get(comment.id) || []).length > 0;
 
         // Get parent profile for "Replying to" display
         const parentProfile = comment.parent_id ? commentMap.get(comment.parent_id)?.profiles : null;
@@ -2874,18 +3007,20 @@ async function fetchComments(promptId) {
         // Get like count from our fresh count map
         const likeCount = commentLikeCounts.get(comment.id) || 0;
 
-        renderComment(comment, overrideAvatar, parentProfile, hasReplies, isLastInThread && !hasReplies, isLiked, likeCount);
-
-        // Render all nested replies
-        replies.forEach((reply, index) => {
-            const isLast = index === replies.length - 1;
-            renderThread(reply, true, isLast);
-        });
+        renderComment(comment, overrideAvatar, parentProfile, hasReplies, isLastInThread, isLiked, likeCount);
     };
 
-    // Render all root comments and their threads
+    // Render all root comments and their flattened replies
     rootComments.forEach(rootComment => {
-        renderThread(rootComment, false, false);
+        // Render root comment
+        renderSingleComment(rootComment, false, false);
+
+        // Collect ALL replies (nested) and render them flatly
+        const allReplies = collectAllReplies(rootComment.id);
+        allReplies.forEach((reply, index) => {
+            const isLast = index === allReplies.length - 1;
+            renderSingleComment(reply, true, isLast);
+        });
     });
 
     // Scroll to top to show first comments
@@ -3107,41 +3242,90 @@ async function submitComment() {
     // Get parent_id if this is a reply
     const parentId = input.dataset.replyTo || null;
 
+    // Store for potential rollback
+    const originalContent = content;
+    const originalParentId = parentId;
+
+    // Clear input IMMEDIATELY for instant feedback
+    input.value = '';
+    delete input.dataset.replyTo;
+
+    // Get cached avatar
+    const currentUserAvatar = window._cachedUserAvatar;
+
     // Build insert data
     const insertData = {
         prompt_id: currentPromptId,
         user_id: user.id,
-        content: content
+        content: originalContent
     };
 
-    // Only add parent_id if it's a reply
-    if (parentId) {
-        insertData.parent_id = parentId;
+    if (originalParentId) {
+        insertData.parent_id = originalParentId;
     }
 
-    // Insert to DB
+    // Insert to DB (without expensive JOIN for speed)
     const { data, error } = await window.supabaseClient
         .from('prompt_comments')
         .insert(insertData)
-        .select()
+        .select('id')
         .single();
 
     if (error) {
+        console.error('Failed to post comment:', error);
+        input.value = originalContent;
+        if (originalParentId) input.dataset.replyTo = originalParentId;
         alert("Failed to post comment");
         return;
     }
 
-    // Clear input and reply state
-    input.value = '';
-    delete input.dataset.replyTo;
+    // Build comment object with cached user data
+    const newComment = {
+        id: data.id,
+        prompt_id: currentPromptId,
+        user_id: user.id,
+        content: originalContent,
+        parent_id: originalParentId,
+        created_at: new Date().toISOString(),
+        profiles: {
+            username: window._cachedUserProfile?.username || user.email?.split('@')[0] || 'You',
+            avatar_url: currentUserAvatar
+        }
+    };
 
-    // Refresh comments to show proper threading
-    fetchComments(currentPromptId);
+    // Extract parent username from @mention
+    let parentProfile = null;
+    if (originalParentId) {
+        const mentionMatch = originalContent.match(/@(\S+)/);
+        if (mentionMatch) {
+            parentProfile = { username: mentionMatch[1] };
+        }
+    }
 
-    // Add points logic implies call to server or trigger, handled by DB trigger? 
-    // We update UI badge
+    // Render immediately
+    renderComment(
+        newComment,
+        currentUserAvatar,
+        parentProfile,
+        false,
+        false,
+        false,
+        0
+    );
+
+    // Auto-scroll
+    setTimeout(() => {
+        const list = document.getElementById('commentList');
+        const elem = list?.querySelector(`[data-comment-id="${data.id}"]`);
+        if (elem) elem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 100);
+
+    // Update badge
     const badge = document.getElementById('commentCountBadge');
     badge.textContent = parseInt(badge.textContent) + 1;
+
+    // Invalidate cache
+    commentCache.delete(currentPromptId);
 }
 
 // Animation lock to prevent rapid click issues

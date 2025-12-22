@@ -1456,8 +1456,10 @@ body {
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    transition: opacity 0.35s ease-out;
+    transition: opacity 0.5s ease-in-out, top 0.5s ease-in-out, transform 0.5s ease-in-out, filter 0.5s ease-in-out;
     opacity: 1;
+    filter: blur(0);
+    will-change: top, transform, opacity, filter;
 }
 
 /* New image entering */
@@ -1688,6 +1690,33 @@ body {
     transform: scale(1.05);
 }
 
+/* Active state - when comment section is open */
+.comment-trigger-btn.active {
+    background: rgba(139, 92, 246, 0.15);
+    color: #8b5cf6;
+}
+
+/* Hide comment count when in active/close mode */
+.comment-trigger-btn.active .comment-count {
+    display: none;
+}
+
+.comment-trigger-btn.active:hover {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+}
+
+/* Dark mode - use starry blue theme */
+[data-theme="dark"] .comment-trigger-btn.active {
+    background: rgba(107, 158, 206, 0.25);
+    color: #6b9ece;
+}
+
+[data-theme="dark"] .comment-trigger-btn.active:hover {
+    background: rgba(239, 68, 68, 0.25);
+    color: #f87171;
+}
+
 /* Ripple effect (simulated with shadow) */
 .comment-trigger-btn::after {
     content: '';
@@ -1795,6 +1824,11 @@ body {
     transform: translate(-50%, -50%) scale(0.85);
 }
 
+/* Motion Blur Class (Added by JS) */
+.modal-image-col img.blur-motion {
+    filter: blur(1.5px);
+}
+
 /* DOCKED Prompt Styling (When prompt is in the left column) */
 .prompt-area.docked {
     background: rgba(255, 255, 255, 0.8);
@@ -1806,7 +1840,9 @@ body {
     margin: 0;
     width: 100%;
     box-sizing: border-box;
-    animation: promptDockIn 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+    animation: promptDockIn 0.5s ease-in-out forwards;
+    pointer-events: auto;
+    /* Re-enable clicks on docked prompt */
 }
 
 /* Limit prompt text height when docked */
@@ -1822,13 +1858,30 @@ body {
 @keyframes promptDockIn {
     from {
         opacity: 0;
-        transform: translateY(20px);
+        transform: translateX(40px);
     }
 
     to {
         opacity: 1;
-        transform: translateY(0);
+        transform: translateX(0);
     }
+}
+
+@keyframes promptReturn {
+    from {
+        opacity: 0;
+        transform: translateX(-40px);
+        /* Slide from left to right */
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.prompt-area.returning {
+    animation: promptReturn 0.5s ease-in-out forwards;
 }
 
 /* 4. Clean Stream Comment Section */
