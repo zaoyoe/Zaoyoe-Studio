@@ -258,6 +258,15 @@
                     <div class="comment-input-area">
                         <input type="text" id="commentInput" placeholder="Add a comment (+5 pts)..."
                             onkeydown="handleCommentKeydown(event)">
+
+                        <!-- Hidden file input -->
+                        <input type="file" id="commentImageUpload" accept="image/*" style="display: none;">
+
+                        <!-- Upload button -->
+                        <button id="commentUploadBtn" class="comment-upload-btn" title="Attach image">
+                            <i class="fas fa-image"></i>
+                        </button>
+
                         <button id="sendCommentBtn" class="send-comment-btn" onclick="submitComment()">
                             <i class="fas fa-paper-plane"></i>
                         </button>

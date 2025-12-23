@@ -1491,8 +1491,11 @@ body {
     transform: translateY(-50%);
     width: 44px;
     height: 44px;
-    background: rgba(255, 255, 255, 0.95);
-    border: 1px solid rgba(0, 0, 0, 0.1);
+    /* Glassmorphism effect - matching avatar dropdown */
+    background: rgba(255, 255, 255, 0.70);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
     border-radius: 50%;
     display: none;
     /* Controlled by JS via display:flex */
@@ -1501,7 +1504,7 @@ body {
     cursor: pointer;
     transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
     z-index: 10;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
     color: #1e293b;
     opacity: 0;
     /* Hidden by default */
@@ -1530,11 +1533,11 @@ body {
 }
 
 .modal-img-nav:hover {
-    background: #ffffff;
+    background: rgba(255, 255, 255, 0.85);
     color: #000;
     transform: translateY(-50%) scale(1.1) !important;
     /* Override slide transform */
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.2);
 }
 
 .modal-img-nav i {
@@ -1649,9 +1652,9 @@ body {
     align-items: center;
     gap: 6px;
     padding: 6px 14px;
-    background: rgba(139, 92, 246, 0.1);
+    background: transparent;
     color: var(--accent-purple);
-    border: 1px solid rgba(139, 92, 246, 0.2);
+    border: 1px solid transparent;
     border-radius: 20px;
     font-size: 0.9rem;
     font-weight: 500;
@@ -1660,7 +1663,8 @@ body {
 }
 
 .unlock-btn:hover {
-    background: rgba(139, 92, 246, 0.2);
+    background: rgba(139, 92, 246, 0.1);
+    border-color: rgba(139, 92, 246, 0.2);
     transform: translateY(-1px);
 }
 
@@ -1692,7 +1696,7 @@ body {
 
 /* Active state - when comment section is open */
 .comment-trigger-btn.active {
-    background: rgba(139, 92, 246, 0.15);
+    background: transparent;
     color: #8b5cf6;
 }
 
@@ -1708,7 +1712,7 @@ body {
 
 /* Dark mode - use starry blue theme */
 [data-theme="dark"] .comment-trigger-btn.active {
-    background: rgba(107, 158, 206, 0.25);
+    background: transparent;
     color: #6b9ece;
 }
 
@@ -1755,13 +1759,14 @@ body {
 }
 
 [data-theme="dark"] .unlock-btn {
-    background: rgba(107, 158, 206, 0.15);
+    background: transparent;
     color: var(--accent-starry);
-    border-color: rgba(107, 158, 206, 0.3);
+    border-color: transparent;
 }
 
 [data-theme="dark"] .unlock-btn:hover {
-    background: rgba(107, 158, 206, 0.25);
+    background: rgba(107, 158, 206, 0.15);
+    border-color: rgba(107, 158, 206, 0.25);
 }
 
 /* Dark mode ripple uses starry blue */
@@ -2324,4 +2329,166 @@ body {
     color: #94a3b8;
     line-height: 1.7;
     font-style: italic;
+}
+
+/* Comment Collapse/Expand */
+.comment-expand-toggle {
+    padding: 15px 30px 10px;
+    text-align: left;
+    font-size: 0.9rem;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: color 0.2s ease;
+    user-select: none;
+}
+
+.comment-expand-toggle:hover {
+    color: var(--accent-purple);
+}
+
+[data-theme="dark"] .comment-expand-toggle:hover {
+    color: var(--accent-starry);
+}
+
+.comment-item.hidden-collapsed {
+    display: none;
+}
+
+/* ===================================
+   COMMENT IMAGE ATTACHMENTS
+   =================================== */
+
+/* Upload button - subtle and unobtrusive */
+.comment-upload-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 8px;
+    opacity: 0.5;
+    transition: all 0.2s ease;
+    font-size: 1.1rem;
+}
+
+/* Only brighten on hover, not by default */
+.comment-upload-btn:hover {
+    opacity: 0.7;
+}
+
+/* Active state when image is selected */
+.comment-upload-btn.has-image {
+    opacity: 1;
+    color: var(--accent-purple);
+}
+
+[data-theme="dark"] .comment-upload-btn.has-image {
+    color: var(--accent-starry);
+}
+
+/* View Image button in comment actions */
+.view-image-btn:hover {
+    color: var(--accent-purple);
+}
+
+[data-theme="dark"] .view-image-btn:hover {
+    color: var(--accent-starry);
+}
+
+/* Image modal/lightbox */
+.image-lightbox {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.9);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+
+.image-lightbox.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.image-lightbox img {
+    max-width: 90%;
+    max-height: 90vh;
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.lightbox-close {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    color: white;
+    font-size: 2rem;
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.lightbox-close:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+/* Dark mode input focus */
+[data-theme="dark"] #commentInput:focus {
+    border-bottom-color: var(--accent-starry);
+}
+
+/* Dark mode image navigation */
+[data-theme="dark"] .modal-img-nav {
+    background: rgba(30, 41, 59, 0.65);
+    border-color: rgba(255, 255, 255, 0.1);
+    color: #e2e8f0;
+}
+
+[data-theme="dark"] .modal-img-nav:hover {
+    background: rgba(30, 41, 59, 0.80);
+    color: #ffffff;
+}
+
+/* ===================================
+   REAL-TIME COMMENT UPDATES
+   =================================== */
+
+/* New comment fade-in animation */
+.comment-item.new-comment {
+    animation: fadeInComment 0.5s ease;
+}
+
+@keyframes fadeInComment {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Gentle highlight for newly viewed comments */
+.comment-item.highlight {
+    background: rgba(107, 158, 206, 0.08);
+    transition: background 2s ease;
+}
+
+[data-theme="dark"] .comment-item.highlight {
+    background: rgba(107, 158, 206, 0.12);
+}
+
+.comment-item.highlight.fade-out {
+    background: transparent;
 }

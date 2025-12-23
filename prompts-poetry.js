@@ -2589,6 +2589,9 @@ function openPromptModal(id) {
     // Fetch comment count
     fetchCommentCount(currentPromptId);
 
+    // Initialize image upload functionality
+    initCommentImageUpload();
+
     modal.classList.add('active');
     document.body.style.overflow = 'hidden';
 }
@@ -2781,6 +2784,221 @@ function copyPromptText(btn) {
 }
 
 // --- Comment System (Supabase) ---
+
+// ===========================================
+// IMAGE ATTACHMENTS FOR COMMENTS
+// ===========================================
+
+// Global state for selected image
+let selectedCommentImage = null;
+
+// Initialize upload button
+function initCommentImageUpload() {
+    const uploadBtn = document.getElementById('commentUploadBtn');
+    const fileInput = document.getElementById('commentImageUpload');
+
+    if (!uploadBtn || !fileInput) return;
+
+    // Click handler - toggle between select and remove
+    uploadBtn.onclick = () => {
+        // If image already selected, show confirm to remove
+        if (selectedCommentImage) {
+            if (confirm(`Remove selected image: ${selectedCommentImage.name}?`)) {
+                // Clear selection
+                selectedCommentImage = null;
+                fileInput.value = '';
+                uploadBtn.classList.remove('has-image');
+                uploadBtn.title = 'Attach image';
+            }
+        } else {
+            // Open file picker
+            fileInput.click();
+        }
+    };
+
+    // Handle file selection
+    fileInput.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        // Validate
+        if (!file.type.startsWith('image/')) {
+            alert('Please select an image file');
+            fileInput.value = '';
+            return;
+        }
+
+        if (file.size > 5 * 1024 * 1024) { // 5MB limit
+            alert('Image must be smaller than 5MB');
+            fileInput.value = '';
+            return;
+        }
+
+        // Store selected file
+        selectedCommentImage = file;
+
+        // Visual feedback - add class for CSS styling
+        uploadBtn.classList.add('has-image');
+        uploadBtn.title = `Image: ${file.name} (click to remove)`;
+    };
+}
+
+// Upload image to Supabase Storage
+async function uploadCommentImage(file) {
+    if (!window.supabaseClient) return null;
+
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+    const filePath = `${fileName}`;
+
+    const { data, error } = await window.supabaseClient.storage
+        .from('comment-images')
+        .upload(filePath, file);
+
+    if (error) {
+        console.error('Upload error:', error);
+        return null;
+    }
+
+    // Get public URL
+    const { data: { publicUrl } } = window.supabaseClient.storage
+        .from('comment-images')
+        .getPublicUrl(filePath);
+
+    return publicUrl;
+}
+
+// Open image in lightbox
+function openImageLightbox(imageUrl) {
+    // Create lightbox if doesn't exist
+    let lightbox = document.getElementById('imageLightbox');
+    if (!lightbox) {
+        lightbox = document.createElement('div');
+        lightbox.id = 'imageLightbox';
+        lightbox.className = 'image-lightbox';
+        lightbox.innerHTML = `
+            <button class="lightbox-close" onclick="closeImageLightbox()">×</button>
+            <img src="" alt="Full size" />
+        `;
+        document.body.appendChild(lightbox);
+    }
+
+    // Set image and show
+    const img = lightbox.querySelector('img');
+    img.src = imageUrl;
+
+    requestAnimationFrame(() => {
+        lightbox.classList.add('active');
+    });
+
+    // Close on background click
+    lightbox.onclick = (e) => {
+        if (e.target === lightbox) closeImageLightbox();
+    };
+}
+
+function closeImageLightbox() {
+    const lightbox = document.getElementById('imageLightbox');
+    if (lightbox) {
+        lightbox.classList.remove('active');
+    }
+}
+
+// ===========================================
+//  END IMAGE ATTACHMENTS
+// ===========================================
+
+// ===========================================
+//  REAL-TIME COMMENT UPDATES
+// ===========================================
+
+let realtimeChannel = null;
+
+// Initialize Supabase Realtime for comments
+function initCommentRealtime() {
+    if (!window.supabaseClient || realtimeChannel) return;
+
+    realtimeChannel = window.supabaseClient
+        .channel('prompt-comments-updates')
+        .on('postgres_changes',
+            { event: 'INSERT', schema: 'public', table: 'prompt_comments' },
+            handleRealtimeCommentInsert
+        )
+        .subscribe();
+}
+
+// Handle new comment from realtime
+async function handleRealtimeCommentInsert(payload) {
+    const comment = payload.new;
+    const { data: { user } } = await window.supabaseClient.auth.getUser();
+
+    // Ignore own comments (already rendered optimistically)
+    if (user && comment.user_id === user.id) return;
+
+    const modal = document.getElementById('promptModal');
+    const isModalOpen = modal?.classList.contains('active');
+
+    if (comment.prompt_id === currentPromptId && isModalOpen) {
+        // Scenario 1: Current modal - silent insertion
+        await renderRealtimeComment(comment);
+    } else {
+        // Scenario 2: Other prompt - update count
+        await updateCommentCountForPrompt(comment.prompt_id);
+    }
+}
+
+// Render realtime comment with fade-in animation
+async function renderRealtimeComment(comment) {
+    // Fetch profile data for the comment
+    const { data: profileData } = await window.supabaseClient
+        .from('profiles')
+        .select('username, avatar_url, email')
+        .eq('id', comment.user_id)
+        .single();
+
+    const commentWithProfile = {
+        ...comment,
+        profiles: profileData || { email: 'Anonymous' }
+    };
+
+    // Render comment
+    renderComment(commentWithProfile, null, null, false, false, false, 0);
+
+    // Add fade-in animation
+    const list = document.getElementById('commentList');
+    const newCommentEl = list.querySelector(`[data-comment-id="${comment.id}"]`);
+    if (newCommentEl) {
+        newCommentEl.classList.add('new-comment');
+        // Remove animation class after completion
+        setTimeout(() => newCommentEl.classList.remove('new-comment'), 500);
+    }
+
+    // Update count badge
+    const badge = document.getElementById('commentCountBadge');
+    badge.textContent = parseInt(badge.textContent) + 1;
+}
+
+// Update comment count for a specific prompt (Gallery cards)
+async function updateCommentCountForPrompt(promptId) {
+    const { count } = await window.supabaseClient
+        .from('prompt_comments')
+        .select('*', { count: 'exact', head: true })
+        .eq('prompt_id', promptId);
+
+    // Update count in gallery card if visible
+    const cards = document.querySelectorAll('.gallery-card');
+    cards.forEach(card => {
+        const item = PROMPTS.find(p => (p.supabaseId || p.id) === promptId);
+        if (item && card.dataset.promptId == item.id) {
+            const countEl = card.querySelector('.comment-count');
+            if (countEl) countEl.textContent = count || 0;
+        }
+    });
+}
+
+// ===========================================
+//  END REAL-TIME UPDATES
+// ===========================================
 
 async function fetchCommentCount(promptId) {
     if (!window.supabaseClient) return;
@@ -3023,10 +3241,58 @@ async function fetchComments(promptId, forceRefresh = false) {
         });
     });
 
+    // Apply Instagram-style collapse (show only 3 newest comments)
+    applyCommentCollapse();
+
     // Scroll to top to show first comments
     setTimeout(() => {
         list.scrollTop = 0;
     }, 100);
+}
+
+// Instagram-style Comment Collapse
+function applyCommentCollapse() {
+    const list = document.getElementById('commentList');
+    const allComments = Array.from(list.querySelectorAll('.comment-item'));
+    const SHOW_COUNT = 3; // Show 3 newest comments by default
+
+    // Remove existing toggle if any
+    const existingToggle = list.parentElement.querySelector('.comment-expand-toggle');
+    if (existingToggle) existingToggle.remove();
+
+    // If <= 3 comments, no need to collapse
+    if (allComments.length <= SHOW_COUNT) return;
+
+    // Hide all except last 3 (newest are at bottom)
+    const toHide = allComments.slice(0, -SHOW_COUNT);
+    toHide.forEach(comment => comment.classList.add('hidden-collapsed'));
+
+    // Create expand toggle link
+    const toggle = document.createElement('div');
+    toggle.className = 'comment-expand-toggle';
+    toggle.textContent = `View all ${allComments.length} comments`;
+    toggle.onclick = toggleCommentExpand;
+
+    // Insert before comment list
+    list.parentElement.insertBefore(toggle, list);
+}
+
+function toggleCommentExpand() {
+    const list = document.getElementById('commentList');
+    const toggle = list.parentElement.querySelector('.comment-expand-toggle');
+    const hiddenComments = list.querySelectorAll('.comment-item.hidden-collapsed');
+
+    if (hiddenComments.length > 0) {
+        // Expand: show all comments
+        hiddenComments.forEach(comment => comment.classList.remove('hidden-collapsed'));
+        toggle.textContent = 'Hide comments';
+    } else {
+        // Collapse: hide comments again
+        const allComments = Array.from(list.querySelectorAll('.comment-item'));
+        const toHide = allComments.slice(0, -3);
+        toHide.forEach(comment => comment.classList.add('hidden-collapsed'));
+        toggle.textContent = `View all ${allComments.length} comments`;
+    }
 }
 
 function renderComment(comment, overrideAvatar = null, replyToProfile = null, hasReplies = false, isLastReply = false, isLiked = false, likeCount = 0) {
@@ -3080,6 +3346,11 @@ function renderComment(comment, overrideAvatar = null, replyToProfile = null, ha
                     <i class="${heartIconClass}" ${heartStyle}></i> <span class="like-count">${likeCount}</span>
                 </button>
                 <button class="comment-action-btn reply-btn">Reply</button>
+                ${comment.image_url ? `
+                    <button class="comment-action-btn view-image-btn" onclick="openImageLightbox('${comment.image_url}')">
+                        <i class="far fa-image"></i> View Image
+                    </button>
+                ` : ''}
             </div>
         </div>
     `;
@@ -3253,6 +3524,18 @@ async function submitComment() {
     // Get cached avatar
     const currentUserAvatar = window._cachedUserAvatar;
 
+    // Upload image if selected
+    let imageUrl = null;
+    if (selectedCommentImage) {
+        imageUrl = await uploadCommentImage(selectedCommentImage);
+        if (!imageUrl) {
+            alert('Failed to upload image');
+            input.value = originalContent;
+            if (originalParentId) input.dataset.replyTo = originalParentId;
+            return;
+        }
+    }
+
     // Build insert data
     const insertData = {
         prompt_id: currentPromptId,
@@ -3262,6 +3545,10 @@ async function submitComment() {
 
     if (originalParentId) {
         insertData.parent_id = originalParentId;
+    }
+
+    if (imageUrl) {
+        insertData.image_url = imageUrl;
     }
 
     // Insert to DB (without expensive JOIN for speed)
@@ -3287,6 +3574,7 @@ async function submitComment() {
         content: originalContent,
         parent_id: originalParentId,
         created_at: new Date().toISOString(),
+        image_url: imageUrl,
         profiles: {
             username: window._cachedUserProfile?.username || user.email?.split('@')[0] || 'You',
             avatar_url: currentUserAvatar
@@ -3323,6 +3611,18 @@ async function submitComment() {
     // Update badge
     const badge = document.getElementById('commentCountBadge');
     badge.textContent = parseInt(badge.textContent) + 1;
+
+    // Clear image selection after successful submission
+    if (selectedCommentImage) {
+        selectedCommentImage = null;
+        const uploadBtn = document.getElementById('commentUploadBtn');
+        const fileInput = document.getElementById('commentImageUpload');
+        if (uploadBtn) {
+            uploadBtn.classList.remove('has-image');
+            uploadBtn.title = 'Attach image';
+        }
+        if (fileInput) fileInput.value = '';
+    }
 
     // Invalidate cache
     commentCache.delete(currentPromptId);
@@ -3458,4 +3758,9 @@ window.onclick = function (event) {
     if (event.target === modal) {
         closePromptModal();
     }
+}
+
+// Initialize realtime on page load
+if (window.supabaseClient) {
+    initCommentRealtime();
 }
