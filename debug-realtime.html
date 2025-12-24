@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>实时评论通知调试工具</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        h2 {
+            color: #333;
+            margin-bottom: 16px;
+            font-size: 1.2rem;
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            font-size: 0.95rem;
+        }
+
+        .status.success {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .status.error {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .status.warning {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .status-icon {
+            font-size: 1.5rem;
+        }
+
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        button:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        button:disabled {
+            background: #cbd5e1;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .log-area {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 16px;
+            border-radius: 8px;
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 0.85rem;
+            max-height: 300px;
+            overflow-y: auto;
+            line-height: 1.6;
+        }
+
+        .log-entry {
+            margin-bottom: 8px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .log-time {
+            color: #94a3b8;
+            margin-right: 8px;
+        }
+
+        .log-success {
+            color: #6ee7b7;
+        }
+
+        .log-error {
+            color: #fca5a5;
+        }
+
+        .log-info {
+            color: #93c5fd;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 16px;
+            margin-top: 16px;
+        }
+
+        .info-item {
+            padding: 12px;
+            background: #f8fafc;
+            border-radius: 8px;
+            border-left: 3px solid #667eea;
+        }
+
+        .info-label {
+            font-size: 0.8rem;
+            color: #64748b;
+            margin-bottom: 4px;
+        }
+
+        .info-value {
+            font-weight: 600;
+            color: #1e293b;
+            font-size: 1rem;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="card">
+            <h1>🔍 实时评论通知调试工具</h1>
+            <p style="color: #64748b; margin-bottom: 20px;">用于诊断和测试 Gallery 页面的 Supabase Realtime 功能</p>
+
+            <div id="connectionStatus"></div>
+
+            <h2>📊 连接信息</h2>
+            <div class="info-grid" id="infoGrid"></div>
+
+            <div class="button-group">
+                <button onclick="checkRealtimeStatus()">🔄 刷新状态</button>
+                <button onclick="testRealtimeConnection()">🧪 测试连接</button>
+                <button onclick="clearLogs()">🗑️ 清空日志</button>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>📝 实时日志</h2>
+            <div class="log-area" id="logArea">
+                <div class="log-entry">
+                    <span class="log-time">[加载中]</span>
+                    <span class="log-info">等待初始化...</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>📖 使用说明</h2>
+            <ol style="line-height: 2; color: #475569;">
+                <li>打开此页面和 Gallery 页面（prompts.html）</li>
+                <li>在另一个浏览器窗口登录并发送评论</li>
+                <li>观察此页面的实时日志，查看是否收到 Realtime 事件</li>
+                <li>如果日志中显示 "Realtime event received"，说明功能正常</li>
+            </ol>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="supabase-client.js"></script>
+    <script>
+        let realtimeChannel = null;
+        let eventCount = 0;
+
+        function log(message, type = 'info') {
+            const logArea = document.getElementById('logArea');
+            const time = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.innerHTML = `
+                <span class="log-time">[${time}]</span>
+                <span class="log-${type}">${message}</span>
+            `;
+            logArea.insertBefore(entry, logArea.firstChild);
+
+            // Keep only last 50 entries
+            while (logArea.children.length > 50) {
+                logArea.removeChild(logArea.lastChild);
+            }
+        }
+
+        function updateStatus(message, type = 'success') {
+            const statusDiv = document.getElementById('connectionStatus');
+            const icons = {
+                success: '✅',
+                error: '❌',
+                warning: '⚠️'
+            };
+            statusDiv.innerHTML = `
+                <div class="status ${type}">
+                    <span class="status-icon">${icons[type]}</span>
+                    <span>${message}</span>
+                </div>
+            `;
+        }
+
+        function updateInfo(key, value) {
+            const infoGrid = document.getElementById('infoGrid');
+            let item = document.getElementById(`info-${key}`);
+
+            if (!item) {
+                item = document.createElement('div');
+                item.className = 'info-item';
+                item.id = `info-${key}`;
+                infoGrid.appendChild(item);
+            }
+
+            const labels = {
+                client: 'Supabase Client',
+                channel: 'Realtime Channel',
+                state: 'Channel 状态',
+                events: '收到的事件数'
+            };
+
+            item.innerHTML = `
+                <div class="info-label">${labels[key] || key}</div>
+                <div class="info-value">${value}</div>
+            `;
+        }
+
+        async function checkRealtimeStatus() {
+            log('检查 Realtime 状态...', 'info');
+
+            // Check Supabase client
+            if (!window.supabaseClient) {
+                updateStatus('Supabase Client 未初始化', 'error');
+                log('❌ Supabase Client 未找到', 'error');
+                updateInfo('client', '❌ 未连接');
+                return;
+            }
+
+            updateInfo('client', '✅ 已连接');
+            log('✅ Supabase Client 已连接', 'success');
+
+            // Check user
+            const { data: { user } } = await window.supabaseClient.auth.getUser();
+            if (user) {
+                log(`✅ 当前用户: ${user.email}`, 'success');
+                updateInfo('user', user.email);
+            } else {
+                log('⚠️ 未登录', 'warning');
+                updateInfo('user', '游客');
+            }
+
+            // Check channel
+            if (realtimeChannel) {
+                updateInfo('channel', '✅ 已创建');
+                updateInfo('state', realtimeChannel.state);
+                log(`✅ Channel 状态: ${realtimeChannel.state}`, 'success');
+                updateStatus('Realtime 已启用并运行中', 'success');
+            } else {
+                updateInfo('channel', '❌ 未创建');
+                log('❌ Realtime Channel 未创建', 'error');
+                updateStatus('Realtime Channel 未初始化', 'error');
+            }
+
+            updateInfo('events', eventCount);
+        }
+
+        async function testRealtimeConnection() {
+            log('开始测试 Realtime 连接...', 'info');
+
+            if (!window.supabaseClient) {
+                log('❌ Supabase Client 不可用', 'error');
+                updateStatus('无法测试：Supabase Client 未连接', 'error');
+                return;
+            }
+
+            // Unsubscribe existing channel
+            if (realtimeChannel) {
+                log('移除现有 Channel...', 'info');
+                await window.supabaseClient.removeChannel(realtimeChannel);
+                realtimeChannel = null;
+            }
+
+            // Create new channel
+            log('创建新的 Realtime Channel...', 'info');
+            realtimeChannel = window.supabaseClient
+                .channel('debug-comments-channel')
+                .on('postgres_changes',
+                    { event: 'INSERT', schema: 'public', table: 'prompt_comments' },
+                    (payload) => {
+                        eventCount++;
+                        log(`🎉 收到 Realtime 事件！评论 ID: ${payload.new.id}`, 'success');
+                        log(`内容: ${payload.new.content}`, 'info');
+                        updateInfo('events', eventCount);
+                    }
+                )
+                .subscribe((status) => {
+                    log(`📡 订阅状态: ${status}`, 'info');
+
+                    if (status === 'SUBSCRIBED') {
+                        log('✅ Realtime 订阅成功！', 'success');
+                        updateStatus('Realtime 已成功订阅，等待新评论...', 'success');
+                    } else if (status === 'CHANNEL_ERROR') {
+                        log('❌ Channel 错误', 'error');
+                        updateStatus('Channel 订阅失败', 'error');
+                    } else if (status === 'TIMED_OUT') {
+                        log('❌ 连接超时', 'error');
+                        updateStatus('连接超时，请检查网络', 'error');
+                    }
+
+                    updateInfo('state', status);
+                });
+
+            log('✅ 测试已启动，现在可以在其他浏览器发送评论来测试', 'success');
+        }
+
+        function clearLogs() {
+            const logArea = document.getElementById('logArea');
+            logArea.innerHTML = '<div class="log-entry"><span class="log-time">[已清空]</span><span class="log-info">日志已清空</span></div>';
+            log('日志已清空', 'info');
+        }
+
+        // Initialize on load
+        window.addEventListener('DOMContentLoaded', async () => {
+            log('调试工具已加载', 'success');
+
+            // Wait for supabase client to load
+            setTimeout(async () => {
+                await checkRealtimeStatus();
+
+                if (window.supabaseClient) {
+                    log('提示：点击 "测试连接" 按钮开始监听 Realtime 事件', 'info');
+                } else {
+                    log('错误：请确保 supabase-client.js 已正确加载', 'error');
+                }
+            }, 500);
+        });
+    </script>
+</body>
+
+</html>

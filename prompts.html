@@ -112,7 +112,14 @@
                 </button>
             </div>
 
+
             <div class="dropdown-actions">
+                <!-- Login (guest users only) -->
+                <button class="dropdown-action" id="loginBtn" style="display: flex;" onclick="handleGalleryLogin()">
+                    <i class="fas fa-sign-in-alt"></i>
+                    <span>Login</span>
+                </button>
+
                 <!-- Profile (logged in users) -->
                 <button class="dropdown-action" id="profileBtn" style="display: none;" onclick="openGalleryProfile()">
                     <i class="fas fa-user"></i>
@@ -251,12 +258,30 @@
 
                 <!-- Comment Section (Initially Hidden) -->
                 <div id="commentSection" class="comment-section">
+                    <!-- Comment Header: Title + Sorting -->
+                    <div class="comment-header">
+                        <div class="comment-header-title" id="commentSectionTitle">
+                            View all
+                        </div>
+                        <div class="comment-sort-wrapper">
+                            <button class="comment-sort-btn" id="commentSortBtn">
+                                <span id="currentSortLabel">Top</span>
+                                <i class="fas fa-chevron-down"></i>
+                            </button>
+                            <div class="comment-sort-dropdown" id="commentSortDropdown">
+                                <div class="sort-option active" data-sort="top">🔥 Top</div>
+                                <div class="sort-option" data-sort="newest">Newest</div>
+                                <div class="sort-option" data-sort="oldest">Oldest</div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="comment-list" id="commentList">
                         <!-- Comments injected here -->
                     </div>
 
                     <div class="comment-input-area">
-                        <input type="text" id="commentInput" placeholder="Add a comment (+5 pts)..."
+                        <input type="text" id="commentInput" placeholder="Add a comment..."
                             onkeydown="handleCommentKeydown(event)">
 
                         <!-- Hidden file input -->
@@ -267,7 +292,11 @@
                             <i class="fas fa-image"></i>
                         </button>
 
-                        <button id="sendCommentBtn" class="send-comment-btn" onclick="submitComment()">
+
+
+                        <!-- 发送按钮 -->
+                        <!-- 发送按钮 (小飞机图标) -->
+                        <button id="sendCommentBtn" class="send-comment-btn" onclick="submitComment()" title="Send">
                             <i class="fas fa-paper-plane"></i>
                         </button>
                     </div>
@@ -450,12 +479,23 @@
     <!-- Scripts -->
     <!-- Supabase Client (CDN for browser) -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <!-- Day.js for relative time display -->
+    <script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dayjs@1/plugin/relativeTime.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dayjs@1/locale/zh-cn.js"></script>
+
     <script>
         // Initialize Supabase client for browser
         const SUPABASE_URL = 'https://mmkugdibsaeoevliebzk.supabase.co';
         const SUPABASE_KEY = 'sb_publishable_lwkiF-sQ80z8e9oMcejFPQ_j7oezjcF';
         window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
         console.log('Supabase browser client initialized');
+
+        // Initialize Day.js
+        dayjs.extend(dayjs_plugin_relativeTime);
+        dayjs.locale('zh-cn');
+        console.log('Day.js initialized with zh-cn locale');
     </script>
     <script src="prompts-data.js"></script>
     <script src="prompts-poetry.js"></script>

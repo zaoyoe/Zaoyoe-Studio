@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <title>快速测试 Realtime</title>
+    <style>
+        body {
+            font-family: system-ui;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+
+        .status {
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            font-weight: bold;
+        }
+
+        .success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .log {
+            background: #000;
+            color: #0f0;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: monospace;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 20px;
+        }
+
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>🧪 Realtime 快速测试</h1>
+    <div id="status"></div>
+    <button onclick="testConnection()">开始测试</button>
+    <div class="log" id="log"></div>
+
+    <!-- Supabase CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <script>
+        const SUPABASE_URL = 'https://mmkugdibsaeoevliebzk.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_lwkiF-sQ80z8e9oMcejFPQ_j7oezjcF';
+
+        let client, channel;
+
+        function log(msg, isError = false) {
+            const logDiv = document.getElementById('log');
+            const time = new Date().toLocaleTimeString();
+            logDiv.innerHTML = `[${time}] ${msg}<br>` + logDiv.innerHTML;
+        }
+
+        function showStatus(msg, success = true) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.className = `status ${success ? 'success' : 'error'}`;
+            statusDiv.textContent = msg;
+        }
+
+        async function testConnection() {
+            try {
+                log('初始化 Supabase Client...');
+                client = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+                log('✅ Client 创建成功');
+
+                // Test auth
+                const { data: { user } } = await client.auth.getUser();
+                log(user ? `当前用户: ${user.email}` : '未登录（游客模式）');
+
+                // Create channel
+                log('创建 Realtime Channel...');
+                channel = client
+                    .channel('test-comments')
+                    .on('postgres_changes',
+                        { event: 'INSERT', schema: 'public', table: 'prompt_comments' },
+                        (payload) => {
+                            log(`🎉 收到新评论事件！ID: ${payload.new.id}`, false);
+                            log(`内容: ${payload.new.content}`);
+                            showStatus('✅ Realtime 工作正常！收到了新评论通知', true);
+                        }
+                    )
+                    .subscribe((status) => {
+                        log(`订阅状态: ${status}`);
+
+                        if (status === 'SUBSCRIBED') {
+                            showStatus('✅ 成功订阅！现在在其他浏览器发送评论测试', true);
+                            log('✅ 订阅成功！等待新评论...');
+                        } else if (status === 'CHANNEL_ERROR') {
+                            showStatus('❌ 订阅失败！请检查配置', false);
+                            log('❌ Channel 错误', true);
+                        }
+                    });
+
+                log('测试启动完成。请在其他浏览器窗口发送评论。');
+
+            } catch (err) {
+                log(`❌ 错误: ${err.message}`, true);
+                showStatus(`❌ 测试失败: ${err.message}`, false);
+            }
+        }
+
+        // Auto-test on load
+        window.addEventListener('DOMContentLoaded', () => {
+            log('页面已加载，点击按钮开始测试');
+        });
+    </script>
+</body>
+
+</html>

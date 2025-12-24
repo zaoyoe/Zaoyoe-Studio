@@ -271,6 +271,7 @@ async function checkAuthState() {
 
         const identityName = document.querySelector('.identity-name');
         const avatarBtn = document.getElementById('userAvatarBtn');
+        const loginBtn = document.getElementById('loginBtn');
         const profileBtn = document.getElementById('profileBtn');
         const switchAccountBtn = document.getElementById('switchAccountBtn');
         const logoutBtn = document.getElementById('logoutBtn');
@@ -359,7 +360,8 @@ async function checkAuthState() {
                 console.log('💾 Updated cached_user_profile with correct avatar');
             }
 
-            // Show Profile and Switch Account for all logged-in users
+            // Hide login button, show other buttons for logged-in users
+            if (loginBtn) loginBtn.style.display = 'none';
             if (profileBtn) profileBtn.style.display = 'flex';
             if (switchAccountBtn) switchAccountBtn.style.display = 'flex';
             if (logoutBtn) logoutBtn.style.display = 'flex';
@@ -367,8 +369,9 @@ async function checkAuthState() {
             // Only show Enter Studio for admin
             if (adminStudioBtn) adminStudioBtn.style.display = isAdmin ? 'flex' : 'none';
         } else {
-            // Guest - hide all user controls
+            // Guest - show login button, hide all user controls
             if (identityName) identityName.textContent = 'Guest';
+            if (loginBtn) loginBtn.style.display = 'flex';
             if (profileBtn) profileBtn.style.display = 'none';
             if (switchAccountBtn) switchAccountBtn.style.display = 'none';
             if (logoutBtn) logoutBtn.style.display = 'none';
@@ -393,6 +396,13 @@ function closeAdminLoginModal() {
     if (modal) {
         modal.classList.remove('active');
     }
+}
+
+// Gallery login handler (for user dropdown)
+function handleGalleryLogin() {
+    console.log('🔐 Gallery login clicked');
+    toggleAvatarMenu(); // Close dropdown
+    handleGoogleLogin(); // Trigger Google login
 }
 
 async function handleGoogleLogin() {
@@ -421,10 +431,51 @@ async function handleGoogleLogin() {
 }
 
 async function logoutUser() {
-    if (!window.supabaseClient) return;
-    await window.supabaseClient.auth.signOut();
-    checkAuthState();
-    toggleAvatarMenu();
+    if (!window.supabaseClient) {
+        alert('Supabase client not available');
+        return;
+    }
+
+    // 确认提示
+    if (!confirm('确定要退出登录吗？')) {
+        return;
+    }
+
+    try {
+        // 显示加载状态
+        const logoutBtn = document.getElementById('logoutBtn');
+        if (logoutBtn) {
+            logoutBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>正在退出...</span>';
+        }
+
+        // 执行登出
+        const { error } = await window.supabaseClient.auth.signOut();
+
+        if (error) {
+            console.error('Logout error:', error);
+            alert('退出登录失败：' + error.message);
+            if (logoutBtn) {
+                logoutBtn.innerHTML = '<i class="fas fa-sign-out-alt"></i><span>Logout</span>';
+            }
+            return;
+        }
+
+        // 清除本地缓存
+        localStorage.removeItem('cached_user_profile');
+
+        // 更新 UI
+        checkAuthState();
+
+        // 关闭下拉菜单
+        toggleAvatarMenu();
+
+        // 刷新页面以完全清除状态
+        window.location.reload();
+
+    } catch (err) {
+        console.error('Logout exception:', err);
+        alert('退出登录时发生错误');
+    }
 }
 
 function openGalleryProfile() {
@@ -2786,6 +2837,32 @@ function copyPromptText(btn) {
 // --- Comment System (Supabase) ---
 
 // ===========================================
+// TIME FORMATTING FOR COMMENTS
+// ===========================================
+
+/**
+ * Format comment time with relative display
+ * @param {string} timestamp - ISO timestamp from database
+ * @returns {string} Formatted time string
+ */
+function formatCommentTime(timestamp) {
+    const now = dayjs();
+    const time = dayjs(timestamp);
+    const diffHours = now.diff(time, 'hour');
+
+    if (diffHours < 24) {
+        // Within 24 hours: Use relative time ("2 minutes ago", "3 hours ago")
+        return time.fromNow();
+    } else if (diffHours < 168) {
+        // Within 7 days: Show weekday + time ("Monday 14:30")
+        return time.format('dddd HH:mm');
+    } else {
+        // Older than 7 days: Show date ("2025-12-20")
+        return time.format('YYYY-MM-DD');
+    }
+}
+
+// ===========================================
 // IMAGE ATTACHMENTS FOR COMMENTS
 // ===========================================
 
@@ -2803,11 +2880,12 @@ function initCommentImageUpload() {
     uploadBtn.onclick = () => {
         // If image already selected, show confirm to remove
         if (selectedCommentImage) {
-            if (confirm(`Remove selected image: ${selectedCommentImage.name}?`)) {
+            if (confirm(`Remove selected image?`)) {
                 // Clear selection
                 selectedCommentImage = null;
                 fileInput.value = '';
                 uploadBtn.classList.remove('has-image');
+                uploadBtn.innerHTML = '<i class="fas fa-image"></i>';
                 uploadBtn.title = 'Attach image';
             }
         } else {
@@ -2821,26 +2899,166 @@ function initCommentImageUpload() {
         const file = e.target.files[0];
         if (!file) return;
 
-        // Validate
+        // Validate file type
         if (!file.type.startsWith('image/')) {
             alert('Please select an image file');
             fileInput.value = '';
             return;
         }
 
-        if (file.size > 5 * 1024 * 1024) { // 5MB limit
-            alert('Image must be smaller than 5MB');
+        // Show compressing feedback
+        uploadBtn.disabled = true;
+        uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        uploadBtn.title = 'Compressing image...';
+
+        try {
+            // Smart compress the image
+            const compressed = await smartCompress(file);
+
+            if (!compressed) {
+                // User rejected or compression failed
+                fileInput.value = '';
+                uploadBtn.disabled = false;
+                uploadBtn.innerHTML = '<i class="fas fa-image"></i>';
+                uploadBtn.classList.remove('has-image');
+                uploadBtn.title = 'Attach image';
+                return;
+            }
+
+            // Convert Blob to File if needed (for proper upload)
+            let finalFile = compressed;
+            if (compressed instanceof Blob && !(compressed instanceof File)) {
+                // Create a new File from the Blob
+                finalFile = new File([compressed], file.name, {
+                    type: 'image/jpeg',
+                    lastModified: Date.now()
+                });
+            }
+
+            // Store compressed file
+            selectedCommentImage = finalFile;
+
+            // Visual feedback - keep image icon, just highlight it
+            uploadBtn.disabled = false;
+            uploadBtn.innerHTML = '<i class="fas fa-image"></i>';
+            uploadBtn.classList.add('has-image');
+
+            const fileName = file.name;
+            const originalSize = (file.size / 1024).toFixed(0);
+            const compressedSize = (finalFile.size / 1024).toFixed(0);
+
+            if (compressed === file) {
+                uploadBtn.title = `已选择: ${fileName} (${originalSize}KB)`;
+            } else {
+                uploadBtn.title = `已压缩: ${fileName} (${originalSize}KB → ${compressedSize}KB, 点击移除)`;
+            }
+
+        } catch (error) {
+            console.error('Compression error:', error);
+            alert('图片压缩失败，请重试');
             fileInput.value = '';
-            return;
+            uploadBtn.disabled = false;
+            uploadBtn.innerHTML = '<i class="fas fa-image"></i>';
+            uploadBtn.classList.remove('has-image');
+            uploadBtn.title = 'Attach image';
         }
-
-        // Store selected file
-        selectedCommentImage = file;
-
-        // Visual feedback - add class for CSS styling
-        uploadBtn.classList.add('has-image');
-        uploadBtn.title = `Image: ${file.name} (click to remove)`;
     };
+}
+
+// ===========================================
+// IMAGE COMPRESSION FOR COMMENTS
+// ===========================================
+
+/**
+ * Compress image using Canvas API
+ * @param {File} file - Original image file
+ * @param {number} maxWidth - Maximum width in pixels
+ * @param {number} quality - JPEG quality (0-1)
+ * @returns {Promise<Blob>} Compressed image blob
+ */
+async function compressImage(file, maxWidth = 800, quality = 0.8) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+
+        reader.onload = (e) => {
+            const img = new Image();
+
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                let width = img.width;
+                let height = img.height;
+
+                // Calculate scale ratio
+                if (width > maxWidth) {
+                    height = (height * maxWidth) / width;
+                    width = maxWidth;
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+
+                // Convert to Blob
+                canvas.toBlob(
+                    (blob) => {
+                        if (blob) {
+                            resolve(blob);
+                        } else {
+                            reject(new Error('Canvas to Blob conversion failed'));
+                        }
+                    },
+                    'image/jpeg',
+                    quality
+                );
+            };
+
+            img.onerror = () => reject(new Error('Image load failed'));
+            img.src = e.target.result;
+        };
+
+        reader.onerror = () => reject(new Error('File read failed'));
+        reader.readAsDataURL(file);
+    });
+}
+
+/**
+ * Smart progressive compression based on file size
+ * @param {File} file - Original image file
+ * @returns {Promise<File|Blob|null>} Compressed file or null if rejected
+ */
+async function smartCompress(file) {
+    const size = file.size;
+    const sizeMB = (size / 1024 / 1024).toFixed(2);
+
+    // Reject if too large
+    if (size > 5 * 1024 * 1024) {
+        alert(`图片过大（${sizeMB}MB），请选择小于 5MB 的图片`);
+        return null;
+    }
+
+    // Small images: upload directly
+    if (size < 200 * 1024) {
+        console.log(`📷 Small image (${sizeMB}MB), uploading directly`);
+        return file;
+    }
+
+    // Medium images: compress to 800px
+    if (size < 1024 * 1024) {
+        console.log(`📷 Medium image (${sizeMB}MB), compressing to 800px`);
+        const compressed = await compressImage(file, 800, 0.8);
+        const compressedSize = (compressed.size / 1024 / 1024).toFixed(2);
+        console.log(`✅ Compressed: ${sizeMB}MB → ${compressedSize}MB`);
+        return compressed;
+    }
+
+    // Large images: compress to 600px with lower quality
+    console.log(`📷 Large image (${sizeMB}MB), compressing to 600px`);
+    const compressed = await compressImage(file, 600, 0.75);
+    const compressedSize = (compressed.size / 1024 / 1024).toFixed(2);
+    console.log(`✅ Compressed: ${sizeMB}MB → ${compressedSize}MB`);
+    return compressed;
 }
 
 // Upload image to Supabase Storage
@@ -3020,6 +3238,12 @@ function renderCommentsFromCache(cached, list) {
     const likedSet = new Set(userLikedCommentIds);
     const countMap = new Map(Object.entries(commentLikeCounts));
 
+    // Update Header Title with Count
+    const sectionTitle = document.getElementById('commentSectionTitle');
+    if (sectionTitle) {
+        sectionTitle.textContent = `View all ${data.length} comments`;
+    }
+
     list.innerHTML = '';
     if (data.length === 0) {
         list.innerHTML = '<div style="padding:40px; text-align:center; color:#999; font-style:italic;">No comments yet. Be the first to analyze this art.</div>';
@@ -3037,7 +3261,35 @@ function renderCommentsFromCache(cached, list) {
         replyMap.get(reply.parent_id).push(reply);
     });
 
-    const rootComments = data.filter(c => !c.parent_id);
+    let rootComments = data.filter(c => !c.parent_id);
+
+    // --- SORTING LOGIC ---
+    // Sort only root comments (threads). Replies remain chronological.
+    const sortType = localStorage.getItem('commentSortPreference') || 'newest';
+
+    // Update UI Label
+    const sortLabel = document.getElementById('currentSortLabel');
+    if (sortLabel) {
+        const labels = { 'newest': 'Newest', 'top': 'Top', 'oldest': 'Oldest' };
+        sortLabel.textContent = labels[sortType] || 'Newest';
+    }
+
+    if (sortType === 'newest') {
+        // Default: Newest first (already sorted by DB usually, but ensure it)
+        rootComments.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    } else if (sortType === 'oldest') {
+        // Oldest first
+        rootComments.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    } else if (sortType === 'top') {
+        // Top: Most likes first
+        rootComments.sort((a, b) => {
+            const likesA = countMap.get(a.id) || 0;
+            const likesB = countMap.get(b.id) || 0;
+            if (likesB !== likesA) return likesB - likesA;
+            // Fallback to newest if likes are equal
+            return new Date(b.created_at) - new Date(a.created_at);
+        });
+    }
 
     // Recursive function to collect all replies in a thread (flattened)
     const collectAllReplies = (commentId, collected = []) => {
@@ -3070,6 +3322,9 @@ function renderCommentsFromCache(cached, list) {
             renderSingleComment(reply, true, isLast);
         });
     });
+
+    // Apply collapse logic (updates header title)
+    initCommentCollapse();
 }
 
 async function fetchComments(promptId, forceRefresh = false) {
@@ -3242,7 +3497,7 @@ async function fetchComments(promptId, forceRefresh = false) {
     });
 
     // Apply Instagram-style collapse (show only 3 newest comments)
-    applyCommentCollapse();
+    initCommentCollapse();
 
     // Scroll to top to show first comments
     setTimeout(() => {
@@ -3250,50 +3505,128 @@ async function fetchComments(promptId, forceRefresh = false) {
     }, 100);
 }
 
-// Instagram-style Comment Collapse
-function applyCommentCollapse() {
+// ============================================
+// COMMENT COLLAPSE/EXPAND - CLEAN REWRITE
+// Uses data attribute for state, direct DOM manipulation
+// Shows only PARENT comments when collapsed (not replies)
+// ============================================
+
+const COLLAPSE_SHOW_COUNT = 3;
+
+/**
+ * Initialize comment collapse on page load or after rendering
+ * Call this after comments are rendered to the DOM
+ */
+function initCommentCollapse() {
     const list = document.getElementById('commentList');
-    const allComments = Array.from(list.querySelectorAll('.comment-item'));
-    const SHOW_COUNT = 3; // Show 3 newest comments by default
+    const title = document.getElementById('commentSectionTitle');
 
-    // Remove existing toggle if any
-    const existingToggle = list.parentElement.querySelector('.comment-expand-toggle');
-    if (existingToggle) existingToggle.remove();
+    if (!list || !title) return;
 
-    // If <= 3 comments, no need to collapse
-    if (allComments.length <= SHOW_COUNT) return;
+    const allComments = Array.from(list.children);
+    const total = allComments.length;
 
-    // Hide all except last 3 (newest are at bottom)
-    const toHide = allComments.slice(0, -SHOW_COUNT);
-    toHide.forEach(comment => comment.classList.add('hidden-collapsed'));
+    // Separate parent comments from replies
+    const parentComments = allComments.filter(c => !c.classList.contains('comment-reply'));
+    const parentCount = parentComments.length;
 
-    // Create expand toggle link
-    const toggle = document.createElement('div');
-    toggle.className = 'comment-expand-toggle';
-    toggle.textContent = `View all ${allComments.length} comments`;
-    toggle.onclick = toggleCommentExpand;
+    console.log('[Collapse] Initializing with', total, 'total,', parentCount, 'parents');
 
-    // Insert before comment list
-    list.parentElement.insertBefore(toggle, list);
+    // Update title text (no count, just action text)
+    title.textContent = 'View all';
+
+    // If 3 or fewer parent comments, no collapse needed
+    if (parentCount <= COLLAPSE_SHOW_COUNT) {
+        title.style.cursor = 'default';
+        title.removeAttribute('data-expandable');
+        list.removeAttribute('data-collapsed');
+        // Make sure all are visible
+        allComments.forEach(c => c.style.display = '');
+        return;
+    }
+
+    // Mark as expandable and collapsed
+    title.style.cursor = 'pointer';
+    title.setAttribute('data-expandable', 'true');
+    list.setAttribute('data-collapsed', 'true');
+
+    // Show only first 3 PARENT comments (hide everything else including their replies)
+    let shownParents = 0;
+    allComments.forEach(comment => {
+        const isParent = !comment.classList.contains('comment-reply');
+
+        if (isParent) {
+            if (shownParents < COLLAPSE_SHOW_COUNT) {
+                comment.style.display = '';
+                shownParents++;
+            } else {
+                comment.style.display = 'none';
+            }
+        } else {
+            // Hide all replies when collapsed
+            comment.style.display = 'none';
+        }
+    });
+
+    // Bind click event
+    title.onclick = handleCollapseToggle;
 }
 
-function toggleCommentExpand() {
+/**
+ * Handle click on the collapse toggle
+ */
+function handleCollapseToggle() {
     const list = document.getElementById('commentList');
-    const toggle = list.parentElement.querySelector('.comment-expand-toggle');
-    const hiddenComments = list.querySelectorAll('.comment-item.hidden-collapsed');
+    const title = document.getElementById('commentSectionTitle');
 
-    if (hiddenComments.length > 0) {
-        // Expand: show all comments
-        hiddenComments.forEach(comment => comment.classList.remove('hidden-collapsed'));
-        toggle.textContent = 'Hide comments';
+    if (!list || !title) return;
+    if (title.getAttribute('data-expandable') !== 'true') return;
+
+    const isCollapsed = list.getAttribute('data-collapsed') === 'true';
+    const allComments = Array.from(list.children);
+    const total = allComments.length;
+
+    console.log('[Collapse] Toggle clicked, isCollapsed:', isCollapsed, 'total:', total);
+
+    if (isCollapsed) {
+        // EXPAND: Show all comments
+        allComments.forEach(c => c.style.display = '');
+        list.setAttribute('data-collapsed', 'false');
+        title.textContent = 'Hide comments';
+
+        // Ensure list is scrollable and scroll to top
+        list.style.overflowY = 'auto';
+        list.scrollTop = 0;
     } else {
-        // Collapse: hide comments again
-        const allComments = Array.from(list.querySelectorAll('.comment-item'));
-        const toHide = allComments.slice(0, -3);
-        toHide.forEach(comment => comment.classList.add('hidden-collapsed'));
-        toggle.textContent = `View all ${allComments.length} comments`;
+        // COLLAPSE: Show only first 3 PARENT comments
+        let shownParents = 0;
+        allComments.forEach(comment => {
+            const isParent = !comment.classList.contains('comment-reply');
+
+            if (isParent) {
+                if (shownParents < COLLAPSE_SHOW_COUNT) {
+                    comment.style.display = '';
+                    shownParents++;
+                } else {
+                    comment.style.display = 'none';
+                }
+            } else {
+                // Hide all replies when collapsed
+                comment.style.display = 'none';
+            }
+        });
+
+        list.setAttribute('data-collapsed', 'true');
+        title.textContent = 'View all';
+
+        // Scroll to top when collapsed
+        list.scrollTop = 0;
     }
 }
+
+// Expose globally for debugging
+window.initCommentCollapse = initCommentCollapse;
+window.handleCollapseToggle = handleCollapseToggle;
 
 function renderComment(comment, overrideAvatar = null, replyToProfile = null, hasReplies = false, isLastReply = false, isLiked = false, likeCount = 0) {
     const list = document.getElementById('commentList');
@@ -3338,7 +3671,7 @@ function renderComment(comment, overrideAvatar = null, replyToProfile = null, ha
             ${replyingToHtml}
             <div class="comment-header">
                 <span class="comment-author">${escapeHtml(name)} ${isAdminUser(comment.profiles?.email) ? '✨' : ''}</span>
-                <span class="comment-time">${new Date(comment.created_at).toLocaleDateString()}</span>
+                <span class="comment-time" title="${new Date(comment.created_at).toLocaleString()}">${formatCommentTime(comment.created_at)}</span>
             </div>
             <div class="comment-content">${formatMentions(displayContent)}</div>
             <div class="comment-actions">
@@ -3431,6 +3764,9 @@ function handleReplyComment(commentId, authorName) {
     }
 }
 
+// Avatar URL cache to avoid 429 errors from Google CDN
+const avatarUrlCache = new Map();
+
 function getAvatarUrl(profile) {
     // Consistent fallback for all avatars (Starry Blue)
     const getDefaultAvatar = (identifier) =>
@@ -3454,24 +3790,49 @@ function getAvatarUrl(profile) {
         return trimmed.startsWith('http');
     };
 
+    // Helper to check if URL is from Google CDN (prone to 429 errors)
+    const isGoogleCDN = (url) => {
+        return url && (url.includes('googleusercontent.com') || url.includes('ggpht.com'));
+    };
+
     if (!profile) return DEFAULT_AVATAR;
 
-    // DEBUG: trace what profile data we receive
-    console.log('🔍 getAvatarUrl debug:', {
-        profileAvatarUrl: profile.avatar_url ? profile.avatar_url.substring(0, 60) + '...' : 'NULL',
-        userMetadataAvatar: profile.user_metadata?.avatar_url ? profile.user_metadata.avatar_url.substring(0, 60) + '...' : 'NULL',
-        isValidDbAvatar: isValidUrl(profile.avatar_url)
-    });
+    // Check cache first
+    const profileId = profile.id || profile.user_id;
+    if (profileId && avatarUrlCache.has(profileId)) {
+        return avatarUrlCache.get(profileId);
+    }
 
-    // 1. Try direct avatar_url from profile (DB)
-    if (isValidUrl(profile.avatar_url)) return profile.avatar_url.trim();
+    let avatarUrl = null;
 
+    // 1. Try direct avatar_url from profile (DB) - highest priority
+    if (isValidUrl(profile.avatar_url)) {
+        avatarUrl = profile.avatar_url.trim();
+    }
     // 2. Try metadata avatar (Auth)
-    const meta = profile.user_metadata || {};
-    if (isValidUrl(meta.avatar_url)) return meta.avatar_url.trim();
+    else {
+        const meta = profile.user_metadata || {};
+        if (isValidUrl(meta.avatar_url)) {
+            avatarUrl = meta.avatar_url.trim();
+        }
+    }
 
-    // 3. Fallback
-    return DEFAULT_AVATAR;
+    // If URL is from Google CDN, use fallback to avoid 429 errors
+    // Google avatars are cached in their CDN but have rate limits
+    if (avatarUrl && isGoogleCDN(avatarUrl)) {
+        console.warn('⚠️ Google CDN avatar detected, using fallback to avoid 429:', avatarUrl.substring(0, 60));
+        avatarUrl = DEFAULT_AVATAR;
+    }
+
+    // Use fallback if no valid URL found
+    const finalUrl = avatarUrl || DEFAULT_AVATAR;
+
+    // Cache the result
+    if (profileId) {
+        avatarUrlCache.set(profileId, finalUrl);
+    }
+
+    return finalUrl;
 }
 
 function isAdminUser(email) {
@@ -3501,7 +3862,11 @@ async function submitComment() {
 
     const input = document.getElementById('commentInput');
     const content = input.value.trim();
-    if (!content) return;
+
+    // Allow empty content if there's an image attached
+    if (!content && !selectedCommentImage) {
+        return; // Need either text or image
+    }
 
     // Check auth
     const { data: { user } } = await window.supabaseClient.auth.getUser();
@@ -3513,8 +3878,16 @@ async function submitComment() {
     // Get parent_id if this is a reply
     const parentId = input.dataset.replyTo || null;
 
-    // Store for potential rollback
-    const originalContent = content;
+    // Handle Reply Content: Strip the leading @username if present
+    // The UI shows "Replying to @User" separately, so we don't need it in the body
+    let cleanContent = content;
+    if (parentId && content.startsWith('@')) {
+        // Remove the first word (which is likely the @mention) and leading spaces
+        cleanContent = content.replace(/^@\S+\s*/, '');
+    }
+
+    // Store for potential rollback (use original input for rollback UI)
+    const originalContent = cleanContent;
     const originalParentId = parentId;
 
     // Clear input IMMEDIATELY for instant feedback
@@ -3540,7 +3913,7 @@ async function submitComment() {
     const insertData = {
         prompt_id: currentPromptId,
         user_id: user.id,
-        content: originalContent
+        content: originalContent || '[图片]' // Default text for image-only comments
     };
 
     if (originalParentId) {
@@ -3581,10 +3954,14 @@ async function submitComment() {
         }
     };
 
-    // Extract parent username from @mention
+    // Extract parent username from input (for immediate optimistic render only)
     let parentProfile = null;
     if (originalParentId) {
-        const mentionMatch = originalContent.match(/@(\S+)/);
+        // We look at the RAW input (input.value was cleared, but 'content' holds it)
+        // actually 'content' is the raw input before cleaning.
+        // Let's rely on the fact that reply logic sets up the placeholder/value
+        const rawInput = content;
+        const mentionMatch = rawInput.match(/^@(\S+)/);
         if (mentionMatch) {
             parentProfile = { username: mentionMatch[1] };
         }
@@ -3627,6 +4004,59 @@ async function submitComment() {
     // Invalidate cache
     commentCache.delete(currentPromptId);
 }
+
+// --- Sorting UI Logic ---
+function setupCommentSorting() {
+    const btn = document.getElementById('commentSortBtn');
+    const dropdown = document.getElementById('commentSortDropdown');
+    const options = document.querySelectorAll('.sort-option');
+
+    if (!btn || !dropdown) return;
+
+    // Toggle Dropdown
+    btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        dropdown.classList.toggle('show');
+    });
+
+    // Close when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!btn.contains(e.target) && !dropdown.contains(e.target)) {
+            dropdown.classList.remove('show');
+        }
+    });
+
+    // Handle Option Click
+    options.forEach(opt => {
+        opt.addEventListener('click', () => {
+            const sortType = opt.dataset.sort;
+
+            // Save preference
+            localStorage.setItem('commentSortPreference', sortType);
+
+            // Update Active State
+            options.forEach(o => o.classList.remove('active'));
+            opt.classList.add('active');
+
+            // Close Dropdown
+            dropdown.classList.remove('show');
+
+            // Trigger Re-render if we have cached data
+            const cached = commentCache.get(currentPromptId);
+            if (cached) {
+                const list = document.getElementById('commentList');
+                // clear list first to show change
+                list.innerHTML = '';
+                renderCommentsFromCache(cached, list);
+            }
+        });
+    });
+}
+
+// Initialize sorting on load
+document.addEventListener('DOMContentLoaded', () => {
+    setupCommentSorting();
+});
 
 // Animation lock to prevent rapid click issues
 let isModalImageAnimating = false;

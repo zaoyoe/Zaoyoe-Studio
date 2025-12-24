@@ -17,6 +17,7 @@
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
     <link rel="stylesheet" href="admin-studio.css?v=3">
+    <link rel="stylesheet" href="admin-sidebar.css?v=1">
     <!-- Cropper.js CSS -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.css">
 
@@ -34,400 +35,611 @@
 </head>
 
 <body>
-    <!-- Ambient Light Canvas -->
-    <canvas id="ambientCanvas"></canvas>
-
-    <!-- Header -->
-    <header class="studio-header">
-        <a href="prompts.html" class="back-link">
-            <i class="fas fa-arrow-left"></i>
-            <span>Back to Gallery</span>
-        </a>
-        <h1 class="studio-title">
-            <i class="fas fa-palette"></i>
-            Admin Studio
-        </h1>
-        <div class="header-right">
-            <div id="apiKeySelector" class="api-key-selector">
-                <!-- Rendered by JavaScript -->
+    <!-- Admin Layout Container -->
+    <div class="admin-layout">
+        <!-- Supabase-style Sidebar -->
+        <aside class="admin-sidebar" id="adminSidebar">
+            <!-- Brand -->
+            <div class="sidebar-brand">
+                <div class="sidebar-brand-icon">
+                    <i class="fas fa-bolt"></i>
+                </div>
+                <span class="sidebar-brand-text">Admin Studio</span>
             </div>
-            <div class="studio-status" id="studioStatus">
-                <span class="status-dot"></span>
-                <span class="status-text">Ready</span>
+
+            <!-- Navigation -->
+            <nav class="sidebar-nav">
+                <div class="sidebar-item active" data-module="gallery" onclick="switchModule('gallery')">
+                    <i class="fas fa-palette"></i>
+                    <span>Gallery</span>
+                </div>
+                <div class="sidebar-item" data-module="comments" onclick="switchModule('comments')">
+                    <i class="fas fa-comments"></i>
+                    <span>评论管理</span>
+                </div>
+                <div class="sidebar-divider"></div>
+                <div class="sidebar-item disabled" data-module="points">
+                    <i class="fas fa-coins"></i>
+                    <span>积分系统</span>
+                    <span class="coming-soon">即将推出</span>
+                </div>
+                <div class="sidebar-item disabled" data-module="analytics">
+                    <i class="fas fa-chart-line"></i>
+                    <span>数据分析</span>
+                    <span class="coming-soon">即将推出</span>
+                </div>
+            </nav>
+
+            <!-- Footer (Settings) -->
+            <div class="sidebar-footer">
+                <div class="sidebar-item" data-module="settings" onclick="switchModule('settings')">
+                    <i class="fas fa-cog"></i>
+                    <span>设置</span>
+                </div>
             </div>
-        </div>
-    </header>
+        </aside>
 
-    <!-- Tab Navigation -->
-    <nav class="admin-tabs">
-        <button class="admin-tab active" data-view="create" onclick="switchView('create')">Create</button>
-        <button class="admin-tab" data-view="manage" onclick="switchView('manage')">Manage</button>
-    </nav>
+        <!-- Main Content Area -->
+        <div class="admin-main-content">
+            <!-- Ambient Light Canvas -->
+            <canvas id="ambientCanvas"></canvas>
 
-    <!-- Main Content -->
-    <!-- Starry Background for Dark Mode -->
-    <canvas id="starryCanvas"></canvas>
-
-    <div class="studio-main">
-        <!-- CREATE VIEW -->
-        <div id="view-create" class="view-section active">
-            <!-- Batch Edit Switcher (only visible in batch edit mode) -->
-            <div class="batch-edit-bar" id="batchEditBar" style="display: none;">
-
-                <div class="batch-edit-dropdown" id="batchEditDropdown">
-                    <button class="batch-edit-current" id="batchEditCurrent">
-                        <span class="current-title">选择提示词...</span>
-                        <span class="current-index">(0/0)</span>
-                        <i class="fas fa-chevron-down"></i>
-                    </button>
-                    <div class="batch-edit-menu" id="batchEditMenu">
-                        <!-- Dynamically populated -->
+            <!-- Header -->
+            <header class="studio-header">
+                <a href="prompts.html" class="back-link">
+                    <i class="fas fa-arrow-left"></i>
+                    <span>Back to Gallery</span>
+                </a>
+                <h1 class="studio-title">
+                    <i class="fas fa-palette"></i>
+                    Admin Studio
+                </h1>
+                <div class="header-right">
+                    <div id="apiKeySelector" class="api-key-selector">
+                        <!-- Rendered by JavaScript -->
+                    </div>
+                    <div class="studio-status" id="studioStatus">
+                        <span class="status-dot"></span>
+                        <span class="status-text">Ready</span>
                     </div>
                 </div>
-                <button class="batch-edit-close" id="batchEditClose" title="退出批量编辑">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            <!-- Upload Section -->
-            <section class="upload-section glass-panel">
-                <h2 class="section-title">
-                    <i class="fas fa-cloud-upload-alt"></i>
-                    Upload Images
-                </h2>
+            </header>
 
-                <div class="upload-zone" id="uploadZone">
-                    <div class="upload-icon">
-                        <i class="fas fa-images"></i>
-                    </div>
-                    <p class="upload-text">Drag & drop images here</p>
-                    <p class="upload-subtext">or click to browse</p>
-                    <input type="file" id="fileInput" multiple accept="image/*" hidden>
-                </div>
+            <!-- ========== GALLERY MODULE ========== -->
+            <div id="module-gallery" class="module-container active">
+                <!-- Tab Navigation -->
+                <nav class="admin-tabs">
+                    <button class="admin-tab active" data-view="create" onclick="switchView('create')">Create</button>
+                    <button class="admin-tab" data-view="manage" onclick="switchView('manage')">Manage</button>
+                </nav>
 
-                <!-- Image Preview Grid -->
-                <div class="preview-grid" id="previewGrid">
-                    <!-- Dynamically populated -->
-                </div>
-            </section>
+                <!-- Main Content -->
+                <!-- Starry Background for Dark Mode -->
+                <canvas id="starryCanvas"></canvas>
 
-            <!-- AI Analysis Section -->
-            <section class="analysis-section glass-panel">
-                <h2 class="section-title">
-                    <i class="fas fa-robot"></i>
-                    AI Analysis
-                    <button class="analyze-btn" id="analyzeBtn" disabled>Analyze</button>
-                </h2>
+                <div class="studio-main">
+                    <!-- CREATE VIEW -->
+                    <div id="view-create" class="view-section active">
+                        <!-- Batch Edit Switcher (only visible in batch edit mode) -->
+                        <div class="batch-edit-bar" id="batchEditBar" style="display: none;">
 
-                <!-- Loading State - Elegant Neural Animation -->
-                <div class="analysis-loading" id="analysisLoading" style="display: none;">
-                    <div class="neural-loader">
-                        <div class="neural-dot"></div>
-                        <div class="neural-dot"></div>
-                        <div class="neural-dot"></div>
-                        <div class="neural-dot"></div>
-                        <div class="neural-dot"></div>
-                    </div>
-                </div>
-
-                <!-- Results Form -->
-                <form class="prompt-form" id="promptForm" style="display: none;">
-                    <!-- Title -->
-                    <div class="form-group">
-                        <label for="promptTitle">
-                            <i class="fas fa-heading"></i>
-                            Title
-                            <span class="ai-badge">AI Generated</span>
-                            <!-- Last Edited Info (shown only in edit mode) -->
-                            <span class="last-edited-info" id="lastEditedInfo" style="display: none;">
-                                <i class="fas fa-clock"></i>
-                                <time id="lastEditedTime"></time>
-                            </span>
-                        </label>
-                        <input type="text" id="promptTitle" placeholder="Enter prompt title...">
-                    </div>
-
-                    <!-- Category -->
-                    <div class="form-group">
-                        <label for="promptCategory">
-                            <i class="fas fa-folder"></i>
-                            Category
-                            <span class="ai-badge">AI Detected</span>
-                        </label>
-                        <!-- Custom Dropdown -->
-                        <div class="custom-select" id="categoryDropdown">
-                            <input type="hidden" id="promptCategory" name="promptCategory" value="">
-                            <div class="select-display" id="categoryDisplay">
-                                <span class="select-text">Select category...</span>
-                                <i class="fas fa-chevron-down select-arrow"></i>
-                            </div>
-                            <div class="select-options" id="categoryOptions">
-                                <div class="select-option" data-value="">Select category...</div>
-                                <div class="select-option" data-value="Photography">Photography</div>
-                                <div class="select-option" data-value="Illustration">Illustration</div>
-                                <div class="select-option" data-value="3D Art">3D Art</div>
-                                <div class="select-option" data-value="Miniature">Miniature</div>
-                                <div class="select-option" data-value="Creative">Creative</div>
-                                <div class="select-option" data-value="Animation">Animation</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Prompt Text -->
-                    <div class="form-group">
-                        <label for="promptText">
-                            <i class="fas fa-terminal"></i>
-                            Prompt Text
-                        </label>
-                        <textarea id="promptText" rows="6"
-                            placeholder="Enter the prompt text used to generate this image..."></textarea>
-                    </div>
-
-                    <!-- Description (Hidden - still analyzed in background) -->
-                    <div class="form-group" style="display: none;">
-                        <label for="promptDescription">
-                            <i class="fas fa-align-left"></i>
-                            Description
-                            <span class="ai-badge">AI Generated</span>
-                        </label>
-                        <textarea id="promptDescription" rows="3" placeholder="Brief description..."></textarea>
-                    </div>
-
-                    <!-- AI Tags Display (Hidden - still analyzed in background) -->
-                    <div class="form-group" style="display: none;">
-                        <label>
-                            <i class="fas fa-tags"></i>
-                            AI Tags
-                            <span class="ai-badge">Auto-generated</span>
-                        </label>
-                        <div class="tags-container">
-                            <div class="tag-category">
-                                <span class="tag-label">Objects:</span>
-                                <div class="tag-list" id="tagObjects"></div>
-                            </div>
-                            <div class="tag-category">
-                                <span class="tag-label">Scenes:</span>
-                                <div class="tag-list" id="tagScenes"></div>
-                            </div>
-                            <div class="tag-category">
-                                <span class="tag-label">Styles:</span>
-                                <div class="tag-list" id="tagStyles"></div>
-                            </div>
-                            <div class="tag-category">
-                                <span class="tag-label">Mood:</span>
-                                <div class="tag-list" id="tagMood"></div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Dominant Colors (Hidden - still analyzed in background) -->
-                    <div class="form-group" style="display: none;">
-                        <label>
-                            <i class="fas fa-palette"></i>
-                            Dominant Colors
-                            <span class="ai-badge">Extracted</span>
-                        </label>
-                        <div class="color-swatches" id="colorSwatches"></div>
-                    </div>
-
-                    <!-- Submit Button -->
-                    <div class="form-actions">
-                        <button type="button" class="btn-secondary" onclick="resetForm()">
-                            <i class="fas fa-undo"></i>
-                            Reset
-                        </button>
-                        <button type="submit" class="btn-primary" id="saveBtn">
-                            <span class="btn-text">
-                                <i class="fas fa-save"></i>
-                                Save to Gallery
-                            </span>
-                            <div class="dot-matrix-container">
-                                <div class="dot-matrix" id="dotMatrix">
-                                    <!-- 30 dots: 10 columns x 3 rows -->
+                            <div class="batch-edit-dropdown" id="batchEditDropdown">
+                                <button class="batch-edit-current" id="batchEditCurrent">
+                                    <span class="current-title">选择提示词...</span>
+                                    <span class="current-index">(0/0)</span>
+                                    <i class="fas fa-chevron-down"></i>
+                                </button>
+                                <div class="batch-edit-menu" id="batchEditMenu">
+                                    <!-- Dynamically populated -->
                                 </div>
                             </div>
+                            <button class="batch-edit-close" id="batchEditClose" title="退出批量编辑">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <!-- Upload Section -->
+                        <section class="upload-section glass-panel">
+                            <h2 class="section-title">
+                                <i class="fas fa-cloud-upload-alt"></i>
+                                Upload Images
+                            </h2>
+
+                            <div class="upload-zone" id="uploadZone">
+                                <div class="upload-icon">
+                                    <i class="fas fa-images"></i>
+                                </div>
+                                <p class="upload-text">Drag & drop images here</p>
+                                <p class="upload-subtext">or click to browse</p>
+                                <input type="file" id="fileInput" multiple accept="image/*" hidden>
+                            </div>
+
+                            <!-- Image Preview Grid -->
+                            <div class="preview-grid" id="previewGrid">
+                                <!-- Dynamically populated -->
+                            </div>
+                        </section>
+
+                        <!-- AI Analysis Section -->
+                        <section class="analysis-section glass-panel">
+                            <h2 class="section-title">
+                                <i class="fas fa-robot"></i>
+                                AI Analysis
+                                <button class="analyze-btn" id="analyzeBtn" disabled>Analyze</button>
+                            </h2>
+
+                            <!-- Loading State - Elegant Neural Animation -->
+                            <div class="analysis-loading" id="analysisLoading" style="display: none;">
+                                <div class="neural-loader">
+                                    <div class="neural-dot"></div>
+                                    <div class="neural-dot"></div>
+                                    <div class="neural-dot"></div>
+                                    <div class="neural-dot"></div>
+                                    <div class="neural-dot"></div>
+                                </div>
+                            </div>
+
+                            <!-- Results Form -->
+                            <form class="prompt-form" id="promptForm" style="display: none;">
+                                <!-- Title -->
+                                <div class="form-group">
+                                    <label for="promptTitle">
+                                        <i class="fas fa-heading"></i>
+                                        Title
+                                        <span class="ai-badge">AI Generated</span>
+                                        <!-- Last Edited Info (shown only in edit mode) -->
+                                        <span class="last-edited-info" id="lastEditedInfo" style="display: none;">
+                                            <i class="fas fa-clock"></i>
+                                            <time id="lastEditedTime"></time>
+                                        </span>
+                                    </label>
+                                    <input type="text" id="promptTitle" placeholder="Enter prompt title...">
+                                </div>
+
+                                <!-- Category -->
+                                <div class="form-group">
+                                    <label for="promptCategory">
+                                        <i class="fas fa-folder"></i>
+                                        Category
+                                        <span class="ai-badge">AI Detected</span>
+                                    </label>
+                                    <!-- Custom Dropdown -->
+                                    <div class="custom-select" id="categoryDropdown">
+                                        <input type="hidden" id="promptCategory" name="promptCategory" value="">
+                                        <div class="select-display" id="categoryDisplay">
+                                            <span class="select-text">Select category...</span>
+                                            <i class="fas fa-chevron-down select-arrow"></i>
+                                        </div>
+                                        <div class="select-options" id="categoryOptions">
+                                            <div class="select-option" data-value="">Select category...</div>
+                                            <div class="select-option" data-value="Photography">Photography</div>
+                                            <div class="select-option" data-value="Illustration">Illustration</div>
+                                            <div class="select-option" data-value="3D Art">3D Art</div>
+                                            <div class="select-option" data-value="Miniature">Miniature</div>
+                                            <div class="select-option" data-value="Creative">Creative</div>
+                                            <div class="select-option" data-value="Animation">Animation</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Prompt Text -->
+                                <div class="form-group">
+                                    <label for="promptText">
+                                        <i class="fas fa-terminal"></i>
+                                        Prompt Text
+                                    </label>
+                                    <textarea id="promptText" rows="6"
+                                        placeholder="Enter the prompt text used to generate this image..."></textarea>
+                                </div>
+
+                                <!-- Description (Hidden - still analyzed in background) -->
+                                <div class="form-group" style="display: none;">
+                                    <label for="promptDescription">
+                                        <i class="fas fa-align-left"></i>
+                                        Description
+                                        <span class="ai-badge">AI Generated</span>
+                                    </label>
+                                    <textarea id="promptDescription" rows="3"
+                                        placeholder="Brief description..."></textarea>
+                                </div>
+
+                                <!-- AI Tags Display (Hidden - still analyzed in background) -->
+                                <div class="form-group" style="display: none;">
+                                    <label>
+                                        <i class="fas fa-tags"></i>
+                                        AI Tags
+                                        <span class="ai-badge">Auto-generated</span>
+                                    </label>
+                                    <div class="tags-container">
+                                        <div class="tag-category">
+                                            <span class="tag-label">Objects:</span>
+                                            <div class="tag-list" id="tagObjects"></div>
+                                        </div>
+                                        <div class="tag-category">
+                                            <span class="tag-label">Scenes:</span>
+                                            <div class="tag-list" id="tagScenes"></div>
+                                        </div>
+                                        <div class="tag-category">
+                                            <span class="tag-label">Styles:</span>
+                                            <div class="tag-list" id="tagStyles"></div>
+                                        </div>
+                                        <div class="tag-category">
+                                            <span class="tag-label">Mood:</span>
+                                            <div class="tag-list" id="tagMood"></div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Dominant Colors (Hidden - still analyzed in background) -->
+                                <div class="form-group" style="display: none;">
+                                    <label>
+                                        <i class="fas fa-palette"></i>
+                                        Dominant Colors
+                                        <span class="ai-badge">Extracted</span>
+                                    </label>
+                                    <div class="color-swatches" id="colorSwatches"></div>
+                                </div>
+
+                                <!-- Submit Button -->
+                                <div class="form-actions">
+                                    <button type="button" class="btn-secondary" onclick="resetForm()">
+                                        <i class="fas fa-undo"></i>
+                                        Reset
+                                    </button>
+                                    <button type="submit" class="btn-primary" id="saveBtn">
+                                        <span class="btn-text">
+                                            <i class="fas fa-save"></i>
+                                            Save to Gallery
+                                        </span>
+                                        <div class="dot-matrix-container">
+                                            <div class="dot-matrix" id="dotMatrix">
+                                                <!-- 30 dots: 10 columns x 3 rows -->
+                                            </div>
+                                        </div>
+                                    </button>
+                                </div>
+                            </form>
+                        </section>
+                    </div>
+                    <!-- END CREATE VIEW -->
+
+                    <!-- MANAGE VIEW -->
+                    <div id="view-manage" class="view-section">
+                        <!-- Search Toolbar -->
+                        <div class="manage-toolbar">
+                            <!-- Search Bar with Dropdown Wrapper -->
+                            <div class="admin-search-wrapper">
+                                <div class="admin-search">
+                                    <i class="fas fa-search"></i>
+                                    <input type="text" id="adminSearchInput" placeholder="Search prompts..."
+                                        autocomplete="off">
+                                </div>
+                                <!-- Search Dropdown -->
+                                <div class="search-dropdown" id="adminSearchDropdown">
+                                    <!-- Autocomplete Suggestions (shown when typing) -->
+                                    <div class="search-suggestions" id="searchSuggestions" style="display: none;">
+                                        <!-- Dynamically generated -->
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="filter-group">
+                                <!-- Category Filter - Custom Dropdown -->
+                                <div class="custom-select filter-custom-select" id="categoryFilterDropdown">
+                                    <input type="hidden" id="categoryFilter" name="categoryFilter" value="">
+                                    <div class="select-display">
+                                        <span class="select-text">All</span>
+                                        <i class="fas fa-chevron-down select-arrow"></i>
+                                    </div>
+                                    <div class="select-options">
+                                        <div class="select-option selected" data-value="">All</div>
+                                        <div class="select-option" data-value="Photography">Photography</div>
+                                        <div class="select-option" data-value="3D Art">3D Art</div>
+                                        <div class="select-option" data-value="Illustration">Illustration</div>
+                                        <div class="select-option" data-value="Creative">Creative</div>
+                                        <div class="select-option" data-value="Miniature">Miniature</div>
+                                        <div class="select-option" data-value="Animation">Animation</div>
+                                    </div>
+                                </div>
+                                <!-- Date Filter - Custom Dropdown -->
+                                <div class="custom-select filter-custom-select" id="dateFilterDropdown">
+                                    <input type="hidden" id="dateFilter" name="dateFilter" value="">
+                                    <div class="select-display">
+                                        <span class="select-text">All</span>
+                                        <i class="fas fa-chevron-down select-arrow"></i>
+                                    </div>
+                                    <div class="select-options">
+                                        <div class="select-option selected" data-value="">All</div>
+                                        <div class="select-option" data-value="today">Today</div>
+                                        <div class="select-option" data-value="week">Week</div>
+                                        <div class="select-option" data-value="month">Month</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Batch Actions -->
+                            <div class="batch-actions-wrapper" id="batchActionsWrapper">
+                                <button class="batch-btn" id="selectModeBtn" title="选择模式">
+                                    <i class="fas fa-check-square"></i>
+                                </button>
+                                <div class="batch-menu-container" id="batchMenuContainer" style="display: none;">
+                                    <button class="batch-btn" id="batchMenuTrigger" title="批量操作">
+                                        <i class="fas fa-ellipsis-h"></i>
+                                    </button>
+                                    <div class="batch-dropdown-menu" id="batchDropdownMenu">
+                                        <div class="batch-menu-item" id="selectAllBtn">
+                                            <i class="fas fa-check-double"></i>
+                                            <span>全选</span>
+                                        </div>
+                                        <div class="batch-menu-item" id="batchEditMenuItem">
+                                            <i class="fas fa-edit"></i>
+                                            <span>批量编辑</span>
+                                        </div>
+                                        <div class="batch-menu-item" id="batchReanalyzeMenuItem">
+                                            <i class="fas fa-sync-alt"></i>
+                                            <span>批量重分析</span>
+                                        </div>
+                                        <div class="batch-menu-item" id="analyzeUntaggedMenuItem">
+                                            <i class="fas fa-tags"></i>
+                                            <span>补充标签</span>
+                                        </div>
+                                        <div class="batch-menu-divider"></div>
+                                        <div class="batch-menu-item danger" id="batchDeleteMenuItem">
+                                            <i class="fas fa-trash-alt"></i>
+                                            <span>批量删除</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="prompt-count" id="promptCountWrapper" style="display: none;">
+                                <span class="select-count">已选 <span id="selectedCount">0</span> 项</span>
+                            </div>
+                        </div>
+                        <div class="admin-grid" id="adminGrid">
+                            <!-- Dynamically loaded -->
+                        </div>
+                    </div>
+                    <!-- END MANAGE VIEW -->
+                </div>
+                <!-- END studio-main -->
+            </div>
+            <!-- END GALLERY MODULE -->
+
+            <!-- ========== COMMENTS MODULE ========== -->
+            <div id="module-comments" class="module-container">
+                <div class="module-header">
+                    <h2><i class="fas fa-comments"></i> 评论管理</h2>
+                </div>
+                <div class="module-content">
+                    <!-- Comment Tabs -->
+                    <nav class="admin-tabs">
+                        <button class="admin-tab active" data-comment-view="guestbook"
+                            onclick="switchCommentView('guestbook')">留言板</button>
+                        <button class="admin-tab" data-comment-view="gallery"
+                            onclick="switchCommentView('gallery')">画廊评论</button>
+                    </nav>
+
+                    <!-- Stats Cards -->
+                    <div class="comment-stats">
+                        <div class="stat-card">
+                            <div class="stat-value" id="totalCommentsCount">--</div>
+                            <div class="stat-label">总评论</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="todayCommentsCount">--</div>
+                            <div class="stat-label">今日新增</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="activeUsersCount">--</div>
+                            <div class="stat-label">活跃用户</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value" id="weekGrowth">--</div>
+                            <div class="stat-label">周增长</div>
+                        </div>
+                    </div>
+
+                    <!-- Search/Filter Bar -->
+                    <div class="comment-toolbar">
+                        <div class="search-box">
+                            <i class="fas fa-search"></i>
+                            <input type="text" id="commentSearch" placeholder="搜索评论内容...">
+                        </div>
+                        <div class="filter-group">
+                            <input type="date" id="commentDateFrom" placeholder="开始日期">
+                            <span>至</span>
+                            <input type="date" id="commentDateTo" placeholder="结束日期">
+                        </div>
+                        <button class="btn-secondary" id="commentFilterBtn">
+                            <i class="fas fa-filter"></i> 筛选
                         </button>
                     </div>
-                </form>
-            </section>
-        </div>
-        <!-- END CREATE VIEW -->
 
-        <!-- MANAGE VIEW -->
-        <div id="view-manage" class="view-section">
-            <!-- Search Toolbar -->
-            <div class="manage-toolbar">
-                <!-- Search Bar with Dropdown Wrapper -->
-                <div class="admin-search-wrapper">
-                    <div class="admin-search">
-                        <i class="fas fa-search"></i>
-                        <input type="text" id="adminSearchInput" placeholder="Search prompts..." autocomplete="off">
-                    </div>
-                    <!-- Search Dropdown -->
-                    <div class="search-dropdown" id="adminSearchDropdown">
-                        <!-- Autocomplete Suggestions (shown when typing) -->
-                        <div class="search-suggestions" id="searchSuggestions" style="display: none;">
-                            <!-- Dynamically generated -->
-                        </div>
+                    <!-- Comment List -->
+                    <div class="comment-list-admin" id="adminCommentList">
+                        <p class="loading-text">加载中...</p>
                     </div>
                 </div>
-                <div class="filter-group">
-                    <!-- Category Filter - Custom Dropdown -->
-                    <div class="custom-select filter-custom-select" id="categoryFilterDropdown">
-                        <input type="hidden" id="categoryFilter" name="categoryFilter" value="">
-                        <div class="select-display">
-                            <span class="select-text">All</span>
-                            <i class="fas fa-chevron-down select-arrow"></i>
-                        </div>
-                        <div class="select-options">
-                            <div class="select-option selected" data-value="">All</div>
-                            <div class="select-option" data-value="Photography">Photography</div>
-                            <div class="select-option" data-value="3D Art">3D Art</div>
-                            <div class="select-option" data-value="Illustration">Illustration</div>
-                            <div class="select-option" data-value="Creative">Creative</div>
-                            <div class="select-option" data-value="Miniature">Miniature</div>
-                            <div class="select-option" data-value="Animation">Animation</div>
+            </div>
+            <!-- END COMMENTS MODULE -->
+
+            <!-- ========== SETTINGS MODULE ========== -->
+            <div id="module-settings" class="module-container">
+                <div class="module-header">
+                    <h2><i class="fas fa-cog"></i> 设置</h2>
+                </div>
+                <div class="module-content">
+                    <!-- API Key Section -->
+                    <div class="settings-section">
+                        <h3><i class="fas fa-key"></i> API 配置</h3>
+                        <div class="settings-item">
+                            <label>Gemini API Key</label>
+                            <div class="settings-input-group">
+                                <input type="password" id="settingsApiKey" placeholder="sk-..." readonly>
+                                <button class="btn-secondary" onclick="promptForApiKey()">
+                                    <i class="fas fa-edit"></i> 修改
+                                </button>
+                            </div>
+                            <p class="settings-status" id="apiKeyStatus">
+                                <span class="status-dot"></span>
+                                <span>检测中...</span>
+                            </p>
                         </div>
                     </div>
-                    <!-- Date Filter - Custom Dropdown -->
-                    <div class="custom-select filter-custom-select" id="dateFilterDropdown">
-                        <input type="hidden" id="dateFilter" name="dateFilter" value="">
-                        <div class="select-display">
-                            <span class="select-text">All</span>
-                            <i class="fas fa-chevron-down select-arrow"></i>
+
+                    <!-- Coming Soon Section -->
+                    <div class="settings-section coming-soon-section">
+                        <h3><i class="fas fa-rocket"></i> 更多设置</h3>
+                        <div class="coming-soon-items">
+                            <div class="coming-soon-item">
+                                <i class="fas fa-users-cog"></i>
+                                <span>管理员权限</span>
+                            </div>
+                            <div class="coming-soon-item">
+                                <i class="fas fa-filter"></i>
+                                <span>敏感词过滤</span>
+                            </div>
+                            <div class="coming-soon-item">
+                                <i class="fas fa-download"></i>
+                                <span>数据导出</span>
+                            </div>
+                            <div class="coming-soon-item">
+                                <i class="fas fa-bell"></i>
+                                <span>通知设置</span>
+                            </div>
                         </div>
-                        <div class="select-options">
-                            <div class="select-option selected" data-value="">All</div>
-                            <div class="select-option" data-value="today">Today</div>
-                            <div class="select-option" data-value="week">Week</div>
-                            <div class="select-option" data-value="month">Month</div>
-                        </div>
+                        <p class="coming-soon-note">🚀 更多功能即将推出</p>
                     </div>
                 </div>
-                <!-- Batch Actions -->
-                <div class="batch-actions-wrapper" id="batchActionsWrapper">
-                    <button class="batch-btn" id="selectModeBtn" title="选择模式">
-                        <i class="fas fa-check-square"></i>
-                    </button>
-                    <div class="batch-menu-container" id="batchMenuContainer" style="display: none;">
-                        <button class="batch-btn" id="batchMenuTrigger" title="批量操作">
-                            <i class="fas fa-ellipsis-h"></i>
+            </div>
+            <!-- END SETTINGS MODULE -->
+
+            <!-- Batch Progress Modal -->
+            <div class="batch-modal-overlay" id="batchProgressOverlay" style="display: none;">
+                <div class="batch-modal">
+                    <h3 class="batch-modal-title" id="batchModalTitle">批量重分析</h3>
+                    <div class="batch-modal-body">
+                        <p class="batch-current-item" id="batchCurrentItem">正在分析...</p>
+                        <div class="batch-progress-bar">
+                            <div class="batch-progress-fill" id="batchProgressFill"></div>
+                        </div>
+                        <p class="batch-progress-text" id="batchProgressText">0/0 (0%)</p>
+                        <p class="batch-time-remaining" id="batchTimeRemaining">预计剩余: --</p>
+                    </div>
+                    <div class="batch-modal-actions">
+                        <button class="btn-secondary" id="batchPauseBtn">
+                            <i class="fas fa-pause"></i> 暂停
                         </button>
-                        <div class="batch-dropdown-menu" id="batchDropdownMenu">
-                            <div class="batch-menu-item" id="selectAllBtn">
-                                <i class="fas fa-check-double"></i>
-                                <span>全选</span>
-                            </div>
-                            <div class="batch-menu-item" id="batchEditMenuItem">
-                                <i class="fas fa-edit"></i>
-                                <span>批量编辑</span>
-                            </div>
-                            <div class="batch-menu-item" id="batchReanalyzeMenuItem">
-                                <i class="fas fa-sync-alt"></i>
-                                <span>批量重分析</span>
-                            </div>
-                            <div class="batch-menu-item" id="analyzeUntaggedMenuItem">
-                                <i class="fas fa-tags"></i>
-                                <span>补充标签</span>
-                            </div>
-                            <div class="batch-menu-divider"></div>
-                            <div class="batch-menu-item danger" id="batchDeleteMenuItem">
-                                <i class="fas fa-trash-alt"></i>
-                                <span>批量删除</span>
-                            </div>
-                        </div>
+                        <button class="btn-danger" id="batchCancelBtn">
+                            <i class="fas fa-times"></i> 取消
+                        </button>
                     </div>
                 </div>
-                <div class="prompt-count" id="promptCountWrapper" style="display: none;">
-                    <span class="select-count">已选 <span id="selectedCount">0</span> 项</span>
-                </div>
             </div>
-            <div class="admin-grid" id="adminGrid">
-                <!-- Dynamically loaded -->
-            </div>
-        </div>
-        <!-- END MANAGE VIEW -->
-        </main>
 
-        <!-- Batch Progress Modal -->
-        <div class="batch-modal-overlay" id="batchProgressOverlay" style="display: none;">
-            <div class="batch-modal">
-                <h3 class="batch-modal-title" id="batchModalTitle">批量重分析</h3>
-                <div class="batch-modal-body">
-                    <p class="batch-current-item" id="batchCurrentItem">正在分析...</p>
-                    <div class="batch-progress-bar">
-                        <div class="batch-progress-fill" id="batchProgressFill"></div>
+            <!-- Delete Confirmation Modal -->
+            <div class="batch-modal-overlay" id="deleteConfirmOverlay" style="display: none;">
+                <div class="batch-modal confirm-modal">
+                    <h3 class="batch-modal-title">⚠️ 确认删除</h3>
+                    <div class="batch-modal-body">
+                        <p id="deleteConfirmText">确定要删除选中的 0 个提示词吗？</p>
+                        <p class="warn-text">此操作无法撤销！</p>
                     </div>
-                    <p class="batch-progress-text" id="batchProgressText">0/0 (0%)</p>
-                    <p class="batch-time-remaining" id="batchTimeRemaining">预计剩余: --</p>
-                </div>
-                <div class="batch-modal-actions">
-                    <button class="btn-secondary" id="batchPauseBtn">
-                        <i class="fas fa-pause"></i> 暂停
-                    </button>
-                    <button class="btn-danger" id="batchCancelBtn">
-                        <i class="fas fa-times"></i> 取消
-                    </button>
+                    <div class="batch-modal-actions">
+                        <button class="btn-secondary" id="deleteConfirmCancel">取消</button>
+                        <button class="btn-danger" id="deleteConfirmOk">确认删除</button>
+                    </div>
                 </div>
             </div>
-        </div>
 
-        <!-- Delete Confirmation Modal -->
-        <div class="batch-modal-overlay" id="deleteConfirmOverlay" style="display: none;">
-            <div class="batch-modal confirm-modal">
-                <h3 class="batch-modal-title">⚠️ 确认删除</h3>
-                <div class="batch-modal-body">
-                    <p id="deleteConfirmText">确定要删除选中的 0 个提示词吗？</p>
-                    <p class="warn-text">此操作无法撤销！</p>
-                </div>
-                <div class="batch-modal-actions">
-                    <button class="btn-secondary" id="deleteConfirmCancel">取消</button>
-                    <button class="btn-danger" id="deleteConfirmOk">确认删除</button>
+            <!-- Image Preview Lightbox -->
+            <div class="lightbox-overlay" id="lightboxOverlay" style="display: none;">
+                <button class="lightbox-close" id="lightboxClose"><i class="fas fa-times"></i></button>
+                <img class="lightbox-image" id="lightboxImage" src="" alt="Preview">
+            </div>
+
+            <!-- Crop Modal -->
+            <div class="batch-modal-overlay" id="cropModalOverlay" style="display: none;">
+                <div class="batch-modal crop-modal">
+                    <h3 class="batch-modal-title">✂️ 裁切图片</h3>
+                    <div class="crop-aspect-buttons">
+                        <button class="crop-aspect-btn active" data-aspect="free">自由</button>
+                        <button class="crop-aspect-btn" data-aspect="1">1:1</button>
+                        <button class="crop-aspect-btn" data-aspect="0.75">3:4</button>
+                        <button class="crop-aspect-btn" data-aspect="1.333">4:3</button>
+                        <button class="crop-aspect-btn" data-aspect="0.5625">9:16</button>
+                        <button class="crop-aspect-btn" data-aspect="1.777">16:9</button>
+                    </div>
+                    <div class="crop-container" id="cropContainer">
+                        <img id="cropImage" src="" alt="Crop">
+                    </div>
+                    <div class="batch-modal-actions">
+                        <button class="btn-secondary" id="cropCancel">取消</button>
+                        <button class="btn-primary" id="cropApply">应用裁切</button>
+                    </div>
                 </div>
             </div>
+
+            <!-- Toast Notifications -->
+            <div class="toast-container" id="toastContainer"></div>
         </div>
+        <!-- END admin-main-content -->
+    </div>
+    <!-- END admin-layout -->
 
-        <!-- Image Preview Lightbox -->
-        <div class="lightbox-overlay" id="lightboxOverlay" style="display: none;">
-            <button class="lightbox-close" id="lightboxClose"><i class="fas fa-times"></i></button>
-            <img class="lightbox-image" id="lightboxImage" src="" alt="Preview">
-        </div>
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Cropper.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.js"></script>
+    <script>
+        // Initialize Supabase client
+        const SUPABASE_URL = 'https://mmkugdibsaeoevliebzk.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_lwkiF-sQ80z8e9oMcejFPQ_j7oezjcF';
+        window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-        <!-- Crop Modal -->
-        <div class="batch-modal-overlay" id="cropModalOverlay" style="display: none;">
-            <div class="batch-modal crop-modal">
-                <h3 class="batch-modal-title">✂️ 裁切图片</h3>
-                <div class="crop-aspect-buttons">
-                    <button class="crop-aspect-btn active" data-aspect="free">自由</button>
-                    <button class="crop-aspect-btn" data-aspect="1">1:1</button>
-                    <button class="crop-aspect-btn" data-aspect="0.75">3:4</button>
-                    <button class="crop-aspect-btn" data-aspect="1.333">4:3</button>
-                    <button class="crop-aspect-btn" data-aspect="0.5625">9:16</button>
-                    <button class="crop-aspect-btn" data-aspect="1.777">16:9</button>
-                </div>
-                <div class="crop-container" id="cropContainer">
-                    <img id="cropImage" src="" alt="Crop">
-                </div>
-                <div class="batch-modal-actions">
-                    <button class="btn-secondary" id="cropCancel">取消</button>
-                    <button class="btn-primary" id="cropApply">应用裁切</button>
-                </div>
-            </div>
-        </div>
+        // Module switching function
+        function switchModule(moduleName) {
+            // Skip disabled modules
+            const clickedItem = document.querySelector(`[data-module="${moduleName}"]`);
+            if (clickedItem && clickedItem.classList.contains('disabled')) {
+                return;
+            }
 
-        <!-- Toast Notifications -->
-        <div class="toast-container" id="toastContainer"></div>
+            // Update sidebar active state
+            document.querySelectorAll('.sidebar-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            if (clickedItem) {
+                clickedItem.classList.add('active');
+            }
 
-        <!-- Scripts -->
-        <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-        <!-- Cropper.js -->
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.js"></script>
-        <script>
-            // Initialize Supabase client
-            const SUPABASE_URL = 'https://mmkugdibsaeoevliebzk.supabase.co';
-            const SUPABASE_KEY = 'sb_publishable_lwkiF-sQ80z8e9oMcejFPQ_j7oezjcF';
-            window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-        </script>
-        <script src="admin-studio.js"></script>
+            // Switch module containers
+            document.querySelectorAll('.module-container').forEach(container => {
+                container.classList.remove('active');
+            });
+            const targetModule = document.getElementById(`module-${moduleName}`);
+            if (targetModule) {
+                targetModule.classList.add('active');
+            }
+
+            // Module-specific initialization
+            if (moduleName === 'comments' && typeof initCommentsModule === 'function') {
+                initCommentsModule();
+            } else if (moduleName === 'settings' && typeof initSettingsModule === 'function') {
+                initSettingsModule();
+            }
+        }
+
+        // Comment view switching
+        function switchCommentView(view) {
+            document.querySelectorAll('[data-comment-view]').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelector(`[data-comment-view="${view}"]`)?.classList.add('active');
+
+            if (typeof loadComments === 'function') {
+                loadComments(view);
+            }
+        }
+    </script>
+    <script src="admin-studio.js"></script>
 </body>
 
 </html>

@@ -1897,14 +1897,14 @@ body {
 
 .comment-section {
     position: relative;
-    /* Catch absolute input bar */
     display: none;
-    /* Initially hidden */
     flex: 1;
-    overflow: hidden;
-    /* Manage scroll internally */
+    overflow: visible;
+    /* Allow dropdown shadow to show */
     flex-direction: column;
     margin-top: 20px;
+    padding-right: 12px;
+    /* Room for dropdown shadow */
     opacity: 0;
     transform: translateY(10px);
     transition: opacity 0.4s ease, transform 0.4s ease;
@@ -1933,6 +1933,8 @@ body {
 .comment-list {
     flex: 1;
     overflow-y: auto;
+    padding-left: 8px;
+    /* Room for avatar shadow (8px spread) */
     padding-right: 8px;
     /* Room for scrollbar */
     margin-bottom: 60px;
@@ -1957,15 +1959,46 @@ body {
 .comment-item {
     display: flex;
     gap: 12px;
-    margin-bottom: 12px;
-    padding-bottom: 8px;
+    margin-bottom: 8px;
+    /* Reduced from 12px */
+    padding-bottom: 6px;
+    /* Reduced from 8px */
     font-size: 0.95rem;
     position: relative;
 }
 
 /* Only show separator in light mode */
-[data-theme="light"] .comment-item {
-    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+/* Remove default border-bottom from all items */
+.comment-item {
+    border-bottom: none;
+}
+
+/* Default (Light Mode) - Separators for threads */
+.comment-item:not(.comment-reply) {
+    border-top: 1px solid #e5e7eb;
+    padding-top: 10px;
+    /* Reduced from 12px */
+}
+
+/* No border for the very first comment */
+.comment-item:first-child {
+    border-top: none;
+    padding-top: 0;
+}
+
+/* Dark mode separators - Strict Thread Separation */
+[data-theme="dark"] .comment-item {
+    border-bottom: none;
+}
+
+[data-theme="dark"] .comment-item:not(.comment-reply) {
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    padding-top: 12px;
+}
+
+[data-theme="dark"] .comment-item:first-child {
+    border-top: none;
+    padding-top: 0;
 }
 
 .comment-item:last-child {
@@ -2107,12 +2140,140 @@ body {
     color: #ef4444;
 }
 
+/* --- Comment Header & Sorting --- */
+.comment-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 4px 8px 4px;
+    margin-bottom: 8px;
+    overflow: visible;
+    /* Allow dropdown shadow to show */
+}
+
+.comment-header-title {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--text-dim);
+    /* Match sort button color */
+    cursor: pointer;
+    transition: color 0.2s;
+}
+
+.comment-header-title:hover {
+    color: var(--text-primary);
+}
+
+
+
+/* Collapse functionality */
+.comment-item.hidden-collapsed {
+    display: none !important;
+}
+
+.comment-sort-wrapper {
+    position: relative;
+    z-index: 20;
+    /* Ensure dropdown is satisfyingly above other content */
+}
+
+.comment-sort-btn {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: 0.9rem;
+    /* Slightly larger */
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    /* More clickable area */
+    border-radius: 8px;
+    transition: all 0.2s ease;
+}
+
+.comment-sort-btn:hover {
+    background: rgba(128, 128, 128, 0.1);
+    color: var(--text-primary);
+}
+
+.comment-sort-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 6px;
+    background: var(--modal-bg);
+    border: 1px solid rgba(128, 128, 128, 0.1);
+    border-radius: 12px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+    padding: 6px;
+    min-width: 140px;
+    display: none;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
+.comment-sort-dropdown.show {
+    display: block;
+    animation: fadeInScale 0.15s ease-out;
+}
+
+.sort-option {
+    padding: 6px 10px;
+    /* Reduced padding */
+    font-size: 0.85rem;
+    /* Slightly smaller font */
+    color: var(--text-dim);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 400;
+    /* No bold by default */
+}
+
+.sort-option:hover {
+    background: rgba(128, 128, 128, 0.08);
+    color: var(--text-primary);
+}
+
+.sort-option.active {
+    color: var(--text-primary);
+    background: rgba(128, 128, 128, 0.05);
+    font-weight: 500;
+    /* Subtle weight for active, not full bold */
+}
+
+/* Light mode specifics for sort dropdown */
+[data-theme="light"] .comment-sort-dropdown {
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+    border: 1px solid rgba(0, 0, 0, 0.04);
+}
+
+@keyframes fadeInScale {
+    from {
+        opacity: 0;
+        transform: scale(0.95) translateY(-5px);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
 /* 5. Floating Input Bar */
 .comment-input-area {
     position: absolute;
     bottom: 0;
     left: 0;
     width: 100%;
+    /* Ensure padding doesn't increase width causing overflow */
+    box-sizing: border-box;
     /* Relative to content-col */
     padding: 20px 40px;
     /* Match modal padding */
@@ -2141,16 +2302,18 @@ body {
 .send-comment-btn {
     background: transparent;
     border: none;
-    color: var(--accent-purple);
-    font-size: 1.2rem;
+    color: var(--text-dim);
+    font-size: 1.1rem;
     cursor: pointer;
-    opacity: 0.6;
-    transition: all 0.3s ease;
+    opacity: 0.5;
+    transition: all 0.2s ease;
+    padding: 8px;
+    flex-shrink: 0;
 }
 
 .send-comment-btn:hover {
     opacity: 1;
-    transform: translateX(3px);
+    color: var(--accent-purple);
 }
 
 /* Dark Mode: Starry Blue for Comment Section */
@@ -2158,7 +2321,7 @@ body {
     border-bottom-color: var(--accent-starry);
 }
 
-[data-theme="dark"] .send-comment-btn {
+[data-theme="dark"] .send-comment-btn:hover {
     color: var(--accent-starry);
 }
 
@@ -2350,9 +2513,7 @@ body {
     color: var(--accent-starry);
 }
 
-.comment-item.hidden-collapsed {
-    display: none;
-}
+
 
 /* ===================================
    COMMENT IMAGE ATTACHMENTS
@@ -2473,6 +2634,7 @@ body {
         opacity: 0;
         transform: translateY(-10px);
     }
+
     to {
         opacity: 1;
         transform: translateY(0);
