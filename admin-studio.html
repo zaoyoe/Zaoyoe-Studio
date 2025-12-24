@@ -404,9 +404,6 @@
 
             <!-- ========== COMMENTS MODULE ========== -->
             <div id="module-comments" class="module-container">
-                <div class="module-header">
-                    <h2><i class="fas fa-comments"></i> 评论管理</h2>
-                </div>
                 <div class="module-content">
                     <!-- Comment Tabs -->
                     <nav class="admin-tabs">
@@ -417,39 +414,119 @@
                     </nav>
 
                     <!-- Stats Cards -->
-                    <div class="comment-stats">
-                        <div class="stat-card">
-                            <div class="stat-value" id="totalCommentsCount">--</div>
-                            <div class="stat-label">总评论</div>
+                    <!-- Compact Stats Badges (inline) -->
+                    <div class="comment-stats-compact">
+                        <div class="stat-badge">
+                            <span class="stat-badge-value" id="totalCommentsCount">--</span>
+                            <span class="stat-badge-label">总评论</span>
                         </div>
-                        <div class="stat-card">
-                            <div class="stat-value" id="todayCommentsCount">--</div>
-                            <div class="stat-label">今日新增</div>
+                        <div class="stat-badge accent">
+                            <span class="stat-badge-value" id="todayCommentsCount">+--</span>
+                            <span class="stat-badge-label">今日</span>
                         </div>
-                        <div class="stat-card">
-                            <div class="stat-value" id="activeUsersCount">--</div>
-                            <div class="stat-label">活跃用户</div>
+                        <div class="stat-badge">
+                            <span class="stat-badge-value" id="activeUsersCount">--</span>
+                            <span class="stat-badge-label">活跃用户</span>
                         </div>
-                        <div class="stat-card">
-                            <div class="stat-value" id="weekGrowth">--</div>
-                            <div class="stat-label">周增长</div>
+                        <div class="stat-badge">
+                            <span class="stat-badge-value" id="weekGrowth">--%</span>
+                            <span class="stat-badge-label">周增长</span>
                         </div>
                     </div>
 
-                    <!-- Search/Filter Bar -->
-                    <div class="comment-toolbar">
-                        <div class="search-box">
-                            <i class="fas fa-search"></i>
-                            <input type="text" id="commentSearch" placeholder="搜索评论内容...">
+                    <!-- Unified Compact Toolbar -->
+                    <div class="comment-toolbar-compact">
+                        <!-- Left: Search + Filters -->
+                        <div class="toolbar-left">
+                            <div class="search-pill">
+                                <i class="fas fa-search"></i>
+                                <input type="text" id="commentSearch" placeholder="搜索评论...">
+                            </div>
+
+                            <!-- Filter Dropdowns -->
+                            <div class="filter-dropdowns">
+                                <!-- Date Filter -->
+                                <div class="filter-dropdown" data-filter="date">
+                                    <button class="filter-btn">
+                                        <i class="fas fa-calendar-alt"></i>
+                                        <span class="filter-label">日期</span>
+                                        <i class="fas fa-chevron-down filter-arrow"></i>
+                                    </button>
+                                    <div class="filter-popup glass-popup">
+                                        <div class="filter-option selected" data-value="all">全部时间</div>
+                                        <div class="filter-option" data-value="today">今天</div>
+                                        <div class="filter-option" data-value="week">本周</div>
+                                        <div class="filter-option" data-value="month">本月</div>
+                                        <div class="filter-divider"></div>
+                                        <div class="filter-custom-date">
+                                            <label>自定义范围</label>
+                                            <input type="date" id="filterDateFrom">
+                                            <span>至</span>
+                                            <input type="date" id="filterDateTo">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Status Filter -->
+                                <div class="filter-dropdown" data-filter="status">
+                                    <button class="filter-btn">
+                                        <i class="fas fa-comment-dots"></i>
+                                        <span class="filter-label">状态</span>
+                                        <i class="fas fa-chevron-down filter-arrow"></i>
+                                    </button>
+                                    <div class="filter-popup glass-popup">
+                                        <div class="filter-option selected" data-value="all">全部</div>
+                                        <div class="filter-option" data-value="replied">已回复</div>
+                                        <div class="filter-option" data-value="unreplied">未回复</div>
+                                    </div>
+                                </div>
+
+                                <!-- Type Filter -->
+                                <div class="filter-dropdown" data-filter="type">
+                                    <button class="filter-btn">
+                                        <i class="fas fa-tag"></i>
+                                        <span class="filter-label">类型</span>
+                                        <i class="fas fa-chevron-down filter-arrow"></i>
+                                    </button>
+                                    <div class="filter-popup glass-popup">
+                                        <div class="filter-option selected" data-value="all">全部</div>
+                                        <div class="filter-option" data-value="top">顶级评论</div>
+                                        <div class="filter-option" data-value="reply">Reply回复</div>
+                                        <div class="filter-divider"></div>
+                                        <label class="filter-checkbox">
+                                            <input type="checkbox" id="filterHasImage">
+                                            <span>含图片</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                        <div class="filter-group">
-                            <input type="date" id="commentDateFrom" placeholder="开始日期">
-                            <span>至</span>
-                            <input type="date" id="commentDateTo" placeholder="结束日期">
+
+                        <!-- Right: View Toggle + Selection + Batch Delete -->
+                        <div class="toolbar-right">
+                            <!-- View Toggle -->
+                            <div class="view-toggle">
+                                <button class="view-btn active" data-view="grid" onclick="switchLayoutView('grid')"
+                                    title="网格视图">
+                                    <i class="fas fa-th-large"></i>
+                                </button>
+                                <button class="view-btn" data-view="list" onclick="switchLayoutView('list')"
+                                    title="列表视图">
+                                    <i class="fas fa-list"></i>
+                                </button>
+                            </div>
+
+                            <div class="divider-vertical"></div>
+
+                            <label class="select-checkbox-compact">
+                                <input type="checkbox" id="selectAllComments" onchange="toggleSelectAll()">
+                                <span id="selectionCount">0</span>
+                            </label>
+                            <button class="batch-delete-pill" id="batchDeleteBtn" disabled
+                                onclick="batchDeleteComments()">
+                                <i class="fas fa-trash"></i>
+                            </button>
                         </div>
-                        <button class="btn-secondary" id="commentFilterBtn">
-                            <i class="fas fa-filter"></i> 筛选
-                        </button>
                     </div>
 
                     <!-- Comment List -->
@@ -639,6 +716,7 @@
             }
         }
     </script>
+    <script src="admin-comments.js"></script>
     <script src="admin-studio.js"></script>
 </body>
 

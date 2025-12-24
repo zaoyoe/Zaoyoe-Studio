@@ -1899,8 +1899,12 @@ body {
     position: relative;
     display: none;
     flex: 1;
-    overflow: visible;
-    /* Allow dropdown shadow to show */
+    min-height: 0;
+    /* Critical: allows flex child to shrink below content size */
+    max-height: 100%;
+    /* Prevent growing beyond parent */
+    overflow: hidden;
+    /* Contain children */
     flex-direction: column;
     margin-top: 20px;
     padding-right: 12px;
@@ -1932,6 +1936,8 @@ body {
 
 .comment-list {
     flex: 1;
+    min-height: 0;
+    /* Critical: allows flex child to scroll properly */
     overflow-y: auto;
     padding-left: 8px;
     /* Room for avatar shadow (8px spread) */
@@ -2272,15 +2278,16 @@ body {
     bottom: 0;
     left: 0;
     width: 100%;
-    /* Ensure padding doesn't increase width causing overflow */
     box-sizing: border-box;
-    /* Relative to content-col */
-    padding: 20px 40px;
-    /* Match modal padding */
-    background: linear-gradient(to top, var(--modal-bg) 80%, transparent 100%);
+    padding: 16px 40px 20px;
+    /* Solid background to block content behind when textarea expands */
+    background: var(--modal-bg);
     display: flex;
     gap: 12px;
-    align-items: center;
+    align-items: flex-end;
+    /* Align to bottom for expanding textarea */
+    /* Add subtle top border for separation */
+    border-top: 1px solid rgba(128, 128, 128, 0.1);
 }
 
 #commentInput {
@@ -2288,10 +2295,21 @@ body {
     background: transparent;
     border: none;
     border-bottom: 1px solid var(--card-border);
-    padding: 10px 0;
+    padding: 0 0 8px 0;
+    /* Only bottom padding to sit on line */
     color: var(--text-main);
     font-size: 0.95rem;
+    font-family: inherit;
     transition: border-color 0.3s ease;
+    /* Textarea auto-expand support */
+    resize: none;
+    overflow-y: hidden;
+    min-height: 1.5em;
+    /* One line height */
+    max-height: 120px;
+    /* About 5 lines max */
+    line-height: 1.5;
+    vertical-align: bottom;
 }
 
 #commentInput:focus {

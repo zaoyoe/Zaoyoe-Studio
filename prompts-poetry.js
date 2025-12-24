@@ -594,7 +594,155 @@ document.addEventListener('DOMContentLoaded', async () => {
             document.querySelector('.nav-items')?.classList.add('loaded');
         }, 100);
     }
+
+    // Check for URL parameter to open specific prompt
+    handleUrlPromptParam();
 });
+
+/**
+ * Handle URL parameter to open specific prompt modal
+ * Usage: prompts.html?id=15 or prompts.html?id=15&comments=1&commentId=123
+ */
+function handleUrlPromptParam() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const promptIdParam = urlParams.get('id');
+    const showComments = urlParams.get('comments');
+    const commentIdParam = urlParams.get('commentId');
+
+    console.log('🔍 URL param check - id:', promptIdParam, 'comments:', showComments, 'commentId:', commentIdParam);
+
+    if (!promptIdParam) {
+        console.log('No prompt id in URL');
+        return;
+    }
+
+    // Small delay to ensure gallery is rendered
+    setTimeout(() => {
+        // Convert to number for comparison (supabaseId is bigint from DB)
+        const targetId = parseInt(promptIdParam, 10);
+
+        console.log('🔍 Searching for prompt with supabaseId:', targetId);
+
+        // Find by supabaseId (database ID as number)
+        let prompt = PROMPTS.find(p => p.supabaseId === targetId);
+
+        // If not found, try by array index id
+        if (!prompt) {
+            prompt = PROMPTS.find(p => p.id === targetId);
+        }
+
+        if (prompt) {
+            console.log('✅ Found prompt:', prompt.title, 'at index:', prompt.id);
+            openPromptModal(prompt.id);
+
+            // If comments=1, auto-open comment mode
+            if (showComments === '1') {
+                console.log('💬 Waiting to open comment mode...');
+                setTimeout(() => {
+                    console.log('💬 Auto-opening comment mode, current isCommentMode:', isCommentMode);
+                    if (!isCommentMode) {
+                        console.log('💬 Calling toggleCommentMode()');
+                        toggleCommentMode();
+                    }
+
+                    // If commentId provided, expand all and scroll to it
+                    if (commentIdParam) {
+                        console.log('💬 Will scroll to comment:', commentIdParam);
+                        setTimeout(() => {
+                            console.log('📍 Calling scrollToComment now');
+                            scrollToComment(commentIdParam);
+                        }, 1000);
+                    }
+                }, 800); // Increased from 600
+            }
+        } else {
+            console.warn('❌ Prompt not found for id:', targetId);
+        }
+
+        // Clean up URL (remove params without page reload)
+        if (window.history.replaceState) {
+            window.history.replaceState({}, '', window.location.pathname);
+        }
+    }, 1000); // Increased from 800
+}
+/**
+ * Scroll to and highlight a specific comment
+ */
+function scrollToComment(commentId) {
+    console.log('📍 Scrolling to comment:', commentId);
+
+    // Wait for comments to load with retry
+    waitForCommentAndScroll(commentId, 10); // Max 10 retries (5 seconds total)
+}
+
+/**
+ * Wait for comment to load then scroll to it
+ */
+function waitForCommentAndScroll(commentId, retriesLeft) {
+    const commentEl = document.querySelector(`[data-comment-id="${commentId}"]`);
+    const commentList = document.getElementById('commentList');
+
+    if (commentEl) {
+        console.log('📍 Found comment element!');
+
+        // First expand if collapsed
+        const isCollapsed = commentList?.getAttribute('data-collapsed') === 'true';
+        if (isCollapsed) {
+            console.log('📍 Expanding collapsed comments');
+            handleCollapseToggle();
+            // Wait for expand animation then scroll
+            setTimeout(() => {
+                scrollCommentIntoView(commentEl, commentList);
+                highlightComment(commentEl);
+            }, 600);
+        } else {
+            scrollCommentIntoView(commentEl, commentList);
+            highlightComment(commentEl);
+        }
+    } else if (retriesLeft > 0) {
+        console.log('📍 Comment not yet loaded, retrying...', retriesLeft);
+        setTimeout(() => waitForCommentAndScroll(commentId, retriesLeft - 1), 500);
+    } else {
+        console.warn('📍 Comment not found after all retries:', commentId);
+    }
+}
+
+/**
+ * Scroll comment into view using container scroll (avoids layout issues)
+ */
+function scrollCommentIntoView(commentEl, commentList) {
+    if (!commentEl || !commentList) return;
+
+    // Get position relative to comment list container
+    const containerRect = commentList.getBoundingClientRect();
+    const elementRect = commentEl.getBoundingClientRect();
+    const scrollTop = commentList.scrollTop;
+
+    // Calculate desired scroll position (center the element)
+    const elementTop = elementRect.top - containerRect.top + scrollTop;
+    const targetScroll = elementTop - (containerRect.height / 2) + (elementRect.height / 2);
+
+    // Smooth scroll the container
+    commentList.scrollTo({
+        top: Math.max(0, targetScroll),
+        behavior: 'smooth'
+    });
+
+    console.log('📍 Scrolled container to:', targetScroll);
+}
+
+/**
+ * Highlight a comment element
+ */
+function highlightComment(commentEl) {
+    commentEl.classList.add('highlight');
+    setTimeout(() => {
+        commentEl.classList.add('fade-out');
+        setTimeout(() => {
+            commentEl.classList.remove('highlight', 'fade-out');
+        }, 2000);
+    }, 3000);
+}
 
 // ========================================
 // DYNAMIC NAVIGATION (AI-Driven Categories)
@@ -3851,8 +3999,25 @@ function formatMentions(text) {
     return escaped.replace(/@(\w+)/g, '<span class="mention">@$1</span>');
 }
 
+/**
+ * Auto-expand textarea as user types
+ * @param {HTMLTextAreaElement} textarea - The textarea element
+ */
+function autoExpandTextarea(textarea) {
+    // Reset height to auto to properly calculate scrollHeight
+    textarea.style.height = 'auto';
+    // Set height to scrollHeight (content height)
+    const maxHeight = 120; // Max ~5 lines, matches CSS max-height
+    textarea.style.height = Math.min(textarea.scrollHeight, maxHeight) + 'px';
+    // Show scrollbar if content exceeds max height
+    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
+}
+
 function handleCommentKeydown(e) {
-    if (e.key === 'Enter') {
+    // Shift+Enter: insert newline (default behavior for textarea)
+    // Enter alone: submit comment
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault(); // Prevent newline
         submitComment();
     }
 }
@@ -3892,6 +4057,9 @@ async function submitComment() {
 
     // Clear input IMMEDIATELY for instant feedback
     input.value = '';
+    // Reset textarea height to original single-line
+    input.style.height = 'auto';
+    input.style.overflowY = 'hidden';
     delete input.dataset.replyTo;
 
     // Get cached avatar

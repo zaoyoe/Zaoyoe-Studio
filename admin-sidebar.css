@@ -262,166 +262,942 @@
 }
 
 /* ============================================
-   Comments Module Styles
+   Comments Module - Compact Redesign
    ============================================ */
 
-/* Stats Cards */
-.comment-stats {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 16px;
-    margin-bottom: 24px;
-}
-
-.stat-card {
-    background: var(--card-bg, rgba(255, 255, 255, 0.05));
-    border: 1px solid rgba(128, 128, 128, 0.1);
-    border-radius: 12px;
-    padding: 20px;
-    text-align: center;
-}
-
-.stat-value {
-    font-size: 2rem;
-    font-weight: 700;
-    color: var(--admin-accent);
-    margin-bottom: 4px;
-}
-
-.stat-label {
-    font-size: 0.85rem;
-    color: var(--text-dim);
-}
-
-/* Comment Toolbar */
-.comment-toolbar {
+/* Compact Stats Badges (inline row) */
+.comment-stats-compact {
     display: flex;
     flex-wrap: wrap;
     gap: 12px;
-    align-items: center;
-    margin-bottom: 20px;
-    padding: 16px;
-    background: var(--card-bg, rgba(255, 255, 255, 0.03));
-    border-radius: 12px;
-    border: 1px solid rgba(128, 128, 128, 0.1);
+    margin-bottom: 16px;
 }
 
-.comment-toolbar .search-box {
-    flex: 1;
-    min-width: 200px;
+.stat-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: var(--card-bg, rgba(255, 255, 255, 0.03));
+    border: 1px solid rgba(128, 128, 128, 0.1);
+    border-radius: 20px;
+    font-size: 0.85rem;
+}
+
+.stat-badge-value {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.stat-badge-label {
+    color: var(--text-dim);
+    font-size: 0.8rem;
+}
+
+.stat-badge.accent {
+    background: var(--admin-accent-bg);
+    border-color: var(--admin-accent);
+}
+
+.stat-badge.accent .stat-badge-value {
+    color: var(--admin-accent);
+}
+
+/* Unified Compact Toolbar */
+.comment-toolbar-compact {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+}
+
+.toolbar-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    /* Increased from 10px */
+}
+
+.toolbar-right {
     display: flex;
     align-items: center;
     gap: 8px;
+}
+
+/* Search Pill */
+.search-pill {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
     background: var(--input-bg, rgba(255, 255, 255, 0.05));
     border: 1px solid rgba(128, 128, 128, 0.15);
-    border-radius: 8px;
-    padding: 8px 12px;
+    border-radius: 20px;
+    min-width: 160px;
+    transition: border-color 0.2s;
 }
 
-.comment-toolbar .search-box i {
+.search-pill:focus-within {
+    border-color: var(--admin-accent);
+}
+
+.search-pill i {
     color: var(--text-dim);
+    font-size: 0.8rem;
 }
 
-.comment-toolbar .search-box input {
-    flex: 1;
+.search-pill input {
     border: none;
     background: transparent;
     color: var(--text-primary);
-    font-size: 0.9rem;
+    font-size: 0.85rem;
+    outline: none;
+    width: 100%;
+}
+
+/* Filter Dropdowns Container */
+.filter-dropdowns {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    /* Increased from 6px */
+}
+
+/* Filter Dropdown Wrapper */
+.filter-dropdown {
+    position: relative;
+}
+
+/* Filter Button */
+.filter-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    background: transparent;
+    border: 1px solid rgba(128, 128, 128, 0.15);
+    border-radius: 8px;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.filter-btn:hover {
+    background: var(--admin-accent-bg);
+    border-color: var(--admin-accent);
+}
+
+.filter-btn i:first-child {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+}
+
+.filter-arrow {
+    font-size: 0.6rem !important;
+    margin-left: 2px;
+    transition: transform 0.2s;
+}
+
+.filter-dropdown.open .filter-arrow {
+    transform: rotate(180deg);
+}
+
+/* Active filter state */
+.filter-btn.active {
+    background: var(--admin-accent-bg);
+    border-color: var(--admin-accent);
+    color: var(--admin-accent);
+}
+
+/* Glass Popup (Gallery-style) */
+.filter-popup.glass-popup {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    min-width: 160px;
+    padding: 8px;
+    border-radius: 12px;
+
+    /* Glass morphism effect */
+    background: rgba(30, 41, 59, 0.92);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+
+    /* Hidden state */
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-8px);
+    transition: all 0.2s ease;
+    z-index: 200;
+}
+
+/* Light mode glass popup */
+[data-theme="light"] .filter-popup.glass-popup {
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.12);
+}
+
+.filter-dropdown.open .filter-popup {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+/* Filter Options */
+.filter-option {
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    color: var(--text-primary);
+    transition: background 0.15s;
+}
+
+.filter-option:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="light"] .filter-option:hover {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+.filter-option.selected {
+    background: var(--admin-accent-bg);
+    color: var(--admin-accent);
+    font-weight: 500;
+}
+
+/* Filter Divider */
+.filter-divider {
+    height: 1px;
+    background: rgba(128, 128, 128, 0.2);
+    margin: 6px 0;
+}
+
+/* Filter Search Input */
+.filter-search {
+    width: 100%;
+    padding: 8px 10px;
+    border: none;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-primary);
+    font-size: 0.85rem;
     outline: none;
 }
 
-.comment-toolbar .filter-group {
+[data-theme="light"] .filter-search {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+.filter-search::placeholder {
+    color: var(--text-dim);
+}
+
+/* Filter Checkbox */
+.filter-checkbox {
     display: flex;
     align-items: center;
     gap: 8px;
-}
-
-.comment-toolbar .filter-group input[type="date"] {
-    padding: 8px 12px;
-    border: 1px solid rgba(128, 128, 128, 0.15);
+    padding: 10px 12px;
     border-radius: 8px;
-    background: var(--input-bg, rgba(255, 255, 255, 0.05));
-    color: var(--text-primary);
+    cursor: pointer;
     font-size: 0.85rem;
+    color: var(--text-primary);
+    transition: background 0.15s;
 }
 
-.comment-toolbar .filter-group span {
+.filter-checkbox:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.filter-checkbox input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    accent-color: var(--admin-accent);
+}
+
+/* Custom Date Range */
+.filter-custom-date {
+    padding: 8px;
+}
+
+.filter-custom-date label {
+    display: block;
+    font-size: 0.75rem;
     color: var(--text-dim);
-    font-size: 0.85rem;
+    margin-bottom: 6px;
+}
+
+.filter-custom-date input[type="date"] {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid rgba(128, 128, 128, 0.2);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-primary);
+    font-size: 0.8rem;
+    margin-bottom: 4px;
+}
+
+.filter-custom-date span {
+    display: block;
+    text-align: center;
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    margin: 4px 0;
+}
+
+/* Filter User List */
+.filter-user-list {
+    max-height: 150px;
+    overflow-y: auto;
+}
+
+/* Compact Select Checkbox */
+.select-checkbox-compact {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    background: rgba(128, 128, 128, 0.08);
+    border-radius: 16px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+}
+
+.select-checkbox-compact input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    accent-color: var(--admin-accent);
+    cursor: pointer;
+}
+
+/* Batch Delete Pill */
+.batch-delete-pill {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: transparent;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 50%;
+    color: #ef4444;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 0.8rem;
+}
+
+.batch-delete-pill:hover:not(:disabled) {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: #ef4444;
+}
+
+.batch-delete-pill:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
 }
 
 /* Comment List Admin */
-.comment-list-admin {
+/* Batch Action Bar */
+.batch-action-bar {
     display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
-
-.comment-list-admin .loading-text {
-    text-align: center;
-    color: var(--text-dim);
-    padding: 40px;
-}
-
-.comment-admin-item {
-    display: flex;
-    gap: 12px;
-    padding: 16px;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 16px;
     background: var(--card-bg, rgba(255, 255, 255, 0.03));
     border: 1px solid rgba(128, 128, 128, 0.1);
-    border-radius: 12px;
-    transition: border-color 0.2s;
+    border-radius: 10px;
+    margin-bottom: 16px;
+}
+
+.select-all-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.select-all-checkbox input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--admin-accent);
+    cursor: pointer;
+}
+
+.selection-count {
+    color: var(--text-dim);
+    font-size: 0.85rem;
+}
+
+.batch-delete-btn {
+    margin-left: auto;
+    padding: 8px 16px;
+    font-size: 0.85rem;
+}
+
+.batch-delete-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* View Toggle Styles */
+.view-toggle {
+    display: flex;
+    background: var(--input-bg, rgba(255, 255, 255, 0.05));
+    border: 1px solid rgba(128, 128, 128, 0.15);
+    border-radius: 8px;
+    padding: 2px;
+}
+
+.view-btn {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    color: var(--text-dim);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+}
+
+.view-btn:hover {
+    color: var(--text-primary);
+    background: rgba(128, 128, 128, 0.1);
+}
+
+.view-btn.active {
+    background: var(--card-bg);
+    color: var(--admin-accent);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.divider-vertical {
+    width: 1px;
+    height: 20px;
+    background: rgba(128, 128, 128, 0.15);
+    margin: 0 4px;
+}
+
+/* ============================================
+   Comments Admin UI - Clean Architectur
+   ============================================ */
+
+/* CONTAINER */
+.comment-list-admin {
+    width: 100%;
+    min-height: 400px;
+    padding-bottom: 40px;
+}
+
+/* 1. GRID VIEW (DEFAULT) */
+.comment-list-admin:not(.list-view) {
+    display: grid;
+    grid-gap: 16px;
+    gap: 16px;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    grid-auto-rows: minmax(120px, max-content);
+    /* Compact: min 120px, max fits content */
+    align-items: start;
+    /* Top-align cards, don't stretch */
+}
+
+/* 2. LIST VIEW */
+.comment-list-admin.list-view {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+/* ============================================
+   CUSTOM CHECKBOX (Modern & Clean)
+   ============================================ */
+.comment-checkbox {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 20px;
+    height: 20px;
+    border: 2px solid rgba(128, 128, 128, 0.4);
+    border-radius: 6px;
+    cursor: pointer;
+    position: relative;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    background-color: rgba(30, 41, 59, 0.4);
+    /* Subtle dark bg */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.comment-checkbox:hover {
+    border-color: var(--admin-accent);
+    background-color: rgba(128, 128, 128, 0.2);
+}
+
+.comment-checkbox:checked {
+    background-color: var(--admin-accent);
+    /* Theme accent (purple in light, starry blue in dark) */
+    border-color: var(--admin-accent);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+}
+
+/* Checkmark Icon */
+.comment-checkbox::after {
+    content: '';
+    position: absolute;
+    width: 5px;
+    height: 9px;
+    border: solid white;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg) scale(0);
+    transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    margin-top: -2px;
+    /* Visual centering adjustment */
+}
+
+.comment-checkbox:checked::after {
+    transform: rotate(45deg) scale(1);
+}
+
+/* ============================================
+   CARD ITEM (SHARED BASE)
+   ============================================ */
+.comment-admin-item {
+    position: relative;
+    background: var(--card-bg, rgba(255, 255, 255, 0.03));
+    border: 1px solid rgba(128, 128, 128, 0.1);
+    transition: all 0.2s ease;
+    cursor: pointer;
+    box-sizing: border-box;
+    /* Critical for borders */
+    z-index: 1;
+    /* Base z-index */
+}
+
+.comment-admin-item.selected {
+    background: var(--admin-accent-bg);
+    /* Theme accent bg (purple/blue tint based on mode) */
+    border-color: var(--admin-accent);
+    z-index: 2;
+    /* Selected items sit higher */
 }
 
 .comment-admin-item:hover {
     border-color: rgba(124, 93, 250, 0.3);
+    background: var(--card-bg, rgba(255, 255, 255, 0.05));
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    z-index: 3;
+    /* Hovered item sits highest */
 }
 
-.comment-admin-avatar {
-    width: 40px;
-    height: 40px;
+/* ============================================
+   GRID VIEW SPECIFIC STYLES
+   ============================================ */
+.comment-list-admin:not(.list-view) .comment-admin-item {
+    display: flex;
+    flex-direction: column;
+    padding: 16px;
+    border-radius: 12px;
+    height: 100%;
+    /* Ensures uniform height within each row */
+    min-height: 120px;
+    /* Minimum baseline height */
+    gap: 12px;
+}
+
+/* Grid: Checkbox in TOP-RIGHT (hover reveal) */
+.comment-list-admin:not(.list-view) .item-checkbox-wrapper {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 5;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.comment-list-admin:not(.list-view) .comment-admin-item:hover .item-checkbox-wrapper,
+.comment-list-admin:not(.list-view) .comment-admin-item.selected .item-checkbox-wrapper {
+    opacity: 1;
+}
+
+/* Grid: Header (Avatar + Name + Time) */
+.comment-list-admin:not(.list-view) .item-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-left: 0;
+    margin-bottom: 0;
+    /* Compact layout */
+}
+
+.comment-list-admin:not(.list-view) .item-avatar {
+    width: 36px;
+    height: 36px;
     border-radius: 50%;
-    background: linear-gradient(135deg, var(--admin-accent), #8bb8e8);
+    background-size: cover;
+    background-position: center;
+    flex-shrink: 0;
+    background-color: var(--admin-accent);
     display: flex;
     align-items: center;
     justify-content: center;
     color: #fff;
+    font-size: 0.8rem;
     font-weight: 600;
-    flex-shrink: 0;
 }
 
-.comment-admin-content {
+.comment-list-admin:not(.list-view) .item-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
     flex: 1;
     min-width: 0;
 }
 
-.comment-admin-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 8px;
-}
-
-.comment-admin-meta {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-}
-
-.comment-admin-name {
+/* Name always visible */
+.comment-list-admin:not(.list-view) .item-name {
     font-weight: 600;
     color: var(--text-primary);
+    font-size: 0.85rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-.comment-admin-context {
-    font-size: 0.8rem;
+/* Time always visible */
+.comment-list-admin:not(.list-view) .item-time {
+    font-size: 0.7rem;
     color: var(--text-dim);
-    background: rgba(124, 93, 250, 0.1);
+}
+
+/* Reply Badge - Bottom Left (subtle text only) */
+.comment-list-admin:not(.list-view) .reply-badge {
+    position: absolute;
+    bottom: 12px;
+    left: 12px;
+    padding: 0;
+    background: transparent;
+    color: var(--text-dim);
+    font-size: 0.7rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Grid: Content */
+.comment-list-admin:not(.list-view) .item-content {
+    flex: 1;
+    /* Push footer down */
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.comment-list-admin:not(.list-view) .item-text {
+    font-size: 0.9rem;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* Grid: Source Badge (Inline with footer or context) */
+.comment-list-admin:not(.list-view) .source-badge {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba(128, 128, 128, 0.1);
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    align-self: flex-start;
+}
+
+/* Grid: Actions Container (absolute bottom-right) */
+.comment-list-admin:not(.list-view) .item-actions {
+    position: absolute;
+    bottom: 12px;
+    right: 12px;
+    display: flex;
+    flex-direction: row;
+    gap: 8px;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.comment-list-admin:not(.list-view) .comment-admin-item:hover .item-actions {
+    opacity: 1;
+}
+
+/* Grid: Delete Button */
+.comment-list-admin:not(.list-view) .action-delete {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-dim);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.comment-list-admin:not(.list-view) .comment-admin-item:hover .action-delete {
+    opacity: 1;
+}
+
+.comment-list-admin:not(.list-view) .action-delete:hover {
+    background: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+}
+
+.comment-list-admin:not(.list-view) .action-view {
+    /* View button inside item-actions container */
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    transition: all 0.2s;
+    padding: 0;
+}
+
+.comment-list-admin:not(.list-view) .comment-admin-item:hover .action-view {
+    opacity: 1;
+}
+
+.comment-list-admin:not(.list-view) .action-view:hover {
+    background: var(--admin-accent-bg);
+    color: var(--admin-accent);
+}
+
+
+/* ============================================
+   LIST VIEW SPECIFIC STYLES (Redesigned Layout)
+   ============================================ */
+
+/* 
+   NEW Grid Layout (4 columns instead of 5):
+   | Avatar Area (50px) | Name/Meta (180px) | Content (1fr) | Actions (80px) |
+   
+   Avatar Area contains:
+   - Row 1: Avatar
+   - Row 2: [REPLY] [checkbox] (inline, shown on hover/selected)
+*/
+.comment-list-admin.list-view .comment-admin-item {
+    display: grid;
+    grid-template-columns: 50px 180px 1fr 80px;
+    grid-template-rows: auto auto;
+    /* Two rows */
+    align-items: center;
+    padding: 12px 16px;
+    border-radius: 0;
+    border: none;
+    border-bottom: 1px solid rgba(128, 128, 128, 0.08);
+    background: transparent;
+    position: relative;
+    min-height: 60px;
+}
+
+.comment-list-admin.list-view .comment-admin-item:hover {
+    background: rgba(128, 128, 128, 0.03);
+    transform: none;
+    box-shadow: none;
+}
+
+/* Avatar - spans 2 rows */
+.comment-list-admin.list-view .item-avatar {
+    grid-column: 1;
+    grid-row: 1 / 3;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background-size: cover;
+    background-position: center;
+    background-color: var(--admin-accent);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    align-self: start;
+    margin-top: 2px;
+}
+
+/* Header uses display: contents to flow children into parent grid */
+.comment-list-admin.list-view .item-header {
+    display: contents;
+}
+
+/* Meta (Name + Time) - Column 2, Row 1 */
+.comment-list-admin.list-view .item-meta {
+    grid-column: 2;
+    grid-row: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
+}
+
+.comment-list-admin.list-view .item-name {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.comment-list-admin.list-view .item-time {
+    font-size: 0.7rem;
+    color: var(--text-dim);
+}
+
+/* Content - Column 3, spans 2 rows */
+.comment-list-admin.list-view .item-content {
+    grid-column: 3;
+    grid-row: 1 / 3;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    padding-left: 12px;
+}
+
+.comment-list-admin.list-view .item-text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.comment-list-admin.list-view .source-badge {
+    display: none;
+    /* Hide in List view */
+}
+
+/* Actions Container - Column 4, spans 2 rows */
+.comment-list-admin.list-view .item-actions {
+    grid-column: 4;
+    grid-row: 1 / 3;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+}
+
+.comment-list-admin.list-view .action-view,
+.comment-list-admin.list-view .action-delete {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    color: var(--text-dim);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.comment-list-admin.list-view .action-delete:hover {
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.1);
+}
+
+.comment-list-admin.list-view .action-view:hover {
+    color: var(--admin-accent);
+    background: var(--admin-accent-bg);
+}
+
+/* Reply Badge + Checkbox Container - Column 2, Row 2 */
+.comment-list-admin.list-view .reply-badge {
+    grid-column: 2;
+    grid-row: 2;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.65rem;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 0;
+    background: transparent;
+    margin-top: 2px;
+}
+
+/* Checkbox - Positioned in Row 2 (next to Reply or alone) */
+.comment-list-admin.list-view .item-checkbox-wrapper {
+    grid-column: 2;
+    grid-row: 2;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    margin-left: 50px;
+    /* Offset from Reply badge */
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+/* Smaller checkbox for List view */
+.comment-list-admin.list-view .comment-checkbox {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+}
+
+.comment-list-admin.list-view .comment-checkbox::after {
+    width: 4px;
+    height: 7px;
+    border-width: 0 1.5px 1.5px 0;
+}
+
+.comment-list-admin.list-view .comment-admin-item:hover .item-checkbox-wrapper,
+.comment-list-admin.list-view .comment-admin-item.selected .item-checkbox-wrapper {
+    opacity: 1;
+}
+
+/* Utility: Context Pill */
+.comment-context-pill {
+    font-size: 0.75rem;
     padding: 2px 8px;
     border-radius: 4px;
+    background: rgba(124, 93, 250, 0.1);
+    /* Purple tint */
+    color: var(--admin-accent);
+    white-space: nowrap;
 }
+
+
 
 .comment-admin-time {
     font-size: 0.8rem;
@@ -576,4 +1352,95 @@
 .sidebar-item.disabled:hover {
     background: transparent;
     color: #8b8b9e;
+}
+
+/* Empty and Error States */
+.empty-text,
+.error-text {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--text-dim);
+    font-size: 0.95rem;
+}
+
+.error-text {
+    color: #ef4444;
+}
+
+/* Comment item transition for delete */
+.comment-admin-item {
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+/* Toast Notifications */
+.toast {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 20px;
+    background: #1e293b;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    color: #fff;
+    font-size: 0.9rem;
+    margin-bottom: 10px;
+    animation: toastSlideIn 0.3s ease;
+    min-width: 200px;
+}
+
+.toast span {
+    flex: 1;
+    color: #fff;
+}
+
+.toast-success {
+    border-left: 3px solid #22c55e;
+}
+
+.toast-success i {
+    color: #22c55e;
+}
+
+.toast-error {
+    border-left: 3px solid #ef4444;
+}
+
+.toast-error i {
+    color: #ef4444;
+}
+
+.toast-info {
+    border-left: 3px solid var(--admin-accent);
+}
+
+.toast-info i {
+    color: var(--admin-accent);
+}
+
+.toast-fade-out {
+    opacity: 0;
+    transform: translateX(20px);
+}
+
+@keyframes toastSlideIn {
+    from {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* Toast container position */
+.toast-container {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column-reverse;
 }

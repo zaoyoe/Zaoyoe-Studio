@@ -93,7 +93,8 @@
             <script>
                 // Inline script to prevent flash - render avatar or icon based on cache
                 if (window.__cachedUserProfile && window.__cachedUserProfile.avatarUrl) {
-                    document.write('<img src="' + window.__cachedUserProfile.avatarUrl + '" alt="Avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">');
+                    // Add onerror to hide broken image and show fallback icon
+                    document.write('<img src="' + window.__cachedUserProfile.avatarUrl + '" alt="Avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" onerror="this.style.display=\'none\';this.parentElement.innerHTML=\'<i class=fa fa-user></i>\';"><i class="fas fa-user" style="display:none;"></i>');
                 } else {
                     document.write('<i class="fas fa-user"></i>');
                 }
@@ -281,8 +282,8 @@
                     </div>
 
                     <div class="comment-input-area">
-                        <input type="text" id="commentInput" placeholder="Add a comment..."
-                            onkeydown="handleCommentKeydown(event)">
+                        <textarea id="commentInput" placeholder="Add a comment..." rows="1"
+                            onkeydown="handleCommentKeydown(event)" oninput="autoExpandTextarea(this)"></textarea>
 
                         <!-- Hidden file input -->
                         <input type="file" id="commentImageUpload" accept="image/*" style="display: none;">
