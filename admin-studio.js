@@ -119,7 +119,6 @@ async function loadAdminPrompts() {
 // ========================================
 function renderAdminCard(prompt) {
     const imageUrl = prompt.images && prompt.images.length > 0 ? prompt.images[0] : '';
-    const tags = Array.isArray(prompt.tags) ? prompt.tags.join(', ') : 'No tags';
 
     return `
         <div class="admin-card" data-id="${prompt.id}">
@@ -127,7 +126,21 @@ function renderAdminCard(prompt) {
             <img src="${imageUrl}" class="admin-card-image" alt="${prompt.title}">
             <div class="admin-card-content">
                 <div class="admin-card-title">${prompt.title}</div>
-                <div class="admin-card-meta">${tags}</div>
+            </div>
+            <!-- Hover Quick Actions - Left (Edit) -->
+            <div class="admin-card-hover-actions left">
+                <button class="hover-action-btn edit" onclick="event.stopPropagation(); editPrompt(${prompt.id})" title="编辑">
+                    <i class="fas fa-edit"></i>
+                </button>
+            </div>
+            <!-- Hover Quick Actions - Right (Delete + Jump) -->
+            <div class="admin-card-hover-actions right">
+                <button class="hover-action-btn delete" onclick="event.stopPropagation(); deletePrompt(${prompt.id})" title="删除">
+                    <i class="fas fa-trash"></i>
+                </button>
+                <button class="hover-action-btn jump" onclick="event.stopPropagation(); window.open('prompts.html?id=${prompt.supabaseId || prompt.id}', '_blank')" title="在画廊查看">
+                    <i class="fas fa-external-link-alt"></i>
+                </button>
             </div>
             <div class="admin-card-actions">
                 <button class="admin-action-btn" onclick="editPrompt(${prompt.id})">

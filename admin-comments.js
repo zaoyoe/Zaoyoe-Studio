@@ -7,19 +7,25 @@
 const getSupabase = () => window.supabaseClient;
 
 // Current state
+// Current state
 let currentCommentView = 'guestbook'; // 'guestbook' or 'gallery'
 let commentsData = [];
 let commentsLoading = false;
 let commentsInitialized = false;
+let filteredComments = []; // Global filtered data for export
 
 // Filter state
 const filterState = {
-    date: 'all',           // 'all', 'today', 'week', 'month', or {from, to}
-    user: '',              // username search string
+    date: 'all',           // 'all', 'today', 'week', 'month', 'custom'
+    dateFrom: null,        // custom range start (datetime string)
+    dateTo: null,          // custom range end (datetime string)
+    user: '',              // DEPRECATED - separate search tags used instead
+    currentSearchInput: '', // Live search input value
     status: 'all',         // 'all', 'replied', 'unreplied'
     type: 'all',           // 'all', 'top', 'reply'
     hasImage: false,       // checkbox
-    source: 'all'          // 'all', 'guestbook', 'gallery'
+    source: 'all',         // 'all', 'guestbook', 'gallery'
+    searchTags: []         // Array of search strings
 };
 
 /**
@@ -102,6 +108,10 @@ function setupFilterDropdowns() {
         option.addEventListener('click', () => {
             const dropdown = option.closest('.filter-dropdown');
             const filterType = dropdown.dataset.filter;
+
+            // Skip action dropdowns (like Export)
+            if (filterType === 'export') return;
+
             const value = option.dataset.value;
 
             // Update selection UI
@@ -128,6 +138,9 @@ function setupFilterDropdowns() {
         });
     });
 
+    // Expose export function globally
+    window.exportData = exportData;
+
     // Handle hasImage checkbox
     const hasImageCheckbox = document.getElementById('filterHasImage');
     if (hasImageCheckbox) {
@@ -137,24 +150,83 @@ function setupFilterDropdowns() {
         });
     }
 
-    // Handle user search
-    const userSearchInput = document.getElementById('filterUserSearch');
+    // Handle user search (Enter key to add tag, Input for live search)
+    const userSearchInput = document.getElementById('commentSearch');
     if (userSearchInput) {
+        // Enter key -> Create Tag
+        userSearchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const val = e.target.value.trim();
+                if (val && !filterState.searchTags.includes(val)) {
+                    filterState.searchTags.push(val);
+                    filterState.currentSearchInput = ''; // Clear live input state
+                    e.target.value = ''; // Clear input UI
+                    loadComments(currentCommentView);
+                }
+            }
+        });
+
+        // Input -> Live Search
         let timeout;
         userSearchInput.addEventListener('input', (e) => {
             clearTimeout(timeout);
             timeout = setTimeout(() => {
-                filterState.user = e.target.value.trim();
-                const userBtn = document.querySelector('[data-filter="user"] .filter-btn');
-                if (filterState.user) {
-                    userBtn.classList.add('active');
-                } else {
-                    userBtn.classList.remove('active');
-                }
+                filterState.currentSearchInput = e.target.value.trim();
                 loadComments(currentCommentView);
             }, 300);
         });
     }
+
+    // Handle custom date range inputs with Flatpickr
+    const dateFromInput = document.getElementById('filterDateFrom');
+    const dateToInput = document.getElementById('filterDateTo');
+
+    const applyCustomDateRange = () => {
+        if (dateFromInput.value || dateToInput.value) {
+            filterState.date = 'custom';
+            // Flatpickr value is already properly formatted if configured correctly
+            filterState.dateFrom = dateFromInput.value || null;
+            filterState.dateTo = dateToInput.value || null;
+
+            // Update date filter button to show active state
+            const dateDropdown = document.querySelector('[data-filter="date"]');
+            const dateBtn = dateDropdown?.querySelector('.filter-btn');
+            const dateLabel = dateDropdown?.querySelector('.filter-label');
+            if (dateBtn) dateBtn.classList.add('active');
+            if (dateLabel) dateLabel.textContent = '自定义';
+
+            // Clear preset selections
+            dateDropdown?.querySelectorAll('.filter-option').forEach(o => o.classList.remove('selected'));
+
+            loadComments(currentCommentView);
+        }
+    };
+
+    // Initialize Flatpickr
+    const flatpickrConfig = {
+        enableTime: true,
+        dateFormat: "Y-m-d H:i",
+        time_24hr: true,
+        theme: "dark",
+        locale: "zh",
+        onChange: function (selectedDates, dateStr, instance) {
+            applyCustomDateRange();
+        }
+    };
+
+    // Check if flatpickr is loaded, if not wait a bit
+    const initFlatpickr = () => {
+        if (window.flatpickr) {
+            if (dateFromInput) flatpickr(dateFromInput, flatpickrConfig);
+            if (dateToInput) flatpickr(dateToInput, flatpickrConfig);
+        } else {
+            console.warn('Flatpickr not loaded yed, retrying...');
+            setTimeout(initFlatpickr, 100);
+        }
+    };
+
+    initFlatpickr();
 }
 
 /**
@@ -210,16 +282,49 @@ function applyFilters(comments) {
             } else if (filterState.date === 'month') {
                 const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
                 if (commentDate < monthAgo) return false;
+            } else if (filterState.date === 'custom') {
+                // Custom date range (datetime-local gives minute precision)
+                if (filterState.dateFrom) {
+                    const fromDate = new Date(filterState.dateFrom);
+                    if (commentDate < fromDate) return false;
+                }
+                if (filterState.dateTo) {
+                    const toDate = new Date(filterState.dateTo);
+                    if (commentDate > toDate) return false;
+                }
             }
         }
 
-        // Search filter (matches content OR username)
-        if (filterState.user) {
-            const searchTerm = filterState.user.toLowerCase();
-            const matchesContent = comment.content.toLowerCase().includes(searchTerm);
-            const matchesAuthor = comment.author.toLowerCase().includes(searchTerm);
-            if (!matchesContent && !matchesAuthor) {
-                return false;
+        // Search filter (Accumulative tags AND Live Input - AND logic)
+        // 1. Check Tags
+        if (filterState.searchTags.length > 0) {
+            const matchesTags = filterState.searchTags.every(tag => {
+                const searchTerm = tag.toLowerCase();
+                const matchesContent = comment.content.toLowerCase().includes(searchTerm);
+                const matchesAuthor = comment.author.toLowerCase().includes(searchTerm);
+                const matchesPrompt = comment.prompt_title && comment.prompt_title.toLowerCase().includes(searchTerm);
+                const matchesId = comment.id && comment.id.toLowerCase().includes(searchTerm);
+                const matchesParentId = comment.parent_id && String(comment.parent_id).toLowerCase().includes(searchTerm);
+                return matchesContent || matchesAuthor || matchesPrompt || matchesId || matchesParentId;
+            });
+            if (!matchesTags) return false;
+        }
+
+        // 2. Check Live Input
+        if (filterState.currentSearchInput) {
+            const searchTerm = filterState.currentSearchInput.toLowerCase();
+
+            // Special keyword: "置顶" filters pinned comments only
+            if (searchTerm === '置顶' || searchTerm === 'pinned') {
+                if (!comment.is_pinned) return false;
+            } else {
+                const matchesContent = comment.content.toLowerCase().includes(searchTerm);
+                const matchesAuthor = comment.author.toLowerCase().includes(searchTerm);
+                const matchesPrompt = comment.prompt_title && comment.prompt_title.toLowerCase().includes(searchTerm);
+                const matchesId = comment.id && comment.id.toLowerCase().includes(searchTerm);
+                const matchesParentId = comment.parent_id && String(comment.parent_id).toLowerCase().includes(searchTerm);
+
+                if (!matchesContent && !matchesAuthor && !matchesPrompt && !matchesId && !matchesParentId) return false;
             }
         }
 
@@ -333,9 +438,131 @@ function switchCommentView(view) {
 }
 
 /**
+ * Render active filter tags
+ */
+function renderFilterTags() {
+    const container = document.getElementById('activeFilterTags');
+    if (!container) return;
+
+    let tagsHtml = '';
+
+    // Date Filter
+    if (filterState.date !== 'all') {
+        let label = '时间';
+        let value = '';
+        if (filterState.date === 'today') value = '今天';
+        else if (filterState.date === 'week') value = '本周';
+        else if (filterState.date === 'month') value = '本月';
+        else if (filterState.date === 'custom') {
+            const start = filterState.dateFrom ? filterState.dateFrom.split(' ')[0] : '...';
+            const end = filterState.dateTo ? filterState.dateTo.split(' ')[0] : '...';
+            value = `${start} - ${end}`;
+        }
+        tagsHtml += createTagHtml('date', label, value);
+    }
+
+    // Status Filter
+    if (filterState.status !== 'all') {
+        const value = filterState.status === 'replied' ? '已回复' : '未回复';
+        tagsHtml += createTagHtml('status', '状态', value);
+    }
+
+    // Type Filter
+    if (filterState.type !== 'all') {
+        const value = filterState.type === 'top' ? '主评论' : '子回复';
+        tagsHtml += createTagHtml('type', '层级', value);
+    }
+
+    // Has Image
+    if (filterState.hasImage) {
+        tagsHtml += createTagHtml('hasImage', '包含', '图片');
+    }
+
+    // User Search Tags
+    if (filterState.searchTags && filterState.searchTags.length > 0) {
+        filterState.searchTags.forEach(tag => {
+            tagsHtml += createTagHtml('searchTag', '搜索', tag, tag); // Pass value as ID for removal
+        });
+    }
+
+    container.innerHTML = tagsHtml;
+}
+
+function createTagHtml(type, label, value, idValue) {
+    // idValue is optional, defaults to value
+    const removeId = idValue || type;
+    // Escape value for onclick to prevent syntax errors with quotes
+    const safeRemoveId = String(removeId).replace(/'/g, "\\'");
+
+    return `
+        <div class="filter-tag">
+            <span class="filter-tag-label">${label}:</span>
+            <span class="filter-tag-value">${value}</span>
+            <span class="filter-tag-close" onclick="removeFilter('${type}', '${safeRemoveId}')">
+                <i class="fas fa-times"></i>
+            </span>
+        </div>
+    `;
+}
+
+/**
+ * Remove a specific filter
+ */
+window.removeFilter = function (type, id) {
+    if (type === 'date') {
+        filterState.date = 'all';
+        filterState.dateFrom = null;
+        filterState.dateTo = null;
+        // Reset inputs
+        document.getElementById('filterDateFrom').value = '';
+        document.getElementById('filterDateTo').value = '';
+        updateDropdownUI('date', 'all');
+    } else if (type === 'status') {
+        filterState.status = 'all';
+        updateDropdownUI('status', 'all');
+    } else if (type === 'type') {
+        filterState.type = 'all';
+        updateDropdownUI('type', 'all');
+    } else if (type === 'user') {
+        filterState.user = ''; // Keep for backward compatibility if needed, though unused
+        // document.getElementById('commentSearch').value = ''; // Don't clear input when removing tag? Maybe unnecessary.
+        // Actually, logic is: 'user' type removed -> clear input?
+        // Wait, 'user' type is legacy. The new type is 'searchTag'. 
+        // But let's keep this safe just in case.
+        const input = document.getElementById('commentSearch');
+        if (input) input.value = ''; false;
+    } else if (type === 'searchTag') {
+        // Remove specific tag from array
+        filterState.searchTags = filterState.searchTags.filter(t => t !== id);
+    }
+
+    loadComments(currentCommentView);
+};
+
+function updateDropdownUI(filterType, value) {
+    const dropdown = document.querySelector(`.filter-dropdown[data-filter="${filterType}"]`);
+    if (!dropdown) return;
+
+    // Reset selection classes
+    dropdown.querySelectorAll('.filter-option').forEach(o => o.classList.remove('selected'));
+    const defaultOption = dropdown.querySelector(`.filter-option[data-value="${value}"]`);
+    if (defaultOption) defaultOption.classList.add('selected');
+
+    // Reset button text
+    const btn = dropdown.querySelector('.filter-btn');
+    const label = dropdown.querySelector('.filter-label');
+    if (btn) btn.classList.remove('active');
+    if (label) label.textContent = getDefaultLabel(filterType);
+}
+
+
+/**
  * Load comments from database
  */
 async function loadComments(view) {
+    // Render active filters
+    renderFilterTags();
+
     if (commentsLoading) return;
     commentsLoading = true;
 
@@ -358,13 +585,14 @@ async function loadComments(view) {
             // Load guestbook messages
             let query = getSupabase()
                 .from('guestbook_messages')
-                .select('*')
+                .select(`
+                    *,
+                    profiles:user_id (username, avatar_url, email)
+                `)
                 .order('created_at', { ascending: false })
                 .limit(50);
 
-
-            // Note: Search filtering is done client-side via applyFilters to support
-            // searching by both content AND username simultaneously
+            // Time filtering
             if (dateFrom) {
                 query = query.gte('created_at', dateFrom);
             }
@@ -377,15 +605,24 @@ async function loadComments(view) {
             const { data: messages, error } = await query;
             if (error) throw error;
 
+            // Fetch profiles manualy if needed, or just revert to previous state
+            // For now, reverting to previous working state to fix crash.
+            // Email will be empty for guestbook messages.
+
             data = (messages || []).map(msg => ({
                 id: msg.id,
                 type: 'guestbook',
-                content: msg.content,
-                author: msg.nickname || '匿名访客',
-                avatar: msg.avatar_url,
+                content: msg.message,
+                author: msg.profiles?.username || msg.nickname || 'Guest',
+                email: msg.profiles?.email || '',
+                avatar: msg.profiles?.avatar_url,
                 created_at: msg.created_at,
-                context: null,
-                user_id: null
+                context: 'Guestbook',
+                prompt_title: '',
+                likes: 0,
+                user_id: msg.user_id,
+                parent_id: null,
+                image_url: null
             }));
 
         } else {
@@ -394,7 +631,11 @@ async function loadComments(view) {
                 .from('prompt_comments')
                 .select(`
                     *,
-                    profiles:user_id (username, avatar_url)
+                    is_pinned,
+                    is_featured,
+                    profiles:user_id (username, avatar_url, email),
+                    prompts:prompt_id (title),
+                    comment_likes (count)
                 `)
                 .order('created_at', { ascending: false })
                 .limit(50);
@@ -413,23 +654,30 @@ async function loadComments(view) {
             const { data: comments, error } = await query;
             if (error) throw error;
 
+            console.log('Admin: Fetched Comments:', comments.length, 'First is_pinned:', comments[0]?.is_pinned, 'is_featured:', comments[0]?.is_featured);
+
             data = (comments || []).map(comment => ({
                 id: comment.id,
                 type: 'gallery',
                 content: comment.content,
                 author: comment.profiles?.username || '未知用户',
+                email: comment.profiles?.email || '',
                 avatar: comment.profiles?.avatar_url,
                 created_at: comment.created_at,
                 context: comment.prompt_id,
+                prompt_title: comment.prompts?.title || 'Unknown',
+                likes: comment.comment_likes ? (comment.comment_likes[0]?.count || 0) : 0,
                 user_id: comment.user_id,
                 parent_id: comment.parent_id,
-                image_url: comment.image_url || null
+                image_url: comment.image_url || null,
+                is_pinned: comment.is_pinned || false,
+                is_featured: comment.is_featured || false
             }));
         }
 
         commentsData = data;
         // Apply filters before rendering
-        const filteredComments = applyFilters(data);
+        filteredComments = applyFilters(data);
         renderCommentList(filteredComments);
 
     } catch (error) {
@@ -493,15 +741,36 @@ function renderCommentList(comments) {
                     <p class="item-text">${escapeHtml(comment.content)}</p>
                 </div>
 
-                <!-- 4. Actions Container (delete on top, view below) -->
+            <!-- 4. Actions Container (delete on top, view below) -->
                 <div class="item-actions">
+                    <div class="action-info-wrapper">
+                         <button class="action-info" onclick="event.stopPropagation(); copyCommentId('${comment.id}', '${comment.parent_id}')" title="复制 ID">
+                            <i class="fas fa-info-circle"></i>
+                        </button>
+                    </div>
+                    
+                    ${comment.type === 'gallery' ? `
+                    <button class="action-btn ${comment.is_pinned ? 'active' : ''}" 
+                        onclick="event.stopPropagation(); togglePin('${comment.id}', ${comment.is_pinned}, '${comment.context}')" 
+                        title="${comment.is_pinned ? '取消置顶' : '置顶评论'}">
+                        <i class="fas fa-thumbtack" style="${comment.is_pinned ? 'color: #9b5de5;' : ''}"></i>
+                    </button>
+                    ` : ''}
+
+
+                    <div class="action-block-wrapper" style="position: relative;">
+                        <button class="action-btn action-block" onclick="event.stopPropagation(); toggleBlockDropdown('${comment.user_id}', this)" title="用户管理">
+                            <i class="fas fa-ban"></i>
+                        </button>
+                    </div>
+
+                    ${comment.context ?
+                `<button class="action-view" onclick="event.stopPropagation(); viewCommentContext('${comment.context}', '${comment.id}')" title="查看上下文">
+                        <i class="fas fa-external-link-alt"></i>
+                    </button>` : ''}
                     <button class="action-delete" onclick="event.stopPropagation(); deleteComment('${comment.id}', '${comment.type}')" title="删除">
                         <i class="fas fa-trash"></i>
                     </button>
-                    ${comment.context ?
-                `<button class="action-view" onclick="event.stopPropagation(); viewCommentContext('${comment.context}', '${comment.id}')" title="查看详情">
-                        <i class="fas fa-external-link-alt"></i>
-                    </button>` : ''}
                 </div>
 
                 <!-- Reply Badge (bottom-left in Grid, below avatar in List) -->
@@ -587,8 +856,112 @@ function updateSelectionUI(count) {
     const countEl = document.getElementById('selectionCount');
     const deleteBtn = document.getElementById('batchDeleteBtn');
 
+    // Update Export text options
+    const exportCsvBtn = document.querySelector('.export-popup .filter-option:nth-child(1)');
+    const exportJsonBtn = document.querySelector('.export-popup .filter-option:nth-child(2)');
+
+    const contextText = count > 0 ? `(选中 ${count} 项)` : `(当前筛选)`;
+
+    if (exportCsvBtn) exportCsvBtn.innerHTML = `<i class="fas fa-file-csv"></i> 导出 CSV ${contextText}`;
+    if (exportJsonBtn) exportJsonBtn.innerHTML = `<i class="fas fa-file-code"></i> 导出 JSON ${contextText}`;
+
     if (countEl) countEl.textContent = `已选 ${count} 条`;
     if (deleteBtn) deleteBtn.disabled = count === 0;
+}
+
+/**
+ * Export data function
+ * format: 'csv' | 'json'
+ */
+function exportData(format) {
+    const checked = document.querySelectorAll('.comment-checkbox:checked');
+    let sourceData = [];
+
+    // 1. Determine Data Source
+    if (checked.length > 0) {
+        // Export selected items from current filtered list
+        const selectedIds = Array.from(checked).map(cb => cb.dataset.id);
+        sourceData = filteredComments.filter(c => selectedIds.includes(c.id));
+    } else {
+        // Export all filtered items
+        sourceData = filteredComments;
+    }
+
+    if (sourceData.length === 0) {
+        alert('无数据可导出');
+        return;
+    }
+
+    // 2. Generate Content
+    let content = '';
+    let mimeType = '';
+    let extension = '';
+    const timestamp = new Date().toISOString().slice(0, 10);
+
+    if (format === 'csv') {
+        // CSV Generation with BOM for Excel
+        content = generateCSV(sourceData);
+        mimeType = 'text/csv;charset=utf-8;';
+        extension = 'csv';
+    } else {
+        // JSON Generation
+        content = JSON.stringify(sourceData, null, 2);
+        mimeType = 'application/json';
+        extension = 'json';
+    }
+
+    // 3. Trigger Download
+    const blob = new Blob([format === 'csv' ? '\ufeff' + content : content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `comments_export_${timestamp}.${extension}`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+/**
+ * Helper: Generate CSV string from comments
+ */
+function generateCSV(data) {
+    // Define columns
+    const columns = [
+        { header: 'ID', key: 'id' },
+        { header: 'Author', key: 'author' },
+        { header: 'Email', key: 'email' },
+        { header: 'Content', key: 'content' },
+        { header: 'Date', key: 'created_at' },
+        { header: 'Type', key: 'type' },
+        { header: 'Likes', key: 'likes' },
+        { header: 'Prompt Title', key: 'prompt_title' },
+        { header: 'Prompt ID', key: 'context' },
+        { header: 'Parent ID', key: 'parent_id' }
+    ];
+
+    // Create Header Row
+    const headerRow = columns.map(col => `"${col.header}"`).join(',');
+
+    // Create Data Rows
+    const dataRows = data.map(item => {
+        return columns.map(col => {
+            let val = item[col.key] || '';
+
+            // Format specific fields
+            if (col.key === 'content') {
+                // Escape quotes and handle newlines for CSV
+                val = val.replace(/"/g, '""'); // Double quotes
+                val = val.replace(/\n/g, ' '); // Replace newlines with space
+            }
+            if (col.key === 'created_at') {
+                val = new Date(val).toLocaleString('zh-CN');
+            }
+
+            return `"${val}"`;
+        }).join(',');
+    });
+
+    return [headerRow, ...dataRows].join('\n');
 }
 
 /**
@@ -791,6 +1164,22 @@ document.addEventListener('DOMContentLoaded', () => {
     switchLayoutView(currentViewLayout);
 });
 
+
+/**
+ * Copy Comment ID to clipboard
+ */
+window.copyCommentId = function (id, parentId) {
+    if (!id) return;
+
+    // Copy ID (just the ID)
+    navigator.clipboard.writeText(id).then(() => {
+        // Show simplified toast
+        showToast ? showToast(`已复制 ID`, 'info') : alert('ID Copied: ' + id);
+    }).catch(err => {
+        console.error('Failed to copy ID:', err);
+    });
+};
+
 // Export functions for global access
 window.initCommentsModule = initCommentsModule;
 window.switchCommentView = switchCommentView;
@@ -802,5 +1191,284 @@ window.updateSelection = updateSelection;
 window.batchDeleteComments = batchDeleteComments;
 window.switchLayoutView = switchLayoutView;
 window.toggleCommentSelection = toggleCommentSelection;
+window.copyCommentId = window.copyCommentId;
+
+/**
+ * Toggle Pin Status (Single pin per card)
+ */
+window.togglePin = async function (id, currentStatus, promptId) {
+    console.log('togglePin called:', id, 'current:', currentStatus, 'prompt:', promptId);
+    try {
+        // If pinning (not unpinning), first unpin any existing pinned comment for this prompt
+        if (!currentStatus && promptId) {
+            const { error: unpinError } = await getSupabase()
+                .from('prompt_comments')
+                .update({ is_pinned: false })
+                .eq('prompt_id', promptId)
+                .eq('is_pinned', true);
+
+            if (unpinError) console.warn('Failed to unpin existing:', unpinError);
+        }
+
+        // Now pin/unpin the target comment
+        const { data, error } = await getSupabase()
+            .from('prompt_comments')
+            .update({ is_pinned: !currentStatus })
+            .eq('id', id)
+            .select();
+
+        console.log('togglePin result:', { data, error });
+
+        if (error) throw error;
+
+        showToast(currentStatus ? '已取消置顶' : '评论已置顶', 'success');
+        loadComments(currentCommentView); // Refresh list
+    } catch (err) {
+        console.error('Error toggling pin:', err);
+        showToast('操作失败', 'error');
+    }
+};
+
+// --- User Blocking Functions ---
+
+let activeBlockDropdown = null;
+
+
+window.toggleBlockDropdown = function (userId, btnElement) {
+    // Close existing if specific button clicked again or just close any open one
+    if (activeBlockDropdown) {
+        const isSame = activeBlockDropdown.dataset.triggerId === userId;
+        activeBlockDropdown.remove();
+        activeBlockDropdown = null;
+        if (isSame) return; // Toggle off behavior
+    }
+
+    // Default to empty/false for immediate render
+    let blockedScopes = [];
+    let isGuestbookBlocked = false;
+    let isGalleryBlocked = false;
+
+    // Create dropdown
+    const dropdown = document.createElement('div');
+    dropdown.className = 'block-dropdown-menu';
+    dropdown.dataset.triggerId = userId;
+
+    let html = `<div class="block-menu-header">封禁管理</div>`;
+
+    // Guestbook Actions
+    if (isGuestbookBlocked) {
+        html += `<button class="block-menu-btn" onclick="unblockUser('${userId}', 'guestbook')">🚫 解封留言板</button>`;
+    } else {
+        html += `<button class="block-menu-btn" onclick="blockUser('${userId}', 'guestbook', null)">永久封禁留言板</button>`;
+    }
+
+    // Gallery Actions
+    if (isGalleryBlocked) {
+        html += `<button class="block-menu-btn" onclick="unblockUser('${userId}', 'gallery')">🚫 解封画廊</button>`;
+    } else {
+        html += `<button class="block-menu-btn" onclick="blockUser('${userId}', 'gallery', null)">永久封禁画廊</button>`;
+        html += `
+            <div class="block-menu-divider"></div>
+            <div class="block-menu-header">临时封禁 (画廊)</div>
+            <button class="block-menu-btn" onclick="blockUser('${userId}', 'gallery', 3)">封禁 3 天</button>
+            <button class="block-menu-btn" onclick="blockUser('${userId}', 'gallery', 7)">封禁 7 天</button>
+            <button class="block-menu-btn" onclick="blockUser('${userId}', 'gallery', 30)">封禁 30 天</button>
+        `;
+    }
+
+    html += `
+        <div class="block-menu-divider"></div>
+        <button class="block-menu-btn" onclick="checkUserStatus('${userId}')">查看状态详情</button>
+    `;
+
+    dropdown.innerHTML = html;
+
+    // Helper to attach listeners (relying on CSS classes for styles)
+    const attachListeners = () => {
+        const buttons = dropdown.querySelectorAll('button');
+        buttons.forEach(btn => {
+            const originalClick = btn.getAttribute('onclick');
+            if (originalClick) {
+                btn.removeAttribute('onclick');
+                btn.onclick = (e) => {
+                    e.stopPropagation();
+                    if (originalClick.includes('unblockUser')) {
+                        const args = originalClick.match(/'([^']*)'/g).map(s => s.replace(/'/g, ''));
+                        window.unblockUser(args[0], args[1]);
+                    } else if (originalClick.includes('checkUserStatus')) {
+                        const args = originalClick.match(/'([^']*)'/g).map(s => s.replace(/'/g, ''));
+                        window.checkUserStatus(args[0]);
+                    } else {
+                        const parts = originalClick.split('(')[1].split(')')[0].split(',');
+                        const uid = parts[0].trim().replace(/'/g, '');
+                        const scope = parts[1].trim().replace(/'/g, '');
+                        const days = parts[2].trim() === 'null' ? null : parseInt(parts[2].trim());
+                        window.blockUser(uid, scope, days);
+                    }
+                    dropdown.remove();
+                    activeBlockDropdown = null;
+                };
+            }
+        });
+    };
+
+    attachListeners();
+
+    btnElement.parentNode.appendChild(dropdown);
+    activeBlockDropdown = dropdown;
+
+    // Robust Close Handler
+    const closeHandler = (e) => {
+        // If clicking inside dropdown, do nothing (handled by buttons)
+        if (dropdown.contains(e.target)) return;
+
+        // If clicking the button that opened it, do nothing (toggle logic handles it)
+        if (btnElement.contains(e.target)) return;
+
+        // Otherwise close
+        dropdown.remove();
+        activeBlockDropdown = null;
+        document.removeEventListener('click', closeHandler);
+        // Also remove mouseleave listener if we added one
+    };
+
+    // Add close listener with delay to avoid immediate trigger
+    setTimeout(() => document.addEventListener('click', closeHandler), 0);
+
+    // Auto-close on mouse leave (requested "retract automatic")
+    dropdown.onmouseleave = () => {
+        // Create a grace period allowing moving to sibling elements? 
+        // For now user said "won't automatically retract", implying they WANT it to retract.
+        // Let's add a timeout to close on mouseleave
+        dropdown._closeTimer = setTimeout(() => {
+            dropdown.remove();
+            activeBlockDropdown = null;
+            document.removeEventListener('click', closeHandler);
+        }, 500);
+    };
+    dropdown.onmouseenter = () => {
+        clearTimeout(dropdown._closeTimer);
+    };
+
+    // -- Async Status Update --
+    // Check status in background and update UI if user is blocked
+    getSupabase()
+        .from('blocked_users')
+        .select('scope')
+        .eq('user_id', userId)
+        .then(({ data }) => {
+            if (activeBlockDropdown === dropdown && data && data.length > 0) {
+                const updatedScopes = data.map(d => d.scope);
+                const isGuestbookBlocked = updatedScopes.includes('guestbook') || updatedScopes.includes('all');
+                const isGalleryBlocked = updatedScopes.includes('gallery') || updatedScopes.includes('all');
+
+                if (isGuestbookBlocked || isGalleryBlocked) {
+                    // Re-render content
+                    let newHtml = `<div class="block-menu-header">封禁管理</div>`;
+
+                    if (isGuestbookBlocked) {
+                        newHtml += `<button class="block-menu-btn" onclick="unblockUser('${userId}', 'guestbook')">🚫 解封留言板</button>`;
+                    } else {
+                        newHtml += `<button class="block-menu-btn" onclick="blockUser('${userId}', 'guestbook', null)">永久封禁留言板</button>`;
+                    }
+
+                    if (isGalleryBlocked) {
+                        newHtml += `<button class="block-menu-btn" onclick="unblockUser('${userId}', 'gallery')">🚫 解封画廊</button>`;
+                    } else {
+                        newHtml += `<button class="block-menu-btn" onclick="blockUser('${userId}', 'gallery', null)">永久封禁画廊</button>`;
+                        newHtml += `
+                            <div class="block-menu-divider"></div>
+                            <div class="block-menu-header">临时封禁 (画廊)</div>
+                            <button class="block-menu-btn" onclick="blockUser('${userId}', 'gallery', 3)">封禁 3 天</button>
+                            <button class="block-menu-btn" onclick="blockUser('${userId}', 'gallery', 7)">封禁 7 天</button>
+                            <button class="block-menu-btn" onclick="blockUser('${userId}', 'gallery', 30)">封禁 30 天</button>
+                        `;
+                    }
+
+                    newHtml += `
+                        <div class="block-menu-divider"></div>
+                        <button class="block-menu-btn" onclick="checkUserStatus('${userId}')">查看状态详情</button>
+                    `;
+
+                    dropdown.innerHTML = newHtml;
+                    attachListeners();
+                }
+            }
+        })
+        .catch(console.error);
+};
+
+window.blockUser = async function (userId, scope, days) {
+    const durationStr = days ? `${days}天` : '永久';
+    const scopeStr = scope === 'guestbook' ? '留言板' : '画廊';
+
+    if (!confirm(`确定要 [${durationStr}] 封禁该用户在 [${scopeStr}] 的权限吗？`)) return;
+
+    try {
+        const payload = {
+            user_id: userId,
+            scope: scope,
+            blocked_by: (await getSupabase().auth.getUser()).data.user.id,
+            blocked_at: new Date().toISOString()
+        };
+
+        if (days) {
+            const expiresAt = new Date();
+            expiresAt.setDate(expiresAt.getDate() + days);
+            payload.expires_at = expiresAt.toISOString();
+        } else {
+            payload.expires_at = null; // Permanent
+        }
+
+        const { error } = await getSupabase()
+            .from('blocked_users')
+            .upsert(payload, { onConflict: 'user_id, scope' });
+
+        if (error) throw error;
+        showToast(`已${durationStr}封禁用户 ${scopeStr} 权限`, 'success');
+    } catch (err) {
+        console.error('Block user error:', err);
+        showToast('操作失败: ' + err.message, 'error');
+    }
+};
+
+window.checkUserStatus = async function (userId) {
+    try {
+        const { data, error } = await getSupabase()
+            .from('blocked_users')
+            .select('*')
+            .eq('user_id', userId);
+
+        if (error) throw error;
+
+        if (!data || data.length === 0) {
+            alert('该用户未被封禁');
+        } else {
+            const scopes = data.map(d => d.scope).join(', ');
+            alert(`用户当前封禁状态：\n权限范围: ${scopes}\n封禁时间: ${new Date(data[0].blocked_at).toLocaleString()}`);
+        }
+    } catch (err) {
+        console.error('Check status error:', err);
+        showToast('查询失败', 'error');
+    }
+};
+
+window.unblockUser = async function (userId, scope) {
+    if (!confirm(`确定要解除该用户在 [${scope === 'guestbook' ? '留言板' : '画廊'}] 的封禁吗？`)) return;
+
+    try {
+        const { error } = await getSupabase()
+            .from('blocked_users')
+            .delete()
+            .eq('user_id', userId)
+            .eq('scope', scope);
+
+        if (error) throw error;
+        showToast(`已解封用户 ${scope === 'guestbook' ? '留言板' : '画廊'} 权限`, 'success');
+    } catch (err) {
+        console.error('Unblock user error:', err);
+        showToast('操作失败: ' + err.message, 'error');
+    }
+};
 
 

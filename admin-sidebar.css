@@ -7,12 +7,18 @@
     --admin-accent: #9b5de5;
     /* Purple for light mode */
     --admin-accent-bg: rgba(155, 93, 229, 0.1);
+
+    /* Map text-primary to text-main (defined in prompts-poetry.css) to ensure consistency */
+    --text-primary: var(--text-main, #1e293b);
 }
 
 [data-theme="dark"] {
     --admin-accent: #6b9ece;
     /* Starry blue for dark mode */
     --admin-accent-bg: rgba(107, 158, 206, 0.15);
+
+    /* Ensure text-primary is light in dark mode */
+    --text-primary: var(--text-main, #e2e8f0);
 }
 
 /* Sidebar Theme Variables */
@@ -309,7 +315,8 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    margin-bottom: 16px;
+    margin-bottom: 24px;
+    /* Increased from 16px for more breathing room */
     padding: 0;
     background: transparent;
     border: none;
@@ -441,16 +448,81 @@
 }
 
 /* Light mode glass popup */
-[data-theme="light"] .filter-popup.glass-popup {
-    background: rgba(255, 255, 255, 0.95);
-    border: 1px solid rgba(0, 0, 0, 0.08);
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.12);
+/* Light mode glass popup */
+:root:not([data-theme="dark"]) .filter-popup.glass-popup {
+    background: rgba(255, 255, 255, 0.95) !important;
+    border: 1px solid rgba(0, 0, 0, 0.08) !important;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.12) !important;
+}
+
+/* Force light text color override for options inside light popup */
+:root:not([data-theme="dark"]) .filter-popup .filter-option {
+    color: var(--text-main);
+}
+
+:root:not([data-theme="dark"]) .filter-popup .filter-option:hover {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+:root:not([data-theme="dark"]) .filter-custom-date label,
+:root:not([data-theme="dark"]) .filter-custom-date span {
+    color: var(--text-secondary);
 }
 
 .filter-dropdown.open .filter-popup {
     opacity: 1;
     visibility: visible;
     transform: translateY(0);
+}
+
+/* Action Info - Match other action buttons exactly */
+.action-info {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.action-info:hover {
+    background: rgba(59, 130, 246, 0.1);
+    color: #3b82f6;
+}
+
+.action-info-wrapper {
+    display: contents;
+}
+
+/* Generic Action Button (Pin, Feature, etc) */
+.action-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.action-btn:hover {
+    background: rgba(128, 128, 128, 0.1);
+    color: var(--text-primary);
+}
+
+.action-btn.active {
+    background: rgba(128, 128, 128, 0.1);
 }
 
 /* Filter Options */
@@ -539,15 +611,32 @@
     margin-bottom: 6px;
 }
 
-.filter-custom-date input[type="date"] {
+/* Updated selector for Flatpickr input */
+.filter-custom-date input.flatpickr-input {
     width: 100%;
     padding: 6px 8px;
-    border: 1px solid rgba(128, 128, 128, 0.2);
+    border: 1px solid rgba(128, 128, 128, 0.3);
     border-radius: 6px;
-    background: rgba(255, 255, 255, 0.05);
-    color: var(--text-primary);
+    background: rgba(15, 23, 42, 0.8);
+    /* Darker background for visibility */
+    color: var(--text-primary, #ffffff);
+    /* Fallback to white if var undefined */
     font-size: 0.8rem;
     margin-bottom: 4px;
+    box-sizing: border-box;
+    /* Fix overflow */
+}
+
+/* Light mode override for date input */
+:root:not([data-theme="dark"]) .filter-custom-date input.flatpickr-input {
+    background: rgba(255, 255, 255, 0.9) !important;
+    color: var(--text-main) !important;
+    border-color: rgba(0, 0, 0, 0.1) !important;
+}
+
+.filter-custom-date input.flatpickr-input:focus {
+    outline: none;
+    border-color: var(--admin-accent);
 }
 
 .filter-custom-date span {
@@ -759,22 +848,18 @@
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
 }
 
-/* Checkmark Icon */
-.comment-checkbox::after {
-    content: '';
-    position: absolute;
-    width: 5px;
-    height: 9px;
-    border: solid white;
-    border-width: 0 2px 2px 0;
-    transform: rotate(45deg) scale(0);
-    transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    margin-top: -2px;
-    /* Visual centering adjustment */
+/* Export Popup - Wider for text */
+.export-popup {
+    min-width: 200px !important;
 }
 
-.comment-checkbox:checked::after {
-    transform: rotate(45deg) scale(1);
+/* Standardize Checkbox Style */
+.comment-checkbox {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--admin-accent);
+    cursor: pointer;
+    border-radius: 4px;
 }
 
 /* ============================================
@@ -793,8 +878,8 @@
 }
 
 .comment-admin-item.selected {
-    background: var(--admin-accent-bg);
-    /* Theme accent bg (purple/blue tint based on mode) */
+    background: transparent;
+    /* Only border, no fill */
     border-color: var(--admin-accent);
     z-index: 2;
     /* Selected items sit higher */
@@ -918,6 +1003,7 @@
     color: var(--text-secondary);
     display: -webkit-box;
     -webkit-line-clamp: 4;
+    line-clamp: 4;
     -webkit-box-orient: vertical;
     overflow: hidden;
 }
@@ -1175,11 +1261,7 @@
     border-radius: 3px;
 }
 
-.comment-list-admin.list-view .comment-checkbox::after {
-    width: 4px;
-    height: 7px;
-    border-width: 0 1.5px 1.5px 0;
-}
+
 
 .comment-list-admin.list-view .comment-admin-item:hover .item-checkbox-wrapper,
 .comment-list-admin.list-view .comment-admin-item.selected .item-checkbox-wrapper {
@@ -1443,4 +1525,235 @@
     z-index: 9999;
     display: flex;
     flex-direction: column-reverse;
+}
+
+/* =========================================
+   Flatpickr Dark Mode Overrides
+   (Since we removed the hardcoded dark theme to support light mode)
+   ========================================= */
+[data-theme="dark"] .flatpickr-calendar {
+    background: #1e293b !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4) !important;
+}
+
+[data-theme="dark"] .flatpickr-calendar.arrowTop:after,
+[data-theme="dark"] .flatpickr-calendar.arrowTop:before {
+    border-bottom-color: #1e293b !important;
+}
+
+[data-theme="dark"] .flatpickr-calendar.arrowBottom:after,
+[data-theme="dark"] .flatpickr-calendar.arrowBottom:before {
+    border-top-color: #1e293b !important;
+}
+
+[data-theme="dark"] .flatpickr-month {
+    color: #e2e8f0 !important;
+    fill: #e2e8f0 !important;
+}
+
+[data-theme="dark"] .flatpickr-current-month .flatpickr-monthDropdown-months {
+    background: #1e293b !important;
+    color: #e2e8f0 !important;
+}
+
+[data-theme="dark"] .flatpickr-current-month .flatpickr-monthDropdown-months:hover {
+    background: #1e293b !important;
+}
+
+[data-theme="dark"] .flatpickr-current-month input.cur-year {
+    color: #e2e8f0 !important;
+}
+
+[data-theme="dark"] .flatpickr-weekday {
+    color: #94a3b8 !important;
+    background: #1e293b !important;
+}
+
+[data-theme="dark"] .flatpickr-day {
+    color: #e2e8f0 !important;
+}
+
+[data-theme="dark"] .flatpickr-day.prevMonthDay,
+[data-theme="dark"] .flatpickr-day.nextMonthDay {
+    color: #475569 !important;
+}
+
+[data-theme="dark"] .flatpickr-day:hover,
+[data-theme="dark"] .flatpickr-day:focus {
+    background: rgba(255, 255, 255, 0.1) !important;
+    border-color: transparent !important;
+}
+
+[data-theme="dark"] .flatpickr-day.today {
+    border-color: #e2e8f0 !important;
+}
+
+[data-theme="dark"] .flatpickr-day.selected,
+[data-theme="dark"] .flatpickr-day.startRange,
+[data-theme="dark"] .flatpickr-day.endRange,
+[data-theme="dark"] .flatpickr-day.selected.inRange,
+[data-theme="dark"] .flatpickr-day.startRange.inRange,
+[data-theme="dark"] .flatpickr-day.endRange.inRange,
+[data-theme="dark"] .flatpickr-day.selected:focus,
+[data-theme="dark"] .flatpickr-day.startRange:focus,
+[data-theme="dark"] .flatpickr-day.endRange:focus {
+    background: var(--admin-accent) !important;
+    border-color: var(--admin-accent) !important;
+    color: #fff !important;
+}
+
+[data-theme="dark"] .flatpickr-day.inRange {
+    background: var(--admin-accent-bg) !important;
+    border-color: transparent !important;
+    box-shadow: -5px 0 0 var(--admin-accent-bg), 5px 0 0 var(--admin-accent-bg) !important;
+}
+
+[data-theme="dark"] .flatpickr-time {
+    background: #1e293b !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+[data-theme="dark"] .flatpickr-time .flatpickr-time-separator,
+[data-theme="dark"] .flatpickr-time .flatpickr-am-pm {
+    color: #e2e8f0 !important;
+}
+
+[data-theme="dark"] .flatpickr-time input {
+    color: #e2e8f0 !important;
+}
+
+[data-theme="dark"] .flatpickr-time input:hover,
+[data-theme="dark"] .flatpickr-time .flatpickr-am-pm:hover,
+[data-theme="dark"] .flatpickr-time input:focus,
+[data-theme="dark"] .flatpickr-time .flatpickr-am-pm:focus {
+    background: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* ============================================
+   Active Filter Tags
+   ============================================ */
+.filter-tags-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+    padding: 0 4px;
+    min-height: 0;
+    transition: all 0.3s ease;
+}
+
+.filter-tags-container:empty {
+    margin-bottom: 0;
+    height: 0;
+    overflow: hidden;
+}
+
+.filter-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    background: rgba(124, 93, 250, 0.1);
+    border: 1px solid rgba(124, 93, 250, 0.2);
+    border-radius: 20px;
+    font-size: 0.8rem;
+    color: var(--text-primary);
+    transition: all 0.2s ease;
+    animation: fadeIn 0.3s ease;
+}
+
+.filter-tag:hover {
+    background: rgba(124, 93, 250, 0.15);
+}
+
+.filter-tag-label {
+    color: var(--text-dim);
+    margin-right: 2px;
+}
+
+.filter-tag-value {
+    color: var(--admin-accent);
+    font-weight: 500;
+}
+
+.filter-tag-close {
+    cursor: pointer;
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    margin-left: 4px;
+    opacity: 0.6;
+    transition: all 0.2s;
+}
+
+.filter-tag-close:hover {
+    background: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
+    opacity: 1;
+}
+
+/* Block Dropdown Menu */
+.block-dropdown-menu {
+    position: absolute;
+    bottom: 100%;
+    right: 0;
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    min-width: 180px;
+    z-index: 9999;
+    overflow: hidden;
+    padding: 6px 0;
+    animation: fadeIn 0.15s ease-out;
+}
+
+.block-menu-header {
+    padding: 6px 12px;
+    font-size: 11px;
+    color: var(--text-dim);
+    font-weight: 600;
+    background: var(--spotlight-color);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.block-menu-btn {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 8px 12px;
+    background: none;
+    border: none;
+    color: var(--text-main);
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.1s;
+}
+
+.block-menu-btn:hover {
+    background: var(--spotlight-color);
+    color: var(--accent-purple);
+}
+
+.block-menu-divider {
+    height: 1px;
+    background: var(--card-border);
+    margin: 4px 0;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-5px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }

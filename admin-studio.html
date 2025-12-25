@@ -20,6 +20,8 @@
     <link rel="stylesheet" href="admin-sidebar.css?v=1">
     <!-- Cropper.js CSS -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.css">
+    <!-- Flatpickr CSS (Base) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 
     <!-- Prevent flash of wrong theme -->
     <script>
@@ -83,6 +85,8 @@
         <div class="admin-main-content">
             <!-- Ambient Light Canvas -->
             <canvas id="ambientCanvas"></canvas>
+            <!-- Starry Sky Canvas (Dark Mode Only) -->
+            <canvas id="starryCanvas"></canvas>
 
             <!-- Header -->
             <header class="studio-header">
@@ -114,8 +118,6 @@
                 </nav>
 
                 <!-- Main Content -->
-                <!-- Starry Background for Dark Mode -->
-                <canvas id="starryCanvas"></canvas>
 
                 <div class="studio-main">
                     <!-- CREATE VIEW -->
@@ -413,27 +415,7 @@
                             onclick="switchCommentView('gallery')">画廊评论</button>
                     </nav>
 
-                    <!-- Stats Cards -->
-                    <!-- Compact Stats Badges (inline) -->
-                    <div class="comment-stats-compact">
-                        <div class="stat-badge">
-                            <span class="stat-badge-value" id="totalCommentsCount">--</span>
-                            <span class="stat-badge-label">总评论</span>
-                        </div>
-                        <div class="stat-badge accent">
-                            <span class="stat-badge-value" id="todayCommentsCount">+--</span>
-                            <span class="stat-badge-label">今日</span>
-                        </div>
-                        <div class="stat-badge">
-                            <span class="stat-badge-value" id="activeUsersCount">--</span>
-                            <span class="stat-badge-label">活跃用户</span>
-                        </div>
-                        <div class="stat-badge">
-                            <span class="stat-badge-value" id="weekGrowth">--%</span>
-                            <span class="stat-badge-label">周增长</span>
-                        </div>
-                    </div>
-
+                    <!-- Stats moved to Analytics module -->
                     <!-- Unified Compact Toolbar -->
                     <div class="comment-toolbar-compact">
                         <!-- Left: Search + Filters -->
@@ -460,43 +442,62 @@
                                         <div class="filter-divider"></div>
                                         <div class="filter-custom-date">
                                             <label>自定义范围</label>
-                                            <input type="date" id="filterDateFrom">
+                                            <input type="text" id="filterDateFrom" class="flatpickr-input"
+                                                placeholder="开始时间" readonly>
                                             <span>至</span>
-                                            <input type="date" id="filterDateTo">
+                                            <input type="text" id="filterDateTo" class="flatpickr-input"
+                                                placeholder="结束时间" readonly>
                                         </div>
                                     </div>
                                 </div>
 
-                                <!-- Status Filter -->
+                                <!-- Status Filter (回复情况) -->
                                 <div class="filter-dropdown" data-filter="status">
                                     <button class="filter-btn">
-                                        <i class="fas fa-comment-dots"></i>
-                                        <span class="filter-label">状态</span>
+                                        <i class="fas fa-reply-all"></i>
+                                        <span class="filter-label">回复</span>
                                         <i class="fas fa-chevron-down filter-arrow"></i>
                                     </button>
                                     <div class="filter-popup glass-popup">
                                         <div class="filter-option selected" data-value="all">全部</div>
-                                        <div class="filter-option" data-value="replied">已回复</div>
-                                        <div class="filter-option" data-value="unreplied">未回复</div>
+                                        <div class="filter-option" data-value="replied">有回复</div>
+                                        <div class="filter-option" data-value="unreplied">无回复</div>
                                     </div>
                                 </div>
 
-                                <!-- Type Filter -->
+                                <!-- Type Filter (层级) -->
                                 <div class="filter-dropdown" data-filter="type">
                                     <button class="filter-btn">
-                                        <i class="fas fa-tag"></i>
-                                        <span class="filter-label">类型</span>
+                                        <i class="fas fa-layer-group"></i>
+                                        <span class="filter-label">层级</span>
                                         <i class="fas fa-chevron-down filter-arrow"></i>
                                     </button>
                                     <div class="filter-popup glass-popup">
                                         <div class="filter-option selected" data-value="all">全部</div>
-                                        <div class="filter-option" data-value="top">顶级评论</div>
-                                        <div class="filter-option" data-value="reply">Reply回复</div>
+                                        <div class="filter-option" data-value="top">主评论</div>
+                                        <div class="filter-option" data-value="reply">子回复</div>
                                         <div class="filter-divider"></div>
                                         <label class="filter-checkbox">
                                             <input type="checkbox" id="filterHasImage">
                                             <span>含图片</span>
                                         </label>
+                                    </div>
+                                </div>
+
+                                <!-- Export Dropdown (New) -->
+                                <div class="filter-dropdown" data-filter="export">
+                                    <button class="filter-btn export-btn-trigger">
+                                        <i class="fas fa-file-export"></i>
+                                        <span class="filter-label">导出</span>
+                                        <i class="fas fa-chevron-down filter-arrow"></i>
+                                    </button>
+                                    <div class="filter-popup glass-popup export-popup">
+                                        <div class="filter-option" onclick="exportData('csv')">
+                                            <i class="fas fa-file-csv"></i> 导出 CSV
+                                        </div>
+                                        <div class="filter-option" onclick="exportData('json')">
+                                            <i class="fas fa-file-code"></i> 导出 JSON
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -528,6 +529,9 @@
                             </button>
                         </div>
                     </div>
+
+                    <!-- Active Filter Tags -->
+                    <div id="activeFilterTags" class="filter-tags-container"></div>
 
                     <!-- Comment List -->
                     <div class="comment-list-admin" id="adminCommentList">
@@ -716,6 +720,10 @@
             }
         }
     </script>
+    <script src="starry-sky.js"></script>
+    <!-- Flatpickr JS -->
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/zh.js"></script>
     <script src="admin-comments.js"></script>
     <script src="admin-studio.js"></script>
 </body>

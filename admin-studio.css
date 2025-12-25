@@ -148,9 +148,10 @@ body {
     --text-dim: #94a3b8;
     --card-bg: #1e293b;
     --card-border: rgba(255, 255, 255, 0.12);
-    /* Starry Blue Accent for Dark Mode */
-    --accent-purple: #5d9fd8;
-    --ambient-color-1: rgba(93, 159, 216, 0.15);
+    /* Starry Blue Accent for Dark Mode - matches Gallery */
+    --accent-purple: #6b9ece;
+    --accent-starry: #6b9ece;
+    --ambient-color-1: rgba(107, 158, 206, 0.15);
 }
 
 .api-key-current i:first-child {
@@ -1247,6 +1248,8 @@ body {
 
 .admin-card-content {
     padding: 20px;
+    padding-bottom: 48px;
+    /* Extra space for hover action buttons */
 }
 
 .admin-card-title {
@@ -1261,6 +1264,68 @@ body {
     font-size: 0.9rem;
     color: var(--text-dim);
     line-height: 1.5;
+}
+
+/* Hover Quick Actions - Bottom Corners */
+.admin-card-hover-actions {
+    position: absolute;
+    bottom: 12px;
+    display: flex;
+    gap: 8px;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity 0.25s ease, transform 0.25s ease;
+    z-index: 10;
+}
+
+.admin-card-hover-actions.left {
+    left: 12px;
+}
+
+.admin-card-hover-actions.right {
+    right: 12px;
+}
+
+.admin-card:hover .admin-card-hover-actions {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* Show checkbox on hover */
+.admin-card:hover .select-checkbox {
+    opacity: 1;
+}
+
+.hover-action-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    border: none;
+    background: transparent;
+    color: rgba(148, 163, 184, 0.6);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    transition: color 0.2s ease, transform 0.2s ease;
+}
+
+.hover-action-btn:hover {
+    color: var(--text-main);
+    transform: scale(1.15);
+}
+
+.hover-action-btn.delete:hover {
+    color: #ef4444;
+}
+
+.hover-action-btn.jump:hover {
+    color: var(--admin-accent);
+}
+
+.hover-action-btn.edit:hover {
+    color: var(--admin-accent);
 }
 
 .admin-card-actions {

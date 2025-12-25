@@ -2672,3 +2672,12 @@ body {
 .comment-item.highlight.fade-out {
     background: transparent;
 }
+
+/* ========================================
+   Pinned Comments (Feature removed)
+   ======================================== */
+
+/* Hide inline pin icon - pinned comments are just sorted to top */
+.pinned-icon {
+    display: none;
+}
