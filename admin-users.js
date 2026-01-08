@@ -1,0 +1,3949 @@
+// ========================================
+// ADMIN USERS MODULE
+// Handles User Directory, Drawers, and Basic Actions
+// ========================================
+
+// Module State
+const userState = {
+    users: [],
+    filteredUsers: [], // For filtered results
+    currentPage: 1,
+    itemsPerPage: 10,
+    selectedUsers: new Set(), // For batch operations (persists across pages)
+    selectMode: false, // Selection mode toggle (like Gallery Manage)
+    filters: {
+        status: 'all', // all, active, banned
+        level: 'all',  // all, vip
+        role: 'all',   // all, admin, user
+        search: ''
+    }
+};
+
+// Prompt Cache for History Display
+let promptCache = {};
+let promptCacheLoaded = false;
+
+async function fetchPromptCache() {
+    if (promptCacheLoaded) return;
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('prompts')
+            .select('id, title');
+
+        if (error) throw error;
+
+        if (data) {
+            data.forEach(p => {
+                promptCache[p.id] = p.title;
+            });
+            promptCacheLoaded = true;
+            console.log('📚 Ledger Prompt Cache Loaded:', Object.keys(promptCache).length);
+        }
+    } catch (e) {
+        console.error('Failed to load prompt cache for ledger:', e);
+    }
+}
+
+// Predefined tags with labels and CSS classes (moved to top for initialization order)
+const TAG_CONFIG = {
+    vip: { label: 'VIP', class: 'tag-vip' },
+    creator: { label: '创作者', class: 'tag-creator' },
+    risk: { label: '需关注', class: 'tag-risk' },
+    spam: { label: '广告号', class: 'tag-spam' },
+    '间距': { label: '间距', class: 'tag-spacing' },
+    '用户': { label: '用户', class: 'tag-user' }
+};
+
+function getTagClass(tag) {
+    return TAG_CONFIG[tag]?.class || 'tag-custom';
+}
+
+function getTagLabel(tag) {
+    return TAG_CONFIG[tag]?.label || tag;
+}
+
+// Initialize Module
+function initUserModule() {
+    console.log('👥 Initializing User Module...');
+
+    // Bind Search
+    document.getElementById('userSearchInput').addEventListener('input', debounce(handleUserSearch, 500));
+
+    // Bind Custom Filter Dropdowns
+    initUserFilterDropdowns();
+
+    // Show admin role filter for super admins
+    if (window._isSuperAdmin) {
+        const roleFilter = document.getElementById('adminRoleFilter');
+        if (roleFilter) roleFilter.style.display = 'block';
+    }
+
+    // Bind Modal Overlay Click
+    const overlay = document.getElementById('userModalOverlay');
+    if (overlay) {
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                closeUserModal();
+            }
+        });
+    }
+
+    // Initial Load
+    loadUsers();
+
+    // Fetch Prompt Cache
+    fetchPromptCache();
+}
+
+// Initialize Filter Dropdowns (Custom Component)
+function initUserFilterDropdowns() {
+    const userModule = document.getElementById('module-users');
+    if (!userModule) return;
+
+    // Toggle dropdown on button click
+    userModule.querySelectorAll('.filter-dropdown .filter-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const dropdown = btn.closest('.filter-dropdown');
+
+            // Close other open dropdowns
+            userModule.querySelectorAll('.filter-dropdown.open').forEach(d => {
+                if (d !== dropdown) d.classList.remove('open');
+            });
+
+            dropdown.classList.toggle('open');
+        });
+    });
+
+    // Handle option selection
+    userModule.querySelectorAll('.filter-dropdown .filter-option').forEach(option => {
+        option.addEventListener('click', (e) => {
+            const dropdown = option.closest('.filter-dropdown');
+            const filterType = dropdown.dataset.filter;
+            const value = option.dataset.value;
+
+            // Update selected state
+            dropdown.querySelectorAll('.filter-option').forEach(o => o.classList.remove('selected'));
+            option.classList.add('selected');
+
+            // Update label
+            const label = dropdown.querySelector('.filter-label');
+            if (value === 'all') {
+                label.textContent = filterType === 'userStatus' ? '状态' : '等级';
+            } else {
+                label.textContent = option.textContent;
+            }
+
+            // Update filter state
+            if (filterType === 'userStatus') {
+                userState.filters.status = value;
+            } else if (filterType === 'userLevel') {
+                userState.filters.level = value;
+            } else if (filterType === 'userRole') {
+                userState.filters.role = value;
+            }
+
+            // Close dropdown and re-render
+            dropdown.classList.remove('open');
+            userState.currentPage = 1;
+            renderUsersTable();
+        });
+    });
+
+    // Close dropdowns on outside click
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.filter-dropdown')) {
+            userModule.querySelectorAll('.filter-dropdown.open').forEach(d => d.classList.remove('open'));
+        }
+    });
+}
+
+// Debounce Helper
+function debounce(func, wait) {
+    let timeout;
+    return function (...args) {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(this, args), wait);
+    };
+}
+
+// Fetch Users from Supabase with Real Points Data
+async function loadUsers() {
+    renderUserLoading();
+
+    try {
+        let profiles = [];
+        let rpcError = null;
+
+        // Try RPC first (includes last_sign_in_at)
+        const { data: rpcData, error: err } = await window.supabaseClient.rpc('get_admin_users');
+
+        if (!err && rpcData) {
+            profiles = rpcData;
+        } else {
+            rpcError = err;
+            console.warn('RPC get_admin_users failed, falling back to profiles table:', err.message);
+            // Fallback to standard profiles query
+            const { data: profileData, error: profileError } = await window.supabaseClient
+                .from('profiles')
+                .select('id, username, email, avatar_url');
+
+            if (profileError) throw profileError;
+            profiles = profileData || [];
+        }
+
+        // Fetch blocks, points, tags, and admin roles in parallel
+        const [blocksResult, pointsResult, tagsResult, rolesResult] = await Promise.all([
+            window.supabaseClient
+                .from('blocked_users')
+                .select('user_id, scope, expires_at'),
+            window.supabaseClient
+                .from('points_balance')
+                .select('user_id, total_balance'),
+            window.supabaseClient
+                .from('user_tags')
+                .select('user_id, tag'),
+            window.supabaseClient
+                .from('admin_roles')
+                .select('user_id, role_name, permissions, expires_at')
+        ]);
+
+        const blocks = blocksResult.data || [];
+        const points = pointsResult.data || [];
+        const tags = tagsResult.data || [];
+        const roles = rolesResult.data || [];
+
+        // Create lookup maps
+        const blockedMap = new Map();
+        blocks.forEach(b => blockedMap.set(b.user_id, b));
+
+        const pointsMap = new Map();
+        points.forEach(p => pointsMap.set(p.user_id, p));
+
+        const tagsMap = new Map();
+        tags.forEach(t => {
+            if (!tagsMap.has(t.user_id)) tagsMap.set(t.user_id, []);
+            tagsMap.get(t.user_id).push(t.tag);
+        });
+
+        const rolesMap = new Map();
+        roles.forEach(r => {
+            // Check if role is not expired
+            if (!r.expires_at || new Date(r.expires_at) > new Date()) {
+                rolesMap.set(r.user_id, r);
+            }
+        });
+
+        // Transform to View Model with real data
+        userState.users = profiles.map(p => {
+            // Support both new out_ prefixed columns and legacy column names
+            const id = p.out_id || p.id;
+            const email = p.out_email || p.email;
+            const username = p.out_username || p.username;
+            const avatar_url = p.out_avatar_url || p.avatar_url;
+            const last_active = p.out_last_active_at || p.out_last_sign_in_at || p.last_sign_in_at;
+            const created = p.out_created_at || p.created_at;
+
+            const userPoints = pointsMap.get(id);
+            return {
+                id: id,
+                username: username || 'Unknown',
+                email: email || null,
+                avatar_url: avatar_url,
+                last_sign_in_at: last_active || null, // Use computed active time
+                created_at: created || null,
+                // Real Points Data (using new system)
+                points: userPoints?.total_balance || 0,
+                total_earned: userPoints?.total_balance || 0, // Fallback as total_earned is not in balance table yet
+                vip_level: (userPoints?.balance || 0) >= 1000 ? 'VIP' : null,
+                // Tags
+                tags: tagsMap.get(id) || [],
+                // Status
+                is_banned: blockedMap.has(id),
+                block_info: blockedMap.get(id),
+                // Admin Role
+                is_admin: rolesMap.has(id) || ['fjivvid@163.com', 'zaoyoe@gmail.com'].includes(email),
+                admin_role: rolesMap.get(id)
+            };
+        });
+
+        renderUsersTable();
+
+    } catch (err) {
+        console.error('Failed to load users:', err);
+        document.getElementById('usersTableBody').innerHTML = `
+            <tr><td colspan="5" style="text-align:center;color:var(--text-dim);padding:20px;">
+                加载失败: ${err.message}
+            </td></tr>
+        `;
+    }
+}
+
+// Handle Filter Changes
+function handleUserSearch(e) {
+    userState.filters.search = e.target.value.toLowerCase();
+    userState.currentPage = 1;
+    renderUsersTable();
+}
+
+function handleUserFilterChange(e) {
+    if (e.target.id === 'userStatusFilter') userState.filters.status = e.target.value;
+    if (e.target.id === 'userLevelFilter') userState.filters.level = e.target.value;
+    userState.currentPage = 1;
+    renderUsersTable();
+}
+
+// Render Users Table
+function renderUsersTable() {
+    // 1. Filter Users
+    const { status, level, role, search } = userState.filters;
+    const term = search ? search.toLowerCase() : '';
+
+    userState.filteredUsers = userState.users.filter(u => {
+        // Search - also match "管理员" / "admin" keywords
+        const isAdminSearch = term && (term.includes('管理员') || term.includes('admin'));
+        const matchSearch = !term ||
+            u.username.toLowerCase().includes(term) ||
+            (u.email && u.email.toLowerCase().includes(term)) ||
+            (u.id && u.id.includes(term)) ||
+            (isAdminSearch && u.is_admin);
+
+        // Status
+        const matchStatus = status === 'all' ||
+            (status === 'active' && !u.is_banned) ||
+            (status === 'banned' && u.is_banned);
+
+        // Level
+        const matchLevel = level === 'all' ||
+            (level === 'vip' && u.vip_level === 'VIP');
+
+        // Role
+        const matchRole = role === 'all' ||
+            (role === 'admin' && u.is_admin) ||
+            (role === 'user' && !u.is_admin);
+
+        return matchSearch && matchStatus && matchLevel && matchRole;
+    });
+
+    const tableBody = document.getElementById('usersTableBody');
+    if (!tableBody) return;
+
+    // 3. Pagination - Calculate BEFORE header rendering
+    const start = (userState.currentPage - 1) * userState.itemsPerPage;
+    const paginatedUsers = userState.filteredUsers.slice(start, start + userState.itemsPerPage);
+
+    const tableHead = document.querySelector('.users-table thead tr');
+    if (tableHead) {
+        const allOnPageSelected = paginatedUsers.length > 0 && paginatedUsers.every(u => userState.selectedUsers.has(u.id));
+
+        // Conditionally include checkbox column based on selectMode
+        const checkboxHeader = userState.selectMode ? `
+            <th class="checkbox-col">
+                <label class="custom-checkbox">
+                    <input type="checkbox" id="selectAllUsers" 
+                           ${allOnPageSelected ? 'checked' : ''} 
+                           onchange="toggleSelectAllPage()" 
+                           title="全选当前页">
+                    <span class="checkmark"></span>
+                </label>
+            </th>
+        ` : '';
+
+        tableHead.innerHTML = `
+            ${checkboxHeader}
+            <th>用户 Identity</th>
+            <th>资产 Assets</th>
+            <th>活跃 Active</th>
+            <th>状态 Status</th>
+            <th>标签 Tags</th>
+        `;
+    }
+
+    if (paginatedUsers.length === 0) {
+        const colspan = userState.selectMode ? 6 : 5;
+        tableBody.innerHTML = `<tr><td colspan="${colspan}" class="empty-state">No users found</td></tr>`;
+        return;
+    }
+
+    // 4. Render Rows
+    tableBody.innerHTML = paginatedUsers.map(u => {
+        // Status Logic
+        let statusClass = 'offline';
+        let statusText = '离线';
+        let timeAgo = '未知';
+
+        if (u.last_sign_in_at) {
+            const date = new Date(u.last_sign_in_at);
+            const now = new Date();
+            const diffMin = (now - date) / 1000 / 60;
+
+            timeAgo = formatTimeAgo(u.last_sign_in_at);
+
+            if (diffMin < 30) { statusClass = 'online'; statusText = '在线'; }
+            else if (diffMin < 60 * 24) { statusClass = 'away'; statusText = '今日'; }
+        } else if (u.created_at) {
+            // Fallback to created_at if no sign in record (new user)
+            timeAgo = '注册于 ' + formatTimeAgo(u.created_at);
+        }
+
+        return `
+        <tr class="user-row ${userState.selectedUsers.has(u.id) ? 'selected' : ''}" onclick="openUserDrawer('${u.id}')">
+            ${userState.selectMode ? `
+            <td class="checkbox-col" onclick="event.stopPropagation()">
+                <label class="custom-checkbox">
+                    <input type="checkbox" 
+                           ${userState.selectedUsers.has(u.id) ? 'checked' : ''} 
+                           onchange="toggleUserSelection('${u.id}')"
+                           class="user-checkbox">
+                    <span class="checkmark"></span>
+                </label>
+            </td>
+            ` : ''}
+            <td>
+                <div class="user-cell">
+                    ${u.avatar_url
+                ? `<img src="${u.avatar_url}" class="user-avatar-small" onerror="this.src='https://via.placeholder.com/40'">`
+                : generateInitialsAvatar(u.username)
+            }
+                    <div class="user-info">
+                        <div class="user-name">
+                            ${escapeHtml(u.username)}
+                            ${u.vip_level === 'VIP' ? '<i class="fas fa-crown vip-icon"></i>' : ''}
+                            ${u.is_admin ? '<i class="fas fa-shield-alt admin-icon" title="管理员"></i>' : ''}
+                        </div>
+                        <div class="user-email">${escapeHtml(u.email || 'No Email')}</div>
+                    </div>
+                </div>
+            </td>
+            <td>
+                <div class="assets-cell">
+                    <div class="points-display">
+                        <i class="fas fa-coins"></i>
+                        <span>${u.points.toLocaleString()}</span>
+                    </div>
+                </div>
+            </td>
+            <td>
+                <div class="active-status">
+                    <div class="status-dot ${statusClass}"></div>
+                    <span>${timeAgo}</span>
+                </div>
+            </td>
+            <td>
+                ${u.is_banned
+                ? `<span class="status-badge banned"><i class="fas fa-ban"></i> 封禁中</span>`
+                : `<span class="status-badge active"><i class="fas fa-check-circle"></i> 正常</span>`
+            }
+            </td>
+            <td>
+                <div class="user-tags-cell">
+                    ${u.tags.length > 0
+                ? u.tags.slice(0, 2).map(tag => `<span class="user-tag ${getTagClass(tag)}">${getTagLabel(tag)}</span>`).join('') + (u.tags.length > 2 ? `<span class="user-tag more">+${u.tags.length - 2}</span>` : '')
+                : '<span style="color:var(--text-dim);font-size:0.8rem;">-</span>'
+            }
+                </div>
+            </td>
+        </tr>
+    `}).join('');
+}
+
+// Loading State
+function renderUserLoading() {
+    document.getElementById('usersTableBody').innerHTML = `
+        <tr>
+            <td colspan="6" class="loading-cell">
+                <div class="neural-loader small">
+                    <div class="neural-dot"></div><div class="neural-dot"></div><div class="neural-dot"></div>
+                </div>
+
+            </td>
+        </tr>
+    `;
+}
+
+// ========================================
+// BATCH SELECTION & ACTIONS
+// ========================================
+
+// Toggle single user selection
+function toggleUserSelection(userId) {
+    if (userState.selectedUsers.has(userId)) {
+        userState.selectedUsers.delete(userId);
+    } else {
+        userState.selectedUsers.add(userId);
+    }
+    renderUsersTable(); // Re-render to update checkbox states
+    renderBatchActionBar();
+}
+
+// Toggle select all on current page
+function toggleSelectAllPage() {
+    const start = (userState.currentPage - 1) * userState.itemsPerPage;
+    const paginatedUsers = userState.filteredUsers.slice(start, start + userState.itemsPerPage);
+
+    const allSelected = paginatedUsers.every(u => userState.selectedUsers.has(u.id));
+
+    if (allSelected) {
+        // Deselect all on page
+        paginatedUsers.forEach(u => userState.selectedUsers.delete(u.id));
+    } else {
+        // Select all on page
+        paginatedUsers.forEach(u => userState.selectedUsers.add(u.id));
+    }
+
+    renderUsersTable();
+    renderBatchActionBar();
+}
+
+// Clear all selections
+function clearAllSelections() {
+    userState.selectedUsers.clear();
+    renderUsersTable();
+    renderBatchActionBar();
+}
+
+// Render batch action bar - Now just updates the toolbar state  
+function renderBatchActionBar() {
+    updateUserSelectionCount();
+}
+
+// Toggle user selection mode (like Gallery Manage)
+function toggleUserSelectMode() {
+    userState.selectMode = !userState.selectMode;
+
+    // Clear selections when exiting select mode
+    if (!userState.selectMode) {
+        userState.selectedUsers.clear();
+    }
+
+    // Update UI
+    updateSelectModeUI();
+    renderUsersTable();
+}
+
+// Update select mode UI (toolbar buttons, counters)
+function updateSelectModeUI() {
+    const selectModeBtn = document.getElementById('userSelectModeBtn');
+    const batchMenuContainer = document.getElementById('userBatchMenuContainer');
+    const selectedCountWrapper = document.getElementById('userSelectedCountWrapper');
+
+    if (selectModeBtn) {
+        selectModeBtn.classList.toggle('active', userState.selectMode);
+    }
+
+    if (batchMenuContainer) {
+        batchMenuContainer.style.display = userState.selectMode ? 'block' : 'none';
+    }
+
+    if (selectedCountWrapper) {
+        selectedCountWrapper.style.display = userState.selectMode && userState.selectedUsers.size > 0 ? 'flex' : 'none';
+    }
+}
+
+// Update selection count display
+function updateUserSelectionCount() {
+    const countEl = document.getElementById('userSelectedCount');
+    const wrapper = document.getElementById('userSelectedCountWrapper');
+
+    if (countEl) {
+        countEl.textContent = userState.selectedUsers.size;
+    }
+
+    if (wrapper) {
+        wrapper.style.display = userState.selectMode && userState.selectedUsers.size > 0 ? 'flex' : 'none';
+    }
+}
+
+// Select all users on current page
+function selectAllUsersOnPage() {
+    const start = (userState.currentPage - 1) * userState.itemsPerPage;
+    const paginatedUsers = userState.filteredUsers.slice(start, start + userState.itemsPerPage);
+
+    paginatedUsers.forEach(u => userState.selectedUsers.add(u.id));
+    renderUsersTable();
+    updateUserSelectionCount();
+}
+
+// Toggle batch menu dropdown
+function toggleUserBatchMenu() {
+    const menu = document.getElementById('userBatchDropdownMenu');
+    if (menu) {
+        menu.classList.toggle('open');
+    }
+}
+
+// Close batch menu when clicking outside
+document.addEventListener('click', (e) => {
+    const menu = document.getElementById('userBatchDropdownMenu');
+    const trigger = document.getElementById('userBatchMenuTrigger');
+
+    if (menu && trigger && !menu.contains(e.target) && !trigger.contains(e.target)) {
+        menu.classList.remove('open');
+    }
+});
+
+// ========================================
+// BATCH OPERATION FUNCTIONS
+// ========================================
+
+// Batch send notification - reuses existing notification modal
+let batchNotificationUserIds = [];
+
+async function batchSendNotification() {
+    const userIds = Array.from(userState.selectedUsers);
+    if (userIds.length === 0) {
+        showToast('请先选择用户', 'error');
+        return;
+    }
+
+    // Store batch user IDs and open notification modal in batch mode
+    batchNotificationUserIds = userIds;
+    showNotificationModalBatch(userIds.length);
+}
+
+// Open notification modal in batch mode
+function showNotificationModalBatch(count) {
+    // Reuse the existing showNotificationModal logic but with batch marker
+    let modal = document.getElementById('notificationModal');
+
+    if (!modal) {
+        // Create modal if not exists (similar to showNotificationModal)
+        showNotificationModal('__BATCH__');
+        modal = document.getElementById('notificationModal');
+    }
+
+    // Update modal title for batch mode
+    const titleEl = modal.querySelector('.modal-title');
+    if (titleEl) {
+        titleEl.innerHTML = `<i class="far fa-bell" style="margin-right: 8px;"></i> 批量通知 <span style="font-size:0.9rem;color:#94a3b8;margin-left:6px;">(${count} 人)</span>`;
+    }
+
+    // Update send button onclick for batch mode
+    const sendBtn = modal.querySelector('.send-notification-btn');
+    if (sendBtn) {
+        sendBtn.onclick = () => executeBatchNotification();
+    }
+
+    // Clear previous input
+    const titleInput = document.getElementById('notifTitle');
+    const contentInput = document.getElementById('notifContent');
+    if (titleInput) titleInput.value = '';
+    if (contentInput) contentInput.value = '';
+
+    // Show modal
+    modal.style.display = 'flex';
+    modal.classList.add('active');
+}
+
+// Execute batch notification send
+async function executeBatchNotification() {
+    const title = document.getElementById('notifTitle')?.value.trim();
+    const content = document.getElementById('notifContent')?.value.trim();
+    const type = document.getElementById('notifType')?.value || 'info';
+
+    if (!title) {
+        showToast('请输入通知标题', 'error');
+        return;
+    }
+    if (!content) {
+        showToast('请输入通知内容', 'error');
+        return;
+    }
+
+    const btn = document.querySelector('#notificationModal .send-notification-btn');
+    if (btn) {
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        btn.disabled = true;
+    }
+
+    try {
+        for (const userId of batchNotificationUserIds) {
+            await window.supabaseClient
+                .from('system_notifications')
+                .insert({
+                    user_id: userId,
+                    title,
+                    content,
+                    type
+                });
+        }
+
+        showToast(`成功发送通知给 ${batchNotificationUserIds.length} 位用户`, 'success');
+
+        // Close modal
+        const modal = document.getElementById('notificationModal');
+        if (modal) {
+            modal.classList.remove('active');
+            setTimeout(() => modal.style.display = 'none', 300);
+        }
+
+        batchNotificationUserIds = [];
+        clearAllSelections();
+    } catch (err) {
+        console.error('Batch notification failed:', err);
+        showToast('批量发送通知失败: ' + err.message, 'error');
+    } finally {
+        if (btn) {
+            btn.innerHTML = '<i class="fas fa-paper-plane"></i>';
+            btn.disabled = false;
+        }
+    }
+}
+
+// Batch ban users - reuses existing ban modal
+async function batchBanUsers() {
+    const userIds = Array.from(userState.selectedUsers);
+    if (userIds.length === 0) {
+        showToast('请先选择用户', 'error');
+        return;
+    }
+
+    // Store batch user IDs and open ban modal in batch mode
+    batchBanUserIds = userIds;
+    openBanModalBatch(userIds.length);
+}
+
+// Open ban modal in batch mode
+async function openBanModalBatch(count) {
+    injectBanUserModal();
+
+    // Set a special marker for batch mode
+    document.getElementById('banTargetUserId').value = '__BATCH__';
+
+    // Update modal title to show batch mode
+    const titleEl = document.querySelector('#banUserModalOverlay .modal-title');
+    if (titleEl) {
+        titleEl.innerHTML = `🚫 批量封禁管理 <span style="font-size:0.9rem;color:#94a3b8;">(${count} 人)</span>`;
+    }
+
+    // Reset State
+    pendingBanState = {};
+    originalBanState = { guestbook: false, gallery: false };
+
+    // Reset UI
+    document.querySelectorAll('.ban-check-item').forEach(item => item.classList.remove('selected'));
+
+    // Show modal
+    const overlay = document.getElementById('banUserModalOverlay');
+    overlay.classList.add('active');
+
+    updateConfirmBtn();
+}
+
+
+// Batch unban users
+async function batchUnbanUsers() {
+    const userIds = Array.from(userState.selectedUsers);
+    if (userIds.length === 0) return;
+
+    if (!confirm(`确定要解封选中的 ${userIds.length} 位用户吗？`)) return;
+
+    showToast(`正在解封 ${userIds.length} 位用户...`, 'info');
+
+    try {
+        for (const userId of userIds) {
+            await window.supabaseClient
+                .from('blocked_users')
+                .delete()
+                .eq('user_id', userId);
+        }
+
+        showToast(`成功解封 ${userIds.length} 位用户`, 'success');
+        clearAllSelections();
+        loadUsers();
+    } catch (err) {
+        console.error('Batch unban failed:', err);
+        showToast('批量解封失败: ' + err.message, 'error');
+    }
+}
+
+// Batch adjust points - reuses existing points modal
+let batchPointsUserIds = [];
+
+async function batchAdjustPoints() {
+    const userIds = Array.from(userState.selectedUsers);
+    if (userIds.length === 0) {
+        showToast('请先选择用户', 'error');
+        return;
+    }
+
+    // Store batch user IDs and open points modal in batch mode
+    batchPointsUserIds = userIds;
+    openPointsModalBatch(userIds.length);
+}
+
+// Open points modal in batch mode
+function openPointsModalBatch(count) {
+    injectPointsModal();
+    const overlay = document.getElementById('pointsModalOverlay');
+
+    // Update for batch mode
+    document.getElementById('pmUserName').textContent = `批量 (${count} 人)`;
+    document.getElementById('pmCurrentPoints').textContent = '多用户';
+    document.getElementById('pmAmount').value = '';
+    document.getElementById('pmReason').value = '';
+
+    // Update confirm button for batch mode
+    const confirmBtn = document.getElementById('pmConfirmBtn');
+    confirmBtn.onclick = () => executeBatchPointsAdjustment();
+
+    // Show Modal
+    overlay.classList.add('active');
+}
+
+// Execute batch points adjustment
+async function executeBatchPointsAdjustment() {
+    const amountStr = document.getElementById('pmAmount').value;
+    const reason = document.getElementById('pmReason').value.trim();
+    const amount = parseInt(amountStr, 10);
+
+    if (isNaN(amount) || amount === 0) {
+        showToast('请输入有效的调整数值', 'error');
+        return;
+    }
+    if (!reason) {
+        showToast('请输入调整原因', 'error');
+        return;
+    }
+
+    const confirmBtn = document.getElementById('pmConfirmBtn');
+    confirmBtn.disabled = true;
+    confirmBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 处理中...';
+
+    try {
+        const { data: { user: adminUser } } = await window.supabaseClient.auth.getUser();
+
+        for (const userId of batchPointsUserIds) {
+            // Get current balance
+            const { data: current } = await window.supabaseClient
+                .from('user_points')
+                .select('balance, total_earned')
+                .eq('user_id', userId)
+                .maybeSingle();
+
+            const currentBalance = current?.balance || 0;
+            const currentTotal = current?.total_earned || 0;
+            const newBalance = currentBalance + amount;
+            const newTotalEarned = amount > 0 ? currentTotal + amount : currentTotal;
+
+            // Update points
+            await window.supabaseClient
+                .from('user_points')
+                .upsert({
+                    user_id: userId,
+                    balance: newBalance,
+                    total_earned: newTotalEarned,
+                    updated_at: new Date().toISOString()
+                }, { onConflict: 'user_id' });
+
+            // Log to ledger
+            await window.supabaseClient
+                .from('points_ledger')
+                .insert({
+                    user_id: userId,
+                    amount: amount,
+                    reason: `[批量调整] ${reason}`,
+                    admin_id: adminUser?.id
+                });
+        }
+
+        showToast(`成功为 ${batchPointsUserIds.length} 位用户${amount > 0 ? '增加' : '扣除'} ${Math.abs(amount)} 积分`, 'success');
+
+        closePointsModal();
+        batchPointsUserIds = [];
+        clearAllSelections();
+        loadUsers();
+    } catch (err) {
+        console.error('Batch points adjustment failed:', err);
+        showToast('批量调整积分失败: ' + err.message, 'error');
+    } finally {
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = '确认调整';
+    }
+}
+
+// Batch add tags
+async function batchAddTags() {
+    const userIds = Array.from(userState.selectedUsers);
+    if (userIds.length === 0) return;
+
+    // Show tag selection modal
+    const tag = await showBatchTagModal(userIds.length);
+    if (!tag) return;
+
+    showToast(`正在为 ${userIds.length} 位用户添加标签...`, 'info');
+
+    try {
+        for (const userId of userIds) {
+            // Check if tag already exists
+            const { data: existing } = await window.supabaseClient
+                .from('user_tags')
+                .select('id')
+                .eq('user_id', userId)
+                .eq('tag', tag)
+                .single();
+
+            if (!existing) {
+                await window.supabaseClient
+                    .from('user_tags')
+                    .insert({ user_id: userId, tag: tag });
+            }
+        }
+
+        showToast(`成功为 ${userIds.length} 位用户添加标签 "${getTagLabel(tag)}"`, 'success');
+        clearAllSelections();
+        loadUsers();
+    } catch (err) {
+        console.error('Batch add tags failed:', err);
+        showToast('批量添加标签失败: ' + err.message, 'error');
+    }
+}
+
+// Show batch tag selection modal
+function showBatchTagModal(count) {
+    return new Promise((resolve) => {
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay active';
+
+        const tagButtons = Object.entries(TAG_CONFIG)
+            .map(([key, config]) => `<button class="tag-option ${config.class}" onclick="window._resolveBatchTag('${key}')">${config.label}</button>`)
+            .join('');
+
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width: 400px;">
+                <div class="modal-header">
+                    <h3>批量添加标签 (${count} 人)</h3>
+                    <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">&times;</button>
+                </div>
+                <div class="modal-body" style="padding: 20px;">
+                    <p style="margin-bottom: 16px; color: var(--text-dim);">选择要添加的标签：</p>
+                    <div class="tag-options" style="display: flex; flex-wrap: wrap; gap: 10px;">
+                        ${tagButtons}
+                    </div>
+                    <div style="margin-top: 16px;">
+                        <input type="text" id="customTagInput" placeholder="或输入自定义标签..." 
+                               style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-secondary); color: var(--text-main);">
+                        <button class="btn-secondary" style="width: 100%; margin-top: 8px;" 
+                                onclick="window._resolveBatchTag(document.getElementById('customTagInput').value)">添加自定义标签</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+
+        window._resolveBatchTag = (tag) => {
+            if (!tag || !tag.trim()) {
+                showToast('请选择或输入标签', 'error');
+                return;
+            }
+            modal.remove();
+            resolve(tag.trim());
+        };
+
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.remove();
+                resolve(null);
+            }
+        });
+    });
+}
+
+// Batch export users
+async function batchExportUsers() {
+    const userIds = Array.from(userState.selectedUsers);
+    if (userIds.length === 0) return;
+
+    // Show export options modal
+    const options = await showBatchExportModal(userIds.length);
+    if (!options) return;
+
+    showToast(`正在导出 ${userIds.length} 位用户数据...`, 'info');
+
+    try {
+        // Get selected users' data
+        const selectedUserData = userState.users.filter(u => userIds.includes(u.id));
+
+        if (options.mode === 'simple') {
+            // Simple CSV export
+            exportUsersToCSV(selectedUserData);
+        } else {
+            // Full Excel export with multiple sheets
+            console.log('📊 Export options:', JSON.stringify(options, null, 2));
+            await exportUsersToExcel(selectedUserData, options);
+        }
+
+        showToast(`成功导出 ${userIds.length} 位用户数据`, 'success');
+    } catch (err) {
+        console.error('Batch export failed:', err);
+        showToast('导出失败: ' + err.message, 'error');
+    }
+}
+
+// Show export options modal
+function showBatchExportModal(count) {
+    return new Promise((resolve, reject) => {
+        // Remove existing modal if any
+        document.querySelector('.batch-export-modal')?.remove();
+
+        const modalOverlay = document.createElement('div');
+        modalOverlay.className = 'batch-export-modal-overlay';
+        modalOverlay.style.cssText = `
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(4px);
+            z-index: 10000; display: flex; align-items: center; justify-content: center;
+            opacity: 0; transition: opacity 0.3s ease;
+        `;
+
+        const modal = document.createElement('div');
+        modal.className = 'batch-export-modal glass-panel';
+        modal.style.cssText = `
+            width: 380px; max-width: 90vw;
+            background: var(--bg-color, #fff);
+            color: var(--text-main, #1e1e1e);
+            border-radius: 12px; box-shadow: 0 20px 50px rgba(0,0,0,0.2);
+            border: 1px solid var(--border-color, rgba(0,0,0,0.1));
+            overflow: hidden; transform: scale(0.95); transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        `;
+
+        modal.innerHTML = `
+            <div style="padding: 14px 16px; border-bottom: 1px solid var(--border-color, rgba(0,0,0,0.1)); text-align: center;">
+                <h3 style="margin: 0; font-size: 1rem; font-weight: 600; color: var(--text-main);">📥 批量导出用户</h3>
+            </div>
+            
+            <div style="padding: 14px 20px;">
+                <div style="margin-bottom: 14px; font-size: 0.95rem; color: var(--text-main);">
+                    已选 <span style="font-weight:700; color:#3b82f6;">${count}</span> 位用户
+                </div>
+
+                <div style="margin-bottom: 16px;">
+                    <div style="color: var(--text-dim, #666); margin-bottom: 8px; font-size: 0.85rem;">导出格式:</div>
+                    <div style="display: flex; flex-direction: column; gap: 8px;">
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text-main); font-size: 0.9rem;">
+                            <input type="radio" name="exportMode" value="simple" style="accent-color: #3b82f6;">
+                            <span>简洁模式 (CSV) - 仅基本信息</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text-main); font-size: 0.9rem;">
+                            <input type="radio" name="exportMode" value="full" checked style="accent-color: #3b82f6;">
+                            <span>完整模式 (Excel) - 含积分流水/封禁记录</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div id="exportDataOptions" style="margin-bottom: 6px;">
+                    <div style="color: var(--text-dim, #666); margin-bottom: 8px; font-size: 0.85rem;">包含数据:</div>
+                    <div style="display: flex; flex-direction: column; gap: 6px;">
+                        <label style="display: flex; align-items: center; gap: 8px; opacity: 0.7; color: var(--text-main); font-size: 0.9rem;">
+                            <input type="checkbox" checked disabled> 基本信息 (用户名/邮箱/积分/状态)
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text-main); font-size: 0.9rem;">
+                            <input type="checkbox" id="exportLedger" checked style="accent-color: #3b82f6;"> 积分流水记录
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text-main); font-size: 0.9rem;">
+                            <input type="checkbox" id="exportBanHistory" style="accent-color: #3b82f6;"> 封禁历史
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: var(--text-main); font-size: 0.9rem;">
+                            <input type="checkbox" id="exportTags" style="accent-color: #3b82f6;"> 标签详情
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div style="padding: 14px 20px; border-top: 1px solid var(--border-color, rgba(0,0,0,0.1)); display: flex; justify-content: center; gap: 16px;">
+                <button class="modal-btn-cancel" style="padding: 6px 24px; border-radius: 6px; border: 1px solid var(--border-color, rgba(0,0,0,0.2)); background: transparent; color: var(--text-main); cursor: pointer; font-size: 0.9rem;">
+                    取消
+                </button>
+                <button class="modal-btn-confirm" style="padding: 6px 24px; border-radius: 6px; border: none; background: #3b82f6; color: #fff; cursor: pointer; font-weight: 600; font-size: 0.9rem;">
+                    导出
+                </button>
+            </div>
+        `;
+
+        document.body.appendChild(modalOverlay);
+        modalOverlay.appendChild(modal);
+
+        // Animation in
+        requestAnimationFrame(() => {
+            modalOverlay.style.opacity = '1';
+            modal.style.transform = 'scale(1)';
+        });
+
+        // Event Listeners
+        const close = () => {
+            modalOverlay.style.opacity = '0';
+            modal.style.transform = 'scale(0.95)';
+            setTimeout(() => modalOverlay.remove(), 300);
+            resolve(null);
+        };
+
+        const confirm = () => {
+            const mode = modal.querySelector('input[name="exportMode"]:checked').value;
+            const options = {
+                mode,
+                includeLedger: modal.querySelector('#exportLedger')?.checked ?? false,
+                includeBanHistory: modal.querySelector('#exportBanHistory')?.checked ?? false,
+                includeTags: modal.querySelector('#exportTags')?.checked ?? false
+            };
+
+            modalOverlay.style.opacity = '0';
+            modal.style.transform = 'scale(0.95)';
+            setTimeout(() => modalOverlay.remove(), 300);
+            resolve(options);
+        };
+
+        // Bind event listeners to buttons
+        modal.querySelector('.modal-btn-cancel').addEventListener('click', close);
+        modal.querySelector('.modal-btn-confirm').addEventListener('click', confirm);
+
+        // Click outside to close
+        modalOverlay.addEventListener('click', (e) => {
+            if (e.target === modalOverlay) close();
+        });
+
+    });
+}
+
+// Export to CSV (simple mode)
+function exportUsersToCSV(users) {
+    const headers = ['用户名', '邮箱', '积分', '状态', '标签', '注册时间', '最后活跃'];
+    const rows = users.map(u => [
+        u.username || 'Unknown',
+        u.email || '',
+        u.points || 0,
+        u.is_banned ? '封禁' : '正常',
+        (u.tags || []).join(', '),
+        u.created_at ? new Date(u.created_at).toLocaleDateString() : '',
+        u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleDateString() : ''
+    ]);
+
+    const csvContent = [headers, ...rows]
+        .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+        .join('\n');
+
+    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `users_export_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+}
+
+// Export to Excel (full mode) - requires SheetJS library
+async function exportUsersToExcel(users, options) {
+    console.log('📊 exportUsersToExcel called with', users.length, 'users, options:', options);
+
+    // Check if SheetJS is available
+    if (typeof XLSX === 'undefined') {
+        // Fallback to CSV if SheetJS not loaded
+        console.log('📊 XLSX not available, falling back to CSV');
+        showToast('Excel 库未加载，将导出为 CSV', 'warning');
+        exportUsersToCSV(users);
+        return;
+    }
+
+    const workbook = XLSX.utils.book_new();
+    const userIds = users.map(u => u.id);
+
+    // Sheet 1: Basic Info
+    const basicData = users.map(u => ({
+        '用户名': u.username || 'Unknown',
+        '邮箱': u.email || '',
+        '积分': u.points || 0,
+        '状态': u.is_banned ? '封禁' : '正常',
+        '标签': (u.tags || []).join(', '),
+        '注册时间': u.created_at ? new Date(u.created_at).toLocaleDateString() : '',
+        '最后活跃': u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleDateString() : ''
+    }));
+    const ws1 = XLSX.utils.json_to_sheet(basicData);
+    XLSX.utils.book_append_sheet(workbook, ws1, '用户信息');
+
+    // Sheet 2: Points Ledger (if selected)
+    if (options.includeLedger) {
+        const { data: ledger } = await window.supabaseClient
+            .from('points_ledger')
+            .select('*')
+            .in('user_id', userIds)
+            .order('created_at', { ascending: false });
+
+        if (ledger && ledger.length > 0) {
+            const ledgerData = ledger.map(l => {
+                const user = users.find(u => u.id === l.user_id);
+                return {
+                    '用户': user?.username || l.user_id,
+                    '变动': l.amount,
+                    '原因': l.reason,
+                    '时间': new Date(l.created_at).toLocaleString()
+                };
+            });
+            const ws2 = XLSX.utils.json_to_sheet(ledgerData);
+            XLSX.utils.book_append_sheet(workbook, ws2, '积分流水');
+        }
+    }
+
+    // Sheet 3: Ban History (if selected)
+    if (options.includeBanHistory) {
+        console.log('📊 Fetching ban history for users:', userIds);
+        const { data: banHistory, error: banError } = await window.supabaseClient
+            .from('block_history')
+            .select('*')
+            .in('user_id', userIds)
+            .order('created_at', { ascending: false });
+
+        console.log('📊 Ban history result:', banHistory, 'Error:', banError);
+
+        if (banHistory && banHistory.length > 0) {
+            const banData = banHistory.map(b => {
+                const user = users.find(u => u.id === b.user_id);
+                return {
+                    '用户': user?.username || b.user_id,
+                    '操作': b.action === 'block' ? '封禁' : '解封',
+                    '范围': b.scope,
+                    '原因': b.reason || '',
+                    '时间': new Date(b.created_at).toLocaleString()
+                };
+            });
+            const ws3 = XLSX.utils.json_to_sheet(banData);
+            XLSX.utils.book_append_sheet(workbook, ws3, '封禁历史');
+        }
+    }
+
+    // Sheet 4: Tags Detail (if selected)
+    if (options.includeTags) {
+        console.log('📊 Fetching tags for users:', userIds);
+        const { data: userTags, error: tagError } = await window.supabaseClient
+            .from('user_tags')
+            .select('*')
+            .in('user_id', userIds);
+
+        console.log('📊 Tags result:', userTags, 'Error:', tagError);
+
+        if (userTags && userTags.length > 0) {
+            const tagData = userTags.map(t => {
+                const user = users.find(u => u.id === t.user_id);
+                return {
+                    '用户': user?.username || t.user_id,
+                    '标签': t.tag,
+                    '标签名称': getTagLabel(t.tag),
+                    '添加时间': t.created_at ? new Date(t.created_at).toLocaleString() : ''
+                };
+            });
+            const ws4 = XLSX.utils.json_to_sheet(tagData);
+            XLSX.utils.book_append_sheet(workbook, ws4, '标签详情');
+        }
+    }
+
+    // Download
+    console.log('📊 Workbook sheets:', workbook.SheetNames);
+    XLSX.writeFile(workbook, `users_export_${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
+// ========================================
+// USER MODAL - FULLSCREEN CARD
+// ========================================
+
+// Current modal state
+let currentModalUser = null;
+let currentModalData = {};
+let currentTab = 'ledger';
+
+// Fetch Active Bans
+async function fetchActiveBans(userId) {
+    const { data, error } = await window.supabaseClient
+        .from('blocked_users')
+        .select('*')
+        .eq('user_id', userId);
+    if (error) {
+        console.error('Error fetching active bans:', error);
+        return [];
+    }
+    return data || [];
+}
+
+// Open User Modal
+async function openUserModal(userId) {
+    const user = userState.users.find(u => u.id === userId);
+    if (!user) {
+        console.error('User not found:', userId);
+        return;
+    }
+
+    currentModalUser = user;
+    currentTab = 'ledger';
+
+    const overlay = document.getElementById('userModalOverlay');
+    const leftPanel = document.getElementById('userModalLeft');
+    const tabContent = document.getElementById('userTabContent');
+    const actionsPanel = document.getElementById('userModalActions');
+
+    // Show modal with loading state
+    overlay.classList.add('active');
+    leftPanel.innerHTML = '<div class="modal-loading"><i class="fas fa-spinner fa-spin"></i> 加载中...</div>';
+    tabContent.innerHTML = '<div class="modal-loading"><i class="fas fa-spinner fa-spin"></i></div>';
+
+    try {
+        // Fetch all data in parallel
+        console.log('📡 Fetching user data for:', userId);
+        const [contentLog, blockHistory, relatedAccounts, roleInfo, pointsLedger, isSuperAdmin, activeBans] = await Promise.all([
+            fetchUserContentLog(userId),
+            fetchUserBlockHistory(userId),
+            fetchRelatedAccounts(userId),
+            fetchUserRoleInfo(userId),
+            fetchPointsLedger(userId),
+            checkSuperAdmin(),
+            fetchActiveBans(userId)
+        ]);
+
+        console.log('✅ Data fetched:', { contentLog, blockHistory, relatedAccounts, roleInfo, pointsLedger, isSuperAdmin, activeBans });
+
+        // Store data for tabs
+        currentModalData = { contentLog, blockHistory, relatedAccounts, roleInfo, pointsLedger, isSuperAdmin, activeBans };
+
+        // Render left panel
+        renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans);
+
+        // Render initial tab
+        renderUserTab('ledger');
+
+        // Render actions
+        renderModalActions(user);
+
+        // Reset tab active states
+        document.querySelectorAll('.user-tab-btn').forEach(btn => btn.classList.remove('active'));
+        const defaultTabBtn = document.querySelector('.user-tab-btn[data-tab="ledger"]');
+        if (defaultTabBtn) {
+            defaultTabBtn.classList.add('active');
+            // Initialize indicator position with a small delay to ensure rendering
+            setTimeout(() => updateTabIndicator(defaultTabBtn), 10);
+        }
+
+    } catch (err) {
+        console.error('❌ Error loading user modal:', err);
+        leftPanel.innerHTML = `< div style = "color:#ef4444;padding:20px;" > 加载失败: ${err.message}</div > `;
+        tabContent.innerHTML = '';
+    }
+}
+
+// Render Left Panel
+function renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans) {
+    const leftPanel = document.getElementById('userModalLeft');
+    const fullEmail = user.email || 'Not available';
+
+    // Format ban details for tooltip
+    let banTooltip = '账号已封禁';
+    if (activeBans && activeBans.length > 0) {
+        banTooltip = '';
+        activeBans.forEach(ban => {
+            const scopeName = ban.scope === 'gallery' ? '画廊' : (ban.scope === 'guestbook' ? '留言板' : (ban.scope === 'points_usage' ? '积分权限' : '全部'));
+            const expiry = ban.expires_at
+                ? `${new Date(ban.expires_at).toLocaleDateString()} 到期`
+                : '永久';
+            banTooltip += `🚫[${scopeName}] ${expiry} \n`;
+        });
+        banTooltip = banTooltip.trim();
+    }
+
+    leftPanel.innerHTML = `
+            <!-- User Card (Horizontal) -->
+        <div class="user-card">
+            ${user.avatar_url
+            ? `<img src="${user.avatar_url}" class="user-avatar-large" onerror="this.src='https://via.placeholder.com/80'">`
+            : generateInitialsAvatar(user.username, 64)}
+            
+            <div class="user-details">
+                <div class="user-name">${escapeHtml(user.username)}</div>
+                <div class="user-email">${fullEmail}</div>
+                
+                <div class="user-meta-icons">
+                    ${user.is_banned
+            ? `<div class="meta-icon-wrapper banned" data-tooltip="${banTooltip}"><i class="fas fa-ban"></i></div>`
+            : `<div class="meta-icon-wrapper active" data-tooltip="账号状态正常"><i class="fas fa-check-circle"></i></div>`
+        }
+                    
+                    <div class="meta-icon-wrapper info" 
+                         data-tooltip="${user.id}" 
+                         onclick="navigator.clipboard.writeText('${user.id}').then(() => { const el = this; const old = el.getAttribute('data-tooltip'); el.setAttribute('data-tooltip', '✅ ID 已复制!'); setTimeout(() => el.setAttribute('data-tooltip', old), 2000); })"
+                         style="cursor: pointer;">
+                        <i class="fas fa-info-circle"></i>
+                    </div>
+                    
+                    ${user.vip_level === 'VIP'
+            ? '<div class="meta-icon-wrapper vip-active" data-tooltip="VIP User"><i class="fas fa-crown"></i></div>'
+            : '<div class="meta-icon-wrapper vip-inactive" data-tooltip="Regular User"><i class="fas fa-crown"></i></div>'
+        }
+                </div>
+            </div>
+        </div>
+
+        <!--Assets Info - Compact Icon + Value-- >
+        <div class="assets-refined-section compact">
+            <div class="asset-stat-row">
+                <i class="fas fa-coins coin-icon"></i>
+                <span class="asset-value-compact">${user.points.toLocaleString()}</span>
+            </div>
+        </div>
+
+        <!--Tags - Custom Dropdown-- >
+        < !--Tags - Custom Dropdown-- >
+            ${window.hasPermission && window.hasPermission('users.manage') ? `
+        <div class="info-block">
+            <div class="admin-control-header">
+                <div class="admin-control-left">
+                    <div class="admin-control-icon"><i class="fas fa-tags"></i></div>
+                    <span class="admin-control-title">标签</span>
+                </div>
+                <!-- Inline Add Button -->
+                ${!user.tags.length ? `
+                <div class="add-tag-wrapper" id="addTagWrapper_${user.id}" style="margin-left:auto;">
+                    <button class="add-tag-btn" onclick="showTagInput('${user.id}')" title="添加标签">
+                        <i class="fas fa-plus"></i>
+                    </button>
+                </div>` : ''}
+            </div>
+            <div class="modal-tags-container">
+                ${user.tags.length > 0
+                ? `
+                    ${user.tags.map(tag => `
+                        <span class="modal-tag ${getTagClass(tag)}">
+                            ${getTagLabel(tag)}
+                            <button class="tag-remove-btn" onclick="removeUserTag('${user.id}', '${tag}')">&times;</button>
+                        </span>
+                    `).join('')}
+                    
+                    <div class="add-tag-wrapper" id="addTagWrapper_${user.id}">
+                        <button class="add-tag-btn" onclick="showTagInput('${user.id}')">
+                            <i class="fas fa-plus"></i>
+                        </button>
+                    </div>
+                `
+                : ''}
+            </div>
+        </div>
+        ` : ''
+        }
+
+        <!-- Admin Role (Super Admin Only) -->
+            ${isSuperAdmin ? `
+        <div class="info-block">
+            <div class="admin-control-header">
+                <div class="admin-control-left">
+                    <div class="admin-control-icon"><i class="fas fa-user-shield"></i></div>
+                    <span class="admin-control-title">权限</span>
+                </div>
+                ${['fjivvid@163.com', 'zaoyoe@gmail.com'].includes(user.email) ?
+                '<div class="super-admin-badge" style="font-size:0.75rem;padding:2px 6px;">⭐ 超管</div>' :
+                `<label class="toggle-switch admin-switch-reset">
+                        <input type="checkbox" id="modalAdminToggle" ${roleInfo.is_admin ? 'checked' : ''} 
+                            onchange="handleModalAdminToggle('${user.id}', this.checked)">
+                        <span class="toggle-slider"></span>
+                    </label>`
+            }
+            </div>
+            
+            ${!['fjivvid@163.com', 'zaoyoe@gmail.com'].includes(user.email) ? `
+                <div class="modal-permissions-panel" id="modalPermissionsPanel" style="display: ${roleInfo.is_admin ? 'block' : 'none'}; margin-top: 0;">
+                    <div class="perm-checkboxes">
+                        <label class="perm-item">
+                            <input type="checkbox" data-perm="content.moderate" ${roleInfo.permissions?.includes('content.moderate') ? 'checked' : ''}>
+                            <span>📝 内容审核</span>
+                        </label>
+                        <label class="perm-item">
+                            <input type="checkbox" data-perm="users.manage" ${roleInfo.permissions?.includes('users.manage') ? 'checked' : ''}>
+                            <span>👥 用户管理</span>
+                        </label>
+                        <label class="perm-item">
+                            <input type="checkbox" data-perm="prompts.manage" ${roleInfo.permissions?.includes('prompts.manage') ? 'checked' : ''}>
+                            <span>🎨 Prompt 管理</span>
+                        </label>
+                        <label class="perm-item">
+                            <input type="checkbox" data-perm="analytics.view" ${roleInfo.permissions?.includes('analytics.view') ? 'checked' : ''}>
+                            <span>📊 数据分析</span>
+                        </label>
+                    </div>
+                    <div class="perm-expiry">
+                        <label>到期时间</label>
+                        <input type="text" id="modalRoleExpiry" placeholder="日期和时间"
+                            data-initial-value="${roleInfo.expires_at || ''}">
+                    </div>
+                    <button class="perm-save-btn" onclick="saveModalAdminPermissions('${user.id}')">
+                        <i class="fas fa-save"></i> 保存权限
+                    </button>
+                </div>
+            ` : ''}
+        </div>
+        ` : ''
+        }
+        `;
+
+    // Initialize Flatpickr for expiry date after DOM is updated
+    setTimeout(() => {
+        const expiryInput = document.getElementById('modalRoleExpiry');
+        if (expiryInput && typeof flatpickr !== 'undefined') {
+            const initialValue = expiryInput.dataset.initialValue;
+            const modalLeft = document.querySelector('.user-modal-left');
+            flatpickr(expiryInput, {
+                enableTime: true,
+                dateFormat: 'Y-m-d H:i',
+                locale: 'zh',
+                time_24hr: true,
+                defaultDate: initialValue ? new Date(initialValue) : null,
+                minDate: 'today',
+                disableMobile: true,
+                appendTo: modalLeft || document.body,
+                positionElement: expiryInput
+            });
+        }
+    }, 100);
+}
+
+// Toggle modal dropdown
+function toggleModalDropdown(dropdownId) {
+    const dropdown = document.getElementById(dropdownId);
+    dropdown.classList.toggle('open');
+
+    // Close when clicking outside
+    const closeHandler = (e) => {
+        if (!dropdown.contains(e.target)) {
+            dropdown.classList.remove('open');
+            document.removeEventListener('click', closeHandler);
+        }
+    };
+    setTimeout(() => document.addEventListener('click', closeHandler), 0);
+}
+
+// Handle admin toggle in modal
+function handleModalAdminToggle(userId, isEnabled) {
+    const panel = document.getElementById('modalPermissionsPanel');
+    if (panel) {
+        panel.style.display = isEnabled ? 'block' : 'none';
+    }
+    toggleAdminRole(userId, isEnabled);
+}
+
+// Save admin permissions from modal
+async function saveModalAdminPermissions(userId) {
+    const panel = document.getElementById('modalPermissionsPanel');
+    const expiryInput = document.getElementById('modalRoleExpiry');
+
+    if (!panel) return;
+
+    const permissions = [];
+    panel.querySelectorAll('input[data-perm]:checked').forEach(cb => {
+        permissions.push(cb.dataset.perm);
+    });
+
+    const expiresAt = expiryInput?.value ? new Date(expiryInput.value).toISOString() : null;
+
+    try {
+        const { error } = await window.supabaseClient
+            .from('admin_roles')
+            .update({ permissions, expires_at: expiresAt })
+            .eq('user_id', userId);
+
+        if (error) throw error;
+        alert('✅ 权限配置已保存');
+    } catch (err) {
+        console.error('Failed to save permissions:', err);
+        alert('保存失败: ' + err.message);
+    }
+}
+
+// Render Modal Actions
+function renderModalActions(user) {
+    const actionsPanel = document.getElementById('userModalActions');
+
+    if (!window.hasPermission || !window.hasPermission('users.manage')) {
+        actionsPanel.innerHTML = '';
+        return;
+    }
+
+    actionsPanel.innerHTML = `
+        <button class="modal-action-btn ${user.is_banned ? '' : 'danger'}" onclick="toggleUserBlock('${user.id}', ${user.is_banned})">
+            <i class="fas ${user.is_banned ? 'fa-unlock' : 'fa-ban'}"></i>
+            ${user.is_banned ? '解除封禁' : '封禁用户'}
+        </button>
+        <button class="modal-action-btn" onclick="adjustUserPoints('${user.id}')">
+            <i class="fas fa-coins"></i> 调整积分
+        </button>
+        <button class="modal-action-btn" onclick="resetUserAvatar('${user.id}')">
+            <i class="fas fa-user-circle"></i> 重置头像
+        </button>
+        <button class="modal-action-btn warning" onclick="clearAllUserContent('${user.id}')">
+            <i class="fas fa-trash-alt"></i> 清空内容
+        </button>
+         <div style="flex:1"></div>
+        <button class="modal-action-btn" onclick="showNotificationModal('${user.id}')" title="发送系统通知" style="position: relative; z-index: 10; pointer-events: auto;">
+            <i class="fas fa-bell"></i>
+        </button>
+    `;
+}
+
+// Switch Tab
+function switchUserTab(tabName) {
+    currentTab = tabName;
+
+    // Update tab buttons
+    document.querySelectorAll('.user-tab-btn').forEach(btn => {
+        const isActive = btn.dataset.tab === tabName;
+        btn.classList.toggle('active', isActive);
+
+        // Move indicator to active button
+        if (isActive) {
+            updateTabIndicator(btn);
+        }
+    });
+
+    // Render tab content
+    renderUserTab(tabName);
+}
+
+// Update Sliding Indicator Position
+function updateTabIndicator(activeBtn) {
+    const nav = document.querySelector('.user-tab-nav');
+    const indicator = document.querySelector('.tab-indicator');
+
+    if (nav && indicator && activeBtn) {
+        indicator.style.left = `${activeBtn.offsetLeft}px`;
+        indicator.style.width = `${activeBtn.offsetWidth}px`;
+        indicator.style.opacity = '1';
+    }
+}
+
+// Render Tab Content
+function renderUserTab(tabName) {
+    const container = document.getElementById('userTabContent');
+    // Switch Logic
+    switch (tabName) {
+        case 'ledger':
+            renderLedgerTab(container);
+            break;
+        case 'activity':
+            renderActivityTab(container);
+            break;
+        case 'notes':
+            renderNotesTab(container);
+            break;
+        case 'audit':
+            renderAuditTab(container);
+            break;
+        case 'blocks':
+            renderBlocksTab(container);
+            break;
+        case 'relatives':
+            renderRelatedTab(container);
+            break;
+    }
+}
+
+// Render Ledger Tab
+function renderLedgerTab(container) {
+    const data = currentModalData.pointsLedger || [];
+
+    container.innerHTML = `
+        <div class="tab-toolbar">
+            <div class="modal-dropdown" id="ledgerTimeDropdown">
+                <div class="modal-dropdown-trigger" onclick="toggleModalDropdown('ledgerTimeDropdown')" style="display:flex;align-items:center;gap:8px;padding:6px 12px;cursor:pointer;background:transparent;border:1px solid var(--border-color);border-radius:6px;font-size:0.85rem;color:var(--text-dim);">
+                    <i class="far fa-calendar-alt"></i>
+                    <span id="ledgerTimeLabel">全部时间</span>
+                    <i class="fas fa-chevron-down"></i>
+                </div>
+                <div class="modal-dropdown-menu">
+                    <div class="modal-dropdown-item" onclick="filterTabByDate('ledger', 'all', '全部时间')">全部时间</div>
+                    <div class="modal-dropdown-item" onclick="filterTabByDate('ledger', 'today', '今天')">今天</div>
+                    <div class="modal-dropdown-item" onclick="filterTabByDate('ledger', 'week', '本周')">本周</div>
+                    <div class="modal-dropdown-item" onclick="filterTabByDate('ledger', 'month', '本月')">本月</div>
+                    <div class="modal-dropdown-item" onclick="openCustomDatePicker('ledger')">📅 自定义</div>
+                </div>
+            </div>
+            <button class="btn-export" onclick="exportTabData('ledger')">
+                <i class="fas fa-download"></i> 导出 Excel
+            </button>
+        </div>
+        <input type="text" id="ledgerDatePicker" style="position:absolute; visibility:hidden; height:0; width:0;" placeholder="选择日期范围">
+        <div class="data-list" id="ledgerList">
+            ${renderLedgerItems(data)}
+        </div>
+    `;
+}
+
+// Render ledger items helper
+function renderLedgerItems(data) {
+    if (data.length === 0) {
+        return '<div class="empty-state" style="text-align:center;padding:40px;color:var(--text-dim);">暂无积分记录</div>';
+    }
+    return data.map(record => `
+        <div class="data-list-item" style="border-left-color: ${record.amount >= 0 ? '#10b981' : '#ef4444'}; display: flex; align-items: center;">
+            <div class="ledger-amount" style="color:${record.amount >= 0 ? '#10b981' : '#ef4444'};min-width:60px;font-weight:700;text-align:center;">
+                ${record.amount >= 0 ? '+' : ''}${record.amount}
+            </div>
+            <div class="ledger-details" style="flex:1;">
+                ${formatLedgerReason(record.reason, record.created_at, record.reference_id)}
+            </div>
+        </div>
+    `).join('');
+}
+
+// Filter tab data by date
+function filterTabByDate(tabName, range, label) {
+    // Update label
+    const labelEl = document.getElementById(`${tabName}TimeLabel`);
+    if (labelEl) labelEl.textContent = label;
+
+    // Close dropdown
+    document.getElementById(`${tabName}TimeDropdown`)?.classList.remove('open');
+
+    // Filter data
+    let data = [];
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    switch (tabName) {
+        case 'ledger':
+            data = currentModalData.pointsLedger || [];
+            break;
+        case 'activity':
+            data = currentModalData.contentLog || [];
+            break;
+        case 'blocks':
+            data = currentModalData.blockHistory || [];
+            break;
+        case 'blocks':
+            data = currentModalData.blockHistory || [];
+            break;
+        case 'notes':
+            data = currentModalData.notes || [];
+            break;
+        case 'audit':
+            data = currentModalData.auditLogs || [];
+            break;
+    }
+
+    if (range !== 'all') {
+        let cutoff;
+        switch (range) {
+            case 'today':
+                cutoff = today;
+                break;
+            case 'week':
+                cutoff = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+                break;
+            case 'month':
+                cutoff = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+                break;
+        }
+        data = data.filter(item => new Date(item.created_at) >= cutoff);
+    }
+
+    // Re-render list
+    const listEl = document.getElementById(`${tabName}List`);
+    if (listEl) {
+        switch (tabName) {
+            case 'ledger':
+                listEl.innerHTML = renderLedgerItems(data);
+                break;
+            case 'activity':
+                listEl.innerHTML = renderActivityItems(data);
+                break;
+            case 'blocks':
+                listEl.innerHTML = renderBlocksItems(data);
+                break;
+        }
+    }
+}
+
+// Open custom date picker
+function openCustomDatePicker(tabName) {
+    document.getElementById(`${tabName}TimeDropdown`)?.classList.remove('open');
+
+    const pickerEl = document.getElementById(`${tabName}DatePicker`);
+    if (!pickerEl) return;
+
+    // Destroy previous instance if any
+    if (pickerEl._flatpickr) {
+        pickerEl._flatpickr.destroy();
+    }
+
+    // Get dropdown for positioning reference
+    const dropdown = document.getElementById(`${tabName}TimeDropdown`);
+    const dropdownTrigger = dropdown ? dropdown.querySelector('.modal-dropdown-trigger') : null;
+
+    // Position calendar function
+    function positionCalendar(instance) {
+        if (!instance.calendarContainer) return;
+
+        // Use requestAnimationFrame to ensure we run after Flatpickr's own positioning
+        requestAnimationFrame(() => {
+            const targetEl = dropdownTrigger || dropdown;
+            if (targetEl) {
+                const rect = targetEl.getBoundingClientRect();
+
+                // Force fixed positioning relative to viewport
+                Object.assign(instance.calendarContainer.style, {
+                    position: 'fixed',
+                    top: `${rect.bottom + 4}px`,
+                    left: `${rect.left}px`,
+                    display: 'block',
+                    visibility: 'visible',
+                    opacity: '1'
+                });
+                // Force max z-index separately to ensure it applies
+                instance.calendarContainer.style.setProperty('z-index', '2147483647', 'important');
+            }
+        });
+    }
+
+    // Initialize Flatpickr with positioning callbacks
+    const fp = flatpickr(pickerEl, {
+        mode: 'range',
+        locale: 'zh',
+        dateFormat: 'Y-m-d',
+        appendTo: document.body, // Always append to body to avoid stacking context issues
+        clickOpens: false, // We open it manually
+        onReady: (selectedDates, dateStr, instance) => positionCalendar(instance),
+        onOpen: (selectedDates, dateStr, instance) => positionCalendar(instance),
+        onClose: (selectedDates, dateStr, instance) => {
+            if (selectedDates.length === 2) {
+                const [start, end] = selectedDates;
+                const labelEl = document.getElementById(`${tabName}TimeLabel`);
+                if (labelEl) labelEl.textContent = `${start.toLocaleDateString()} - ${end.toLocaleDateString()}`;
+
+                // Get source data based on tab
+                let data = [];
+                switch (tabName) {
+                    case 'ledger':
+                        data = currentModalData.pointsLedger || [];
+                        break;
+                    case 'activity':
+                        data = currentModalData.contentLog || [];
+                        break;
+                    case 'blocks':
+                        data = currentModalData.blockHistory || [];
+                        break;
+                }
+
+                // Filter by custom range
+                data = data.filter(item => {
+                    const d = new Date(item.created_at);
+                    return d >= start && d <= new Date(end.getTime() + 86400000);
+                });
+
+                // Re-render
+                const listEl = document.getElementById(`${tabName}List`);
+                if (listEl) {
+                    switch (tabName) {
+                        case 'ledger':
+                            listEl.innerHTML = renderLedgerItems(data);
+                            break;
+                        case 'activity':
+                            listEl.innerHTML = renderActivityItems(data);
+                            break;
+                        case 'blocks':
+                            listEl.innerHTML = renderBlocksItems(data);
+                            break;
+                    }
+                }
+            }
+            // Cleanup flatpickr instance after selection  
+            setTimeout(() => {
+                if (instance) instance.destroy();
+            }, 100);
+        }
+    });
+
+    fp.open();
+}
+
+// Render Activity Tab
+function renderActivityTab(container) {
+    const data = currentModalData.contentLog || [];
+
+    container.innerHTML = `
+        <div class="tab-toolbar">
+            <div class="modal-dropdown" id="activityTimeDropdown">
+                <div class="modal-dropdown-trigger" onclick="toggleModalDropdown('activityTimeDropdown')" style="display:flex;align-items:center;gap:8px;padding:6px 12px;cursor:pointer;background:transparent;border:1px solid var(--border-color);border-radius:6px;font-size:0.85rem;color:var(--text-dim);">
+                    <i class="far fa-calendar-alt"></i>
+                    <span id="activityTimeLabel">全部时间</span>
+                    <i class="fas fa-chevron-down"></i>
+                </div>
+                <div class="modal-dropdown-menu">
+                    <div class="modal-dropdown-item" onclick="filterTabByDate('activity', 'all', '全部时间')">全部时间</div>
+                    <div class="modal-dropdown-item" onclick="filterTabByDate('activity', 'today', '今天')">今天</div>
+                    <div class="modal-dropdown-item" onclick="filterTabByDate('activity', 'week', '本周')">本周</div>
+                    <div class="modal-dropdown-item" onclick="filterTabByDate('activity', 'month', '本月')">本月</div>
+                    <div class="modal-dropdown-item" onclick="openCustomDatePicker('activity')">📅 自定义</div>
+                </div>
+            </div>
+            <button class="btn-export" onclick="exportTabData('activity')">
+                <i class="fas fa-download"></i> 导出 Excel
+            </button>
+        </div>
+        <input type="text" id="activityDatePicker" style="position:absolute; visibility:hidden; height:0; width:0;" placeholder="选择日期范围">
+        <div class="data-list" id="activityList">
+            ${renderActivityItems(data)}
+        </div>
+    `;
+}
+
+// Render activity items helper
+function renderActivityItems(data) {
+    if (data.length === 0) {
+        return '<div class="empty-state" style="text-align:center;padding:40px;color:var(--text-dim);">暂无内容记录</div>';
+    }
+    return data.map(item => `
+        <div class="data-list-item">
+            <div style="width:32px;height:32px;border-radius:8px;background:rgba(107,158,206,0.15);display:flex;align-items:center;justify-content:center;">
+                <i class="fas ${item.type === 'comment' ? 'fa-comment' : 'fa-book'}" style="color:#6b9ece;font-size:0.85rem;"></i>
+            </div>
+            <div style="flex:1;">
+                <div style="font-size:0.9rem;">${escapeHtml(item.content.substring(0, 80))}${item.content.length > 80 ? '...' : ''}</div>
+                <div style="font-size:0.75rem;color:var(--text-dim);">${item.source} · ${formatTimeAgo(item.created_at)}</div>
+            </div>
+        </div>
+    `).join('');
+}
+
+// Render Blocks Tab
+function renderBlocksTab(container) {
+    const data = currentModalData.blockHistory || [];
+
+    container.innerHTML = `
+        <div class="tab-toolbar">
+            <div class="modal-dropdown" id="blocksTimeDropdown">
+                <div class="modal-dropdown-trigger" onclick="toggleModalDropdown('blocksTimeDropdown')" style="display:flex;align-items:center;gap:8px;padding:6px 12px;cursor:pointer;background:transparent;border:1px solid var(--border-color);border-radius:6px;font-size:0.85rem;color:var(--text-dim);">
+                    <i class="far fa-calendar-alt"></i>
+                    <span id="blocksTimeLabel">全部时间</span>
+                    <i class="fas fa-chevron-down"></i>
+                </div>
+                <div class="modal-dropdown-menu">
+                    <div class="modal-dropdown-item" onclick="filterTabByDate('blocks', 'all', '全部时间')">全部时间</div>
+                    <div class="modal-dropdown-item" onclick="filterTabByDate('blocks', 'today', '今天')">今天</div>
+                    <div class="modal-dropdown-item" onclick="filterTabByDate('blocks', 'week', '本周')">本周</div>
+                    <div class="modal-dropdown-item" onclick="filterTabByDate('blocks', 'month', '本月')">本月</div>
+                    <div class="modal-dropdown-item" onclick="openCustomDatePicker('blocks')">📅 自定义</div>
+                </div>
+            </div>
+            <button class="btn-export" onclick="exportTabData('blocks')">
+                <i class="fas fa-download"></i> 导出 Excel
+            </button>
+        </div>
+        <input type="text" id="blocksDatePicker" style="position:absolute; visibility:hidden; height:0; width:0;" placeholder="选择日期范围">
+        <div class="data-list" id="blocksList">
+            ${renderBlocksItems(data)}
+        </div>
+    `;
+}
+
+// Render blocks items helper
+function renderBlocksItems(data) {
+    if (data.length === 0) {
+        return '<div class="empty-state" style="text-align:center;padding:40px;color:var(--text-dim);">无封禁记录</div>';
+    }
+    return data.map(record => `
+        <div class="data-list-item" style="border-left-color: ${record.action === 'block' ? '#ef4444' : '#10b981'};">
+            <div style="width:32px;height:32px;border-radius:8px;background:${record.action === 'block' ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.15)'};display:flex;align-items:center;justify-content:center;">
+                <i class="fas ${record.action === 'block' ? 'fa-ban' : 'fa-unlock'}" style="color:${record.action === 'block' ? '#ef4444' : '#10b981'};font-size:0.85rem;"></i>
+            </div>
+            <div style="flex:1;">
+                <div style="font-size:0.9rem;">${record.action === 'block' ? '封禁' : '解封'} - ${record.scope === 'all' ? '全站' : record.scope}</div>
+                <div style="font-size:0.75rem;color:var(--text-dim);">${record.reason || '无备注'} · ${formatTimeAgo(record.created_at)}</div>
+            </div>
+        </div>
+    `).join('');
+}
+
+// Render Related Accounts Tab
+function renderRelatedTab(container) {
+    const data = currentModalData.relatedAccounts || [];
+
+    container.innerHTML = `
+        <div class="data-list">
+            ${data.length > 0 ? data.map(acc => `
+                <div class="data-list-item" style="cursor:pointer;" onclick="openUserModal('${acc.related_user_id}')">
+                    <div style="width:40px;height:40px;border-radius:50%;background:rgba(245,158,11,0.15);display:flex;align-items:center;justify-content:center;">
+                        <i class="fas fa-user-circle" style="color:#f59e0b;font-size:1.2rem;"></i>
+                    </div>
+                    <div style="flex:1;">
+                        <div style="font-size:0.9rem;font-weight:500;">${escapeHtml(acc.related_username || 'Unknown')}</div>
+                        <div style="font-size:0.75rem;color:var(--text-dim);">共享 IP: ${acc.shared_ip}</div>
+                    </div>
+                    <i class="fas fa-chevron-right" style="color:var(--text-dim);"></i>
+                </div>
+            `).join('') : '<div class="empty-state" style="text-align:center;padding:40px;color:var(--text-dim);">未检测到关联账号</div>'}
+        </div>
+    `;
+}
+
+// Close Modal
+function closeUserModal() {
+    const overlay = document.getElementById('userModalOverlay');
+    overlay.classList.remove('active');
+    currentModalUser = null;
+    currentModalData = {};
+}
+
+// Export Tab Data to Excel (CSV fallback)
+function exportTabData(tabName) {
+    let data = [];
+    let filename = '';
+    const username = currentModalUser?.username || 'user';
+    const date = new Date().toISOString().split('T')[0];
+
+    switch (tabName) {
+        case 'ledger':
+            data = (currentModalData.pointsLedger || []).map(r => {
+                let operator = '系统';
+                let reasonText = r.reason || '';
+
+                // Parse admin manual reason
+                if (reasonText.startsWith('admin_manual:')) {
+                    const match = reasonText.match(/admin_manual:\[(.*?)\] (.*)/);
+                    if (match) {
+                        operator = match[1];
+                        reasonText = match[2];
+                    } else {
+                        // Fallback for old records
+                        operator = '管理员';
+                        reasonText = reasonText.replace('admin_manual:', '').trim();
+                    }
+                } else {
+                    // Map other system codes to readable text without emojis for Excel
+                    const reasonMap = {
+                        'sign_in_bonus': '签到奖励',
+                        'comment_reward': '评论奖励',
+                        'like_reward': '点赞奖励',
+                        'purchase': '积分消费',
+                        'refund': '退款',
+                        'admin_adjustment': '管理员调整'
+                    };
+                    reasonText = reasonMap[reasonText] || reasonText;
+                }
+
+                return {
+                    '操作人': operator,
+                    '金额': r.amount,
+                    '原因': reasonText,
+                    '时间': new Date(r.created_at).toLocaleString()
+                };
+            });
+            filename = `${username}_积分流水_${date}.csv`;
+            break;
+        case 'activity':
+            data = (currentModalData.contentLog || []).map(r => ({
+                '类型': r.type,
+                '内容': r.content,
+                '来源': r.source,
+                '时间': new Date(r.created_at).toLocaleString()
+            }));
+            filename = `${username}_近期动态_${date}.csv`;
+            break;
+        case 'notes':
+            data = (currentModalData.notes || []).map(r => ({
+                '操作人': r.admin_email,
+                '内容': r.content,
+                '时间': new Date(r.created_at).toLocaleString()
+            }));
+            filename = `${username}_备注记录_${date}.csv`;
+            break;
+        case 'audit':
+            data = (currentModalData.auditLogs || []).map(r => {
+                let details = '';
+                try { details = JSON.stringify(r.details); } catch (e) { }
+                // Better formatting for Excel? Maybe simple text logic if needed
+                return {
+                    '行动': r.action_type,
+                    '详情': details,
+                    '操作人': r.admin_email,
+                    '时间': new Date(r.created_at).toLocaleString()
+                };
+            });
+            filename = `${username}_审计日志_${date}.csv`;
+            break;
+        case 'blocks':
+            data = (currentModalData.blockHistory || []).map(r => ({
+                '操作': r.action,
+                '范围': r.scope,
+                '原因': r.reason || '',
+                '时间': new Date(r.created_at).toLocaleString()
+            }));
+            filename = `${username}_封禁记录_${date}.csv`;
+            break;
+    }
+
+    if (data.length === 0) {
+        alert('没有数据可导出');
+        return;
+    }
+
+    // Convert to CSV
+    const headers = Object.keys(data[0]);
+    const csv = [
+        headers.join(','),
+        ...data.map(row => headers.map(h => `"${String(row[h]).replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    // Download
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    link.click();
+}
+
+// Backward compatibility: keep openUserDrawer as alias
+function openUserDrawer(userId) {
+    openUserModal(userId);
+}
+
+function closeUserDrawer() {
+    closeUserModal();
+}
+
+// Fetch user's recent content (comments/guestbook)
+async function fetchUserContentLog(userId) {
+    try {
+        // Fetch from both comments and guestbook
+        const [galleryComments, guestbookMessages] = await Promise.all([
+            window.supabaseClient
+                .from('prompt_comments')
+                .select('id, content, created_at, prompt_id, prompts(title)')
+                .eq('user_id', userId)
+                .order('created_at', { ascending: false })
+                .limit(5),
+            window.supabaseClient
+                .from('guestbook_messages')
+                .select('id, content, created_at')
+                .eq('user_id', userId)
+                .order('created_at', { ascending: false })
+                .limit(5)
+        ]);
+
+        const items = [];
+
+        if (galleryComments.data) {
+            galleryComments.data.forEach(c => {
+                const promptTitle = c.prompts?.title || `Prompt #${c.prompt_id}`;
+                items.push({
+                    type: 'comment',
+                    content: c.content,
+                    source: `📸 ${promptTitle}`,
+                    created_at: c.created_at
+                });
+            });
+        }
+
+        if (guestbookMessages.data) {
+            guestbookMessages.data.forEach(m => {
+                items.push({
+                    type: 'guestbook',
+                    content: m.content,
+                    source: '留言板',
+                    created_at: m.created_at
+                });
+            });
+        }
+
+        // Sort by date and take top 5
+        return items.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 5);
+    } catch (err) {
+        console.error('Failed to fetch content log:', err);
+        return [];
+    }
+}
+
+// Fetch user's block history (from permanent history table)
+async function fetchUserBlockHistory(userId) {
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('block_history')
+            .select('*')
+            .eq('user_id', userId)
+            .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        return (data || []).map(record => ({
+            ...record,
+            is_active: record.action === 'block',
+            scope: record.scope || 'all'
+        }));
+    } catch (err) {
+        console.error('Failed to fetch block history:', err);
+        return [];
+    }
+}
+
+// Fetch related accounts (multi-account detection by IP)
+async function fetchRelatedAccounts(userId) {
+    try {
+        const { data, error } = await window.supabaseClient
+            .rpc('find_related_accounts', { target_user_id: userId });
+
+        if (error) {
+            console.warn('Related accounts query failed:', error.message);
+            return [];
+        }
+
+        // Return unique users (dedupe by user_id)
+        const uniqueUsers = new Map();
+        (data || []).forEach(acc => {
+            if (!uniqueUsers.has(acc.related_user_id)) {
+                uniqueUsers.set(acc.related_user_id, acc);
+            }
+        });
+
+        return Array.from(uniqueUsers.values());
+    } catch (err) {
+        console.error('Failed to fetch related accounts:', err);
+        return [];
+    }
+}
+
+// Fetch user's points ledger (transaction history)
+async function fetchPointsLedger(userId) {
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('points_ledger')
+            .select('*')
+            .eq('user_id', userId)
+            .order('created_at', { ascending: false })
+            .limit(10);
+
+        if (error) throw error;
+
+        return data || [];
+    } catch (err) {
+        console.error('Failed to fetch points ledger:', err);
+        return [];
+    }
+}
+
+// Format ledger reason for display
+function formatLedgerReason(reason, createdAt, referenceId) {
+    const timeStr = createdAt ? formatTimeAgo(createdAt) : '';
+    const timeHtml = `<span style="font-size:0.75rem;color:#94a3b8;margin-left:auto;">${timeStr}</span>`;
+
+    if (!reason) return `
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+             <span>未知</span>
+             ${timeHtml}
+        </div>`;
+
+    let text = reason;
+    let icon = 'fa-circle';
+    let color = '#94a3b8'; // default gray
+
+    if (reason === 'daily_checkin') {
+        text = '📅 每日签到';
+        color = '#3b82f6';
+    } else if (reason === 'unlock_prompt') {
+        text = '🔓 解锁提示词';
+        color = '#f59e0b';
+        // Try to resolve prompt title
+        if (referenceId && promptCache[referenceId]) {
+            text += `: ${promptCache[referenceId]}`;
+        } else if (referenceId) {
+            text += ` (ID: ${referenceId})`;
+        }
+    } else if (reason.startsWith('comment_reward')) {
+        text = '💬 评论奖励';
+        color = '#10b981';
+    } else if (reason.startsWith('admin_manual')) {
+        text = '👮‍♂️ 管理员调整';
+        color = '#8b5cf6';
+        const match = reason.match(/admin_manual:\[(.*?)\] (.*)/);
+        if (match && match[2]) {
+            text += `: ${match[2]}`;
+            // Hide email if desired, or keep as is for admin view (admin sees admin email usually)
+            // User asked: "管理员的‘积分流水’也是应该显示详细的解锁了哪款提示词"
+            // Assuming admin manual reason is fine as is
+        } else if (reason.includes(':')) {
+            text += `: ${reason.split(':')[1].trim()}`;
+        }
+    } else if (reason === 'recharge') {
+        text = '💰 充值';
+        color = '#10b981';
+    } else if (reason === 'redeem_code') {
+        text = '🎟️ 兑换码';
+        color = '#10b981';
+    } else if (reason === 'register_bonus') {
+        text = '🎁 注册奖励';
+        color = '#ec4899';
+    }
+
+    return `
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+             <span style="color:${color}; font-weight:500;">${text}</span>
+             ${timeHtml}
+        </div>`;
+}
+
+
+
+let pendingBanState = {}; // { guestbook: {action, days}, gallery: {action, days} }
+let originalBanState = {}; // To track what to unban
+let batchBanUserIds = []; // For batch ban operations
+
+// Inject Ban Modal
+function injectBanUserModal() {
+    if (document.getElementById('banUserModalOverlay')) return;
+
+    const modalHtml = `
+    <div id="banUserModalOverlay" class="custom-modal-overlay" onclick="if(event.target === this) closeBanUserModal()">
+        <div class="custom-modal ban-user-modal">
+            <div class="modal-header">
+                <h3 class="modal-title" style="color:#ef4444;">🚫 封禁管理</h3>
+                <button class="modal-close-btn" onclick="closeBanUserModal()"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body" style="padding: 0 24px 24px 24px;">
+                 <input type="hidden" id="banTargetUserId">
+                 
+                 <!-- Permanent Bans -->
+                 <div class="ban-scope-group">
+                     <div class="ban-scope-header">
+                        <i class="fas fa-comment-alt"></i> 留言板权限
+                     </div>
+                     <div class="scope-options-pills">
+                         <div class="scope-pill selected" data-scope="guestbook" data-days="unban" onclick="toggleBanSelection(this, 'guestbook', 'unban')">正常</div>
+                         <div class="scope-pill" data-scope="guestbook" data-days="3" onclick="toggleBanSelection(this, 'guestbook', 3)">3天</div>
+                         <div class="scope-pill" data-scope="guestbook" data-days="30" onclick="toggleBanSelection(this, 'guestbook', 30)">30天</div>
+                         <div class="scope-pill danger" data-scope="guestbook" data-days="permanent" onclick="toggleBanSelection(this, 'guestbook', null)">永久封禁</div>
+                     </div>
+                 </div>
+
+                 <div class="ban-scope-group">
+                     <div class="ban-scope-header">
+                        <i class="fas fa-images"></i> 画廊权限
+                     </div>
+                     <div class="scope-options-pills">
+                         <div class="scope-pill selected" data-scope="gallery" data-days="unban" onclick="toggleBanSelection(this, 'gallery', 'unban')">正常</div>
+                         <div class="scope-pill" data-scope="gallery" data-days="3" onclick="toggleBanSelection(this, 'gallery', 3)">3天</div>
+                         <div class="scope-pill" data-scope="gallery" data-days="7" onclick="toggleBanSelection(this, 'gallery', 7)">7天</div>
+                         <div class="scope-pill" data-scope="gallery" data-days="30" onclick="toggleBanSelection(this, 'gallery', 30)">30天</div>
+                         <div class="scope-pill danger" data-scope="gallery" data-days="permanent" onclick="toggleBanSelection(this, 'gallery', null)">永久封禁</div>
+                     </div>
+                 </div>
+
+                 <div class="ban-scope-group">
+                     <div class="ban-scope-header">
+                        <i class="fas fa-coins"></i> 积分消费
+                     </div>
+                     <div class="scope-options-pills">
+                         <div class="scope-pill selected" data-scope="points_usage" data-days="unban" onclick="toggleBanSelection(this, 'points_usage', 'unban')">正常</div>
+                         <div class="scope-pill" data-scope="points_usage" data-days="3" onclick="toggleBanSelection(this, 'points_usage', 3)">3天</div>
+                         <div class="scope-pill" data-scope="points_usage" data-days="7" onclick="toggleBanSelection(this, 'points_usage', 7)">7天</div>
+                         <div class="scope-pill" data-scope="points_usage" data-days="30" onclick="toggleBanSelection(this, 'points_usage', 30)">30天</div>
+                         <div class="scope-pill danger" data-scope="points_usage" data-days="permanent" onclick="toggleBanSelection(this, 'points_usage', null)">永久封禁</div>
+                     </div>
+                 </div>
+                 
+                 <div class="ban-scope-group" style="margin-top:20px;padding-top:15px;border-top:1px dashed rgba(0,0,0,0.1);">
+                    <div class="scope-options-pills no-indicator">
+                        <div class="scope-pill success" style="width:100%;justify-content:center;" onclick="toggleBanSelection(this, 'all', 'unban')">
+                            <i class="fas fa-shield-alt" style="margin-right:6px;"></i> 解除该用户所有封禁
+                        </div>
+                    </div>
+                 </div>
+                 
+                 <div class="ban-actions" style="margin-top:24px;display:flex;gap:12px;justify-content:flex-end;">
+                    <button class="modal-btn" onclick="showBanDetails(null)" style="margin-right:auto;background:transparent;border:1px solid rgba(0,0,0,0.1);color:#64748b;">状态详情</button>
+                    <button id="btnBanConfirm" class="modal-btn confirm" onclick="executeBanSelection()">确认执行</button>
+                 </div>
+            </div>
+        </div>
+    </div>`;
+
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
+
+function closeBanUserModal() {
+    const overlay = document.getElementById('banUserModalOverlay');
+    if (overlay) overlay.classList.remove('active');
+    pendingBanState = {};
+}
+
+// Update sliding indicator position and color
+// Update sliding indicator position and color
+function updatePillIndicator(container, selectedPill) {
+    if (!container || !selectedPill) return;
+    if (container.classList.contains('no-indicator')) return;
+
+    const pills = Array.from(container.querySelectorAll('.scope-pill'));
+    const index = pills.indexOf(selectedPill);
+    const count = pills.length;
+
+    if (index === -1) return;
+
+    // Set pill count and active index
+    container.style.setProperty('--pill-count', count);
+    container.style.setProperty('--active-index', index);
+
+    // Determine indicator color based on pill type
+    const days = selectedPill.dataset.days;
+    const isDanger = selectedPill.classList.contains('danger');
+
+    let bgColor, borderColor;
+    if (days === 'unban') {
+        // Blue for normal/unban
+        bgColor = 'rgba(59, 130, 246, 0.25)';
+        borderColor = 'rgba(59, 130, 246, 0.5)';
+    } else if (isDanger || days === 'permanent') {
+        // Red for permanent ban
+        bgColor = 'rgba(239, 68, 68, 0.25)';
+        borderColor = 'rgba(239, 68, 68, 0.5)';
+    } else {
+        // Orange for temporary ban
+        bgColor = 'rgba(245, 158, 11, 0.2)';
+        borderColor = 'rgba(245, 158, 11, 0.5)';
+    }
+
+    container.style.setProperty('--indicator-color', bgColor);
+    container.style.setProperty('--indicator-border', borderColor);
+}
+
+// Toggle Selection (Pills behavior)
+function toggleBanSelection(el, scope, days) {
+    if (scope === 'all' && days === 'unban') {
+        // Unban All: Set all scopes to 'unban'
+        ['guestbook', 'gallery', 'points_usage'].forEach(s => {
+            pendingBanState[s] = { action: 'unban' };
+
+            // Visuals: Select "Normal" pill for this scope
+            const container = document.querySelector(`.scope-pill[data-scope="${s}"]`)?.parentElement;
+            document.querySelectorAll(`.scope-pill[data-scope="${s}"]`).forEach(p => p.classList.remove('selected'));
+            const unbanPill = document.querySelector(`.scope-pill[data-scope="${s}"][data-days="unban"]`);
+            if (unbanPill) {
+                unbanPill.classList.add('selected');
+                updatePillIndicator(container, unbanPill);
+            }
+        });
+    } else {
+        // Specific Scope
+        const container = el.parentElement;
+
+        // 1. Deselect other pills in this scope group
+        document.querySelectorAll(`.scope-pill[data-scope="${scope}"]`).forEach(p => p.classList.remove('selected'));
+
+        // 2. Select clicked pill
+        el.classList.add('selected');
+
+        // 3. Update sliding indicator
+        updatePillIndicator(container, el);
+
+        // 4. Logic
+        if (days === 'unban') {
+            pendingBanState[scope] = { action: 'unban' };
+        } else {
+            pendingBanState[scope] = { action: 'ban', days: days };
+        }
+    }
+
+    updateConfirmBtn();
+}
+
+function updateConfirmBtn() {
+    const btn = document.getElementById('btnBanConfirm');
+    if (!btn) return;
+
+    // Check if any changes
+    const hasChanges = Object.keys(pendingBanState).length > 0;
+
+    if (hasChanges) {
+        btn.disabled = false;
+        // Check if all actions are unban
+        const allUnban = Object.values(pendingBanState).every(s => s.action === 'unban');
+        if (allUnban) {
+            btn.textContent = '确认解封';
+            btn.style.background = '#10b981';
+        } else {
+            btn.textContent = '确认执行';
+            btn.style.background = '#ef4444';
+        }
+    } else {
+        btn.disabled = false; // Always enabled to allow "No Change"? No, prefer disabled or "No Change"
+        btn.textContent = '未做修改';
+        btn.style.background = '#94a3b8';
+    }
+}
+
+// Open and Load Data
+async function openBanModal(userId) {
+    injectBanUserModal();
+    document.getElementById('banTargetUserId').value = userId;
+
+    // Reset State
+    pendingBanState = {};
+    originalBanState = { guestbook: false, gallery: false, points_usage: false };
+
+    // Reset UI: Select "Normal" (Unban) for all scopes by default
+    document.querySelectorAll('.scope-pill').forEach(item => item.classList.remove('selected'));
+    document.querySelectorAll('.scope-pill[data-days="unban"]').forEach(item => {
+        if (item.getAttribute('data-scope') !== 'all') { // Skip the 'Unban All' button itself if it has unban data
+            item.classList.add('selected');
+        }
+    });
+
+    // Show Loading or just fetch fast
+    const overlay = document.getElementById('banUserModalOverlay');
+    overlay.classList.add('active');
+
+    try {
+        const { data: bans } = await window.supabaseClient
+            .from('blocked_users')
+            .select('*')
+            .eq('user_id', userId);
+
+        // Pre-select options based on existing bans
+        if (bans && bans.length > 0) {
+            bans.forEach(ban => {
+                let scope = ban.scope;
+                originalBanState[scope] = true; // Mark as was banned
+
+                let selector = `.scope-pill[data-scope="${scope}"]`;
+
+                let targetDays = 'permanent';
+                if (ban.expires_at) {
+                    const diff = new Date(ban.expires_at) - new Date();
+                    const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
+                    if (days <= 3) targetDays = '3';
+                    else if (days <= 7) targetDays = '7';
+                    else if (days <= 30) targetDays = '30';
+                    else targetDays = 'permanent'; // fallback
+                }
+
+                // Deselect "Normal"
+                const normalPill = document.querySelector(`${selector}[data-days="unban"]`);
+                if (normalPill) normalPill.classList.remove('selected');
+
+                // Select Target
+                const el = document.querySelector(`${selector}[data-days="${targetDays}"]`);
+                if (el) el.classList.add('selected');
+            });
+        }
+
+    } catch (e) {
+        console.error("Fetch ban status failed", e);
+    }
+
+    // Initialize sliding indicators for all scope groups
+    ['guestbook', 'gallery', 'points_usage'].forEach(scope => {
+        const selectedPill = document.querySelector(`.scope-pill[data-scope="${scope}"].selected`);
+        if (selectedPill) {
+            const container = selectedPill.parentElement;
+            updatePillIndicator(container, selectedPill);
+        }
+    });
+
+    updateConfirmBtn();
+}
+
+// Execute Final Logic
+async function executeBanSelection() {
+    const targetId = document.getElementById('banTargetUserId').value;
+    const isBatchMode = targetId === '__BATCH__';
+    const userIds = isBatchMode ? batchBanUserIds : [targetId];
+
+    const { data: { user: adminUser } } = await window.supabaseClient.auth.getUser();
+
+    if (Object.keys(pendingBanState).length === 0) {
+        closeBanUserModal();
+        return;
+    }
+
+    const promises = [];
+
+    for (const userId of userIds) {
+        for (const [scope, state] of Object.entries(pendingBanState)) {
+            if (state.action === 'ban') {
+                // Calculate expiry
+                let expiresAt = null;
+                if (state.days) {
+                    const date = new Date();
+                    date.setDate(date.getDate() + parseInt(state.days));
+                    expiresAt = date.toISOString();
+                }
+
+                const payload = {
+                    user_id: userId,
+                    scope: scope,
+                    reason: state.days ? `临时封禁 ${state.days}天` : '永久封禁',
+                    admin_id: adminUser?.id,
+                    expires_at: expiresAt
+                };
+
+                // Upsert
+                promises.push(
+                    window.supabaseClient
+                        .from('blocked_users')
+                        .upsert(payload, { onConflict: 'user_id, scope' })
+                        .then(async () => {
+                            logAdminAction('BAN_USER', userId, { scope, days: state.days });
+                            // Notify Ban (skip for batch to avoid spam, or just send)
+                            if (!isBatchMode) {
+                                await sendSystemNotification(
+                                    userId,
+                                    '账号封禁通知',
+                                    `您已被封禁 [${scope === 'all' ? '全站' : scope}] 权限。\n时长：${state.days ? state.days + '天' : '永久'}.\n此期间您将无法使用相关功能。`,
+                                    'warning'
+                                );
+                            }
+                        })
+                );
+
+                // Log history
+                promises.push(
+                    window.supabaseClient.from('block_history').insert({
+                        user_id: userId, action: 'block', scope, reason: payload.reason, admin_id: adminUser?.id
+                    })
+                );
+
+            } else if (state.action === 'unban') {
+                // Delete
+                promises.push(
+                    window.supabaseClient
+                        .from('blocked_users')
+                        .delete()
+                        .eq('user_id', userId)
+                        .eq('scope', scope)
+                        .then(async () => {
+                            logAdminAction('UNBAN_USER', userId, { scope });
+                            if (!isBatchMode) {
+                                await sendSystemNotification(
+                                    userId,
+                                    '封禁解除通知',
+                                    `您的 [${scope === 'all' ? '全站' : scope}] 封禁已被管理员解除。您可以正常使用了。`,
+                                    'success'
+                                );
+                            }
+                        })
+                );
+                // Log history
+                promises.push(
+                    window.supabaseClient.from('block_history').insert({
+                        user_id: userId, action: 'unblock', scope, reason: 'Manual Unban', admin_id: adminUser?.id
+                    })
+                );
+            }
+        }
+    }
+
+    closeBanUserModal();
+
+    try {
+        await Promise.all(promises);
+
+        if (isBatchMode) {
+            showToast(`成功处理 ${userIds.length} 位用户的封禁状态`, 'success');
+            batchBanUserIds = []; // Clear batch state
+            clearAllSelections();
+            loadUsers();
+        } else {
+            // Refresh single user drawer
+            await openUserDrawer(targetId);
+            showToast('✅ 操作执行成功', 'success');
+        }
+    } catch (err) {
+        console.error('Ban exec failed', err);
+        showToast('部分操作可能失败: ' + err.message, 'error');
+    }
+}
+
+// Show Ban Details
+async function showBanDetails(userId) {
+    if (!userId) userId = document.getElementById('banTargetUserId').value;
+
+    try {
+        const { data: bans, error } = await window.supabaseClient
+            .from('blocked_users')
+            .select('*')
+            .eq('user_id', userId);
+
+        if (error) throw error;
+
+        if (!bans || bans.length === 0) {
+            alert('该用户当前没有生效的封禁记录。');
+            return;
+        }
+
+        let msg = '🚫 封禁记录:\n\n';
+        bans.forEach(b => {
+            let typeStr = b.expires_at ? `${new Date(b.expires_at).toLocaleDateString()} 到期` : '永久';
+            let scopeStr = b.scope === 'gallery' ? '画廊' : b.scope;
+            msg += `- [${scopeStr}] ${typeStr}\n  原因: ${b.reason || '无'}\n\n`;
+        });
+
+        alert(msg);
+    } catch (e) {
+        alert('获取详情失败');
+    }
+}
+
+// Toggle Block/Unblock (Entry Point)
+async function toggleUserBlock(userId, currentlyBanned) {
+    openBanModal(userId);
+}
+
+// Reset user avatar (placeholder)
+async function resetUserAvatar(userId) {
+    if (!confirm('确定要重置该用户的头像为默认头像吗？')) return;
+
+    try {
+        const { error } = await window.supabaseClient
+            .from('profiles')
+            .update({ avatar_url: null })
+            .eq('id', userId);
+
+        if (error) throw error;
+
+        const userIndex = userState.users.findIndex(u => u.id === userId);
+        if (userIndex !== -1) {
+            userState.users[userIndex].avatar_url = null;
+        }
+
+        await openUserDrawer(userId);
+        renderUsersTable();
+
+        alert('头像已重置');
+        logAdminAction('RESET_AVATAR', userId, {});
+    } catch (err) {
+        console.error('Avatar reset failed:', err);
+        alert('操作失败: ' + err.message);
+    }
+
+}
+
+// Helper: Mask email for privacy
+function maskEmail(email) {
+    if (!email || !email.includes('@')) return email;
+    const [name, domain] = email.split('@');
+    const maskedName = name.length > 2
+        ? name.substring(0, 2) + '***'
+        : name + '***';
+    return `${maskedName} @${domain} `;
+}
+
+// Helper: Format time ago
+function formatTimeAgo(dateString) {
+    const date = new Date(dateString);
+    const now = new Date();
+    const seconds = Math.floor((now - date) / 1000);
+
+    if (seconds < 60) return '刚刚';
+    if (seconds < 3600) return `${Math.floor(seconds / 60)} 分钟前`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)} 小时前`;
+    if (seconds < 2592000) return `${Math.floor(seconds / 86400)} 天前`;
+    return date.toLocaleDateString();
+}
+
+function closeUserDrawer() {
+    document.getElementById('userDrawerOverlay').classList.remove('active');
+}
+
+// Close drawer on overlay click (with null check)
+const drawerOverlay = document.getElementById('userDrawerOverlay') || document.getElementById('userModalOverlay');
+if (drawerOverlay) {
+    drawerOverlay.addEventListener('click', (e) => {
+        if (e.target === drawerOverlay) closeUserDrawer();
+    });
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    return text.replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/'/g, "&#39;").replace(/"/g, "&quot;");
+}
+
+// Generate avatar with initials
+function generateInitialsAvatar(name, size = 32) {
+    const initials = (name || 'U').slice(0, 2).toUpperCase();
+    const colors = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#3b82f6'];
+    const colorIndex = (name || 'U').charCodeAt(0) % colors.length;
+    const bgColor = colors[colorIndex];
+    return `<div class="user-avatar-small initials-avatar" style="background:${bgColor};display:flex;align-items:center;justify-content:center;color:white;font-weight:600;font-size:${size * 0.4}px;width:${size}px;height:${size}px;border-radius:50%;">${initials}</div>`;
+}
+
+// Points Modal Logic
+function injectPointsModal() {
+    if (document.getElementById('pointsModalOverlay')) return;
+
+    const modalHtml = `
+        <div id="pointsModalOverlay" class="custom-modal-overlay" onclick="closePointsModal()">
+            <div class="custom-modal ban-user-modal points-adjustment-modal" onclick="event.stopPropagation()">
+                <div class="modal-header">
+                    <h3 class="modal-title">⚖️ 调整积分</h3>
+                    <button class="modal-close-btn" onclick="closePointsModal()"><i class="fas fa-times"></i></button>
+                </div>
+                <div class="modal-body">
+                    <div class="data-row">
+                        <span class="label">目标用户:</span>
+                        <span id="pmUserName" class="value-highlight">--</span>
+                    </div>
+                    <div class="data-row">
+                        <span class="label">当前积分:</span>
+                        <span id="pmCurrentPoints" class="value-highlight">0</span>
+                    </div>
+
+                    <div class="form-group" style="margin-top:20px;">
+                        <label>调整数值 <small>(正数增加 / 负数扣除)</small></label>
+                        <input type="number" id="pmAmount" class="modal-input">
+                    </div>
+
+                    <div class="form-group">
+                        <label>调整原因 <small>(必填)</small></label>
+                        <input type="text" id="pmReason" class="modal-input">
+                    </div>
+                </div>
+                <div class="modal-footer" style="justify-content: flex-end;">
+                    <button class="modal-btn confirm" id="pmConfirmBtn">确认调整</button>
+                </div>
+            </div>
+    </div > `;
+
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
+function closePointsModal() {
+    const overlay = document.getElementById('pointsModalOverlay');
+    if (overlay) overlay.classList.remove('active');
+}
+
+// Manual Points Adjustment (Custom Modal)
+async function adjustUserPoints(userId) {
+    injectPointsModal();
+    const overlay = document.getElementById('pointsModalOverlay');
+    const user = userState.users.find(u => u.id === userId);
+    if (!user) return;
+
+    // Reset Fields
+    // Display name priority: email > username (if not 'Unknown') > nickname > fallback
+    const displayName = user.email || (user.username !== 'Unknown' ? user.username : null) || user.nickname || 'Unknown';
+    document.getElementById('pmUserName').textContent = displayName;
+    document.getElementById('pmCurrentPoints').textContent = user.points.toLocaleString();
+    document.getElementById('pmAmount').value = '';
+    document.getElementById('pmReason').value = '';
+
+    // Show Modal
+    overlay.classList.add('active');
+
+    // Handle Confirm
+    const confirmBtn = document.getElementById('pmConfirmBtn');
+    confirmBtn.onclick = async () => {
+        const amountStr = document.getElementById('pmAmount').value;
+        const reason = document.getElementById('pmReason').value.trim();
+
+        const amount = parseInt(amountStr, 10);
+
+        if (isNaN(amount) || amount === 0) {
+            alert('请输入有效的调整数值');
+            return;
+        }
+
+        if (!reason) {
+            alert('请输入调整原因');
+            return;
+        }
+
+        // Disable button
+        confirmBtn.disabled = true;
+        confirmBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 处理中...';
+
+        try {
+            // 1. Fetch latest points
+            const { data: currentPoints, error: fetchError } = await window.supabaseClient
+                .from('user_points')
+                .select('balance, total_earned')
+                .eq('user_id', userId)
+                .maybeSingle();
+
+            if (fetchError) throw fetchError;
+
+            const currentBalance = currentPoints?.balance || 0;
+            const currentTotalEarned = currentPoints?.total_earned || 0;
+            const newBalance = currentBalance + amount;
+            const newTotalEarned = amount > 0 ? currentTotalEarned + amount : currentTotalEarned;
+
+            // 2. Upsert user_points
+            const { error: upsertError } = await window.supabaseClient
+                .from('user_points')
+                .upsert({
+                    user_id: userId,
+                    balance: newBalance,
+                    total_earned: newTotalEarned,
+                    updated_at: new Date().toISOString()
+                }, { onConflict: 'user_id' });
+
+            if (upsertError) throw upsertError;
+
+            // 3. Get admin info for audit
+            const { data: { user: currentUser } } = await window.supabaseClient.auth.getUser();
+            const adminIdentity = currentUser?.email || 'Unknown';
+
+            // 4. Log to ledger
+            await window.supabaseClient
+                .from('points_ledger')
+                .insert({
+                    user_id: userId,
+                    amount: amount,
+                    reason: `admin_manual: [${adminIdentity}] ${reason} `,
+                    reference_id: 'admin_adjustment'
+                });
+
+            logAdminAction('UPDATE_POINT', userId, { amount, reason });
+
+            // Send System Notification
+            const changeStr = amount > 0 ? `+${amount}` : `${amount}`;
+            await sendSystemNotification(
+                userId,
+                '积分变动通知',
+                `您的积分已${amount > 0 ? '增加' : '扣除'} ${Math.abs(amount)}。\n原因：${reason}`,
+                amount > 0 ? 'success' : 'warning'
+            );
+
+            // 5. Update Local State
+            const userIndex = userState.users.findIndex(u => u.id === userId);
+            if (userIndex !== -1) {
+                userState.users[userIndex].points = newBalance;
+                userState.users[userIndex].total_earned = newTotalEarned;
+            }
+
+            // 6. Refresh UI
+            if (currentModalUser && currentModalUser.id === userId) {
+                // If drawer/modal is open for this user, refresh it
+                openUserModal(userId);
+            }
+            renderUsersTable();
+
+            // Close and Reset
+            closePointsModal();
+            console.log(`✅ Points adjusted for ${userId}: ${changeStr}, new balance: ${newBalance} `);
+
+        } catch (err) {
+            console.error('Points adjustment failed:', err);
+            alert('操作失败: ' + err.message);
+        } finally {
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = '确认调整';
+        }
+    };
+}
+
+// Clear Content Modal Logic
+function injectClearContentModal() {
+    if (document.getElementById('clearContentModalOverlay')) return;
+
+    const modalHtml = `
+        <div id="clearContentModalOverlay" class="custom-modal-overlay" onclick="if(event.target === this) closeClearContentModal()">
+            <div class="custom-modal ban-user-modal danger-modal">
+                <div class="modal-header">
+                    <h3 class="modal-title" style="color:#ef4444;">⚠️ 危险操作</h3>
+                    <button class="modal-close-btn" onclick="closeClearContentModal()"><i class="fas fa-times"></i></button>
+                </div>
+                <div class="modal-body">
+                    <div class="checklist-container" style="background:rgba(0,0,0,0.02); padding:16px; border-radius:8px; margin-bottom:20px; border:1px solid rgba(0,0,0,0.05);">
+                        <label class="checkbox-item" style="display:flex;align-items:center;padding:8px 0;cursor:pointer;">
+                            <input type="checkbox" id="ccCheckComments" style="width:16px;height:16px;accent-color:#ef4444;margin-right:10px;">
+                                <span>🖼️ 画廊评论</span>
+                        </label>
+                        <label class="checkbox-item" style="display:flex;align-items:center;padding:8px 0;cursor:pointer;">
+                            <input type="checkbox" id="ccCheckGuestbook" style="width:16px;height:16px;accent-color:#ef4444;margin-right:10px;">
+                                <span>📝 留言板留言</span>
+                        </label>
+                        <label class="checkbox-item" style="display:flex;align-items:center;padding:8px 0;cursor:pointer;">
+                            <input type="checkbox" id="ccCheckPoints" style="width:16px;height:16px;accent-color:#ef4444;margin-right:10px;">
+                                <span>💰 积分流水</span>
+                        </label>
+                        <label class="checkbox-item" style="display:flex;align-items:center;padding:8px 0;cursor:pointer;">
+                            <input type="checkbox" id="ccCheckBlocks" style="width:16px;height:16px;accent-color:#ef4444;margin-right:10px;">
+                                <span>🚫 封禁记录</span>
+                        </label>
+                        <label class="checkbox-item" style="display:flex;align-items:center;padding:8px 0;cursor:pointer;">
+                            <input type="checkbox" id="ccCheckNotes" style="width:16px;height:16px;accent-color:#ef4444;margin-right:10px;">
+                                <span>🗒️ 内部备注</span>
+                        </label>
+                        <label class="checkbox-item" style="display:flex;align-items:center;padding:8px 0;cursor:pointer;">
+                            <input type="checkbox" id="ccCheckAudit" style="width:16px;height:16px;accent-color:#ef4444;margin-right:10px;">
+                                <span>🛡️ 审计日志</span>
+                        </label>
+                        <div style="height:1px;background:rgba(0,0,0,0.1);margin:8px 0;"></div>
+                        <label class="checkbox-item" style="display:flex;align-items:center;padding:8px 0;cursor:pointer;">
+                            <input type="checkbox" id="ccCheckResetPoints" style="width:16px;height:16px;accent-color:#ef4444;margin-right:10px;">
+                                <span>🗑️ 清空剩余积分 (重置为0)</span>
+                        </label>
+                        <label class="checkbox-item" style="display:flex;align-items:center;padding:8px 0;cursor:pointer;">
+                            <input type="checkbox" id="ccCheckPurchases" style="width:16px;height:16px;accent-color:#ef4444;margin-right:10px;">
+                                <span>🛒 清空购买记录 (收回商品)</span>
+                        </label>
+                    </div>
+
+                    <div class="form-group">
+                        <input type="text" id="ccConfirmInput" class="modal-input" placeholder="输入密匙" style="border-color: #fca5a5;">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="modal-btn cancel" onclick="closeClearContentModal()">取消</button>
+                    <button class="modal-btn danger" id="ccConfirmBtn" style="background:#ef4444; color:white; border:none; box-shadow:0 2px 8px rgba(239, 68, 68, 0.4);">确认清空</button>
+                </div>
+            </div>
+    </div > `;
+
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
+function closeClearContentModal() {
+    const overlay = document.getElementById('clearContentModalOverlay');
+    if (overlay) overlay.classList.remove('active');
+}
+
+// Clear All User Content (Dangerous operation)
+async function clearAllUserContent(userId) {
+    injectClearContentModal();
+    const overlay = document.getElementById('clearContentModalOverlay');
+    const user = userState.users.find(u => u.id === userId);
+    if (!user) return;
+
+    // Reset Fields
+    // document.getElementById('ccUserName').textContent = user.username; // Element removed
+
+    // Reset inputs
+    const input = document.getElementById('ccConfirmInput');
+    input.value = '';
+
+    const checkboxes = [
+        document.getElementById('ccCheckComments'),
+        document.getElementById('ccCheckGuestbook'),
+        document.getElementById('ccCheckPoints'),
+        document.getElementById('ccCheckBlocks'),
+        document.getElementById('ccCheckBlocks'),
+        document.getElementById('ccCheckNotes'),
+        document.getElementById('ccCheckAudit'),
+        document.getElementById('ccCheckResetPoints'),
+        document.getElementById('ccCheckPurchases')
+    ];
+
+    // Uncheck all
+    checkboxes.forEach(cb => cb.checked = false);
+
+    const confirmBtn = document.getElementById('ccConfirmBtn');
+
+    const validateState = () => {
+        const isConfirmed = input.value === '0.0wangyong';
+        const hasSelection = checkboxes.some(cb => cb.checked);
+
+        if (isConfirmed && hasSelection) {
+            confirmBtn.disabled = false;
+            confirmBtn.style.opacity = '1';
+            confirmBtn.style.cursor = 'pointer';
+        } else {
+            confirmBtn.disabled = true;
+            confirmBtn.style.opacity = '0.5';
+            confirmBtn.style.cursor = 'not-allowed';
+        }
+    };
+
+    // Bind events
+    input.oninput = validateState;
+    checkboxes.forEach(cb => cb.onchange = validateState);
+
+    // Initial validation
+    validateState();
+
+    // Show Modal
+    overlay.classList.add('active');
+
+    // Handle Confirm
+    confirmBtn.onclick = async () => {
+        if (input.value !== '0.0wangyong') return;
+
+        // Disable button
+        confirmBtn.disabled = true;
+        confirmBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 处理中...';
+
+        try {
+            const results = [];
+
+            // 1. Delete Gallery Comments
+            if (document.getElementById('ccCheckComments').checked) {
+                const { error } = await window.supabaseClient
+                    .from('prompt_comments')
+                    .delete()
+                    .eq('user_id', userId);
+                if (error) console.warn('删除画廊评论失败:', error);
+                else results.push('画廊评论');
+            }
+
+            // 2. Delete Guestbook Messages
+            if (document.getElementById('ccCheckGuestbook').checked) {
+                const { error } = await window.supabaseClient
+                    .from('guestbook_messages')
+                    .delete()
+                    .eq('user_id', userId);
+                if (error) console.warn('删除留言失败:', error);
+                else results.push('留言板留言');
+            }
+
+            // 3. Delete Points Ledger
+            if (document.getElementById('ccCheckPoints').checked) {
+                const { error } = await window.supabaseClient
+                    .from('points_ledger')
+                    .delete()
+                    .eq('user_id', userId);
+                if (error) console.warn('删除积分记录失败:', error);
+                else results.push('积分记录');
+
+                // Note: This does NOT reset the user's current points balance, only the history.
+                // If user wants to reset balance, they should adjust points manually or we'd need another option.
+                // Assuming "Clear Content" implies history/logs.
+            }
+
+            // 4. Delete Block History
+            if (document.getElementById('ccCheckBlocks').checked) {
+                const { error } = await window.supabaseClient
+                    .from('block_history')
+                    .delete()
+                    .eq('user_id', userId);
+                if (error) console.warn('删除封禁记录失败:', error);
+                else results.push('封禁记录');
+            }
+
+            // 5. Delete Notes
+            if (document.getElementById('ccCheckNotes').checked) {
+                const { error } = await window.supabaseClient
+                    .from('admin_notes')
+                    .delete()
+                    .eq('target_user_id', userId);
+                if (error) console.warn('删除备注失败:', error);
+                else results.push('内部备注');
+            }
+
+            // 6. Delete Audit Logs
+            if (document.getElementById('ccCheckAudit').checked) {
+                const { error } = await window.supabaseClient
+                    .from('admin_audit_logs')
+                    .delete()
+                    .eq('target_user_id', userId);
+                if (error) console.warn('删除审计日志失败:', error);
+                else results.push('审计日志');
+            }
+
+            // 7. Reset Points & Purchases (Consolidated Atomic RPC)
+            const checkPoints = document.getElementById('ccCheckResetPoints').checked;
+            const checkPurchases = document.getElementById('ccCheckPurchases').checked;
+
+            if (checkPoints || checkPurchases) {
+                const { data, error } = await window.supabaseClient
+                    .rpc('fn_admin_clear_user_data', {
+                        target_user_id: userId,
+                        clear_points: checkPoints,
+                        clear_purchases: checkPurchases
+                    });
+
+                if (error) {
+                    console.warn('清空用户数据失败:', error);
+                    results.push('清空失败: ' + error.message);
+                } else {
+                    if (checkPoints) results.push('剩余积分(重置为0)');
+                    if (checkPurchases) results.push('购买记录(已收回)');
+                    console.log('✅ Clear Data Result:', data);
+                }
+            }
+
+            // Update Local State if points were reset
+            if (document.getElementById('ccCheckResetPoints').checked) {
+                const userIndex = userState.users.findIndex(u => u.id === userId);
+                if (userIndex !== -1) {
+                    userState.users[userIndex].points = 0;
+                    userState.users[userIndex].total_earned = 0;
+                }
+            }
+
+            // Refresh drawer
+            await openUserDrawer(userId);
+            // Refresh table list
+            renderUsersTable();
+
+            closeClearContentModal();
+            console.log(`✅ Cleared content for user ${userId}: ${results.join(', ')} `);
+            logAdminAction('CLEAR_CONTENT', userId, { cleared_items: results });
+
+        } catch (err) {
+            console.error('Clear content failed:', err);
+            alert('操作失败: ' + err.message);
+        } finally {
+            confirmBtn.textContent = '确认清空';
+        }
+    };
+}
+
+// ============================================
+// TAG SYSTEM
+// ============================================
+
+// Add tag to user
+async function addUserTag(userId, tag) {
+    try {
+        const { error } = await window.supabaseClient
+            .from('user_tags')
+            .insert({ user_id: userId, tag: tag });
+
+        if (error) throw error;
+
+        // Log action
+        await logAdminAction('add_tag', userId, { tag });
+
+        // Update local state
+        const userIndex = userState.users.findIndex(u => u.id === userId);
+        if (userIndex !== -1 && !userState.users[userIndex].tags.includes(tag)) {
+            userState.users[userIndex].tags.push(tag);
+        }
+
+        await openUserDrawer(userId);
+        renderUsersTable();
+        console.log(`✅ Tag "${tag}" added to user ${userId} `);
+    } catch (err) {
+        console.error('Add tag failed:', err);
+        alert('添加标签失败: ' + err.message);
+    }
+}
+
+// Remove tag from user
+async function removeUserTag(userId, tag) {
+    try {
+        const { error } = await window.supabaseClient
+            .from('user_tags')
+            .delete()
+            .eq('user_id', userId)
+            .eq('tag', tag);
+
+        if (error) throw error;
+
+        // Log action
+        await logAdminAction('remove_tag', userId, { tag });
+
+        // Update local state
+        const userIndex = userState.users.findIndex(u => u.id === userId);
+        if (userIndex !== -1) {
+            userState.users[userIndex].tags = userState.users[userIndex].tags.filter(t => t !== tag);
+        }
+
+        await openUserDrawer(userId);
+        renderUsersTable();
+        console.log(`✅ Tag "${tag}" removed from user ${userId} `);
+    } catch (err) {
+        console.error('Remove tag failed:', err);
+        alert('移除标签失败: ' + err.message);
+    }
+}
+
+// Show inline tag input
+function showTagInput(userId) {
+    const wrapper = document.getElementById(`addTagWrapper_${userId}`);
+    if (!wrapper) return;
+
+    wrapper.innerHTML = `
+        <div class="custom-tag-input-wrapper">
+            <input type="text" class="custom-tag-input" 
+                   placeholder="输入标签..." 
+                   onkeydown="handleTagInputKey(event, '${userId}')" 
+                   onblur="resetTagInput('${userId}', this)"
+                   style="width: 80px; padding: 3px 8px; border-radius: 20px; border: 1px solid #cbd5e1; font-size: 0.75rem; background: transparent; color: inherit; outline: none; transition: all 0.2s;"
+            >
+        </div>
+    `;
+
+    // Focus immediately
+    const input = wrapper.querySelector('input');
+    if (input) {
+        input.focus();
+        // Prevent immediate blur overlap if needed, though native focus works well
+    }
+}
+
+// Handle key events in tag input
+function handleTagInputKey(e, userId) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        const val = e.target.value.trim();
+        if (val) {
+            addUserTag(userId, val);
+        } else {
+            resetTagInput(userId, e.target);
+        }
+    } else if (e.key === 'Escape') {
+        resetTagInput(userId, e.target);
+    }
+}
+
+// Reset input to button
+function resetTagInput(userId, inputElement) {
+    // Delay to check if related target is within (if needed), or just revert
+    setTimeout(() => {
+        const wrapper = document.getElementById(`addTagWrapper_${userId}`);
+        if (wrapper) {
+            wrapper.innerHTML = `
+                <button class="add-tag-btn" onclick="showTagInput('${userId}')">
+                    <i class="fas fa-plus"></i>
+                </button>
+            `;
+        }
+    }, 200);
+}
+
+// ============================================
+// AUDIT LOG
+// ============================================
+
+async function logAdminAction(action, targetUserId, details = {}) {
+    try {
+        const { data: { user } } = await window.supabaseClient.auth.getUser();
+        if (!user) return;
+
+        await window.supabaseClient
+            .from('admin_audit_logs')
+            .insert({
+                admin_id: user.id,
+                action_type: action,
+                target_user_id: targetUserId,
+                details: details
+            });
+    } catch (err) {
+        console.error('Audit log failed:', err);
+    }
+}
+
+// Fetch audit log entries
+async function fetchAuditLog(limit = 50) {
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('admin_audit_log')
+            .select(`
+            id, action, details, created_at,
+                admin: admin_id(username),
+                    target: target_user_id(username)
+            `)
+            .order('created_at', { ascending: false })
+            .limit(limit);
+
+        if (error) throw error;
+        return data || [];
+    } catch (err) {
+        console.error('Failed to fetch audit log:', err);
+        return [];
+    }
+}
+
+// ============================================
+// Admin Role Management Functions
+// ============================================
+
+// Check if current user is Super Admin
+async function checkSuperAdmin() {
+    try {
+        const { data, error } = await window.supabaseClient
+            .rpc('is_super_admin');
+
+        if (error) throw error;
+        window._isSuperAdmin = data === true;
+        return window._isSuperAdmin;
+    } catch (err) {
+        console.warn('Super admin check failed:', err);
+        window._isSuperAdmin = false;
+        return false;
+    }
+}
+
+// Fetch role info for a specific user
+async function fetchUserRoleInfo(userId) {
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('admin_roles')
+            .select('*')
+            .eq('user_id', userId)
+            .maybeSingle();
+
+        if (error) throw error;
+
+        return {
+            is_admin: !!data,
+            is_super_admin: false, // Will be determined by email check
+            permissions: data?.permissions || [],
+            expires_at: data?.expires_at,
+            role_name: data?.role_name || 'admin'
+        };
+    } catch (err) {
+        console.warn('Failed to fetch role info:', err);
+        return {
+            is_admin: false,
+            is_super_admin: false,
+            permissions: [],
+            expires_at: null
+        };
+    }
+}
+
+// Toggle admin role on/off
+async function toggleAdminRole(userId, enabled) {
+    const permPanel = document.getElementById(`permPanel - ${userId} `);
+
+    if (enabled) {
+        // Show permissions panel
+        if (permPanel) permPanel.style.display = 'block';
+
+        // Insert role with default permissions
+        try {
+            const { data: currentUser } = await window.supabaseClient.auth.getUser();
+
+            const { error } = await window.supabaseClient
+                .from('admin_roles')
+                .upsert({
+                    user_id: userId,
+                    role_name: 'admin',
+                    permissions: ['content.moderate'],
+                    granted_by: currentUser.user?.id,
+                    granted_at: new Date().toISOString()
+                }, { onConflict: 'user_id' });
+
+            if (error) throw error;
+
+            console.log('✅ Admin role granted to', userId);
+            logAdminAction('grant_admin', userId, { permissions: ['content.moderate'] });
+        } catch (err) {
+            console.error('Failed to grant admin role:', err);
+            alert('授予管理员权限失败: ' + err.message);
+            // Revert toggle
+            document.getElementById(`adminRoleToggle - ${userId} `).checked = false;
+            if (permPanel) permPanel.style.display = 'none';
+        }
+    } else {
+        // Hide permissions panel
+        if (permPanel) permPanel.style.display = 'none';
+
+        // Remove role
+        try {
+            const { error } = await window.supabaseClient
+                .from('admin_roles')
+                .delete()
+                .eq('user_id', userId);
+
+            if (error) throw error;
+
+            console.log('✅ Admin role revoked from', userId);
+            logAdminAction('revoke_admin', userId, {});
+        } catch (err) {
+            console.error('Failed to revoke admin role:', err);
+            alert('撤销管理员权限失败: ' + err.message);
+            // Revert toggle
+            document.getElementById(`adminRoleToggle - ${userId} `).checked = true;
+            if (permPanel) permPanel.style.display = 'block';
+        }
+    }
+}
+
+// Save admin permissions configuration
+async function saveAdminPermissions(userId) {
+    const permPanel = document.getElementById(`permPanel - ${userId} `);
+    const expiryInput = document.getElementById(`roleExpiry - ${userId} `);
+
+    // Collect selected permissions
+    const permissions = [];
+    permPanel.querySelectorAll('input[data-perm]:checked').forEach(cb => {
+        permissions.push(cb.dataset.perm);
+    });
+
+    // Get expiry time
+    const expiresAt = expiryInput.value ? new Date(expiryInput.value).toISOString() : null;
+
+    try {
+        const { error } = await window.supabaseClient
+            .from('admin_roles')
+            .update({
+                permissions: permissions,
+                expires_at: expiresAt
+            })
+            .eq('user_id', userId);
+
+        if (error) throw error;
+
+        alert('✅ 权限配置已保存');
+        console.log('✅ Permissions saved for', userId, permissions, 'expires:', expiresAt);
+        logAdminAction('update_permissions', userId, { permissions, expires_at: expiresAt });
+    } catch (err) {
+        console.error('Failed to save permissions:', err);
+        alert('保存权限失败: ' + err.message);
+    }
+}
+
+// Initialize super admin check when module loads
+(async function () {
+    await checkSuperAdmin();
+})();
+
+// Export functions
+window.initUserModule = initUserModule;
+window.toggleUserBlock = toggleUserBlock;
+window.resetUserAvatar = resetUserAvatar;
+window.adjustUserPoints = adjustUserPoints;
+window.clearAllUserContent = clearAllUserContent;
+window.addUserTag = addUserTag;
+window.removeUserTag = removeUserTag;
+window.getTagClass = getTagClass;
+window.getTagLabel = getTagLabel;
+window.toggleAdminRole = toggleAdminRole;
+window.saveAdminPermissions = saveAdminPermissions;
+window.checkSuperAdmin = checkSuperAdmin;
+window.openUserModal = openUserModal;
+window.closeUserModal = closeUserModal;
+window.switchUserTab = switchUserTab;
+window.exportTabData = exportTabData;
+window.openUserDrawer = openUserDrawer;
+window.closeUserDrawer = closeUserDrawer;
+window.toggleModalDropdown = toggleModalDropdown;
+window.handleModalAdminToggle = handleModalAdminToggle;
+window.saveModalAdminPermissions = saveModalAdminPermissions;
+window.filterTabByDate = filterTabByDate;
+window.openCustomDatePicker = openCustomDatePicker;
+
+// ==========================================
+// NOTES TAB
+// ==========================================
+// Helper for auto-resizing notes input
+window.autoResizeNotesInput = function (el) {
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 'px';
+};
+
+async function renderNotesTab(container) {
+    container.innerHTML = `
+        <div class="tab-toolbar" style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;">
+            <div class="modal-dropdown" id="notesTimeDropdown">
+                <div class="modal-dropdown-trigger" onclick="toggleModalDropdown('notesTimeDropdown')" style="display:flex;align-items:center;gap:8px;padding:6px 12px;cursor:pointer;background:transparent;border:1px solid var(--border-color);border-radius:6px;font-size:0.85rem;color:var(--text-dim);">
+                    <i class="far fa-calendar-alt"></i>
+                    <span id="notesTimeLabel">全部时间</span>
+                    <i class="fas fa-chevron-down"></i>
+                </div>
+                <div class="modal-dropdown-menu">
+                    <div class="modal-dropdown-item" onclick="filterTabByDate('notes', 'all', '全部时间')">全部时间</div>
+                    <div class="modal-dropdown-item" onclick="filterTabByDate('notes', 'today', '今天')">今天</div>
+                    <div class="modal-dropdown-item" onclick="filterTabByDate('notes', 'week', '本周')">本周</div>
+                    <div class="modal-dropdown-item" onclick="filterTabByDate('notes', 'month', '本月')">本月</div>
+                </div>
+            </div>
+            <button class="btn-export" onclick="exportTabData('notes')" style="background:transparent;border:1px solid var(--border-color);padding:6px 12px;border-radius:6px;font-size:0.85rem;cursor:pointer;color:var(--text-dim);">
+                <i class="fas fa-download"></i> 导出 Excel
+            </button>
+        </div>
+        <div class="notes-container" style="display:flex;flex-direction:column;height:calc(100% - 60px);max-height:600px;">
+             <div class="notes-list" id="notesList" style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px;">
+                 <div class="modal-loading"><i class="fas fa-spinner fa-spin"></i> 加载备注...</div>
+             </div>
+             <div class="notes-input-area" style="padding:16px;background:transparent">
+                 <div style="display:flex;align-items:flex-end;gap:10px;">
+                     <textarea id="newNoteInput" placeholder="添加内部备注..." rows="1" oninput="autoResizeNotesInput(this)" style="flex:1;min-height:38px;max-height:120px;padding:8px 0;border:none;border-bottom:1px solid var(--card-border);background:transparent;color:inherit;outline:none;resize:none;font-family:inherit;font-size:0.9rem;line-height:1.5;overflow-y:auto;box-sizing:border-box;display:block;"></textarea>
+                     <button class="btn-primary" onclick="submitUserNote()" style="padding:0 20px;height:38px;border-radius:8px;flex-shrink:0;"><i class="fas fa-paper-plane"></i></button>
+                 </div>
+                 </div>
+             </div>
+        </div>
+    `;
+
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('admin_notes_view')
+            .select('id, content, created_at, admin_email')
+            .eq('target_user_id', currentModalUser.id)
+            .order('created_at', { ascending: true });
+
+        if (error) throw error;
+
+        currentModalData.notes = data; // Store for filtering
+        document.getElementById('notesList').innerHTML = renderNotesItems(data);
+
+    } catch (err) {
+        console.error('Error loading notes:', err);
+        document.getElementById('notesList').innerHTML = `<div class="error-msg" style="text-align:center;padding:20px;color:#ef4444;">加载失败: ${escapeHtml(err.message)}</div>`;
+    }
+}
+
+function renderNotesItems(data) {
+    if (!data || data.length === 0) {
+        return `<div class="empty-state" style="text-align:center;padding:40px;color:var(--text-dim);">暂无备注</div>`;
+    }
+
+    return data.map(note => {
+        const adminEmail = note.admin_email || 'Unknown';
+        return `
+            <div class="note-item" style="background:rgba(255,255,255,0.03);padding:10px 12px;border-radius:8px;border-left:2px solid rgba(107,158,206,0.5);">
+                <div class="note-content" style="margin-bottom:6px;line-height:1.5;font-size:0.85rem;color:var(--text-main);">${escapeHtml(note.content)}</div>
+                <div class="note-meta" style="font-size:0.75rem;color:var(--text-dim);display:flex;justify-content:space-between;">
+                        <span><i class="fas fa-user-shield"></i> ${escapeHtml(adminEmail)}</span>
+                        <span>${formatTimeAgo(note.created_at)}</span>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+async function submitUserNote() {
+    const input = document.getElementById('newNoteInput');
+    const content = input.value.trim();
+    if (!content) return;
+
+    try {
+        // Get current admin ID
+        const { data: { user } } = await window.supabaseClient.auth.getUser();
+        if (!user) throw new Error('Not authenticated');
+
+        const { error } = await window.supabaseClient
+            .from('admin_notes')
+            .insert({
+                target_user_id: currentModalUser.id,
+                admin_id: user.id,
+                content: content
+            });
+
+        if (error) throw error;
+
+        input.value = '';
+        renderNotesTab(document.getElementById('userTabContent')); // Reload list
+
+        logAdminAction('ADD_NOTE', currentModalUser.id, { content_preview: content.substring(0, 20) });
+
+    } catch (err) {
+        alert('发送失败: ' + err.message);
+    }
+}
+
+// ==========================================
+// AUDIT TAB
+// ==========================================
+async function renderAuditTab(container) {
+    container.innerHTML = `
+        <div class="tab-toolbar" style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;">
+            <div class="modal-dropdown" id="auditTimeDropdown">
+                <div class="modal-dropdown-trigger" onclick="toggleModalDropdown('auditTimeDropdown')" style="display:flex;align-items:center;gap:8px;padding:6px 12px;cursor:pointer;background:transparent;border:1px solid var(--border-color);border-radius:6px;font-size:0.85rem;color:var(--text-dim);">
+                    <i class="far fa-calendar-alt"></i>
+                    <span id="auditTimeLabel">全部时间</span>
+                    <i class="fas fa-chevron-down"></i>
+                </div>
+                <div class="modal-dropdown-menu">
+                    <div class="modal-dropdown-item" onclick="filterTabByDate('audit', 'all', '全部时间')">全部时间</div>
+                    <div class="modal-dropdown-item" onclick="filterTabByDate('audit', 'today', '今天')">今天</div>
+                    <div class="modal-dropdown-item" onclick="filterTabByDate('audit', 'week', '本周')">本周</div>
+                    <div class="modal-dropdown-item" onclick="filterTabByDate('audit', 'month', '本月')">本月</div>
+                </div>
+            </div>
+            <button class="btn-export" onclick="exportTabData('audit')" style="background:transparent;border:1px solid var(--border-color);padding:6px 12px;border-radius:6px;font-size:0.85rem;cursor:pointer;color:var(--text-dim);">
+                <i class="fas fa-download"></i> 导出 Excel
+            </button>
+        </div>
+        <div class="audit-list" id="auditList" style="padding:16px;display:flex;flex-direction:column;gap:12px;">
+            <div class="modal-loading"><i class="fas fa-spinner fa-spin"></i> 加载审计日志...</div>
+        </div>
+    `;
+
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('admin_audit_logs_view')
+            .select('id, action_type, details, created_at, admin_email')
+            .eq('target_user_id', currentModalUser.id)
+            .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        currentModalData.auditLogs = data; // Store for filtering
+        document.getElementById('auditList').innerHTML = renderAuditItems(data);
+
+    } catch (err) {
+        console.error('Error loading audit logs:', err);
+        document.getElementById('auditList').innerHTML = `<div class="error-msg" style="text-align:center;padding:20px;color:#ef4444;">加载失败: ${escapeHtml(err.message)}</div>`;
+    }
+}
+
+function renderAuditItems(data) {
+    if (!data || data.length === 0) {
+        return `<div class="empty-state" style="text-align:center;padding:40px;color:var(--text-dim);">暂无审计记录</div>`;
+    }
+
+    return data.map(log => {
+        const adminEmail = log.admin_email || 'Unknown';
+        // Format details helper
+        const formatDetails = (type, details) => {
+            if (type.includes('POINT')) return `变动: <span style="color:${details.amount > 0 ? '#10b981' : '#ef4444'}">${details.amount > 0 ? '+' : ''}${details.amount}</span> · 理由: ${details.reason}`;
+            if (type.includes('BAN')) return `范围: ${details.scope === 'all' ? '全站' : '单项'} · 时长: ${details.days}天`;
+            if (type.includes('UNBAN')) return `解封范围: ${details.scope === 'all' ? '全站' : '单项'}`;
+            if (type.includes('NOTE')) return `内容: ${details.content_preview}...`;
+            if (type.includes('NOTIFICATION')) return `标题: ${details.title} (${details.type})`;
+            if (type.includes('CLEAR')) return `清空项目: ${details.cleared_items ? details.cleared_items.join(', ') : '无'}`;
+
+            // Admin Permission Changes
+            if (type === 'grant_admin' || type === 'update_admin_permissions') {
+                const permMap = {
+                    'content.moderate': '内容审核',
+                    'users.manage': '用户管理',
+                    'prompts.manage': 'Prompt 管理',
+                    'analytics.view': '数据分析'
+                };
+                const perms = details.permissions
+                    ? details.permissions.map(p => permMap[p] || p).join(', ')
+                    : '无';
+                return `授予权限: ${perms}`;
+            }
+            if (type === 'revoke_admin') return '已移除该用户的管理员权限';
+
+            return JSON.stringify(details, null, 2); // Fallback
+        };
+
+        let icon = 'fa-shield-alt';
+        let color = '#64748b'; // default slate
+
+        if (log.action_type.includes('BAN')) { icon = 'fa-ban'; color = '#ef4444'; }
+        else if (log.action_type.includes('UNBAN')) { icon = 'fa-unlock'; color = '#10b981'; }
+        else if (log.action_type.includes('POINTS')) { icon = 'fa-coins'; color = '#f59e0b'; }
+        else if (log.action_type.includes('NOTE')) { icon = 'fa-sticky-note'; color = '#3b82f6'; }
+        else if (log.action_type.includes('CLEAR')) { icon = 'fa-trash-alt'; color = '#ef4444'; }
+        else if (log.action_type.includes('NOTIFICATION')) { icon = 'fa-bell'; color = '#8b5cf6'; }
+        else if (log.action_type.includes('AVATAR')) { icon = 'fa-user-circle'; color = '#64748b'; }
+        else if (log.action_type.includes('admin')) { icon = 'fa-user-shield'; color = '#8b5cf6'; }
+
+        return `
+            <div class="audit-item" style="display:flex;gap:12px;padding:12px;background:rgba(255,255,255,0.03);border-radius:8px;border:1px solid var(--card-border);">
+                <div class="audit-icon" style="color:${color};font-size:1.1rem;margin-top:2px;">
+                    <i class="fas ${icon}"></i>
+                </div>
+                <div class="audit-content" style="flex:1;">
+                    <div class="audit-header" style="display:flex;justify-content:space-between;margin-bottom:4px;">
+                        <span style="font-weight:600;color:var(--text-main);font-size:0.9rem;">${formatAuditAction(log.action_type)}</span>
+                        <span style="font-size:0.75rem;color:var(--text-dim);">${formatTimeAgo(log.created_at)}</span>
+                    </div>
+                    <div class="audit-meta" style="font-size:0.8rem;color:var(--text-dim);margin-bottom:6px;">
+                        <i class="fas fa-user-tie" style="font-size:0.7rem;"></i> ${escapeHtml(adminEmail)}
+                    </div>
+                    ${Object.keys(log.details).length > 0 || log.action_type === 'revoke_admin' ? `
+                    <div class="audit-details" style="font-size:0.85rem;color:var(--text-main);background:transparent;padding:0;">
+                        ${formatDetails(log.action_type, log.details)}
+                    </div>` : ''}
+
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function formatAuditAction(action) {
+    const map = {
+        'BAN_USER': '封禁用户',
+        'UNBAN_USER': '解除封禁',
+        'UPDATE_POINT': '调整积分',
+        'UPDATE_VIP': '修改VIP',
+        'CLEAR_CONTENT': '清空内容',
+        'ADD_NOTE': '添加备注',
+        'SEND_NOTIFICATION': '发送系统通知',
+        'RESET_AVATAR': '重置头像',
+        'grant_admin': '授予管理员',
+        'revoke_admin': '移除管理员',
+        'update_admin_permissions': '更新权限'
+    };
+    return map[action] || action;
+}
+
+// ==========================================
+// SYSTEM NOTIFICATIONS
+// ==========================================
+function showNotificationModal(userId) {
+    let modal = document.getElementById('notificationModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'notificationModal';
+        modal.className = 'custom-modal-overlay';
+        modal.style.zIndex = '10000'; // Ensure it's above other modals
+        modal.onclick = (e) => {
+            if (e.target === modal) {
+                modal.classList.remove('active');
+                setTimeout(() => modal.style.display = 'none', 300);
+            }
+        };
+        modal.innerHTML = `
+            <div class="custom-modal" style="width:400px;">
+                <div class="modal-header">
+                    <h3 class="modal-title"><i class="far fa-bell" style="margin-right: 8px;"></i> 通知</h3>
+                    <button class="modal-close-btn" onclick="this.closest('.custom-modal-overlay').click()"><i class="fas fa-times"></i></button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>标题</label>
+                        <input type="text" id="notifTitle" class="modal-input" placeholder="简短的通知标题">
+                    </div>
+                    <div class="form-group">
+                        <label>内容</label>
+                        <textarea id="notifContent" class="modal-input" rows="4" placeholder="通知详细内容..."></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>类型</label>
+                        <div class="notif-type-selector" style="display:flex;gap:8px;">
+                            <button class="type-btn active" data-type="info" onclick="selectNotifType(this, 'info')"><i class="fas fa-info-circle"></i> 信息</button>
+                            <button class="type-btn" data-type="warning" onclick="selectNotifType(this, 'warning')"><i class="fas fa-exclamation-triangle"></i> 警告</button>
+                            <button class="type-btn" data-type="success" onclick="selectNotifType(this, 'success')"><i class="fas fa-check-circle"></i> 成功</button>
+                        </div>
+                        <input type="hidden" id="notifType" value="info">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="send-notification-btn" onclick="sendSystemNotification('${userId}')"><i class="fas fa-paper-plane"></i></button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+
+        const style = document.createElement('style');
+        style.textContent = `
+            .type-btn { 
+                flex: 1; 
+                padding: 10px; 
+                border: 1px solid transparent; 
+                background: rgba(255, 255, 255, 0.03); 
+                border-radius: 10px; 
+                cursor: pointer; 
+                color: var(--text-dim); 
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); 
+                font-size: 0.9rem;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 8px;
+                font-weight: 500;
+            }
+            .type-btn:hover { 
+                background: rgba(255, 255, 255, 0.08); 
+                color: var(--text-main);
+            }
+            .type-btn.active { 
+                border-color: #6b9ece; 
+                background: rgba(107, 158, 206, 0.12); 
+                color: #6b9ece; 
+                font-weight: 600;
+            }
+            
+            /* Specific colors for types when active */
+            .type-btn[data-type="warning"].active {
+                border-color: #f59e0b;
+                color: #f59e0b;
+                background: rgba(245, 158, 11, 0.08);
+            }
+            .type-btn[data-type="success"].active {
+                border-color: #10b981;
+                color: #10b981;
+                background: rgba(16, 185, 129, 0.08);
+            }
+
+            @media (prefers-color-scheme: dark) {
+                .type-btn {
+                    background: rgba(255,255,255,0.05);
+                }
+            }
+            
+            .send-notification-btn {
+                background: transparent;
+                border: none;
+                color: #94a3b8; /* Neutral default */
+                font-size: 1.5rem;
+                cursor: pointer;
+                padding: 10px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                transition: color 0.2s;
+            }
+            .send-notification-btn:hover {
+                color: #6b9ece; /* Blue on hover */
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    document.getElementById('notifTitle').value = '';
+    document.getElementById('notifContent').value = '';
+    const btnParam = modal.querySelector('.send-notification-btn');
+    btnParam.onclick = () => sendSystemNotification(userId); // Update onclick with current userId
+    selectNotifType(modal.querySelector('[data-type="info"]'), 'info');
+
+    modal.style.display = 'flex';
+    // Force reflow to enable transition
+    void modal.offsetWidth;
+    modal.classList.add('active');
+}
+
+function selectNotifType(btn, type) {
+    document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('notifType').value = type;
+}
+
+async function sendSystemNotification(userId, titleArg = null, contentArg = null, typeArg = null) {
+    // Determine if manual (UI) or automated
+    const isManual = !titleArg;
+
+    let title = titleArg;
+    let content = contentArg;
+    let type = typeArg;
+
+    if (isManual) {
+        title = document.getElementById('notifTitle').value.trim();
+        content = document.getElementById('notifContent').value.trim();
+        type = document.getElementById('notifType').value;
+
+        if (!title || !content) {
+            alert('请填写完整的标题和内容');
+            return;
+        }
+    }
+
+    // UI Loading State (only if manual)
+    let btn = null;
+    let originalText = '';
+
+    if (isManual) {
+        btn = document.querySelector('#notificationModal .send-notification-btn');
+        if (btn) {
+            originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            btn.disabled = true;
+        }
+    }
+
+    try {
+        const { error } = await window.supabaseClient
+            .from('system_notifications')
+            .insert({
+                user_id: userId,
+                title,
+                content,
+                type: type || 'info'
+            });
+
+        if (error) throw error;
+
+        if (isManual) {
+            alert('✅ 通知发送成功');
+            // Close modal using new logic
+            const modal = document.getElementById('notificationModal');
+            if (modal) {
+                modal.classList.remove('active');
+                setTimeout(() => modal.style.display = 'none', 300);
+            }
+        }
+
+        logAdminAction('SEND_NOTIFICATION', userId, { title, type });
+
+    } catch (err) {
+        console.error('Failed to send notification:', err);
+        if (isManual) alert('发送失败: ' + err.message);
+    } finally {
+        if (isManual && btn) {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
+    }
+}
+
+// Expose functions globally
+window.renderNotesTab = renderNotesTab;
+window.submitUserNote = submitUserNote;
+window.renderAuditTab = renderAuditTab;
+window.showNotificationModal = showNotificationModal;
+window.sendSystemNotification = sendSystemNotification;

@@ -16,8 +16,8 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
-    <link rel="stylesheet" href="admin-studio.css?v=3">
-    <link rel="stylesheet" href="admin-sidebar.css?v=1">
+    <link rel="stylesheet" href="admin-studio.css?v=7">
+    <link rel="stylesheet" href="admin-sidebar.css?v=7">
     <!-- Cropper.js CSS -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.css">
     <!-- Flatpickr CSS (Base) -->
@@ -60,15 +60,18 @@
                     <span>评论管理</span>
                 </div>
                 <div class="sidebar-divider"></div>
-                <div class="sidebar-item disabled" data-module="points">
-                    <i class="fas fa-coins"></i>
-                    <span>积分系统</span>
-                    <span class="coming-soon">即将推出</span>
+                <div class="sidebar-item" data-module="users" onclick="switchModule('users')">
+                    <i class="fas fa-users-cog"></i>
+                    <span>用户管理</span>
                 </div>
-                <div class="sidebar-item disabled" data-module="analytics">
+                <div class="sidebar-divider"></div>
+                <div class="sidebar-item" data-module="points" onclick="switchModule('points')">
+                    <i class="fas fa-coins"></i>
+                    <span>积分管理</span>
+                </div>
+                <div class="sidebar-item" data-module="analytics" onclick="switchModule('analytics')">
                     <i class="fas fa-chart-line"></i>
                     <span>数据分析</span>
-                    <span class="coming-soon">即将推出</span>
                 </div>
             </nav>
 
@@ -115,6 +118,7 @@
                 <nav class="admin-tabs">
                     <button class="admin-tab active" data-view="create" onclick="switchView('create')">Create</button>
                     <button class="admin-tab" data-view="manage" onclick="switchView('manage')">Manage</button>
+                    <div class="admin-tab-indicator"></div>
                 </nav>
 
                 <!-- Main Content -->
@@ -413,6 +417,7 @@
                             onclick="switchCommentView('guestbook')">留言板</button>
                         <button class="admin-tab" data-comment-view="gallery"
                             onclick="switchCommentView('gallery')">画廊评论</button>
+                        <div class="admin-tab-indicator"></div>
                     </nav>
 
                     <!-- Stats moved to Analytics module -->
@@ -592,6 +597,308 @@
             </div>
             <!-- END SETTINGS MODULE -->
 
+            <!-- ========== POINTS MANAGEMENT MODULE ========== -->
+            <div id="module-points" class="module-container">
+                <!-- Tabs -->
+                <nav class="admin-tabs">
+                    <button class="admin-tab active" data-points-view="batches" onclick="switchPointsView('batches')">📦
+                        批次管理</button>
+                    <button class="admin-tab" data-points-view="generate" onclick="switchPointsView('generate')">➕
+                        生成兑换码</button>
+                    <button class="admin-tab" data-points-view="lookup" onclick="switchPointsView('lookup')">🔍
+                        查询</button>
+                    <div class="admin-tab-indicator"></div>
+                </nav>
+
+                <!-- BATCHES VIEW -->
+                <div id="points-view-batches" class="view-section active">
+                    <!-- Table Panel with Toolbar Inside -->
+                    <div class="glass-panel users-table-panel">
+                        <!-- Toolbar (inside panel for perfect alignment) -->
+                        <div class="admin-toolbar batch-toolbar-inside">
+                            <div class="toolbar-left">
+                                <div class="search-bar">
+                                    <i class="fas fa-search"></i>
+                                    <input type="text" id="batchSearchInput" placeholder="搜索批次名称或兑换码..."
+                                        autocomplete="off" onkeydown="if(event.key==='Enter') searchCodeInBatches()">
+                                </div>
+                                <div class="filter-dropdowns">
+                                    <!-- Date Filter -->
+                                    <div class="filter-dropdown" data-filter="batchDate" id="batchDateFilter">
+                                        <button class="filter-btn" onclick="toggleBatchDateFilter()">
+                                            <i class="fas fa-calendar-alt"></i>
+                                            <span class="filter-label" id="batchDateLabel">日期</span>
+                                            <i class="fas fa-chevron-down filter-arrow"></i>
+                                        </button>
+                                        <div class="filter-popup glass-popup" id="batchDatePopup">
+                                            <div class="filter-option selected" data-value="all"
+                                                onclick="filterBatchByDate('all')">全部时间</div>
+                                            <div class="filter-option" data-value="today"
+                                                onclick="filterBatchByDate('today')">今天</div>
+                                            <div class="filter-option" data-value="week"
+                                                onclick="filterBatchByDate('week')">本周</div>
+                                            <div class="filter-option" data-value="month"
+                                                onclick="filterBatchByDate('month')">本月</div>
+                                            <div class="filter-divider"></div>
+                                            <div class="filter-custom-date">
+                                                <label>自定义范围</label>
+                                                <input type="text" id="batchDateFrom" class="flatpickr-input"
+                                                    placeholder="开始时间" readonly>
+                                                <span>至</span>
+                                                <input type="text" id="batchDateTo" class="flatpickr-input"
+                                                    placeholder="结束时间" readonly>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <!-- Channel Filter -->
+                                    <div class="filter-dropdown" data-filter="batchChannel" id="batchChannelFilter">
+                                        <button class="filter-btn" onclick="toggleBatchChannelFilter()">
+                                            <i class="fas fa-store"></i>
+                                            <span class="filter-label" id="batchChannelLabel">渠道</span>
+                                            <i class="fas fa-chevron-down filter-arrow"></i>
+                                        </button>
+                                        <div class="filter-popup glass-popup" id="batchChannelPopup">
+                                            <div class="filter-option selected" data-value="all"
+                                                onclick="filterBatchByChannel('all')">全部渠道</div>
+                                            <div class="filter-option" data-value="xianyu"
+                                                onclick="filterBatchByChannel('xianyu')">闲鱼</div>
+                                            <div class="filter-option" data-value="taobao"
+                                                onclick="filterBatchByChannel('taobao')">淘宝</div>
+                                            <div class="filter-option" data-value="manual"
+                                                onclick="filterBatchByChannel('manual')">手动</div>
+                                            <div class="filter-option" data-value="promotion"
+                                                onclick="filterBatchByChannel('promotion')">促销</div>
+                                            <div class="filter-option" data-value="test"
+                                                onclick="filterBatchByChannel('test')">测试</div>
+                                        </div>
+                                    </div>
+                                    <!-- Package Filter -->
+                                    <div class="filter-dropdown" data-filter="batchPackage" id="batchPackageFilter">
+                                        <button class="filter-btn" onclick="toggleBatchPackageFilter()">
+                                            <i class="fas fa-gift"></i>
+                                            <span class="filter-label" id="batchPackageLabel">套餐</span>
+                                            <i class="fas fa-chevron-down filter-arrow"></i>
+                                        </button>
+                                        <div class="filter-popup glass-popup" id="batchPackagePopup">
+                                            <div class="filter-option selected" data-value="all"
+                                                onclick="filterBatchByPackage('all')">全部套餐</div>
+                                            <!-- Populated dynamically -->
+                                        </div>
+                                    </div>
+                                    <!-- Batch Select Toggle Button (after Package filter) -->
+                                    <button class="btn-icon batch-select-btn" id="batchSelectToggle"
+                                        onclick="toggleBatchSelectMode()" title="选择模式">
+                                        <i class="fas fa-check-square"></i>
+                                    </button>
+                                    <!-- Batch Actions Menu (moved here, next to checkbox toggle) -->
+                                    <div class="batch-menu-container" id="pointsBatchMenuContainer"
+                                        style="display: none;">
+                                        <button class="btn-icon" onclick="togglePointsBatchActionsMenu()">
+                                            <i class="fas fa-ellipsis-h"></i>
+                                        </button>
+                                        <div class="batch-menu-popup glass-popup" id="pointsBatchActionsMenu">
+                                            <div class="batch-menu-item" onclick="batchInvalidateCodes()">
+                                                <i class="fas fa-ban"></i>
+                                                <span>作废未使用</span>
+                                            </div>
+                                            <div class="batch-menu-divider"></div>
+                                            <div class="batch-menu-item danger" onclick="batchDeleteBatches()">
+                                                <i class="fas fa-trash"></i>
+                                                <span>删除选中</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="toolbar-right">
+                                <!-- Selected Count Display -->
+                                <div class="prompt-count" id="pointsBatchSelectedCountWrapper" style="display: none;">
+                                    <span class="select-count">已选 <span id="pointsBatchSelectedCount">0</span> 项</span>
+                                </div>
+                                <!-- Export Dropdown -->
+                                <div class="filter-dropdown" data-filter="batchExport" id="batchExportDropdown">
+                                    <button class="filter-btn" onclick="toggleBatchExportMenu()">
+                                        <i class="fas fa-file-export"></i>
+                                        <span class="filter-label">导出</span>
+                                        <i class="fas fa-chevron-down filter-arrow"></i>
+                                    </button>
+                                    <div class="filter-popup glass-popup" id="batchExportPopup">
+                                        <div class="filter-option" onclick="exportBatchList()">
+                                            <i class="fas fa-list"></i> 导出批次列表
+                                        </div>
+                                        <div class="filter-option" onclick="exportSelectedBatches()"
+                                            id="exportSelectedOption" style="display: none;">
+                                            <i class="fas fa-check-double"></i> 导出选中批次
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <table class="admin-table" id="batchesTable">
+                            <thead>
+                                <tr>
+                                    <!-- Checkbox column - dynamically shown -->
+                                    <th class="checkbox-col" id="batchCheckboxHeader" style="display: none;">
+                                        <label class="custom-checkbox">
+                                            <input type="checkbox" id="selectAllBatches"
+                                                onchange="toggleSelectAllBatches()" title="全选当前页">
+                                            <span class="checkmark"></span>
+                                        </label>
+                                    </th>
+                                    <th class="sortable" data-sort="name" onclick="sortBatches('name')">
+                                        批次名称 <i class="fas fa-sort sort-icon"></i>
+                                    </th>
+                                    <th>套餐</th>
+                                    <th>渠道</th>
+                                    <th class="sortable" data-sort="total_count" onclick="sortBatches('total_count')">
+                                        总数 <i class="fas fa-sort sort-icon"></i>
+                                    </th>
+                                    <th class="sortable" data-sort="used_count" onclick="sortBatches('used_count')">
+                                        已用 <i class="fas fa-sort sort-icon"></i>
+                                    </th>
+                                    <th class="sortable" data-sort="created_at" onclick="sortBatches('created_at')">
+                                        创建时间 <i class="fas fa-sort-down sort-icon active"></i>
+                                    </th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="batchesTableBody">
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- GENERATE VIEW -->
+                <div id="points-view-generate" class="view-section">
+                    <div class="points-create-grid">
+                        <!-- Left Column: Config -->
+                        <div class="glass-panel">
+                            <div class="section-title">
+                                <i class="fas fa-cog"></i> 配置参数
+                            </div>
+                            <form id="generateCodesForm" onsubmit="generateCodes(event)" class="prompt-form">
+                                <div class="form-group">
+                                    <label>批次名称</label>
+                                    <input type="text" id="batchName" placeholder="如: 闲鱼1月活动" required>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>关联套餐</label>
+                                        <div class="custom-select points-select" id="packageSelectDropdown">
+                                            <input type="hidden" id="batchPackageId" name="batchPackageId" value=""
+                                                required>
+                                            <div class="select-display">
+                                                <span class="select-text">请选择套餐</span>
+                                                <i class="fas fa-chevron-down select-arrow"></i>
+                                            </div>
+                                            <div class="select-options" id="packageOptions">
+                                                <!-- Populated by JS -->
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>销售渠道</label>
+                                        <div class="custom-select points-select" id="channelSelectDropdown">
+                                            <input type="hidden" id="batchChannel" name="batchChannel" value="xianyu">
+                                            <div class="select-display">
+                                                <span class="select-text">闲鱼</span>
+                                                <i class="fas fa-chevron-down select-arrow"></i>
+                                            </div>
+                                            <div class="select-options">
+                                                <div class="select-option selected" data-value="xianyu">闲鱼</div>
+                                                <div class="select-option" data-value="taobao">淘宝</div>
+                                                <div class="select-option" data-value="manual">手动发放</div>
+                                                <div class="select-option" data-value="promotion">促销活动</div>
+                                                <div class="select-option" data-value="test">内部测试</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <!-- Custom Points Input (shown when "自定义积分" is selected) -->
+                                <div id="customPointsWrapper" class="form-group" style="display: none;">
+                                    <label>自定义积分数量</label>
+                                    <input type="number" id="customPointsAmount" min="1" max="100000"
+                                        placeholder="输入积分数量">
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>生成数量</label>
+                                        <input type="number" id="batchCount" min="1" max="1000" value="10" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>过期时间 (可选)</label>
+                                        <input type="text" id="batchExpires" class="flatpickr-input"
+                                            placeholder="选择日期和时间" readonly>
+                                    </div>
+                                </div>
+                                <div class="form-actions">
+                                    <button type="submit" class="btn-primary">
+                                        <i class="fas fa-magic"></i> 生成兑换码
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+
+                        <!-- Right Column: Result/Preview -->
+                        <div class="glass-panel">
+                            <div class="section-title">
+                                <i class="fas fa-list-alt"></i> 生成结果
+                            </div>
+
+                            <!-- Initial State -->
+                            <div id="generatePlaceholder" class="empty-state-content">
+                                <i class="fas fa-ticket-alt"
+                                    style="font-size: 3rem; color: var(--text-dim); opacity: 0.3; margin-bottom: 16px;"></i>
+                                <p style="color: var(--text-dim);">填写左侧配置并点击生成<br>结果将在此处显示</p>
+                            </div>
+
+                            <!-- Result State -->
+                            <div id="generatedCodesResult"
+                                style="display: none; border-top: none; margin-top: 0; padding-top: 0;">
+                                <div class="result-header"
+                                    style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                                    <h4 style="margin: 0; color: #22c55e;"><i class="fas fa-check-circle"></i> 生成成功</h4>
+                                    <div class="codes-actions">
+                                        <button class="btn-sm btn-secondary" onclick="copyAllCodes()">
+                                            <i class="fas fa-copy"></i> 复制
+                                        </button>
+                                        <button class="btn-sm btn-secondary" onclick="downloadCodesCSV()">
+                                            <i class="fas fa-download"></i> CSV
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="codes-list" id="codesListDisplay" style="max-height: 400px;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- LOOKUP VIEW -->
+                <div id="points-view-lookup" class="view-section">
+                    <div class="points-lookup-container">
+                        <div class="lookup-hero">
+                            <div class="lookup-search-container"
+                                style="display: flex; gap: 16px; max-width: 600px; margin: 0 auto; align-items: center;">
+                                <div class="lookup-search-box"
+                                    style="display: flex; gap: 12px; padding: 12px 20px; border-radius: 12px; align-items: center; flex: 1;">
+                                    <i class="fas fa-search" style="color: var(--text-dim);"></i>
+                                    <input type="text" id="lookupCodeInput" placeholder="输入兑换码或订单号" maxlength="50">
+                                </div>
+                                <button class="btn-primary lookup-btn" onclick="lookupCode()">查询</button>
+                            </div>
+                        </div>
+
+                        <div id="lookupResult" class="lookup-result"
+                            style="display: none; max-width: 500px; margin: 40px auto 0;">
+                            <!-- Result populated by JS -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- END POINTS MODULE -->
+
             <!-- Batch Progress Modal -->
             <div class="batch-modal-overlay" id="batchProgressOverlay" style="display: none;">
                 <div class="batch-modal">
@@ -658,6 +965,431 @@
                 </div>
             </div>
 
+            <!-- ========== USER MANAGEMENT MODULE ========== -->
+            <div id="module-users" class="module-container">
+                <!-- Toolbar -->
+                <div class="admin-toolbar">
+                    <div class="toolbar-left">
+                        <div class="search-bar">
+                            <i class="fas fa-search"></i>
+                            <input type="text" id="userSearchInput" placeholder="搜索用户 (昵称 / Email / ID)..."
+                                autocomplete="off">
+                        </div>
+                        <div class="filter-dropdowns">
+                            <!-- Status Filter -->
+                            <div class="filter-dropdown" data-filter="userStatus">
+                                <button class="filter-btn">
+                                    <i class="fas fa-shield-alt"></i>
+                                    <span class="filter-label">状态</span>
+                                    <i class="fas fa-chevron-down filter-arrow"></i>
+                                </button>
+                                <div class="filter-popup glass-popup">
+                                    <div class="filter-option selected" data-value="all">全部</div>
+                                    <div class="filter-option" data-value="active">正常</div>
+                                    <div class="filter-option" data-value="banned">封禁中</div>
+                                </div>
+                            </div>
+
+                            <!-- Level Filter -->
+                            <div class="filter-dropdown" data-filter="userLevel">
+                                <button class="filter-btn">
+                                    <i class="fas fa-star"></i>
+                                    <span class="filter-label">等级</span>
+                                    <i class="fas fa-chevron-down filter-arrow"></i>
+                                </button>
+                                <div class="filter-popup glass-popup">
+                                    <div class="filter-option selected" data-value="all">全部</div>
+                                    <div class="filter-option" data-value="vip">VIP 会员</div>
+                                </div>
+                            </div>
+
+                            <!-- Role Filter (Super Admin Only) -->
+                            <div class="filter-dropdown" data-filter="userRole" id="adminRoleFilter"
+                                style="display: none;">
+                                <button class="filter-btn">
+                                    <i class="fas fa-user-shield"></i>
+                                    <span class="filter-label">角色</span>
+                                    <i class="fas fa-chevron-down filter-arrow"></i>
+                                </button>
+                                <div class="filter-popup glass-popup">
+                                    <div class="filter-option selected" data-value="all">全部</div>
+                                    <div class="filter-option" data-value="admin">管理员</div>
+                                    <div class="filter-option" data-value="user">普通用户</div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Batch Actions (like Gallery Manage) -->
+                        <div class="batch-actions-wrapper">
+                            <button class="batch-btn" id="userSelectModeBtn" onclick="toggleUserSelectMode()"
+                                title="选择模式">
+                                <i class="fas fa-check-square"></i>
+                            </button>
+                            <div class="batch-menu-container" id="userBatchMenuContainer" style="display: none;">
+                                <button class="batch-btn" id="userBatchMenuTrigger" onclick="toggleUserBatchMenu()"
+                                    title="批量操作">
+                                    <i class="fas fa-ellipsis-h"></i>
+                                </button>
+                                <div class="batch-dropdown-menu" id="userBatchDropdownMenu">
+                                    <div class="batch-menu-item" onclick="selectAllUsersOnPage()">
+                                        <i class="fas fa-check-double"></i>
+                                        <span>全选当前页</span>
+                                    </div>
+                                    <div class="batch-menu-divider"></div>
+                                    <div class="batch-menu-item" onclick="batchSendNotification()">
+                                        <i class="fas fa-bell"></i>
+                                        <span>发送通知</span>
+                                    </div>
+                                    <div class="batch-menu-item" onclick="batchAdjustPoints()">
+                                        <i class="fas fa-coins"></i>
+                                        <span>调整积分</span>
+                                    </div>
+                                    <div class="batch-menu-item" onclick="batchAddTags()">
+                                        <i class="fas fa-tags"></i>
+                                        <span>添加标签</span>
+                                    </div>
+                                    <div class="batch-menu-item" onclick="batchExportUsers()">
+                                        <i class="fas fa-download"></i>
+                                        <span>导出数据</span>
+                                    </div>
+                                    <div class="batch-menu-divider"></div>
+                                    <div class="batch-menu-item danger" onclick="batchBanUsers()">
+                                        <i class="fas fa-ban"></i>
+                                        <span>封禁管理</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="prompt-count" id="userSelectedCountWrapper" style="display: none;">
+                                <span class="select-count">已选 <span id="userSelectedCount">0</span> 人</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- User Directory Table -->
+                <div class="glass-panel table-view users-table-panel">
+                    <table class="admin-table users-table" id="usersTable">
+                        <thead>
+                            <tr>
+                                <!-- Checkbox column rendered dynamically -->
+                                <th>用户 Identity</th>
+                                <th>资产 Assets</th>
+                                <th>活跃 Active</th>
+                                <th>状态 Status</th>
+                                <th>标签 Tags</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersTableBody">
+                            <!-- Populated by JS -->
+                            <tr>
+                                <td colspan="5" class="loading-cell">
+                                    <div class="neural-loader small">
+                                        <div class="neural-dot"></div>
+                                        <div class="neural-dot"></div>
+                                        <div class="neural-dot"></div>
+                                    </div>
+                                    <span>加载用户数据...</span>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <!-- Pagination -->
+                    <div class="admin-pagination" id="usersPagination">
+                        <button class="page-btn prev" disabled><i class="fas fa-chevron-left"></i></button>
+                        <span class="page-info">第 1 页</span>
+                        <button class="page-btn next"><i class="fas fa-chevron-right"></i></button>
+                    </div>
+                </div>
+
+                <!-- User Details Modal (Fullscreen Card) -->
+                <div class="user-modal-overlay" id="userModalOverlay">
+                    <div class="user-modal" id="userModal">
+                        <!-- Modal Header -->
+                        <div class="user-modal-header">
+
+                            <h2 class="modal-title">用户详情</h2>
+                            <button class="modal-close-btn" onclick="closeUserModal()">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+
+                        <!-- Modal Body (Two-Column Layout) -->
+                        <div class="user-modal-body">
+                            <!-- Left Column: User Profile -->
+                            <div class="user-modal-left" id="userModalLeft">
+                                <!-- Filled dynamically -->
+                            </div>
+
+                            <!-- Right Column: Tabs -->
+                            <div class="user-modal-right">
+                                <!-- Tab Navigation -->
+                                <div class="user-tab-nav">
+                                    <button class="user-tab-btn active" data-tab="ledger"
+                                        onclick="switchUserTab('ledger')">
+                                        <i class="fas fa-chart-line"></i> 积分流水
+                                    </button>
+                                    <button class="user-tab-btn" data-tab="activity"
+                                        onclick="switchUserTab('activity')">
+                                        <i class="fas fa-history"></i> 近期动态
+                                    </button>
+                                    <button class="user-tab-btn" data-tab="notes" onclick="switchUserTab('notes')">
+                                        <i class="far fa-sticky-note"></i> 备注
+                                    </button>
+                                    <button class="user-tab-btn" data-tab="audit" onclick="switchUserTab('audit')">
+                                        <i class="fas fa-shield-alt"></i> 审计
+                                    </button>
+                                    <button class="user-tab-btn" data-tab="blocks" onclick="switchUserTab('blocks')">
+                                        <i class="fas fa-ban"></i> 封禁记录
+                                    </button>
+                                    <button class="user-tab-btn" data-tab="relatives"
+                                        onclick="switchUserTab('relatives')">
+                                        <i class="fas fa-users-cog"></i> 关联账号
+                                    </button>
+                                    <div class="tab-indicator"></div>
+                                </div>
+
+                                <!-- Tab Content Area -->
+                                <div class="user-tab-content" id="userTabContent">
+                                    <!-- Filled dynamically based on active tab -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Modal Footer: Actions -->
+                        <div class="user-modal-actions" id="userModalActions">
+                            <!-- Filled dynamically -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- END module-users -->
+
+            <!-- ========== ANALYTICS MODULE ========== -->
+            <div id="module-analytics" class="module-container">
+                <div class="analytics-dashboard">
+                    <!-- KPI Cards Row -->
+                    <div class="kpi-cards-row">
+                        <div class="kpi-card" id="kpiDau">
+                            <div class="kpi-icon"><i class="fas fa-user-clock"></i></div>
+                            <div class="kpi-content">
+                                <div class="kpi-value-row">
+                                    <div class="kpi-value" id="kpiDauValue">--</div>
+                                    <div class="kpi-trend" id="kpiDauTrend"></div>
+                                </div>
+                                <div class="kpi-label">日活用户 (DAU)</div>
+                            </div>
+                        </div>
+                        <div class="kpi-card" id="kpiMau">
+                            <div class="kpi-icon"><i class="fas fa-users"></i></div>
+                            <div class="kpi-content">
+                                <div class="kpi-value" id="kpiMauValue">--</div>
+                                <div class="kpi-label">月活用户 (MAU)</div>
+                            </div>
+                        </div>
+                        <div class="kpi-card" id="kpiNewUsers">
+                            <div class="kpi-icon"><i class="fas fa-user-plus"></i></div>
+                            <div class="kpi-content">
+                                <div class="kpi-value-row">
+                                    <div class="kpi-value" id="kpiNewUsersValue">--</div>
+                                    <div class="kpi-trend" id="kpiNewUsersTrend"></div>
+                                </div>
+                                <div class="kpi-label">本周新增</div>
+                            </div>
+                        </div>
+                        <div class="kpi-card" id="kpiPoints">
+                            <div class="kpi-icon"><i class="fas fa-coins"></i></div>
+                            <div class="kpi-content">
+                                <div class="kpi-value" id="kpiPointsValue">--</div>
+                                <div class="kpi-label">积分流通</div>
+                            </div>
+                        </div>
+                        <div class="kpi-card" id="kpiComments">
+                            <div class="kpi-icon"><i class="fas fa-comments"></i></div>
+                            <div class="kpi-content">
+                                <div class="kpi-value-row">
+                                    <div class="kpi-value" id="kpiCommentsValue">--</div>
+                                    <div class="kpi-trend" id="kpiCommentsTrend"></div>
+                                </div>
+                                <div class="kpi-label">总评论数</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Charts Grid -->
+                    <div class="charts-grid">
+                        <!-- User Trend Chart -->
+                        <div class="chart-card glass-panel">
+                            <div class="chart-header">
+                                <h3><i class="fas fa-chart-area"></i> 用户增长趋势</h3>
+                                <div class="chart-period-selector">
+                                    <button class="period-btn active" data-days="7">7天</button>
+                                    <button class="period-btn" data-days="30">30天</button>
+                                    <button class="period-btn" data-days="90">90天</button>
+                                </div>
+                            </div>
+                            <div class="chart-body">
+                                <canvas id="userTrendChart"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Channel Distribution Chart -->
+                        <div class="chart-card glass-panel">
+                            <div class="chart-header">
+                                <h3><i class="fas fa-chart-pie"></i> 渠道分布</h3>
+                            </div>
+                            <div class="chart-body">
+                                <canvas id="channelChart"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Content Trend Chart -->
+                        <div class="chart-card glass-panel">
+                            <div class="chart-header">
+                                <h3><i class="fas fa-chart-line"></i> 内容活跃趋势</h3>
+                            </div>
+                            <div class="chart-body">
+                                <canvas id="contentTrendChart"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Top Content List -->
+                        <div class="chart-card glass-panel">
+                            <div class="chart-header">
+                                <h3><i class="fas fa-fire"></i> 热门内容 TOP 10</h3>
+                            </div>
+                            <div class="chart-body top-content-list" id="topContentList">
+                                <!-- Populated by JS -->
+                                <div class="loading-text">加载中...</div>
+                            </div>
+                        </div>
+
+                        <!-- Activity Heatmap -->
+                        <div class="chart-card glass-panel chart-wide">
+                            <div class="chart-header">
+                                <h3><i class="fas fa-th"></i> 活跃时段热力图</h3>
+                            </div>
+                            <div class="chart-body heatmap-container" id="activityHeatmap">
+                                <div class="loading-text">加载中...</div>
+                            </div>
+                        </div>
+
+                        <!-- Top Contributors -->
+                        <div class="chart-card glass-panel">
+                            <div class="chart-header">
+                                <h3><i class="fas fa-crown"></i> 贡献者排行榜</h3>
+                            </div>
+                            <div class="chart-body contributors-list" id="topContributorsList">
+                                <div class="loading-text">加载中...</div>
+                            </div>
+                        </div>
+
+                        <!-- Community Stats -->
+                        <div class="chart-card glass-panel">
+                            <div class="chart-header">
+                                <h3><i class="fas fa-heart"></i> 社区活跃趋势</h3>
+                            </div>
+                            <div class="chart-body">
+                                <canvas id="communityChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Phase 10: Deep Analytics Grid -->
+                    <div class="deep-analytics-grid">
+                        <!-- Conversion Funnel -->
+                        <div class="chart-card glass-panel">
+                            <div class="chart-header">
+                                <h3><i class="fas fa-filter"></i> 转化漏斗</h3>
+                            </div>
+                            <div class="chart-body" id="conversionFunnel">
+                                <canvas id="funnelChart"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- Retention Cohort -->
+                        <div class="chart-card glass-panel">
+                            <div class="chart-header">
+                                <h3><i class="fas fa-th"></i> 用户留存 (周)</h3>
+                            </div>
+                            <div class="chart-body" id="retentionCohort">
+                                <div class="loading-text">加载中...</div>
+                            </div>
+                        </div>
+
+                        <!-- Points Flow -->
+                        <div class="chart-card glass-panel">
+                            <div class="chart-header">
+                                <h3><i class="fas fa-exchange-alt"></i> 积分流向</h3>
+                            </div>
+                            <div class="chart-body" id="pointsFlow">
+                                <div class="loading-text">加载中...</div>
+                            </div>
+                        </div>
+
+                        <!-- AI Prediction -->
+                        <div class="chart-card glass-panel">
+                            <div class="chart-header">
+                                <h3><i class="fas fa-chart-line"></i> AI 趋势预测</h3>
+                                <button class="btn-sm btn-secondary" onclick="loadAIPrediction()">
+                                    <i class="fas fa-sync-alt"></i> 生成
+                                </button>
+                            </div>
+                            <div class="chart-body" id="aiPredictionContent">
+                                <p class="ai-placeholder">点击"生成"获取 AI 预测...</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Phase 11 & 14: Geo + A/B Testing Grid -->
+                    <div class="deep-analytics-grid">
+                        <!-- Geo Distribution -->
+                        <div class="chart-card glass-panel">
+                            <div class="chart-header">
+                                <h3><i class="fas fa-globe-asia"></i> 地理分布</h3>
+                            </div>
+                            <div class="chart-body" id="geoDistribution">
+                                <canvas id="geoChart"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- A/B Experiments -->
+                        <div class="chart-card glass-panel">
+                            <div class="chart-header">
+                                <h3><i class="fas fa-flask"></i> A/B 实验</h3>
+                                <div class="header-actions">
+                                    <button class="btn-sm btn-primary" onclick="openExperimentModal()">
+                                        <i class="fas fa-plus"></i> 创建
+                                    </button>
+                                    <button class="btn-sm btn-secondary" onclick="loadExperimentsList()">
+                                        <i class="fas fa-sync-alt"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="chart-body experiments-list" id="experimentsList">
+                                <div class="empty-state-hint">
+                                    <i class="fas fa-flask"></i>
+                                    <span>执行 SQL 后刷新</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- AI Insight Card -->
+                    <div class="ai-insight-card glass-panel" id="aiInsightCard">
+                        <div class="ai-insight-header">
+                            <div class="ai-icon"><i class="fas fa-robot"></i></div>
+                            <h3>AI 智能洞察</h3>
+                            <button class="btn-secondary" id="generateInsightBtn">
+                                <i class="fas fa-magic"></i> 生成分析
+                            </button>
+                        </div>
+                        <div class="ai-insight-content" id="aiInsightContent">
+                            <p class="ai-placeholder">点击"生成分析"获取 AI 智能洞察...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- END ANALYTICS MODULE -->
+
             <!-- Toast Notifications -->
             <div class="toast-container" id="toastContainer"></div>
         </div>
@@ -665,10 +1397,57 @@
     </div>
     <!-- END admin-layout -->
 
+    <!-- A/B Experiment Modal -->
+    <div class="modal" id="experimentModal">
+        <div class="modal-content experiment-form">
+            <div class="modal-header">
+                <h3><i class="fas fa-flask"></i> 创建 A/B 实验</h3>
+                <button class="modal-close" onclick="closeExperimentModal()">&times;</button>
+            </div>
+            <form id="experimentForm" onsubmit="handleCreateExperiment(event)">
+                <div class="form-group">
+                    <label>实验名称</label>
+                    <input type="text" id="expName" required placeholder="例：首页按钮颜色测试">
+                </div>
+                <div class="form-group">
+                    <label>描述</label>
+                    <input type="text" id="expDescription" placeholder="简短描述实验目的">
+                </div>
+                <div class="form-group">
+                    <label>变体设置</label>
+                    <div class="variants-list" id="variantsList">
+                        <div class="variant-row">
+                            <input type="text" placeholder="Control" value="Control" class="variant-name">
+                            <input type="number" placeholder="50" value="50" class="variant-weight" min="0" max="100">
+                            <span>%</span>
+                        </div>
+                        <div class="variant-row">
+                            <input type="text" placeholder="Variant A" value="Variant A" class="variant-name">
+                            <input type="number" placeholder="50" value="50" class="variant-weight" min="0" max="100">
+                            <span>%</span>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-link" onclick="addVariantRow()">
+                        <i class="fas fa-plus"></i> 添加变体
+                    </button>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn-secondary" onclick="closeExperimentModal()">取消</button>
+                    <button type="submit" class="btn-primary">创建实验</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+
     <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- Cropper.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.js"></script>
+    <!-- SheetJS for Excel export -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <!-- Chart.js for Analytics -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
         // Initialize Supabase client
         const SUPABASE_URL = 'https://mmkugdibsaeoevliebzk.supabase.co';
@@ -705,26 +1484,27 @@
                 initCommentsModule();
             } else if (moduleName === 'settings' && typeof initSettingsModule === 'function') {
                 initSettingsModule();
+            } else if (moduleName === 'users' && typeof initUserModule === 'function') {
+                initUserModule();
+            } else if (moduleName === 'points') {
+                // Load points module data
+                if (typeof loadBatches === 'function') loadBatches();
+                if (typeof loadPackagesForSelect === 'function') loadPackagesForSelect();
+            } else if (moduleName === 'analytics' && typeof initAnalyticsModule === 'function') {
+                initAnalyticsModule();
             }
         }
 
-        // Comment view switching
-        function switchCommentView(view) {
-            document.querySelectorAll('[data-comment-view]').forEach(tab => {
-                tab.classList.remove('active');
-            });
-            document.querySelector(`[data-comment-view="${view}"]`)?.classList.add('active');
 
-            if (typeof loadComments === 'function') {
-                loadComments(view);
-            }
-        }
     </script>
+    <script src="admin-users.js"></script>
+    <script src="admin-points.js"></script>
     <script src="starry-sky.js"></script>
     <!-- Flatpickr JS -->
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/zh.js"></script>
     <script src="admin-comments.js"></script>
+    <script src="admin-analytics.js"></script>
     <script src="admin-studio.js"></script>
 </body>
 

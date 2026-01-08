@@ -307,12 +307,52 @@ function formatTime(dateString) {
     return date.toLocaleDateString('zh-CN');
 }
 
+// ==================== 封禁检查辅助函数 ====================
+async function checkUserBlockStatus(userId, scope = 'guestbook') {
+    if (!window.supabaseClient) return false;
+
+    // Check for explicit block
+    // We check for 'all' scope or specific scope
+    const { data: blocks, error } = await window.supabaseClient
+        .from('blocked_users')
+        .select('*')
+        .eq('user_id', userId)
+        .or(`scope.eq.all,scope.eq.${scope}`);
+
+    if (error || !blocks || blocks.length === 0) return false;
+
+    // Check expiration
+    const now = new Date();
+    const activeBlock = blocks.find(b => {
+        if (!b.expires_at) return true; // Permanent
+        return new Date(b.expires_at) > now; // Temporary and still active
+    });
+
+    if (activeBlock) {
+        const type = activeBlock.expires_at ? '临时' : '永久';
+        const dateStr = activeBlock.expires_at ? new Date(activeBlock.expires_at).toLocaleDateString() : '';
+        const msg = activeBlock.expires_at
+            ? `您已被${type}封禁，解封时间：${dateStr}`
+            : `您已被永久封禁`;
+        return { blocked: true, message: msg };
+    }
+
+    return false;
+}
+
 // ==================== 发送留言 (Supabase 版本) ====================
 async function addMessage(content, imageUrl = '') {
     const { data: { user } } = await window.supabaseClient.auth.getUser();
 
     if (!user) {
         alert('请先登录');
+        return false;
+    }
+
+    // 🛑 Block Check
+    const blockStatus = await checkUserBlockStatus(user.id, 'guestbook');
+    if (blockStatus && blockStatus.blocked) {
+        alert(blockStatus.message || '您已被限制发言');
         return false;
     }
 
@@ -351,6 +391,13 @@ async function addCommentToMessage(messageId, content) {
 
     if (!user) {
         alert('请先登录');
+        return false;
+    }
+
+    // 🛑 Block Check
+    const blockStatus = await checkUserBlockStatus(user.id, 'guestbook');
+    if (blockStatus && blockStatus.blocked) {
+        alert(blockStatus.message || '您已被限制发言');
         return false;
     }
 
@@ -414,6 +461,13 @@ async function addReplyToComment(parentCommentId, messageId, content) {
 
     if (!user) {
         alert('请先登录');
+        return false;
+    }
+
+    // 🛑 Block Check
+    const blockStatus = await checkUserBlockStatus(user.id, 'guestbook');
+    if (blockStatus && blockStatus.blocked) {
+        alert(blockStatus.message || '您已被限制发言');
         return false;
     }
 

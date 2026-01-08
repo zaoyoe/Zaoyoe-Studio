@@ -4,9 +4,9 @@
 
 /* Global Theme Variables for Admin Studio */
 :root {
-    --admin-accent: #9b5de5;
-    /* Purple for light mode */
-    --admin-accent-bg: rgba(155, 93, 229, 0.1);
+    --admin-accent: #6b9ece;
+    /* Starry Blue */
+    --admin-accent-bg: rgba(107, 158, 206, 0.1);
 
     /* Map text-primary to text-main (defined in prompts-poetry.css) to ensure consistency */
     --text-primary: var(--text-main, #1e293b);
@@ -23,28 +23,53 @@
 
 /* Sidebar Theme Variables */
 .admin-sidebar {
+    /* Base Variables */
+    --sidebar-width: 260px;
+    --sidebar-collapsed-width: 72px;
+
+    /* Default (Light) */
+    --sidebar-bg: #f8fafc;
+    --sidebar-border: rgba(0, 0, 0, 0.06);
+    --sidebar-text: #64748b;
+    --sidebar-text-active: #6b9ece;
+    --sidebar-accent: #6b9ece;
+    --sidebar-hover-bg: rgba(107, 158, 206, 0.08);
+    /* Blue tint */
+    --sidebar-active-bg: rgba(107, 158, 206, 0.12);
+    /* Blue tint */
+
+    --admin-bg: #ffffff;
+    --admin-sidebar-bg: #f8fafc;
+    --admin-border: rgba(0, 0, 0, 0.06);
+    --admin-text-main: #1e293b;
+    --admin-text-secondary: #64748b;
+    --admin-accent: #6b9ece;
+    --admin-accent-bg: rgba(107, 158, 206, 0.1);
+    --admin-danger: #ef4444;
+    --admin-success: #22c55e;
+}
+
+/* Dark Mode Overrides */
+[data-theme="dark"] .admin-sidebar {
     --sidebar-bg: #0f172a;
-    /* Dark mode: starry background */
+    /* Starry background */
     --sidebar-border: rgba(255, 255, 255, 0.06);
     --sidebar-text: #8b9cc7;
     --sidebar-text-hover: #e2e8f0;
     --sidebar-accent: #6b9ece;
-    /* Starry blue */
     --sidebar-accent-bg: rgba(107, 158, 206, 0.15);
     --sidebar-item-hover: rgba(255, 255, 255, 0.06);
 }
 
-/* Light Mode Theme - Purple accent */
+/* Redundant Light Mode Block - ensuring consistent blue */
 [data-theme="light"] .admin-sidebar,
 :root:not([data-theme="dark"]) .admin-sidebar {
     --sidebar-bg: #f8fafc;
     --sidebar-border: rgba(0, 0, 0, 0.08);
     --sidebar-text: #64748b;
     --sidebar-text-hover: #1e293b;
-    --sidebar-accent: #9b5de5;
-    /* Purple accent for light mode */
-    --sidebar-accent-bg: rgba(155, 93, 229, 0.1);
-    --sidebar-item-hover: rgba(0, 0, 0, 0.04);
+    --sidebar-accent: #6b9ece;
+    --sidebar-accent-bg: rgba(107, 158, 206, 0.1);
 }
 
 /* Layout Container */
@@ -65,7 +90,7 @@
     border-right: 1px solid var(--sidebar-border);
     display: flex;
     flex-direction: column;
-    z-index: 100;
+    z-index: 1000;
     transition: width 0.2s ease;
     overflow: hidden;
 }
@@ -208,6 +233,11 @@
     margin-left: 56px;
     transition: margin-left 0.2s ease;
     min-height: 100vh;
+    /* Critical: prevent content from expanding beyond viewport */
+    width: calc(100vw - 56px);
+    max-width: calc(100vw - 56px);
+    min-width: 0;
+    overflow-x: hidden;
 }
 
 /* Module Containers */
@@ -316,8 +346,11 @@
     justify-content: space-between;
     gap: 12px;
     margin-bottom: 24px;
-    /* Increased from 16px for more breathing room */
-    padding: 0;
+    padding: 0 32px;
+    max-width: 1600px;
+    margin-left: auto;
+    margin-right: auto;
+    box-sizing: border-box;
     background: transparent;
     border: none;
     border-radius: 0;
@@ -344,7 +377,7 @@
     padding: 6px 12px;
     background: var(--input-bg, rgba(255, 255, 255, 0.05));
     border: 1px solid rgba(128, 128, 128, 0.15);
-    border-radius: 20px;
+    border-radius: 8px;
     min-width: 160px;
     transition: border-color 0.2s;
 }
@@ -432,12 +465,12 @@
     padding: 8px;
     border-radius: 12px;
 
-    /* Glass morphism effect */
-    background: rgba(30, 41, 59, 0.92);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+    /* Glass morphism effect - enhanced transparency */
+    background: rgba(30, 41, 59, 0.75);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 
     /* Hidden state */
     opacity: 0;
@@ -484,6 +517,8 @@
     align-items: center;
     justify-content: center;
     padding: 0;
+    margin: 0;
+    /* Force zero margin */
     background: transparent;
     border: none;
     color: var(--text-dim);
@@ -496,8 +531,26 @@
     color: #3b82f6;
 }
 
+/* Fix for Info Wrapper match block wrapper */
 .action-info-wrapper {
-    display: contents;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+    padding: 0;
+}
+
+/* Fix for Block Wrapper to ensure equal spacing */
+.action-block-wrapper {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+    padding: 0;
 }
 
 /* Generic Action Button (Pin, Feature, etc) */
@@ -509,6 +562,8 @@
     align-items: center;
     justify-content: center;
     padding: 0;
+    margin: 0;
+    /* Force zero margin */
     background: transparent;
     border: none;
     color: var(--text-dim);
@@ -795,6 +850,11 @@
     width: 100%;
     min-height: 400px;
     padding-bottom: 40px;
+    padding-left: 32px;
+    padding-right: 32px;
+    max-width: 1600px;
+    margin: 0 auto;
+    box-sizing: border-box;
 }
 
 /* 1. GRID VIEW (DEFAULT) */
@@ -807,6 +867,8 @@
     /* Compact: min 120px, max fits content */
     align-items: start;
     /* Top-align cards, don't stretch */
+    justify-content: center;
+    /* Center grid items */
 }
 
 /* 2. LIST VIEW */
@@ -841,11 +903,12 @@
     background-color: rgba(128, 128, 128, 0.2);
 }
 
+/* Updated Checkbox Color */
 .comment-checkbox:checked {
-    background-color: var(--admin-accent);
-    /* Theme accent (purple in light, starry blue in dark) */
-    border-color: var(--admin-accent);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+    background-color: #6b9ece;
+    /* Starry Blue */
+    border-color: #6b9ece;
+    box-shadow: 0 2px 4px rgba(107, 158, 206, 0.3);
 }
 
 /* Export Popup - Wider for text */
@@ -880,7 +943,8 @@
 .comment-admin-item.selected {
     background: transparent;
     /* Only border, no fill */
-    border-color: var(--admin-accent);
+    border-color: #6b9ece;
+    /* Starry Blue */
     z-index: 2;
     /* Selected items sit higher */
 }
@@ -1113,8 +1177,11 @@
 
 .comment-list-admin.list-view .comment-admin-item:hover {
     background: rgba(128, 128, 128, 0.03);
-    transform: none;
-    box-shadow: none;
+    transform: translateY(-2px);
+    /* Adjusted lift */
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.07);
+    /* Slightly stronger shadow */
+    z-index: 5;
 }
 
 /* Avatar - spans 2 rows */
@@ -1213,6 +1280,8 @@
     border-radius: 4px;
     cursor: pointer;
     transition: all 0.2s;
+    margin: 0;
+    /* Force zero margin */
 }
 
 .comment-list-admin.list-view .action-delete:hover {
@@ -1755,5 +1824,246 @@
     to {
         opacity: 1;
         transform: translateY(0);
+    }
+}
+
+/* ============================================
+   VIP & ADMIN ICONS
+   ============================================ */
+.vip-icon {
+    color: #f59e0b;
+    /* Gold/Amber for VIP crown */
+    margin-left: 4px;
+    font-size: 0.85em;
+}
+
+.admin-icon {
+    color: var(--admin-accent, #6b9ece);
+    /* Blue for admin shield */
+    margin-left: 4px;
+    font-size: 0.85em;
+}
+
+/* ============================================
+   MOBILE RESPONSIVE - USER MANAGEMENT
+   ============================================ */
+@media (max-width: 768px) {
+
+    /* Toolbar: Stack vertically */
+    .admin-toolbar {
+        flex-direction: column;
+        align-items: stretch !important;
+        gap: 12px;
+        padding: 12px 16px;
+    }
+
+    .admin-toolbar .toolbar-left {
+        flex-direction: column;
+        gap: 10px;
+        width: 100%;
+    }
+
+    .admin-toolbar .toolbar-right {
+        width: 100%;
+        justify-content: flex-end;
+    }
+
+    /* Search bar: Full width */
+    .admin-toolbar .search-bar {
+        width: 100%;
+        min-width: unset;
+    }
+
+    .admin-toolbar .search-bar input {
+        width: 100%;
+    }
+
+    /* Filter dropdowns: Scrollable row */
+    .admin-toolbar .filter-dropdowns {
+        display: flex;
+        gap: 8px;
+        overflow-x: auto;
+        padding-bottom: 4px;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .admin-toolbar .filter-btn {
+        font-size: 0.75rem;
+        padding: 6px 10px;
+        white-space: nowrap;
+    }
+
+    /* User Table: Hide less important columns */
+    .users-table-wrapper {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .users-table th:nth-child(3),
+    .users-table td:nth-child(3),
+    .users-table th:nth-child(4),
+    .users-table td:nth-child(4) {
+        /* Hide Assets & Activity columns */
+        display: none;
+    }
+
+    .users-table th,
+    .users-table td {
+        padding: 10px 8px;
+        font-size: 0.85rem;
+    }
+
+    /* User identity cell: More compact */
+    .user-cell {
+        gap: 8px;
+    }
+
+    .user-cell .user-avatar {
+        width: 32px;
+        height: 32px;
+    }
+
+    .user-cell .user-name {
+        font-size: 0.9rem;
+    }
+
+    .user-cell .user-email {
+        font-size: 0.75rem;
+    }
+
+    /* Batch action menu: Position fix */
+    .batch-dropdown-menu {
+        right: -50%;
+        min-width: 140px;
+    }
+
+    /* User modal: Full screen on mobile */
+    .user-modal-overlay .user-modal {
+        width: 100vw !important;
+        height: 100vh !important;
+        max-width: 100vw !important;
+        max-height: 100vh !important;
+        border-radius: 0 !important;
+    }
+
+    .user-modal .modal-content {
+        height: calc(100vh - 60px);
+    }
+
+    /* Modal tabs: Horizontal scroll */
+    .user-tabs {
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        gap: 4px;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .user-tab-btn {
+        font-size: 0.75rem !important;
+        padding: 8px 10px !important;
+        white-space: nowrap;
+    }
+
+    /* Pagination: Compact */
+    .pagination-controls {
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: center;
+    }
+
+    .pagination-controls button {
+        padding: 6px 12px;
+        font-size: 0.8rem;
+    }
+
+    /* Filter popup: Full width on mobile */
+    .filter-popup.glass-popup {
+        min-width: 180px;
+        right: 0;
+        left: auto;
+    }
+}
+
+/* Extra small screens */
+@media (max-width: 480px) {
+    .admin-toolbar {
+        padding: 10px 12px;
+    }
+
+    .users-table th:nth-child(2),
+    .users-table td:nth-child(2) {
+        /* Also hide Status column on very small screens */
+        display: none;
+    }
+
+    .user-cell .user-avatar {
+        width: 28px;
+        height: 28px;
+    }
+
+    .batch-dropdown-menu {
+        position: fixed;
+        top: auto;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        width: 100%;
+        border-radius: 16px 16px 0 0;
+        padding: 12px;
+    }
+
+    .batch-menu-item {
+        padding: 14px;
+        font-size: 0.95rem;
+    }
+}
+
+/* ============================================
+   Comments Module - Responsive Centering Fix
+   ============================================ */
+@media (max-width: 1024px) {
+    .comment-toolbar-compact {
+        padding: 0 16px;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 12px;
+    }
+
+    .comment-toolbar-compact .toolbar-left {
+        width: 100%;
+        justify-content: center;
+        flex-wrap: wrap;
+    }
+
+    .comment-toolbar-compact .toolbar-right {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .comment-list-admin {
+        padding-left: 16px;
+        padding-right: 16px;
+        justify-content: center;
+    }
+
+    .comment-list-admin:not(.list-view) {
+        justify-content: center;
+    }
+}
+
+@media (max-width: 768px) {
+    .comment-toolbar-compact {
+        padding: 0 12px;
+    }
+
+    .comment-list-admin {
+        padding-left: 12px;
+        padding-right: 12px;
+    }
+
+    .comment-list-admin:not(.list-view) {
+        grid-template-columns: 1fr;
+        max-width: 400px;
+        margin: 0 auto;
     }
 }

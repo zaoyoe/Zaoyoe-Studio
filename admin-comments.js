@@ -3,8 +3,11 @@
  * Manages both guestbook messages and gallery comments
  */
 
-// Get supabase client reference
-const getSupabase = () => window.supabaseClient;
+// Get supabase client reference - check if already defined (from admin-points.js)
+// Use existing function if available, otherwise define it
+if (typeof getSupabase === 'undefined') {
+    window.getSupabase = () => window.supabaseClient || window.supabase;
+}
 
 // Current state
 // Current state
@@ -560,14 +563,19 @@ function updateDropdownUI(filterType, value) {
  * Load comments from database
  */
 async function loadComments(view) {
+    console.log('loadComments called for view:', view);
     // Render active filters
     renderFilterTags();
 
-    if (commentsLoading) return;
+    if (commentsLoading) {
+        console.warn('Comments already loading, skipping...');
+        return;
+    }
     commentsLoading = true;
 
     const listContainer = document.getElementById('adminCommentList');
     if (!listContainer) {
+        console.error('adminCommentList container not found!');
         commentsLoading = false;
         return;
     }
@@ -575,20 +583,26 @@ async function loadComments(view) {
     listContainer.innerHTML = '<p class="loading-text">加载中...</p>';
 
     try {
+        const client = getSupabase();
+        if (!client) {
+            throw new Error('Supabase client not initialized');
+        }
+
         const searchQuery = document.getElementById('commentSearch')?.value?.trim() || '';
-        const dateFrom = document.getElementById('commentDateFrom')?.value || '';
-        const dateTo = document.getElementById('commentDateTo')?.value || '';
+        const dateFrom = document.getElementById('filterDateFrom')?.value || ''; // Fixed ID
+        const dateTo = document.getElementById('filterDateTo')?.value || ''; // Fixed ID
+
+        console.log('Fetching comments...', { view, searchQuery, dateFrom, dateTo });
 
         let data = [];
 
         if (view === 'guestbook') {
             // Load guestbook messages
-            let query = getSupabase()
+            console.log('Loading guestbook messages...');
+
+            let query = client
                 .from('guestbook_messages')
-                .select(`
-                    *,
-                    profiles:user_id (username, avatar_url, email)
-                `)
+                .select('*')
                 .order('created_at', { ascending: false })
                 .limit(50);
 
@@ -603,19 +617,21 @@ async function loadComments(view) {
             }
 
             const { data: messages, error } = await query;
-            if (error) throw error;
 
-            // Fetch profiles manualy if needed, or just revert to previous state
-            // For now, reverting to previous working state to fix crash.
-            // Email will be empty for guestbook messages.
+            if (error) {
+                console.error('Error fetching guestbook messages:', error);
+                throw error;
+            }
+
+            console.log('Guestbook messages fetched:', messages?.length);
 
             data = (messages || []).map(msg => ({
                 id: msg.id,
                 type: 'guestbook',
                 content: msg.message,
-                author: msg.profiles?.username || msg.nickname || 'Guest',
-                email: msg.profiles?.email || '',
-                avatar: msg.profiles?.avatar_url,
+                author: msg.nickname || 'Guest',
+                email: '',
+                avatar: null,
                 created_at: msg.created_at,
                 context: 'Guestbook',
                 prompt_title: '',
@@ -627,7 +643,7 @@ async function loadComments(view) {
 
         } else {
             // Load gallery comments
-            let query = getSupabase()
+            let query = client
                 .from('prompt_comments')
                 .select(`
                     *,
@@ -652,8 +668,12 @@ async function loadComments(view) {
             }
 
             const { data: comments, error } = await query;
-            if (error) throw error;
+            if (error) {
+                console.error('Error fetching gallery comments:', error);
+                throw error;
+            }
 
+            console.log('Gallery comments fetched:', comments?.length);
             console.log('Admin: Fetched Comments:', comments.length, 'First is_pinned:', comments[0]?.is_pinned, 'is_featured:', comments[0]?.is_featured);
 
             data = (comments || []).map(comment => ({
@@ -682,9 +702,10 @@ async function loadComments(view) {
 
     } catch (error) {
         console.error('Error loading comments:', error);
-        listContainer.innerHTML = `<p class="error-text">加载失败: ${error.message}</p>`;
+        listContainer.innerHTML = `<p class="error-text">加载失败: ${error.message || '未知错误'}</p>`;
     } finally {
         commentsLoading = false;
+        console.log('Comments loading finished.');
     }
 }
 
@@ -741,7 +762,7 @@ function renderCommentList(comments) {
                     <p class="item-text">${escapeHtml(comment.content)}</p>
                 </div>
 
-            <!-- 4. Actions Container (delete on top, view below) -->
+                <!-- 4. Actions Container (delete on top, view below) -->
                 <div class="item-actions">
                     <div class="action-info-wrapper">
                          <button class="action-info" onclick="event.stopPropagation(); copyCommentId('${comment.id}', '${comment.parent_id}')" title="复制 ID">
@@ -749,7 +770,7 @@ function renderCommentList(comments) {
                         </button>
                     </div>
                     
-                    ${comment.type === 'gallery' ? `
+                    ${comment.type === 'gallery' && window.hasPermission && window.hasPermission('content.moderate') ? `
                     <button class="action-btn ${comment.is_pinned ? 'active' : ''}" 
                         onclick="event.stopPropagation(); togglePin('${comment.id}', ${comment.is_pinned}, '${comment.context}')" 
                         title="${comment.is_pinned ? '取消置顶' : '置顶评论'}">
@@ -757,20 +778,24 @@ function renderCommentList(comments) {
                     </button>
                     ` : ''}
 
-
+                    ${window.hasPermission && window.hasPermission('users.manage') ? `
                     <div class="action-block-wrapper" style="position: relative;">
                         <button class="action-btn action-block" onclick="event.stopPropagation(); toggleBlockDropdown('${comment.user_id}', this)" title="用户管理">
                             <i class="fas fa-ban"></i>
                         </button>
                     </div>
+                    ` : ''}
 
                     ${comment.context ?
                 `<button class="action-view" onclick="event.stopPropagation(); viewCommentContext('${comment.context}', '${comment.id}')" title="查看上下文">
                         <i class="fas fa-external-link-alt"></i>
                     </button>` : ''}
+                    
+                    ${window.hasPermission && window.hasPermission('content.moderate') ? `
                     <button class="action-delete" onclick="event.stopPropagation(); deleteComment('${comment.id}', '${comment.type}')" title="删除">
                         <i class="fas fa-trash"></i>
                     </button>
+                    ` : ''}
                 </div>
 
                 <!-- Reply Badge (bottom-left in Grid, below avatar in List) -->

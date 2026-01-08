@@ -280,7 +280,20 @@ async function checkAuthState() {
         if (user) {
             // User is logged in
             const displayName = user.email.split('@')[0];
-            isAdmin = user.email === ADMIN_EMAIL;
+
+            // Check admin via RPC (supports dynamic admins)
+            try {
+                const { data: isAdminResult } = await window.supabaseClient.rpc('is_admin');
+                isAdmin = isAdminResult === true;
+            } catch (e) {
+                // Fallback to hardcoded email if RPC fails
+                isAdmin = user.email === ADMIN_EMAIL;
+            }
+
+            // Force allow Super Admins (in case DB function is not updated)
+            if (['fjivvid@163.com', 'zaoyoe@gmail.com'].includes(user.email)) {
+                isAdmin = true;
+            }
 
             if (identityName) {
                 identityName.innerHTML = isAdmin
@@ -2514,6 +2527,13 @@ function openPromptModal(id) {
     if (!item) return;
 
     currentPromptId = item.supabaseId || item.id; // Prefer persistent UUID if available
+    console.log('[DEBUG] openPromptModal opening:', {
+        localId: id,
+        supabaseId: currentPromptId,
+        title: item.title,
+        textLength: item.prompt ? item.prompt.length : 0
+    });
+
     const modal = document.getElementById('promptModal');
 
     // Reset State
@@ -2545,8 +2565,12 @@ function openPromptModal(id) {
     const promptText = document.getElementById('modalPromptText');
     promptText.classList.add('blur-masked');
     unlockBtn.innerHTML = '<i class="fas fa-gem"></i> 10';
+    unlockBtn.className = 'unlock-btn';
+    unlockBtn.disabled = false;
     unlockBtn.onclick = handleUnlockPrompt;
-    unlockBtn.className = 'unlock-btn'; // remove 'copy' style
+
+    // Reset unlock lock for new prompt
+    _unlockInProgress = false;
 
     // Store images for navigation
     currentModalImages = item.images || [];
@@ -2735,47 +2759,77 @@ async function checkUnlockStatus(promptId) {
     }
 }
 
+// ============================================
+// UNLOCK PROMPT V2 - 完全重写
+// ============================================
+let _unlockInProgress = false;
+
 async function handleUnlockPrompt() {
-    if (!window.supabaseClient) {
-        alert("Please connect to database for points system.");
+    // 单一全局锁
+    if (_unlockInProgress) {
+        console.log('[Unlock] Already in progress, skipping');
         return;
     }
+    _unlockInProgress = true;
 
-    // 1. Check Auth
-    const { data: { user } } = await window.supabaseClient.auth.getUser();
-    if (!user) {
-        // Trigger login modal
-        showLoginModal();
-        return;
-    }
+    const btn = document.getElementById('unlockPromptBtn');
+    const originalHTML = btn?.innerHTML || '<i class="fas fa-gem"></i> 10';
 
-    const unlockBtn = document.getElementById('unlockPromptBtn');
-
-    // 2. Optimistic UI update (optional, but safer to wait for RPC)
-    unlockBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-
-    // 3. Call RPC
     try {
+        // 立即禁用按钮
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        }
+
+        // 检查登录
+        if (!window.supabaseClient) {
+            alert('数据库未连接');
+            return;
+        }
+
+        const { data: { user } } = await window.supabaseClient.auth.getUser();
+        if (!user) {
+            showLoginModal();
+            return;
+        }
+
+        // 调用新的 V2 RPC
+        console.log('[Unlock] Calling unlock_prompt_v2 for prompt:', currentPromptId);
         const { data, error } = await window.supabaseClient
-            .rpc('unlock_prompt', {
-                p_prompt_id: currentPromptId,
+            .rpc('unlock_prompt_v2', {
+                p_prompt_id: String(currentPromptId),
                 p_cost: 10
             });
 
-        if (error) throw error;
+        console.log('[Unlock] RPC result:', data, error);
 
-        if (data.success) {
+        if (error) {
+            throw new Error(error.message);
+        }
+
+        if (data?.success) {
+            if (data.already_unlocked) {
+                console.log('[Unlock] Already unlocked, just showing');
+            }
             setPromptUnlocked();
-            // Show toast or confetti?
-            console.log("Unlocked! New Balance:", data.new_balance);
+            console.log('[Unlock] Success! New Balance:', data.new_balance);
         } else {
-            alert(data.error || "Unlock failed");
-            unlockBtn.innerHTML = '<i class="fas fa-gem"></i> 10';
+            alert(data?.error || '解锁失败');
+            if (btn) {
+                btn.innerHTML = originalHTML;
+                btn.disabled = false;
+            }
         }
     } catch (err) {
-        console.error(err);
-        alert("Transaction failed");
-        unlockBtn.innerHTML = '<i class="fas fa-gem"></i> 10';
+        console.error('[Unlock] Error:', err);
+        alert('解锁失败: ' + err.message);
+        if (btn) {
+            btn.innerHTML = originalHTML;
+            btn.disabled = false;
+        }
+    } finally {
+        _unlockInProgress = false;
     }
 }
 
@@ -2785,6 +2839,14 @@ function setPromptUnlocked() {
 
     // Remove blur
     promptText.classList.remove('blur-masked');
+
+    // 🔓 SECURITY FIX: Inject real text now
+    const promptId = currentPromptId; // Global variable set in openPromptModal
+    // Find prompt in PROMPTS (supabaseId or id match)
+    const promptItem = PROMPTS.find(p => p.supabaseId === promptId || p.id === promptId);
+    if (promptItem) {
+        promptText.textContent = promptItem.prompt;
+    }
 
     // Transform button to Copy
     unlockBtn.innerHTML = '<i class="fas fa-copy"></i> Copy';
@@ -3852,6 +3914,38 @@ function handleCommentKeydown(e) {
     }
 }
 
+/* ==================== 封禁检查辅助函数 ==================== */
+async function checkUserBlockStatus(userId, scope = 'gallery') {
+    if (!window.supabaseClient) return false;
+
+    // Check for explicit block
+    const { data: blocks, error } = await window.supabaseClient
+        .from('blocked_users')
+        .select('*')
+        .eq('user_id', userId)
+        .or(`scope.eq.all,scope.eq.${scope}`);
+
+    if (error || !blocks || blocks.length === 0) return false;
+
+    // Check expiration
+    const now = new Date();
+    const activeBlock = blocks.find(b => {
+        if (!b.expires_at) return true; // Permanent
+        return new Date(b.expires_at) > now; // Temporary and still active
+    });
+
+    if (activeBlock) {
+        const type = activeBlock.expires_at ? '临时' : '永久';
+        const dateStr = activeBlock.expires_at ? new Date(activeBlock.expires_at).toLocaleDateString() : '';
+        const msg = activeBlock.expires_at
+            ? `您已被${type}封禁，解封时间：${dateStr}`
+            : `您已被永久封禁`;
+        return { blocked: true, message: msg };
+    }
+
+    return false;
+}
+
 async function submitComment() {
     if (!window.supabaseClient) return;
 
@@ -3867,6 +3961,13 @@ async function submitComment() {
     const { data: { user } } = await window.supabaseClient.auth.getUser();
     if (!user) {
         showLoginModal();
+        return;
+    }
+
+    // 🛑 Block Check
+    const blockStatus = await checkUserBlockStatus(user.id, 'gallery');
+    if (blockStatus && blockStatus.blocked) {
+        alert(blockStatus.message || '您已被限制发言');
         return;
     }
 

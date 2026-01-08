@@ -13,6 +13,9 @@ const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/
 // State
 let uploadedFiles = [];
 let analysisResult = null;
+window.currentUserPermissions = [];
+window.isSuperAdmin = false;
+window.isAdmin = false;
 
 // ========================================
 // THEME INITIALIZATION - Sync with Gallery
@@ -47,6 +50,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initCustomDropdown();
     checkApiKey();
     initStarrySky(); // New: Starry background
+    loadUserPermissions(); // Load permissions on start
     // Load manage view if switching to it
     const manageTab = document.querySelector('[data-view="manage"]');
     if (manageTab) {
@@ -61,23 +65,120 @@ let currentMode = 'create'; // 'create' or 'edit'
 let editingId = null;
 
 // ========================================
+// PERMISSION SYSTEM
+// ========================================
+window.loadUserPermissions = async function () {
+    try {
+        const { data: { user } } = await window.supabaseClient.auth.getUser();
+        if (!user) return;
+
+        // Force super admin for known emails (frontend override)
+        const isForceSuper = ['fjivvid@163.com', 'zaoyoe@gmail.com'].includes(user.email);
+
+        const { data, error } = await window.supabaseClient
+            .rpc('get_user_permissions', { p_user_id: user.id });
+
+        if (error) throw error;
+
+        window.isSuperAdmin = data.is_super_admin || isForceSuper;
+        window.isAdmin = data.is_admin || isForceSuper;
+        window.currentUserPermissions = data.permissions || [];
+
+        console.log('🛡️ Permissions loaded:', {
+            isSuperAdmin: window.isSuperAdmin,
+            permissions: window.currentUserPermissions
+        });
+
+        // Broadcast event for other modules
+        window.dispatchEvent(new CustomEvent('permissionsLoaded'));
+
+        // Update UI based on permissions
+        updateUIBasedOnPermissions();
+
+    } catch (err) {
+        console.warn('Failed to load permissions:', err);
+        // Fallback or retry
+    }
+};
+
+window.hasPermission = function (permission) {
+    if (window.isSuperAdmin) return true;
+    return window.currentUserPermissions.includes(permission);
+};
+
+function updateUIBasedOnPermissions() {
+    // Hide/Show sections based on permissions
+    const manageTab = document.querySelector('[data-view="manage"]');
+    if (manageTab && !hasPermission('prompts.manage') && !hasPermission('content.moderate')) {
+        manageTab.style.display = 'none';
+    }
+
+    // Additional UI updates can be handled by respective modules listening to 'permissionsLoaded'
+}
+
+// ========================================
 // VIEW SWITCHING
 // ========================================
+// Switch between Create and Manage views
 function switchView(viewName) {
-    // Update tabs
+    // Update active tab buttons
     document.querySelectorAll('.admin-tab').forEach(tab => {
-        tab.classList.toggle('active', tab.dataset.view === viewName);
+        const isActive = tab.dataset.view === viewName;
+        tab.classList.toggle('active', isActive);
+
+        // Update sliding indicator position
+        if (isActive) {
+            updateAdminTabIndicator(tab);
+        }
     });
 
-    // Update views
+    // Update view visibility
     document.querySelectorAll('.view-section').forEach(section => {
         section.classList.remove('active');
     });
     document.getElementById(`view-${viewName}`).classList.add('active');
 
-    // Load data if switching to manage
+    // Load data if switching to Manage view
     if (viewName === 'manage') {
         loadAdminPrompts();
+    }
+}
+
+// Initialize tab indicator (robust check)
+function initIndicator() {
+    const activeTab = document.querySelector('.admin-tab.active');
+    if (activeTab) updateAdminTabIndicator(activeTab);
+}
+
+// Run on DOMReady, Window Load, and Resize
+setTimeout(initIndicator, 50);
+window.addEventListener('load', initIndicator);
+window.addEventListener('resize', () => {
+    // Debounce slightly
+    requestAnimationFrame(initIndicator);
+});
+
+// Update Admin Tab Indicator Position
+// Update Admin Tab Indicator Position
+function updateAdminTabIndicator(activeTab) {
+    if (!activeTab) return;
+
+    // Find the indicator within the same navigation container
+    const nav = activeTab.closest('.admin-tabs');
+    if (!nav) return;
+
+    const indicator = nav.querySelector('.admin-tab-indicator');
+    if (indicator) {
+        // Ensure nav has relative positioning context (handled in CSS, but check anyway)
+        const navRect = nav.getBoundingClientRect();
+        const tabRect = activeTab.getBoundingClientRect();
+
+        // Calculate relative position to handle potential nested offsets
+        const left = tabRect.left - navRect.left;
+
+        indicator.style.left = `${left}px`;
+        indicator.style.width = `${tabRect.width}px`;
+        indicator.style.opacity = '1';
     }
 }
 
@@ -1606,6 +1707,36 @@ function updateBatchButtonStates() {
 // Get selected prompts data
 function getSelectedPromptsData() {
     return allPrompts.filter(p => selectedPrompts.has(String(p.id))); // 将ID转为字符串比较
+}
+
+// ========================================
+// COMMENT VIEW SWITCHING
+// ========================================
+function switchCommentView(viewName) {
+    // Update active tab buttons
+    document.querySelectorAll('.admin-tab[data-comment-view]').forEach(tab => {
+        const isActive = tab.dataset.commentView === viewName;
+        tab.classList.toggle('active', isActive);
+
+        // Update sliding indicator position
+        if (isActive) {
+            updateAdminTabIndicator(tab);
+        }
+    });
+
+    // Switch actual content
+    console.log(`Switching comment view to: ${viewName}`);
+
+    // Call loadComments from admin-comments.js if available
+    if (typeof loadComments === 'function') {
+        // Update global state if it exists (usually defined in admin-comments.js)
+        if (typeof currentCommentView !== 'undefined') {
+            currentCommentView = viewName;
+        }
+        loadComments(viewName);
+    } else {
+        console.warn('loadComments function not found - make sure admin-comments.js is loaded');
+    }
 }
 
 // ========================================

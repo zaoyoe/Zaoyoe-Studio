@@ -11,6 +11,13 @@ async function handleRegister(event) {
     const password = document.getElementById('reg-password').value;
     const email = document.getElementById('reg-email').value.trim();
     const username = document.getElementById('reg-username').value.trim();
+    const privacyConsent = document.getElementById('privacyConsent')?.checked;
+
+    // 隐私政策验证
+    if (!privacyConsent) {
+        alert("请先阅读并同意隐私政策");
+        return;
+    }
 
     // 验证码检查
     if (inputCode !== generatedCode) {
@@ -140,6 +147,9 @@ async function handleLogin(event) {
             nickname: profile?.username || data.user.user_metadata?.full_name || data.user.email.split('@')[0],
             avatarUrl: profile?.avatar_url || data.user.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.user.email)}&background=random`
         });
+
+        // 记录登录 IP（用于多账号检测）
+        recordLoginIP(data.user.id);
 
         // 刷新留言板点赞状态
         if (typeof loadGuestbookMessages === 'function') {
@@ -434,7 +444,8 @@ function updateResetButtonCountdown(button, originalText) {
 async function handleGoogleLogin() {
     console.log('🔵 Google Login button clicked');
 
-    const redirectUrl = window.location.href.split('?')[0];
+    // 移除 query 和 hash 部分，确保干净的 redirect URL
+    const redirectUrl = window.location.origin + window.location.pathname.replace(/\/$/, '');
     console.log('🔗 Redirect URL:', redirectUrl);
 
     try {
@@ -586,13 +597,34 @@ window.forceLogout = forceLogout;
 document.addEventListener('DOMContentLoaded', async function () {
     console.log('📄 页面加载完成');
 
+    // 🆕 Clean up malformed OAuth URLs (fix ##access_token issue)
+    const currentUrl = window.location.href;
+    if (currentUrl.includes('##') || (currentUrl.match(/#/g) || []).length > 1) {
+        console.warn('⚠️ Detected malformed OAuth URL, cleaning up...');
+        // Remove all hash content and redirect to clean URL
+        const cleanUrl = window.location.origin + window.location.pathname;
+        window.history.replaceState({}, document.title, cleanUrl);
+    }
+
+    // 🆕 Instant UI restoration from cache (prevents avatar flash on hard refresh)
+    const cachedProfile = localStorage.getItem('cached_user_profile');
+    if (cachedProfile) {
+        try {
+            const user = JSON.parse(cachedProfile);
+            console.log('⚡ Instant restore from cached profile:', user.nickname);
+            updateUserUI(user);
+        } catch (e) {
+            console.warn('Failed to parse cached profile:', e);
+        }
+    }
+
     // 等待 Supabase 客户端初始化
     if (!window.supabaseClient) {
         console.warn('⚠️ Supabase client not ready, waiting...');
         await new Promise(resolve => setTimeout(resolve, 500));
     }
 
-    // 检查登录状态
+    // 检查登录状态 (will update UI again with fresh data)
     await checkAuthState();
 
     // Check sessionStorage for modal flags (from Gallery navigation)
@@ -675,6 +707,8 @@ document.addEventListener('DOMContentLoaded', async function () {
                 // 只有在非初始化阶段才重新检查状态
                 if (authStateInitialized) {
                     checkAuthState();
+                    // Record login IP for OAuth logins (Google, etc.)
+                    recordLoginIP(session.user.id);
                 }
             } else if (event === 'SIGNED_OUT') {
                 updateUserUI(null);
@@ -958,6 +992,59 @@ async function saveNickname() {
 }
 
 window.saveNickname = saveNickname;
+
+// ==================== 记录登录 IP + 地理位置 ====================
+async function recordLoginIP(userId) {
+    try {
+        // 获取用户 IP 和地理信息（通过 HTTPS ipinfo.io）
+        let userIP = '';
+        let geoInfo = null;
+
+        try {
+            // 使用 HTTPS API 避免 Mixed Content 错误
+            const geoResponse = await fetch('https://ipinfo.io/json');
+            const geoData = await geoResponse.json();
+
+            if (geoData.ip) {
+                userIP = geoData.ip;
+                geoInfo = {
+                    country: geoData.country || '未知',
+                    region: geoData.region || '未知',
+                    city: geoData.city || '未知'
+                };
+                console.log('📍 Geo info:', geoInfo);
+            }
+        } catch (geoErr) {
+            console.warn('Geo API failed, fallback to IP only:', geoErr);
+            // Fallback to ipify
+            const ipResponse = await fetch('https://api.ipify.org?format=json');
+            const ipData = await ipResponse.json();
+            userIP = ipData.ip;
+        }
+
+        console.log('📍 Recording login IP:', userIP);
+
+        // 插入登录记录（包含地理信息）
+        const { error } = await window.supabaseClient
+            .from('user_login_history')
+            .insert({
+                user_id: userId,
+                ip_address: userIP,
+                user_agent: navigator.userAgent,
+                geo_info: geoInfo
+            });
+
+        if (error) {
+            console.warn('IP recording failed:', error.message);
+        } else {
+            console.log('✅ Login IP + Geo recorded');
+        }
+    } catch (err) {
+        console.warn('Failed to record IP:', err.message);
+    }
+}
+
+window.recordLoginIP = recordLoginIP;
 
 // 挂载到 window
 window.handleRegister = handleRegister;

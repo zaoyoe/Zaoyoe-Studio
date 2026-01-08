@@ -46,6 +46,7 @@
 
     <!-- Force Input Background Fix -->
     <script src="./force-input-bg-fix.js?v=3" defer></script>
+    <script src="./notification-client.js?v=1" defer></script>
 
     <!-- Main Styles -->
     <link rel="stylesheet" href="style.css?v=CONTACT_POPUP_FIX_V8">
@@ -475,7 +476,45 @@
     </script>
 
     <!-- Login Trigger Button (Top Right) -->
-    <div class="top-right-nav" style="position: fixed; top: 28px; right: 30px; z-index: 2100;">
+    <div class="top-right-nav"
+        style="position: fixed; top: 28px; right: 30px; z-index: 2100; display: flex; align-items: center; gap: 12px;">
+
+        <!-- Notification Bell (Hidden by default, shown when logged in) -->
+        <div class="notif-wrapper" style="position: relative; display: none;" id="navNotifWrapper">
+            <button id="notifBtn" class="login-trigger-btn" onclick="toggleNotifMenu(event)"
+                style="width: 40px; height: 40px; padding: 0; justify-content: center;">
+                <i class="far fa-bell" style="font-size: 1.1rem;"></i>
+                <div class="notif-badge" id="notifBadge" style="display: none;"></div>
+            </button>
+
+            <!-- Notification Dropdown -->
+            <div id="notifDropdown" class="user-dropdown notif-dropdown">
+                <div class="notif-header"
+                    style="padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.1); display:flex; justify-content:space-between; align-items:center;">
+                    <span style="font-weight: 600; font-size: 0.9rem;">通知中心</span>
+                    <span class="mark-all-read" onclick="markAllNotificationsRead()"
+                        style="font-size: 0.75rem; color: var(--accent-starry); cursor: pointer;">全部已读</span>
+                </div>
+                <div class="notif-list" id="notifList">
+                    <!-- Javascript will populate this -->
+                    <div class="empty-notif"
+                        style="padding: 20px; text-align: center; color: rgba(255,255,255,0.5); font-size: 0.85rem;">
+                        暂无新通知
+                    </div>
+                </div>
+                <!-- Notification Footer -->
+                <div class="notif-footer"
+                    style="padding: 8px 16px; border-top: 1px solid rgba(255,255,255,0.05); text-align: right;">
+                    <span class="clear-all-btn" onclick="clearAllNotifications()"
+                        style="font-size: 0.75rem; color: rgba(255,255,255,0.4); cursor: pointer; display: inline-flex; align-items: center; gap: 4px; transition: color 0.2s;">
+                        <i class="fas fa-trash-alt"></i> 清空
+                    </span>
+                </div>
+            </div>
+        </div>
+
+
+
         <button id="authBtn" class="login-trigger-btn" onclick="window.toggleAuthMenu(event)">
             <!-- Default Icon (shown when logged out) -->
             <i id="defaultAuthIcon" class="fas fa-user-circle" style="font-size: 1.2rem;"></i>
@@ -496,7 +535,14 @@
                 个人资料
             </div>
 
-            <div class="divider" style="margin: 5px 0; border-top: 1px solid rgba(255,255,255,0.1);"></div>
+            <!-- My Wallet -->
+            <div class="menu-item wallet-menu-item" onclick="WalletModal.open()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect>
+                    <line x1="1" y1="10" x2="23" y2="10"></line>
+                </svg>
+                我的钱包
+            </div>
 
             <!-- Enter Studio (Admin Only) -->
             <div class="menu-item enter-studio" id="enterStudioBtn" style="display: none;"
@@ -721,6 +767,17 @@
 
                     <div class="input-group">
                         <input type="password" id="reg-password" class="glass-input" placeholder="设置密码" required>
+                    </div>
+
+                    <!-- Privacy Policy Consent -->
+                    <div class="privacy-consent"
+                        style="margin-bottom: 20px; display: flex; align-items: flex-start; gap: 10px;">
+                        <input type="checkbox" id="privacyConsent" class="privacy-checkbox" required>
+                        <label for="privacyConsent"
+                            style="font-size: 13px; color: rgba(255, 255, 255, 0.7); cursor: pointer; line-height: 1.4;">
+                            我已阅读并同意 <a href="privacy.html" target="_blank"
+                                style="color: #9b5de5; text-decoration: none;">《隐私政策》</a>
+                        </label>
                     </div>
 
                     <button type="submit" class="login-submit-btn">创建账号</button>
@@ -1026,9 +1083,10 @@
         <link rel="stylesheet" href="style.css?v=FIX_INPUT_AVATAR_FINAL">
         <script src="inject-auth.js?v=1733030269" defer></script>
         <script src="prevent-zoom.js?v=20251130" defer></script>
-        <!-- Elastic Press Effect -->
-        <script src="elastic-press.js?v=FIX_MODAL_DETECTION" defer></script>
         <script src="script.js?v=FIX_UI_OPTIMIZATIONS_V6" defer></script>
+        <!-- Commercial Points System (loaded at end of body for reliability) -->
+        <script src="js/services/PointsService.js?v=2"></script>
+        <script src="js/components/WalletModal.js?v=2"></script>
 </body>
 
 </html>

@@ -1,0 +1,873 @@
+/**
+ * 💳 Wallet Modal Styles
+ * Simple, clean styling for the wallet modal
+ */
+
+/* Overlay */
+.wallet-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    padding: 20px;
+    overscroll-behavior: contain;
+}
+
+.wallet-overlay.loading {
+    pointer-events: none;
+    /* cursor: wait; - no opacity change for less intrusive loading */
+}
+
+/* Modal Container - Frosted Glass Effect (Matches Profile Modal) */
+.wallet-modal {
+    /* Lighter Glassmorphism - Same as profile modal */
+    background: rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(40px);
+    -webkit-backdrop-filter: blur(40px);
+    border-radius: 24px;
+    max-width: 700px;
+    width: 100%;
+    height: 500px;
+    overflow: hidden;
+    position: relative;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-top: 1px solid rgba(255, 255, 255, 0.25);
+    display: flex;
+    flex-direction: column;
+}
+
+/* Close Button */
+.wallet-close-btn {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 16px;
+    z-index: 10;
+    transition: background 0.2s;
+}
+
+.wallet-close-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+/* Header */
+.wallet-header {
+    padding: 24px 24px 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.wallet-header h2 {
+    margin: 0;
+    font-size: 24px;
+    color: #fff;
+}
+
+/* Balance Section */
+.wallet-balance-section {
+    padding: 24px;
+}
+
+/* Split Layout */
+.wallet-layout {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+/* Left Sidebar */
+.wallet-sidebar {
+    width: 140px;
+    flex-shrink: 0;
+    padding: 16px;
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    position: relative;
+    /* For indicator positioning */
+}
+
+/* Sliding Indicator */
+.sidebar-indicator {
+    position: absolute;
+    left: 16px;
+    /* Match sidebar padding */
+    width: calc(100% - 32px);
+    /* Full width minus padding */
+    background: rgba(255, 215, 0, 0.12);
+    border: 1px solid rgba(255, 215, 0, 0.3);
+    border-radius: 12px;
+    top: 16px;
+    /* Initial top */
+    height: 48px;
+    /* Initial height (approx) */
+    pointer-events: none;
+    /* Let clicks pass through */
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    z-index: 0;
+    opacity: 0;
+    /* Hidden initially until JS calculates position */
+}
+
+.wallet-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 1px solid transparent;
+}
+
+.wallet-menu-item:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.wallet-menu-item.active {
+    /* Background handled by .sidebar-indicator */
+}
+
+.menu-icon {
+    font-size: 18px;
+}
+
+.menu-text {
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.wallet-menu-item.active .menu-text {
+    color: #FFD700;
+    font-weight: 500;
+}
+
+/* Right Content Area */
+.wallet-content {
+    flex: 1;
+    padding: 24px;
+    overflow-y: auto;
+    min-height: 350px;
+    overscroll-behavior: contain;
+}
+
+/* Views */
+/* Views */
+.wallet-view {
+    display: none;
+    height: 100%;
+    /* Take full height of content area */
+    box-sizing: border-box;
+}
+
+#view-balance {
+    display: none;
+    /* Toggle via JS */
+    flex-direction: column;
+}
+
+#view-balance.active {
+    display: flex;
+    animation: fadeIn 0.2s ease;
+}
+
+.wallet-view.active {
+    display: block;
+    animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+.view-title {
+    margin: 0 0 20px;
+    font-size: 18px;
+    color: #fff;
+}
+
+/* Balance Card */
+/* Balance Card: Compact Premium */
+.balance-card.compact-premium-card {
+    background: linear-gradient(135deg, #1c1c1c 0%, #2a2a2a 100%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 24px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    position: relative;
+    overflow: hidden;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+/* Subtle glow effect */
+.balance-card.compact-premium-card::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 200px;
+    height: 100%;
+    background: radial-gradient(circle at center, rgba(255, 215, 0, 0.05) 0%, transparent 70%);
+    pointer-events: none;
+}
+
+.card-left {
+    text-align: left;
+}
+
+.card-left label {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.5);
+    display: block;
+    margin-bottom: 6px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+
+.balance-amount {
+    font-size: 42px;
+    font-weight: 700;
+    color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    letter-spacing: -1px;
+    background: linear-gradient(180deg, #ffffff 0%, #e0e0e0 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+}
+
+.card-right {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    border-left: 1px solid rgba(255, 255, 255, 0.1);
+    padding-left: 32px;
+}
+
+.balance-detail-row {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.6);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    justify-content: space-between;
+    min-width: 140px;
+}
+
+.detail-label {
+    font-size: 12px;
+}
+
+.detail-val {
+    color: #FFD700;
+    font-family: monospace;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+/* Sections */
+.wallet-section {
+    padding: 16px 24px 24px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.wallet-section h3 {
+    margin: 0 0 16px;
+    font-size: 16px;
+    color: #fff;
+}
+
+/* Packages */
+/* Packages */
+.packages-container {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    /* 3 Columns */
+    gap: 8px;
+    /* Tighter gap */
+}
+
+.package-item {
+    background: linear-gradient(145deg, #222222, #2a2a2a);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 16px 12px;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    height: 100%;
+}
+
+.package-item::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+}
+
+.package-item:hover {
+    background: linear-gradient(145deg, #2a2a2a, #333333);
+    border-color: rgba(255, 215, 0, 0.3);
+    transform: translateY(-4px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+}
+
+.pkg-name {
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: rgba(255, 255, 255, 0.4);
+    margin-bottom: 8px;
+}
+
+.pkg-points {
+    font-size: 22px;
+    font-weight: 800;
+    background: linear-gradient(180deg, #FFD700 0%, #FFA500 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 4px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.pkg-bonus {
+    font-size: 10px;
+    color: #4cd964;
+    background: rgba(76, 217, 100, 0.1);
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-bottom: 12px;
+    font-weight: 600;
+    border: 1px solid rgba(76, 217, 100, 0.2);
+}
+
+.pkg-price {
+    font-size: 15px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.9);
+    background: transparent;
+    padding: 6px 20px;
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    transition: all 0.3s ease;
+    margin-top: auto;
+    /* Push to bottom */
+}
+
+.package-item:hover .pkg-price {
+    background: #FFD700;
+    color: #1a1a1a;
+    border-color: #FFD700;
+    font-weight: 700;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 10px rgba(255, 215, 0, 0.3);
+}
+
+/* Redemption Code Section */
+.redeem-input-row {
+    display: flex;
+    gap: 10px;
+}
+
+.redeem-input-row input {
+    flex: 1;
+    padding: 12px 14px;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 10px;
+    color: white;
+    font-size: 14px;
+    font-family: 'Monaco', 'Consolas', monospace;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+}
+
+.redeem-input-row input::placeholder {
+    color: rgba(255, 255, 255, 0.3);
+    text-transform: none;
+    letter-spacing: normal;
+}
+
+.redeem-input-row input:focus {
+    outline: none;
+    border-color: rgba(255, 215, 0, 0.5);
+}
+
+.redeem-btn {
+    padding: 12px 24px;
+    background: rgba(255, 255, 255, 0.05);
+    /* Subtle glass background */
+    border: 1px solid rgba(255, 215, 0, 0.3);
+    /* Gold border */
+    border-radius: 10px;
+    color: #FFD700;
+    /* Gold text */
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    backdrop-filter: blur(4px);
+}
+
+.redeem-btn:hover:not(:disabled) {
+    background: rgba(255, 215, 0, 0.1);
+    border-color: rgba(255, 215, 0, 0.6);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.redeem-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+
+
+/* History */
+.history-container {
+    max-height: 280px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+}
+
+.history-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.history-item:last-child {
+    border-bottom: none;
+}
+
+.history-desc {
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.history-amount {
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.history-amount.positive {
+    color: #4CAF50;
+}
+
+.history-amount.negative {
+    color: #f44336;
+}
+
+/* Loading & Empty States */
+.loading-text,
+.empty-text {
+    text-align: center;
+    padding: 24px;
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 14px;
+}
+
+/* History Section - Compact */
+.history-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.history-section h3 {
+    margin: 0;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 16px;
+}
+
+.history-toggle {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.history-count {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.4);
+    font-weight: normal;
+}
+
+.history-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Filter Chip - Small clickable pill */
+.filter-chip {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 20px;
+    padding: 5px 12px;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.8);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.filter-chip:hover {
+    background: rgba(255, 215, 0, 0.15);
+    border-color: rgba(255, 215, 0, 0.3);
+    color: #FFD700;
+}
+
+.filter-arrow {
+    font-size: 8px;
+    margin-left: 4px;
+    opacity: 0.6;
+}
+
+/* Filter Popup - Frosted Glass */
+.filter-wrapper {
+    position: relative;
+}
+
+.filter-popup {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    min-width: 120px;
+    /* Clean dark glass - like macOS dark menu */
+    background: rgba(20, 20, 22, 0.95);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+    padding: 6px;
+    z-index: 200;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-8px) scale(0.95);
+    transition: all 0.2s ease-out;
+    box-shadow:
+        0 8px 32px rgba(0, 0, 0, 0.6),
+        inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.filter-popup.open {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0) scale(1);
+}
+
+.filter-option {
+    padding: 10px 14px;
+    border-radius: 8px;
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.filter-option:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.filter-option.active {
+    color: #FFD700;
+}
+
+.filter-divider {
+    height: 1px;
+    background: rgba(255, 255, 255, 0.1);
+    margin: 4px 0;
+}
+
+/* Clear Chip */
+.clear-chip {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 82, 82, 0.1);
+    border: 1px solid rgba(255, 82, 82, 0.2);
+    border-radius: 50%;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.clear-chip:hover {
+    background: rgba(255, 82, 82, 0.25);
+    transform: scale(1.1);
+}
+
+/* Date Picker Modal */
+.date-picker-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10002;
+}
+
+.date-picker-content {
+    background: rgba(30, 30, 30, 0.95);
+    backdrop-filter: blur(40px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 16px;
+    padding: 24px;
+    min-width: 280px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.date-picker-header {
+    font-size: 18px;
+    font-weight: 600;
+    color: white;
+    margin-bottom: 20px;
+    text-align: center;
+}
+
+.date-picker-row {
+    margin-bottom: 16px;
+}
+
+.date-picker-row label {
+    display: block;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.6);
+    margin-bottom: 6px;
+}
+
+.date-picker-row input[type="date"] {
+    width: 100%;
+    padding: 12px;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 10px;
+    color: white;
+    font-size: 14px;
+    box-sizing: border-box;
+}
+
+.date-picker-row input[type="date"]:focus {
+    outline: none;
+    border-color: rgba(255, 215, 0, 0.5);
+}
+
+.date-picker-actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 20px;
+}
+
+.date-cancel,
+.date-confirm {
+    flex: 1;
+    padding: 12px;
+    border-radius: 10px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: none;
+}
+
+.date-cancel {
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+}
+
+.date-cancel:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+.date-confirm {
+    background: linear-gradient(135deg, #FFD700, #FFA500);
+    color: #000;
+    font-weight: 600;
+}
+
+.date-confirm:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(255, 215, 0, 0.3);
+}
+
+/* Collapsed State */
+.history-container.collapsed {
+    max-height: 0 !important;
+    overflow: hidden;
+    padding: 0;
+    opacity: 0;
+}
+
+/* History Item - Enhanced */
+.history-item {
+    cursor: pointer;
+    transition: background 0.2s;
+    border-radius: 8px;
+    padding: 12px 8px;
+    margin: 0 -8px;
+}
+
+.history-item:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.history-main {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.history-date {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.4);
+}
+
+/* History Details */
+.history-item {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: stretch;
+    padding: 16px 16px;
+    /* Increased padding */
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.history-item .history-row-main {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+}
+
+.history-details {
+    display: none;
+    margin-top: 16px;
+    padding: 16px 12px;
+    /* Add internal padding */
+    background: rgba(0, 0, 0, 0.2);
+    /* Darker background for details */
+    border-radius: 8px;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.6);
+    animation: slideDown 0.2s ease-out;
+}
+
+.history-item.expanded {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.history-item.expanded .history-details {
+    display: block;
+}
+
+.detail-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    /* Center align items */
+    margin-bottom: 8px;
+}
+
+.detail-row:last-child {
+    margin-bottom: 0;
+}
+
+.detail-val.copyable {
+    cursor: pointer;
+    position: relative;
+    transition: color 0.2s;
+}
+
+.detail-val.copyable:hover {
+    color: #FFD700 !important;
+    text-decoration: underline;
+}
+
+.detail-val.copyable:active {
+    transform: scale(0.98);
+}
+
+.detail-val.copyable::after {
+    content: '📋';
+    font-size: 10px;
+    margin-left: 6px;
+    opacity: 0.5;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-5px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Mobile Responsive */
+@media (max-width: 480px) {
+    .wallet-modal {
+        max-height: 90vh;
+    }
+
+    .packages-container {
+        grid-template-columns: 1fr;
+    }
+
+    .balance-value {
+        font-size: 36px;
+    }
+}

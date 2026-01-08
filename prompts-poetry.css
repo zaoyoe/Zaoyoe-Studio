@@ -1625,10 +1625,10 @@ body {
 
 /* --- Gallery 4.0 Spatial Flow & Comment System --- */
 
-/* 1. Prompt Blur Mask (The Mystery) */
 .prompt-text.blur-masked {
     mask-image: linear-gradient(to bottom, black 40%, transparent 95%);
     -webkit-mask-image: linear-gradient(to bottom, black 40%, transparent 95%);
+    /* Gradient fade only - no blur filter */
     /* Prevent scrolling when masked to keep the mystery static */
     overflow: hidden;
     pointer-events: none;
