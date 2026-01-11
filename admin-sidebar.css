@@ -108,6 +108,8 @@
     border-bottom: 1px solid var(--sidebar-border);
     gap: 12px;
     flex-shrink: 0;
+    text-decoration: none;
+    cursor: pointer;
 }
 
 .sidebar-brand-icon {

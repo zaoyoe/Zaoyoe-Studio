@@ -42,12 +42,12 @@
         <!-- Supabase-style Sidebar -->
         <aside class="admin-sidebar" id="adminSidebar">
             <!-- Brand -->
-            <div class="sidebar-brand">
+            <a href="index.html" class="sidebar-brand" title="返回主页">
                 <div class="sidebar-brand-icon">
                     <i class="fas fa-bolt"></i>
                 </div>
                 <span class="sidebar-brand-text">Admin Studio</span>
-            </div>
+            </a>
 
             <!-- Navigation -->
             <nav class="sidebar-nav">
@@ -93,18 +93,16 @@
 
             <!-- Header -->
             <header class="studio-header">
-                <a href="prompts.html" class="back-link">
+                <!-- Hidden placeholder to maintain centering -->
+                <div class="back-link" style="visibility: hidden;">
                     <i class="fas fa-arrow-left"></i>
                     <span>Back to Gallery</span>
-                </a>
+                </div>
                 <h1 class="studio-title">
                     <i class="fas fa-palette"></i>
                     Admin Studio
                 </h1>
                 <div class="header-right">
-                    <div id="apiKeySelector" class="api-key-selector">
-                        <!-- Rendered by JavaScript -->
-                    </div>
                     <div class="studio-status" id="studioStatus">
                         <span class="status-dot"></span>
                         <span class="status-text">Ready</span>
@@ -548,50 +546,924 @@
 
             <!-- ========== SETTINGS MODULE ========== -->
             <div id="module-settings" class="module-container">
-                <div class="module-header">
-                    <h2><i class="fas fa-cog"></i> 设置</h2>
-                </div>
-                <div class="module-content">
-                    <!-- API Key Section -->
-                    <div class="settings-section">
-                        <h3><i class="fas fa-key"></i> API 配置</h3>
-                        <div class="settings-item">
-                            <label>Gemini API Key</label>
-                            <div class="settings-input-group">
-                                <input type="password" id="settingsApiKey" placeholder="sk-..." readonly>
-                                <button class="btn-secondary" onclick="promptForApiKey()">
-                                    <i class="fas fa-edit"></i> 修改
+                <!-- Tabs -->
+                <nav class="admin-tabs" id="settingsTabsNav">
+                    <button class="admin-tab active" data-settings-view="pricing"
+                        onclick="switchSettingsView('pricing')">
+                        💰 定价配置
+                    </button>
+                    <button class="admin-tab" data-settings-view="security" onclick="switchSettingsView('security')">
+                        🔒 安全设置
+                    </button>
+                    <button class="admin-tab" data-settings-view="notifications"
+                        onclick="switchSettingsView('notifications')">
+                        📧 通知设置
+                    </button>
+                    <button class="admin-tab" data-settings-view="moderation"
+                        onclick="switchSettingsView('moderation')">
+                        🛡️ 内容审核
+                    </button>
+                    <button class="admin-tab" data-settings-view="gallery" onclick="switchSettingsView('gallery')">
+                        📚 画廊设置
+                    </button>
+                    <button class="admin-tab" data-settings-view="comments" onclick="switchSettingsView('comments')">
+                        💬 评论设置
+                    </button>
+                    <button class="admin-tab" data-settings-view="integrations"
+                        onclick="switchSettingsView('integrations')">
+                        🔗 集成
+                    </button>
+                    <button class="admin-tab" data-settings-view="export" onclick="switchSettingsView('export')">
+                        📦 导出
+                    </button>
+                    <button class="admin-tab" data-settings-view="seo" onclick="switchSettingsView('seo')">
+                        🌐 SEO
+                    </button>
+                    <button class="admin-tab" data-settings-view="performance"
+                        onclick="switchSettingsView('performance')">
+                        ⚡ 性能
+                    </button>
+                    <button class="admin-tab" data-settings-view="general" onclick="switchSettingsView('general')">
+                        ⚙️ 其它设置
+                    </button>
+                    <div class="admin-tab-indicator"></div>
+                </nav>
+
+                <!-- PRICING VIEW -->
+                <div id="settings-view-pricing" class="view-section active">
+                    <div class="module-content">
+                        <!-- Unlock Pricing Card -->
+                        <div class="config-card" data-config="unlock_pricing">
+                            <div class="config-card-header">
+                                <div class="config-card-title">
+                                    <i class="fas fa-unlock-alt"></i>
+                                    <span>解锁定价</span>
+                                </div>
+                            </div>
+                            <div class="config-card-body">
+                                <div class="config-row">
+                                    <label>默认解锁积分</label>
+                                    <div class="config-input-wrapper">
+                                        <input type="number" class="config-input" id="cfgUnlockPoints" min="1"
+                                            max="1000">
+                                        <span class="config-unit">分</span>
+                                        <span class="config-save-indicator">✓</span>
+                                    </div>
+                                </div>
+                                <div class="config-row">
+                                    <label>VIP 用户折扣</label>
+                                    <div class="config-input-wrapper">
+                                        <input type="number" class="config-input" id="cfgVipDiscount" min="50" max="100"
+                                            step="5">
+                                        <span class="config-unit">%</span>
+                                        <span class="config-save-indicator">✓</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Packages Card -->
+                        <div class="config-card" data-config="packages">
+                            <div class="config-card-header">
+                                <div class="config-card-title">
+                                    <i class="fas fa-gift"></i>
+                                    <span>礼包配置</span>
+                                </div>
+                            </div>
+                            <div class="config-card-body">
+                                <table class="config-table" id="packagesTable">
+                                    <thead>
+                                        <tr>
+                                            <th>名称</th>
+                                            <th>积分</th>
+                                            <th>赠送</th>
+                                            <th>价格 (¥)</th>
+                                            <th>状态</th>
+                                            <th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="packagesTableBody">
+                                        <!-- Dynamic rows -->
+                                    </tbody>
+                                </table>
+                                <button class="btn-add-config" onclick="addPackageRow()">
+                                    <i class="fas fa-plus"></i> 添加礼包
                                 </button>
                             </div>
-                            <p class="settings-status" id="apiKeyStatus">
+                        </div>
+
+                        <!-- Channels Card -->
+                        <div class="config-card" data-config="channels">
+                            <div class="config-card-header">
+                                <div class="config-card-title">
+                                    <i class="fas fa-store"></i>
+                                    <span>销售渠道</span>
+                                </div>
+                            </div>
+                            <div class="config-card-body">
+                                <div class="channel-tags" id="channelTags">
+                                    <!-- Dynamic tags -->
+                                </div>
+                                <div class="add-channel-row">
+                                    <input type="text" id="newChannelName" placeholder="新渠道名称">
+                                    <button class="btn-add-config" onclick="addChannel()">
+                                        <i class="fas fa-plus"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Rewards Card -->
+                        <div class="config-card" data-config="rewards">
+                            <div class="config-card-header">
+                                <div class="config-card-title">
+                                    <i class="fas fa-coins"></i>
+                                    <span>积分奖励</span>
+                                </div>
+                            </div>
+                            <div class="config-card-body">
+                                <div class="config-row">
+                                    <label>首次注册赠送</label>
+                                    <div class="config-input-wrapper">
+                                        <input type="number" class="config-input" id="cfgSignupBonus" min="0">
+                                        <span class="config-unit">分</span>
+                                        <span class="config-save-indicator">✓</span>
+                                    </div>
+                                </div>
+                                <div class="config-row">
+                                    <label>每日签到</label>
+                                    <div class="config-input-wrapper">
+                                        <input type="number" class="config-input" id="cfgDailyCheckin" min="0">
+                                        <span class="config-unit">分</span>
+                                        <span class="config-save-indicator">✓</span>
+                                    </div>
+                                </div>
+                                <div class="config-row">
+                                    <label>评论奖励</label>
+                                    <div class="config-input-wrapper">
+                                        <input type="number" class="config-input" id="cfgCommentReward" min="0">
+                                        <span class="config-unit">分</span>
+                                        <span class="config-save-indicator">✓</span>
+                                    </div>
+                                </div>
+                                <div class="config-row">
+                                    <label>邀请奖励</label>
+                                    <div class="config-input-wrapper">
+                                        <input type="number" class="config-input" id="cfgInviteReward" min="0">
+                                        <span class="config-unit">分</span>
+                                        <span class="config-save-indicator">✓</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SECURITY VIEW -->
+                <div id="settings-view-security" class="view-section">
+                    <div class="module-content">
+                        <!-- Login Security -->
+                        <div class="settings-section">
+                            <h3><i class="fas fa-shield-alt"></i> 登录安全</h3>
+                            <div class="config-item-row">
+                                <div class="config-label">
+                                    <span>登录失败锁定</span>
+                                    <span class="config-hint">连续失败N次后锁定账户</span>
+                                </div>
+                                <div class="config-value">
+                                    <div class="config-input-wrapper">
+                                        <input type="number" class="config-input" id="cfgLoginLockoutAttempts" min="3"
+                                            max="10" value="5">
+                                        <span class="config-unit">次</span>
+                                        <span class="config-save-indicator">✓</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="config-item-row">
+                                <div class="config-label">
+                                    <span>锁定时长</span>
+                                    <span class="config-hint">账户锁定后的解锁等待时间</span>
+                                </div>
+                                <div class="config-value">
+                                    <div class="custom-dropdown" id="lockoutDurationDropdown">
+                                        <button class="dropdown-trigger"
+                                            onclick="toggleCustomDropdown('lockoutDurationDropdown')">
+                                            <span class="dropdown-value" id="lockoutDurationValue">15 分钟</span>
+                                            <i class="fas fa-chevron-down"></i>
+                                        </button>
+                                        <div class="dropdown-menu">
+                                            <div class="dropdown-option" data-value="300000"
+                                                onclick="selectDropdownOption('lockoutDurationDropdown', '300000', '5 分钟')">
+                                                5 分钟</div>
+                                            <div class="dropdown-option selected" data-value="900000"
+                                                onclick="selectDropdownOption('lockoutDurationDropdown', '900000', '15 分钟')">
+                                                15 分钟</div>
+                                            <div class="dropdown-option" data-value="3600000"
+                                                onclick="selectDropdownOption('lockoutDurationDropdown', '3600000', '1 小时')">
+                                                1 小时</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="config-item-row">
+                                <div class="config-label">
+                                    <span>会话超时</span>
+                                    <span class="config-hint">用户无操作后自动登出时间</span>
+                                </div>
+                                <div class="config-value">
+                                    <div class="custom-dropdown" id="sessionTimeoutDropdown">
+                                        <button class="dropdown-trigger"
+                                            onclick="toggleCustomDropdown('sessionTimeoutDropdown')">
+                                            <span class="dropdown-value" id="sessionTimeoutValue">1 小时</span>
+                                            <i class="fas fa-chevron-down"></i>
+                                        </button>
+                                        <div class="dropdown-menu">
+                                            <div class="dropdown-option" data-value="1800000"
+                                                onclick="selectDropdownOption('sessionTimeoutDropdown', '1800000', '30 分钟')">
+                                                30 分钟</div>
+                                            <div class="dropdown-option selected" data-value="3600000"
+                                                onclick="selectDropdownOption('sessionTimeoutDropdown', '3600000', '1 小时')">
+                                                1 小时</div>
+                                            <div class="dropdown-option" data-value="86400000"
+                                                onclick="selectDropdownOption('sessionTimeoutDropdown', '86400000', '1 天')">
+                                                1 天</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- IP Blacklist -->
+                        <div class="settings-section">
+                            <h3><i class="fas fa-ban"></i> IP 黑名单</h3>
+                            <div class="config-item-row" style="flex-direction: column; align-items: stretch;">
+                                <div class="config-label" style="margin-bottom: 8px;">
+                                    <span>被封禁的IP地址</span>
+                                    <span class="config-hint">一行一个IP地址，支持CIDR格式 (如 192.168.1.0/24)</span>
+                                </div>
+                                <textarea class="config-textarea" id="cfgIpBlacklist" rows="6"
+                                    placeholder="192.168.1.100&#10;10.0.0.0/8&#10;..."></textarea>
+                                <div class="config-actions" style="margin-top: 12px;">
+                                    <button class="btn-sm btn-primary" onclick="saveIpBlacklist()">
+                                        <i class="fas fa-save"></i> 保存黑名单
+                                    </button>
+                                    <span class="config-save-indicator" id="ipBlacklistSaveIndicator"
+                                        style="margin-left: 12px; opacity: 0;">✓ 已保存</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- NOTIFICATIONS VIEW -->
+                <div id="settings-view-notifications" class="view-section">
+                    <div class="module-content" style="display: block; padding: 20px;">
+
+                        <!-- Two Column Layout -->
+                        <div class="announcement-full-layout">
+                            <!-- Left: Preview Panel -->
+                            <div class="announcement-preview-side">
+                                <div class="announcement-preview-stage">
+                                    <div class="announcement-preview-large" id="announcementPreview">
+                                        <div class="preview-header">
+                                            <i class="fas fa-bullhorn"></i>
+                                            <span class="preview-title">站内公告</span>
+                                        </div>
+                                        <div class="preview-body">
+                                            <span>在此预览公告效果...</span>
+                                        </div>
+                                    </div>
+
+                                    <!-- Color Palette (inline in preview) -->
+                                    <div class="preview-color-palette">
+                                        <label class="palette-dot" title="紫色"><input type="radio"
+                                                name="announcementColor" value="purple" checked><span
+                                                style="background: linear-gradient(135deg, #667eea, #764ba2);"></span></label>
+                                        <label class="palette-dot" title="蓝色"><input type="radio"
+                                                name="announcementColor" value="blue"><span
+                                                style="background: linear-gradient(135deg, #2193b0, #6dd5ed);"></span></label>
+                                        <label class="palette-dot" title="绿色"><input type="radio"
+                                                name="announcementColor" value="green"><span
+                                                style="background: linear-gradient(135deg, #11998e, #38ef7d);"></span></label>
+                                        <label class="palette-dot" title="橙色"><input type="radio"
+                                                name="announcementColor" value="orange"><span
+                                                style="background: linear-gradient(135deg, #f2994a, #f2c94c);"></span></label>
+                                        <label class="palette-dot" title="红色"><input type="radio"
+                                                name="announcementColor" value="red"><span
+                                                style="background: linear-gradient(135deg, #eb3349, #f45c43);"></span></label>
+                                        <label class="palette-dot" title="暗色"><input type="radio"
+                                                name="announcementColor" value="dark"><span
+                                                style="background: linear-gradient(135deg, #2c3e50, #4a5568);"></span></label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Right: Editor Panel -->
+                            <div class="announcement-editor-side">
+
+                                <!-- Type Selector -->
+                                <div class="editor-section">
+                                    <div class="editor-section-label">公告类型</div>
+                                    <div class="announcement-type-selector">
+                                        <label class="type-option">
+                                            <input type="radio" name="announcementType" value="banner" checked>
+                                            <div class="type-card"><i class="fas fa-minus"></i><span>顶部横幅</span></div>
+                                        </label>
+                                        <label class="type-option">
+                                            <input type="radio" name="announcementType" value="modal">
+                                            <div class="type-card"><i
+                                                    class="fas fa-window-maximize"></i><span>中央弹窗</span></div>
+                                        </label>
+                                        <label class="type-option">
+                                            <input type="radio" name="announcementType" value="toast">
+                                            <div class="type-card"><i class="fas fa-comment-alt"></i><span>右下浮窗</span>
+                                            </div>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <!-- Content Editor -->
+                                <div class="editor-section">
+                                    <div class="editor-section-label">公告内容</div>
+                                    <div class="announcement-toolbar">
+                                        <button type="button" class="toolbar-btn" onclick="insertFormat('b')"
+                                            title="加粗"><i class="fas fa-bold"></i></button>
+                                        <button type="button" class="toolbar-btn" onclick="insertFormat('i')"
+                                            title="斜体"><i class="fas fa-italic"></i></button>
+                                        <button type="button" class="toolbar-btn" onclick="insertFormat('u')"
+                                            title="下划线"><i class="fas fa-underline"></i></button>
+                                        <div class="toolbar-divider"></div>
+                                        <button type="button" class="toolbar-btn" onclick="insertLink()" title="链接"><i
+                                                class="fas fa-link"></i></button>
+                                        <div class="emoji-picker-container">
+                                            <button type="button" class="toolbar-btn" id="emojiPickerBtn"
+                                                onclick="toggleEmojiPicker()" title="表情"><i
+                                                    class="fas fa-smile"></i></button>
+                                            <div class="emoji-picker" id="emojiPicker">
+                                                <div class="emoji-picker-header">表情</div>
+                                                <div class="emoji-grid">
+                                                    <button type="button" class="emoji-item"
+                                                        onclick="selectEmoji('🎉')">🎉</button>
+                                                    <button type="button" class="emoji-item"
+                                                        onclick="selectEmoji('📢')">📢</button>
+                                                    <button type="button" class="emoji-item"
+                                                        onclick="selectEmoji('⚠️')">⚠️</button>
+                                                    <button type="button" class="emoji-item"
+                                                        onclick="selectEmoji('✨')">✨</button>
+                                                    <button type="button" class="emoji-item"
+                                                        onclick="selectEmoji('🔥')">🔥</button>
+                                                    <button type="button" class="emoji-item"
+                                                        onclick="selectEmoji('💡')">💡</button>
+                                                    <button type="button" class="emoji-item"
+                                                        onclick="selectEmoji('🎁')">🎁</button>
+                                                    <button type="button" class="emoji-item"
+                                                        onclick="selectEmoji('❤️')">❤️</button>
+                                                    <button type="button" class="emoji-item"
+                                                        onclick="selectEmoji('👍')">👍</button>
+                                                    <button type="button" class="emoji-item"
+                                                        onclick="selectEmoji('🚀')">🚀</button>
+                                                    <button type="button" class="emoji-item"
+                                                        onclick="selectEmoji('🌟')">🌟</button>
+                                                    <button type="button" class="emoji-item"
+                                                        onclick="selectEmoji('💯')">💯</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="toolbar-divider"></div>
+                                        <select id="textColorSelect" class="toolbar-select"
+                                            onchange="applyTextColor(this.value)" title="颜色">
+                                            <option value="">文字颜色</option>
+                                            <option value="#ffffff">⬜ 白色</option>
+                                            <option value="#ffeb3b">🟨 黄色</option>
+                                            <option value="#ff9800">🟧 橙色</option>
+                                            <option value="#4caf50">🟩 绿色</option>
+                                        </select>
+                                        <select id="textSizeSelect" class="toolbar-select"
+                                            onchange="applyTextSize(this.value)" title="字号">
+                                            <option value="">字号</option>
+                                            <option value="2">小</option>
+                                            <option value="3">中</option>
+                                            <option value="5">大</option>
+                                        </select>
+                                    </div>
+                                    <div class="wysiwyg-editor" id="cfgAnnouncementContent" contenteditable="true"
+                                        data-placeholder="输入公告内容..."></div>
+                                </div>
+
+                                <!-- Save Button -->
+                                <div class="editor-actions">
+                                    <button class="btn-primary" onclick="saveAnnouncement()">
+                                        <i class="fas fa-paper-plane"></i> 发布公告
+                                    </button>
+                                    <div class="announcement-toggle-inline">
+                                        <span class="toggle-label">系统公告</span>
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" id="cfgAnnouncementEnabled">
+                                            <span class="toggle-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- MODERATION VIEW -->
+                <div id="settings-view-moderation" class="view-section">
+                    <div class="module-content">
+                        <!-- Sensitive Words -->
+                        <div class="settings-section">
+                            <h3><i class="fas fa-filter"></i> 敏感词过滤</h3>
+                            <div class="config-item-row">
+                                <div class="config-label">
+                                    <span>自动过滤</span>
+                                    <span class="config-hint">包含敏感词的内容自动隐藏</span>
+                                </div>
+                                <div class="config-value">
+                                    <label class="toggle-switch-sm">
+                                        <input type="checkbox" id="cfgAutoFilter">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="config-item-row"
+                                style="flex-direction: column; align-items: stretch; margin-top: 12px;">
+                                <div class="config-label" style="margin-bottom: 8px;">
+                                    <span>敏感词库</span>
+                                    <span class="config-hint">一行一个词，匹配时自动过滤</span>
+                                </div>
+                                <textarea class="config-textarea" id="cfgSensitiveWords" rows="8"
+                                    placeholder="敏感词1&#10;敏感词2&#10;..."></textarea>
+                                <div class="config-actions" style="margin-top: 12px;">
+                                    <button class="btn-sm btn-primary" onclick="saveSensitiveWords()">
+                                        <i class="fas fa-save"></i> 保存词库
+                                    </button>
+                                    <span class="config-save-indicator" id="sensitiveWordsSaveIndicator"
+                                        style="margin-left: 12px; opacity: 0;">✓ 已保存</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- AI Content Detection -->
+                        <div class="settings-section">
+                            <h3><i class="fas fa-robot"></i> AI 内容检测</h3>
+                            <div class="config-item-row">
+                                <div class="config-label">
+                                    <span>启用AI检测</span>
+                                    <span class="config-hint">使用AI自动检测违规内容（需要API Key）</span>
+                                </div>
+                                <div class="config-value">
+                                    <label class="toggle-switch-sm">
+                                        <input type="checkbox" id="cfgAiContentDetection">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- GALLERY VIEW -->
+                <div id="settings-view-gallery" class="view-section">
+                    <div class="module-content">
+                        <div class="settings-section">
+                            <h3><i class="fas fa-images"></i> 画廊显示</h3>
+                            <div class="config-item-row">
+                                <div class="config-label">
+                                    <span>每页显示数量</span>
+                                    <span class="config-hint">画廊页面每次加载的卡片数量</span>
+                                </div>
+                                <div class="config-value">
+                                    <div class="custom-dropdown" id="perPageDropdown">
+                                        <button class="dropdown-trigger"
+                                            onclick="toggleCustomDropdown('perPageDropdown')">
+                                            <span class="dropdown-value" id="perPageValue">24</span>
+                                            <i class="fas fa-chevron-down"></i>
+                                        </button>
+                                        <div class="dropdown-menu">
+                                            <div class="dropdown-option" data-value="12"
+                                                onclick="selectDropdownOption('perPageDropdown', '12', '12')">12</div>
+                                            <div class="dropdown-option selected" data-value="24"
+                                                onclick="selectDropdownOption('perPageDropdown', '24', '24')">24</div>
+                                            <div class="dropdown-option" data-value="36"
+                                                onclick="selectDropdownOption('perPageDropdown', '36', '36')">36</div>
+                                            <div class="dropdown-option" data-value="48"
+                                                onclick="selectDropdownOption('perPageDropdown', '48', '48')">48</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="config-item-row">
+                                <div class="config-label">
+                                    <span>默认排序</span>
+                                    <span class="config-hint">画廊默认的排序方式</span>
+                                </div>
+                                <div class="config-value">
+                                    <div class="custom-dropdown" id="defaultSortDropdown">
+                                        <button class="dropdown-trigger"
+                                            onclick="toggleCustomDropdown('defaultSortDropdown')">
+                                            <span class="dropdown-value" id="defaultSortValue">最新</span>
+                                            <i class="fas fa-chevron-down"></i>
+                                        </button>
+                                        <div class="dropdown-menu">
+                                            <div class="dropdown-option selected" data-value="newest"
+                                                onclick="selectDropdownOption('defaultSortDropdown', 'newest', '最新')">最新
+                                            </div>
+                                            <div class="dropdown-option" data-value="popular"
+                                                onclick="selectDropdownOption('defaultSortDropdown', 'popular', '最热')">
+                                                最热</div>
+                                            <div class="dropdown-option" data-value="random"
+                                                onclick="selectDropdownOption('defaultSortDropdown', 'random', '随机')">随机
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="config-item-row">
+                                <div class="config-label">
+                                    <span>允许下载</span>
+                                    <span class="config-hint">显示下载按钮允许用户下载图片</span>
+                                </div>
+                                <div class="config-value">
+                                    <label class="toggle-switch-sm">
+                                        <input type="checkbox" id="cfgAllowDownload" checked>
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="config-item-row">
+                                <div class="config-label">
+                                    <span>水印设置</span>
+                                    <span class="config-hint">下载图片时添加水印</span>
+                                </div>
+                                <div class="config-value">
+                                    <label class="toggle-switch-sm">
+                                        <input type="checkbox" id="cfgWatermarkEnabled">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- COMMENTS VIEW -->
+                <div id="settings-view-comments" class="view-section">
+                    <div class="module-content">
+                        <div class="settings-section">
+                            <h3><i class="fas fa-comments"></i> 评论规则</h3>
+                            <div class="config-item-row">
+                                <div class="config-label">
+                                    <span>允许匿名评论</span>
+                                    <span class="config-hint">未登录用户可以发表评论</span>
+                                </div>
+                                <div class="config-value">
+                                    <label class="toggle-switch-sm">
+                                        <input type="checkbox" id="cfgAllowAnonymous">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="config-item-row">
+                                <div class="config-label">
+                                    <span>评论最大长度</span>
+                                    <span class="config-hint">单条评论的字符上限</span>
+                                </div>
+                                <div class="config-value">
+                                    <div class="config-input-wrapper">
+                                        <input type="number" class="config-input" id="cfgMaxCommentLength" min="100"
+                                            max="2000" value="500">
+                                        <span class="config-unit">字</span>
+                                        <span class="config-save-indicator">✓</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="config-item-row">
+                                <div class="config-label">
+                                    <span>嵌套层级上限</span>
+                                    <span class="config-hint">评论回复的最大深度</span>
+                                </div>
+                                <div class="config-value">
+                                    <div class="config-input-wrapper">
+                                        <input type="number" class="config-input" id="cfgMaxNestingLevel" min="1"
+                                            max="5" value="3">
+                                        <span class="config-unit">层</span>
+                                        <span class="config-save-indicator">✓</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- INTEGRATIONS VIEW -->
+                <div id="settings-view-integrations" class="view-section">
+                    <div class="module-content">
+                        <div class="settings-section">
+                            <h3><i class="fas fa-plug"></i> 第三方集成</h3>
+                            <div class="config-item-row">
+                                <div class="config-label">
+                                    <span>Google 登录</span>
+                                    <span class="config-hint">启用 Google OAuth 登录</span>
+                                </div>
+                                <div class="config-value">
+                                    <label class="toggle-switch-sm">
+                                        <input type="checkbox" id="cfgGoogleLogin" checked>
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="config-item-row">
+                                <div class="config-label">
+                                    <span>微信登录</span>
+                                    <span class="config-hint">启用微信 OAuth 登录</span>
+                                </div>
+                                <div class="config-value">
+                                    <label class="toggle-switch-sm">
+                                        <input type="checkbox" id="cfgWechatLogin">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="config-item-row">
+                                <div class="config-label">
+                                    <span>Supabase 实时</span>
+                                    <span class="config-hint">启用实时数据更新功能</span>
+                                </div>
+                                <div class="config-value">
+                                    <label class="toggle-switch-sm">
+                                        <input type="checkbox" id="cfgSupabaseRealtime" checked>
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="config-item-row">
+                                <div class="config-label">
+                                    <span>AI 分析服务</span>
+                                    <span class="config-hint">用于图片分析的AI模型</span>
+                                </div>
+                                <div class="config-value">
+                                    <div class="custom-dropdown" id="aiServiceDropdown">
+                                        <button class="dropdown-trigger"
+                                            onclick="toggleCustomDropdown('aiServiceDropdown')">
+                                            <span class="dropdown-value" id="aiServiceValue">Gemini</span>
+                                            <i class="fas fa-chevron-down"></i>
+                                        </button>
+                                        <div class="dropdown-menu">
+                                            <div class="dropdown-option selected" data-value="gemini"
+                                                onclick="selectDropdownOption('aiServiceDropdown', 'gemini', 'Gemini')">
+                                                Gemini</div>
+                                            <div class="dropdown-option" data-value="openai"
+                                                onclick="selectDropdownOption('aiServiceDropdown', 'openai', 'OpenAI')">
+                                                OpenAI</div>
+                                            <div class="dropdown-option" data-value="claude"
+                                                onclick="selectDropdownOption('aiServiceDropdown', 'claude', 'Claude')">
+                                                Claude</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- EXPORT VIEW -->
+                <div id="settings-view-export" class="view-section">
+                    <div class="module-content">
+                        <div class="settings-section">
+                            <h3><i class="fas fa-file-export"></i> 数据导出</h3>
+                            <div class="export-buttons-grid">
+                                <button class="export-btn" onclick="exportData('users', 'json')">
+                                    <i class="fas fa-users"></i>
+                                    <span>导出用户数据</span>
+                                    <small>JSON 格式</small>
+                                </button>
+                                <button class="export-btn" onclick="exportData('users', 'csv')">
+                                    <i class="fas fa-users"></i>
+                                    <span>导出用户数据</span>
+                                    <small>CSV 格式</small>
+                                </button>
+                                <button class="export-btn" onclick="exportData('comments', 'json')">
+                                    <i class="fas fa-comments"></i>
+                                    <span>导出评论数据</span>
+                                    <small>JSON 格式</small>
+                                </button>
+                                <button class="export-btn" onclick="exportData('comments', 'csv')">
+                                    <i class="fas fa-comments"></i>
+                                    <span>导出评论数据</span>
+                                    <small>CSV 格式</small>
+                                </button>
+                                <button class="export-btn" onclick="exportData('points', 'json')">
+                                    <i class="fas fa-coins"></i>
+                                    <span>导出积分记录</span>
+                                    <small>JSON 格式</small>
+                                </button>
+                                <button class="export-btn" onclick="exportData('points', 'csv')">
+                                    <i class="fas fa-coins"></i>
+                                    <span>导出积分记录</span>
+                                    <small>CSV 格式</small>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SEO VIEW -->
+                <div id="settings-view-seo" class="view-section">
+                    <div class="module-content">
+                        <div class="settings-section">
+                            <h3><i class="fas fa-search"></i> SEO 设置</h3>
+                            <div class="config-item-row" style="flex-direction: column; align-items: stretch;">
+                                <div class="config-label" style="margin-bottom: 8px;">
+                                    <span>网站标题</span>
+                                    <span class="config-hint">显示在浏览器标签页的标题</span>
+                                </div>
+                                <input type="text" class="config-input" id="cfgSiteTitle"
+                                    style="width: 100%; text-align: left;" placeholder="我的提示词画廊">
+                            </div>
+                            <div class="config-item-row"
+                                style="flex-direction: column; align-items: stretch; margin-top: 16px;">
+                                <div class="config-label" style="margin-bottom: 8px;">
+                                    <span>网站描述</span>
+                                    <span class="config-hint">Meta description，用于搜索引擎展示</span>
+                                </div>
+                                <textarea class="config-textarea" id="cfgSiteDescription" rows="3"
+                                    placeholder="精选AI生成图片提示词，一键复制使用..."></textarea>
+                            </div>
+                            <div class="config-item-row"
+                                style="flex-direction: column; align-items: stretch; margin-top: 16px;">
+                                <div class="config-label" style="margin-bottom: 8px;">
+                                    <span>关键词</span>
+                                    <span class="config-hint">Meta keywords，用逗号分隔</span>
+                                </div>
+                                <input type="text" class="config-input" id="cfgSiteKeywords"
+                                    style="width: 100%; text-align: left;"
+                                    placeholder="AI图片, 提示词, Midjourney, Stable Diffusion">
+                            </div>
+                            <div class="config-actions" style="margin-top: 16px;">
+                                <button class="btn-sm btn-primary" onclick="saveSeoSettings()">
+                                    <i class="fas fa-save"></i> 保存SEO设置
+                                </button>
+                                <span class="config-save-indicator" id="seoSaveIndicator"
+                                    style="margin-left: 12px; opacity: 0;">✓ 已保存</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- PERFORMANCE VIEW -->
+                <div id="settings-view-performance" class="view-section">
+                    <div class="module-content">
+                        <div class="settings-section">
+                            <h3><i class="fas fa-tachometer-alt"></i> 性能优化</h3>
+                            <div class="config-item-row">
+                                <div class="config-label">
+                                    <span>图片懒加载</span>
+                                    <span class="config-hint">延迟加载屏幕外的图片</span>
+                                </div>
+                                <div class="config-value">
+                                    <label class="toggle-switch-sm">
+                                        <input type="checkbox" id="cfgLazyLoad" checked>
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="config-item-row">
+                                <div class="config-label">
+                                    <span>图片压缩质量</span>
+                                    <span class="config-hint">WebP转换质量 (60-100%)</span>
+                                </div>
+                                <div class="config-value"
+                                    style="flex-direction: column; align-items: flex-end; gap: 4px;">
+                                    <input type="range" id="cfgImageQuality" min="60" max="100" value="85"
+                                        style="width: 150px;">
+                                    <span id="cfgImageQualityValue"
+                                        style="font-size: 0.85rem; color: var(--text-secondary);">85%</span>
+                                </div>
+                            </div>
+                            <div class="config-item-row">
+                                <div class="config-label">
+                                    <span>缓存时长</span>
+                                    <span class="config-hint">浏览器缓存有效期</span>
+                                </div>
+                                <div class="config-value">
+                                    <div class="custom-dropdown" id="cacheDurationDropdown">
+                                        <button class="dropdown-trigger"
+                                            onclick="toggleCustomDropdown('cacheDurationDropdown')">
+                                            <span class="dropdown-value" id="cacheDurationValue">1 天</span>
+                                            <i class="fas fa-chevron-down"></i>
+                                        </button>
+                                        <div class="dropdown-menu">
+                                            <div class="dropdown-option" data-value="3600"
+                                                onclick="selectDropdownOption('cacheDurationDropdown', '3600', '1 小时')">
+                                                1 小时</div>
+                                            <div class="dropdown-option selected" data-value="86400"
+                                                onclick="selectDropdownOption('cacheDurationDropdown', '86400', '1 天')">
+                                                1 天</div>
+                                            <div class="dropdown-option" data-value="604800"
+                                                onclick="selectDropdownOption('cacheDurationDropdown', '604800', '1 周')">
+                                                1 周</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="config-item-row">
+                                <div class="config-label">
+                                    <span>CDN 启用</span>
+                                    <span class="config-hint">使用CDN加速静态资源</span>
+                                </div>
+                                <div class="config-value">
+                                    <label class="toggle-switch-sm">
+                                        <input type="checkbox" id="cfgCdnEnabled">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- GENERAL VIEW -->
+                <div id="settings-view-general" class="view-section">
+                    <div class="module-content">
+                        <!-- API Key Section -->
+                        <div class="settings-section">
+                            <h3><i class="fas fa-key"></i> API 配置</h3>
+                            <div class="api-keys-list" id="settingsApiKeysList">
+                                <!-- Dynamic key items -->
+                            </div>
+                            <button class="btn-add-config" onclick="addNewApiKey()" style="margin-top: 12px;">
+                                <i class="fas fa-plus"></i> 添加新 Key
+                            </button>
+                            <p class="settings-status" id="apiKeyStatus" style="margin-top: 12px;">
                                 <span class="status-dot"></span>
                                 <span>检测中...</span>
                             </p>
                         </div>
-                    </div>
 
-                    <!-- Coming Soon Section -->
-                    <div class="settings-section coming-soon-section">
-                        <h3><i class="fas fa-rocket"></i> 更多设置</h3>
-                        <div class="coming-soon-items">
-                            <div class="coming-soon-item">
-                                <i class="fas fa-users-cog"></i>
-                                <span>管理员权限</span>
-                            </div>
-                            <div class="coming-soon-item">
-                                <i class="fas fa-filter"></i>
-                                <span>敏感词过滤</span>
-                            </div>
-                            <div class="coming-soon-item">
-                                <i class="fas fa-download"></i>
-                                <span>数据导出</span>
-                            </div>
-                            <div class="coming-soon-item">
-                                <i class="fas fa-bell"></i>
-                                <span>通知设置</span>
+                        <!-- Analytics Settings Section -->
+                        <div class="settings-section">
+                            <h3><i class="fas fa-chart-line"></i> 数据分析</h3>
+                            <div class="config-item-row">
+                                <div class="config-label">
+                                    <span>自动刷新间隔</span>
+                                    <span class="config-hint">设置数据自动刷新的时间间隔</span>
+                                </div>
+                                <div class="config-value">
+                                    <div class="custom-dropdown" id="refreshIntervalDropdown">
+                                        <button class="dropdown-trigger"
+                                            onclick="toggleCustomDropdown('refreshIntervalDropdown')">
+                                            <span class="dropdown-value" id="refreshIntervalValue">5 分钟</span>
+                                            <i class="fas fa-chevron-down"></i>
+                                        </button>
+                                        <div class="dropdown-menu">
+                                            <div class="dropdown-option" data-value="60000"
+                                                onclick="selectDropdownOption('refreshIntervalDropdown', '60000', '1 分钟')">
+                                                1 分钟</div>
+                                            <div class="dropdown-option" data-value="180000"
+                                                onclick="selectDropdownOption('refreshIntervalDropdown', '180000', '3 分钟')">
+                                                3 分钟</div>
+                                            <div class="dropdown-option selected" data-value="300000"
+                                                onclick="selectDropdownOption('refreshIntervalDropdown', '300000', '5 分钟')">
+                                                5 分钟</div>
+                                            <div class="dropdown-option" data-value="600000"
+                                                onclick="selectDropdownOption('refreshIntervalDropdown', '600000', '10 分钟')">
+                                                10 分钟</div>
+                                            <div class="dropdown-option" data-value="900000"
+                                                onclick="selectDropdownOption('refreshIntervalDropdown', '900000', '15 分钟')">
+                                                15 分钟</div>
+                                            <div class="dropdown-option" data-value="1800000"
+                                                onclick="selectDropdownOption('refreshIntervalDropdown', '1800000', '30 分钟')">
+                                                30 分钟</div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                        <p class="coming-soon-note">🚀 更多功能即将推出</p>
+
+                        <!-- Coming Soon Section -->
+                        <div class="settings-section coming-soon-section">
+                            <h3><i class="fas fa-rocket"></i> 更多设置</h3>
+                            <div class="coming-soon-items">
+                                <div class="coming-soon-item">
+                                    <i class="fas fa-users-cog"></i>
+                                    <span>管理员权限</span>
+                                </div>
+                                <div class="coming-soon-item">
+                                    <i class="fas fa-filter"></i>
+                                    <span>敏感词过滤</span>
+                                </div>
+                                <div class="coming-soon-item">
+                                    <i class="fas fa-download"></i>
+                                    <span>数据导出</span>
+                                </div>
+                                <div class="coming-soon-item">
+                                    <i class="fas fa-bell"></i>
+                                    <span>通知设置</span>
+                                </div>
+                            </div>
+                            <p class="coming-soon-note">🚀 更多功能即将推出</p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1166,224 +2038,412 @@
             <!-- ========== ANALYTICS MODULE ========== -->
             <div id="module-analytics" class="module-container">
                 <div class="analytics-dashboard">
-                    <!-- KPI Cards Row -->
-                    <div class="kpi-cards-row">
-                        <div class="kpi-card" id="kpiDau">
-                            <div class="kpi-icon"><i class="fas fa-user-clock"></i></div>
-                            <div class="kpi-content">
-                                <div class="kpi-value-row">
-                                    <div class="kpi-value" id="kpiDauValue">--</div>
-                                    <div class="kpi-trend" id="kpiDauTrend"></div>
-                                </div>
-                                <div class="kpi-label">日活用户 (DAU)</div>
-                            </div>
-                        </div>
-                        <div class="kpi-card" id="kpiMau">
-                            <div class="kpi-icon"><i class="fas fa-users"></i></div>
-                            <div class="kpi-content">
-                                <div class="kpi-value" id="kpiMauValue">--</div>
-                                <div class="kpi-label">月活用户 (MAU)</div>
-                            </div>
-                        </div>
-                        <div class="kpi-card" id="kpiNewUsers">
-                            <div class="kpi-icon"><i class="fas fa-user-plus"></i></div>
-                            <div class="kpi-content">
-                                <div class="kpi-value-row">
-                                    <div class="kpi-value" id="kpiNewUsersValue">--</div>
-                                    <div class="kpi-trend" id="kpiNewUsersTrend"></div>
-                                </div>
-                                <div class="kpi-label">本周新增</div>
-                            </div>
-                        </div>
-                        <div class="kpi-card" id="kpiPoints">
-                            <div class="kpi-icon"><i class="fas fa-coins"></i></div>
-                            <div class="kpi-content">
-                                <div class="kpi-value" id="kpiPointsValue">--</div>
-                                <div class="kpi-label">积分流通</div>
-                            </div>
-                        </div>
-                        <div class="kpi-card" id="kpiComments">
-                            <div class="kpi-icon"><i class="fas fa-comments"></i></div>
-                            <div class="kpi-content">
-                                <div class="kpi-value-row">
-                                    <div class="kpi-value" id="kpiCommentsValue">--</div>
-                                    <div class="kpi-trend" id="kpiCommentsTrend"></div>
-                                </div>
-                                <div class="kpi-label">总评论数</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Charts Grid -->
-                    <div class="charts-grid">
-                        <!-- User Trend Chart -->
-                        <div class="chart-card glass-panel">
-                            <div class="chart-header">
-                                <h3><i class="fas fa-chart-area"></i> 用户增长趋势</h3>
-                                <div class="chart-period-selector">
-                                    <button class="period-btn active" data-days="7">7天</button>
-                                    <button class="period-btn" data-days="30">30天</button>
-                                    <button class="period-btn" data-days="90">90天</button>
-                                </div>
-                            </div>
-                            <div class="chart-body">
-                                <canvas id="userTrendChart"></canvas>
-                            </div>
-                        </div>
-
-                        <!-- Channel Distribution Chart -->
-                        <div class="chart-card glass-panel">
-                            <div class="chart-header">
-                                <h3><i class="fas fa-chart-pie"></i> 渠道分布</h3>
-                            </div>
-                            <div class="chart-body">
-                                <canvas id="channelChart"></canvas>
-                            </div>
-                        </div>
-
-                        <!-- Content Trend Chart -->
-                        <div class="chart-card glass-panel">
-                            <div class="chart-header">
-                                <h3><i class="fas fa-chart-line"></i> 内容活跃趋势</h3>
-                            </div>
-                            <div class="chart-body">
-                                <canvas id="contentTrendChart"></canvas>
-                            </div>
-                        </div>
-
-                        <!-- Top Content List -->
-                        <div class="chart-card glass-panel">
-                            <div class="chart-header">
-                                <h3><i class="fas fa-fire"></i> 热门内容 TOP 10</h3>
-                            </div>
-                            <div class="chart-body top-content-list" id="topContentList">
-                                <!-- Populated by JS -->
-                                <div class="loading-text">加载中...</div>
-                            </div>
-                        </div>
-
-                        <!-- Activity Heatmap -->
-                        <div class="chart-card glass-panel chart-wide">
-                            <div class="chart-header">
-                                <h3><i class="fas fa-th"></i> 活跃时段热力图</h3>
-                            </div>
-                            <div class="chart-body heatmap-container" id="activityHeatmap">
-                                <div class="loading-text">加载中...</div>
-                            </div>
-                        </div>
-
-                        <!-- Top Contributors -->
-                        <div class="chart-card glass-panel">
-                            <div class="chart-header">
-                                <h3><i class="fas fa-crown"></i> 贡献者排行榜</h3>
-                            </div>
-                            <div class="chart-body contributors-list" id="topContributorsList">
-                                <div class="loading-text">加载中...</div>
-                            </div>
-                        </div>
-
-                        <!-- Community Stats -->
-                        <div class="chart-card glass-panel">
-                            <div class="chart-header">
-                                <h3><i class="fas fa-heart"></i> 社区活跃趋势</h3>
-                            </div>
-                            <div class="chart-body">
-                                <canvas id="communityChart"></canvas>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Phase 10: Deep Analytics Grid -->
-                    <div class="deep-analytics-grid">
-                        <!-- Conversion Funnel -->
-                        <div class="chart-card glass-panel">
-                            <div class="chart-header">
-                                <h3><i class="fas fa-filter"></i> 转化漏斗</h3>
-                            </div>
-                            <div class="chart-body" id="conversionFunnel">
-                                <canvas id="funnelChart"></canvas>
-                            </div>
-                        </div>
-
-                        <!-- Retention Cohort -->
-                        <div class="chart-card glass-panel">
-                            <div class="chart-header">
-                                <h3><i class="fas fa-th"></i> 用户留存 (周)</h3>
-                            </div>
-                            <div class="chart-body" id="retentionCohort">
-                                <div class="loading-text">加载中...</div>
-                            </div>
-                        </div>
-
-                        <!-- Points Flow -->
-                        <div class="chart-card glass-panel">
-                            <div class="chart-header">
-                                <h3><i class="fas fa-exchange-alt"></i> 积分流向</h3>
-                            </div>
-                            <div class="chart-body" id="pointsFlow">
-                                <div class="loading-text">加载中...</div>
-                            </div>
-                        </div>
-
-                        <!-- AI Prediction -->
-                        <div class="chart-card glass-panel">
-                            <div class="chart-header">
-                                <h3><i class="fas fa-chart-line"></i> AI 趋势预测</h3>
-                                <button class="btn-sm btn-secondary" onclick="loadAIPrediction()">
-                                    <i class="fas fa-sync-alt"></i> 生成
-                                </button>
-                            </div>
-                            <div class="chart-body" id="aiPredictionContent">
-                                <p class="ai-placeholder">点击"生成"获取 AI 预测...</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Phase 11 & 14: Geo + A/B Testing Grid -->
-                    <div class="deep-analytics-grid">
-                        <!-- Geo Distribution -->
-                        <div class="chart-card glass-panel">
-                            <div class="chart-header">
-                                <h3><i class="fas fa-globe-asia"></i> 地理分布</h3>
-                            </div>
-                            <div class="chart-body" id="geoDistribution">
-                                <canvas id="geoChart"></canvas>
-                            </div>
-                        </div>
-
-                        <!-- A/B Experiments -->
-                        <div class="chart-card glass-panel">
-                            <div class="chart-header">
-                                <h3><i class="fas fa-flask"></i> A/B 实验</h3>
-                                <div class="header-actions">
-                                    <button class="btn-sm btn-primary" onclick="openExperimentModal()">
-                                        <i class="fas fa-plus"></i> 创建
-                                    </button>
-                                    <button class="btn-sm btn-secondary" onclick="loadExperimentsList()">
-                                        <i class="fas fa-sync-alt"></i>
-                                    </button>
-                                </div>
-                            </div>
-                            <div class="chart-body experiments-list" id="experimentsList">
-                                <div class="empty-state-hint">
-                                    <i class="fas fa-flask"></i>
-                                    <span>执行 SQL 后刷新</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- AI Insight Card -->
-                    <div class="ai-insight-card glass-panel" id="aiInsightCard">
-                        <div class="ai-insight-header">
-                            <div class="ai-icon"><i class="fas fa-robot"></i></div>
-                            <h3>AI 智能洞察</h3>
-                            <button class="btn-secondary" id="generateInsightBtn">
-                                <i class="fas fa-magic"></i> 生成分析
+                    <!-- Status bar removed - elements moved to toolbar -->
+                    <!-- Anomaly Alerts Area -->
+                    <div class="anomaly-alerts-area" id="anomalyAlertsArea" style="display: none;">
+                        <div class="alerts-header">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            <span>异常告警</span>
+                            <button class="btn-icon-sm" onclick="dismissAllAlerts()">
+                                <i class="fas fa-times"></i> 忽略
                             </button>
                         </div>
-                        <div class="ai-insight-content" id="aiInsightContent">
-                            <p class="ai-placeholder">点击"生成分析"获取 AI 智能洞察...</p>
+                        <div class="alerts-list" id="alertsList"></div>
+                    </div>
+
+                    <!-- Analytics Tabs (centered, standalone) -->
+                    <nav class="admin-tabs" id="analyticsTabsNav">
+                        <button class="admin-tab active" data-tab="users"
+                            onclick="switchAnalyticsTab('users')">用户表现</button>
+                        <button class="admin-tab" data-tab="points" onclick="switchAnalyticsTab('points')">积分生态</button>
+                        <button class="admin-tab" data-tab="ai" onclick="switchAnalyticsTab('ai')">AI 洞察</button>
+                        <div class="admin-tab-indicator"></div>
+                    </nav>
+
+
+                    <!-- Global Analytics Controls -->
+                    <div class="analytics-toolbar">
+                        <div class="toolbar-left">
+                            <!-- Unified Date Range Dropdown -->
+                            <div class="date-range-dropdown" id="dateRangeDropdown">
+                                <button class="date-range-trigger" onclick="toggleDateRangeDropdown()">
+                                    <i class="fas fa-calendar-alt"></i>
+                                    <span id="dateRangeLabel">最近 7 天</span>
+                                    <i class="fas fa-chevron-down dropdown-arrow"></i>
+                                </button>
+                                <div class="date-range-menu" id="dateRangeMenu">
+                                    <div class="date-range-presets">
+                                        <button class="preset-btn active" data-range="7"
+                                            onclick="selectPresetRange(7)">最近 7 天</button>
+                                        <button class="preset-btn" data-range="30" onclick="selectPresetRange(30)">最近 30
+                                            天</button>
+                                        <button class="preset-btn" data-range="90" onclick="selectPresetRange(90)">最近 90
+                                            天</button>
+                                        <button class="preset-btn" data-range="365" onclick="selectPresetRange(365)">最近
+                                            1 年</button>
+                                    </div>
+                                    <div class="date-range-divider"></div>
+                                    <div class="custom-range-section">
+                                        <div class="custom-range-label">自定义范围</div>
+                                        <div class="custom-range-inputs">
+                                            <div class="custom-date-picker" id="customStartPicker"
+                                                onclick="toggleInlineCalendar(event)">
+                                                <span class="custom-date-value" id="customStartDisplay">选择开始日期</span>
+                                                <i class="fas fa-calendar"></i>
+                                            </div>
+                                            <span class="date-separator">至</span>
+                                            <div class="custom-date-picker" id="customEndPicker"
+                                                onclick="toggleInlineCalendar(event)">
+                                                <span class="custom-date-value" id="customEndDisplay">选择结束日期</span>
+                                                <i class="fas fa-calendar"></i>
+                                            </div>
+                                        </div>
+                                        <!-- Custom Calendar -->
+                                        <div class="inline-calendar" id="inlineCalendar">
+                                            <div class="calendar-header">
+                                                <button type="button" class="cal-nav" onclick="changeInlineMonth(-1)"><i
+                                                        class="fas fa-chevron-left"></i></button>
+                                                <span class="cal-title" id="calendarTitle">一月 2026</span>
+                                                <button type="button" class="cal-nav" onclick="changeInlineMonth(1)"><i
+                                                        class="fas fa-chevron-right"></i></button>
+                                            </div>
+                                            <div class="calendar-hint" id="calendarHint">选择开始日期</div>
+                                            <div class="calendar-weekdays">
+                                                <span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span>
+                                            </div>
+                                            <div class="calendar-days" id="calendarDays"></div>
+                                            <div class="calendar-footer">
+                                                <button type="button" class="cal-btn-reset"
+                                                    onclick="resetInlineCalendar()">清除</button>
+                                                <button type="button" class="cal-btn-today"
+                                                    onclick="setInlineToday()">今天</button>
+                                            </div>
+                                        </div>
+                                        <button class="custom-range-apply" onclick="applyCustomRange()">确定</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="toolbar-center">
+                            <div class="realtime-indicator">
+                                <span class="pulse-dot"></span>
+                                <span class="realtime-label">在线</span>
+                                <span class="realtime-value" id="onlineUsersCount">--</span>
+                            </div>
+                        </div>
+                        <div class="toolbar-right">
+                            <button class="toolbar-icon-btn" onclick="exportAnalyticsData('excel')"
+                                title="导出 Excel (多工作表)">
+                                <i class="fas fa-file-excel"></i>
+                            </button>
+                            <button class="toolbar-icon-btn" onclick="exportAnalyticsData('csv')" title="导出 CSV (单文件)">
+                                <i class="fas fa-file-csv"></i>
+                            </button>
+                            <button class="toolbar-icon-btn" onclick="refreshAllAnalytics()" title="刷新数据">
+                                <i class="fas fa-sync-alt"></i>
+                            </button>
+                            <div class="auto-refresh-toggle" title="自动刷新 (5分钟)">
+                                <label class="toggle-switch-sm">
+                                    <input type="checkbox" id="autoRefreshToggle" checked>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
+                            <div class="last-update-compact">
+                                <span id="lastUpdateTime">--</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tab Content: Users Overview (Default) -->
+                    <div id="analytics-tab-users" class="analytics-tab-content active">
+                        <!-- KPI Cards Row Used ONLY for Users Tab -->
+                        <div class="kpi-cards-row">
+                            <div class="kpi-card" id="kpiDau">
+                                <div class="kpi-icon"><i class="fas fa-user-clock"></i></div>
+                                <div class="kpi-content">
+                                    <div class="kpi-value-row">
+                                        <div class="kpi-value" id="kpiDauValue">--</div>
+                                        <div class="kpi-trend" id="kpiDauTrend"></div>
+                                    </div>
+                                    <div class="kpi-label">日活用户 (DAU)</div>
+                                </div>
+                            </div>
+                            <div class="kpi-card" id="kpiMau">
+                                <div class="kpi-icon"><i class="fas fa-users"></i></div>
+                                <div class="kpi-content">
+                                    <div class="kpi-value" id="kpiMauValue">--</div>
+                                    <div class="kpi-label">月活用户 (MAU)</div>
+                                </div>
+                            </div>
+                            <div class="kpi-card" id="kpiNewUsers">
+                                <div class="kpi-icon"><i class="fas fa-user-plus"></i></div>
+                                <div class="kpi-content">
+                                    <div class="kpi-value-row">
+                                        <div class="kpi-value" id="kpiNewUsersValue">--</div>
+                                        <div class="kpi-trend" id="kpiNewUsersTrend"></div>
+                                    </div>
+                                    <div class="kpi-label">本周新增</div>
+                                </div>
+                            </div>
+                            <div class="kpi-card" id="kpiComments">
+                                <div class="kpi-icon"><i class="fas fa-comments"></i></div>
+                                <div class="kpi-content">
+                                    <div class="kpi-value-row">
+                                        <div class="kpi-value" id="kpiCommentsValue">--</div>
+                                        <div class="kpi-trend" id="kpiCommentsTrend"></div>
+                                    </div>
+                                    <div class="kpi-label">总评论数</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Charts Grid for Users -->
+                        <div class="charts-grid">
+                            <!-- User Trend Chart -->
+                            <div class="chart-card glass-panel">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-chart-area"></i> 用户增长趋势</h3>
+                                </div>
+                                <div class="chart-body">
+                                    <canvas id="userTrendChart"></canvas>
+                                </div>
+                            </div>
+
+                            <!-- Channel Distribution Chart -->
+                            <div class="chart-card glass-panel">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-chart-pie"></i> 渠道分布</h3>
+                                </div>
+                                <div class="chart-body">
+                                    <canvas id="channelChart"></canvas>
+                                </div>
+                            </div>
+
+                            <!-- Content Trend Chart -->
+                            <div class="chart-card glass-panel">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-chart-line"></i> 内容活跃趋势</h3>
+                                </div>
+                                <div class="chart-body">
+                                    <canvas id="contentTrendChart"></canvas>
+                                </div>
+                            </div>
+
+                            <!-- Top Content List -->
+                            <div class="chart-card glass-panel">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-fire"></i> 热门内容 TOP 10</h3>
+                                </div>
+                                <div class="chart-body top-content-list" id="topContentList">
+                                    <!-- Populated by JS -->
+                                    <div class="loading-text">加载中...</div>
+                                </div>
+                            </div>
+
+                            <!-- Activity Heatmap -->
+                            <div class="chart-card glass-panel chart-wide">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-th"></i> 活跃时段热力图</h3>
+                                </div>
+                                <div class="chart-body heatmap-container" id="activityHeatmap">
+                                    <div class="loading-text">加载中...</div>
+                                </div>
+                            </div>
+
+                            <!-- Top Contributors -->
+                            <div class="chart-card glass-panel">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-crown"></i> 贡献者排行榜</h3>
+                                </div>
+                                <div class="chart-body contributors-list" id="topContributorsList">
+                                    <div class="loading-text">加载中...</div>
+                                </div>
+                            </div>
+
+                            <!-- Community Stats -->
+                            <div class="chart-card glass-panel">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-heart"></i> 社区活跃趋势</h3>
+                                </div>
+                                <div class="chart-body">
+                                    <canvas id="communityChart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Deep Analytics for Users -->
+                        <div class="deep-analytics-grid">
+                            <!-- Conversion Funnel -->
+                            <div class="chart-card glass-panel">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-filter"></i> 转化漏斗</h3>
+                                </div>
+                                <div class="chart-body" id="conversionFunnel">
+                                    <canvas id="funnelChart"></canvas>
+                                </div>
+                            </div>
+
+                            <!-- Retention Cohort -->
+                            <div class="chart-card glass-panel">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-th"></i> 用户留存 (周)</h3>
+                                </div>
+                                <div class="chart-body" id="retentionCohort">
+                                    <div class="loading-text">加载中...</div>
+                                </div>
+                            </div>
+
+                            <!-- Geo Distribution -->
+                            <div class="chart-card glass-panel">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-globe-asia"></i> 地理分布</h3>
+                                </div>
+                                <div class="chart-body" id="geoDistribution">
+                                    <canvas id="geoChart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tab Content: Points Ecosystem -->
+                    <div id="analytics-tab-points" class="analytics-tab-content">
+                        <!-- Points KPIs (Will be enhanced) -->
+                        <div class="kpi-cards-row">
+                            <div class="kpi-card" id="kpiPoints">
+                                <div class="kpi-icon"><i class="fas fa-coins"></i></div>
+                                <div class="kpi-content">
+                                    <div class="kpi-value" id="kpiPointsValue">--</div>
+                                    <div class="kpi-label">积分流通总量</div>
+                                </div>
+                            </div>
+                            <!-- New Placeholders for Points KPIs -->
+                            <div class="kpi-card">
+                                <div class="kpi-icon"><i class="fas fa-wallet"></i></div>
+                                <div class="kpi-content">
+                                    <div class="kpi-value" id="kpiPointsInValue">--</div>
+                                    <div class="kpi-label">本周收入</div>
+                                </div>
+                            </div>
+                            <div class="kpi-card">
+                                <div class="kpi-icon"><i class="fas fa-shopping-cart"></i></div>
+                                <div class="kpi-content">
+                                    <div class="kpi-value" id="kpiPointsOutValue">--</div>
+                                    <div class="kpi-label">本周消耗</div>
+                                </div>
+                            </div>
+                            <div class="kpi-card">
+                                <div class="kpi-icon"><i class="fas fa-tachometer-alt"></i></div>
+                                <div class="kpi-content">
+                                    <div class="kpi-value" id="kpiPointsVelocityValue">--</div>
+                                    <div class="kpi-label">流通速度</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="charts-grid">
+                            <!-- Points Flow -->
+                            <div class="chart-card glass-panel">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-exchange-alt"></i> 积分流向趋势</h3>
+                                </div>
+                                <div class="chart-body" id="pointsFlow">
+                                    <div class="loading-text">加载中...</div>
+                                </div>
+                            </div>
+
+                            <!-- New Charts Placeholders -->
+                            <!-- Points Distribution -->
+                            <div class="chart-card glass-panel">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-chart-bar"></i> 积分持有分布</h3>
+                                </div>
+                                <div class="chart-body">
+                                    <canvas id="pointsDistChart"></canvas>
+                                </div>
+                            </div>
+
+                            <!-- Points Leaderboard -->
+                            <div class="chart-card glass-panel">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-trophy"></i> 积分富豪榜 Top 10</h3>
+                                </div>
+                                <div class="chart-body" id="pointsLeaderboard">
+                                    <div class="loading-text">开发中...</div>
+                                </div>
+                            </div>
+
+                            <!-- Redemption Funnel -->
+                            <div class="chart-card glass-panel">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-ticket-alt"></i> 兑换码漏斗</h3>
+                                </div>
+                                <div class="chart-body">
+                                    <canvas id="redemptionFunnelChart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tab Content: AI Insights -->
+                    <div id="analytics-tab-ai" class="analytics-tab-content">
+                        <!-- AI Insight Card -->
+                        <div class="ai-insight-card glass-panel" id="aiInsightCard" style="margin-bottom: 24px;">
+                            <div class="ai-insight-header">
+                                <div class="ai-icon"><i class="fas fa-robot"></i></div>
+                                <h3>AI 智能洞察</h3>
+                                <button class="btn-secondary" id="generateInsightBtn">
+                                    <i class="fas fa-magic"></i> 生成分析
+                                </button>
+                            </div>
+                            <div class="ai-insight-content" id="aiInsightContent">
+                                <p class="ai-placeholder">点击"生成分析"获取 AI 智能洞察...</p>
+                            </div>
+                        </div>
+
+                        <div class="charts-grid">
+                            <!-- AI Prediction -->
+                            <div class="chart-card glass-panel">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-chart-line"></i> 趋势预测 (未来7天)</h3>
+                                    <button class="btn-sm btn-secondary" onclick="loadAIPrediction()">
+                                        <i class="fas fa-sync-alt"></i> 生成
+                                    </button>
+                                </div>
+                                <div class="chart-body" id="aiPredictionContent">
+                                    <p class="ai-placeholder">点击"生成"获取 AI 预测...</p>
+                                </div>
+                            </div>
+
+                            <!-- A/B Experiments -->
+                            <div class="chart-card glass-panel">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-flask"></i> A/B 实验管理</h3>
+                                    <div class="header-actions">
+                                        <button class="btn-sm btn-primary" onclick="openExperimentModal()">
+                                            <i class="fas fa-plus"></i> 创建
+                                        </button>
+                                        <button class="btn-sm btn-secondary" onclick="loadExperimentsList()">
+                                            <i class="fas fa-sync-alt"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="chart-body experiments-list" id="experimentsList">
+                                    <div class="empty-state-hint">
+                                        <i class="fas fa-flask"></i>
+                                        <span>执行 SQL 后刷新</span>
+                                    </div>
+                                </div>
+                                <!-- A/B Results Chart -->
+                                <div class="ab-results-chart" id="abResultsChart" style="display: none;">
+                                    <div class="ab-chart-header">
+                                        <span id="abChartTitle">实验结果对比</span>
+                                        <button class="btn-icon-sm" onclick="closeABResultsChart()">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </div>
+                                    <canvas id="abCompareChart" height="200"></canvas>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1430,6 +2490,17 @@
                     <button type="button" class="btn-link" onclick="addVariantRow()">
                         <i class="fas fa-plus"></i> 添加变体
                     </button>
+                </div>
+                <div class="form-group">
+                    <label>目标指标</label>
+                    <select id="expTargetMetric" class="form-select">
+                        <option value="page_view">页面浏览量</option>
+                        <option value="button_click">按钮点击</option>
+                        <option value="signup">注册转化</option>
+                        <option value="purchase">购买转化</option>
+                        <option value="engagement">互动参与</option>
+                    </select>
+                    <small class="form-hint">选择要追踪的转化指标</small>
                 </div>
                 <div class="form-actions">
                     <button type="button" class="btn-secondary" onclick="closeExperimentModal()">取消</button>
@@ -1505,6 +2576,7 @@
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/zh.js"></script>
     <script src="admin-comments.js"></script>
     <script src="admin-analytics.js"></script>
+    <script src="admin-config.js"></script>
     <script src="admin-studio.js"></script>
 </body>
 

@@ -518,6 +518,464 @@ body {
     /* Note: mask-image removed - it was clipping the search dropdown */
 }
 
+/* ===== System Announcement - Multi-Type Support ===== */
+
+/* Base Banner Type (Default) */
+.announcement-banner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 14px 24px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    font-size: 0.95rem;
+    position: relative;
+    border-radius: 0;
+    box-shadow: 0 4px 20px rgba(102, 126, 234, 0.3);
+    animation: bannerSlideIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.announcement-banner.closing {
+    animation: bannerSlideOut 0.3s ease-in forwards;
+}
+
+@keyframes bannerSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-100%);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes bannerSlideOut {
+    from {
+        opacity: 1;
+        transform: translateY(0);
+    }
+
+    to {
+        opacity: 0;
+        transform: translateY(-100%);
+    }
+}
+
+/* Modal Type (Center Popup) */
+.announcement-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: modalOverlayIn 0.3s ease-out;
+}
+
+.announcement-modal-overlay.closing {
+    animation: modalOverlayOut 0.3s ease-in forwards;
+}
+
+@keyframes modalOverlayIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes modalOverlayOut {
+    from {
+        opacity: 1;
+    }
+
+    to {
+        opacity: 0;
+    }
+}
+
+.announcement-modal {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 0;
+    border-radius: 24px;
+    max-width: 480px;
+    width: 90%;
+    position: relative;
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.3);
+    animation: modalPopIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    overflow: hidden;
+}
+
+.announcement-modal-overlay.closing .announcement-modal {
+    animation: modalPopOut 0.25s ease-in forwards;
+}
+
+@keyframes modalPopIn {
+    from {
+        opacity: 0;
+        transform: scale(0.8) translateY(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+@keyframes modalPopOut {
+    from {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    to {
+        opacity: 0;
+        transform: scale(0.9);
+    }
+}
+
+/* Header Section - Icon + Title centered */
+.announcement-modal .announcement-header {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 24px 24px 12px;
+}
+
+.announcement-modal .announcement-icon-wrapper {
+    width: 36px;
+    height: 36px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+}
+
+.announcement-modal .announcement-title {
+    font-size: 0.95rem;
+    font-weight: 500;
+    opacity: 0.9;
+}
+
+.announcement-modal .announcement-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    opacity: 0.9;
+    letter-spacing: 0.5px;
+}
+
+/* Body Section */
+.announcement-modal .announcement-body {
+    padding: 0 24px 24px;
+}
+
+.announcement-modal .announcement-text {
+    background: rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-radius: 16px;
+    padding: 20px;
+    font-size: 0.95rem;
+    line-height: 1.7;
+    text-align: left;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+/* Footer Section */
+.announcement-modal .announcement-footer {
+    padding: 0 24px 24px;
+    display: flex;
+    justify-content: center;
+}
+
+.announcement-modal .announcement-close {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    background: rgba(255, 255, 255, 0.15);
+    border: none;
+    color: white;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    opacity: 0.7;
+}
+
+.announcement-modal .announcement-close:hover {
+    background: rgba(255, 255, 255, 0.25);
+    opacity: 1;
+    transform: scale(1.1);
+}
+
+/* "我知道了" Acknowledge Button - Modal */
+.announcement-ack-btn {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    color: white;
+    padding: 10px 24px;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.announcement-ack-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.6);
+}
+
+.announcement-ack-btn i {
+    font-size: 0.8rem;
+    opacity: 0.8;
+}
+
+/* "我知道了" Acknowledge Button - Toast (smaller) */
+.announcement-ack-btn-sm {
+    background: rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    color: white;
+    padding: 6px 14px;
+    border-radius: 15px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-left: auto;
+    white-space: nowrap;
+}
+
+.announcement-ack-btn-sm:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* Toast Type (Bottom Right) */
+.announcement-toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 16px 20px;
+    border-radius: 12px;
+    max-width: 420px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
+    z-index: 9998;
+    animation: toastSlideIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.announcement-toast.closing {
+    animation: toastSlideOut 0.3s ease-in forwards;
+}
+
+@keyframes toastSlideIn {
+    from {
+        opacity: 0;
+        transform: translateX(100%);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes toastSlideOut {
+    from {
+        opacity: 1;
+        transform: translateX(0);
+    }
+
+    to {
+        opacity: 0;
+        transform: translateX(100%);
+    }
+}
+
+.announcement-toast .announcement-content {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+.announcement-toast .announcement-content i {
+    font-size: 1.2rem;
+    margin-top: 2px;
+}
+
+.announcement-toast .announcement-close {
+    background: rgba(255, 255, 255, 0.2);
+    border: none;
+    color: white;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    font-size: 0.8rem;
+    flex-shrink: 0;
+}
+
+.announcement-toast .announcement-close:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* Banner Common Elements */
+.announcement-content {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.announcement-content i {
+    font-size: 1.1rem;
+}
+
+.announcement-banner .announcement-close {
+    position: absolute;
+    right: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(255, 255, 255, 0.2);
+    border: none;
+    color: white;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.announcement-banner .announcement-close:hover {
+    background: rgba(255, 255, 255, 0.3);
+    transform: translateY(-50%) scale(1.1);
+}
+
+/* ===== Color Themes ===== */
+
+/* Purple (Default) */
+.announcement-color-purple,
+.announcement-banner.color-purple,
+.announcement-modal.color-purple,
+.announcement-toast.color-purple {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    box-shadow: 0 4px 20px rgba(102, 126, 234, 0.3);
+}
+
+/* Blue */
+.announcement-color-blue,
+.announcement-banner.color-blue,
+.announcement-modal.color-blue,
+.announcement-toast.color-blue {
+    background: linear-gradient(135deg, #2193b0 0%, #6dd5ed 100%);
+    box-shadow: 0 4px 20px rgba(33, 147, 176, 0.3);
+}
+
+/* Green */
+.announcement-color-green,
+.announcement-banner.color-green,
+.announcement-modal.color-green,
+.announcement-toast.color-green {
+    background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+    box-shadow: 0 4px 20px rgba(17, 153, 142, 0.3);
+}
+
+/* Orange */
+.announcement-color-orange,
+.announcement-banner.color-orange,
+.announcement-modal.color-orange,
+.announcement-toast.color-orange {
+    background: linear-gradient(135deg, #f2994a 0%, #f2c94c 100%);
+    box-shadow: 0 4px 20px rgba(242, 153, 74, 0.3);
+}
+
+/* Red */
+.announcement-color-red,
+.announcement-banner.color-red,
+.announcement-modal.color-red,
+.announcement-toast.color-red {
+    background: linear-gradient(135deg, #eb3349 0%, #f45c43 100%);
+    box-shadow: 0 4px 20px rgba(235, 51, 73, 0.3);
+}
+
+/* Dark */
+.announcement-color-dark,
+.announcement-banner.color-dark,
+.announcement-modal.color-dark,
+.announcement-toast.color-dark {
+    background: linear-gradient(135deg, #2c3e50 0%, #4a5568 100%);
+    box-shadow: 0 4px 20px rgba(44, 62, 80, 0.3);
+}
+
+/* Dark mode adjustments */
+[data-theme="dark"] .announcement-banner {
+    box-shadow: 0 4px 25px rgba(0, 0, 0, 0.4);
+}
+
+[data-theme="dark"] .announcement-modal {
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5);
+}
+
+[data-theme="dark"] .announcement-toast {
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+}
+
+/* ===== Font Size Classes ===== */
+.announcement-banner.size-small,
+.announcement-modal.size-small,
+.announcement-toast.size-small {
+    font-size: 0.85rem;
+}
+
+.announcement-banner.size-medium,
+.announcement-modal.size-medium,
+.announcement-toast.size-medium {
+    font-size: 0.95rem;
+}
+
+.announcement-banner.size-large,
+.announcement-modal.size-large,
+.announcement-toast.size-large {
+    font-size: 1.1rem;
+}
+
+/* Text with line breaks */
+#announcementText,
+.announcement-text,
+.announcement-toast span {
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
 /* The spotlight effect overlay - Darker trace on white */
 .spotlight-overlay {
     position: absolute;

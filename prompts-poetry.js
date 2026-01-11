@@ -514,6 +514,177 @@ function enterAdminStudio() {
     toggleAvatarMenu();
 }
 
+// ========================================
+// SYSTEM ANNOUNCEMENT (Multi-Type Support)
+// ========================================
+
+let currentAnnouncementElement = null;
+
+async function loadAnnouncement() {
+    console.log('📢 loadAnnouncement() 开始执行...');
+
+    if (!window.supabaseClient) {
+        console.warn('📢 Supabase client 不可用');
+        return;
+    }
+
+    try {
+        console.log('📢 正在获取 notifications 配置...');
+        const { data, error } = await window.supabaseClient.rpc('get_system_config', { p_key: 'notifications' });
+
+        if (error) {
+            console.error('📢 获取配置出错:', error);
+            return;
+        }
+
+        if (!data) {
+            console.warn('📢 notifications 配置不存在');
+            return;
+        }
+
+        const config = data;
+        console.log('📢 配置:', config);
+
+        if (config.announcement_enabled && config.announcement_content) {
+            const type = config.announcement_type || 'banner';
+            const color = config.announcement_color || 'purple';
+            const size = config.announcement_size || 'medium';
+            // Convert line breaks to <br> for proper display
+            const content = config.announcement_content.replace(/\n/g, '<br>');
+
+            // Check if user already acknowledged this announcement (permanent)
+            const ackKey = 'announcement_acked_' + btoa(encodeURIComponent(config.announcement_content.substring(0, 100)));
+            if (localStorage.getItem(ackKey)) {
+                console.log('该公告已被用户确认');
+                return;
+            }
+
+            // Show announcement based on type
+            showAnnouncement(type, color, size, content, ackKey);
+            console.log('公告已显示:', type, color, size);
+        } else {
+            console.log('📢 公告未启用或内容为空');
+        }
+    } catch (err) {
+        console.error('📢 加载公告失败:', err);
+    }
+}
+
+function showAnnouncement(type, color, size, content, ackKey) {
+    // Remove any existing announcement
+    if (currentAnnouncementElement) {
+        currentAnnouncementElement.remove();
+    }
+
+    if (type === 'banner') {
+        showBannerAnnouncement(color, size, content, ackKey);
+    } else if (type === 'modal') {
+        showModalAnnouncement(color, size, content, ackKey);
+    } else if (type === 'toast') {
+        showToastAnnouncement(color, size, content, ackKey);
+    }
+}
+
+function showBannerAnnouncement(color, size, content, ackKey) {
+    const banner = document.getElementById('announcementBanner');
+    const textEl = document.getElementById('announcementText');
+
+    if (banner && textEl) {
+        textEl.innerHTML = content;
+        banner.className = 'announcement-banner color-' + color + ' size-' + size;
+        banner.style.display = 'flex';
+        banner.dataset.ackKey = ackKey;
+        currentAnnouncementElement = banner;
+    }
+}
+
+function showModalAnnouncement(color, size, content, ackKey) {
+    // Create modal overlay
+    const overlay = document.createElement('div');
+    overlay.className = 'announcement-modal-overlay';
+    overlay.dataset.ackKey = ackKey;
+
+    overlay.innerHTML = `
+        <div class="announcement-modal color-${color} size-${size}">
+            <div class="announcement-header">
+                <div class="announcement-icon-wrapper">
+                    <i class="fas fa-bullhorn"></i>
+                </div>
+                <span class="announcement-title">站内公告</span>
+            </div>
+            <div class="announcement-body">
+                <div class="announcement-text">${content}</div>
+            </div>
+            <div class="announcement-footer">
+                <button class="announcement-ack-btn" onclick="closeAnnouncement(true)">
+                    <i class="fas fa-check"></i> 我知道了
+                </button>
+            </div>
+        </div>
+    `;
+
+    // Close on overlay click (temporary close)
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+            closeAnnouncement(false);
+        }
+    });
+
+    document.body.appendChild(overlay);
+    currentAnnouncementElement = overlay;
+}
+
+function showToastAnnouncement(color, size, content, ackKey) {
+    // Create toast
+    const toast = document.createElement('div');
+    toast.className = 'announcement-toast color-' + color + ' size-' + size;
+    toast.dataset.ackKey = ackKey;
+
+    toast.innerHTML = `
+        <div class="announcement-content">
+            <i class="fas fa-bullhorn"></i>
+            <span>${content}</span>
+        </div>
+        <button class="announcement-ack-btn-sm" onclick="closeAnnouncement(true)">我知道了</button>
+        <button class="announcement-close" onclick="closeAnnouncement(false)">
+            <i class="fas fa-times"></i>
+        </button>
+    `;
+
+    document.body.appendChild(toast);
+    currentAnnouncementElement = toast;
+}
+
+function closeAnnouncement(acknowledged = false) {
+    if (!currentAnnouncementElement) return;
+
+    const ackKey = currentAnnouncementElement.dataset.ackKey;
+
+    // If user clicked "我知道了", save to localStorage (permanent)
+    // If user clicked X or overlay, don't save (will show again on refresh)
+    if (acknowledged && ackKey) {
+        localStorage.setItem(ackKey, 'true');
+        console.log('用户已确认公告，不再显示');
+    } else {
+        console.log('用户临时关闭公告，刷新后将重新显示');
+    }
+
+    // Add closing animation class
+    currentAnnouncementElement.classList.add('closing');
+
+    // Remove after animation
+    setTimeout(() => {
+        if (currentAnnouncementElement) {
+            currentAnnouncementElement.style.display = 'none';
+            if (currentAnnouncementElement.classList.contains('announcement-modal-overlay') ||
+                currentAnnouncementElement.classList.contains('announcement-toast')) {
+                currentAnnouncementElement.remove();
+            }
+            currentAnnouncementElement = null;
+        }
+    }, 300);
+}
+
 // Initialize theme before page renders
 initTheme();
 
@@ -595,6 +766,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupSearch(); // Pinterest-style search
     setupScrollReveal(); // New: Wave scroll animation
     checkAuthState(); // New: Check if admin is logged in
+    loadAnnouncement(); // Load system announcement from config
 
     // Fade in nav after fonts load (or timeout)
     if (document.fonts && document.fonts.ready) {
@@ -612,71 +784,132 @@ document.addEventListener('DOMContentLoaded', async () => {
     handleUrlPromptParam();
 });
 
+// Handle hash changes when page is already loaded (e.g., from admin "View Context" button)
+window.addEventListener('hashchange', () => {
+    console.log('🔗 Hash changed:', window.location.hash);
+    handleUrlPromptParam();
+});
+
+// Handle page show event (for back/forward navigation with bfcache)
+window.addEventListener('pageshow', (event) => {
+    if (event.persisted && window.location.hash) {
+        console.log('🔗 Page restored from bfcache with hash:', window.location.hash);
+        handleUrlPromptParam();
+    }
+});
+
 /**
  * Handle URL parameter to open specific prompt modal
  * Usage: prompts.html?id=15 or prompts.html?id=15&comments=1&commentId=123
+ * Also supports hash: prompts.html#prompt-15
  */
+let pendingPromptId = null; // 保存待处理的 prompt ID，防止 hash 被清空后丢失
+
 function handleUrlPromptParam() {
     const urlParams = new URLSearchParams(window.location.search);
-    const promptIdParam = urlParams.get('id');
+    let promptIdParam = urlParams.get('id');
     const showComments = urlParams.get('comments');
     const commentIdParam = urlParams.get('commentId');
 
-    console.log('🔍 URL param check - id:', promptIdParam, 'comments:', showComments, 'commentId:', commentIdParam);
+    // 支持 hash 格式: #prompt-xxx
+    if (!promptIdParam && window.location.hash) {
+        const hash = window.location.hash;
+        const hashMatch = hash.match(/^#prompt-(.+)$/);
+        if (hashMatch) {
+            promptIdParam = hashMatch[1];
+            console.log('🔗 从 hash 中找到 prompt ID:', promptIdParam);
+        }
+    }
+
+    // 如果有之前保存的待处理 ID，优先使用它
+    if (!promptIdParam && pendingPromptId) {
+        promptIdParam = pendingPromptId;
+        console.log('🔗 使用之前保存的 prompt ID:', promptIdParam);
+    }
+
+    console.log('🔍 URL 参数检查 - id:', promptIdParam, 'comments:', showComments, 'commentId:', commentIdParam);
 
     if (!promptIdParam) {
-        console.log('No prompt id in URL');
+        console.log('URL 中没有 prompt id');
         return;
     }
 
-    // Small delay to ensure gallery is rendered
-    setTimeout(() => {
-        // Convert to number for comparison (supabaseId is bigint from DB)
-        const targetId = parseInt(promptIdParam, 10);
+    // 保存 ID 以防 hash 被清空
+    pendingPromptId = promptIdParam;
 
-        console.log('🔍 Searching for prompt with supabaseId:', targetId);
+    // 检查 PROMPTS 是否已加载
+    if (typeof PROMPTS === 'undefined' || PROMPTS.length === 0) {
+        console.log('⏳ PROMPTS 数据尚未加载，等待重试...');
+        setTimeout(() => handleUrlPromptParam(), 500);
+        return;
+    }
 
-        // Find by supabaseId (database ID as number)
-        let prompt = PROMPTS.find(p => p.supabaseId === targetId);
+    // 查找对应的 prompt
+    const targetIdNum = parseInt(promptIdParam, 10);
+    const targetIdStr = String(promptIdParam);
 
-        // If not found, try by array index id
-        if (!prompt) {
-            prompt = PROMPTS.find(p => p.id === targetId);
-        }
+    console.log('🔍 搜索 prompt，id:', targetIdStr, '(解析后数字:', targetIdNum, ')');
+    console.log('🔍 PROMPTS 数量:', PROMPTS.length);
 
-        if (prompt) {
-            console.log('✅ Found prompt:', prompt.title, 'at index:', prompt.id);
+    // 按 supabaseId 查找（先尝试字符串，再尝试数字）
+    let prompt = PROMPTS.find(p => String(p.supabaseId) === targetIdStr);
+
+    // 如果字符串匹配失败，尝试数字比较
+    if (!prompt && !isNaN(targetIdNum)) {
+        prompt = PROMPTS.find(p => p.supabaseId === targetIdNum);
+    }
+
+    // 如果还是没找到，尝试按数组索引 id 查找
+    if (!prompt) {
+        prompt = PROMPTS.find(p => p.id === targetIdNum);
+    }
+
+    if (prompt) {
+        console.log('✅ 找到 prompt:', prompt.title, '索引:', prompt.id);
+
+        // 清除待处理 ID
+        pendingPromptId = null;
+
+        // 稍微延迟以确保 Gallery 渲染完成
+        setTimeout(() => {
             openPromptModal(prompt.id);
 
-            // If comments=1, auto-open comment mode
+            // 如果 comments=1，自动打开评论模式
             if (showComments === '1') {
-                console.log('💬 Waiting to open comment mode...');
+                console.log('💬 准备打开评论模式...');
                 setTimeout(() => {
-                    console.log('💬 Auto-opening comment mode, current isCommentMode:', isCommentMode);
+                    console.log('💬 自动打开评论模式，当前 isCommentMode:', isCommentMode);
                     if (!isCommentMode) {
-                        console.log('💬 Calling toggleCommentMode()');
+                        console.log('💬 调用 toggleCommentMode()');
                         toggleCommentMode();
                     }
 
-                    // If commentId provided, expand all and scroll to it
+                    // 如果提供了 commentId，展开全部并滚动到该评论
                     if (commentIdParam) {
-                        console.log('💬 Will scroll to comment:', commentIdParam);
+                        console.log('💬 即将滚动到评论:', commentIdParam);
                         setTimeout(() => {
-                            console.log('📍 Calling scrollToComment now');
+                            console.log('📍 调用 scrollToComment');
                             scrollToComment(commentIdParam);
                         }, 1000);
                     }
-                }, 800); // Increased from 600
+                }, 800);
             }
-        } else {
-            console.warn('❌ Prompt not found for id:', targetId);
-        }
+        }, 300);
 
-        // Clean up URL (remove params without page reload)
+        // 成功后清理 URL（移除参数，不触发页面重载）
         if (window.history.replaceState) {
             window.history.replaceState({}, '', window.location.pathname);
         }
-    }, 1000); // Increased from 800
+    } else {
+        console.warn('❌ 未找到对应的 prompt，id:', targetIdStr);
+        // 不要立即清除，可能是数据还没完全加载
+        // 5秒后才清除待处理 ID
+        setTimeout(() => {
+            if (pendingPromptId === promptIdParam) {
+                pendingPromptId = null;
+            }
+        }, 5000);
+    }
 }
 /**
  * Scroll to and highlight a specific comment

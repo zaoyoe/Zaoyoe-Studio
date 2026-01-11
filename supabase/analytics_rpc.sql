@@ -241,7 +241,7 @@ RETURNS TABLE (
 BEGIN
     RETURN QUERY
     SELECT 
-        COALESCE(b.channel, '未分类') AS channel,
+        COALESCE(b.channel, '未分类')::TEXT AS channel,
         COUNT(DISTINCT b.id) AS batch_count,
         COUNT(c.id) AS total_codes,
         COUNT(c.id) FILTER (WHERE c.status = 'used') AS used_codes,
@@ -499,3 +499,179 @@ GRANT EXECUTE ON FUNCTION get_ai_summary_data(INTEGER) TO authenticated;
 -- DONE! Run this in Supabase SQL Editor
 -- after running analytics_infrastructure.sql
 -- ============================================
+
+-- ============================================
+-- 9. POINTS ANALYTICS (PHASE 2)
+-- Distribution, Leaderboard, Health, Funnel
+-- ============================================
+
+-- 9.1 Points Distribution (Shows all ranges, even with 0 users)
+CREATE OR REPLACE FUNCTION get_points_distribution()
+RETURNS TABLE (
+    range_label TEXT,
+    user_count BIGINT,
+    sort_order INTEGER
+) AS $$
+BEGIN
+    RETURN QUERY
+    WITH all_ranges AS (
+        -- Define all possible ranges
+        SELECT '0'::TEXT AS range_group, 1 AS order_rank, 0 AS min_val, 0 AS max_val
+        UNION ALL SELECT '1-9', 2, 1, 9
+        UNION ALL SELECT '10-49', 3, 10, 49
+        UNION ALL SELECT '50-99', 4, 50, 99
+        UNION ALL SELECT '100-499', 5, 100, 499
+        UNION ALL SELECT '500-999', 6, 500, 999
+        UNION ALL SELECT '1k-5k', 7, 1000, 4999
+        UNION ALL SELECT '5k-10k', 8, 5000, 9999
+        UNION ALL SELECT '10k+', 9, 10000, 999999999
+    ),
+    user_ranges AS (
+        SELECT 
+            CASE 
+                WHEN balance = 0 THEN '0'
+                WHEN balance BETWEEN 1 AND 9 THEN '1-9'
+                WHEN balance BETWEEN 10 AND 49 THEN '10-49'
+                WHEN balance BETWEEN 50 AND 99 THEN '50-99'
+                WHEN balance BETWEEN 100 AND 499 THEN '100-499'
+                WHEN balance BETWEEN 500 AND 999 THEN '500-999'
+                WHEN balance BETWEEN 1000 AND 4999 THEN '1k-5k'
+                WHEN balance BETWEEN 5000 AND 9999 THEN '5k-10k'
+                WHEN balance >= 10000 THEN '10k+'
+            END AS range_group,
+            1 AS cnt
+        FROM public.user_points
+        WHERE balance IS NOT NULL
+    )
+    SELECT 
+        ar.range_group,
+        COALESCE(COUNT(ur.cnt), 0)::BIGINT AS user_count,
+        ar.order_rank::INTEGER
+    FROM all_ranges ar
+    LEFT JOIN user_ranges ur ON ar.range_group = ur.range_group
+    GROUP BY ar.range_group, ar.order_rank
+    ORDER BY ar.order_rank;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 9.2 Points Leaderboard
+CREATE OR REPLACE FUNCTION get_points_leaderboard(p_limit INTEGER DEFAULT 10)
+RETURNS TABLE (
+    user_id UUID,
+    username TEXT,
+    avatar_url TEXT,
+    balance INTEGER,
+    total_spent INTEGER
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        up.user_id,
+        p.username,
+        p.avatar_url,
+        up.balance,
+        COALESCE(
+            (SELECT ABS(SUM(amount)) FROM public.points_ledger pl 
+             WHERE pl.user_id = up.user_id AND pl.amount < 0), 0
+        )::INTEGER AS total_spent
+    FROM public.user_points up
+    LEFT JOIN public.profiles p ON p.id = up.user_id
+    ORDER BY up.balance DESC
+    LIMIT p_limit;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 9.3 Points Health (Hoarding & Velocity)
+CREATE OR REPLACE FUNCTION get_points_health()
+RETURNS JSONB AS $$
+DECLARE
+    v_total_users BIGINT;
+    v_users_with_points BIGINT;
+    v_hoarding_users BIGINT; -- Users with points but no spend in 30 days
+    v_total_circulation BIGINT;
+    v_monthly_spend BIGINT;
+    v_velocity NUMERIC;
+    v_hoarding_rate NUMERIC;
+    v_30_days_ago TIMESTAMP := NOW() - INTERVAL '30 days';
+BEGIN
+    -- Total circulation
+    SELECT COALESCE(SUM(balance), 0) INTO v_total_circulation FROM public.user_points;
+    
+    -- Monthly spend (absolute value of negative ledger entries)
+    SELECT COALESCE(ABS(SUM(amount)), 0) INTO v_monthly_spend
+    FROM public.points_ledger
+    WHERE amount < 0 AND created_at >= v_30_days_ago;
+    
+    -- Velocity = Monthly Spend / Total Circulation (Turnover rate)
+    IF v_total_circulation > 0 THEN
+        v_velocity := ROUND((v_monthly_spend::NUMERIC / v_total_circulation::NUMERIC) * 100, 2);
+    ELSE
+        v_velocity := 0;
+    END IF;
+
+    -- Hoarding Calculation
+    -- Users with points > 0
+    SELECT COUNT(*) INTO v_users_with_points FROM public.user_points WHERE balance > 0;
+    
+    -- Users with points > 0 AND (no spend in last 30 days)
+    -- This means max(created_at) of negative ledger is NULL or < 30 days ago
+    SELECT COUNT(*) INTO v_hoarding_users
+    FROM public.user_points up
+    WHERE up.balance > 0
+    AND NOT EXISTS (
+        SELECT 1 FROM public.points_ledger pl
+        WHERE pl.user_id = up.user_id 
+        AND pl.amount < 0 
+        AND pl.created_at >= v_30_days_ago
+    );
+
+    IF v_users_with_points > 0 THEN
+        v_hoarding_rate := ROUND((v_hoarding_users::NUMERIC / v_users_with_points::NUMERIC) * 100, 2);
+    ELSE
+        v_hoarding_rate := 0;
+    END IF;
+
+    RETURN jsonb_build_object(
+        'total_circulation', v_total_circulation,
+        'monthly_spend', v_monthly_spend,
+        'velocity', v_velocity, -- % turnover per month
+        'hoarding_rate', v_hoarding_rate, -- % of inactive holders
+        'active_holders', v_users_with_points,
+        'hoarding_users', v_hoarding_users
+    );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 9.4 Redemption Funnel
+CREATE OR REPLACE FUNCTION get_redemption_funnel()
+RETURNS TABLE (
+    step TEXT,
+    count BIGINT,
+    conversion_rate NUMERIC
+) AS $$
+DECLARE
+    v_generated BIGINT;
+    v_redeemed BIGINT;
+    v_users BIGINT;
+BEGIN
+    -- 1. Generated Codes
+    SELECT COUNT(*) INTO v_generated FROM public.redemption_codes;
+    
+    -- 2. Redeemed Codes
+    SELECT COUNT(*) INTO v_redeemed FROM public.redemption_codes WHERE status = 'used';
+    
+    -- 3. Users Redeemed (Unique)
+    SELECT COUNT(DISTINCT used_by) INTO v_users 
+    FROM public.redemption_codes 
+    WHERE status = 'used' AND used_by IS NOT NULL;
+    
+    RETURN QUERY SELECT '已生成', v_generated, 100.0::NUMERIC;
+    
+    RETURN QUERY SELECT '已核销', v_redeemed, 
+        CASE WHEN v_generated > 0 THEN ROUND((v_redeemed::NUMERIC / v_generated::NUMERIC) * 100, 2) ELSE 0 END;
+        
+    RETURN QUERY SELECT '核销人数', v_users, 
+        CASE WHEN v_redeemed > 0 THEN ROUND((v_users::NUMERIC / v_redeemed::NUMERIC) * 100, 2) ELSE 0 END;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+

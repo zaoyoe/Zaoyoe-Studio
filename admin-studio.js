@@ -51,6 +51,12 @@ document.addEventListener('DOMContentLoaded', () => {
     checkApiKey();
     initStarrySky(); // New: Starry background
     loadUserPermissions(); // Load permissions on start
+
+    // Initialize system config if available
+    if (typeof initSystemConfig === 'function') {
+        initSystemConfig();
+    }
+
     // Load manage view if switching to it
     const manageTab = document.querySelector('[data-view="manage"]');
     if (manageTab) {
@@ -141,6 +147,35 @@ function switchView(viewName) {
     // Load data if switching to Manage view
     if (viewName === 'manage') {
         loadAdminPrompts();
+    }
+}
+
+// Switch between Settings sub-views (Pricing / General)
+function switchSettingsView(viewName) {
+    // Update active tab in settings module only
+    const settingsModule = document.getElementById('module-settings');
+    if (!settingsModule) return;
+
+    settingsModule.querySelectorAll('.admin-tab').forEach(tab => {
+        const isActive = tab.dataset.settingsView === viewName;
+        tab.classList.toggle('active', isActive);
+
+        if (isActive) {
+            updateAdminTabIndicator(tab);
+        }
+    });
+
+    // Update view visibility within settings
+    settingsModule.querySelectorAll('.view-section').forEach(section => {
+        section.classList.remove('active');
+    });
+
+    const targetView = document.getElementById(`settings-view-${viewName}`);
+    if (targetView) targetView.classList.add('active');
+
+    // Load API keys when switching to general
+    if (viewName === 'general') {
+        renderApiKeySelector();
     }
 }
 
@@ -561,49 +596,119 @@ function deleteApiKey(index) {
 
 function renderApiKeySelector() {
     const container = document.getElementById('apiKeySelector');
-    if (!container) return;
+    const settingsList = document.getElementById('settingsApiKeysList');
 
     const keys = getApiKeys();
     const activeIndex = getActiveKeyIndex();
 
-    if (keys.length === 0) {
-        container.innerHTML = `
-            <button class="api-key-btn add" onclick="promptForApiKey()">
-                <i class="fas fa-plus"></i> 添加 API Key
-            </button>
-        `;
-        return;
+    // Render header dropdown (simplified)
+    if (container) {
+        if (keys.length === 0) {
+            container.innerHTML = `
+                <button class="api-key-btn add" onclick="promptForApiKey()">
+                    <i class="fas fa-plus"></i> 添加 API Key
+                </button>
+            `;
+        } else {
+            const activeKey = keys[activeIndex];
+            const activeKeyName = typeof activeKey === 'object' ? activeKey.name : `Key ${activeIndex + 1}`;
+
+            container.innerHTML = `
+                <div class="api-key-dropdown">
+                    <button class="api-key-current" onclick="toggleApiKeyDropdown()">
+                        <i class="fas fa-key"></i>
+                        <span>${activeKeyName}</span>
+                        <i class="fas fa-chevron-down"></i>
+                    </button>
+                    <div class="api-key-menu" id="apiKeyMenu">
+                        ${keys.map((k, i) => {
+                const keyName = typeof k === 'object' ? k.name : `Key ${i + 1}`;
+                const keyValue = typeof k === 'object' ? k.key : k;
+                const keyPreview = keyValue ? keyValue.slice(-6) : '???';
+                return `
+                            <div class="api-key-item ${i === activeIndex ? 'active' : ''}" onclick="switchApiKey(${i})">
+                                <span class="key-name">${keyName}</span>
+                                <span class="key-preview">...${keyPreview}</span>
+                                ${keys.length > 1 ? `<button class="key-delete" onclick="event.stopPropagation(); deleteApiKey(${i})"><i class="fas fa-times"></i></button>` : ''}
+                            </div>
+                        `}).join('')}
+                        <div class="api-key-item add" onclick="addNewApiKey()">
+                            <i class="fas fa-plus"></i> 添加新 Key
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
     }
 
-    const activeKey = keys[activeIndex];
-    const activeKeyName = typeof activeKey === 'object' ? activeKey.name : `Key ${activeIndex + 1}`;
+    // Render settings page key list (full version)
+    if (settingsList) {
+        if (keys.length === 0) {
+            settingsList.innerHTML = `<div class="empty-keys-hint">暂无 API Key，请添加</div>`;
+        } else {
+            settingsList.innerHTML = keys.map((k, i) => {
+                const keyName = typeof k === 'object' ? k.name : `Key ${i + 1}`;
+                const keyValue = typeof k === 'object' ? k.key : k;
+                const keyPreview = keyValue ? '••••••' + keyValue.slice(-6) : '???';
+                const isActive = i === activeIndex;
 
-    container.innerHTML = `
-        <div class="api-key-dropdown">
-            <button class="api-key-current" onclick="toggleApiKeyDropdown()">
-                <i class="fas fa-key"></i>
-                <span>${activeKeyName}</span>
-                <i class="fas fa-chevron-down"></i>
-            </button>
-            <div class="api-key-menu" id="apiKeyMenu">
-                ${keys.map((k, i) => {
-        // Handle both object format {name, key} and legacy string format
-        const keyName = typeof k === 'object' ? k.name : `Key ${i + 1}`;
-        const keyValue = typeof k === 'object' ? k.key : k;
-        const keyPreview = keyValue ? keyValue.slice(-6) : '???';
-        return `
-                    <div class="api-key-item ${i === activeIndex ? 'active' : ''}" onclick="switchApiKey(${i})">
-                        <span class="key-name">${keyName}</span>
-                        <span class="key-preview">...${keyPreview}</span>
-                        ${keys.length > 1 ? `<button class="key-delete" onclick="event.stopPropagation(); deleteApiKey(${i})"><i class="fas fa-times"></i></button>` : ''}
+                return `
+                    <div class="api-key-row ${isActive ? 'active' : ''}" data-index="${i}">
+                        <div class="key-info" onclick="switchApiKey(${i})">
+                            <span class="key-name-label">${keyName}</span>
+                            <span class="key-preview-label">${keyPreview}</span>
+                        </div>
+                        <div class="key-actions">
+                            ${isActive ? '<span class="key-active-badge">当前使用</span>' : ''}
+                            <button class="btn-icon" onclick="editApiKeyName(${i})" title="重命名">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            ${keys.length > 1 ? `
+                                <button class="btn-icon delete" onclick="deleteApiKey(${i})" title="删除">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            ` : ''}
+                        </div>
                     </div>
-                `}).join('')}
-                <div class="api-key-item add" onclick="addNewApiKey()">
-                    <i class="fas fa-plus"></i> 添加新 Key
-                </div>
-            </div>
-        </div>
-    `;
+                `;
+            }).join('');
+        }
+    }
+
+    // Update API status in settings page
+    const apiStatus = document.getElementById('apiKeyStatus');
+    if (apiStatus) {
+        const dot = apiStatus.querySelector('.status-dot');
+        const text = apiStatus.querySelector('span:last-child');
+
+        if (keys.length > 0 && window.GEMINI_API_KEY) {
+            dot.className = 'status-dot ready';
+            text.textContent = 'Ready';
+        } else {
+            dot.className = 'status-dot error';
+            text.textContent = '未配置 API Key';
+        }
+    }
+}
+
+// Edit API key name
+function editApiKeyName(index) {
+    const keys = getApiKeys();
+    if (!keys[index]) return;
+
+    const currentName = typeof keys[index] === 'object' ? keys[index].name : `Key ${index + 1}`;
+    const newName = prompt('重命名 API Key:', currentName);
+
+    if (newName && newName.trim()) {
+        if (typeof keys[index] === 'object') {
+            keys[index].name = newName.trim();
+        } else {
+            keys[index] = { name: newName.trim(), key: keys[index] };
+        }
+        saveApiKeys(keys, getActiveKeyIndex());
+        renderApiKeySelector();
+        showToast('已重命名', 'success');
+    }
 }
 
 

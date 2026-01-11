@@ -82,6 +82,17 @@
 
 <body>
 
+    <!-- System Announcement Banner (页面最顶部) -->
+    <div id="announcementBanner" class="announcement-banner" style="display: none;">
+        <div class="announcement-content">
+            <i class="fas fa-bullhorn"></i>
+            <span id="announcementText"></span>
+        </div>
+        <button class="announcement-close" onclick="closeAnnouncement()">
+            <i class="fas fa-times"></i>
+        </button>
+    </div>
+
     <!-- Ambient Light Canvas (Living Background) -->
     <canvas id="ambientCanvas"></canvas>
     <!-- Starry Sky Canvas (Dark Mode Only) -->
@@ -178,6 +189,8 @@
             <!-- Dynamically generated from PROMPTS data -->
         </div>
     </div>
+
+
 
     <!-- Featured Banner -->
     <section class="featured-banner" id="featuredBanner">
@@ -501,6 +514,7 @@
     <script src="prompts-data.js"></script>
     <script src="starry-sky.js"></script>
     <script src="prompts-poetry.js"></script>
+    <script src="js/heartbeat.js"></script>
     <script>
         // Reveal page after content is ready
         document.body.classList.add('loaded');

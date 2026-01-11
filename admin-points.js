@@ -247,16 +247,40 @@ async function loadPackagesForSelect() {
     displayText.textContent = '加载中...';
 
     try {
-        const { data, error } = await getSupabase()
-            .from('points_packages')
-            .select('id, name, points_amount, bonus_points')
-            .eq('is_active', true)
-            .order('points_amount');
+        let packages = [];
 
-        if (error) throw error;
+        // First try to get packages from system config (if available)
+        try {
+            const { data: configData } = await getSupabase().rpc('get_system_config', { p_key: 'packages' });
+            if (configData && Array.isArray(configData)) {
+                // Filter enabled packages only
+                packages = configData
+                    .filter(pkg => pkg.enabled !== false)
+                    .map(pkg => ({
+                        id: pkg.id,
+                        name: pkg.name,
+                        points_amount: pkg.points,
+                        bonus_points: 0
+                    }));
+            }
+        } catch (configErr) {
+            console.warn('[Points] System config not available, falling back to DB:', configErr.message);
+        }
+
+        // Fallback: load from points_packages table if config empty
+        if (packages.length === 0) {
+            const { data, error } = await getSupabase()
+                .from('points_packages')
+                .select('id, name, points_amount, bonus_points')
+                .eq('is_active', true)
+                .order('points_amount');
+
+            if (error) throw error;
+            packages = data || [];
+        }
 
         // Build options with custom option at the end
-        let optionsHtml = data.map((pkg, index) => {
+        let optionsHtml = packages.map((pkg, index) => {
             const total = pkg.points_amount + (pkg.bonus_points || 0);
             const isFirst = index === 0;
             return `<div class="select-option${isFirst ? ' selected' : ''}" data-value="${pkg.id}">${pkg.name} (${total}分)</div>`;
@@ -268,8 +292,8 @@ async function loadPackagesForSelect() {
         optionsContainer.innerHTML = optionsHtml;
 
         // Select first option by default
-        if (data.length > 0) {
-            const firstPkg = data[0];
+        if (packages.length > 0) {
+            const firstPkg = packages[0];
             const total = firstPkg.points_amount + (firstPkg.bonus_points || 0);
             displayText.textContent = `${firstPkg.name} (${total}分)`;
             hiddenInput.value = firstPkg.id;
