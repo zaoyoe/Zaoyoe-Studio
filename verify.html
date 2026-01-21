@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <title>Gemini 验证服务 - Zaoyoe</title>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;700;800&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
+    <!-- Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+        const SUPABASE_URL = 'https://mmkugdibsaeoevliebzk.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_lwkiF-sQ80z8e9oMcejFPQ_j7oezjcF';
+        window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    </script>
+
+    <!-- Auth Functions -->
+    <script src="./supabase-auth-functions.js?v=GUESTBOOK_MIGRATION" defer></script>
+
+    <!-- Styles -->
+    <link rel="stylesheet" href="style.css?v=CONTACT_POPUP_FIX_V8">
+    <link rel="stylesheet" href="login_styles.css?v=DARK_BG_INPUTS_V1">
+    <link rel="stylesheet" href="avatar-fix.css?v=UNIFIED_HOVER_V2">
+    <link rel="stylesheet" href="verify-widget.css?v=1">
+
+    <style>
+        /* Page specific styles */
+        body {
+            min-height: 100vh;
+            background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            padding: 80px 20px 40px;
+        }
+
+        .verify-page-container {
+            width: 100%;
+            max-width: 520px;
+            animation: fadeInUp 0.5s ease;
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Page Header */
+        .verify-page-header {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+
+        .verify-page-header h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #fff;
+            margin: 0 0 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+        }
+
+        .verify-page-header h1 i {
+            color: #667eea;
+        }
+
+        .verify-page-header p {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 1rem;
+            margin: 0;
+        }
+
+        /* Back link */
+        .back-link {
+            position: fixed;
+            top: 24px;
+            left: 24px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: rgba(255, 255, 255, 0.6);
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: all 0.3s ease;
+            padding: 10px 16px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .back-link:hover {
+            color: #fff;
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        /* Info Cards */
+        .verify-info-cards {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-top: 24px;
+        }
+
+        .verify-info-card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 16px;
+            text-align: center;
+        }
+
+        .verify-info-card i {
+            font-size: 1.5rem;
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        .verify-info-card .info-value {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .verify-info-card .info-label {
+            font-size: 0.75rem;
+            color: rgba(255, 255, 255, 0.5);
+            margin-top: 4px;
+        }
+
+        .verify-info-card.success i {
+            color: #22c55e;
+        }
+
+        .verify-info-card.warning i {
+            color: #fbbf24;
+        }
+
+        .verify-info-card.info i {
+            color: #667eea;
+        }
+
+        /* Usage Instructions */
+        .verify-instructions {
+            margin-top: 24px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 20px;
+        }
+
+        .verify-instructions h3 {
+            font-size: 1rem;
+            color: #fff;
+            margin: 0 0 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .verify-instructions h3 i {
+            color: #fbbf24;
+        }
+
+        .verify-instructions ol {
+            margin: 0;
+            padding-left: 20px;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 0.9rem;
+            line-height: 1.8;
+        }
+
+        .verify-instructions code {
+            background: rgba(102, 126, 234, 0.2);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.85rem;
+            color: #a5b4fc;
+        }
+
+        /* Responsive */
+        @media (max-width: 600px) {
+            .verify-info-cards {
+                grid-template-columns: 1fr;
+            }
+
+            .back-link {
+                top: 16px;
+                left: 16px;
+            }
+
+            body {
+                padding-top: 70px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Background -->
+    <div class="background-blobs">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+    </div>
+
+    <!-- Back Link -->
+    <a href="index.html" class="back-link">
+        <i class="fas fa-arrow-left"></i>
+        返回首页
+    </a>
+
+    <!-- Main Container -->
+    <div class="verify-page-container">
+        <!-- Page Header -->
+        <div class="verify-page-header">
+            <h1><i class="fas fa-shield-check"></i> Gemini 验证服务</h1>
+            <p>快速验证您的 Gemini 账户状态</p>
+        </div>
+
+        <!-- Verify Widget -->
+        <div id="verify-widget-container"></div>
+
+        <!-- Info Cards -->
+        <div class="verify-info-cards">
+            <div class="verify-info-card success">
+                <i class="fas fa-bolt"></i>
+                <div class="info-value">30秒</div>
+                <div class="info-label">快速验证</div>
+            </div>
+            <div class="verify-info-card warning">
+                <i class="fas fa-coins"></i>
+                <div class="info-value" id="displayPrice">3</div>
+                <div class="info-label">积分/次</div>
+            </div>
+            <div class="verify-info-card info">
+                <i class="fas fa-check-double"></i>
+                <div class="info-value">95%+</div>
+                <div class="info-label">通过率</div>
+            </div>
+        </div>
+
+        <!-- Instructions -->
+        <div class="verify-instructions">
+            <h3><i class="fas fa-lightbulb"></i> 使用说明</h3>
+            <ol>
+                <li>获取您的 <code>Verification ID</code> 或验证链接</li>
+                <li>粘贴到上方输入框</li>
+                <li>点击「开始验证」，系统自动处理</li>
+                <li>验证结果将实时显示</li>
+            </ol>
+        </div>
+    </div>
+
+    <!-- Points Service (for balance loading) -->
+    <script src="./js/services/PointsService.js"></script>
+
+    <!-- Verify Widget Script -->
+    <script src="./verify-widget.js?v=2"></script>
+
+    <!-- Load price from config -->
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                const { data } = await window.supabaseClient
+                    .from('system_config')
+                    .select('config_value')
+                    .eq('config_key', 'verify')
+                    .single();
+
+                if (data?.config_value?.price_per_verify) {
+                    document.getElementById('displayPrice').textContent = data.config_value.price_per_verify;
+                }
+            } catch (e) {
+                console.warn('Failed to load verify config:', e);
+            }
+        });
+    </script>
+</body>
+
+</html>
