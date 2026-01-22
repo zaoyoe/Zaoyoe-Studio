@@ -59,7 +59,11 @@ app.get('/api/verify-stream', async (req, res) => {
         res.write(`data: ${JSON.stringify(data)}\n\n`);
     };
 
-    if (!verificationId) {
+    // Support batch: comma-separated IDs or single ID
+    const verificationIds = verificationId ? verificationId.split(',').map(id => id.trim()).filter(id => id) : [];
+    const batchSize = verificationIds.length;
+
+    if (batchSize === 0) {
         sendEvent('error', { message: '请提供验证ID' });
         return res.end();
     }
@@ -73,22 +77,23 @@ app.get('/api/verify-stream', async (req, res) => {
     let heartbeatInterval = null;
 
     try {
-        sendEvent('status', { status: 'init', message: '⚡ 正在初始化验证服务...' });
+        sendEvent('status', { status: 'init', message: `⚡ 正在初始化验证服务 (${batchSize} 个链接)...` });
 
         // Get verify config
         const { data: configData } = await supabase
             .from('system_config')
             .select('config_value')
-            .eq('config_key', 'verify')
+            .eq('config_key', 'verify_settings')
             .single();
 
         const config = configData?.config_value || {};
         const pricePerVerify = config.price_per_verify || 2;
+        const totalPriceNeeded = pricePerVerify * batchSize;
         const batchApiKey = config.batch_api_key || process.env.BATCH_API_KEY || 'cdk_=_vgb6#kJqYeu-mzD5%@6dQ8vVc4OB@-';
 
         // Debug: Log API key info (masked for security)
         console.log(`[Verify] API Key info: length=${batchApiKey?.length}, first5=${batchApiKey?.substring(0, 5)}, last5=${batchApiKey?.substring(batchApiKey.length - 5)}`);
-        console.log(`[Verify] API Key from config:`, !!config.batch_api_key, 'from env:', !!process.env.BATCH_API_KEY);
+        console.log(`[Verify] Batch size: ${batchSize}, Price per verify: ${pricePerVerify}, Total needed: ${totalPriceNeeded}`);
 
         if (!batchApiKey) {
             sendEvent('error', { message: '验证服务未配置' });
@@ -105,16 +110,16 @@ app.get('/api/verify-stream', async (req, res) => {
 
         const currentBalance = balanceData?.total_balance || 0;
 
-        if (currentBalance < pricePerVerify) {
+        if (currentBalance < totalPriceNeeded) {
             sendEvent('error', {
-                message: `积分不足，需要 ${pricePerVerify} 积分，当前余额 ${currentBalance}`
+                message: `积分不足，需要 ${totalPriceNeeded} 积分 (${batchSize}个×${pricePerVerify})，当前余额 ${currentBalance}`
             });
             return res.end();
         }
 
-        sendEvent('status', { status: 'balance_ok', message: `💰 余额充足 (${currentBalance} 积分)` });
+        sendEvent('status', { status: 'balance_ok', message: `💰 余额充足 (${currentBalance} 积分，需要 ${totalPriceNeeded})` });
 
-        console.log(`[Verify] Starting verification for ${verificationId}`);
+        console.log(`[Verify] Starting batch verification for ${batchSize} IDs`);
 
         // Start heartbeat to keep SSE connection alive (Railway has ~100s timeout)
         let heartbeatCount = 0;
@@ -137,44 +142,53 @@ app.get('/api/verify-stream', async (req, res) => {
             }
         };
 
-        // Run Puppeteer automation with progress callback
-        const result = await verifyWithPuppeteer(batchApiKey, verificationId, onProgress);
+        // Run Puppeteer automation with progress callback (pass array of IDs)
+        const result = await verifyWithPuppeteer(batchApiKey, verificationIds, onProgress);
 
-        console.log(`[Verify] Result:`, result);
+        console.log(`[Verify] Batch result:`, result);
 
-        // Deduct points on success
-        if (result.success) {
+        // Get batch stats - deduct only for successful verifications
+        const stats = result.stats || { success: result.success ? batchSize : 0, failed: result.success ? 0 : batchSize, total: batchSize };
+        const successCount = stats.success || 0;
+        const pointsToDeduct = successCount * pricePerVerify;
+
+        // Deduct points for successful verifications only
+        if (pointsToDeduct > 0) {
             const { error: deductError } = await supabase.rpc('fn_deduct_points', {
                 p_target_user_id: userId,
-                p_amount: pricePerVerify,
-                p_reason: 'Gemini验证服务'
+                p_amount: pointsToDeduct,
+                p_reason: `Gemini验证服务 (${successCount}/${batchSize} 成功)`
             });
 
             if (deductError) {
                 console.error('[Verify] Failed to deduct points:', deductError);
             } else {
-                sendEvent('status', { status: 'deducted', message: `💳 已扣除 ${pricePerVerify} 积分` });
+                sendEvent('status', { status: 'deducted', message: `💳 已扣除 ${pointsToDeduct} 积分 (${successCount} 个成功验证)` });
             }
         }
 
-        // Log verification attempt
+        // Log verification attempt (batch summary)
         try {
             await supabase.from('verification_logs').insert({
                 user_id: userId,
-                verification_id: verificationId,
-                status: result.success ? 'success' : 'failed',
+                verification_id: verificationIds.join(',').substring(0, 500), // Truncate if too long
+                status: successCount > 0 ? 'success' : 'failed',
                 message: result.message,
-                points_deducted: result.success ? pricePerVerify : 0
+                points_deducted: pointsToDeduct,
+                batch_count: batchSize,
+                batch_success: successCount,
+                batch_failed: stats.failed || 0
             });
         } catch (logError) {
             console.warn('Failed to log verification:', logError);
         }
 
-        // Send final result
+        // Send final result with batch stats
         sendEvent('result', {
-            success: result.success,
+            success: successCount > 0,
             message: result.message,
-            pointsDeducted: result.success ? pricePerVerify : 0
+            pointsDeducted: pointsToDeduct,
+            stats: stats
         });
 
     } catch (error) {

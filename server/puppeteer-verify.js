@@ -15,25 +15,38 @@ const MOCK_MODE = process.env.MOCK_VERIFY === 'true';
 /**
  * Verify using Puppeteer automation on batch.1key.me
  * @param {string} apiKey - The 1key API key
- * @param {string} verificationId - The verification ID to process
+ * @param {string|string[]} verificationIds - Single ID or array of verification IDs to process
  * @param {function} onProgress - Callback for progress updates (status, message, pageContent, metadata)
- * @returns {Promise<{success: boolean, message: string, remainingQuota?: number}>}
+ * @returns {Promise<{success: boolean, message: string, remainingQuota?: number, results?: Array}>}
  */
-async function verifyWithPuppeteer(apiKey, verificationId, onProgress = () => { }) {
+async function verifyWithPuppeteer(apiKey, verificationIds, onProgress = () => { }) {
+    // Normalize to array
+    const ids = Array.isArray(verificationIds) ? verificationIds : [verificationIds];
+    const batchSize = ids.length;
     // Mock mode for local testing
     if (MOCK_MODE) {
-        onProgress('mock', '🧪 模拟模式启动');
-        console.log('[Puppeteer] 🧪 Running in MOCK MODE');
+        onProgress('mock', `🧪 模拟模式启动 (${batchSize} 个链接)`);
+        console.log('[Puppeteer] 🧪 Running in MOCK MODE with', batchSize, 'IDs');
 
         await new Promise(r => setTimeout(r, 1000));
         onProgress('mock', '正在模拟验证过程...');
 
         await new Promise(r => setTimeout(r, 2000));
-        onProgress('complete', '✅ 验证成功 (模拟模式)');
+
+        // Generate mock results for each ID
+        const mockResults = ids.map((id, i) => ({
+            id: id.substring(0, 50),
+            success: true,
+            message: '验证成功 (模拟)'
+        }));
+
+        onProgress('complete', `✅ 验证完成 (模拟模式): ${batchSize}/${batchSize} 成功`);
 
         return {
             success: true,
-            message: '✅ 验证成功 (模拟模式)'
+            message: `✅ 批量验证完成 (模拟模式)`,
+            results: mockResults,
+            stats: { success: batchSize, failed: 0, total: batchSize }
         };
     }
 
@@ -153,8 +166,11 @@ async function verifyWithPuppeteer(apiKey, verificationId, onProgress = () => { 
         // Wait for the textarea to be ready after program selection
         await new Promise(r => setTimeout(r, 1000));
 
-        onProgress('entering', '✏️ 正在输入验证 ID...');
-        console.log('[Puppeteer] Entering verification ID:', verificationId.substring(0, 30) + '...');
+        // Join all IDs with newlines for batch submission
+        const batchInput = ids.join('\n');
+
+        onProgress('entering', `✏️ 正在输入 ${batchSize} 个验证 ID...`);
+        console.log(`[Puppeteer] Entering ${batchSize} verification IDs`);
 
         const textareaSelector = 'textarea';
         await page.waitForSelector(textareaSelector, { timeout: 5000 });
@@ -172,7 +188,7 @@ async function verifyWithPuppeteer(apiKey, verificationId, onProgress = () => { 
                 textarea.dispatchEvent(new Event('input', { bubbles: true }));
                 textarea.dispatchEvent(new Event('change', { bubbles: true }));
             }
-        }, textareaSelector, verificationId);
+        }, textareaSelector, batchInput);
 
         // Verify the input was successful
         const inputtedValue = await page.evaluate((selector) => {
@@ -180,13 +196,14 @@ async function verifyWithPuppeteer(apiKey, verificationId, onProgress = () => { 
             return textarea ? textarea.value : '';
         }, textareaSelector);
 
-        console.log('[Puppeteer] Verified textarea value:', inputtedValue.substring(0, 50) + '...');
+        const inputLines = inputtedValue.split('\n').filter(l => l.trim()).length;
+        console.log(`[Puppeteer] Verified textarea: ${inputLines} lines entered`);
 
-        if (!inputtedValue || !inputtedValue.includes('sheerid') && !inputtedValue.includes('6971')) {
-            onProgress('debug', `⚠️ 输入验证: 当前值长度 ${inputtedValue.length}`);
-            console.log('[Puppeteer] Warning: Input might not be correct');
+        if (inputLines !== batchSize) {
+            onProgress('debug', `⚠️ 输入验证: 期望 ${batchSize} 行，实际 ${inputLines} 行`);
+            console.log('[Puppeteer] Warning: Input line count mismatch');
         } else {
-            onProgress('entering', '✅ 验证 ID 已输入');
+            onProgress('entering', `✅ ${batchSize} 个验证 ID 已输入`);
         }
 
         await new Promise(r => setTimeout(r, 500));
@@ -211,11 +228,11 @@ async function verifyWithPuppeteer(apiKey, verificationId, onProgress = () => { 
 
         await startButton.click();
 
-        onProgress('waiting', '⏳ 验证进行中，请耐心等待...');
-        console.log('[Puppeteer] Waiting for verification results...');
+        onProgress('waiting', `⏳ 批量验证进行中 (${batchSize} 个)，请耐心等待...`);
+        console.log(`[Puppeteer] Waiting for batch verification results (${batchSize} IDs)...`);
 
         // Monitor for status changes with progress updates
-        const result = await waitForVerificationResult(page, verificationId, onProgress);
+        const result = await waitForVerificationResult(page, ids, batchSize, onProgress);
 
         if (result.success) {
             onProgress('complete', `✅ ${result.message}`);
@@ -241,11 +258,16 @@ async function verifyWithPuppeteer(apiKey, verificationId, onProgress = () => { 
 
 /**
  * Wait for verification result by monitoring page changes
+ * @param {Page} page - Puppeteer page
+ * @param {string[]} ids - Array of verification IDs
+ * @param {number} batchSize - Total number of IDs
+ * @param {function} onProgress - Progress callback
  */
-async function waitForVerificationResult(page, verificationId, onProgress) {
+async function waitForVerificationResult(page, ids, batchSize, onProgress) {
     const startTime = Date.now();
     let checkCount = 0;
-    const shortId = verificationId.substring(0, 10);
+    let lastSuccessCount = 0;
+    let lastFailedCount = 0;
 
     while (Date.now() - startTime < VERIFICATION_TIMEOUT) {
         await new Promise(r => setTimeout(r, 2000)); // Check every 2 seconds
@@ -258,8 +280,27 @@ async function waitForVerificationResult(page, verificationId, onProgress) {
 
         const elapsedSec = Math.floor((Date.now() - startTime) / 1000);
 
-        // Look for our verification ID in the page
-        const hasOurId = pageContent.includes(shortId);
+        // Parse success and failed counts from page content
+        const successMatch = pageContent.match(/(\d+)\s*\n*Success/i);
+        const failedMatch = pageContent.match(/(\d+)\s*\n*Failed/i);
+        const pendingMatch = pageContent.match(/(\d+)\s*\n*Pending/i);
+
+        const successCount = successMatch ? parseInt(successMatch[1]) : 0;
+        const failedCount = failedMatch ? parseInt(failedMatch[1]) : 0;
+        const pendingCount = pendingMatch ? parseInt(pendingMatch[1]) : 0;
+        const processedCount = successCount + failedCount;
+
+        // Send progress update when counts change
+        if (successCount !== lastSuccessCount || failedCount !== lastFailedCount) {
+            onProgress('progress', `📊 进度: ${processedCount}/${batchSize} (✅${successCount} ❌${failedCount})`, null, {
+                processed: processedCount,
+                success: successCount,
+                failed: failedCount,
+                total: batchSize
+            });
+            lastSuccessCount = successCount;
+            lastFailedCount = failedCount;
+        }
 
         // Detect 1key processing status from actual UI patterns
         if (pageContent.includes('Waiting...') && pageContent.includes('pending')) {
@@ -267,78 +308,82 @@ async function waitForVerificationResult(page, verificationId, onProgress) {
         } else if (pageContent.includes('Waiting for review')) {
             onProgress('reviewing', `🔍 1key 正在审核验证... (${elapsedSec}s)`);
         } else if (pageContent.includes('Processing')) {
-            onProgress('processing', `🔄 1key 处理中... (${elapsedSec}s)`);
-        } else {
-            onProgress('waiting', `⏳ 等待1key响应... (${elapsedSec}s)`);
+            onProgress('processing', `🔄 1key 处理中 ${processedCount}/${batchSize}... (${elapsedSec}s)`);
+        } else if (processedCount > 0 && processedCount < batchSize) {
+            onProgress('waiting', `⏳ 处理中 ${processedCount}/${batchSize}... (${elapsedSec}s)`);
         }
 
-        // Check for SUCCESS - "Verification completed successfully!" from screenshot
+        // Check if all items are processed (no pending items)
+        if (processedCount === batchSize && pendingCount === 0) {
+            console.log(`[Puppeteer] Batch complete: ${successCount} success, ${failedCount} failed`);
+
+            const message = `批量验证完成: ${successCount} 个成功, ${failedCount} 个失败`;
+
+            return {
+                success: successCount > 0,
+                message: message,
+                stats: {
+                    success: successCount,
+                    failed: failedCount,
+                    total: batchSize
+                }
+            };
+        }
+
+        // Check for "Verification completed successfully!" message
         if (pageContent.includes('Verification completed successfully') ||
             pageContent.includes('completed successfully')) {
-            onProgress('success', '✅ 1key 验证成功！');
-            console.log('[Puppeteer] Verification completed successfully!');
-            return { success: true, message: '验证成功！' };
-        }
+            console.log('[Puppeteer] Verification completed message detected');
 
-        // Check for success count in Results section (e.g., "1 Success")
-        if (hasOurId) {
-            const successMatch = pageContent.match(/(\d+)\s*\n*Success/i);
-            if (successMatch && parseInt(successMatch[1]) > 0) {
-                onProgress('success', '✅ 验证成功！');
-                console.log('[Puppeteer] Found success count > 0');
-                return { success: true, message: '验证成功！' };
-            }
+            // Wait a bit more to get final counts
+            await new Promise(r => setTimeout(r, 2000));
 
-            // Check for failure count
-            const failedMatch = pageContent.match(/(\d+)\s*\n*Failed/i);
-            if (failedMatch && parseInt(failedMatch[1]) > 0) {
-                onProgress('failed', '❌ 验证失败');
-                console.log('[Puppeteer] Found failed count > 0');
-                return { success: false, message: '验证失败' };
-            }
+            const finalContent = await page.evaluate(() => document.body.innerText);
+            const finalSuccess = finalContent.match(/(\d+)\s*\n*Success/i);
+            const finalFailed = finalContent.match(/(\d+)\s*\n*Failed/i);
+
+            const finalSuccessCount = finalSuccess ? parseInt(finalSuccess[1]) : successCount;
+            const finalFailedCount = finalFailed ? parseInt(finalFailed[1]) : failedCount;
+
+            return {
+                success: finalSuccessCount > 0,
+                message: `批量验证完成: ${finalSuccessCount} 个成功, ${finalFailedCount} 个失败`,
+                stats: {
+                    success: finalSuccessCount,
+                    failed: finalFailedCount,
+                    total: batchSize
+                }
+            };
         }
 
         // Check for general error messages on the page
-        // Note: Must be careful not to match "API key enabled" which is a success indicator
         if (pageContent.includes('Invalid API key') ||
             pageContent.includes('API key invalid') ||
             pageContent.includes('Invalid API Key') ||
             pageContent.includes('Unauthorized') ||
             pageContent.includes('authentication failed')) {
             onProgress('error', '❌ API Key 无效');
-            return { success: false, message: 'API Key 无效，请联系管理员' };
+            return { success: false, message: 'API Key 无效，请联系管理员', stats: { success: 0, failed: batchSize, total: batchSize } };
         }
 
         if (pageContent.includes('Rate limit') || pageContent.includes('Too many')) {
             onProgress('error', '❌ 请求过于频繁');
-            return { success: false, message: '请求过于频繁，请稍后重试' };
+            return { success: false, message: '请求过于频繁，请稍后重试', stats: { success: successCount, failed: failedCount, total: batchSize } };
         }
 
-        if (pageContent.includes('expired') || pageContent.includes('过期')) {
-            onProgress('error', '❌ 验证ID已过期');
-            return { success: false, message: '验证ID已过期' };
-        }
-
-        if (pageContent.includes('Invalid') && pageContent.includes('ID')) {
-            onProgress('error', '❌ 无效的验证ID');
-            return { success: false, message: '无效的验证ID' };
-        }
-
-        // Check for completion indicators
-        if (pageContent.includes('Complete') || pageContent.includes('完成')) {
-            onProgress('checking', '🔍 检测到验证完成，正在确认结果...');
-            await new Promise(r => setTimeout(r, 2000));
-        }
-
-        // Send page content summary every 10 checks for debugging (console only, not displayed to user)
-        if (checkCount % 10 === 0) {
+        // Send page content summary every 15 checks for debugging (console only)
+        if (checkCount % 15 === 0) {
             const contentPreview = pageContent.substring(0, 300).replace(/\n/g, ' ');
-            // Pass page content as third parameter - this sends a 'debug' event, not displayed to user
             console.log(`[Puppeteer] Page content preview: ${contentPreview}...`);
         }
     }
 
-    return { success: false, message: '验证超时，请稍后重试' };
+    // Timeout - return whatever we have
+    return {
+        success: lastSuccessCount > 0,
+        message: `验证超时，已完成 ${lastSuccessCount + lastFailedCount}/${batchSize}`,
+        stats: { success: lastSuccessCount, failed: lastFailedCount, total: batchSize }
+    };
 }
 
 module.exports = { verifyWithPuppeteer };

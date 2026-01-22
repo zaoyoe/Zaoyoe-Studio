@@ -353,51 +353,51 @@
         updateBatchProgress(0, links.length);
         hideBatchSummary();
 
+        // Extract and validate all verification IDs first
+        const validLinks = [];
+        const invalidIndices = [];
+
+        for (let i = 0; i < links.length; i++) {
+            const link = links[i];
+            const verificationId = extractVerificationId(link);
+
+            if (!verificationId) {
+                addResultItem(i, link, 'error', '无效的链接格式');
+                batchStats.failed++;
+                invalidIndices.push(i);
+            } else {
+                validLinks.push({ index: i, link, verificationId });
+                addResultItem(i, link, 'processing', '等待验证...');
+            }
+        }
+
+        // If all links are invalid, show summary and return
+        if (validLinks.length === 0) {
+            showBatchSummary();
+            return;
+        }
+
         // Start loading
         isLoading = true;
         submitBtn.disabled = true;
         submitBtn.innerHTML = '<div class="spinner"></div> 批量验证中...';
 
         try {
-            // Process each link sequentially
-            for (let i = 0; i < links.length; i++) {
-                const link = links[i];
-                const verificationId = extractVerificationId(link);
+            // Send all valid verification IDs in a single batch request
+            const verificationIds = validLinks.map(v => v.verificationId);
 
-                if (!verificationId) {
-                    addResultItem(i, link, 'error', '无效的链接格式');
-                    batchStats.failed++;
-                    updateBatchProgress(i + 1, links.length);
-                    continue;
-                }
+            // Call batch verification API with all IDs
+            const result = await callBatchVerifyAPI(verificationIds, validLinks);
 
-                // Add processing item
-                addResultItem(i, link, 'processing', '验证中...');
+            // Update batch stats from server response
+            if (result.stats) {
+                batchStats.success = result.stats.success || 0;
+                batchStats.failed = (result.stats.failed || 0) + invalidIndices.length;
+            }
 
-                try {
-                    // Call verification API
-                    const response = await callVerifyAPI(verificationId, i);
-
-                    if (response.success) {
-                        updateResultItem(i, 'success', response.message || '验证成功');
-                        batchStats.success++;
-                        userBalance -= CONFIG.pricePerVerify;
-                    } else {
-                        updateResultItem(i, 'error', response.message || '验证失败');
-                        batchStats.failed++;
-                    }
-                } catch (e) {
-                    console.error('[VerifyWidget] Verification error:', e);
-                    updateResultItem(i, 'error', e.message || '请求失败');
-                    batchStats.failed++;
-                }
-
-                updateBatchProgress(i + 1, links.length);
-
-                // Small delay between verifications to avoid overwhelming the server
-                if (i < links.length - 1) {
-                    await new Promise(r => setTimeout(r, 1000));
-                }
+            // Update balance
+            if (result.pointsDeducted) {
+                userBalance -= result.pointsDeducted;
             }
 
             // Show summary
@@ -406,6 +406,14 @@
             // Refresh balance
             await loadUserBalance();
 
+        } catch (e) {
+            console.error('[VerifyWidget] Batch verification error:', e);
+            // Mark all processing items as failed
+            validLinks.forEach(({ index }) => {
+                updateResultItem(index, 'error', e.message || '验证失败');
+            });
+            batchStats.failed += validLinks.length;
+            showBatchSummary();
         } finally {
             isLoading = false;
             submitBtn.disabled = false;
@@ -544,6 +552,143 @@
                 eventSource.close();
                 reject(new Error('验证超时，请稍后重试'));
             }, 360000);
+        });
+    }
+
+    // =============================================
+    // Call Batch Verification API (all IDs at once)
+    // =============================================
+    async function callBatchVerifyAPI(verificationIds, validLinks) {
+        // Get current user ID
+        const { data: userData } = await window.supabaseClient.auth.getUser();
+        const userId = userData?.user?.id;
+
+        if (!userId) {
+            throw new Error('请先登录');
+        }
+
+        return new Promise((resolve, reject) => {
+            // Send all IDs as comma-separated string
+            const params = new URLSearchParams({
+                verificationId: verificationIds.join(','),
+                userId: userId
+            });
+
+            const endpoint = `${CONFIG.nodeServerUrl}/api/verify-stream?${params}`;
+            const eventSource = new EventSource(endpoint);
+            const batchSize = validLinks.length;
+
+            // Update all items with a single status
+            const updateAllItems = (status, message) => {
+                validLinks.forEach(({ index }) => {
+                    updateResultItem(index, status, message);
+                });
+            };
+
+            eventSource.addEventListener('status', (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('[VerifyWidget] Batch Status:', data);
+
+                    // Skip debug messages
+                    if (data.status === 'debug_content' || data.status === 'debug') {
+                        return;
+                    }
+
+                    // Update progress for all items
+                    if (data.status === 'progress') {
+                        // Parse progress from metadata
+                        updateBatchProgress(data.processed || 0, batchSize);
+                    }
+
+                    // Update all processing items with the current status
+                    validLinks.forEach(({ index }) => {
+                        updateResultItem(index, 'processing', data.message);
+                    });
+                } catch (e) {
+                    console.warn('[VerifyWidget] Failed to parse batch status:', e);
+                }
+            });
+
+            eventSource.addEventListener('debug', (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('[VerifyWidget] Debug (page content):', data.content);
+                } catch (e) {
+                    console.warn('[VerifyWidget] Failed to parse debug:', e);
+                }
+            });
+
+            // Handle quota updates from 1key
+            eventSource.addEventListener('quota', (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('[VerifyWidget] Quota:', data);
+                    updateQuotaDisplay(data.remaining);
+                } catch (e) {
+                    console.warn('[VerifyWidget] Failed to parse quota:', e);
+                }
+            });
+
+            eventSource.addEventListener('result', (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('[VerifyWidget] Batch Result:', data);
+                    eventSource.close();
+
+                    // Update individual items based on batch stats
+                    const stats = data.stats || { success: 0, failed: 0, total: batchSize };
+
+                    // Since we don't have per-item results from 1key, 
+                    // we need to mark items based on overall stats
+                    // For now, mark all as success if any succeeded, or show summary
+                    if (stats.success === batchSize) {
+                        // All succeeded
+                        validLinks.forEach(({ index }) => {
+                            updateResultItem(index, 'success', '验证成功！');
+                        });
+                    } else if (stats.success === 0) {
+                        // All failed
+                        validLinks.forEach(({ index }) => {
+                            updateResultItem(index, 'error', data.message || '验证失败');
+                        });
+                    } else {
+                        // Mixed results - show as complete with summary
+                        validLinks.forEach(({ index }, i) => {
+                            // We don't know which specific ones succeeded, 
+                            // so show a summary message
+                            updateResultItem(index, 'info', `批量结果: ${stats.success}成功/${stats.failed}失败`);
+                        });
+                    }
+
+                    updateBatchProgress(batchSize, batchSize);
+                    resolve(data);
+                } catch (e) {
+                    console.warn('[VerifyWidget] Failed to parse batch result:', e);
+                    eventSource.close();
+                    reject(new Error('解析响应失败'));
+                }
+            });
+
+            eventSource.addEventListener('error', (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('[VerifyWidget] Batch Error:', data);
+                    eventSource.close();
+                    reject(new Error(data.message || '验证失败'));
+                } catch (e) {
+                    // Generic error
+                    console.error('[VerifyWidget] SSE error:', event);
+                    eventSource.close();
+                    reject(new Error('连接中断，请重试'));
+                }
+            });
+
+            // Timeout fallback (8 minutes for batch operations)
+            setTimeout(() => {
+                eventSource.close();
+                reject(new Error('批量验证超时，请稍后重试'));
+            }, 480000);
         });
     }
 
