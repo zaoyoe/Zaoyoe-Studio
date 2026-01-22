@@ -186,20 +186,34 @@ async function verifyWithPuppeteer(apiKey, verificationIds, onProgress = () => {
         const textareaSelector = 'textarea';
         await page.waitForSelector(textareaSelector, { timeout: 5000 });
 
-        // Method 1: Clear and type using triple-click to select all, then type
-        await page.click(textareaSelector, { clickCount: 3 }); // Select all placeholder if any
-        await page.keyboard.press('Backspace'); // Clear selection
+        // Click on textarea to focus it
+        await page.click(textareaSelector);
 
-        // Method 2: Use evaluate to directly set the value (more reliable)
-        await page.evaluate((selector, value) => {
-            const textarea = document.querySelector(selector);
-            if (textarea) {
-                textarea.value = value;
-                // Trigger input event so Vue/React can detect the change
-                textarea.dispatchEvent(new Event('input', { bubbles: true }));
-                textarea.dispatchEvent(new Event('change', { bubbles: true }));
+        // Clear any existing content
+        await page.keyboard.down('Meta'); // Command key on Mac
+        await page.keyboard.press('a');
+        await page.keyboard.up('Meta');
+        await page.keyboard.press('Backspace');
+
+        // Type each URL individually with Enter key between them
+        // This is more reliable than setting value directly for Vue/React frameworks
+        console.log('[Puppeteer] Typing URLs line by line...');
+        for (let i = 0; i < ids.length; i++) {
+            const id = ids[i];
+            console.log(`[Puppeteer] Typing ID[${i}]: "${id.substring(0, 80)}..."`);
+
+            // Type the URL
+            await page.type(textareaSelector, id, { delay: 5 }); // 5ms delay between keystrokes
+
+            // If not the last URL, press Enter to create a new line
+            if (i < ids.length - 1) {
+                await page.keyboard.press('Enter');
+                console.log('[Puppeteer] Pressed Enter for new line');
             }
-        }, textareaSelector, batchInput);
+
+            // Small delay between URLs
+            await new Promise(r => setTimeout(r, 100));
+        }
 
         // Verify the input was successful
         const inputtedValue = await page.evaluate((selector) => {
@@ -209,7 +223,7 @@ async function verifyWithPuppeteer(apiKey, verificationIds, onProgress = () => {
 
         const inputLines = inputtedValue.split('\n').filter(l => l.trim()).length;
         console.log(`[Puppeteer] Verified textarea: ${inputLines} lines entered`);
-        console.log(`[Puppeteer] Textarea actual content preview: "${inputtedValue.substring(0, 300)}"`);
+        console.log(`[Puppeteer] Textarea actual content (first 500 chars): "${inputtedValue.substring(0, 500)}"`);
 
         if (inputLines !== batchSize) {
             onProgress('debug', `⚠️ 输入验证: 期望 ${batchSize} 行，实际 ${inputLines} 行`);
