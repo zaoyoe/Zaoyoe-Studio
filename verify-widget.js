@@ -385,22 +385,29 @@
         try {
             // Send all valid verification IDs in a single batch request
             const verificationIds = validLinks.map(v => v.verificationId);
+            console.log('[VerifyWidget] Starting batch with IDs:', verificationIds);
 
             // Call batch verification API with all IDs
             const result = await callBatchVerifyAPI(verificationIds, validLinks);
+            console.log('[VerifyWidget] callBatchVerifyAPI returned:', JSON.stringify(result));
 
             // Update batch stats from server response
-            if (result.stats) {
+            if (result && result.stats) {
+                console.log('[VerifyWidget] Updating batchStats with:', result.stats);
                 batchStats.success = result.stats.success || 0;
                 batchStats.failed = (result.stats.failed || 0) + invalidIndices.length;
+                console.log('[VerifyWidget] batchStats after update:', batchStats);
+            } else {
+                console.warn('[VerifyWidget] No stats in result!');
             }
 
             // Update balance
-            if (result.pointsDeducted) {
+            if (result && result.pointsDeducted) {
                 userBalance -= result.pointsDeducted;
             }
 
             // Show summary
+            console.log('[VerifyWidget] Calling showBatchSummary with batchStats:', batchStats);
             showBatchSummary();
 
             // Refresh balance
@@ -792,12 +799,17 @@
 
         console.log('[VerifyWidget] Setting className:', `verify-result-item ${status}`);
         item.className = `verify-result-item ${status}`;
+        // Force reflow to ensure class update takes effect
+        item.offsetHeight;
 
         const iconEl = item.querySelector('.verify-result-item-icon i');
         if (iconEl) {
             const newIconClass = `fas ${icons[status] || icons.pending}`;
-            console.log('[VerifyWidget] Setting icon:', newIconClass);
+            console.log('[VerifyWidget] Setting icon:', newIconClass, 'on element:', iconEl);
+            iconEl.className = '';
             iconEl.className = newIconClass;
+        } else {
+            console.warn('[VerifyWidget] Icon element not found in item:', item.id);
         }
 
         const messageEl = item.querySelector('.verify-result-item-message');
