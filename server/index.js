@@ -164,8 +164,13 @@ app.get('/api/verify-stream', async (req, res) => {
         console.log(`[Verify] result.stats type:`, typeof result.stats);
 
         // Get batch stats - deduct only for successful verifications
-        const stats = result.stats || { success: result.success ? batchSize : 0, failed: result.success ? 0 : batchSize, total: batchSize };
-        console.log(`[Verify] Final stats:`, JSON.stringify(stats));
+        // More robust extraction with explicit type checking
+        const stats = {
+            success: typeof result.stats?.success === 'number' ? result.stats.success : (result.success ? batchSize : 0),
+            failed: typeof result.stats?.failed === 'number' ? result.stats.failed : (result.success ? 0 : batchSize),
+            total: batchSize
+        };
+        console.log(`[Verify] Final stats (constructed):`, JSON.stringify(stats));
         const successCount = stats.success || 0;
         const pointsToDeduct = successCount * pricePerVerify;
 

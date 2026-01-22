@@ -186,48 +186,46 @@ async function verifyWithPuppeteer(apiKey, verificationIds, onProgress = () => {
         const textareaSelector = 'textarea';
         await page.waitForSelector(textareaSelector, { timeout: 5000 });
 
-        // Click on textarea to focus it
+        // Use native Puppeteer input simulation - MOST reliable for all frameworks
+        // Step 1: Click to focus
+        // Step 2: Select all (Ctrl+A / Cmd+A)
+        // Step 3: Delete existing content
+        // Step 4: Type new content using keyboard.type
+        console.log('[Puppeteer] Using native keyboard input for textarea...');
+
+        // Focus and click the textarea
         await page.click(textareaSelector);
+        await new Promise(r => setTimeout(r, 200));
 
-        // Clear any existing content
-        await page.keyboard.down('Meta'); // Command key on Mac
-        await page.keyboard.press('a');
-        await page.keyboard.up('Meta');
+        // Select all and delete existing content
+        const isMac = process.platform === 'darwin';
+        if (isMac) {
+            await page.keyboard.down('Meta');
+            await page.keyboard.press('a');
+            await page.keyboard.up('Meta');
+        } else {
+            await page.keyboard.down('Control');
+            await page.keyboard.press('a');
+            await page.keyboard.up('Control');
+        }
         await page.keyboard.press('Backspace');
+        await new Promise(r => setTimeout(r, 200));
 
-        // Type each URL individually with Enter key between them
-        // This is more reliable than setting value directly for Vue/React frameworks
-        console.log('[Puppeteer] Typing URLs line by line...');
+        // Type each line separately with explicit Enter key between them
+        console.log('[Puppeteer] Typing', ids.length, 'IDs line by line...');
         for (let i = 0; i < ids.length; i++) {
             const id = ids[i];
             console.log(`[Puppeteer] Typing ID[${i}]: "${id.substring(0, 80)}..."`);
+            await page.keyboard.type(id, { delay: 1 }); // Fast typing with 1ms delay
 
-            // Type the URL
-            await page.type(textareaSelector, id, { delay: 5 }); // 5ms delay between keystrokes
-
-            // If not the last URL, press Enter to create a new line
+            // Add newline after each ID except the last one
             if (i < ids.length - 1) {
                 await page.keyboard.press('Enter');
-                console.log('[Puppeteer] Pressed Enter for new line');
             }
-
-            // Small delay between URLs
-            await new Promise(r => setTimeout(r, 100));
         }
 
-        // Trigger input event to ensure Vue/React frameworks detect the change
-        await page.evaluate((selector) => {
-            const textarea = document.querySelector(selector);
-            if (textarea) {
-                // Dispatch input and change events for Vue/React reactivity
-                textarea.dispatchEvent(new Event('input', { bubbles: true }));
-                textarea.dispatchEvent(new Event('change', { bubbles: true }));
-                console.log('Dispatched input/change events on textarea');
-            }
-        }, textareaSelector);
-
-        // Small delay to let Vue/React process the events
-        await new Promise(r => setTimeout(r, 300));
+        // Wait for framework reactivity
+        await new Promise(r => setTimeout(r, 500));
 
         // Verify the input was successful
         const inputtedValue = await page.evaluate((selector) => {
