@@ -478,6 +478,7 @@
 
             const endpoint = `${CONFIG.nodeServerUrl}/api/verify-stream?${params}`;
             const eventSource = new EventSource(endpoint);
+            let isCompleted = false; // Track completion to ignore post-close errors
 
             // Update status message in UI
             const updateStatus = (message) => {
@@ -485,6 +486,7 @@
             };
 
             eventSource.addEventListener('status', (event) => {
+                if (isCompleted) return;
                 try {
                     const data = JSON.parse(event.data);
                     console.log('[VerifyWidget] Status:', data);
@@ -501,6 +503,7 @@
             });
 
             eventSource.addEventListener('debug', (event) => {
+                if (isCompleted) return;
                 try {
                     const data = JSON.parse(event.data);
                     console.log('[VerifyWidget] Debug (page content):', data.content);
@@ -511,6 +514,7 @@
 
             // Handle quota updates from 1key
             eventSource.addEventListener('quota', (event) => {
+                if (isCompleted) return;
                 try {
                     const data = JSON.parse(event.data);
                     console.log('[VerifyWidget] Quota:', data);
@@ -521,6 +525,7 @@
             });
 
             eventSource.addEventListener('result', (event) => {
+                isCompleted = true;
                 try {
                     const data = JSON.parse(event.data);
                     console.log('[VerifyWidget] Result:', data);
@@ -534,14 +539,23 @@
             });
 
             eventSource.addEventListener('error', (event) => {
+                // Ignore error after completion (SSE fires error on normal close)
+                if (isCompleted) {
+                    console.log('[VerifyWidget] Ignoring error after completion');
+                    eventSource.close();
+                    return;
+                }
+
                 try {
                     const data = JSON.parse(event.data);
                     console.log('[VerifyWidget] Error:', data);
+                    isCompleted = true;
                     eventSource.close();
                     reject(new Error(data.message || '验证失败'));
                 } catch (e) {
                     // Generic error
                     console.error('[VerifyWidget] SSE error:', event);
+                    isCompleted = true;
                     eventSource.close();
                     reject(new Error('连接中断，请重试'));
                 }
@@ -549,8 +563,11 @@
 
             // Timeout fallback (6 minutes)
             setTimeout(() => {
-                eventSource.close();
-                reject(new Error('验证超时，请稍后重试'));
+                if (!isCompleted) {
+                    isCompleted = true;
+                    eventSource.close();
+                    reject(new Error('验证超时，请稍后重试'));
+                }
             }, 360000);
         });
     }
@@ -577,6 +594,7 @@
             const endpoint = `${CONFIG.nodeServerUrl}/api/verify-stream?${params}`;
             const eventSource = new EventSource(endpoint);
             const batchSize = validLinks.length;
+            let isCompleted = false; // Track if we've received a result
 
             // Update all items with a single status
             const updateAllItems = (status, message) => {
@@ -586,6 +604,7 @@
             };
 
             eventSource.addEventListener('status', (event) => {
+                if (isCompleted) return;
                 try {
                     const data = JSON.parse(event.data);
                     console.log('[VerifyWidget] Batch Status:', data);
@@ -611,6 +630,7 @@
             });
 
             eventSource.addEventListener('debug', (event) => {
+                if (isCompleted) return;
                 try {
                     const data = JSON.parse(event.data);
                     console.log('[VerifyWidget] Debug (page content):', data.content);
@@ -621,6 +641,7 @@
 
             // Handle quota updates from 1key
             eventSource.addEventListener('quota', (event) => {
+                if (isCompleted) return;
                 try {
                     const data = JSON.parse(event.data);
                     console.log('[VerifyWidget] Quota:', data);
@@ -631,6 +652,7 @@
             });
 
             eventSource.addEventListener('result', (event) => {
+                isCompleted = true; // Mark as completed BEFORE closing
                 try {
                     const data = JSON.parse(event.data);
                     console.log('[VerifyWidget] Batch Result:', data);
@@ -641,7 +663,6 @@
 
                     // Since we don't have per-item results from 1key, 
                     // we need to mark items based on overall stats
-                    // For now, mark all as success if any succeeded, or show summary
                     if (stats.success === batchSize) {
                         // All succeeded
                         validLinks.forEach(({ index }) => {
@@ -655,8 +676,6 @@
                     } else {
                         // Mixed results - show as complete with summary
                         validLinks.forEach(({ index }, i) => {
-                            // We don't know which specific ones succeeded, 
-                            // so show a summary message
                             updateResultItem(index, 'info', `批量结果: ${stats.success}成功/${stats.failed}失败`);
                         });
                     }
@@ -671,14 +690,24 @@
             });
 
             eventSource.addEventListener('error', (event) => {
+                // Ignore error events if we've already received a result
+                // (SSE triggers error when connection closes normally)
+                if (isCompleted) {
+                    console.log('[VerifyWidget] Ignoring error event after completion');
+                    eventSource.close();
+                    return;
+                }
+
                 try {
                     const data = JSON.parse(event.data);
                     console.log('[VerifyWidget] Batch Error:', data);
+                    isCompleted = true;
                     eventSource.close();
                     reject(new Error(data.message || '验证失败'));
                 } catch (e) {
-                    // Generic error
-                    console.error('[VerifyWidget] SSE error:', event);
+                    // Generic error (connection lost, server error, etc.)
+                    console.error('[VerifyWidget] SSE connection error:', event);
+                    isCompleted = true;
                     eventSource.close();
                     reject(new Error('连接中断，请重试'));
                 }
@@ -686,14 +715,15 @@
 
             // Timeout fallback (8 minutes for batch operations)
             setTimeout(() => {
-                eventSource.close();
-                reject(new Error('批量验证超时，请稍后重试'));
+                if (!isCompleted) {
+                    isCompleted = true;
+                    eventSource.close();
+                    reject(new Error('批量验证超时，请稍后重试'));
+                }
             }, 480000);
         });
     }
 
-    // =============================================
-    // Batch Results UI Helpers
     // =============================================
     function clearResultsList() {
         const list = document.getElementById('verifyResultsList');
