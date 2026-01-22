@@ -215,6 +215,20 @@ async function verifyWithPuppeteer(apiKey, verificationIds, onProgress = () => {
             await new Promise(r => setTimeout(r, 100));
         }
 
+        // Trigger input event to ensure Vue/React frameworks detect the change
+        await page.evaluate((selector) => {
+            const textarea = document.querySelector(selector);
+            if (textarea) {
+                // Dispatch input and change events for Vue/React reactivity
+                textarea.dispatchEvent(new Event('input', { bubbles: true }));
+                textarea.dispatchEvent(new Event('change', { bubbles: true }));
+                console.log('Dispatched input/change events on textarea');
+            }
+        }, textareaSelector);
+
+        // Small delay to let Vue/React process the events
+        await new Promise(r => setTimeout(r, 300));
+
         // Verify the input was successful
         const inputtedValue = await page.evaluate((selector) => {
             const textarea = document.querySelector(selector);
