@@ -1,6 +1,7 @@
 /**
  * Batch Verifier Widget
  * Modular component for Gemini verification service
+ * Supports batch mode for multiple SheerID links
  */
 
 (function () {
@@ -31,6 +32,8 @@
     let currentUser = null;
     let userBalance = 0;
     let isLoading = false;
+    let batchResults = []; // Store results for batch mode
+    let batchStats = { success: 0, failed: 0, total: 0 };
 
     // =============================================
     // Initialize Widget
@@ -89,7 +92,11 @@
                     </div>
                     <div class="verify-widget-title">
                         <h3>Gemini 验证服务</h3>
-                        <p>一键验证账户状态</p>
+                        <p>支持批量验证账户状态</p>
+                    </div>
+                    <div class="verify-quota" id="verifyQuota" style="display: none;">
+                        <i class="fas fa-ticket"></i>
+                        剩余: <span id="verifyQuotaValue">--</span>
                     </div>
                     <div class="verify-balance" id="verifyBalance" style="display: none;">
                         <i class="fas fa-coins"></i>
@@ -109,24 +116,60 @@
 
                     <div id="verifyForm" style="display: none;">
                         <div class="verify-input-area">
-                            <input 
-                                type="text" 
-                                class="verify-input" 
+                            <textarea 
+                                class="verify-textarea" 
                                 id="verifyIdInput"
-                                placeholder="输入 Verification ID 或 URL"
-                            >
+                                placeholder="输入 SheerID 验证链接&#10;每行一个，支持批量验证&#10;&#10;示例:&#10;https://services.sheerid.com/verify/xxx/?verificationId=yyy&#10;https://services.sheerid.com/verify/xxx/?verificationId=zzz"
+                                rows="5"
+                            ></textarea>
+                            <div class="verify-batch-info">
+                                <div class="verify-batch-count">
+                                    <i class="fas fa-list-ol"></i>
+                                    待验证: <span class="count" id="verifyLinkCount">0</span> 个
+                                </div>
+                                <div class="verify-price-info">
+                                    <i class="fas fa-coins"></i>
+                                    共需 <span class="price" id="verifyTotalCost">0</span> 积分
+                                    <span class="per-price">（${CONFIG.pricePerVerify}积分/次）</span>
+                                </div>
+                            </div>
                             <button class="verify-submit-btn" id="verifySubmitBtn" onclick="VerifyWidget.submit()">
                                 <i class="fas fa-check-circle"></i>
                                 开始验证
                             </button>
                         </div>
-                        <div class="verify-price-info">
-                            <i class="fas fa-info-circle"></i>
-                            每次验证消耗 <span class="price" id="verifyPriceDisplay">${CONFIG.pricePerVerify}</span> 积分
+                    </div>
+                </div>
+
+                <!-- Batch Results Panel -->
+                <div class="verify-batch-results" id="verifyBatchResults">
+                    <div class="verify-batch-results-header">
+                        <div class="verify-batch-results-title">
+                            <i class="fas fa-list-check"></i>
+                            验证结果
+                        </div>
+                        <div class="verify-batch-progress" id="verifyBatchProgress">
+                            进度: <span class="current">0</span>/<span class="total">0</span>
+                        </div>
+                    </div>
+                    <div id="verifyResultsList"></div>
+                    <div class="verify-batch-summary" id="verifyBatchSummary" style="display: none;">
+                        <div class="verify-batch-stat success">
+                            <i class="fas fa-check-circle"></i>
+                            成功: <span id="successCount">0</span>
+                        </div>
+                        <div class="verify-batch-stat error">
+                            <i class="fas fa-times-circle"></i>
+                            失败: <span id="failedCount">0</span>
+                        </div>
+                        <div class="verify-batch-stat total">
+                            <i class="fas fa-list"></i>
+                            总计: <span id="totalCount">0</span>
                         </div>
                     </div>
                 </div>
 
+                <!-- Single result (hidden in batch mode) -->
                 <div class="verify-result" id="verifyResult">
                     <div class="verify-result-header">
                         <div class="verify-result-icon">
@@ -140,6 +183,51 @@
         `;
 
         updatePriceDisplay();
+        setupInputListener();
+    }
+
+    // =============================================
+    // Setup Input Listener for Link Count
+    // =============================================
+    function setupInputListener() {
+        const input = document.getElementById('verifyIdInput');
+        if (input) {
+            input.addEventListener('input', updateLinkCount);
+        }
+    }
+
+    function updateLinkCount() {
+        const input = document.getElementById('verifyIdInput');
+        const countEl = document.getElementById('verifyLinkCount');
+        const totalCostEl = document.getElementById('verifyTotalCost');
+        if (!input || !countEl) return;
+
+        const links = parseLinks(input.value);
+        const count = links.length;
+        const totalCost = count * CONFIG.pricePerVerify;
+
+        countEl.textContent = count;
+        if (totalCostEl) {
+            totalCostEl.textContent = totalCost;
+        }
+    }
+
+    // =============================================
+    // Parse Links from Input
+    // =============================================
+    function parseLinks(text) {
+        if (!text.trim()) return [];
+
+        // Split by newlines and filter valid links
+        return text
+            .split('\n')
+            .map(line => line.trim())
+            .filter(line => {
+                // Must contain sheerid or verification-related patterns
+                return line.includes('sheerid.com') ||
+                    line.includes('verificationId') ||
+                    (line.length > 20 && !line.includes(' '));
+            });
     }
 
     // =============================================
@@ -221,56 +309,103 @@
     }
 
     // =============================================
-    // Submit Verification
+    // Submit Verification (Batch Mode)
     // =============================================
     async function submit() {
         if (isLoading) return;
 
         const input = document.getElementById('verifyIdInput');
         const submitBtn = document.getElementById('verifySubmitBtn');
-        const result = document.getElementById('verifyResult');
+        const singleResult = document.getElementById('verifyResult');
+        const batchResultsPanel = document.getElementById('verifyBatchResults');
 
         if (!input || !submitBtn) return;
 
         const inputValue = input.value.trim();
         if (!inputValue) {
-            showResult('error', '请输入内容', '请输入 Verification ID 或验证链接');
+            showSingleResult('error', '请输入内容', '请输入 SheerID 验证链接');
             return;
         }
 
-        // Extract verification ID from URL if needed
-        const verificationId = extractVerificationId(inputValue);
-        if (!verificationId) {
-            showResult('error', '格式错误', '无法识别的 Verification ID 或链接格式');
+        // Parse all links
+        const links = parseLinks(inputValue);
+        if (links.length === 0) {
+            showSingleResult('error', '格式错误', '无法识别有效的验证链接');
             return;
         }
 
-        // Check balance
-        if (userBalance < CONFIG.pricePerVerify) {
-            showResult('error', '积分不足', `验证需要 ${CONFIG.pricePerVerify} 积分，当前余额: ${userBalance}`);
+        // Calculate total cost
+        const totalCost = links.length * CONFIG.pricePerVerify;
+        if (userBalance < totalCost) {
+            showSingleResult('error', '积分不足',
+                `验证 ${links.length} 个链接需要 ${totalCost} 积分，当前余额: ${userBalance}`);
             return;
         }
+
+        // Hide single result, show batch results panel
+        if (singleResult) singleResult.classList.remove('show');
+        if (batchResultsPanel) batchResultsPanel.classList.add('show');
+
+        // Reset batch state
+        batchResults = [];
+        batchStats = { success: 0, failed: 0, total: links.length };
+        clearResultsList();
+        updateBatchProgress(0, links.length);
+        hideBatchSummary();
 
         // Start loading
         isLoading = true;
         submitBtn.disabled = true;
-        submitBtn.innerHTML = '<div class="spinner"></div> 验证中...';
+        submitBtn.innerHTML = '<div class="spinner"></div> 批量验证中...';
 
         try {
-            // Call verification API
-            const response = await callVerifyAPI(verificationId);
+            // Process each link sequentially
+            for (let i = 0; i < links.length; i++) {
+                const link = links[i];
+                const verificationId = extractVerificationId(link);
 
-            if (response.success) {
-                showResult('success', '验证完成', response.message || '账户验证成功');
+                if (!verificationId) {
+                    addResultItem(i, link, 'error', '无效的链接格式');
+                    batchStats.failed++;
+                    updateBatchProgress(i + 1, links.length);
+                    continue;
+                }
 
-                // Refresh balance (Edge Function already deducted points)
-                await loadUserBalance();
-            } else {
-                showResult('error', '验证失败', response.message || '验证过程中发生错误');
+                // Add processing item
+                addResultItem(i, link, 'processing', '验证中...');
+
+                try {
+                    // Call verification API
+                    const response = await callVerifyAPI(verificationId, i);
+
+                    if (response.success) {
+                        updateResultItem(i, 'success', response.message || '验证成功');
+                        batchStats.success++;
+                        userBalance -= CONFIG.pricePerVerify;
+                    } else {
+                        updateResultItem(i, 'error', response.message || '验证失败');
+                        batchStats.failed++;
+                    }
+                } catch (e) {
+                    console.error('[VerifyWidget] Verification error:', e);
+                    updateResultItem(i, 'error', e.message || '请求失败');
+                    batchStats.failed++;
+                }
+
+                updateBatchProgress(i + 1, links.length);
+
+                // Small delay between verifications to avoid overwhelming the server
+                if (i < links.length - 1) {
+                    await new Promise(r => setTimeout(r, 1000));
+                }
             }
-        } catch (e) {
-            console.error('[VerifyWidget] Verification error:', e);
-            showResult('error', '请求失败', e.message || '网络错误，请稍后重试');
+
+            // Show summary
+            showBatchSummary();
+
+            // Refresh balance
+            await loadUserBalance();
+
         } finally {
             isLoading = false;
             submitBtn.disabled = false;
@@ -282,6 +417,13 @@
     // Extract Verification ID
     // =============================================
     function extractVerificationId(input) {
+        input = input.trim();
+
+        // If it's a SheerID URL, return the full URL (batch.1key.me needs full URL)
+        if (input.includes('sheerid.com') || input.includes('services.sheerid')) {
+            return input; // Return full URL for SheerID links
+        }
+
         // If it's a direct ID (no URL)
         if (!input.includes('/') && !input.includes('?')) {
             return input;
@@ -289,6 +431,10 @@
 
         // Try to extract from URL
         try {
+            // Pattern: /verify/xxx/ (SheerID format)
+            const sheerIdMatch = input.match(/\/verify\/([a-zA-Z0-9]+)/i);
+            if (sheerIdMatch) return input; // Return full URL
+
             // Pattern: ?verificationId=xxx or /verify/xxx/?verificationId=xxx
             const match = input.match(/verificationId[=\/]([a-zA-Z0-9_-]+)/i);
             if (match) return match[1];
@@ -303,12 +449,11 @@
         }
     }
 
-    // =============================================
-    // Call Verification API via Node.js Puppeteer Server
-    // =============================================
-    async function callVerifyAPI(verificationId) {
-        const endpoint = `${CONFIG.nodeServerUrl}/api/verify`;
 
+    // =============================================
+    // Call Verification API via SSE (Server-Sent Events)
+    // =============================================
+    async function callVerifyAPI(verificationId, itemIndex) {
         // Get current user ID
         const { data: userData } = await window.supabaseClient.auth.getUser();
         const userId = userData?.user?.id;
@@ -317,47 +462,195 @@
             throw new Error('请先登录');
         }
 
-        const response = await fetch(endpoint, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
+        return new Promise((resolve, reject) => {
+            const params = new URLSearchParams({
                 verificationId: verificationId,
                 userId: userId
-            })
+            });
+
+            const endpoint = `${CONFIG.nodeServerUrl}/api/verify-stream?${params}`;
+            const eventSource = new EventSource(endpoint);
+
+            // Update status message in UI
+            const updateStatus = (message) => {
+                updateResultItem(itemIndex, 'processing', message);
+            };
+
+            eventSource.addEventListener('status', (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('[VerifyWidget] Status:', data);
+
+                    // Skip debug_content messages - they are for debugging only
+                    if (data.status === 'debug_content' || data.status === 'debug') {
+                        return;
+                    }
+
+                    updateStatus(data.message);
+                } catch (e) {
+                    console.warn('[VerifyWidget] Failed to parse status:', e);
+                }
+            });
+
+            eventSource.addEventListener('debug', (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('[VerifyWidget] Debug (page content):', data.content);
+                } catch (e) {
+                    console.warn('[VerifyWidget] Failed to parse debug:', e);
+                }
+            });
+
+            // Handle quota updates from 1key
+            eventSource.addEventListener('quota', (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('[VerifyWidget] Quota:', data);
+                    updateQuotaDisplay(data.remaining);
+                } catch (e) {
+                    console.warn('[VerifyWidget] Failed to parse quota:', e);
+                }
+            });
+
+            eventSource.addEventListener('result', (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('[VerifyWidget] Result:', data);
+                    eventSource.close();
+                    resolve(data);
+                } catch (e) {
+                    console.warn('[VerifyWidget] Failed to parse result:', e);
+                    eventSource.close();
+                    reject(new Error('解析响应失败'));
+                }
+            });
+
+            eventSource.addEventListener('error', (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('[VerifyWidget] Error:', data);
+                    eventSource.close();
+                    reject(new Error(data.message || '验证失败'));
+                } catch (e) {
+                    // Generic error
+                    console.error('[VerifyWidget] SSE error:', event);
+                    eventSource.close();
+                    reject(new Error('连接中断，请重试'));
+                }
+            });
+
+            // Timeout fallback (6 minutes)
+            setTimeout(() => {
+                eventSource.close();
+                reject(new Error('验证超时，请稍后重试'));
+            }, 360000);
         });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-            throw new Error(data.message || 'API 请求失败');
-        }
-
-        // Update balance display after successful verification
-        if (data.pointsDeducted) {
-            userBalance -= data.pointsDeducted;
-            const balanceValueEl = document.getElementById('verifyBalanceValue');
-            if (balanceValueEl) {
-                balanceValueEl.textContent = userBalance;
-            }
-        }
-
-        return data;
     }
 
-    // (Removed deductPoints - Edge Function handles point deduction)
+    // =============================================
+    // Batch Results UI Helpers
+    // =============================================
+    function clearResultsList() {
+        const list = document.getElementById('verifyResultsList');
+        if (list) list.innerHTML = '';
+    }
+
+    function addResultItem(index, link, status, message) {
+        const list = document.getElementById('verifyResultsList');
+        if (!list) return;
+
+        const shortLink = link.length > 60 ? link.substring(0, 60) + '...' : link;
+        const icons = {
+            success: 'fa-check',
+            error: 'fa-times',
+            pending: 'fa-hourglass-half',
+            processing: 'fa-spinner fa-spin'
+        };
+
+        const item = document.createElement('div');
+        item.className = `verify-result-item ${status}`;
+        item.id = `result-item-${index}`;
+        item.innerHTML = `
+            <div class="verify-result-item-icon">
+                <i class="fas ${icons[status] || icons.pending}"></i>
+            </div>
+            <div class="verify-result-item-content">
+                <div class="verify-result-item-id">#${index + 1}: ${shortLink}</div>
+                <div class="verify-result-item-message">${message}</div>
+            </div>
+        `;
+
+        list.appendChild(item);
+
+        // Auto-scroll to bottom
+        const resultsPanel = document.getElementById('verifyBatchResults');
+        if (resultsPanel) {
+            resultsPanel.scrollTop = resultsPanel.scrollHeight;
+        }
+    }
+
+    function updateResultItem(index, status, message) {
+        const item = document.getElementById(`result-item-${index}`);
+        if (!item) return;
+
+        const icons = {
+            success: 'fa-check',
+            error: 'fa-times',
+            pending: 'fa-hourglass-half',
+            processing: 'fa-spinner fa-spin'
+        };
+
+        item.className = `verify-result-item ${status}`;
+
+        const iconEl = item.querySelector('.verify-result-item-icon i');
+        if (iconEl) {
+            iconEl.className = `fas ${icons[status] || icons.pending}`;
+        }
+
+        const messageEl = item.querySelector('.verify-result-item-message');
+        if (messageEl) {
+            messageEl.textContent = message;
+        }
+    }
+
+    function updateBatchProgress(current, total) {
+        const progressEl = document.getElementById('verifyBatchProgress');
+        if (progressEl) {
+            progressEl.innerHTML = `进度: <span class="current">${current}</span>/<span class="total">${total}</span>`;
+        }
+    }
+
+    function showBatchSummary() {
+        const summary = document.getElementById('verifyBatchSummary');
+        const successCount = document.getElementById('successCount');
+        const failedCount = document.getElementById('failedCount');
+        const totalCount = document.getElementById('totalCount');
+
+        if (summary) summary.style.display = 'flex';
+        if (successCount) successCount.textContent = batchStats.success;
+        if (failedCount) failedCount.textContent = batchStats.failed;
+        if (totalCount) totalCount.textContent = batchStats.total;
+    }
+
+    function hideBatchSummary() {
+        const summary = document.getElementById('verifyBatchSummary');
+        if (summary) summary.style.display = 'none';
+    }
 
     // =============================================
-    // Show Result
+    // Show Single Result (for errors before batch starts)
     // =============================================
-    function showResult(type, title, message) {
+    function showSingleResult(type, title, message) {
         const result = document.getElementById('verifyResult');
+        const batchResults = document.getElementById('verifyBatchResults');
         const resultIcon = result?.querySelector('.verify-result-icon i');
         const resultTitle = document.getElementById('verifyResultTitle');
         const resultMessage = document.getElementById('verifyResultMessage');
 
         if (!result) return;
+
+        // Hide batch results, show single result
+        if (batchResults) batchResults.classList.remove('show');
 
         // Set type
         result.className = 'verify-result show ' + type;
@@ -381,9 +674,37 @@
     // Update Price Display
     // =============================================
     function updatePriceDisplay() {
-        const priceEl = document.getElementById('verifyPriceDisplay');
-        if (priceEl) {
-            priceEl.textContent = CONFIG.pricePerVerify;
+        // Update the per-price text
+        const perPriceElements = document.querySelectorAll('.per-price');
+        perPriceElements.forEach(el => {
+            el.textContent = `（${CONFIG.pricePerVerify}积分/次）`;
+        });
+        // Update total cost display
+        updateLinkCount();
+    }
+
+    // =============================================
+    // Update Quota Display (1key remaining count)
+    // =============================================
+    function updateQuotaDisplay(remaining) {
+        const quotaEl = document.getElementById('verifyQuota');
+        const quotaValueEl = document.getElementById('verifyQuotaValue');
+
+        if (!quotaEl || !quotaValueEl) return;
+
+        // Show the quota display
+        quotaEl.style.display = 'flex';
+        quotaValueEl.textContent = remaining;
+
+        // Update styling based on remaining count
+        quotaEl.classList.remove('warning', 'danger');
+
+        if (remaining === 0) {
+            quotaEl.classList.add('danger');
+            // Show warning message
+            showSingleResult('error', '服务暂不可用', 'API验证次数已用完，请联系管理员补货');
+        } else if (remaining <= 5) {
+            quotaEl.classList.add('warning');
         }
     }
 
