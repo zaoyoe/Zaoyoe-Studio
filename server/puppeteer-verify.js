@@ -144,7 +144,8 @@ async function verifyWithPuppeteer(apiKey, verificationIds, onProgress = () => {
                 return {
                     success: false,
                     message: 'API验证次数已用完，请联系管理员补货',
-                    remainingQuota: 0
+                    remainingQuota: 0,
+                    stats: { success: 0, failed: batchSize, total: batchSize }
                 };
             }
         }
@@ -168,6 +169,16 @@ async function verifyWithPuppeteer(apiKey, verificationIds, onProgress = () => {
 
         // Join all IDs with newlines for batch submission
         const batchInput = ids.join('\n');
+
+        // DEBUG: Log exact input content
+        console.log('[Puppeteer] === BATCH INPUT DEBUG ===');
+        console.log('[Puppeteer] Number of IDs:', ids.length);
+        ids.forEach((id, i) => {
+            console.log(`[Puppeteer] ID[${i}]: "${id.substring(0, 100)}${id.length > 100 ? '...' : ''}"`);
+        });
+        console.log('[Puppeteer] batchInput length:', batchInput.length);
+        console.log('[Puppeteer] batchInput preview:', batchInput.substring(0, 300));
+        console.log('[Puppeteer] === END BATCH INPUT DEBUG ===');
 
         onProgress('entering', `✏️ 正在输入 ${batchSize} 个验证 ID...`);
         console.log(`[Puppeteer] Entering ${batchSize} verification IDs`);
@@ -198,6 +209,7 @@ async function verifyWithPuppeteer(apiKey, verificationIds, onProgress = () => {
 
         const inputLines = inputtedValue.split('\n').filter(l => l.trim()).length;
         console.log(`[Puppeteer] Verified textarea: ${inputLines} lines entered`);
+        console.log(`[Puppeteer] Textarea actual content preview: "${inputtedValue.substring(0, 300)}"`);
 
         if (inputLines !== batchSize) {
             onProgress('debug', `⚠️ 输入验证: 期望 ${batchSize} 行，实际 ${inputLines} 行`);
@@ -247,7 +259,8 @@ async function verifyWithPuppeteer(apiKey, verificationIds, onProgress = () => {
         onProgress('error', `❌ 错误: ${error.message}`);
         return {
             success: false,
-            message: error.message || '验证过程出错'
+            message: error.message || '验证过程出错',
+            stats: { success: 0, failed: batchSize, total: batchSize }
         };
     } finally {
         if (browser) {

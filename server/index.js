@@ -159,10 +159,13 @@ app.get('/api/verify-stream', async (req, res) => {
         // Run Puppeteer automation with progress callback (pass array of IDs)
         const result = await verifyWithPuppeteer(batchApiKey, verificationIds, onProgress);
 
-        console.log(`[Verify] Batch result:`, result);
+        console.log(`[Verify] Batch result:`, JSON.stringify(result));
+        console.log(`[Verify] result.stats:`, result.stats);
+        console.log(`[Verify] result.stats type:`, typeof result.stats);
 
         // Get batch stats - deduct only for successful verifications
         const stats = result.stats || { success: result.success ? batchSize : 0, failed: result.success ? 0 : batchSize, total: batchSize };
+        console.log(`[Verify] Final stats:`, JSON.stringify(stats));
         const successCount = stats.success || 0;
         const pointsToDeduct = successCount * pricePerVerify;
 

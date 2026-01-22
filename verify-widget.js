@@ -357,9 +357,12 @@
         const validLinks = [];
         const invalidIndices = [];
 
+        console.log('[VerifyWidget] === EXTRACTION DEBUG ===');
         for (let i = 0; i < links.length; i++) {
             const link = links[i];
+            console.log(`[VerifyWidget] Link[${i}]: "${link.substring(0, 80)}${link.length > 80 ? '...' : ''}"`);
             const verificationId = extractVerificationId(link);
+            console.log(`[VerifyWidget] Extracted ID[${i}]: "${verificationId ? verificationId.substring(0, 80) : 'NULL'}${verificationId && verificationId.length > 80 ? '...' : ''}"`);
 
             if (!verificationId) {
                 addResultItem(i, link, 'error', '无效的链接格式');
@@ -370,6 +373,7 @@
                 addResultItem(i, link, 'processing', '等待验证...');
             }
         }
+        console.log('[VerifyWidget] === END EXTRACTION DEBUG ===');
 
         // If all links are invalid, show summary and return
         if (validLinks.length === 0) {
@@ -385,7 +389,10 @@
         try {
             // Send all valid verification IDs in a single batch request
             const verificationIds = validLinks.map(v => v.verificationId);
-            console.log('[VerifyWidget] Starting batch with IDs:', verificationIds);
+            console.log('[VerifyWidget] Starting batch with IDs:');
+            verificationIds.forEach((id, i) => {
+                console.log(`[VerifyWidget] verificationIds[${i}]: "${id.substring(0, 80)}${id.length > 80 ? '...' : ''}"`);
+            });
 
             // Call batch verification API with all IDs
             const result = await callBatchVerifyAPI(verificationIds, validLinks);
@@ -665,10 +672,13 @@
                 try {
                     const data = JSON.parse(event.data);
                     console.log('[VerifyWidget] Batch Result RAW:', JSON.stringify(data));
+                    console.log('[VerifyWidget] data.stats:', data.stats);
+                    console.log('[VerifyWidget] data.stats type:', typeof data.stats);
                     eventSource.close();
 
                     // Update individual items based on batch stats
                     const stats = data.stats || { success: 0, failed: 0, total: batchSize };
+                    console.log('[VerifyWidget] Final stats object:', JSON.stringify(stats));
                     console.log('[VerifyWidget] Parsed stats:', stats, 'batchSize:', batchSize);
 
                     // Since we don't have per-item results from 1key, 
@@ -808,8 +818,11 @@
         if (iconEl) {
             const newIconClass = `fas ${icons[status] || icons.pending}`;
             console.log('[VerifyWidget] Setting icon:', newIconClass, 'on element:', iconEl);
-            iconEl.className = '';
-            iconEl.className = newIconClass;
+            // Use requestAnimationFrame to ensure DOM update happens
+            requestAnimationFrame(() => {
+                iconEl.className = newIconClass;
+                console.log('[VerifyWidget] Icon className after update:', iconEl.className);
+            });
         } else {
             console.warn('[VerifyWidget] Icon element not found in item:', item.id);
         }
