@@ -592,11 +592,13 @@
         }
 
         return new Promise((resolve, reject) => {
-            // Send all IDs as comma-separated string
+            // Send all IDs with a safe separator (URLs may contain commas or other special chars)
+            // Use triple pipe as separator since it's not valid in URLs
             const params = new URLSearchParams({
-                verificationId: verificationIds.join(','),
+                verificationId: verificationIds.join('|||'),
                 userId: userId
             });
+            console.log('[VerifyWidget] Sending batch IDs:', verificationIds);
 
             const endpoint = `${CONFIG.nodeServerUrl}/api/verify-stream?${params}`;
             const eventSource = new EventSource(endpoint);

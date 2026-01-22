@@ -59,8 +59,16 @@ app.get('/api/verify-stream', async (req, res) => {
         res.write(`data: ${JSON.stringify(data)}\n\n`);
     };
 
-    // Support batch: comma-separated IDs or single ID
-    const verificationIds = verificationId ? verificationId.split(',').map(id => id.trim()).filter(id => id) : [];
+    // Support batch: triple-pipe separated IDs (||| is safe separator since it's not valid in URLs)
+    let verificationIds = [];
+    if (verificationId) {
+        if (verificationId.includes('|||')) {
+            verificationIds = verificationId.split('|||').map(id => id.trim()).filter(id => id);
+        } else {
+            // Fallback: single ID (for backwards compat)
+            verificationIds = [verificationId.trim()].filter(id => id);
+        }
+    }
     const batchSize = verificationIds.length;
 
     if (batchSize === 0) {
@@ -118,6 +126,12 @@ app.get('/api/verify-stream', async (req, res) => {
         }
 
         sendEvent('status', { status: 'balance_ok', message: `💰 余额充足 (${currentBalance} 积分，需要 ${totalPriceNeeded})` });
+
+        // Debug: Log exact IDs being processed
+        console.log(`[Verify] Verification IDs received (${batchSize}):`);
+        verificationIds.forEach((id, i) => {
+            console.log(`  [${i}]: ${id.substring(0, 80)}${id.length > 80 ? '...' : ''}`);
+        });
 
         console.log(`[Verify] Starting batch verification for ${batchSize} IDs`);
 
