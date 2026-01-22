@@ -655,28 +655,37 @@
                 isCompleted = true; // Mark as completed BEFORE closing
                 try {
                     const data = JSON.parse(event.data);
-                    console.log('[VerifyWidget] Batch Result:', data);
+                    console.log('[VerifyWidget] Batch Result RAW:', JSON.stringify(data));
                     eventSource.close();
 
                     // Update individual items based on batch stats
                     const stats = data.stats || { success: 0, failed: 0, total: batchSize };
+                    console.log('[VerifyWidget] Parsed stats:', stats, 'batchSize:', batchSize);
 
                     // Since we don't have per-item results from 1key, 
                     // we need to mark items based on overall stats
                     if (stats.success === batchSize) {
                         // All succeeded
+                        console.log('[VerifyWidget] All succeeded, updating items to success');
                         validLinks.forEach(({ index }) => {
+                            console.log('[VerifyWidget] Updating item', index, 'to success');
                             updateResultItem(index, 'success', '验证成功！');
                         });
                     } else if (stats.success === 0) {
                         // All failed
+                        console.log('[VerifyWidget] All failed, updating items to error');
                         validLinks.forEach(({ index }) => {
                             updateResultItem(index, 'error', data.message || '验证失败');
                         });
                     } else {
-                        // Mixed results - show as complete with summary
+                        // Mixed results - mark first N as success, rest as failed
+                        console.log('[VerifyWidget] Mixed results:', stats.success, 'success,', stats.failed, 'failed');
                         validLinks.forEach(({ index }, i) => {
-                            updateResultItem(index, 'info', `批量结果: ${stats.success}成功/${stats.failed}失败`);
+                            if (i < stats.success) {
+                                updateResultItem(index, 'success', '验证成功！');
+                            } else {
+                                updateResultItem(index, 'error', '验证失败');
+                            }
                         });
                     }
 
@@ -739,7 +748,8 @@
             success: 'fa-check',
             error: 'fa-times',
             pending: 'fa-hourglass-half',
-            processing: 'fa-spinner fa-spin'
+            processing: 'fa-spinner fa-spin',
+            info: 'fa-info-circle'
         };
 
         const item = document.createElement('div');
@@ -766,20 +776,28 @@
 
     function updateResultItem(index, status, message) {
         const item = document.getElementById(`result-item-${index}`);
-        if (!item) return;
+        console.log('[VerifyWidget] updateResultItem:', { index, status, message, itemFound: !!item });
+        if (!item) {
+            console.warn('[VerifyWidget] Item not found:', `result-item-${index}`);
+            return;
+        }
 
         const icons = {
             success: 'fa-check',
             error: 'fa-times',
             pending: 'fa-hourglass-half',
-            processing: 'fa-spinner fa-spin'
+            processing: 'fa-spinner fa-spin',
+            info: 'fa-info-circle'
         };
 
+        console.log('[VerifyWidget] Setting className:', `verify-result-item ${status}`);
         item.className = `verify-result-item ${status}`;
 
         const iconEl = item.querySelector('.verify-result-item-icon i');
         if (iconEl) {
-            iconEl.className = `fas ${icons[status] || icons.pending}`;
+            const newIconClass = `fas ${icons[status] || icons.pending}`;
+            console.log('[VerifyWidget] Setting icon:', newIconClass);
+            iconEl.className = newIconClass;
         }
 
         const messageEl = item.querySelector('.verify-result-item-message');
