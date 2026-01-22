@@ -80,7 +80,7 @@ async function handleRegister(event) {
     }
 }
 
-// ==================== 登录功能 (Supabase 版本) ====================
+// ==================== 登录功能 (Supabase 版本 - 带安全锁定) ====================
 async function handleLogin(event) {
     event.preventDefault();
 
@@ -94,14 +94,50 @@ async function handleLogin(event) {
     }
 
     try {
+        // 🌐 Step 0: 获取客户端 IP
+        const clientIP = await getClientIP();
+
+        // 🚫 Step 0.5: 检查 IP 是否被拉黑
+        if (clientIP) {
+            const ipStatus = await checkIPBlacklisted(clientIP);
+            if (ipStatus.blocked) {
+                let message = '⛔ 您的 IP 地址已被禁止登录';
+                if (ipStatus.reason) {
+                    message += `\n\n原因: ${ipStatus.reason}`;
+                }
+                if (ipStatus.expires_at) {
+                    const expiresDate = new Date(ipStatus.expires_at);
+                    message += `\n解封时间: ${expiresDate.toLocaleString('zh-CN')}`;
+                }
+                alert(message);
+                return;
+            }
+        }
+
+        // 🔒 Step 1: 检查账户是否被锁定
+        const lockStatus = await checkUserLocked(email);
+        if (lockStatus.isLocked) {
+            const minutes = Math.ceil(lockStatus.remainingSeconds / 60);
+            alert(`⚠️ 账户已锁定\n\n由于多次登录失败，您的账户已被临时锁定。\n请在 ${minutes} 分钟后重试。`);
+            return;
+        }
+
+        // Step 2: 尝试登录
         const { data, error } = await window.supabaseClient.auth.signInWithPassword({
             email: email,
             password: password
         });
 
-        if (error) throw error;
+        if (error) {
+            // 🔒 登录失败 - 记录失败次数（包含 IP）
+            await recordLoginFailure(email, clientIP);
+            throw error;
+        }
 
         console.log('✅ 登录成功:', data.user);
+
+        // 🔒 Step 3: 登录成功 - 重置失败计数
+        await resetLoginFailures(email);
 
         // 获取用户 profile
         const { data: profile } = await window.supabaseClient
@@ -151,6 +187,9 @@ async function handleLogin(event) {
         // 记录登录 IP（用于多账号检测）
         recordLoginIP(data.user.id);
 
+        // 🔒 Step 4: 启动会话超时监控
+        startSessionTimeoutMonitor();
+
         // 刷新留言板点赞状态
         if (typeof loadGuestbookMessages === 'function') {
             console.log('🔄 登录成功，刷新留言板点赞状态...');
@@ -171,6 +210,207 @@ async function handleLogin(event) {
     }
 }
 
+// ==================== 登录安全辅助函数 ====================
+
+// 获取客户端 IP 地址
+async function getClientIP() {
+    try {
+        // 优先使用 ipify（更快更稳定）
+        const response = await fetch('https://api.ipify.org?format=json');
+        const data = await response.json();
+        console.log('🌐 客户端 IP:', data.ip);
+        return data.ip;
+    } catch (e) {
+        console.warn('无法获取客户端 IP:', e.message);
+        return null;
+    }
+}
+
+// 检查 IP 是否被拉黑
+async function checkIPBlacklisted(clientIP) {
+    try {
+        const { data, error } = await window.supabaseClient.rpc('check_ip_blacklisted', {
+            client_ip: clientIP
+        });
+
+        if (error) {
+            console.warn('检查 IP 黑名单失败:', error.message);
+            return { blocked: false };
+        }
+
+        if (data && data.blocked) {
+            console.warn('🚫 IP 已被拉黑:', clientIP, data.reason);
+        }
+
+        return data || { blocked: false };
+    } catch (e) {
+        console.warn('检查 IP 黑名单失败:', e.message);
+        return { blocked: false };
+    }
+}
+
+// 获取安全配置 (使用公开 RPC 函数，anon 用户可访问)
+async function getSecurityConfig() {
+    try {
+        const { data, error } = await window.supabaseClient
+            .rpc('get_public_security_config');
+
+        if (error) {
+            console.warn('读取安全配置失败:', error.message);
+            throw error;
+        }
+
+        console.log('📋 安全配置加载成功:', data);
+        return data || {
+            login_lockout_attempts: 5,
+            lockout_duration: 900000,
+            session_timeout: 3600000
+        };
+    } catch (e) {
+        console.warn('无法获取安全配置，使用默认值:', e.message);
+        return {
+            login_lockout_attempts: 5,
+            lockout_duration: 900000,
+            session_timeout: 3600000
+        };
+    }
+}
+
+// 检查用户是否被锁定
+async function checkUserLocked(email) {
+    try {
+        const { data, error } = await window.supabaseClient.rpc('check_user_locked', {
+            user_email: email
+        });
+        if (error) throw error;
+        if (data && data.length > 0) {
+            return {
+                isLocked: data[0].is_locked,
+                lockedUntil: data[0].locked_until,
+                remainingSeconds: data[0].remaining_seconds
+            };
+        }
+        return { isLocked: false };
+    } catch (e) {
+        console.warn('检查锁定状态失败:', e);
+        return { isLocked: false }; // 失败时允许继续登录
+    }
+}
+
+// 记录登录失败（支持 IP 传递用于自动拉黑）
+async function recordLoginFailure(email, clientIP = null) {
+    try {
+        const config = await getSecurityConfig();
+        const maxAttempts = config.login_lockout_attempts || 5;
+        const lockoutMinutes = Math.floor((config.lockout_duration || 900000) / 60000);
+
+        const { data, error } = await window.supabaseClient.rpc('record_login_failure', {
+            user_email: email,
+            max_attempts: maxAttempts,
+            lockout_minutes: lockoutMinutes,
+            client_ip: clientIP
+        });
+
+        if (error) throw error;
+
+        if (data && data.length > 0 && data[0].is_now_locked) {
+            console.warn(`⚠️ 账户 ${email} 已被锁定 ${lockoutMinutes} 分钟`);
+
+            // 检查是否触发了 IP 自动拉黑
+            if (data[0].ip_auto_blocked) {
+                console.warn(`🚫 IP ${clientIP} 已被自动拉黑 24 小时`);
+            }
+        } else if (data && data.length > 0) {
+            const remaining = maxAttempts - data[0].attempts;
+            if (remaining > 0 && remaining <= 2) {
+                console.warn(`⚠️ 登录失败，还剩 ${remaining} 次尝试机会`);
+            }
+        }
+    } catch (e) {
+        console.error('记录登录失败次数时出错:', e);
+    }
+}
+
+// 重置登录失败次数
+async function resetLoginFailures(email) {
+    try {
+        const { error } = await window.supabaseClient.rpc('reset_login_failures', {
+            user_email: email
+        });
+        if (error) throw error;
+        console.log('✅ 登录成功，失败计数已重置');
+    } catch (e) {
+        console.error('重置失败计数时出错:', e);
+    }
+}
+
+// ==================== 会话超时监控 ====================
+let sessionTimeoutTimer = null;
+let lastActivityTime = Date.now();
+
+function startSessionTimeoutMonitor() {
+    // 清除之前的定时器
+    if (sessionTimeoutTimer) {
+        clearInterval(sessionTimeoutTimer);
+    }
+
+    // 更新最后活动时间
+    lastActivityTime = Date.now();
+
+    // 监听用户活动
+    const activityEvents = ['mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
+    activityEvents.forEach(event => {
+        document.addEventListener(event, updateLastActivity, { passive: true });
+    });
+
+    // 定期检查超时（每分钟检查一次）
+    sessionTimeoutTimer = setInterval(checkSessionTimeout, 60000);
+    console.log('🔒 会话超时监控已启动');
+}
+
+function updateLastActivity() {
+    lastActivityTime = Date.now();
+}
+
+async function checkSessionTimeout() {
+    const { data: { user } } = await window.supabaseClient.auth.getUser();
+    if (!user) {
+        // 用户未登录，停止监控
+        stopSessionTimeoutMonitor();
+        return;
+    }
+
+    const config = await getSecurityConfig();
+    const timeout = config.session_timeout || 3600000; // 默认1小时
+    const elapsed = Date.now() - lastActivityTime;
+
+    if (elapsed >= timeout) {
+        console.log('⏰ 会话超时，自动登出...');
+        stopSessionTimeoutMonitor();
+
+        // 自动登出
+        await window.supabaseClient.auth.signOut();
+        updateUserUI(null);
+
+        alert('⏰ 由于长时间无操作，您已被自动登出。');
+    }
+}
+
+function stopSessionTimeoutMonitor() {
+    if (sessionTimeoutTimer) {
+        clearInterval(sessionTimeoutTimer);
+        sessionTimeoutTimer = null;
+    }
+
+    // 移除活动监听器
+    const activityEvents = ['mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
+    activityEvents.forEach(event => {
+        document.removeEventListener(event, updateLastActivity);
+    });
+
+    console.log('🔒 会话超时监控已停止');
+}
+
 // ==================== 退出登录 (Supabase 版本) ====================
 async function handleLogout(event) {
     if (event) {
@@ -187,6 +427,9 @@ async function handleLogout(event) {
     if (!confirm("确定要退出登录吗？")) return;
 
     console.log('🚪 退出登录');
+
+    // 🔒 停止会话超时监控
+    stopSessionTimeoutMonitor();
 
     try {
         await window.supabaseClient.auth.signOut();
@@ -288,6 +531,9 @@ async function checkAuthState() {
             nickname: profile?.username || user.user_metadata?.full_name || user.email.split('@')[0],
             avatarUrl: validCustomAvatar || user.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.email)}&background=6b9ece&color=fff`
         });
+
+        // 🔒 启动会话超时监控
+        startSessionTimeoutMonitor();
     } else {
         console.log('❌ 用户未登录');
         updateUserUI(null);
@@ -577,6 +823,9 @@ async function forceLogout(event) {
     if (overlay) overlay.classList.remove('active');
 
     if (!confirm("确定要退出登录吗？")) return;
+
+    // 🔒 停止会话超时监控
+    stopSessionTimeoutMonitor();
 
     try {
         await window.supabaseClient.auth.signOut();

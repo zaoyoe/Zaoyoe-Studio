@@ -557,31 +557,13 @@
                     </button>
                     <button class="admin-tab" data-settings-view="notifications"
                         onclick="switchSettingsView('notifications')">
-                        📧 通知设置
+                        📧 系统公告
                     </button>
-                    <button class="admin-tab" data-settings-view="moderation"
-                        onclick="switchSettingsView('moderation')">
-                        🛡️ 内容审核
-                    </button>
-                    <button class="admin-tab" data-settings-view="gallery" onclick="switchSettingsView('gallery')">
-                        📚 画廊设置
-                    </button>
-                    <button class="admin-tab" data-settings-view="comments" onclick="switchSettingsView('comments')">
-                        💬 评论设置
-                    </button>
-                    <button class="admin-tab" data-settings-view="integrations"
-                        onclick="switchSettingsView('integrations')">
-                        🔗 集成
+                    <button class="admin-tab" data-settings-view="content" onclick="switchSettingsView('content')">
+                        📚 内容设置
                     </button>
                     <button class="admin-tab" data-settings-view="export" onclick="switchSettingsView('export')">
                         📦 导出
-                    </button>
-                    <button class="admin-tab" data-settings-view="seo" onclick="switchSettingsView('seo')">
-                        🌐 SEO
-                    </button>
-                    <button class="admin-tab" data-settings-view="performance"
-                        onclick="switchSettingsView('performance')">
-                        ⚡ 性能
                     </button>
                     <button class="admin-tab" data-settings-view="general" onclick="switchSettingsView('general')">
                         ⚙️ 其它设置
@@ -733,9 +715,8 @@
                                 <div class="config-value">
                                     <div class="config-input-wrapper">
                                         <input type="number" class="config-input" id="cfgLoginLockoutAttempts" min="3"
-                                            max="10" value="5">
+                                            max="10" value="5" style="width: 80px;">
                                         <span class="config-unit">次</span>
-                                        <span class="config-save-indicator">✓</span>
                                     </div>
                                 </div>
                             </div>
@@ -745,23 +726,26 @@
                                     <span class="config-hint">账户锁定后的解锁等待时间</span>
                                 </div>
                                 <div class="config-value">
-                                    <div class="custom-dropdown" id="lockoutDurationDropdown">
-                                        <button class="dropdown-trigger"
-                                            onclick="toggleCustomDropdown('lockoutDurationDropdown')">
-                                            <span class="dropdown-value" id="lockoutDurationValue">15 分钟</span>
-                                            <i class="fas fa-chevron-down"></i>
-                                        </button>
-                                        <div class="dropdown-menu">
-                                            <div class="dropdown-option" data-value="300000"
-                                                onclick="selectDropdownOption('lockoutDurationDropdown', '300000', '5 分钟')">
-                                                5 分钟</div>
-                                            <div class="dropdown-option selected" data-value="900000"
-                                                onclick="selectDropdownOption('lockoutDurationDropdown', '900000', '15 分钟')">
-                                                15 分钟</div>
-                                            <div class="dropdown-option" data-value="3600000"
-                                                onclick="selectDropdownOption('lockoutDurationDropdown', '3600000', '1 小时')">
-                                                1 小时</div>
+                                    <div class="config-input-wrapper">
+                                        <div class="custom-dropdown" id="lockoutDurationDropdown">
+                                            <button class="dropdown-trigger"
+                                                onclick="toggleCustomDropdown('lockoutDurationDropdown')">
+                                                <span class="dropdown-value" id="lockoutDurationValue">15</span>
+                                                <i class="fas fa-chevron-down"></i>
+                                            </button>
+                                            <div class="dropdown-menu">
+                                                <div class="dropdown-option" data-value="300000"
+                                                    onclick="selectDropdownOption('lockoutDurationDropdown', '300000', '5')">
+                                                    5</div>
+                                                <div class="dropdown-option selected" data-value="900000"
+                                                    onclick="selectDropdownOption('lockoutDurationDropdown', '900000', '15')">
+                                                    15</div>
+                                                <div class="dropdown-option" data-value="3600000"
+                                                    onclick="selectDropdownOption('lockoutDurationDropdown', '3600000', '60')">
+                                                    60</div>
+                                            </div>
                                         </div>
+                                        <span class="config-unit">分</span>
                                     </div>
                                 </div>
                             </div>
@@ -771,24 +755,59 @@
                                     <span class="config-hint">用户无操作后自动登出时间</span>
                                 </div>
                                 <div class="config-value">
-                                    <div class="custom-dropdown" id="sessionTimeoutDropdown">
-                                        <button class="dropdown-trigger"
-                                            onclick="toggleCustomDropdown('sessionTimeoutDropdown')">
-                                            <span class="dropdown-value" id="sessionTimeoutValue">1 小时</span>
-                                            <i class="fas fa-chevron-down"></i>
-                                        </button>
-                                        <div class="dropdown-menu">
-                                            <div class="dropdown-option" data-value="1800000"
-                                                onclick="selectDropdownOption('sessionTimeoutDropdown', '1800000', '30 分钟')">
-                                                30 分钟</div>
-                                            <div class="dropdown-option selected" data-value="3600000"
-                                                onclick="selectDropdownOption('sessionTimeoutDropdown', '3600000', '1 小时')">
-                                                1 小时</div>
-                                            <div class="dropdown-option" data-value="86400000"
-                                                onclick="selectDropdownOption('sessionTimeoutDropdown', '86400000', '1 天')">
-                                                1 天</div>
+                                    <div class="config-input-wrapper">
+                                        <div class="custom-dropdown" id="sessionTimeoutDropdown">
+                                            <button class="dropdown-trigger"
+                                                onclick="toggleCustomDropdown('sessionTimeoutDropdown')">
+                                                <span class="dropdown-value" id="sessionTimeoutValue">60</span>
+                                                <i class="fas fa-chevron-down"></i>
+                                            </button>
+                                            <div class="dropdown-menu">
+                                                <div class="dropdown-option" data-value="1800000"
+                                                    onclick="selectDropdownOption('sessionTimeoutDropdown', '1800000', '30')">
+                                                    30</div>
+                                                <div class="dropdown-option selected" data-value="3600000"
+                                                    onclick="selectDropdownOption('sessionTimeoutDropdown', '3600000', '60')">
+                                                    60</div>
+                                                <div class="dropdown-option" data-value="86400000"
+                                                    onclick="selectDropdownOption('sessionTimeoutDropdown', '86400000', '1440')">
+                                                    1440</div>
+                                            </div>
                                         </div>
+                                        <span class="config-unit">分</span>
                                     </div>
+                                </div>
+                            </div>
+                            <!-- Save Button -->
+                            <div class="config-actions" style="margin-top: 32px; justify-content: flex-end;">
+                                <span class="config-save-indicator" id="loginSecuritySaveIndicator"
+                                    style="margin-right: 12px; opacity: 0;">✓ 已保存</span>
+                                <button class="btn-sm btn-primary" onclick="saveLoginSecuritySettings()">
+                                    <i class="fas fa-save"></i> 保存
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Locked Accounts -->
+                        <div class="settings-section">
+                            <h3><i class="fas fa-user-lock"></i> 锁定账户 <span class="locked-count-badge"
+                                    id="lockedCountBadge">0</span></h3>
+                            <div class="locked-accounts-container">
+                                <div class="locked-accounts-list" id="lockedAccountsList">
+                                    <div class="empty-state" id="noLockedAccountsMsg">
+                                        <i class="fas fa-check-circle"></i>
+                                        <span>暂无锁定账户</span>
+                                    </div>
+                                    <!-- Dynamic locked accounts will be inserted here -->
+                                </div>
+                                <div class="config-actions" style="margin-top: 16px; justify-content: space-between;">
+                                    <button class="btn-sm btn-secondary" onclick="refreshLockedAccounts()">
+                                        <i class="fas fa-sync-alt"></i> 刷新
+                                    </button>
+                                    <button class="btn-sm btn-warning" onclick="unlockAllAccounts()" id="unlockAllBtn"
+                                        style="display: none; align-items: center; gap: 6px;">
+                                        <i class="fas fa-unlock"></i>全部解锁
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -803,12 +822,12 @@
                                 </div>
                                 <textarea class="config-textarea" id="cfgIpBlacklist" rows="6"
                                     placeholder="192.168.1.100&#10;10.0.0.0/8&#10;..."></textarea>
-                                <div class="config-actions" style="margin-top: 12px;">
-                                    <button class="btn-sm btn-primary" onclick="saveIpBlacklist()">
-                                        <i class="fas fa-save"></i> 保存黑名单
-                                    </button>
+                                <div class="config-actions" style="margin-top: 26px; justify-content: flex-end;">
                                     <span class="config-save-indicator" id="ipBlacklistSaveIndicator"
-                                        style="margin-left: 12px; opacity: 0;">✓ 已保存</span>
+                                        style="margin-right: 12px; opacity: 0;">✓ 已保存</span>
+                                    <button class="btn-sm btn-primary" onclick="saveIpBlacklist()">
+                                        <i class="fas fa-save"></i> 保存
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -824,36 +843,19 @@
                             <!-- Left: Preview Panel -->
                             <div class="announcement-preview-side">
                                 <div class="announcement-preview-stage">
-                                    <div class="announcement-preview-large" id="announcementPreview">
-                                        <div class="preview-header">
-                                            <i class="fas fa-bullhorn"></i>
-                                            <span class="preview-title">站内公告</span>
+                                    <div class="announcement-modal announcement-preview-modal" id="announcementPreview">
+                                        <div class="announcement-header">
+                                            <div class="announcement-icon-wrapper">
+                                                <i class="fas fa-bullhorn"></i>
+                                            </div>
+                                            <span class="announcement-title">站内公告</span>
                                         </div>
-                                        <div class="preview-body">
-                                            <span>在此预览公告效果...</span>
+                                        <div class="announcement-body">
+                                            <div class="announcement-text" id="previewTextContent">在此预览公告效果...</div>
                                         </div>
-                                    </div>
-
-                                    <!-- Color Palette (inline in preview) -->
-                                    <div class="preview-color-palette">
-                                        <label class="palette-dot" title="紫色"><input type="radio"
-                                                name="announcementColor" value="purple" checked><span
-                                                style="background: linear-gradient(135deg, #667eea, #764ba2);"></span></label>
-                                        <label class="palette-dot" title="蓝色"><input type="radio"
-                                                name="announcementColor" value="blue"><span
-                                                style="background: linear-gradient(135deg, #2193b0, #6dd5ed);"></span></label>
-                                        <label class="palette-dot" title="绿色"><input type="radio"
-                                                name="announcementColor" value="green"><span
-                                                style="background: linear-gradient(135deg, #11998e, #38ef7d);"></span></label>
-                                        <label class="palette-dot" title="橙色"><input type="radio"
-                                                name="announcementColor" value="orange"><span
-                                                style="background: linear-gradient(135deg, #f2994a, #f2c94c);"></span></label>
-                                        <label class="palette-dot" title="红色"><input type="radio"
-                                                name="announcementColor" value="red"><span
-                                                style="background: linear-gradient(135deg, #eb3349, #f45c43);"></span></label>
-                                        <label class="palette-dot" title="暗色"><input type="radio"
-                                                name="announcementColor" value="dark"><span
-                                                style="background: linear-gradient(135deg, #2c3e50, #4a5568);"></span></label>
+                                        <div class="announcement-footer">
+                                            <button class="announcement-ack-btn">已读</button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -882,6 +884,59 @@
                                     </div>
                                 </div>
 
+                                <!-- Decoration Selector -->
+                                <div class="editor-section">
+                                    <div class="editor-section-label">
+                                        动态装饰
+                                        <label class="decoration-toggle">
+                                            <input type="checkbox" id="decorationEnabled" onchange="toggleDecoration()">
+                                            <span class="toggle-slider-mini"></span>
+                                        </label>
+                                    </div>
+                                    <div class="decoration-theme-selector" id="decorationSelector">
+                                        <button type="button" class="decoration-btn active" data-decoration="none"
+                                            onclick="selectDecoration('none')" title="无装饰">
+                                            <span class="deco-icon">✕</span>
+                                            <span class="deco-label">无</span>
+                                        </button>
+                                        <button type="button" class="decoration-btn" data-decoration="snow"
+                                            onclick="selectDecoration('snow')" title="飘雪效果">
+                                            <span class="deco-icon">❄️</span>
+                                            <span class="deco-label">飘雪</span>
+                                        </button>
+                                        <button type="button" class="decoration-btn" data-decoration="sakura"
+                                            onclick="selectDecoration('sakura')" title="樱花飘落">
+                                            <span class="deco-icon">🌸</span>
+                                            <span class="deco-label">樱花</span>
+                                        </button>
+                                        <button type="button" class="decoration-btn" data-decoration="fireworks"
+                                            onclick="selectDecoration('fireworks')" title="烟花庆典">
+                                            <span class="deco-icon">🎆</span>
+                                            <span class="deco-label">烟花</span>
+                                        </button>
+                                        <button type="button" class="decoration-btn" data-decoration="hearts"
+                                            onclick="selectDecoration('hearts')" title="漂浮爱心">
+                                            <span class="deco-icon">❤️</span>
+                                            <span class="deco-label">爱心</span>
+                                        </button>
+                                        <button type="button" class="decoration-btn" data-decoration="leaves"
+                                            onclick="selectDecoration('leaves')" title="秋日落叶">
+                                            <span class="deco-icon">🍂</span>
+                                            <span class="deco-label">落叶</span>
+                                        </button>
+                                        <button type="button" class="decoration-btn" data-decoration="rain"
+                                            onclick="selectDecoration('rain')" title="雨天效果">
+                                            <span class="deco-icon">🌧️</span>
+                                            <span class="deco-label">雨天</span>
+                                        </button>
+                                        <button type="button" class="decoration-btn" data-decoration="sunlight"
+                                            onclick="selectDecoration('sunlight')" title="阳光灿烂">
+                                            <span class="deco-icon">☀️</span>
+                                            <span class="deco-label">阳光</span>
+                                        </button>
+                                    </div>
+                                </div>
+
                                 <!-- Content Editor -->
                                 <div class="editor-section">
                                     <div class="editor-section-label">公告内容</div>
@@ -892,6 +947,25 @@
                                             title="斜体"><i class="fas fa-italic"></i></button>
                                         <button type="button" class="toolbar-btn" onclick="insertFormat('u')"
                                             title="下划线"><i class="fas fa-underline"></i></button>
+                                        <div class="align-picker-container">
+                                            <button type="button" class="toolbar-btn" id="alignPickerBtn"
+                                                onclick="toggleAlignPicker()" title="对齐"><i
+                                                    class="fas fa-align-center"></i></button>
+                                            <div class="align-picker" id="alignPicker">
+                                                <button type="button" class="align-item"
+                                                    onclick="applyTextAlign('left')" title="左对齐">
+                                                    <i class="fas fa-align-left"></i>
+                                                </button>
+                                                <button type="button" class="align-item"
+                                                    onclick="applyTextAlign('center')" title="居中">
+                                                    <i class="fas fa-align-center"></i>
+                                                </button>
+                                                <button type="button" class="align-item"
+                                                    onclick="applyTextAlign('right')" title="右对齐">
+                                                    <i class="fas fa-align-right"></i>
+                                                </button>
+                                            </div>
+                                        </div>
                                         <div class="toolbar-divider"></div>
                                         <button type="button" class="toolbar-btn" onclick="insertLink()" title="链接"><i
                                                 class="fas fa-link"></i></button>
@@ -937,6 +1011,7 @@
                                             <option value="#ffeb3b">🟨 黄色</option>
                                             <option value="#ff9800">🟧 橙色</option>
                                             <option value="#4caf50">🟩 绿色</option>
+                                            <option value="#e57373">🟥 红色</option>
                                         </select>
                                         <select id="textSizeSelect" class="toolbar-select"
                                             onchange="applyTextSize(this.value)" title="字号">
@@ -968,8 +1043,8 @@
                     </div>
                 </div>
 
-                <!-- MODERATION VIEW -->
-                <div id="settings-view-moderation" class="view-section">
+                <!-- CONTENT VIEW (Consolidated: Moderation + Gallery + Comments) -->
+                <div id="settings-view-content" class="view-section">
                     <div class="module-content">
                         <!-- Sensitive Words -->
                         <div class="settings-section">
@@ -994,12 +1069,10 @@
                                 </div>
                                 <textarea class="config-textarea" id="cfgSensitiveWords" rows="8"
                                     placeholder="敏感词1&#10;敏感词2&#10;..."></textarea>
-                                <div class="config-actions" style="margin-top: 12px;">
+                                <div class="config-actions" style="margin-top: 26px; justify-content: flex-end;">
                                     <button class="btn-sm btn-primary" onclick="saveSensitiveWords()">
-                                        <i class="fas fa-save"></i> 保存词库
+                                        <i class="fas fa-save"></i> 保存
                                     </button>
-                                    <span class="config-save-indicator" id="sensitiveWordsSaveIndicator"
-                                        style="margin-left: 12px; opacity: 0;">✓ 已保存</span>
                                 </div>
                             </div>
                         </div>
@@ -1020,12 +1093,8 @@
                                 </div>
                             </div>
                         </div>
-                    </div>
-                </div>
 
-                <!-- GALLERY VIEW -->
-                <div id="settings-view-gallery" class="view-section">
-                    <div class="module-content">
+                        <!-- Gallery Display -->
                         <div class="settings-section">
                             <h3><i class="fas fa-images"></i> 画廊显示</h3>
                             <div class="config-item-row">
@@ -1056,7 +1125,7 @@
                             <div class="config-item-row">
                                 <div class="config-label">
                                     <span>默认排序</span>
-                                    <span class="config-hint">画廊默认的排序方式</span>
+                                    <span class="config-hint">画廊页面默认的排序方式</span>
                                 </div>
                                 <div class="config-value">
                                     <div class="custom-dropdown" id="defaultSortDropdown">
@@ -1079,37 +1148,52 @@
                                     </div>
                                 </div>
                             </div>
+                        </div>
+
+                        <!-- Verification Service -->
+                        <div class="settings-section">
+                            <h3><i class="fas fa-shield-check"></i> 验证服务</h3>
                             <div class="config-item-row">
                                 <div class="config-label">
-                                    <span>允许下载</span>
-                                    <span class="config-hint">显示下载按钮允许用户下载图片</span>
+                                    <span>每次验证价格</span>
+                                    <span class="config-hint">用户每次使用验证服务消耗的积分</span>
                                 </div>
                                 <div class="config-value">
-                                    <label class="toggle-switch-sm">
-                                        <input type="checkbox" id="cfgAllowDownload" checked>
-                                        <span class="toggle-slider"></span>
-                                    </label>
+                                    <div class="input-with-addon">
+                                        <input type="number" id="cfgVerifyPrice" class="config-input" value="3" min="1"
+                                            max="100" step="1"
+                                            onchange="window.saveVerifyConfig && window.saveVerifyConfig()">
+                                        <span class="input-addon">积分/次</span>
+                                    </div>
                                 </div>
                             </div>
                             <div class="config-item-row">
                                 <div class="config-label">
-                                    <span>水印设置</span>
-                                    <span class="config-hint">下载图片时添加水印</span>
+                                    <span>Batch API Key</span>
+                                    <span class="config-hint">batch.1key.me 的 API 密钥</span>
                                 </div>
                                 <div class="config-value">
-                                    <label class="toggle-switch-sm">
-                                        <input type="checkbox" id="cfgWatermarkEnabled">
+                                    <input type="password" id="cfgBatchApiKey" class="config-input config-input-wide"
+                                        placeholder="cdk_xxxxx..."
+                                        onchange="window.saveVerifyConfig && window.saveVerifyConfig()">
+                                </div>
+                            </div>
+                            <div class="config-item-row">
+                                <div class="config-label">
+                                    <span>启用验证服务</span>
+                                    <span class="config-hint">关闭后主页不显示验证模块</span>
+                                </div>
+                                <div class="config-value">
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="cfgVerifyEnabled" checked
+                                            onchange="window.saveVerifyConfig && window.saveVerifyConfig()">
                                         <span class="toggle-slider"></span>
                                     </label>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                </div>
 
-                <!-- COMMENTS VIEW -->
-                <div id="settings-view-comments" class="view-section">
-                    <div class="module-content">
+                        <!-- Comments Rules -->
                         <div class="settings-section">
                             <h3><i class="fas fa-comments"></i> 评论规则</h3>
                             <div class="config-item-row">
@@ -1156,9 +1240,106 @@
                     </div>
                 </div>
 
-                <!-- INTEGRATIONS VIEW -->
-                <div id="settings-view-integrations" class="view-section">
+                <!-- EXPORT VIEW -->
+                <div id="settings-view-export" class="view-section">
                     <div class="module-content">
+                        <div class="settings-section">
+                            <h3><i class="fas fa-file-export"></i> 数据导出</h3>
+                            <div class="export-buttons-grid">
+                                <button class="export-btn" onclick="exportData('users', 'json')">
+                                    <i class="fas fa-users"></i>
+                                    <span>导出用户数据</span>
+                                    <small>JSON 格式</small>
+                                </button>
+                                <button class="export-btn" onclick="exportData('users', 'csv')">
+                                    <i class="fas fa-users"></i>
+                                    <span>导出用户数据</span>
+                                    <small>CSV 格式</small>
+                                </button>
+                                <button class="export-btn" onclick="exportData('comments', 'json')">
+                                    <i class="fas fa-comments"></i>
+                                    <span>导出评论数据</span>
+                                    <small>JSON 格式</small>
+                                </button>
+                                <button class="export-btn" onclick="exportData('comments', 'csv')">
+                                    <i class="fas fa-comments"></i>
+                                    <span>导出评论数据</span>
+                                    <small>CSV 格式</small>
+                                </button>
+                                <button class="export-btn" onclick="exportData('points', 'json')">
+                                    <i class="fas fa-coins"></i>
+                                    <span>导出积分记录</span>
+                                    <small>JSON 格式</small>
+                                </button>
+                                <button class="export-btn" onclick="exportData('points', 'csv')">
+                                    <i class="fas fa-coins"></i>
+                                    <span>导出积分记录</span>
+                                    <small>CSV 格式</small>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- GENERAL VIEW -->
+                <div id="settings-view-general" class="view-section">
+                    <div class="module-content">
+                        <!-- API Key Section -->
+                        <div class="settings-section">
+                            <h3><i class="fas fa-key"></i> API 配置</h3>
+                            <div class="api-keys-list" id="settingsApiKeysList">
+                                <!-- Dynamic key items -->
+                            </div>
+                            <button class="btn-add-config" onclick="addNewApiKey()" style="margin-top: 12px;">
+                                <i class="fas fa-plus"></i> 添加新 Key
+                            </button>
+                            <p class="settings-status" id="apiKeyStatus" style="margin-top: 12px;">
+                                <span class="status-dot"></span>
+                                <span>检测中...</span>
+                            </p>
+                        </div>
+
+                        <!-- Analytics Settings Section -->
+                        <div class="settings-section">
+                            <h3><i class="fas fa-chart-line"></i> 数据分析</h3>
+                            <div class="config-item-row">
+                                <div class="config-label">
+                                    <span>自动刷新间隔</span>
+                                    <span class="config-hint">设置数据自动刷新的时间间隔</span>
+                                </div>
+                                <div class="config-value">
+                                    <div class="custom-dropdown" id="refreshIntervalDropdown">
+                                        <button class="dropdown-trigger"
+                                            onclick="toggleCustomDropdown('refreshIntervalDropdown')">
+                                            <span class="dropdown-value" id="refreshIntervalValue">5 分钟</span>
+                                            <i class="fas fa-chevron-down"></i>
+                                        </button>
+                                        <div class="dropdown-menu">
+                                            <div class="dropdown-option" data-value="60000"
+                                                onclick="selectDropdownOption('refreshIntervalDropdown', '60000', '1 分钟')">
+                                                1 分钟</div>
+                                            <div class="dropdown-option" data-value="180000"
+                                                onclick="selectDropdownOption('refreshIntervalDropdown', '180000', '3 分钟')">
+                                                3 分钟</div>
+                                            <div class="dropdown-option selected" data-value="300000"
+                                                onclick="selectDropdownOption('refreshIntervalDropdown', '300000', '5 分钟')">
+                                                5 分钟</div>
+                                            <div class="dropdown-option" data-value="600000"
+                                                onclick="selectDropdownOption('refreshIntervalDropdown', '600000', '10 分钟')">
+                                                10 分钟</div>
+                                            <div class="dropdown-option" data-value="900000"
+                                                onclick="selectDropdownOption('refreshIntervalDropdown', '900000', '15 分钟')">
+                                                15 分钟</div>
+                                            <div class="dropdown-option" data-value="1800000"
+                                                onclick="selectDropdownOption('refreshIntervalDropdown', '1800000', '30 分钟')">
+                                                30 分钟</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Integrations Section (Merged) -->
                         <div class="settings-section">
                             <h3><i class="fas fa-plug"></i> 第三方集成</h3>
                             <div class="config-item-row">
@@ -1224,53 +1405,8 @@
                                 </div>
                             </div>
                         </div>
-                    </div>
-                </div>
 
-                <!-- EXPORT VIEW -->
-                <div id="settings-view-export" class="view-section">
-                    <div class="module-content">
-                        <div class="settings-section">
-                            <h3><i class="fas fa-file-export"></i> 数据导出</h3>
-                            <div class="export-buttons-grid">
-                                <button class="export-btn" onclick="exportData('users', 'json')">
-                                    <i class="fas fa-users"></i>
-                                    <span>导出用户数据</span>
-                                    <small>JSON 格式</small>
-                                </button>
-                                <button class="export-btn" onclick="exportData('users', 'csv')">
-                                    <i class="fas fa-users"></i>
-                                    <span>导出用户数据</span>
-                                    <small>CSV 格式</small>
-                                </button>
-                                <button class="export-btn" onclick="exportData('comments', 'json')">
-                                    <i class="fas fa-comments"></i>
-                                    <span>导出评论数据</span>
-                                    <small>JSON 格式</small>
-                                </button>
-                                <button class="export-btn" onclick="exportData('comments', 'csv')">
-                                    <i class="fas fa-comments"></i>
-                                    <span>导出评论数据</span>
-                                    <small>CSV 格式</small>
-                                </button>
-                                <button class="export-btn" onclick="exportData('points', 'json')">
-                                    <i class="fas fa-coins"></i>
-                                    <span>导出积分记录</span>
-                                    <small>JSON 格式</small>
-                                </button>
-                                <button class="export-btn" onclick="exportData('points', 'csv')">
-                                    <i class="fas fa-coins"></i>
-                                    <span>导出积分记录</span>
-                                    <small>CSV 格式</small>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- SEO VIEW -->
-                <div id="settings-view-seo" class="view-section">
-                    <div class="module-content">
+                        <!-- SEO Section (Merged) -->
                         <div class="settings-section">
                             <h3><i class="fas fa-search"></i> SEO 设置</h3>
                             <div class="config-item-row" style="flex-direction: column; align-items: stretch;">
@@ -1300,20 +1436,16 @@
                                     style="width: 100%; text-align: left;"
                                     placeholder="AI图片, 提示词, Midjourney, Stable Diffusion">
                             </div>
-                            <div class="config-actions" style="margin-top: 16px;">
-                                <button class="btn-sm btn-primary" onclick="saveSeoSettings()">
-                                    <i class="fas fa-save"></i> 保存SEO设置
-                                </button>
+                            <div class="config-actions" style="margin-top: 24px; justify-content: flex-end;">
                                 <span class="config-save-indicator" id="seoSaveIndicator"
-                                    style="margin-left: 12px; opacity: 0;">✓ 已保存</span>
+                                    style="margin-right: 12px; opacity: 0;">✓ 已保存</span>
+                                <button class="btn-sm btn-primary" onclick="saveSeoSettings()">
+                                    <i class="fas fa-save"></i> 保存
+                                </button>
                             </div>
                         </div>
-                    </div>
-                </div>
 
-                <!-- PERFORMANCE VIEW -->
-                <div id="settings-view-performance" class="view-section">
-                    <div class="module-content">
+                        <!-- Performance Section (Merged) -->
                         <div class="settings-section">
                             <h3><i class="fas fa-tachometer-alt"></i> 性能优化</h3>
                             <div class="config-item-row">
@@ -1379,90 +1511,6 @@
                                     </label>
                                 </div>
                             </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- GENERAL VIEW -->
-                <div id="settings-view-general" class="view-section">
-                    <div class="module-content">
-                        <!-- API Key Section -->
-                        <div class="settings-section">
-                            <h3><i class="fas fa-key"></i> API 配置</h3>
-                            <div class="api-keys-list" id="settingsApiKeysList">
-                                <!-- Dynamic key items -->
-                            </div>
-                            <button class="btn-add-config" onclick="addNewApiKey()" style="margin-top: 12px;">
-                                <i class="fas fa-plus"></i> 添加新 Key
-                            </button>
-                            <p class="settings-status" id="apiKeyStatus" style="margin-top: 12px;">
-                                <span class="status-dot"></span>
-                                <span>检测中...</span>
-                            </p>
-                        </div>
-
-                        <!-- Analytics Settings Section -->
-                        <div class="settings-section">
-                            <h3><i class="fas fa-chart-line"></i> 数据分析</h3>
-                            <div class="config-item-row">
-                                <div class="config-label">
-                                    <span>自动刷新间隔</span>
-                                    <span class="config-hint">设置数据自动刷新的时间间隔</span>
-                                </div>
-                                <div class="config-value">
-                                    <div class="custom-dropdown" id="refreshIntervalDropdown">
-                                        <button class="dropdown-trigger"
-                                            onclick="toggleCustomDropdown('refreshIntervalDropdown')">
-                                            <span class="dropdown-value" id="refreshIntervalValue">5 分钟</span>
-                                            <i class="fas fa-chevron-down"></i>
-                                        </button>
-                                        <div class="dropdown-menu">
-                                            <div class="dropdown-option" data-value="60000"
-                                                onclick="selectDropdownOption('refreshIntervalDropdown', '60000', '1 分钟')">
-                                                1 分钟</div>
-                                            <div class="dropdown-option" data-value="180000"
-                                                onclick="selectDropdownOption('refreshIntervalDropdown', '180000', '3 分钟')">
-                                                3 分钟</div>
-                                            <div class="dropdown-option selected" data-value="300000"
-                                                onclick="selectDropdownOption('refreshIntervalDropdown', '300000', '5 分钟')">
-                                                5 分钟</div>
-                                            <div class="dropdown-option" data-value="600000"
-                                                onclick="selectDropdownOption('refreshIntervalDropdown', '600000', '10 分钟')">
-                                                10 分钟</div>
-                                            <div class="dropdown-option" data-value="900000"
-                                                onclick="selectDropdownOption('refreshIntervalDropdown', '900000', '15 分钟')">
-                                                15 分钟</div>
-                                            <div class="dropdown-option" data-value="1800000"
-                                                onclick="selectDropdownOption('refreshIntervalDropdown', '1800000', '30 分钟')">
-                                                30 分钟</div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Coming Soon Section -->
-                        <div class="settings-section coming-soon-section">
-                            <h3><i class="fas fa-rocket"></i> 更多设置</h3>
-                            <div class="coming-soon-items">
-                                <div class="coming-soon-item">
-                                    <i class="fas fa-users-cog"></i>
-                                    <span>管理员权限</span>
-                                </div>
-                                <div class="coming-soon-item">
-                                    <i class="fas fa-filter"></i>
-                                    <span>敏感词过滤</span>
-                                </div>
-                                <div class="coming-soon-item">
-                                    <i class="fas fa-download"></i>
-                                    <span>数据导出</span>
-                                </div>
-                                <div class="coming-soon-item">
-                                    <i class="fas fa-bell"></i>
-                                    <span>通知设置</span>
-                                </div>
-                            </div>
-                            <p class="coming-soon-note">🚀 更多功能即将推出</p>
                         </div>
                     </div>
                 </div>

@@ -40,6 +40,9 @@ async function loadAllSystemConfig() {
         renderSecurityConfig();
         renderNotificationsConfig();
         renderModerationConfig();
+        renderGalleryConfig();
+        renderCommentRulesConfig();
+        renderVerifyConfig();
 
     } catch (err) {
         console.warn('[Config] Load error:', err.message);
@@ -416,20 +419,20 @@ function renderSecurityConfig() {
     const lockoutInput = document.getElementById('cfgLoginLockoutAttempts');
     if (lockoutInput) lockoutInput.value = config.login_lockout_attempts || 5;
 
-    // Lockout duration dropdown
+    // Lockout duration dropdown (now shows minutes only)
     const lockoutDurationValue = document.getElementById('lockoutDurationValue');
     if (lockoutDurationValue) {
         const duration = config.lockout_duration || 900000;
-        const labels = { 300000: '5 分钟', 900000: '15 分钟', 3600000: '1 小时' };
-        lockoutDurationValue.textContent = labels[duration] || '15 分钟';
+        const minutes = Math.round(duration / 60000);
+        lockoutDurationValue.textContent = minutes;
     }
 
-    // Session timeout dropdown
+    // Session timeout dropdown (now shows minutes only)
     const sessionTimeoutValue = document.getElementById('sessionTimeoutValue');
     if (sessionTimeoutValue) {
         const timeout = config.session_timeout || 3600000;
-        const labels = { 1800000: '30 分钟', 3600000: '1 小时', 86400000: '1 天' };
-        sessionTimeoutValue.textContent = labels[timeout] || '1 小时';
+        const minutes = Math.round(timeout / 60000);
+        sessionTimeoutValue.textContent = minutes;
     }
 
     // IP blacklist
@@ -458,18 +461,219 @@ async function saveIpBlacklist() {
 }
 
 function setupSecurityEventListeners() {
-    // Login lockout attempts
-    const lockoutInput = document.getElementById('cfgLoginLockoutAttempts');
-    if (lockoutInput) {
-        lockoutInput.addEventListener('change', async (e) => {
-            const config = systemConfigCache['security'] || {};
-            config.login_lockout_attempts = parseInt(e.target.value) || 5;
-            if (await saveConfig('security', config)) {
-                showSaveIndicator(e.target);
-            }
+    // Login lockout attempts - no auto-save, user will click save button
+    // We removed the auto-save to require explicit save button click
+
+    // Load locked accounts when security settings view is shown
+    document.querySelectorAll('[data-settings-view="security"]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            setTimeout(refreshLockedAccounts, 300);
         });
+    });
+}
+
+// ============================================
+// LOGIN SECURITY FUNCTIONS
+// ============================================
+
+// Save all login security settings at once
+async function saveLoginSecuritySettings() {
+    try {
+        const lockoutInput = document.getElementById('cfgLoginLockoutAttempts');
+        const lockoutDurationValue = document.getElementById('lockoutDurationValue');
+        const sessionTimeoutValue = document.getElementById('sessionTimeoutValue');
+
+        // Map display values (minutes) to milliseconds
+        const durationMinutes = parseInt(lockoutDurationValue?.textContent) || 15;
+        const timeoutMinutes = parseInt(sessionTimeoutValue?.textContent) || 60;
+
+        const config = systemConfigCache['security'] || {};
+        config.login_lockout_attempts = parseInt(lockoutInput?.value) || 5;
+        config.lockout_duration = durationMinutes * 60 * 1000; // minutes to ms
+        config.session_timeout = timeoutMinutes * 60 * 1000; // minutes to ms
+
+        const success = await saveConfig('security', config);
+
+        if (success) {
+            const indicator = document.getElementById('loginSecuritySaveIndicator');
+            if (indicator) {
+                indicator.style.opacity = '1';
+                setTimeout(() => indicator.style.opacity = '0', 2000);
+            }
+            if (typeof showToast === 'function') {
+                showToast('登录安全设置已保存', 'success');
+            }
+        }
+    } catch (err) {
+        console.error('保存登录安全设置失败:', err);
+        if (typeof showToast === 'function') {
+            showToast('保存失败: ' + err.message, 'error');
+        }
     }
 }
+
+// Refresh locked accounts list
+async function refreshLockedAccounts() {
+    const listEl = document.getElementById('lockedAccountsList');
+    const badgeEl = document.getElementById('lockedCountBadge');
+    const unlockAllBtn = document.getElementById('unlockAllBtn');
+    const emptyMsg = document.getElementById('noLockedAccountsMsg');
+
+    if (!listEl) return;
+
+    try {
+        // Query profiles with locked_until > now
+        const { data: lockedAccounts, error } = await supabaseClient
+            .from('profiles')
+            .select('id, username, failed_login_attempts, locked_until')
+            .gt('locked_until', new Date().toISOString())
+            .order('locked_until', { ascending: false });
+
+        if (error) throw error;
+
+        // Get emails from auth.users via admin view
+        let accountsWithEmail = lockedAccounts || [];
+
+        // Try to get emails if admin view exists
+        try {
+            const { data: usersData } = await supabaseClient
+                .from('admin_users_view')
+                .select('id, email')
+                .in('id', accountsWithEmail.map(a => a.id));
+
+            if (usersData) {
+                const emailMap = {};
+                usersData.forEach(u => emailMap[u.id] = u.email);
+                accountsWithEmail = accountsWithEmail.map(a => ({
+                    ...a,
+                    email: emailMap[a.id] || a.username || a.id.substring(0, 8) + '...'
+                }));
+            }
+        } catch (e) {
+            // Fallback to username if admin view not available
+            accountsWithEmail = accountsWithEmail.map(a => ({
+                ...a,
+                email: a.username || a.id.substring(0, 8) + '...'
+            }));
+        }
+
+        // Update badge
+        if (badgeEl) {
+            badgeEl.textContent = accountsWithEmail.length;
+            badgeEl.style.display = accountsWithEmail.length > 0 ? 'inline-flex' : 'none';
+        }
+
+        // Update unlock all button
+        if (unlockAllBtn) {
+            unlockAllBtn.style.display = accountsWithEmail.length > 0 ? 'flex' : 'none';
+        }
+
+        // Render list
+        if (accountsWithEmail.length === 0) {
+            if (emptyMsg) emptyMsg.style.display = 'flex';
+            // Remove any account items
+            listEl.querySelectorAll('.locked-account-item').forEach(el => el.remove());
+        } else {
+            if (emptyMsg) emptyMsg.style.display = 'none';
+
+            // Clear existing items
+            listEl.querySelectorAll('.locked-account-item').forEach(el => el.remove());
+
+            // Render locked accounts
+            accountsWithEmail.forEach(account => {
+                const expiresAt = new Date(account.locked_until);
+                const now = new Date();
+                const remainingMs = expiresAt - now;
+                const remainingMins = Math.ceil(remainingMs / 60000);
+
+                const itemHtml = `
+                    <div class="locked-account-item" data-user-id="${account.id}">
+                        <div class="locked-account-info">
+                            <div class="locked-account-email">${escapeHtml(account.email)}</div>
+                            <div class="locked-account-meta">
+                                <span class="attempts">${account.failed_login_attempts} 次失败</span>
+                                <span class="expires"><i class="fas fa-clock"></i> ${remainingMins} 分钟后解锁</span>
+                            </div>
+                        </div>
+                        <button class="btn-unlock" onclick="unlockAccount('${account.id}')">
+                            <i class="fas fa-unlock"></i> 解锁
+                        </button>
+                    </div>
+                `;
+                listEl.insertAdjacentHTML('beforeend', itemHtml);
+            });
+        }
+
+    } catch (err) {
+        console.error('加载锁定账户失败:', err);
+        if (typeof showToast === 'function') {
+            showToast('加载失败: ' + err.message, 'error');
+        }
+    }
+}
+
+// Unlock a single account
+async function unlockAccount(userId) {
+    try {
+        // Use RPC to bypass RLS
+        const { data, error } = await supabaseClient
+            .rpc('admin_unlock_account', { target_user_id: userId });
+
+        if (error) throw error;
+
+        if (typeof showToast === 'function') {
+            showToast('账户已解锁', 'success');
+        }
+
+        // Refresh list
+        await refreshLockedAccounts();
+
+    } catch (err) {
+        console.error('解锁账户失败:', err);
+        if (typeof showToast === 'function') {
+            showToast('解锁失败: ' + err.message, 'error');
+        }
+    }
+}
+
+// Unlock all accounts
+async function unlockAllAccounts() {
+    if (!confirm('确定要解锁所有账户吗？')) return;
+
+    try {
+        // Use RPC to bypass RLS
+        const { data, error } = await supabaseClient
+            .rpc('admin_unlock_all_accounts');
+
+        if (error) throw error;
+
+        if (typeof showToast === 'function') {
+            showToast(`已解锁 ${data || 0} 个账户`, 'success');
+        }
+
+        // Refresh list
+        await refreshLockedAccounts();
+
+    } catch (err) {
+        console.error('批量解锁失败:', err);
+        if (typeof showToast === 'function') {
+            showToast('解锁失败: ' + err.message, 'error');
+        }
+    }
+}
+
+// Helper function to escape HTML
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Expose to window
+window.saveLoginSecuritySettings = saveLoginSecuritySettings;
+window.refreshLockedAccounts = refreshLockedAccounts;
+window.unlockAccount = unlockAccount;
+window.unlockAllAccounts = unlockAllAccounts;
 
 // ============================================
 // NOTIFICATIONS SETTINGS
@@ -482,7 +686,8 @@ function renderNotificationsConfig() {
         announcement_content: '',
         announcement_type: 'banner',
         announcement_color: 'purple',
-        announcement_size: 'medium'
+        announcement_size: 'medium',
+        announcement_decoration: 'none'
     };
 
     // New user notification toggle
@@ -515,6 +720,17 @@ function renderNotificationsConfig() {
         }
     });
 
+    // Decoration theme
+    const savedDecoration = config.announcement_decoration || 'none';
+    const decorationEnabled = document.getElementById('decorationEnabled');
+    const decorationSelector = document.getElementById('decorationSelector');
+
+    if (savedDecoration !== 'none' && decorationEnabled && decorationSelector) {
+        decorationEnabled.checked = true;
+        decorationSelector.classList.add('active');
+        selectDecoration(savedDecoration);
+    }
+
     // Update preview
     updateAnnouncementPreview();
 }
@@ -525,37 +741,30 @@ function updateAnnouncementPreview() {
 
     const contentEl = document.getElementById('cfgAnnouncementContent');
     const typeRadio = document.querySelector('input[name="announcementType"]:checked');
-    const colorRadio = document.querySelector('input[name="announcementColor"]:checked');
 
     // For contenteditable div, use innerHTML; for textarea, use value
     const content = contentEl?.innerHTML || contentEl?.value || '在此预览公告效果...';
     const type = typeRadio?.value || 'banner';
-    const color = colorRadio?.value || 'purple';
 
-    // Update preview content - target the span inside preview-body
-    const bodySpan = preview.querySelector('.preview-body span');
-    if (bodySpan) {
-        bodySpan.innerHTML = content || '在此预览公告效果...';
+    // Update preview content - target the new announcement-text element
+    const textContent = document.getElementById('previewTextContent');
+    if (textContent) {
+        textContent.innerHTML = content || '在此预览公告效果...';
     }
 
-    // Update type style
+    // Update type style (currently only modal style is truly supported in preview)
     preview.classList.remove('modal-style', 'toast-style');
     if (type === 'modal') {
         preview.classList.add('modal-style');
     } else if (type === 'toast') {
         preview.classList.add('toast-style');
     }
-
-    // Update color
-    preview.classList.remove('color-purple', 'color-blue', 'color-green', 'color-orange', 'color-red', 'color-dark');
-    preview.classList.add('color-' + color);
 }
 
 async function saveAnnouncement() {
     const contentEl = document.getElementById('cfgAnnouncementContent');
     const enabledEl = document.getElementById('cfgAnnouncementEnabled');
     const typeRadio = document.querySelector('input[name="announcementType"]:checked');
-    const colorRadio = document.querySelector('input[name="announcementColor"]:checked');
 
     if (!contentEl) return;
 
@@ -564,7 +773,8 @@ async function saveAnnouncement() {
     config.announcement_content = contentEl.innerHTML || contentEl.value || '';
     config.announcement_enabled = enabledEl?.checked || false;
     config.announcement_type = typeRadio?.value || 'banner';
-    config.announcement_color = colorRadio?.value || 'purple';
+    // Save decoration theme
+    config.announcement_decoration = getCurrentDecoration();
 
     const success = await saveConfig('notifications', config);
 
@@ -572,18 +782,11 @@ async function saveAnnouncement() {
     const saveBtn = document.querySelector('.editor-actions .btn-primary');
 
     if (success && saveBtn) {
-        // Save original content
-        const originalHTML = saveBtn.innerHTML;
-
-        // Show success state
-        saveBtn.classList.add('success');
-        saveBtn.innerHTML = '<i class="fas fa-check"></i> 已发布';
-
-        // Restore after 2 seconds
-        setTimeout(() => {
-            saveBtn.classList.remove('success');
-            saveBtn.innerHTML = originalHTML;
-        }, 2000);
+        if (typeof showToast === 'function') {
+            showToast('公告已发布', 'success');
+        } else {
+            console.warn('showToast function not found');
+        }
     }
 }
 
@@ -657,6 +860,34 @@ function applyTextSize(size) {
     document.getElementById('textSizeSelect').value = '';
 }
 
+function applyTextAlign(align) {
+    const editor = document.getElementById('cfgAnnouncementContent');
+    if (!editor) return;
+
+    editor.focus();
+
+    // Map align to execCommand
+    const commands = {
+        'left': 'justifyLeft',
+        'center': 'justifyCenter',
+        'right': 'justifyRight'
+    };
+
+    document.execCommand(commands[align] || 'justifyCenter', false, null);
+    updateAnnouncementPreview();
+
+    // Close picker after selection
+    const picker = document.getElementById('alignPicker');
+    if (picker) picker.classList.remove('active');
+}
+
+function toggleAlignPicker() {
+    const picker = document.getElementById('alignPicker');
+    if (picker) {
+        picker.classList.toggle('active');
+    }
+}
+
 function insertLink() {
     const url = prompt('请输入链接地址:', 'https://');
     if (!url) return;
@@ -690,6 +921,13 @@ document.addEventListener('click', (e) => {
     if (picker && btn && !picker.contains(e.target) && !btn.contains(e.target)) {
         picker.classList.remove('active');
     }
+
+    // Also close align picker
+    const alignPicker = document.getElementById('alignPicker');
+    const alignBtn = document.getElementById('alignPickerBtn');
+    if (alignPicker && alignBtn && !alignPicker.contains(e.target) && !alignBtn.contains(e.target)) {
+        alignPicker.classList.remove('active');
+    }
 });
 
 // ============================================
@@ -719,6 +957,109 @@ function renderModerationConfig() {
     if (aiDetection) aiDetection.checked = config.ai_content_detection || false;
 }
 
+function renderGalleryConfig() {
+    const config = systemConfigCache['gallery'] || {
+        items_per_page: 24,
+        default_sort: 'newest'
+    };
+
+    // Per page dropdown
+    const perPageValue = document.getElementById('perPageValue');
+    if (perPageValue) perPageValue.textContent = config.items_per_page || 24;
+
+    // Default sort dropdown
+    const sortValue = document.getElementById('defaultSortValue');
+    const sortLabels = { newest: '最新', popular: '最热', random: '随机' };
+    if (sortValue) sortValue.textContent = sortLabels[config.default_sort] || '最新';
+}
+
+function renderCommentRulesConfig() {
+    const config = systemConfigCache['comments'] || {
+        allow_anonymous: false,
+        max_comment_length: 500,
+        max_nesting_level: 3
+    };
+
+    // Allow anonymous toggle
+    const allowAnonymous = document.getElementById('cfgAllowAnonymous');
+    if (allowAnonymous) allowAnonymous.checked = config.allow_anonymous || false;
+
+    // Max comment length
+    const maxLength = document.getElementById('cfgMaxCommentLength');
+    if (maxLength) maxLength.value = config.max_comment_length || 500;
+
+    // Max nesting level
+    const maxNesting = document.getElementById('cfgMaxNestingLevel');
+    if (maxNesting) maxNesting.value = config.max_nesting_level || 3;
+}
+
+// ============================================
+// VERIFICATION SERVICE CONFIG
+// ============================================
+
+function renderVerifyConfig() {
+    const config = systemConfigCache['verify'] || {
+        price_per_verify: 3,
+        enabled: true,
+        batch_api_key: ''
+    };
+
+    // Price input
+    const priceInput = document.getElementById('cfgVerifyPrice');
+    if (priceInput) priceInput.value = config.price_per_verify || 3;
+
+    // Enabled toggle
+    const enabledToggle = document.getElementById('cfgVerifyEnabled');
+    if (enabledToggle) enabledToggle.checked = config.enabled !== false;
+
+    // API Key (show masked for security)
+    const apiKeyInput = document.getElementById('cfgBatchApiKey');
+    if (apiKeyInput && config.batch_api_key) {
+        // Show first 8 chars + masked rest
+        const key = config.batch_api_key;
+        apiKeyInput.value = key.length > 8 ? key.slice(0, 8) + '...' : key;
+        apiKeyInput.dataset.hasKey = 'true';
+    }
+}
+
+async function saveVerifyConfig() {
+    const priceInput = document.getElementById('cfgVerifyPrice');
+    const enabledToggle = document.getElementById('cfgVerifyEnabled');
+    const apiKeyInput = document.getElementById('cfgBatchApiKey');
+
+    const config = systemConfigCache['verify'] || {};
+
+    // Update price
+    if (priceInput) {
+        config.price_per_verify = parseInt(priceInput.value) || 3;
+    }
+
+    // Update enabled
+    if (enabledToggle) {
+        config.enabled = enabledToggle.checked;
+    }
+
+    // Update API key only if it was changed (not masked)
+    if (apiKeyInput && !apiKeyInput.value.includes('...')) {
+        const newKey = apiKeyInput.value.trim();
+        if (newKey) {
+            config.batch_api_key = newKey;
+        }
+    }
+
+    const success = await saveConfig('verify', config);
+
+    if (success && typeof showToast === 'function') {
+        showToast('验证服务配置已保存', 'success');
+    }
+
+    // Update cache
+    systemConfigCache['verify'] = config;
+}
+
+// Expose globally for HTML onclick handlers
+window.saveVerifyConfig = saveVerifyConfig;
+
 async function saveSensitiveWords() {
     const textarea = document.getElementById('cfgSensitiveWords');
     if (!textarea) return;
@@ -729,10 +1070,8 @@ async function saveSensitiveWords() {
 
     const success = await saveConfig('moderation', config);
 
-    const indicator = document.getElementById('sensitiveWordsSaveIndicator');
-    if (indicator && success) {
-        indicator.style.opacity = '1';
-        setTimeout(() => indicator.style.opacity = '0', 2000);
+    if (success && typeof showToast === 'function') {
+        showToast('敏感词列表已保存', 'success');
     }
 }
 
@@ -756,6 +1095,194 @@ function setupModerationEventListeners() {
             await saveConfig('moderation', config);
         });
     }
+
+    // Gallery settings
+    setupGalleryEventListeners();
+
+    // Comment rules
+    setupCommentRulesEventListeners();
+}
+
+// ============================================
+// GALLERY SETTINGS
+// ============================================
+
+function loadGallerySettings(config) {
+    // Per page dropdown
+    const perPageValue = document.getElementById('perPageValue');
+    if (perPageValue && config.items_per_page) {
+        perPageValue.textContent = config.items_per_page;
+    }
+}
+
+function setupGalleryEventListeners() {
+    // Gallery settings are saved via dropdown selection override
+    // No additional event listeners needed for now
+}
+
+// Override dropdown selection to save gallery settings
+const originalSelectDropdownOption = window.selectDropdownOption;
+window.selectDropdownOption = function (dropdownId, value, displayText) {
+    // Call original
+    if (typeof originalSelectDropdownOption === 'function') {
+        originalSelectDropdownOption(dropdownId, value, displayText);
+    }
+
+    // Handle gallery dropdowns
+    if (dropdownId === 'perPageDropdown') {
+        const config = systemConfigCache['gallery'] || {};
+        config.items_per_page = parseInt(value);
+        saveConfig('gallery', config);
+    } else if (dropdownId === 'defaultSortDropdown') {
+        const config = systemConfigCache['gallery'] || {};
+        config.default_sort = value;
+        saveConfig('gallery', config);
+    }
+};
+
+// ============================================
+// COMMENT RULES
+// ============================================
+
+function loadCommentRules(config) {
+    // Allow anonymous toggle
+    const allowAnonymous = document.getElementById('cfgAllowAnonymous');
+    if (allowAnonymous) allowAnonymous.checked = config.allow_anonymous || false;
+
+    // Max comment length
+    const maxLength = document.getElementById('cfgMaxCommentLength');
+    if (maxLength) maxLength.value = config.max_comment_length || 500;
+
+    // Max nesting level
+    const maxNesting = document.getElementById('cfgMaxNestingLevel');
+    if (maxNesting) maxNesting.value = config.max_nesting_level || 3;
+}
+
+function setupCommentRulesEventListeners() {
+    // Allow anonymous toggle
+    const allowAnonymous = document.getElementById('cfgAllowAnonymous');
+    if (allowAnonymous) {
+        allowAnonymous.addEventListener('change', async (e) => {
+            const config = systemConfigCache['comments'] || {};
+            config.allow_anonymous = e.target.checked;
+            await saveConfig('comments', config);
+        });
+    }
+
+    // Max comment length
+    const maxLength = document.getElementById('cfgMaxCommentLength');
+    if (maxLength) {
+        maxLength.addEventListener('change', async (e) => {
+            const config = systemConfigCache['comments'] || {};
+            config.max_comment_length = parseInt(e.target.value) || 500;
+            await saveConfig('comments', config);
+        });
+    }
+
+    // Max nesting level
+    const maxNesting = document.getElementById('cfgMaxNestingLevel');
+    if (maxNesting) {
+        maxNesting.addEventListener('change', async (e) => {
+            const config = systemConfigCache['comments'] || {};
+            config.max_nesting_level = parseInt(e.target.value) || 3;
+            await saveConfig('comments', config);
+        });
+    }
+}
+
+// ============================================
+// DECORATION SYSTEM
+// ============================================
+
+let currentDecoration = 'none';
+
+function toggleDecoration() {
+    const checkbox = document.getElementById('decorationEnabled');
+    const selector = document.getElementById('decorationSelector');
+
+    if (checkbox && selector) {
+        if (checkbox.checked) {
+            selector.classList.add('active');
+        } else {
+            selector.classList.remove('active');
+            // Clear decoration when disabled
+            selectDecoration('none');
+        }
+    }
+}
+
+function selectDecoration(theme) {
+    currentDecoration = theme;
+
+    // Update button states
+    document.querySelectorAll('.decoration-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.decoration === theme);
+    });
+
+    // Apply decoration to preview
+    applyDecorationToPreview(theme);
+}
+
+// Apply decoration to preview stage
+function applyDecorationToPreview(theme) {
+    const preview = document.getElementById('announcementPreview');
+    if (!preview) return;
+
+    // Remove existing particles container
+    const existingParticles = preview.querySelector('.decoration-particles');
+    if (existingParticles) {
+        existingParticles.remove();
+    }
+
+    // Remove existing heart container (specific to hearts theme)
+    const existingHearts = preview.querySelectorAll('.heart-container');
+    existingHearts.forEach(h => h.remove());
+
+    // If no decoration selected, exit
+    if (theme === 'none') {
+        // Also ensure any running particle system is stopped
+        if (window.stopContinuousParticles) {
+            window.stopContinuousParticles();
+        }
+        return;
+    }
+
+    // Use the shared generator from prompts-poetry.js
+    if (window.generateDecorationParticles) {
+        // Insert HTML
+        preview.insertAdjacentHTML('afterbegin', window.generateDecorationParticles(theme));
+
+        // Start animation based on theme
+        if (theme === 'hearts') {
+            if (window.startHeartFloat) {
+                // Ensure the hearts are positioned relative to the preview container
+                window.startHeartFloat(preview);
+            }
+        } else {
+            // Only use active JS ParticleSystem for complex physics themes
+            // Sakura and Leaves use the CSS-based particles we generated
+            const activePhysicsThemes = ['snow', 'rain', 'fireworks'];
+
+            if (activePhysicsThemes.includes(theme)) {
+                const particleContainer = preview.querySelector('.decoration-particles');
+                if (particleContainer && window.startContinuousParticles) {
+                    // Slight delay to ensure DOM is rendered and dimensions are available
+                    setTimeout(() => {
+                        window.startContinuousParticles(particleContainer, theme);
+                    }, 50);
+                }
+            }
+        }
+    } else {
+        console.warn('generateDecorationParticles not found. Ensure prompts-poetry.js is loaded.');
+    }
+}
+
+// Get current decoration for saving
+function getCurrentDecoration() {
+    const checkbox = document.getElementById('decorationEnabled');
+    if (!checkbox || !checkbox.checked) return 'none';
+    return currentDecoration;
 }
 
 // ============================================
@@ -773,3 +1300,5 @@ window.addChannel = addChannel;
 window.saveIpBlacklist = saveIpBlacklist;
 window.saveAnnouncement = saveAnnouncement;
 window.saveSensitiveWords = saveSensitiveWords;
+window.toggleDecoration = toggleDecoration;
+window.selectDecoration = selectDecoration;

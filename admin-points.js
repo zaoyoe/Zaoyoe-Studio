@@ -249,35 +249,15 @@ async function loadPackagesForSelect() {
     try {
         let packages = [];
 
-        // First try to get packages from system config (if available)
-        try {
-            const { data: configData } = await getSupabase().rpc('get_system_config', { p_key: 'packages' });
-            if (configData && Array.isArray(configData)) {
-                // Filter enabled packages only
-                packages = configData
-                    .filter(pkg => pkg.enabled !== false)
-                    .map(pkg => ({
-                        id: pkg.id,
-                        name: pkg.name,
-                        points_amount: pkg.points,
-                        bonus_points: 0
-                    }));
-            }
-        } catch (configErr) {
-            console.warn('[Points] System config not available, falling back to DB:', configErr.message);
-        }
+        // Always load from points_packages table (has UUID IDs required by fn_generate_codes)
+        const { data, error } = await getSupabase()
+            .from('points_packages')
+            .select('id, name, points_amount, bonus_points')
+            .eq('is_active', true)
+            .order('points_amount');
 
-        // Fallback: load from points_packages table if config empty
-        if (packages.length === 0) {
-            const { data, error } = await getSupabase()
-                .from('points_packages')
-                .select('id, name, points_amount, bonus_points')
-                .eq('is_active', true)
-                .order('points_amount');
-
-            if (error) throw error;
-            packages = data || [];
-        }
+        if (error) throw error;
+        packages = data || [];
 
         // Build options with custom option at the end
         let optionsHtml = packages.map((pkg, index) => {

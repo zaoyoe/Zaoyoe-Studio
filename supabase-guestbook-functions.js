@@ -12,6 +12,57 @@ function escapeHTML(str) {
     });
 }
 
+// ==================== 敏感词过滤 ====================
+let sensitiveWordsCache = null;
+let sensitiveWordsCacheTime = null;
+
+async function loadSensitiveWords() {
+    // Cache for 5 minutes
+    if (sensitiveWordsCache && sensitiveWordsCacheTime && (Date.now() - sensitiveWordsCacheTime < 300000)) {
+        return sensitiveWordsCache;
+    }
+
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('system_config')
+            .select('config_value')
+            .eq('config_key', 'moderation')
+            .single();
+
+        if (error || !data) {
+            sensitiveWordsCache = { enabled: false, words: [] };
+        } else {
+            sensitiveWordsCache = {
+                enabled: data.config_value?.auto_filter || false,
+                words: data.config_value?.sensitive_words || []
+            };
+        }
+        sensitiveWordsCacheTime = Date.now();
+        console.log('📋 敏感词配置已加载:', sensitiveWordsCache.words.length, '个词');
+        return sensitiveWordsCache;
+    } catch (e) {
+        console.warn('加载敏感词配置失败:', e);
+        return { enabled: false, words: [] };
+    }
+}
+
+async function checkSensitiveContent(content) {
+    const config = await loadSensitiveWords();
+
+    if (!config.enabled || !config.words.length) {
+        return { blocked: false };
+    }
+
+    const lowerContent = content.toLowerCase();
+    for (const word of config.words) {
+        if (lowerContent.includes(word.toLowerCase())) {
+            return { blocked: true, word: word };
+        }
+    }
+
+    return { blocked: false };
+}
+
 // ==================== 缓存管理 ====================
 const guestbookCache = {
     messages: [],
@@ -361,6 +412,15 @@ async function addMessage(content, imageUrl = '') {
         return false;
     }
 
+    // 🔍 敏感词检查
+    if (content) {
+        const sensitiveCheck = await checkSensitiveContent(content);
+        if (sensitiveCheck.blocked) {
+            alert(`⚠️ 内容包含敏感词，请修改后重试`);
+            return false;
+        }
+    }
+
     try {
         const { data, error } = await window.supabaseClient
             .from('guestbook_messages')
@@ -403,6 +463,13 @@ async function addCommentToMessage(messageId, content) {
 
     if (!content) {
         alert('请输入评论内容');
+        return false;
+    }
+
+    // 🔍 敏感词检查
+    const sensitiveCheck = await checkSensitiveContent(content);
+    if (sensitiveCheck.blocked) {
+        alert(`⚠️ 内容包含敏感词，请修改后重试`);
         return false;
     }
 
@@ -473,6 +540,13 @@ async function addReplyToComment(parentCommentId, messageId, content) {
 
     if (!content) {
         alert('请输入回复内容');
+        return false;
+    }
+
+    // 🔍 敏感词检查
+    const sensitiveCheck2 = await checkSensitiveContent(content);
+    if (sensitiveCheck2.blocked) {
+        alert(`⚠️ 内容包含敏感词，请修改后重试`);
         return false;
     }
 

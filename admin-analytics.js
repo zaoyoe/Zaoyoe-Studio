@@ -2969,9 +2969,55 @@ function selectDropdownOption(dropdownId, value, label) {
         // Close dropdown
         dropdown.classList.remove('open');
 
-        // Trigger the update
+        // Trigger the update based on dropdown type
         if (dropdownId === 'refreshIntervalDropdown') {
             updateAutoRefreshInterval(value);
+        } else if (dropdownId === 'lockoutDurationDropdown') {
+            // 🔒 保存锁定时长设置
+            saveSecurityDropdownSetting('lockout_duration', parseInt(value));
+        } else if (dropdownId === 'sessionTimeoutDropdown') {
+            // 🔒 保存会话超时设置
+            saveSecurityDropdownSetting('session_timeout', parseInt(value));
+        }
+    }
+}
+
+// 🔒 Save security dropdown settings
+async function saveSecurityDropdownSetting(key, value) {
+    try {
+        // Get current security config from system_config table
+        const { data: currentData } = await supabaseClient
+            .from('system_config')
+            .select('value')
+            .eq('key', 'security')
+            .single();
+
+        const config = currentData?.value || {
+            login_lockout_attempts: 5,
+            lockout_duration: 900000,
+            session_timeout: 3600000
+        };
+
+        // Update the specific key
+        config[key] = value;
+
+        // Save back using RPC (admin-config.js saveConfig pattern)
+        const { error } = await supabaseClient.rpc('update_system_config', {
+            p_key: 'security',
+            p_value: config
+        });
+
+        if (error) throw error;
+
+        console.log(`✅ 安全设置已保存: ${key} = ${value}`);
+
+        if (typeof showToast === 'function') {
+            showToast('设置已保存', 'success');
+        }
+    } catch (err) {
+        console.error('保存安全设置失败:', err);
+        if (typeof showToast === 'function') {
+            showToast('保存失败: ' + err.message, 'error');
         }
     }
 }

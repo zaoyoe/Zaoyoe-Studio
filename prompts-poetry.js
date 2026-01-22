@@ -47,6 +47,138 @@ const AI_SEARCH_RATE_LIMIT = {
 // Hot tags cache (computed once on init)
 let HOT_TAGS_CACHE = null;
 
+// ==================== 敏感词过滤（画廊版本）====================
+let gallerySensitiveWordsCache = null;
+let gallerySensitiveWordsCacheTime = null;
+
+async function loadGallerySensitiveWords() {
+    // Cache for 5 minutes
+    if (gallerySensitiveWordsCache && gallerySensitiveWordsCacheTime && (Date.now() - gallerySensitiveWordsCacheTime < 300000)) {
+        return gallerySensitiveWordsCache;
+    }
+
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('system_config')
+            .select('config_value')
+            .eq('config_key', 'moderation')
+            .single();
+
+        if (error || !data) {
+            gallerySensitiveWordsCache = { enabled: false, words: [] };
+        } else {
+            gallerySensitiveWordsCache = {
+                enabled: data.config_value?.auto_filter || false,
+                words: data.config_value?.sensitive_words || []
+            };
+        }
+        gallerySensitiveWordsCacheTime = Date.now();
+        console.log('📋 [Gallery] 敏感词配置已加载:', gallerySensitiveWordsCache.words.length, '个词');
+        return gallerySensitiveWordsCache;
+    } catch (e) {
+        console.warn('[Gallery] 加载敏感词配置失败:', e);
+        return { enabled: false, words: [] };
+    }
+}
+
+async function checkGallerySensitiveContent(content) {
+    const config = await loadGallerySensitiveWords();
+
+    if (!config.enabled || !config.words.length) {
+        return { blocked: false };
+    }
+
+    const lowerContent = content.toLowerCase();
+    for (const word of config.words) {
+        if (lowerContent.includes(word.toLowerCase())) {
+            return { blocked: true, word: word };
+        }
+    }
+
+    return { blocked: false };
+}
+
+// ==================== 自定义 Toast 通知 ====================
+function showGalleryToast(message, type = 'warning', duration = 3000) {
+    // Remove existing toast if any
+    const existingToast = document.querySelector('.gallery-toast');
+    if (existingToast) {
+        existingToast.remove();
+    }
+
+    // Icon mapping
+    const icons = {
+        warning: 'fas fa-exclamation-triangle',
+        error: 'fas fa-times-circle',
+        success: 'fas fa-check-circle',
+        info: 'fas fa-info-circle'
+    };
+
+    // Color mapping
+    const colors = {
+        warning: { bg: 'rgba(245, 158, 11, 0.15)', border: 'rgba(245, 158, 11, 0.5)', icon: '#f59e0b' },
+        error: { bg: 'rgba(239, 68, 68, 0.15)', border: 'rgba(239, 68, 68, 0.5)', icon: '#ef4444' },
+        success: { bg: 'rgba(34, 197, 94, 0.15)', border: 'rgba(34, 197, 94, 0.5)', icon: '#22c55e' },
+        info: { bg: 'rgba(59, 130, 246, 0.15)', border: 'rgba(59, 130, 246, 0.5)', icon: '#3b82f6' }
+    };
+
+    const color = colors[type] || colors.info;
+
+    // Create toast element
+    const toast = document.createElement('div');
+    toast.className = 'gallery-toast';
+    toast.innerHTML = `
+        <i class="${icons[type] || icons.info}" style="color: ${color.icon}; font-size: 1.2rem;"></i>
+        <span>${message}</span>
+    `;
+
+    // Apply styles
+    Object.assign(toast.style, {
+        position: 'fixed',
+        bottom: '24px',
+        left: '50%',
+        transform: 'translateX(-50%) translateY(100px)',
+        background: 'rgba(255, 255, 255, 0.85)',
+        backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)',
+        border: `1px solid ${color.border}`,
+        borderRadius: '16px',
+        padding: '16px 24px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        boxShadow: '0 10px 40px rgba(0, 0, 0, 0.15)',
+        zIndex: '10000',
+        fontFamily: 'var(--font-sans, sans-serif)',
+        fontSize: '0.95rem',
+        color: '#1e293b',
+        opacity: '0',
+        transition: 'all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)'
+    });
+
+    // Dark mode styles
+    if (document.documentElement.getAttribute('data-theme') === 'dark') {
+        toast.style.background = 'rgba(30, 41, 59, 0.85)';
+        toast.style.color = '#e2e8f0';
+        toast.style.borderColor = color.border;
+    }
+
+    document.body.appendChild(toast);
+
+    // Animate in
+    requestAnimationFrame(() => {
+        toast.style.opacity = '1';
+        toast.style.transform = 'translateX(-50%) translateY(0)';
+    });
+
+    // Auto dismiss
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(-50%) translateY(20px)';
+        setTimeout(() => toast.remove(), 400);
+    }, duration);
+}
+
 // Inverted search index for O(1) tag lookups (built on init)
 // Structure: { "tag_lowercase": [promptIndex1, promptIndex2, ...] }
 let SEARCH_INDEX = null;
@@ -560,8 +692,9 @@ async function loadAnnouncement() {
             }
 
             // Show announcement based on type
-            showAnnouncement(type, color, size, content, ackKey);
-            console.log('公告已显示:', type, color, size);
+            const decoration = config.announcement_decoration || 'none';
+            showAnnouncement(type, color, size, content, ackKey, decoration);
+            console.log('公告已显示:', type, color, size, '装饰:', decoration);
         } else {
             console.log('📢 公告未启用或内容为空');
         }
@@ -570,22 +703,1171 @@ async function loadAnnouncement() {
     }
 }
 
-function showAnnouncement(type, color, size, content, ackKey) {
+function showAnnouncement(type, color, size, content, ackKey, decoration) {
     // Remove any existing announcement
     if (currentAnnouncementElement) {
         currentAnnouncementElement.remove();
     }
 
     if (type === 'banner') {
-        showBannerAnnouncement(color, size, content, ackKey);
+        showBannerAnnouncement(color, size, content, ackKey, decoration);
     } else if (type === 'modal') {
-        showModalAnnouncement(color, size, content, ackKey);
+        showModalAnnouncement(color, size, content, ackKey, decoration);
     } else if (type === 'toast') {
-        showToastAnnouncement(color, size, content, ackKey);
+        showToastAnnouncement(color, size, content, ackKey, decoration);
     }
 }
 
-function showBannerAnnouncement(color, size, content, ackKey) {
+// ========================================
+// DECORATION PARTICLE SYSTEM
+// ========================================
+
+// Generate decoration particles with continuous falling effect
+function generateDecorationParticles(theme) {
+    if (!theme || theme === 'none') return '';
+
+    // ========================================
+    // 特殊装饰：爱心 (Hearts) - 优雅的呼吸光效
+    // ========================================
+    // ========================================
+    // 特殊装饰：阳光 (Sunlight) - 丁达尔效应 + 金色微尘
+    // ========================================
+    if (theme === 'sunlight' || theme === 'sunshine') {
+        let dustParticles = '';
+        // Create 50 dust motes
+        for (let i = 0; i < 50; i++) {
+            const left = Math.random() * 100;
+            const top = Math.random() * 100;
+
+            // Precision Tune: 1.0px to 2.6px (Visible but refined)
+            const size = 1.0 + Math.random() * 1.6;
+
+            const duration = 20 + Math.random() * 20;
+            const delay = Math.random() * -20;
+            const opacity = 0.2 + Math.random() * 0.3;
+
+            // Random Trajectory vars
+            const tx = Math.random() * 100 - 50; // -50px to +50px drift
+            const ty = Math.random() * -70 - 30; // -30px to -100px rise
+
+            dustParticles += `<div class="dust-mote" style="left:${left}%; top:${top}%; width:${size}px; height:${size}px; opacity:${opacity}; --tx:${tx}px; --ty:${ty}px; animation-duration:${duration}s; animation-delay:${delay}s"></div>`;
+        }
+
+        return `
+            <style>
+                /* Theme Variables */
+                .decoration-container.sunlight {
+                    /* Default (Light Mode) - Soft Gold / Visible Warmth */
+                    /* Tuned: More visible than Champagne, but cleaner than Deep Orange */
+                    --sun-glow: rgba(255, 200, 120, 0.12);     /* 0.06 -> 0.12 (Visible) */
+                    --sun-beam-1-color: 255, 210, 150;         /* Warm Gold */
+                    --sun-beam-2-color: 255, 225, 180;         /* Soft Yellow-Gold */
+                    --dust-bg: rgba(255, 210, 120, 0.5);       /* More visible dust */
+                    --dust-shadow: rgba(255, 200, 100, 0.15);
+                    
+                    position: absolute;
+                    top: 0; left: 0; width: 100%; height: 100%;
+                    overflow: hidden;
+                    z-index: 0;
+                    pointer-events: none;
+                    border-radius: inherit;
+                    /* Base ambient wash - Theme aware */
+                    background: linear-gradient(135deg, var(--sun-glow) 0%, transparent 60%);
+                }
+
+                /* Dark Mode Overrides - White/Pale */
+                [data-theme="dark"] .decoration-container.sunlight {
+                    --sun-glow: rgba(255, 255, 255, 0.05); /* Very subtle white glow */
+                    --sun-beam-1-color: 220, 230, 255;      /* Cool white/silver */
+                    --sun-beam-2-color: 200, 220, 255;
+                    --dust-bg: rgba(255, 255, 255, 0.4);    /* White dust */
+                    --dust-shadow: rgba(200, 220, 255, 0.2);
+                }
+                
+                .announcement-header, .announcement-body, .announcement-footer {
+                    position: relative;
+                    z-index: 10;
+                }
+
+                /* 1. Ambient Warmth/Glow */
+                .sunlight-glow {
+                    position: absolute;
+                    top: -25%; left: -25%;
+                    width: 120%; height: 120%;
+                    background: radial-gradient(circle at 25% 25%, var(--sun-glow) 0%, transparent 60%);
+                    animation: sunPulse 10s ease-in-out infinite alternate;
+                }
+
+                /* 2. God Rays Base (Shared) */
+                .sunlight-beam {
+                    position: absolute;
+                    top: -50%; left: -50%;
+                    width: 200%; height: 200%;
+                    filter: blur(3px); 
+                    transform-origin: 40% 40%;
+                    will-change: transform, opacity;
+                }
+
+                /* Layer 1: The "Hero" Rays */
+                .sunlight-beam.layer-1 {
+                    background: linear-gradient(
+                        115deg,
+                        transparent 25%,
+                        rgba(var(--sun-beam-1-color), 0.15) 30%, 
+                        transparent 35%, 
+                        rgba(var(--sun-beam-1-color), 0.25) 45%, 
+                        transparent 50%,
+                        rgba(var(--sun-beam-1-color), 0.1) 60%, 
+                        transparent 70%
+                    );
+                    background-size: 150% 150%;
+                    animation: sunRayPrimary 18s ease-in-out infinite alternate; 
+                }
+
+                /* Layer 2: The "Fill" */
+                .sunlight-beam.layer-2 {
+                    background: linear-gradient(
+                        110deg,
+                        transparent 20%,
+                        rgba(var(--sun-beam-2-color), 0.08) 40%, 
+                        transparent 60%,
+                        rgba(var(--sun-beam-2-color), 0.1) 75%,
+                        transparent 90%
+                    );
+                    background-size: 150% 150%;
+                    opacity: 0.7;
+                    animation: sunRaySecondary 22s ease-in-out infinite alternate-reverse; 
+                }
+
+                /* 3. Dust Motes - Theme Aware */
+                .dust-mote {
+                    position: absolute;
+                    background: var(--dust-bg);
+                    box-shadow: 0 0 1px var(--dust-shadow);
+                    border-radius: 50%;
+                    animation-name: dustFloat;
+                    animation-timing-function: ease-in-out;
+                    animation-iteration-count: infinite;
+                    will-change: transform, opacity;
+                }
+
+                @keyframes sunPulse {
+                    0% { opacity: 0.8; transform: scale(1); }
+                    100% { opacity: 1; transform: scale(1.05); }
+                }
+
+                @keyframes sunRayPrimary {
+                    0% { 
+                        transform: rotate(0deg) translateX(0); 
+                        opacity: 0.8; 
+                        background-position: 0% 50%;
+                    }
+                    100% { 
+                        transform: rotate(3deg) translateX(10px); 
+                        opacity: 1; 
+                        background-position: 20% 50%; /* Increased flow range slightly */
+                    }
+                }
+
+                @keyframes sunRaySecondary {
+                    0% { 
+                        transform: rotate(-2deg) translateX(-5px); 
+                        opacity: 0.4; 
+                        background-position: 10% 50%;
+                    }
+                    100% { 
+                        transform: rotate(1deg) translateX(5px); 
+                        opacity: 0.6; 
+                        background-position: 0% 50%;
+                    }
+                }
+                
+                @keyframes dustFloat {
+                    0% { transform: translate(0, 0); opacity: 0; }
+                    20% { opacity: 1; }
+                    70% { opacity: 1; } /* Disappear earlier randomly */
+                    100% { 
+                        transform: translate(var(--tx), var(--ty)); /* Random Trajectory */
+                        opacity: 0; 
+                    }
+                }
+            </style>
+
+            <div class="decoration-container sunlight">
+                 <div class="sunlight-glow"></div>
+                 <div class="sunlight-beam layer-1"></div>
+                 <div class="sunlight-beam layer-2"></div>
+                 ${dustParticles}
+            </div>
+        `;
+    }
+
+    if (theme === 'hearts') {
+        return `
+                <style>
+                    .decoration-pulsing-bg {
+                        position: absolute;
+                        top: 0; left: 0; width: 100%; height: 100%;
+                        overflow: hidden;
+                        z-index: 1;
+                        pointer-events: none;
+                        border-radius: inherit;
+                    }
+                    /* Ensure content sits above */
+                    .announcement-header, .announcement-body, .announcement-footer {
+                        position: relative;
+                        z-index: 2;
+                    }
+                    
+                    /* Container handles Position + Floating (Bobbing) */
+                    .heart-container {
+                        position: absolute;
+                        will-change: top, left, opacity;
+                        transition: opacity 2s ease-in-out; /* Slower fade */
+                    }
+                    .heart-container.relocating {
+                        opacity: 0 !important;
+                    }
+
+                    /* Inner SVG handles Pulse + Shape */
+                    .heart-svg {
+                        width: 100%; height: 100%;
+                        filter: blur(16px); /* Increased blur (was 8px) */
+                        fill: currentColor;
+                        display: block;
+                        /* Animation defined in modifiers below */
+                    }
+
+                    /* --- Heart 2 (Big) --- */
+                    .container-2 {
+                        width: 240px; height: 240px; /* Reduced from 320px */
+                        top: 20%; left: 20%; /* Initial pos */
+                        color: rgba(255, 120, 160, 0.5); 
+                        animation: gentleFloat 8s ease-in-out infinite;
+                    }
+                    .container-2 .heart-svg {
+                        animation: realHeartBeat 8s ease-in-out infinite; /* Main beat */
+                    }
+
+                    /* --- Heart 3 (Small) --- */
+                    .container-3 {
+                        width: 160px; height: 160px;
+                        top: 60%; left: 70%; /* Initial pos far from Heart 2 */
+                        color: rgba(255, 140, 180, 0.6); 
+                        animation: gentleFloat 6s ease-in-out infinite reverse; 
+                    }
+                    .container-3 .heart-svg {
+                        filter: blur(24px); /* Very blurry (was 12px) */
+                        animation: realHeartBeat 8s ease-in-out infinite;
+                        animation-delay: 2s; /* Echo beat (2s after main) */
+                    }
+
+                    @keyframes realHeartBeat {
+                        /* "Lub-Dub" takes ~20% of 8s (1.6s), rest is silence */
+                        0%   { transform: scale(1) rotate(-5deg); opacity: 0.5; }
+                        5%   { transform: scale(1.08) rotate(0deg); opacity: 0.7; } /* Lub */
+                        10%  { transform: scale(1) rotate(-5deg); opacity: 0.5; }
+                        15%  { transform: scale(1.12) rotate(3deg); opacity: 0.8; } /* Dub */
+                        20%  { transform: scale(1) rotate(-5deg); opacity: 0.5; }
+                        100% { transform: scale(1) rotate(-5deg); opacity: 0.5; }
+                    }
+
+                    @keyframes gentleFloat {
+                        0%, 100% { transform: translateY(0); }
+                        50% { transform: translateY(-20px); }
+                    }
+                </style>
+                
+                <!-- Heart 2 -->
+                <div class="heart-container container-2">
+                    <svg class="heart-svg" viewBox="0 0 24 24">
+                        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                    </svg>
+                </div>
+
+                <!-- Heart 3 -->
+                <div class="heart-container container-3">
+                    <svg class="heart-svg" viewBox="0 0 24 24">
+                        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                    </svg>
+                </div>
+        `;
+    }
+
+    const themeEmoji = {
+        snow: '❄️', sakura: '🌸', fireworks: '✨', // hearts removed from here effectively
+        leaves: '🍂', rain: '💧', sunshine: '☀️'
+    };
+
+    // 增加粒子数量确保持续下落 (Optimized for continuous flow & density)
+    const particleCounts = {
+        snow: 24, sakura: 24, fireworks: 15, hearts: 12,
+        leaves: 12, rain: 30, sunshine: 5 // Sakura: 20 -> 24 for better flow
+    };
+
+    // Style for SVG content to fill the particle span
+    const svgStyle = "width:100%;height:100%;filter:drop-shadow(0 1px 1px rgba(0,0,0,0.1));display:block;";
+
+    // Helper to generate random leaf SVG
+    const getLeafContent = () => {
+        const type = Math.floor(Math.random() * 3);
+        const colors = ['#e06c75', '#d19a66', '#e5c07b', '#c678dd', '#be5046']; // Autumn Palette
+        const color = colors[Math.floor(Math.random() * colors.length)];
+
+        // 1. Maple Leaf (Maple)
+        if (type === 0) {
+            return `<svg viewBox="0 0 24 24" fill="${color}" style="${svgStyle}"><path d="M17,12L12,17L7,12L2,17V7L7,2L12,7L17,2V12M22,12V17H17V12H22M22,2V7H17V2H22Z" style="display:none"/><path d="M12.5,2C12.5,2 12.8,4.5 11,6C9,7.5 7,6 7,6L6,8C6,8 3,7.5 2,9C1,10.5 4,11 4,11L3,13C3,13 1,12.5 0,14C-1,15.5 2,16 2,16L3,18C3,18 2,19.5 4,20.5C6,21.5 7,19.5 7,19.5L9,21C9,21 10,22 13,22C16,22 16,19 16,19L17,20.5C17,20.5 19,20.5 20,19C21,17.5 19,16 19,16L21,14.5C21,14.5 23,14 22,12C21,10 19,10.5 19,10.5L20,8C20,8 19,6 17,6C15,6 14.5,8 14.5,8L12.5,2Z" /></svg>`;
+        }
+        // 2. Oak Leaf (Oak - Lobed)
+        if (type === 1) {
+            return `<svg viewBox="0 0 24 24" fill="${color}" style="${svgStyle}"><path d="M7,18C6,18 5,16.5 5.5,15C6,13.5 4,12 4,12C4,12 5,10.5 6.5,11C8,11.5 9,10 9,10C9,10 8,8 9.5,7C11,6 12,3 13,3C14,3 15.5,5 15,7C14.5,9 16,9.5 16,9.5C16,9.5 18,9 18.5,10.5C19,12 17,13 17,13C17,13 18.5,14 18,16C17.5,18 16,18 15,17C14,16 13,17 12,18C11,19 12,21 12,21H11C11,21 10,19 11,18C12,17 10,16 10,16C10,16 8,18 7,18Z"/></svg>`;
+        }
+        // 3. Poplar/Birch (Simple Teardrop)
+        return `<svg viewBox="0 0 24 24" fill="${color}" style="${svgStyle}"><path d="M12,2C12,2 4,8 4,14C4,19 9,22 12,22C15,22 20,19 20,14C20,8 12,2 12,2M12,20C12,20 11,16 12,12"/></svg>`;
+    };
+
+    // Helper to generate random Sakura SVG
+    const getSakuraContent = () => {
+        const type = Math.random(); // Use float for probability
+        const colors = ['#fecdd3', '#fca5a5', '#fda4af', '#f43f5e']; // Premium Pink Palette
+        const color = colors[Math.floor(Math.random() * colors.length)];
+
+        // 60% Full Flower (5 Petals with authentic notches)
+        if (type > 0.4) {
+            // A more detailed 5-petal sakura shape
+            return `<svg viewBox="0 0 100 100" fill="${color}" style="${svgStyle}"><path d="M50 50 L50 15 C50 15 55 20 60 15 C65 10 75 25 50 50 Z M50 50 L85 50 C85 50 80 55 85 60 C90 65 75 75 50 50 Z M50 50 L50 85 C50 85 45 80 40 85 C35 90 25 75 50 50 Z M50 50 L15 50 C15 50 20 45 15 40 C10 35 25 25 50 50 Z M50 50 L25 25 C25 25 30 20 25 15 C20 10 10 20 50 50 Z" stroke="none" opacity="0.9"/><circle cx="50" cy="50" r="4" fill="#fff1f2"/></svg>`;
+        }
+
+        // 40% Single Petal (Notched tip, not heart)
+        // Classic Sakura petal shape: wider top with a notch, tapering bottom
+        return `<svg viewBox="0 0 100 100" fill="${color}" style="${svgStyle}"><path d="M50 90 C50 90 20 60 20 40 C20 25 30 10 45 20 C48 22 50 25 50 25 C50 25 52 22 55 20 C70 10 80 25 80 40 C80 60 50 90 50 90 Z" opacity="0.8"/></svg>`;
+    };
+
+
+    const count = particleCounts[theme] || 20;
+    let particles = '';
+
+    // Helper to generate random Snowflake SVG (Theme Adaptive)
+    const getSnowContent = () => {
+        // High-quality Snowflake SVG
+        return `<svg viewBox="0 0 24 24" fill="var(--snow-color)" style="${svgStyle}"><path d="M12,2L12,22 M2,12L22,12 M19.07,4.93L4.93,19.07 M19.07,19.07L4.93,4.93 M12,2C12,2 14,6 16,6 M12,2C12,2 10,6 8,6 M12,22C12,22 14,18 16,18 M12,22C12,22 10,18 8,18 M2,12C2,12 6,10 6,8 M2,12C2,12 6,14 6,16 M22,12C22,12 18,10 18,8 M22,12C22,12 18,14 18,16" stroke="var(--snow-color)" stroke-width="2" stroke-linecap="round" fill="none"/></svg>`;
+    };
+
+    for (let i = 0; i < count; i++) {
+        // Select content - Move inside loop for diversity
+        let particleContent = '';
+        if (theme === 'leaves') {
+            particleContent = getLeafContent();
+        } else if (theme === 'sakura') {
+            particleContent = getSakuraContent();
+        } else if (theme === 'snow') {
+            particleContent = getSnowContent();
+        } else {
+            particleContent = theme === 'sunshine' ? '' : // Sunshine is css-only
+                theme === 'rain' ? '' : // Rain uses JS canvas/physics (streaks) only
+                    theme === 'fireworks' ? '' : // Fireworks uses JS canvas/physics only
+                        '❤️';
+        }
+
+        const left = Math.random() * 100;
+        // Depth Logic: 0.0 (Far) -> 1.0 (Near)
+        const depth = Math.random();
+        // Re-coupled speed to depth for true 3D effect.
+        // Near (1.0) = Fast (e.g. 10s), Far (0.0) = Slow (e.g. 25s)
+        // We keep some random noise (+/- 2s) to avoid robotic feel, but preserve the trend.
+        const baseDuration = theme === 'rain' ? 2 : theme === 'snow' ? 15 : 12;
+        const depthFactor = theme === 'rain' ? 3 : 10; // Rain varies less
+        const duration = baseDuration + ((1 - depth) * depthFactor) + (Math.random() * 4 - 2);
+
+        const delay = -Math.random() * duration;
+
+        // Size: Near = Bigger (1.2), Far = Smaller (0.3)
+        // Wider range for more dramatic contrast
+        const size = 0.3 + (depth * 0.9);
+
+        const driftOffset = Math.random() * 80 - 40;
+        // Font Size Config
+        const fontSize = theme === 'sunshine' ? 18 + Math.random() * 6 :
+            theme === 'rain' ? 8 + Math.random() * 4 :
+                theme === 'leaves' ? 14 + Math.random() * 8 :
+                    theme === 'sakura' ? 16 + Math.random() * 6 : /* SVG Sakura Size: 16-22px base */
+                        theme === 'snow' ? 8 + Math.random() * 4 : /* Micro Snow: 8-12px base */
+                            12 + Math.random() * 6;
+
+        const finalFontSize = fontSize * size;
+
+        // Explicit dimensions for SVGs (Added snow via SVG)
+        let dimensionStyle = `font-size:${finalFontSize.toFixed(0)}px;`;
+        if (theme === 'leaves' || theme === 'sakura' || theme === 'snow') {
+            dimensionStyle += `width:${finalFontSize.toFixed(0)}px;height:${finalFontSize.toFixed(0)}px;`;
+        }
+
+        // Opacity: Near = 1.0, Far = 0.4 (Increased visibility floor)
+        const opacity = 0.4 + (depth * 0.6);
+
+        // Blur: Far = 1.5px, Near = 0px (Sharper for visibility)
+        const blur = (1 - depth) * 1.5;
+
+        particles += `<span class="decoration-particle" style="left:${left}%;animation-delay:${delay.toFixed(2)}s;animation-duration:${duration.toFixed(2)}s;--drift-x:${driftOffset}px;${dimensionStyle}opacity:${opacity.toFixed(2)};filter:blur(${blur.toFixed(1)}px);">${particleContent}</span>`;
+    }
+
+    return `<div class="decoration-particles ${theme}">${particles}</div>`;
+}
+
+// 活跃的粒子动画控制器
+const ParticleSystem = {
+    timer: null,
+    frameId: null,
+    particles: [],
+    container: null,
+    theme: null,
+    width: 0,
+    height: 0,
+    lastTime: 0,
+
+    init(container, theme) {
+        this.stop(); // 清理旧的
+        if (!container || !theme || theme === 'none') return;
+
+        this.container = container;
+        this.theme = theme;
+        this.particles = [];
+
+        // 强制容器样式，确保动画环境稳定
+        container.style.position = 'absolute';
+        container.style.top = '0';
+        container.style.left = '0';
+        container.style.width = '100%';
+        container.style.height = '100%';
+        container.style.overflow = 'hidden';
+        container.style.pointerEvents = 'none';
+        container.style.zIndex = '1';
+
+        // 更新尺寸
+        this.updateDimensions();
+
+        // 立即生成一批 (Pre-warm)，让画面一开始就有内容飘落
+        // 雨雪天气增加预热数量
+        let initialCount = 6;
+        if (theme === 'rain' || theme === 'snow') initialCount = 40;
+
+        this.spawnBatch(initialCount, true);
+
+        // 启动循环
+        // 启动循环 (必须通过 rAF 传入 timestamp，否则 deltaTime 为 NaN)
+        this.frameId = requestAnimationFrame((t) => this.loop(t));
+
+        // 定时生成
+        this.scheduleSpawn();
+    },
+
+    stop() {
+        if (this.timer) clearTimeout(this.timer);
+        if (this.frameId) cancelAnimationFrame(this.frameId);
+        if (this.container) {
+            this.container.innerHTML = ''; // 清空DOM
+        }
+        this.particles = [];
+        this.timer = null;
+        this.frameId = null;
+        this.container = null;
+    },
+
+    updateDimensions() {
+        if (!this.container) return;
+        this.width = this.container.clientWidth || 0;
+        this.height = this.container.clientHeight || 0;
+
+        // 获取按钮的碰撞体积
+        const btn = this.container.parentElement ? this.container.parentElement.querySelector('.announcement-ack-btn') : null;
+        if (btn) {
+            const parentRect = this.container.getBoundingClientRect();
+            const btnRect = btn.getBoundingClientRect();
+            this.btnBounds = {
+                top: btnRect.top - parentRect.top,
+                left: btnRect.left - parentRect.left,
+                right: btnRect.right - parentRect.left,
+                bottom: btnRect.bottom - parentRect.top
+            };
+        } else {
+            this.btnBounds = null;
+        }
+    },
+
+    getParticleContent() {
+        if (this.theme === 'sakura') {
+            // 原创手绘樱花矢量图 (SVG)
+            // 包含花蕊细节和渐变色
+            return `
+            <svg viewBox="0 0 32 32" width="100%" height="100%" style="overflow:visible;">
+                <defs>
+                    <radialGradient id="sakuraGradient" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
+                        <stop offset="0%" style="stop-color:#ffe6ea;stop-opacity:1" />
+                        <stop offset="100%" style="stop-color:#ffb7b2;stop-opacity:1" />
+                    </radialGradient>
+                    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+                        <feGaussianBlur stdDeviation="1" result="blur"/>
+                        <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+                    </filter>
+                </defs>
+                <!-- 花瓣主体 -->
+                <path d="M16 2 C16 2 9 8 9 14 C9 21 16 28 16 28 C16 28 23 21 23 14 C23 8 16 2 16 2 Z" 
+                      fill="url(#sakuraGradient)" stroke="#ff9e99" stroke-width="0.5" />
+                <!-- 内部花蕊细节 -->
+                <path d="M16 28 Q13 20 16 12 Q19 20 16 28" fill="none" stroke="#fff" stroke-width="0.8" opacity="0.6"/>
+            </svg>`;
+        }
+
+        if (this.theme === 'snow') {
+            // 原创矢量雪花 (SVG) - 简化版 (无 Gradient/Filter，确保颜色正确)
+            return `
+            <svg viewBox="0 0 32 32" width="100%" height="100%" style="overflow:visible;">
+                <g stroke="var(--snow-color)" stroke-width="1.5" stroke-linecap="round" fill="none">
+                    <!-- 主轴 -->
+                    <path d="M16 2 L16 30 M8 6 L24 26 M24 6 L8 26" />
+                    <!-- 枝晶细节 -->
+                    <path d="M16 6 L13 9 M16 6 L19 9" />
+                    <path d="M16 26 L13 23 M16 26 L19 23" />
+                    <path d="M22 9 L20 12 M22 9 L23 12" />
+                    <path d="M10 23 L12 20 M10 23 L9 20" />
+                    <path d="M22 23 L20 20 M22 23 L23 20" />
+                    <path d="M10 9 L12 12 M10 9 L9 12" />
+                </g>
+                <!-- 中心晶核 - 直接填充颜色，无 Gradient -->
+                <circle cx="16" cy="16" r="2.5" fill="var(--snow-color)" opacity="0.8" />
+            </svg>`;
+        }
+
+        // 其他主题暂时保持 Emoji
+        const themeEmoji = {
+            fireworks: '✨', hearts: '❤️',
+            leaves: '🍂', sunshine: '☀️',
+            // 雨滴改为 SVG，此处留空或返回特定标记
+            rain: '<svg viewBox="0 0 10 20" width="100%" height="100%"><path d="M5 0 Q 5 10 0 15 A 5 5 0 1 0 10 15 Q 5 10 5 0" fill="rgba(173, 216, 230, 0.6)"/></svg>'
+        };
+        return themeEmoji[this.theme] || '🌸';
+    },
+
+    // 烟花爆炸逻辑
+    explode(rocket) {
+        const type = rocket.subType || 'willow'; // 默认柳叶型
+
+        // 1. 柳叶 (Willow): 金/银色，下落慢，悬浮感强
+        if (type === 'willow') {
+            const sparkCount = 30 + Math.random() * 20;
+            for (let i = 0; i < sparkCount; i++) {
+                this.createSpark(rocket, {
+                    speed: 1 + Math.random() * 3,
+                    gravity: 0.02 + Math.random() * 0.02,
+                    friction: 0.97,
+                    decay: 0.002 + Math.random() * 0.003,
+                    color: Math.random() > 0.5 ? '#FFD700' : '#E0E0E0' // 金银
+                });
+            }
+        }
+        // 2. 牡丹 (Peony): 彩色，球形均匀，炸得更开
+        else if (type === 'peony') {
+            const sparkCount = 40 + Math.random() * 20;
+            const baseHue = Math.random() * 360; // 统一色系
+            for (let i = 0; i < sparkCount; i++) {
+                this.createSpark(rocket, {
+                    speed: 2 + Math.random() * 4, // 初始速度快
+                    gravity: 0.03 + Math.random() * 0.02,
+                    friction: 0.95, // 阻力稍大，停得快
+                    decay: 0.005 + Math.random() * 0.005, // 消失稍快
+                    color: `hsl(${baseHue + Math.random() * 40}, 100%, 70%)`
+                });
+            }
+        }
+        // 3. 光环 (Ring): 只有边缘有粒子
+        else if (type === 'ring') {
+            const sparkCount = 36; // 均匀分布
+            const ringSpeed = 3 + Math.random() * 1;
+            const color = `hsl(${Math.random() * 360}, 100%, 75%)`;
+            for (let i = 0; i < sparkCount; i++) {
+                const angle = (i / sparkCount) * Math.PI * 2;
+                this.createSpark(rocket, {
+                    vx: Math.cos(angle) * ringSpeed,
+                    vy: Math.sin(angle) * ringSpeed,
+                    gravity: 0.025,
+                    friction: 0.98, // 阻力小，保持圆环形状扩散
+                    decay: 0.003 + Math.random() * 0.003,
+                    color: color,
+                    fixedSpeed: true // 标记使用自定义vx/vy
+                });
+            }
+        }
+    },
+
+    createSpark(rocket, CONFIG) {
+        const el = document.createElement('div');
+        el.style.position = 'absolute';
+        el.style.width = '4px';
+        el.style.height = '4px';
+        el.style.borderRadius = '50%';
+        el.style.backgroundColor = CONFIG.color;
+        el.style.boxShadow = `0 0 6px 1px ${CONFIG.color}`;
+        el.style.pointerEvents = 'none';
+        el.style.willChange = 'transform, opacity';
+
+        this.container.appendChild(el);
+
+        const angle = Math.random() * Math.PI * 2;
+        const speed = CONFIG.speed || (1 + Math.random() * 3);
+
+        this.particles.push({
+            el: el,
+            type: 'spark',
+            x: rocket.x,
+            y: rocket.y,
+            // 如果传入 fixedSpeed 则忽略随机角度计算
+            vx: CONFIG.fixedSpeed ? CONFIG.vx : Math.cos(angle) * speed,
+            vy: CONFIG.fixedSpeed ? CONFIG.vy : Math.sin(angle) * speed,
+            gravity: CONFIG.gravity,
+            friction: CONFIG.friction,
+            opacity: 1,
+            decay: CONFIG.decay,
+            state: 'fading'
+        });
+    },
+
+
+    spawnBatch(count, preWarm = false) {
+        for (let i = 0; i < count; i++) {
+            let startY;
+            if (preWarm && this.height > 0) {
+                // 预热：随机分布在整个屏幕高度 (包含负值以便衔接)
+                startY = Math.random() * (this.height + 50) - 50;
+            } else {
+                // 正常：从顶部上方生成
+                startY = -20 - Math.random() * 50;
+            }
+            // 稍微错开位置
+            this.createParticle(startY);
+        }
+    },
+
+    scheduleSpawn() {
+        // 默认为普通模式
+        let delay = 1800 + Math.random() * 1200;
+        let maxParticles = 12;
+
+        // 雨天模式：极速高密度
+        if (this.theme === 'rain') {
+            delay = 30 + Math.random() * 30; // 30-60ms 极快
+            maxParticles = 80; // 允许同屏 80 个雨滴
+        }
+
+
+        // 雪天模式：中等密度，允许堆积
+        else if (this.theme === 'snow') {
+            delay = 200 + Math.random() * 200; // 200-400ms
+            maxParticles = 60; // 允许较多雪花共存(含堆积)
+        }
+
+        this.timer = setTimeout(() => {
+            if (this.container && this.particles.length < maxParticles) {
+
+                // 烟花连发逻辑：8% 概率触发连发 (降低概率)
+                if (this.theme === 'fireworks' && Math.random() < 0.08) {
+                    this.fireCombo();
+                } else {
+                    this.createParticle();
+                }
+            }
+            this.scheduleSpawn();
+        }, delay);
+    },
+
+    // 烟花连发
+    fireCombo() {
+        const count = 2 + Math.floor(Math.random() * 2); // 2-3个
+        for (let i = 0; i < count; i++) {
+            // 稍微错开时间发射，模拟真实烟花的 "嘭-嘭-嘭"
+            setTimeout(() => {
+                this.createParticle();
+            }, i * 300 + Math.random() * 200);
+        }
+    },
+
+    createParticle(startY = -30) {
+        if (!this.container) return;
+
+        // --- 烟花逻辑分支 ---
+        if (this.theme === 'fireworks') {
+            const el = document.createElement('div');
+            el.textContent = '✦'; // 烟花弹
+            el.style.position = 'absolute';
+            el.style.left = '0';
+            el.style.top = '0';
+            el.style.fontSize = '8px';
+            el.style.color = `hsl(${Math.random() * 360}, 100%, 70%)`; // 随机亮色
+            el.style.willChange = 'transform, opacity';
+            el.style.pointerEvents = 'none';
+            // 初始在底部
+            el.style.transform = `translate3d(0, 0, 0)`;
+
+            this.container.appendChild(el);
+
+            const p = {
+                el: el,
+                type: 'rocket', // 类型标记
+                subType: ['willow', 'peony', 'ring'][Math.floor(Math.random() * 3)], // 随机类型
+                x: 20 + Math.random() * (this.width - 40), // 随机X位置
+                y: this.height, // 从底部发射
+                targetY: this.height * 0.05 + Math.random() * (this.height * 0.2), // 目标高度：顶部 5%-25% 处 (更高)
+                vx: (Math.random() - 0.5) * 1, // 轻微左右偏移
+                vy: -4 - Math.random() * 3, // 向上速度 (稍微加快)
+                state: 'rising',
+                opacity: 1,
+                color: el.style.color
+            };
+            this.particles.push(p);
+            return;
+        }
+
+        // 防止宽度过小（弹窗动画初期）时堆积
+        // 只有当宽度确实 > 100 时才开始生成，彻底杜绝边缘堆积
+        if (!this.width || this.width < 100) return;
+
+        // --- 雨滴逻辑分支 (CSS Streaks) ---
+        if (this.theme === 'rain') {
+            const el = document.createElement('div');
+            // 纯 CSS 实现雨滴拖尾效果 (Streak)
+            el.style.position = 'absolute';
+            el.style.width = (1 + Math.random()) + 'px'; // 极细 1-2px
+            el.style.height = (60 + Math.random() * 60) + 'px'; // 很长 60-120px
+            // 渐变色：上端透明 -> 下端钢蓝/深蓝，适配浅色背景
+            el.style.background = 'linear-gradient(to bottom, transparent, rgba(70, 130, 180, 0.6))'; // SteelBlue
+            el.style.filter = 'blur(0.5px)'; // 轻微羽化
+            el.style.willChange = 'transform, opacity';
+            el.style.pointerEvents = 'none';
+            el.style.opacity = 0.4 + Math.random() * 0.4; // 0.4-0.8，更明显
+
+            this.container.appendChild(el);
+
+            const p = {
+                el: el,
+                type: 'rain',
+                // 左右留边 20px，防止贴边显示不全; 确保 range >= 0
+                x: 20 + Math.random() * Math.max(0, this.width - 40),
+                y: -150, // 从更上方开始，保证进入画面时已有速度感
+                speed: 25 + Math.random() * 15, // 极速狂飙 (25-40px/frame)
+                swayAmp: 0,
+                swaySpeed: 0,
+                rotation: 5 + Math.random() * 5, // 轻微倾斜 (5-10度)
+                rotSpeed: 0,
+                state: 'falling',
+                targetAmp: 0,
+                landingY: this.height
+            };
+            this.particles.push(p);
+            return;
+        }
+
+        // --- 雪花逻辑分支 (复用SVG但自定义物理) ---
+        // 放在通用逻辑前拦截
+        if (this.theme === 'snow') {
+            // 1. 创建元素
+            const el = document.createElement('div');
+
+            // 引入更丰富的多样性 (3个层级)
+            const rand = Math.random();
+            let size, isCrystal = false;
+            let swayParam = 1.0; // 物理参数系数
+
+            // 层级 1: 微尘 (30%) - 极小，增加氛围感
+            if (rand < 0.3) {
+                size = 1.5 + Math.random() * 1.5; // 1.5-3px (极小)
+                el.style.borderRadius = '50%';
+                el.style.backgroundColor = 'rgba(255, 255, 255, 0.6)'; // 更透明
+                el.style.filter = 'blur(0.8px)';
+                swayParam = 1.5; // 更容易受风影响，摇摆快
+            }
+            // 层级 2: 柔光片 (20%) - 中等，模糊边缘
+            else if (rand < 0.5) {
+                size = 3 + Math.random() * 2; // 3-5px (缩小)
+                el.style.borderRadius = '50%';
+                el.style.backgroundColor = 'rgba(255, 255, 255, 0.7)'; // 稍透
+                el.style.filter = 'blur(0.6px)';
+                swayParam = 1.2;
+            }
+            // 层级 3: 冰晶 (20%) - 大，清晰 SVG
+            else {
+                isCrystal = true;
+                el.innerHTML = this.getParticleContent().trim();
+                size = 4 + Math.random() * 4; // 4-8px (极致精细)
+                el.style.filter = 'drop-shadow(0 0 0.5px rgba(255,255,255,0.6))';
+                swayParam = 0.8; // 重，摇摆稳
+            }
+
+            el.style.width = size + 'px';
+            el.style.height = size + 'px';
+
+            el.style.position = 'absolute';
+            el.style.left = '0';
+            el.style.top = '0';
+            el.style.willChange = 'transform, opacity';
+            el.style.pointerEvents = 'none';
+            // 初始透明度 0 避免闪烁
+            el.style.opacity = '0';
+
+            this.container.appendChild(el);
+
+            // 2. 堆积逻辑
+            // 统计当前已堆积(resting)的雪花数量
+            const restingCount = this.particles.filter(p => p.state === 'resting').length;
+            // 允许最多 35 个像自然积雪一样停留在底部
+            const willRest = restingCount < 35;
+
+            // 3. 物理属性
+            const p = {
+                el: el,
+                type: 'snow', // 标记类型
+                startX: Math.random() * this.width,
+                currentX: 0,
+                y: startY, // -30
+                // 飘落极其缓慢
+                speed: (0.4 + Math.random() * 0.6) * (2 - swayParam), // 小颗粒(sway large)飘得慢，大颗粒(sway small)飘得稍快
+                // 大幅度摇摆 (Drift)
+                swayAmp: (10 + Math.random() * 20) * swayParam, // 10-30px 摆幅 (减小)
+                swaySpeed: (0.002 + Math.random() * 0.006) * swayParam, // 摇摆更缓慢
+                phase: Math.random() * Math.PI * 2,
+
+                rotation: Math.random() * 360,
+                // 只有晶体才旋转，尘埃不明显旋转
+                rotSpeed: isCrystal ? (Math.random() - 0.5) * 1.5 : 0,
+
+                state: 'falling',
+                opacity: 0,
+                size: size,
+                // 落地位置：带一点随机起伏，模拟不平整雪堆
+                landingY: this.height - size * 0.8 - (Math.random() * 8),
+                willRest: willRest,
+                restTime: 0
+            };
+            // 初始X需计算一次
+            p.currentX = p.startX + Math.sin(p.phase) * p.swayAmp;
+
+            this.particles.push(p);
+            return;
+        }
+
+        // --- 原有逻辑 (花瓣/其他) ---
+        const el = document.createElement('div');
+        // 使用 innerHTML 插入 SVG
+        // 关键修复：去除首尾空格，否则 startsWith('<svg') 会失败导致显示源码
+        const content = this.getParticleContent().trim();
+
+        // 计算精确尺寸 (再大一点)
+        const size = 26 + Math.random() * 12; // 26-38px
+
+        if (content.startsWith('<svg')) {
+            el.innerHTML = content;
+            // SVG 必须显式设置宽高，否则会默认变得巨大
+            el.style.width = size + 'px';
+            el.style.height = size + 'px';
+        } else {
+            el.textContent = content;
+            // Emoji 使用字体大小控制
+            el.style.fontSize = size + 'px';
+        }
+
+        el.style.position = 'absolute';
+        el.style.left = '0';
+        el.style.top = '0';
+        el.style.willChange = 'transform, opacity';
+        el.style.pointerEvents = 'none';
+        el.style.userSelect = 'none';
+
+        el.style.opacity = '0';
+        el.style.transform = `translate3d(-100px, -100px, 0)`;
+
+        this.container.appendChild(el);
+
+        // 动态决定是否停留：用户希望始终保持 2-3 个
+        const restingCount = this.particles.filter(p => p.state === 'resting').length;
+        let willRest = false;
+
+        // 只有当极度稀缺(<1)时才小概率补充，否则绝对不停
+        if (restingCount < 1) {
+            willRest = Math.random() < 0.2; // 只有 20% 概率补充第一个
+        } else {
+            // willRest = false; // logic removed
+        }
+
+        // 所有的雪花都应该堆积 (100% 堆积率)
+        if (this.theme === 'snow') {
+            willRest = true;
+        }
+
+        const p = {
+            el: el,
+            startX: Math.random() * this.width, // 初始X轴中心
+            currentX: 0,
+            y: startY,
+            // 物理属性
+            speed: 0.5 + Math.random() * 0.4,
+            swayAmp: 10 + Math.random() * 20,
+            targetAmp: 0,
+            // 降低摇曳频率，更加慵懒
+            swaySpeed: 0.003 + Math.random() * 0.008,
+            phase: Math.random() * Math.PI * 2,
+            rotation: Math.random() * 360,
+            // 随机旋转方向：正负随机
+            // 只有 60% 的粒子会旋转，40% 的粒子保持静止角度飘落
+            rotSpeed: (Math.random() > 0.4)
+                ? (Math.random() < 0.5 ? -1 : 1) * (0.2 + Math.random() * 0.5)
+                : 0,
+
+            // 状态
+            // 状态
+            state: 'falling',
+            opacity: 0,
+            restTime: 0,
+            size: size,
+            isCrystal: isCrystal, // 保存类型用于物理计算
+            willRest: willRest
+        };
+
+        // 设定落地后的目标摇摆幅度 (停留时仅微风吹动)
+        // 设定落地后的目标摇摆幅度 (停留时停止摇摆)
+        p.targetAmp = 0;
+        // 随机微调落地高度，模拟积雪不平整 (-2px 到 +2px)
+        p.landingOffset = (Math.random() - 0.5) * 4;
+
+        this.particles.push(p);
+    },
+
+    createSplash(x, y) {
+        const splashCount = 3 + Math.floor(Math.random() * 4); // 3-6 个水滴
+        for (let i = 0; i < splashCount; i++) {
+            const el = document.createElement('div');
+            el.style.position = 'absolute';
+            el.style.width = '2px';
+            el.style.height = '2px'; // 小圆点
+            el.style.borderRadius = '50%';
+            el.style.backgroundColor = 'rgba(70, 130, 180, 0.8)'; // 深蓝色 (SteelBlue)，浅色背景可见
+            el.style.willChange = 'transform, opacity';
+            el.style.pointerEvents = 'none';
+            // 修正：初始位置
+            el.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+
+            this.container.appendChild(el);
+
+            this.particles.push({
+                el: el,
+                type: 'splash',
+                x: x,
+                y: y,
+                vx: (Math.random() - 0.5) * 4, // 向左右溅射
+                vy: -3 - Math.random() * 3, // 向上溅起
+                friction: 0.95,
+                gravity: 0.5, // 重力较大，快速落下
+                opacity: 1,
+                state: 'fading'
+            });
+        }
+    },
+
+    loop(timestamp) {
+        if (!this.container) return;
+
+        // 保底：如果没有传入 timestamp (比如手动调用)，使用 perf.now
+        if (!timestamp) timestamp = performance.now();
+
+        // 初始化或长时间暂停后重置
+        if (!this.lastTime) this.lastTime = timestamp;
+        const deltaTime = timestamp - this.lastTime;
+        this.lastTime = timestamp;
+
+        // 限制最大帧间隔 (防止切后台回来后瞬间爆炸)
+        // 16.67ms = 60fps. timeScale = 1.0 @ 60fps
+        const timeScale = Math.min(deltaTime, 100) / 16.67;
+
+        this.updateDimensions();
+
+        for (let i = this.particles.length - 1; i >= 0; i--) {
+            const p = this.particles[i];
+
+            // --- 烟花物理逻辑: 火箭 ---
+            if (p.type === 'rocket') {
+                p.y += p.vy * timeScale;
+                p.el.style.transform = `translate3d(${p.x}px, ${p.y}px, 0)`;
+
+                // 到达目标高度或速度耗尽则爆炸
+                if (p.y <= p.targetY) {
+                    this.explode(p);
+                    this.particles.splice(i, 1);
+                    p.el.remove();
+                }
+                continue;
+            }
+
+            // --- 烟花物理逻辑: 雨滴 ---
+            if (p.type === 'rain') {
+                // 高刷屏下(>100Hz, deltaTime < 10ms)，极速流体看起来会比 60Hz 视觉上更快 (无残影)。
+                // 增加感知补偿系数：如果是高刷，降低速度以匹配 60Hz 的观感。
+                let hzDampener = 1.0;
+                if (deltaTime < 10) hzDampener = 0.6; // 240Hz 降速 40%
+
+                p.y += p.speed * timeScale * hzDampener;
+                p.el.style.transform = `translate3d(${p.x}px, ${p.y}px, 0)`;
+                // 边界检测：超出屏幕底部移除
+                if (p.y > this.height) {
+                    // 溅起水花
+                    this.createSplash(p.x, this.height);
+
+                    this.particles.splice(i, 1);
+                    p.el.remove();
+                }
+                continue;
+            }
+
+            // --- 烟花物理逻辑: 溅起的水花 ---
+            if (p.type === 'splash') {
+                p.vy += 0.5 * timeScale; // 重力
+                p.x += p.vx * timeScale;
+                p.y += p.vy * timeScale;
+                p.opacity -= 0.05 * timeScale; // 快速消失
+
+                p.el.style.opacity = p.opacity;
+                p.el.style.transform = `translate3d(${p.x}px, ${p.y}px, 0)`;
+
+                if (p.opacity <= 0) {
+                    this.particles.splice(i, 1);
+                    p.el.remove();
+                }
+                continue;
+            }
+
+            // --- 烟花物理逻辑: 火花 ---
+            if (p.type === 'spark') {
+                // 摩擦力指数衰减: vel = vel * friction^timeScale
+                p.vx *= Math.pow(p.friction, timeScale);
+                p.vy *= Math.pow(p.friction, timeScale);
+                p.vy += p.gravity * timeScale;
+                p.x += p.vx * timeScale;
+                p.y += p.vy * timeScale;
+                p.opacity -= p.decay * timeScale;
+
+                p.el.style.opacity = p.opacity;
+                p.el.style.transform = `translate3d(${p.x}px, ${p.y}px, 0)`;
+
+                if (p.opacity <= 0) {
+                    this.particles.splice(i, 1);
+                    p.el.remove();
+                }
+                continue;
+            }
+
+            // 动态更新 landingY 以适应窗口大小变化
+            // 差异化落地高度：
+            // 1. 晶体 (SVG): 沉入 20% (HEIGHT - size*0.2)，看起来"脚踏实地"
+            // 2. 圆点 (Dust/Soft): 沉入 50% (HEIGHT - size*0.5)，看起来"嵌入/半埋"在雪堆里
+            const sinkRatio = p.isCrystal ? 0.2 : 0.5;
+            let currentLandingY = this.height - p.size * sinkRatio + (p.landingOffset || 0);
+
+            // 检测按钮碰撞
+            if (this.btnBounds && p.currentX >= this.btnBounds.left && p.currentX <= this.btnBounds.right) {
+                // 同样应用差异化沉入
+                // 晶体沉入少一点 (0.3)，圆点沉入多一点 (0.6)
+                const btnSinkRatio = p.isCrystal ? 0.3 : 0.6;
+                const btnY = this.btnBounds.top - p.size * btnSinkRatio + 2;
+                if (p.y <= btnY + 10) {
+                    currentLandingY = btnY;
+                }
+            }
+
+            // 1. 公共运动逻辑：水平摇摆
+            p.phase += p.swaySpeed * timeScale;
+            if (p.state === 'resting') {
+                // 已在进入状态时冻结 sway，此处无需操作
+            }
+            const currentSway = Math.sin(p.phase) * p.swayAmp;
+            p.currentX = p.startX + currentSway;
+
+            // 2. 状态机逻辑
+            if (p.state === 'falling') {
+                p.y += p.speed * timeScale;
+                p.rotation += p.rotSpeed * timeScale;
+
+                // 渐显效果
+                if (p.opacity < 1) {
+                    p.opacity += 0.02 * timeScale;
+                    if (p.opacity > 1) p.opacity = 1;
+                }
+
+                // 落地检测
+                if (p.y >= currentLandingY) {
+                    if (p.willRest) {
+                        p.state = 'resting';
+                        p.y = currentLandingY;
+                        // 彻底冻结 X 轴位置，防止滑动
+                        p.startX = p.currentX;
+                        p.swayAmp = 0;
+                        p.swaySpeed = 0;
+                    } else {
+                        // 如果不应该停留，则直接转为 falling_through 继续下落
+                        p.state = 'falling_through';
+                    }
+                }
+
+            } else if (p.state === 'falling_through') {
+                // 继续下落
+                p.y += p.speed * timeScale;
+
+                const realBottom = this.height - p.size;
+                if (p.y < realBottom) {
+                    p.opacity -= 0.002 * timeScale;
+                } else {
+                    p.opacity -= 0.03 * timeScale;
+                }
+
+            } else if (p.state === 'resting') {
+                // 底部停留
+                p.y = currentLandingY;
+                p.restTime += 16.7 * timeScale;
+
+                if (p.restTime > 2000 + Math.random() * 3000) {
+                    // 时间到后融化 (原地消失)，而不是掉下去
+                    p.state = 'melting';
+                }
+            } else if (p.state === 'melting') {
+                // 融化逻辑：原地变透明
+                p.opacity -= 0.01 * timeScale;
+                // p.y 不变
+            } else if (p.state === 'fading') {
+                p.opacity = 0;
+            }
+
+            // 移除检测
+            if (p.opacity <= 0 && (p.state === 'falling_through' || p.state === 'fading' || p.state === 'melting')) {
+                p.el.remove();
+                this.particles.splice(i, 1);
+                continue;
+            }
+
+            // 渲染
+            p.el.style.opacity = p.opacity;
+            p.el.style.transform = `translate3d(${p.currentX}px, ${p.y}px, 0) rotate(${p.rotation}deg)`;
+        }
+
+        this.frameId = requestAnimationFrame((t) => this.loop(t));
+    }
+};
+
+// 兼容旧接口
+function startContinuousParticles(container, theme) {
+    ParticleSystem.init(container, theme);
+}
+
+// 停止粒子动画
+function stopContinuousParticles() {
+    ParticleSystem.stop();
+}
+
+function showBannerAnnouncement(color, size, content, ackKey, decoration) {
     const banner = document.getElementById('announcementBanner');
     const textEl = document.getElementById('announcementText');
 
@@ -595,17 +1877,34 @@ function showBannerAnnouncement(color, size, content, ackKey) {
         banner.style.display = 'flex';
         banner.dataset.ackKey = ackKey;
         currentAnnouncementElement = banner;
+
+        // Add decoration particles
+        if (decoration && decoration !== 'none') {
+            const existing = banner.querySelector('.decoration-particles');
+            if (existing) existing.remove();
+            banner.insertAdjacentHTML('beforeend', generateDecorationParticles(decoration));
+            const particleContainer = banner.querySelector('.decoration-particles');
+            if (particleContainer) {
+                startContinuousParticles(particleContainer, decoration);
+            }
+        }
+
+        // Add class to body to offset fixed elements
+        document.body.classList.add('has-banner');
     }
 }
 
-function showModalAnnouncement(color, size, content, ackKey) {
+function showModalAnnouncement(color, size, content, ackKey, decoration) {
     // Create modal overlay
     const overlay = document.createElement('div');
     overlay.className = 'announcement-modal-overlay';
     overlay.dataset.ackKey = ackKey;
 
+    const decorationHtml = generateDecorationParticles(decoration);
+
     overlay.innerHTML = `
         <div class="announcement-modal color-${color} size-${size}">
+            ${decorationHtml}
             <div class="announcement-header">
                 <div class="announcement-icon-wrapper">
                     <i class="fas fa-bullhorn"></i>
@@ -617,7 +1916,7 @@ function showModalAnnouncement(color, size, content, ackKey) {
             </div>
             <div class="announcement-footer">
                 <button class="announcement-ack-btn" onclick="closeAnnouncement(true)">
-                    <i class="fas fa-check"></i> 我知道了
+                    已读
                 </button>
             </div>
         </div>
@@ -632,24 +1931,148 @@ function showModalAnnouncement(color, size, content, ackKey) {
 
     document.body.appendChild(overlay);
     currentAnnouncementElement = overlay;
+
+    // Start particle animation after DOM is ready
+    if (decoration && decoration !== 'none') {
+        if (decoration === 'hearts') {
+            startHeartFloat(overlay);
+        } else {
+            // Only use active JS ParticleSystem for complex physics themes
+            // Sakura and Leaves use the CSS-based particles we generated
+            const activePhysicsThemes = ['snow', 'rain', 'fireworks'];
+
+            if (activePhysicsThemes.includes(decoration)) {
+                const particleContainer = overlay.querySelector('.decoration-particles');
+                if (particleContainer) {
+                    startContinuousParticles(particleContainer, decoration);
+                }
+            }
+        }
+    }
 }
 
-function showToastAnnouncement(color, size, content, ackKey) {
+// ----------------------------------------
+// Random Floating Heart Logic (Fade Out -> Teleport -> Fade In)
+// ----------------------------------------
+// ----------------------------------------
+// Random Floating Heart Logic (Fade Out -> Teleport -> Fade In)
+// With Collision Avoidance (Keep hearts apart)
+// ----------------------------------------
+function startHeartFloat(container) {
+    const hearts = Array.from(container.querySelectorAll('.heart-container'));
+
+    // Track current target positions (initialized with defaults)
+    const positions = hearts.map(() => ({ x: 0, y: 0 }));
+
+    hearts.forEach((heart, index) => {
+        // --- Helper: Generate Safe Position ---
+        const getSafePosition = () => {
+            let safe = false;
+            let attempts = 0;
+            let newX, newY;
+
+            while (!safe && attempts < 20) {
+                // Generate random position (10% to 90%)
+                newX = Math.random() * 80 + 10;
+                newY = Math.random() * 80 + 10;
+                safe = true;
+
+                // Check distance against other hearts
+                for (let i = 0; i < positions.length; i++) {
+                    if (i === index) continue; // Skip self
+
+                    // Only check if other heart has been initialized (not 0,0)
+                    if (positions[i].x !== 0 && positions[i].y !== 0) {
+                        const dist = Math.hypot(newX - positions[i].x, newY - positions[i].y);
+                        if (dist < 40) { // Keep at least 40% screen width apart
+                            safe = false;
+                            break;
+                        }
+                    }
+                }
+                attempts++;
+            }
+            return { x: newX, y: newY };
+        };
+
+        // --- Initial Move ---
+        const initialPos = getSafePosition();
+        positions[index] = initialPos;
+        heart.style.left = `${initialPos.x}%`;
+        heart.style.top = `${initialPos.y}%`;
+
+        // --- Schedule Next Move ---
+        const scheduleNextMove = () => {
+            if (!document.body.contains(container)) return;
+
+            // Random delay 10-18s
+            const delay = 10000 + Math.random() * 8000;
+
+            setTimeout(() => {
+                if (!document.body.contains(container)) return;
+
+                // 1. Fade Out
+                heart.classList.add('relocating');
+
+                // 2. Teleport after fade out (2s)
+                setTimeout(() => {
+                    if (!document.body.contains(container)) return;
+
+                    // Generate new safe position
+                    const newPos = getSafePosition();
+                    positions[index] = newPos; // Update tracker
+
+                    heart.style.left = `${newPos.x}%`;
+                    heart.style.top = `${newPos.y}%`;
+
+                    // 3. Fade In
+                    requestAnimationFrame(() => {
+                        heart.classList.remove('relocating');
+                        scheduleNextMove();
+                    });
+                }, 2000);
+            }, delay);
+        };
+
+        scheduleNextMove();
+    });
+}
+
+let toastBackdropElement = null;
+
+function showToastAnnouncement(color, size, content, ackKey, decoration) {
+    // Create blur backdrop
+    const backdrop = document.createElement('div');
+    backdrop.className = 'announcement-toast-backdrop';
+    document.body.appendChild(backdrop);
+    toastBackdropElement = backdrop;
+
+    const decorationHtml = generateDecorationParticles(decoration);
+
     // Create toast
     const toast = document.createElement('div');
     toast.className = 'announcement-toast color-' + color + ' size-' + size;
     toast.dataset.ackKey = ackKey;
 
     toast.innerHTML = `
-        <div class="announcement-content">
+        ${decorationHtml}
+        <div class="toast-header">
             <i class="fas fa-bullhorn"></i>
-            <span>${content}</span>
+            <span class="toast-title">站内公告</span>
         </div>
-        <button class="announcement-ack-btn-sm" onclick="closeAnnouncement(true)">我知道了</button>
-        <button class="announcement-close" onclick="closeAnnouncement(false)">
-            <i class="fas fa-times"></i>
-        </button>
+        <div class="toast-body">${content}</div>
+        <button class="announcement-ack-btn-sm" onclick="event.stopPropagation(); closeAnnouncement(true)">已读</button>
     `;
+
+    // Prevent clicks inside toast from closing
+    toast.addEventListener('click', (e) => {
+        e.stopPropagation();
+    });
+
+    // Click backdrop to close
+    backdrop.addEventListener('click', () => {
+        closeAnnouncement(false);
+    });
 
     document.body.appendChild(toast);
     currentAnnouncementElement = toast;
@@ -660,7 +2083,7 @@ function closeAnnouncement(acknowledged = false) {
 
     const ackKey = currentAnnouncementElement.dataset.ackKey;
 
-    // If user clicked "我知道了", save to localStorage (permanent)
+    // If user clicked "已读", save to localStorage (permanent)
     // If user clicked X or overlay, don't save (will show again on refresh)
     if (acknowledged && ackKey) {
         localStorage.setItem(ackKey, 'true');
@@ -672,6 +2095,14 @@ function closeAnnouncement(acknowledged = false) {
     // Add closing animation class
     currentAnnouncementElement.classList.add('closing');
 
+    // Stop particle animation
+    stopContinuousParticles();
+
+    // Also animate backdrop if exists
+    if (toastBackdropElement) {
+        toastBackdropElement.classList.add('closing');
+    }
+
     // Remove after animation
     setTimeout(() => {
         if (currentAnnouncementElement) {
@@ -681,6 +2112,15 @@ function closeAnnouncement(acknowledged = false) {
                 currentAnnouncementElement.remove();
             }
             currentAnnouncementElement = null;
+
+            // Remove body class when banner is closed
+            document.body.classList.remove('has-banner');
+        }
+
+        // Remove backdrop
+        if (toastBackdropElement) {
+            toastBackdropElement.remove();
+            toastBackdropElement = null;
         }
     }, 300);
 }
@@ -760,6 +2200,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     initStarrySky(); // New: Starry background for dark mode
     generateDynamicNav(); // New: AI-driven navigation
     renderFeaturedBanner(); // New: Today's featured artwork
+
+    // Load gallery config (items per page, default sort) before rendering
+    await loadGalleryConfig();
+
     renderGallery('all');
     setupFilters();
     setupInfiniteScroll();
@@ -1571,13 +3015,117 @@ function initSpotlight() {
 }
 
 // --- Pagination State ---
-const CARDS_PER_PAGE = 20;
+let CARDS_PER_PAGE = 24; // Default, will be overwritten by config
 let currentFilter = 'all';
-let currentPage = 0;
 let isLoading = false;
 let allFilteredItems = [];
 let allCardsRendered = false; // Track if all cards have been rendered
 let renderedCards = new Map(); // Cache rendered cards by id
+
+// Load gallery config from system_config
+let DEFAULT_SORT = 'newest'; // Default sort order
+
+async function loadGalleryConfig() {
+    try {
+        if (!window.supabaseClient) return;
+
+        const { data, error } = await window.supabaseClient
+            .from('system_config')
+            .select('config_value')
+            .eq('config_key', 'gallery')
+            .single();
+
+        if (!error && data && data.config_value) {
+            const config = data.config_value;
+            if (config.items_per_page) {
+                CARDS_PER_PAGE = parseInt(config.items_per_page) || 24;
+            }
+            if (config.default_sort) {
+                DEFAULT_SORT = config.default_sort;
+            }
+            console.log('📋 画廊配置已加载: CARDS_PER_PAGE =', CARDS_PER_PAGE, ', DEFAULT_SORT =', DEFAULT_SORT);
+
+            // Apply initial sorting to PROMPTS
+            sortPrompts(DEFAULT_SORT);
+        }
+    } catch (e) {
+        console.warn('加载画廊配置失败:', e);
+    }
+}
+
+// Sort PROMPTS array based on sort type
+function sortPrompts(sortType) {
+    if (!PROMPTS || PROMPTS.length === 0) return;
+
+    // Helper: Extract numeric id from string format like "prompt-123"
+    const getNumericId = (item) => {
+        if (!item.id) return 0;
+        if (typeof item.id === 'number') return item.id;
+        // Extract number from string like "prompt-42"
+        const match = String(item.id).match(/(\d+)/);
+        return match ? parseInt(match[1], 10) : 0;
+    };
+
+    // Helper: Get favorites count from localStorage (used for 'popular' sorting)
+    const getFavoritesCount = () => {
+        try {
+            // Load all favorites data from localStorage
+            const storedFavorites = JSON.parse(localStorage.getItem('promptFavorites') || '[]');
+            // Count how many times each prompt appears in all users' favorites
+            // For now, we use a simple approach: check if the prompt is in the current user's favorites
+            const favSet = new Set(storedFavorites);
+            return favSet;
+        } catch (e) {
+            return new Set();
+        }
+    };
+
+    switch (sortType) {
+        case 'newest':
+            // Sort by createdAt date first, fallback to numeric id (higher = newer)
+            PROMPTS.sort((a, b) => {
+                // If there's a createdAt field, use it
+                if (a.createdAt && b.createdAt) {
+                    return new Date(b.createdAt) - new Date(a.createdAt);
+                }
+                // Otherwise, extract numeric id and sort descending (newer items have higher ids)
+                return getNumericId(b) - getNumericId(a);
+            });
+            break;
+        case 'popular':
+            // Sort by favorites count (prioritize favorited items, then by id)
+            const favSet = getFavoritesCount();
+            PROMPTS.sort((a, b) => {
+                // Check if items are favorited
+                const aFav = favSet.has(a.id) ? 1 : 0;
+                const bFav = favSet.has(b.id) ? 1 : 0;
+
+                // If both have same favorite status, sort by explicit likes/favCount
+                if (aFav === bFav) {
+                    const aLikes = a.likes || a.favCount || 0;
+                    const bLikes = b.likes || b.favCount || 0;
+                    if (aLikes !== bLikes) return bLikes - aLikes;
+                    // Fallback to id order
+                    return getNumericId(b) - getNumericId(a);
+                }
+                // Favorited items come first
+                return bFav - aFav;
+            });
+            break;
+        case 'random':
+            // Fisher-Yates shuffle
+            for (let i = PROMPTS.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [PROMPTS[i], PROMPTS[j]] = [PROMPTS[j], PROMPTS[i]];
+            }
+            break;
+        default:
+            // Default to newest if unknown sort type
+            sortPrompts('newest');
+    }
+
+    console.log('🔄 画廊已排序:', sortType);
+}
 
 // --- Favorites System (Pinterest-style) ---
 let favorites = new Set(JSON.parse(localStorage.getItem('promptFavorites') || '[]'));
@@ -4204,6 +5752,15 @@ async function submitComment() {
         return;
     }
 
+    // 🔍 敏感词检查
+    if (content) {
+        const sensitiveCheck = await checkGallerySensitiveContent(content);
+        if (sensitiveCheck.blocked) {
+            showGalleryToast('内容包含敏感词，请修改后重试', 'warning', 4000);
+            return;
+        }
+    }
+
     // Get parent_id if this is a reply
     const parentId = input.dataset.replyTo || null;
 
@@ -4526,3 +6083,11 @@ window.onclick = function (event) {
 if (window.supabaseClient) {
     initCommentRealtime();
 }
+
+// ===================================
+// EXPORTS to allow external usage (e.g. admin-config.js)
+// ===================================
+window.generateDecorationParticles = generateDecorationParticles;
+window.startContinuousParticles = startContinuousParticles;
+window.startHeartFloat = startHeartFloat;
+window.closeAnnouncement = closeAnnouncement;

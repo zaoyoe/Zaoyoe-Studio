@@ -181,8 +181,11 @@ function switchSettingsView(viewName) {
 
 // Initialize tab indicator (robust check)
 function initIndicator() {
-    const activeTab = document.querySelector('.admin-tab.active');
-    if (activeTab) updateAdminTabIndicator(activeTab);
+    // Update ALL active tab indicators in all navigation bars
+    document.querySelectorAll('.admin-tabs').forEach(nav => {
+        const activeTab = nav.querySelector('.admin-tab.active');
+        if (activeTab) updateAdminTabIndicator(activeTab);
+    });
 }
 
 // Run on DOMReady, Window Load, and Resize

@@ -6,8 +6,11 @@
     --accent-purple: #9b5de5;
     --font-serif: 'Playfair Display', serif;
     --font-sans: 'Outfit', sans-serif;
-    --card-bg: #ffffff;
-    --card-border: rgba(0, 0, 0, 0.06);
+    --card-bg: #f8fafc;
+    --card-border: #e2e8f0;
+    --accent-color: #3b82f6;
+    --snow-color: #3b82f6;
+    /* Vivid Blue for Light Mode */
     --modal-bg: #ffffff;
     --modal-overlay: rgba(0, 0, 0, 0.55);
     --footer-border: rgba(0, 0, 0, 0.05);
@@ -122,15 +125,17 @@
 /* Dark Mode Colors */
 [data-theme="dark"] {
     --bg-color: #0f172a;
-    --text-main: #f1f5f9;
-    --text-dim: #64748b;
+    --text-main: #e2e8f0;
+    --text-dim: #94a3b8;
     --spotlight-color: rgba(255, 255, 255, 0.03);
-    --card-bg: #1e293b;
-    --card-border: rgba(255, 255, 255, 0.08);
-    --modal-bg: #1e293b;
+    --card-bg: rgba(30, 41, 59, 0.5);
+    --card-border: rgba(51, 65, 85, 0.5);
+    --modal-bg: rgba(15, 23, 42, 0.85);
     --modal-overlay: rgba(0, 0, 0, 0.65);
     --footer-border: rgba(255, 255, 255, 0.05);
     --accent-starry: #6b9ece;
+    --snow-color: #ffffff;
+    /* Pure White for Dark Mode */
     /* Starry blue for dark mode accents */
 }
 
@@ -190,6 +195,12 @@ body,
     right: 30px;
     z-index: 100;
     cursor: pointer;
+    transition: top 0.3s ease;
+}
+
+/* Offset when banner is visible */
+body.has-banner .user-avatar-container {
+    top: 70px;
 }
 
 .user-avatar-btn {
@@ -525,15 +536,56 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 12px;
     padding: 14px 24px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    /* Softer blue-purple gradient for light mode */
+    background: linear-gradient(135deg, #7c8fd4 0%, #9b7fbf 100%);
     color: white;
     font-size: 0.95rem;
     position: relative;
     border-radius: 0;
-    box-shadow: 0 4px 20px rgba(102, 126, 234, 0.3);
+    box-shadow: 0 4px 20px rgba(124, 143, 212, 0.25);
     animation: bannerSlideIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Banner content wrapper */
+.announcement-banner .announcement-content {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+/* Banner icon - fixed size box for perfect alignment */
+.announcement-banner .announcement-content i {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    font-size: 1rem;
+    flex-shrink: 0;
+}
+
+/* Banner text span - same height constraint */
+.announcement-banner #announcementText {
+    display: flex;
+    align-items: center;
+    min-height: 20px;
+}
+
+/* Banner links - light cyan for contrast with white text */
+.announcement-banner a {
+    color: #a0f0f0;
+    text-decoration: none;
+}
+
+.announcement-banner a:hover {
+    color: #ffffff;
+}
+
+/* Dark mode: muted starry blue gradient */
+[data-theme="dark"] .announcement-banner {
+    background: linear-gradient(135deg, #2d3a4f 0%, #3d3553 100%);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
 }
 
 .announcement-banner.closing {
@@ -568,9 +620,10 @@ body {
 .announcement-modal-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.5);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
+    /* Semi-transparent backdrop with blur - same as prompt modal */
+    background: rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
     z-index: 9999;
     display: flex;
     align-items: center;
@@ -603,16 +656,43 @@ body {
 }
 
 .announcement-modal {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
+    /* 不使用 backdrop-filter，让内层内容区域的磨砂效果能正常工作 */
+    background: rgba(245, 245, 247, 0.95);
+    color: #1e293b;
     padding: 0;
     border-radius: 24px;
     max-width: 480px;
     width: 90%;
     position: relative;
-    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.2);
     animation: modalPopIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
     overflow: hidden;
+    cursor: default;
+}
+
+/* 强制整个公告弹窗禁用文本光标 */
+.announcement-modal,
+.announcement-modal *:not(a):not(button):not(.announcement-ack-btn):not(.announcement-ack-btn-sm) {
+    cursor: default !important;
+    user-select: none !important;
+    -webkit-user-select: none !important;
+}
+
+/* 链接和按钮显示手型光标 */
+.announcement-modal a,
+.announcement-modal button,
+.announcement-modal .announcement-ack-btn,
+.announcement-modal .announcement-ack-btn-sm {
+    cursor: pointer !important;
+}
+
+/* Dark mode: 深色背景 */
+[data-theme="dark"] .announcement-modal {
+    background: rgba(30, 41, 59, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: white;
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5);
 }
 
 .announcement-modal-overlay.closing .announcement-modal {
@@ -650,48 +730,107 @@ body {
     justify-content: center;
     gap: 10px;
     padding: 24px 24px 12px;
+    margin-bottom: 0;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    position: relative;
+    z-index: 1;
+    /* Above particles */
+    cursor: default;
+}
+
+[data-theme="dark"] .announcement-modal .announcement-header {
+    border-bottom-color: rgba(255, 255, 255, 0.15);
 }
 
 .announcement-modal .announcement-icon-wrapper {
-    width: 36px;
-    height: 36px;
-    background: rgba(255, 255, 255, 0.2);
-    border-radius: 10px;
+    /* Remove the background box - just show icon */
+    width: auto;
+    height: auto;
+    background: none;
+    border-radius: 0;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1rem;
-}
-
-.announcement-modal .announcement-title {
-    font-size: 0.95rem;
-    font-weight: 500;
-    opacity: 0.9;
-}
-
-.announcement-modal .announcement-title {
     font-size: 1.1rem;
-    font-weight: 600;
-    opacity: 0.9;
-    letter-spacing: 0.5px;
+    color: #1e293b;
 }
 
-/* Body Section */
+[data-theme="dark"] .announcement-modal .announcement-icon-wrapper {
+    background: none;
+    color: white;
+}
+
+.announcement-modal .announcement-title {
+    font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: 0;
+}
+
+/* Body Section - clean like toast */
 .announcement-modal .announcement-body {
-    padding: 0 24px 24px;
+    padding: 16px 24px 24px;
+    position: relative;
+    z-index: 1;
+    /* Above particles */
+    cursor: default;
 }
 
 .announcement-modal .announcement-text {
-    background: rgba(255, 255, 255, 0.12);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    border-radius: 16px;
-    padding: 20px;
-    font-size: 0.95rem;
-    line-height: 1.7;
+    /* 磨砂玻璃效果 - 降低透明度让粒子能透过来并被模糊 */
+    background: rgba(255, 255, 255, 0.35);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    border-radius: 12px;
+    padding: 16px;
+    font-size: 0.9rem;
+    line-height: 1.6;
     text-align: left;
     max-height: 300px;
     overflow-y: auto;
+    position: relative;
+    z-index: 2;
+    /* Above particles */
+    pointer-events: auto;
+    /* Ensure clicks work */
+    user-select: none;
+    /* Disable text selection */
+    -webkit-user-select: none;
+    cursor: default;
+    /* Force default cursor */
+    /* 柔和阴影增强层次感 */
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04),
+        inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+/* Dark mode: 深色磨砂玻璃 */
+[data-theme="dark"] .announcement-modal .announcement-text {
+    background: rgba(30, 41, 59, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* Force default cursor on ALL text content */
+.announcement-modal .announcement-text,
+.announcement-modal .announcement-text * {
+    cursor: default !important;
+    user-select: none !important;
+    -webkit-user-select: none !important;
+}
+
+/* Link styling in announcement text - override with pointer */
+.announcement-modal .announcement-text a,
+.announcement-modal .announcement-text a * {
+    color: var(--accent-starry, #6b9ece);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer !important;
+}
+
+.announcement-modal .announcement-text a:hover {
+    opacity: 0.8;
+    cursor: pointer !important;
 }
 
 /* Footer Section */
@@ -699,37 +838,21 @@ body {
     padding: 0 24px 24px;
     display: flex;
     justify-content: center;
-}
-
-.announcement-modal .announcement-close {
-    position: absolute;
-    top: 16px;
-    right: 16px;
-    background: rgba(255, 255, 255, 0.15);
-    border: none;
-    color: white;
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s;
-    opacity: 0.7;
-}
-
-.announcement-modal .announcement-close:hover {
-    background: rgba(255, 255, 255, 0.25);
-    opacity: 1;
-    transform: scale(1.1);
+    position: relative;
+    z-index: 1;
+    /* Above particles */
 }
 
 /* "我知道了" Acknowledge Button - Modal */
 .announcement-ack-btn {
-    background: transparent;
-    border: 1px solid rgba(255, 255, 255, 0.4);
-    color: white;
+    /* 磨砂玻璃效果 */
+    background: rgba(255, 255, 255, 0.35);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04),
+        inset 0 1px 0 rgba(255, 255, 255, 0.6);
+    color: #1e293b;
     padding: 10px 24px;
     border-radius: 8px;
     font-size: 0.9rem;
@@ -742,8 +865,28 @@ body {
 }
 
 .announcement-ack-btn:hover {
-    background: rgba(255, 255, 255, 0.15);
-    border-color: rgba(255, 255, 255, 0.6);
+    background: rgba(255, 255, 255, 0.5);
+    border-color: rgba(255, 255, 255, 0.8);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08),
+        inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+/* Dark mode button */
+/* Dark mode button */
+[data-theme="dark"] .announcement-ack-btn {
+    background: rgba(30, 41, 59, 0.35);
+    border-color: rgba(255, 255, 255, 0.15);
+    color: white;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="dark"] .announcement-ack-btn:hover {
+    background: rgba(30, 41, 59, 0.5);
+    border-color: rgba(255, 255, 255, 0.3);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2),
+        inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
 .announcement-ack-btn i {
@@ -769,22 +912,41 @@ body {
     background: rgba(255, 255, 255, 0.3);
 }
 
+/* Toast Backdrop (full page blur) */
+.announcement-toast-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    z-index: 9997;
+    animation: modalOverlayIn 0.3s ease-out;
+}
+
+.announcement-toast-backdrop.closing {
+    animation: modalOverlayOut 0.3s ease-in forwards;
+}
+
 /* Toast Type (Bottom Right) */
 .announcement-toast {
     position: fixed;
     bottom: 24px;
     right: 24px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    padding: 16px 20px;
-    border-radius: 12px;
+    /* Light mode: Frosted glass - same as avatar dropdown */
+    background: rgba(255, 255, 255, 0.70);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    color: #1e293b;
+    padding: 24px 28px;
+    border-radius: 16px;
     max-width: 420px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
+    min-width: 320px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
     z-index: 9998;
     animation: toastSlideIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
     display: flex;
-    align-items: center;
-    gap: 12px;
+    flex-direction: column;
 }
 
 .announcement-toast.closing {
@@ -815,35 +977,81 @@ body {
     }
 }
 
-.announcement-toast .announcement-content {
-    display: flex;
-    align-items: flex-start;
-    gap: 12px;
-}
-
-.announcement-toast .announcement-content i {
-    font-size: 1.2rem;
-    margin-top: 2px;
-}
-
-.announcement-toast .announcement-close {
-    background: rgba(255, 255, 255, 0.2);
-    border: none;
-    color: white;
-    width: 24px;
-    height: 24px;
-    border-radius: 50%;
-    cursor: pointer;
+/* Toast header - icon + title */
+.announcement-toast .toast-header {
     display: flex;
     align-items: center;
-    justify-content: center;
-    transition: all 0.2s;
-    font-size: 0.8rem;
-    flex-shrink: 0;
+    gap: 10px;
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
 }
 
-.announcement-toast .announcement-close:hover {
-    background: rgba(255, 255, 255, 0.3);
+[data-theme="dark"] .announcement-toast .toast-header {
+    border-bottom-color: rgba(255, 255, 255, 0.15);
+}
+
+.announcement-toast .toast-header i {
+    font-size: 1rem;
+}
+
+.announcement-toast .toast-title {
+    font-weight: 600;
+    font-size: 0.95rem;
+}
+
+/* Toast body - content */
+.announcement-toast .toast-body {
+    line-height: 1.6;
+    margin-bottom: 16px;
+    font-size: 0.9rem;
+}
+
+/* Toast links - use accent starry color */
+.announcement-toast a {
+    color: var(--accent-starry, #6b9ece);
+    text-decoration: none;
+}
+
+.announcement-toast a:hover {
+    opacity: 0.8;
+}
+
+/* Toast button - right aligned */
+.announcement-toast .announcement-ack-btn-sm {
+    display: inline-flex;
+    align-items: center;
+    margin-left: auto;
+    background: rgba(0, 0, 0, 0.06);
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    color: #1e293b;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.announcement-toast .announcement-ack-btn-sm:hover {
+    background: rgba(0, 0, 0, 0.1);
+}
+
+/* Dark mode toast button */
+[data-theme="dark"] .announcement-toast .announcement-ack-btn-sm {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+    color: white;
+}
+
+[data-theme="dark"] .announcement-toast .announcement-ack-btn-sm:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+/* Dark mode toast - Frosted glass - same as avatar dropdown */
+[data-theme="dark"] .announcement-toast {
+    background: rgba(30, 41, 59, 0.65);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: white;
 }
 
 /* Banner Common Elements */
@@ -880,62 +1088,6 @@ body {
     transform: translateY(-50%) scale(1.1);
 }
 
-/* ===== Color Themes ===== */
-
-/* Purple (Default) */
-.announcement-color-purple,
-.announcement-banner.color-purple,
-.announcement-modal.color-purple,
-.announcement-toast.color-purple {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    box-shadow: 0 4px 20px rgba(102, 126, 234, 0.3);
-}
-
-/* Blue */
-.announcement-color-blue,
-.announcement-banner.color-blue,
-.announcement-modal.color-blue,
-.announcement-toast.color-blue {
-    background: linear-gradient(135deg, #2193b0 0%, #6dd5ed 100%);
-    box-shadow: 0 4px 20px rgba(33, 147, 176, 0.3);
-}
-
-/* Green */
-.announcement-color-green,
-.announcement-banner.color-green,
-.announcement-modal.color-green,
-.announcement-toast.color-green {
-    background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
-    box-shadow: 0 4px 20px rgba(17, 153, 142, 0.3);
-}
-
-/* Orange */
-.announcement-color-orange,
-.announcement-banner.color-orange,
-.announcement-modal.color-orange,
-.announcement-toast.color-orange {
-    background: linear-gradient(135deg, #f2994a 0%, #f2c94c 100%);
-    box-shadow: 0 4px 20px rgba(242, 153, 74, 0.3);
-}
-
-/* Red */
-.announcement-color-red,
-.announcement-banner.color-red,
-.announcement-modal.color-red,
-.announcement-toast.color-red {
-    background: linear-gradient(135deg, #eb3349 0%, #f45c43 100%);
-    box-shadow: 0 4px 20px rgba(235, 51, 73, 0.3);
-}
-
-/* Dark */
-.announcement-color-dark,
-.announcement-banner.color-dark,
-.announcement-modal.color-dark,
-.announcement-toast.color-dark {
-    background: linear-gradient(135deg, #2c3e50 0%, #4a5568 100%);
-    box-shadow: 0 4px 20px rgba(44, 62, 80, 0.3);
-}
-
 /* Dark mode adjustments */
 [data-theme="dark"] .announcement-banner {
     box-shadow: 0 4px 25px rgba(0, 0, 0, 0.4);
@@ -943,10 +1095,6 @@ body {
 
 [data-theme="dark"] .announcement-modal {
     box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5);
-}
-
-[data-theme="dark"] .announcement-toast {
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
 }
 
 /* ===== Font Size Classes ===== */
@@ -3138,4 +3286,229 @@ body {
 /* Hide inline pin icon - pinned comments are just sorted to top */
 .pinned-icon {
     display: none;
+}
+
+/* ========================================
+   Announcement Decoration Particles
+   完全重写，禁用所有交互
+   ======================================== */
+
+/* 粒子容器 - 绝对禁止所有鼠标交互 */
+.decoration-particles {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    z-index: 0;
+    border-radius: inherit;
+    /* 强制禁用所有交互 */
+    pointer-events: none !important;
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    -moz-user-select: none !important;
+    -ms-user-select: none !important;
+    cursor: default !important;
+}
+
+/* 单个粒子 - 绝对禁止交互 */
+.decoration-particle {
+    position: absolute;
+    display: block;
+    line-height: 1;
+    /* 强制禁用所有交互 */
+    pointer-events: none !important;
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    -moz-user-select: none !important;
+    cursor: default !important;
+    /* JavaScript 控制动画，不使用 CSS animation */
+    transition: none;
+    /* Ensure continuous looping for negative delays to work */
+    animation-iteration-count: infinite;
+    animation-timing-function: linear;
+}
+
+/* 雪花主题 */
+.decoration-particles.snow .decoration-particle {
+    animation-name: particle-fall;
+    animation-duration: 10s;
+}
+
+/* 樱花主题 */
+.decoration-particles.sakura .decoration-particle {
+    animation-name: particle-fall-sway;
+    animation-duration: 12s;
+}
+
+/* 烟花主题 */
+.decoration-particles.fireworks .decoration-particle {
+    animation-name: particle-sparkle;
+    animation-duration: 4s;
+}
+
+/* 爱心主题 */
+.decoration-particles.hearts .decoration-particle {
+    animation-name: particle-float-up;
+    animation-duration: 10s;
+}
+
+/* 落叶主题 */
+.decoration-particles.leaves .decoration-particle {
+    animation-name: particle-fall-spin;
+    animation-duration: 11s;
+}
+
+/* 雨滴主题 */
+.decoration-particles.rain .decoration-particle {
+    animation-name: particle-fall-fast;
+    animation-duration: 3s;
+}
+
+/* 阳光主题 */
+.decoration-particles.sunshine .decoration-particle {
+    animation-name: particle-pulse;
+    animation-duration: 6s;
+}
+
+/* 动画关键帧 */
+@keyframes particle-fall {
+    0% {
+        transform: translateY(-20px) translateX(0) rotate(0deg);
+        opacity: 0;
+    }
+
+    10% {
+        opacity: 0.8;
+    }
+
+    90% {
+        opacity: 0.6;
+    }
+
+    100% {
+        transform: translateY(450px) translateX(var(--drift-x, 0px)) rotate(360deg);
+        opacity: 0;
+    }
+}
+
+@keyframes particle-fall-sway {
+    0% {
+        transform: translateY(-20px) translateX(0) rotate(0deg);
+        opacity: 0;
+    }
+
+    10% {
+        opacity: 0.9;
+        transform: translateY(30px) translateX(5px) rotate(10deg);
+    }
+
+    30% {
+        transform: translateY(150px) translateX(-15px) rotate(45deg);
+        opacity: 0.9;
+    }
+
+    50% {
+        transform: translateY(280px) translateX(10px) rotate(90deg);
+        opacity: 0.8;
+    }
+
+    70% {
+        transform: translateY(400px) translateX(-10px) rotate(135deg);
+        opacity: 0.7;
+    }
+
+    100% {
+        transform: translateY(550px) translateX(var(--drift-x, 20px)) rotate(180deg);
+        opacity: 0;
+    }
+}
+
+@keyframes particle-sparkle {
+
+    0%,
+    100% {
+        opacity: 0;
+        transform: scale(0.5);
+    }
+
+    50% {
+        opacity: 1;
+        transform: scale(1.3);
+    }
+}
+
+@keyframes particle-float-up {
+    0% {
+        transform: translateY(400px) scale(0.5);
+        opacity: 0;
+    }
+
+    10% {
+        opacity: 0.9;
+    }
+
+    90% {
+        opacity: 0.7;
+    }
+
+    100% {
+        transform: translateY(-30px) translateX(var(--drift-x, 0px)) scale(1);
+        opacity: 0;
+    }
+}
+
+@keyframes particle-fall-spin {
+    0% {
+        transform: translateY(-20px) translateX(0) rotate(0deg);
+        opacity: 0;
+    }
+
+    10% {
+        opacity: 0.75;
+    }
+
+    90% {
+        opacity: 0.4;
+    }
+
+    100% {
+        transform: translateY(450px) translateX(var(--drift-x, -15px)) rotate(720deg);
+        opacity: 0;
+    }
+}
+
+@keyframes particle-fall-fast {
+    0% {
+        transform: translateY(-10px);
+        opacity: 0;
+    }
+
+    10% {
+        opacity: 0.7;
+    }
+
+    90% {
+        opacity: 0.5;
+    }
+
+    100% {
+        transform: translateY(450px);
+        opacity: 0;
+    }
+}
+
+@keyframes particle-pulse {
+
+    0%,
+    100% {
+        opacity: 0.4;
+        transform: scale(0.9) rotate(0deg);
+    }
+
+    50% {
+        opacity: 1;
+        transform: scale(1.2) rotate(180deg);
+    }
 }

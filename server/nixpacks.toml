@@ -2,11 +2,11 @@
 providers = ["node"]
 
 [phases.setup]
-nixPkgs = ["chromium", "nss", "freetype", "freetype-dev"]
+aptPkgs = ["chromium", "libnss3", "libatk1.0-0", "libatk-bridge2.0-0", "libcups2", "libgbm1", "libasound2t64", "libpangocairo-1.0-0", "libxss1", "libgtk-3-0", "libxshmfence1", "libglu1-mesa", "fonts-liberation"]
 
 [phases.install]
 cmds = ["npm ci"]
 
 [variables]
-PUPPETEER_EXECUTABLE_PATH = "/nix/store/x205pbkd5xh5g4iv0g58xjla55has3cx-chromium-108.0.5359.94/bin/chromium"
 PUPPETEER_SKIP_CHROMIUM_DOWNLOAD = "true"
+PUPPETEER_EXECUTABLE_PATH = "/usr/bin/chromium"
