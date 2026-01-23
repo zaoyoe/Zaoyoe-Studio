@@ -49,35 +49,26 @@
         // Load config from system_config
         await loadConfig();
 
-        // Render widget
-        render(container);
-
-        // OPTIMIZATION: Check for cached user profile immediately to prevent "logged out" flash
+        // OPTIMIZATION: Check for cached user profile BEFORE rendering to prevent flash
+        let isLoggedIn = false;
         try {
             const cachedProfile = localStorage.getItem('cached_user_profile');
             if (cachedProfile) {
                 const user = JSON.parse(cachedProfile);
-                if (user && (user.id || user.user_id)) { // Support both formats
-                    console.log('[VerifyWidget] Found cached profile, setting immediate state');
-
+                if (user && (user.id || user.user_id)) {
+                    console.log('[VerifyWidget] Found cached profile, rendering as logged in');
                     // Correct ID mapping if needed for consistency
                     if (!user.id && user.user_id) user.id = user.user_id;
-
-                    currentUser = user; // Set temporary user
-
-                    // Update UI elements immediately
-                    const loginPrompt = document.getElementById('verifyLoginPrompt');
-                    const form = document.getElementById('verifyForm');
-                    const balanceEl = document.getElementById('verifyBalance');
-
-                    if (loginPrompt) loginPrompt.style.display = 'none';
-                    if (form) form.style.display = 'block';
-                    if (balanceEl) balanceEl.style.display = 'flex';
+                    currentUser = user;
+                    isLoggedIn = true;
                 }
             }
         } catch (e) {
             console.warn('[VerifyWidget] Error reading cached profile:', e);
         }
+
+        // Render widget with initial auth state
+        render(container, isLoggedIn);
 
         // Setup auth listener (will verify token and update final state)
         setupAuthListener();
@@ -111,7 +102,12 @@
     // =============================================
     // Render Widget
     // =============================================
-    function render(container) {
+    function render(container, isLoggedIn = false) {
+        // Pre-calculate display styles based on initial auth state
+        const loginPromptDisplay = isLoggedIn ? 'none' : 'block';
+        const formDisplay = isLoggedIn ? 'block' : 'none';
+        const balanceDisplay = isLoggedIn ? 'flex' : 'none';
+
         container.innerHTML = `
             <div class="verify-widget">
                 <div class="verify-widget-header">
@@ -129,7 +125,7 @@
                         <i class="fas fa-ticket"></i>
                         剩余: <span id="verifyQuotaValue">--</span>
                     </div>
-                    <div class="verify-balance" id="verifyBalance" style="display: none;">
+                    <div class="verify-balance" id="verifyBalance" style="display: ${balanceDisplay};">
                         <i class="fas fa-coins"></i>
                         <span id="verifyBalanceValue">0</span>
                     </div>
@@ -137,7 +133,7 @@
 
                 <div id="verifyContent">
                     <!-- Content will be dynamically loaded based on auth state -->
-                    <div class="verify-login-prompt" id="verifyLoginPrompt">
+                    <div class="verify-login-prompt" id="verifyLoginPrompt" style="display: ${loginPromptDisplay};">
                         <p>登录后即可使用验证服务</p>
                         <button class="verify-login-btn" onclick="window.toggleLoginModal && window.toggleLoginModal()">
                             <i class="fas fa-sign-in-alt"></i>
@@ -145,7 +141,7 @@
                         </button>
                     </div>
 
-                    <div id="verifyForm" style="display: none;">
+                    <div id="verifyForm" style="display: ${formDisplay};">
                         <div class="verify-input-area">
                             <textarea 
                                 class="verify-textarea" 
