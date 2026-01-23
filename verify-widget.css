@@ -411,7 +411,8 @@
     min-height: 120px;
     padding: 14px 16px;
     background: rgba(0, 0, 0, 0.3);
-    border: 1.5px solid rgba(155, 93, 229, 0.3);
+    /* Starry Blue Border */
+    border: 1.5px solid rgba(107, 158, 206, 0.3);
     border-radius: 12px;
     color: #fff;
     font-size: 0.9rem;
@@ -424,9 +425,9 @@
 
 .verify-textarea:focus {
     outline: none;
-    border-color: rgba(155, 93, 229, 0.7);
+    border-color: rgba(107, 158, 206, 0.7);
     background: rgba(0, 0, 0, 0.5);
-    box-shadow: 0 0 0 3px rgba(155, 93, 229, 0.15);
+    box-shadow: 0 0 0 3px rgba(107, 158, 206, 0.15);
 }
 
 .verify-textarea::placeholder {
