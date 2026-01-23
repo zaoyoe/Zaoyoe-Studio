@@ -250,7 +250,23 @@
         </div>
 
         <!-- Verify Widget -->
-        <div id="verify-widget-container"></div>
+        <div id="verify-widget-container">
+            <!-- PRE-RENDER: Synchronous check of localStorage to prevent flash -->
+            <script>
+                (function () {
+                    try {
+                        const cached = localStorage.getItem('cached_user_profile');
+                        if (cached) {
+                            const user = JSON.parse(cached);
+                            if (user && (user.id || user.user_id)) {
+                                // User is logged in - show form, hide login prompt
+                                document.write('<style>#verifyLoginPrompt{display:none!important}#verifyForm{display:block!important}#verifyBalance{display:flex!important}</style>');
+                            }
+                        }
+                    } catch (e) { }
+                })();
+            </script>
+        </div>
 
         <!-- Info Cards removed as requested -->
 
