@@ -30,13 +30,22 @@
 .verify-widget-icon {
     width: 48px;
     height: 48px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    border-radius: 14px;
+    /* Premium Violet-Blue Gradient */
+    background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+    border-radius: 12px;
     display: flex;
     align-items: center;
     justify-content: center;
     color: #fff;
-    font-size: 1.4rem;
+    box-shadow: 0 4px 10px rgba(99, 102, 241, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    position: relative;
+}
+
+.verify-widget-icon svg {
+    width: 24px;
+    height: 24px;
+    z-index: 1;
+    filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.1));
 }
 
 .verify-widget-title {
