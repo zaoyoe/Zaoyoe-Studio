@@ -291,6 +291,20 @@
             if (form) form.style.display = 'block';
             if (balanceEl) balanceEl.style.display = 'flex';
 
+            // Sync cache (Robustness fix)
+            try {
+                // Ensure we have a profile-like object to cache (user object from Supabase is enough for ID check)
+                const cacheData = {
+                    id: user.id,
+                    email: user.email,
+                    // If we have metadata, use it
+                    user_metadata: user.user_metadata
+                };
+                localStorage.setItem('cached_user_profile', JSON.stringify(cacheData));
+            } catch (e) {
+                console.warn('[VerifyWidget] Failed to update cache:', e);
+            }
+
             // Load user balance
             await loadUserBalance();
         } else {
@@ -298,6 +312,9 @@
             if (loginPrompt) loginPrompt.style.display = 'block';
             if (form) form.style.display = 'none';
             if (balanceEl) balanceEl.style.display = 'none';
+
+            // Clear cache
+            localStorage.removeItem('cached_user_profile');
         }
     }
 

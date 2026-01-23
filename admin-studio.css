@@ -23,7 +23,8 @@ body {
     background: transparent;
 }
 
-.studio-header .back-link {
+.studio-header .back-link,
+.studio-header .header-left {
     justify-self: start;
 }
 
@@ -413,9 +414,13 @@ body {
    MAIN LAYOUT
    ======================================== */
 .studio-main {
-    max-width: 100%;
+    max-width: 1200px;
+    /* Changed from 100% to force centering */
     margin: 0 auto;
-    padding: 20px 5vw 60px;
+    padding: 20px 24px 60px;
+    /* Fixed padding instead of vw */
+    width: 100%;
+    box-sizing: border-box;
 }
 
 /* ========================================
@@ -427,6 +432,9 @@ body {
     border-radius: 16px;
     padding: 28px;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+    width: 100%;
+    /* Fill parent */
+    box-sizing: border-box;
 }
 
 .section-title {
@@ -1825,7 +1833,11 @@ body {
     }
 
     .studio-main {
-        padding: 16px 5vw 40px;
+        padding: 16px 16px 40px;
+        /* Fixed padding */
+        margin: 0 auto;
+        width: 100%;
+        max-width: 100%;
     }
 
     .glass-panel {

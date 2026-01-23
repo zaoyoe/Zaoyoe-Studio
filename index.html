@@ -295,8 +295,9 @@
             </a>
 
             <!-- Gemini Verification Service (2x1) - Wide -->
-            <a href="verify.html" class="glass-box box-wide">
-                <i class="fas fa-shield-check icon-large" style="color: #667eea;"></i>
+            <!-- Gemini Verification Service (2x1) - Wide -->
+            <a href="verify.html" class="glass-box box-wide box-gemini-verify">
+                <i class="fas fa-robot icon-large" style="color: #667eea;"></i>
                 <div class="box-label">Gemini 验证</div>
             </a>
 
@@ -311,13 +312,13 @@
                 <i class="fa-regular fa-comment-dots icon-large" style="color: #f59e0b;"></i>
                 <div class="box-label">留言板</div>
             </div>
-            <!-- Afdian Support Link (Styled Footer) -->
-            <div class="home-footer"
-                style="grid-column: 1 / -1; width: 100%; text-align: center; margin-top: 80px; padding-top: 60px; border-top: 1px solid rgba(255, 255, 255, 0.1); opacity: 0.6;">
-                <span style="font-size: 13px; color: rgba(255, 255, 255, 0.8);">❤️ 支持我们: <a
-                        href="https://afdian.com/a/zaoyoe" target="_blank"
-                        style="color: inherit; text-decoration: none; border-bottom: 1px dotted rgba(255, 255, 255, 0.5); padding-bottom: 2px; transition: all 0.3s;">afdian.com/a/zaoyoe</a></span>
-            </div>
+        </div>
+        <!-- Afdian Support Link (Styled Footer) -->
+        <div class="home-footer"
+            style="position: absolute; bottom: 0; width: 100%; text-align: center; padding-top: 30px; padding-bottom: 30px; border-top: 1px solid rgba(255, 255, 255, 0.1); opacity: 0.6;">
+            <span style="font-size: 13px; color: rgba(255, 255, 255, 0.8);">支持我们: <a href="https://afdian.com/a/zaoyoe"
+                    target="_blank"
+                    style="color: inherit; text-decoration: none; transition: all 0.3s;">afdian.com/a/zaoyoe</a></span>
         </div>
     </div><!-- End of main-wrapper -->
 
@@ -1086,8 +1087,30 @@
         <script src="prevent-zoom.js?v=20251130" defer></script>
         <script src="script.js?v=FIX_UI_OPTIMIZATIONS_V6" defer></script>
         <!-- Commercial Points System (loaded at end of body for reliability) -->
-        <script src="js/services/PointsService.js?v=2"></script>
-        <script src="js/components/WalletModal.js?v=2"></script>
+        <script src="js/services/PointsService.js?v=3"></script>
+        <script src="js/components/WalletModal.js?v=3"></script>
+
+        <!-- Chat Widget -->
+        <link rel="stylesheet" href="css/chat-widget.css">
+        <script src="js/components/ChatWidget.js?v=1"></script>
+        <script>
+            document.addEventListener('DOMContentLoaded', () => {
+                // Initialize Chat Widget after DOM is ready
+                // Assuming supabaseClient is available globally from inject-auth.js or similar
+                // If not, we might need to wait for it.
+                // inject-auth.js usually exposes window.supabaseClient
+
+                // Simple wait mechanism in case auth script is slow
+                const initChat = () => {
+                    if (window.supabaseClient) {
+                        new ChatWidget();
+                    } else {
+                        setTimeout(initChat, 500);
+                    }
+                };
+                initChat();
+            });
+        </script>
 </body>
 
 </html>

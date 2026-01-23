@@ -55,6 +55,8 @@ body {
     flex-direction: column;
     justify-content: center;
     align-items: center;
+    padding-bottom: 120px;
+    /* Space for absolute footer */
     page-break-after: always;
     /* Ensure proper print breaking if needed, but mostly for structure */
     width: 100%;
@@ -6615,4 +6617,9 @@ body {
 /* blob使用fixed相对于viewport */
 .background-blobs .blob {
     position: fixed !important;
+}
+
+/* Unified text shadow for all box labels */
+.box-label {
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3) !important;
 }

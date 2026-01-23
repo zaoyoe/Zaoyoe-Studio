@@ -267,9 +267,56 @@
 
     .admin-main-content {
         margin-left: 0;
+        width: 100%;
+        /* Reset from calc(100vw - 56px) */
+        max-width: 100%;
     }
 
-    /* Mobile menu toggle would be needed */
+    /* Mobile Menu Button - Visible on Mobile */
+    .mobile-menu-btn {
+        display: flex;
+    }
+
+    /* Sidebar Overlay - Visible when sidebar open */
+    .sidebar-overlay.active {
+        opacity: 1;
+        visibility: visible;
+    }
+}
+
+/* Mobile Menu Button - Hidden on Desktop by default */
+.mobile-menu-btn {
+    display: none;
+    width: 40px;
+    height: 40px;
+    border: none;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    color: var(--text-primary, #e2e8f0);
+    font-size: 18px;
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+}
+
+.mobile-menu-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+/* Sidebar Overlay - For closing sidebar on mobile */
+.sidebar-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 999;
+    /* Below sidebar (1000) */
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s, visibility 0.3s;
 }
 
 /* ============================================

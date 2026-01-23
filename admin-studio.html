@@ -18,6 +18,9 @@
     <link rel="stylesheet" href="prompts-poetry.css">
     <link rel="stylesheet" href="admin-studio.css?v=7">
     <link rel="stylesheet" href="admin-sidebar.css?v=7">
+    <link rel="stylesheet" href="css/admin-chat.css">
+
+
     <!-- Cropper.js CSS -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.css">
     <!-- Flatpickr CSS (Base) -->
@@ -59,6 +62,11 @@
                     <i class="fas fa-comments"></i>
                     <span>评论管理</span>
                 </div>
+                <!-- Chat Admin Link -->
+                <div class="sidebar-item" data-module="chat" onclick="switchModule('chat')">
+                    <i class="fas fa-comment-dots"></i>
+                    <span>客服消息</span>
+                </div>
                 <div class="sidebar-divider"></div>
                 <div class="sidebar-item" data-module="users" onclick="switchModule('users')">
                     <i class="fas fa-users-cog"></i>
@@ -84,6 +92,9 @@
             </div>
         </aside>
 
+        <!-- Sidebar Overlay (for closing on mobile) -->
+        <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeMobileSidebar()"></div>
+
         <!-- Main Content Area -->
         <div class="admin-main-content">
             <!-- Ambient Light Canvas -->
@@ -93,10 +104,12 @@
 
             <!-- Header -->
             <header class="studio-header">
-                <!-- Hidden placeholder to maintain centering -->
-                <div class="back-link" style="visibility: hidden;">
-                    <i class="fas fa-arrow-left"></i>
-                    <span>Back to Gallery</span>
+                <!-- Left Column (balances right for centering) -->
+                <div class="header-left">
+                    <!-- Mobile Menu Toggle (visible only on mobile) -->
+                    <button class="mobile-menu-btn" id="mobileMenuBtn" onclick="toggleMobileSidebar()">
+                        <i class="fas fa-bars"></i>
+                    </button>
                 </div>
                 <h1 class="studio-title">
                     <i class="fas fa-palette"></i>
@@ -109,6 +122,13 @@
                     </div>
                 </div>
             </header>
+
+            <!-- ========== CHAT MODULE ========== -->
+            <div id="module-chat" class="module-container">
+                <div id="chat-admin-container" style="height: calc(100vh - 80px);">
+                    <!-- Chat Interface injected by JS -->
+                </div>
+            </div>
 
             <!-- ========== GALLERY MODULE ========== -->
             <div id="module-gallery" class="module-container active">
@@ -874,7 +894,8 @@
                                         <label class="type-option">
                                             <input type="radio" name="announcementType" value="modal">
                                             <div class="type-card"><i
-                                                    class="fas fa-window-maximize"></i><span>中央弹窗</span></div>
+                                                    class="fas fa-window-maximize"></i><span>中央弹窗</span>
+                                            </div>
                                         </label>
                                         <label class="type-option">
                                             <input type="radio" name="announcementType" value="toast">
@@ -2122,7 +2143,8 @@
                                 <div class="date-range-menu" id="dateRangeMenu">
                                     <div class="date-range-presets">
                                         <button class="preset-btn active" data-range="7"
-                                            onclick="selectPresetRange(7)">最近 7 天</button>
+                                            onclick="selectPresetRange(7)">最近 7
+                                            天</button>
                                         <button class="preset-btn" data-range="30" onclick="selectPresetRange(30)">最近 30
                                             天</button>
                                         <button class="preset-btn" data-range="90" onclick="selectPresetRange(90)">最近 90
@@ -2573,6 +2595,21 @@
         const SUPABASE_KEY = 'sb_publishable_lwkiF-sQ80z8e9oMcejFPQ_j7oezjcF';
         window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+        // Mobile Sidebar Toggle Functions
+        function toggleMobileSidebar() {
+            const sidebar = document.querySelector('.admin-sidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+            sidebar.classList.toggle('open');
+            overlay.classList.toggle('active');
+        }
+
+        function closeMobileSidebar() {
+            const sidebar = document.querySelector('.admin-sidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+            sidebar.classList.remove('open');
+            overlay.classList.remove('active');
+        }
+
         // Module switching function
         function switchModule(moduleName) {
             // Skip disabled modules
@@ -2597,6 +2634,9 @@
             if (targetModule) {
                 targetModule.classList.add('active');
             }
+
+            // Close mobile sidebar after selection
+            closeMobileSidebar();
 
             // Module-specific initialization
             if (moduleName === 'comments' && typeof initCommentsModule === 'function') {
@@ -2627,5 +2667,41 @@
     <script src="admin-config.js"></script>
     <script src="admin-studio.js"></script>
 </body>
+
+<!-- Admin Chat Script -->
+<script src="js/admin-chat.js"></script>
+<script>
+    // Module Switching Logic (Enhanced)
+    const originalSwitchModule = window.switchModule;
+    window.switchModule = function (moduleName) {
+        // Hide all modules
+        document.querySelectorAll('.module-container').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.sidebar-item').forEach(el => el.classList.remove('active'));
+
+        // Show target
+        const target = document.getElementById(`module-${moduleName}`);
+        if (target) {
+            target.classList.add('active');
+        } else {
+            // Try fallback to visibility hidden toggling if original logic used that (less likely for this app based on module-container class)
+        }
+
+        // Highlight sidebar
+        const sidebarItem = document.querySelector(`.sidebar-item[data-module="${moduleName}"]`);
+        if (sidebarItem) sidebarItem.classList.add('active');
+
+        // Lazy init Chat
+        if (moduleName === 'chat') {
+            if (!window.adminChatInstance) {
+                window.adminChatInstance = new AdminChat();
+            }
+        }
+
+        // Call original if it exists and handles other things (like analytics)
+        if (typeof originalSwitchModule === 'function' && originalSwitchModule.name !== 'window.switchModule') {
+            originalSwitchModule(moduleName);
+        }
+    };
+</script>
 
 </html>
