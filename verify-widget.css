@@ -146,9 +146,9 @@
 
 .verify-input:focus {
     outline: none;
-    border-color: rgba(107, 158, 206, 0.7);
+    border-color: rgba(107, 158, 206, 0.7) !important;
     background: rgba(0, 0, 0, 0.5);
-    box-shadow: 0 0 0 3px rgba(107, 158, 206, 0.15);
+    box-shadow: 0 0 0 3px rgba(107, 158, 206, 0.15) !important;
 }
 
 .verify-input::placeholder {
@@ -425,9 +425,9 @@
 
 .verify-textarea:focus {
     outline: none;
-    border-color: rgba(107, 158, 206, 0.7);
+    border-color: rgba(107, 158, 206, 0.7) !important;
     background: rgba(0, 0, 0, 0.5);
-    box-shadow: 0 0 0 3px rgba(107, 158, 206, 0.15);
+    box-shadow: 0 0 0 3px rgba(107, 158, 206, 0.15) !important;
 }
 
 .verify-textarea::placeholder {
