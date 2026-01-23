@@ -52,7 +52,34 @@
         // Render widget
         render(container);
 
-        // Setup auth listener
+        // OPTIMIZATION: Check for cached user profile immediately to prevent "logged out" flash
+        try {
+            const cachedProfile = localStorage.getItem('cached_user_profile');
+            if (cachedProfile) {
+                const user = JSON.parse(cachedProfile);
+                if (user && (user.id || user.user_id)) { // Support both formats
+                    console.log('[VerifyWidget] Found cached profile, setting immediate state');
+
+                    // Correct ID mapping if needed for consistency
+                    if (!user.id && user.user_id) user.id = user.user_id;
+
+                    currentUser = user; // Set temporary user
+
+                    // Update UI elements immediately
+                    const loginPrompt = document.getElementById('verifyLoginPrompt');
+                    const form = document.getElementById('verifyForm');
+                    const balanceEl = document.getElementById('verifyBalance');
+
+                    if (loginPrompt) loginPrompt.style.display = 'none';
+                    if (form) form.style.display = 'block';
+                    if (balanceEl) balanceEl.style.display = 'flex';
+                }
+            }
+        } catch (e) {
+            console.warn('[VerifyWidget] Error reading cached profile:', e);
+        }
+
+        // Setup auth listener (will verify token and update final state)
         setupAuthListener();
     }
 
