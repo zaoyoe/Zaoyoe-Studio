@@ -156,8 +156,15 @@ app.get('/api/verify-stream', async (req, res) => {
             }
         };
 
+        // Create AbortController for cancellation
+        const controller = new AbortController();
+        req.on('close', () => {
+            console.log('[Verify] Client connection closed, aborting verification...');
+            controller.abort();
+        });
+
         // Run Puppeteer automation with progress callback (pass array of IDs)
-        const result = await verifyWithPuppeteer(batchApiKey, verificationIds, onProgress);
+        const result = await verifyWithPuppeteer(batchApiKey, verificationIds, onProgress, controller.signal);
 
         // Log result summary
         console.log(`[Verify] Batch result: ${result.success ? 'Success' : 'Failed'}, Message: ${result.message}`);

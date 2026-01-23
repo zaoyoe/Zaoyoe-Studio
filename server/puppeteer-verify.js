@@ -16,22 +16,54 @@ const MOCK_MODE = process.env.MOCK_VERIFY === 'true';
  * Verify using Puppeteer automation on batch.1key.me
  * @param {string} apiKey - The 1key API key
  * @param {string|string[]} verificationIds - Single ID or array of verification IDs to process
- * @param {function} onProgress - Callback for progress updates (status, message, pageContent, metadata)
+ * @param {function} onProgress - Callback for progress updates
+ * @param {AbortSignal} abortSignal - Signal to abort the operation
  * @returns {Promise<{success: boolean, message: string, remainingQuota?: number, results?: Array}>}
  */
-async function verifyWithPuppeteer(apiKey, verificationIds, onProgress = () => { }) {
+async function verifyWithPuppeteer(apiKey, verificationIds, onProgress = () => { }, abortSignal = null) {
     // Normalize to array
     const ids = Array.isArray(verificationIds) ? verificationIds : [verificationIds];
     const batchSize = ids.length;
+
+    // Check for abort before starting
+    if (abortSignal && abortSignal.aborted) {
+        return {
+            success: false,
+            message: '验证已取消',
+            stats: { success: 0, failed: 0, total: batchSize }
+        };
+    }
+
     // Mock mode for local testing
     if (MOCK_MODE) {
         onProgress('mock', `🧪 模拟模式启动 (${batchSize} 个链接)`);
         console.log('[Puppeteer] 🧪 Running in MOCK MODE with', batchSize, 'IDs');
 
         await new Promise(r => setTimeout(r, 1000));
+
+        // Check for abort in mock mode
+        if (abortSignal && abortSignal.aborted) {
+            onProgress('error', '验证已取消');
+            return {
+                success: false,
+                message: '验证已取消',
+                stats: { success: 0, failed: 0, total: batchSize }
+            };
+        }
+
         onProgress('mock', '正在模拟验证过程...');
 
         await new Promise(r => setTimeout(r, 2000));
+
+        // Check for abort again
+        if (abortSignal && abortSignal.aborted) {
+            onProgress('error', '验证已取消');
+            return {
+                success: false,
+                message: '验证已取消',
+                stats: { success: 0, failed: 0, total: batchSize }
+            };
+        }
 
         // Generate mock results for each ID
         const mockResults = ids.map((id, i) => ({
@@ -92,6 +124,10 @@ async function verifyWithPuppeteer(apiKey, verificationIds, onProgress = () => {
         }
 
         browser = await puppeteer.launch(launchOptions);
+
+        // Check for abort
+        if (abortSignal && abortSignal.aborted) throw new Error('ABORTED');
+
         const page = await browser.newPage();
 
         await page.setViewport({ width: 1280, height: 800 });
@@ -100,6 +136,9 @@ async function verifyWithPuppeteer(apiKey, verificationIds, onProgress = () => {
         onProgress('navigating', '🌐 正在连接 batch.1key.me...');
         console.log('[Puppeteer] Navigating to batch.1key.me...');
         await page.goto(BATCH_1KEY_URL, { waitUntil: 'networkidle2', timeout: 30000 });
+
+        // Check for abort
+        if (abortSignal && abortSignal.aborted) throw new Error('ABORTED');
 
         await page.waitForSelector('#programSelect', { timeout: 10000 });
 
@@ -140,6 +179,9 @@ async function verifyWithPuppeteer(apiKey, verificationIds, onProgress = () => {
             }, apiKey);
             await page.reload({ waitUntil: 'networkidle2' });
         }
+
+        // Check for abort
+        if (abortSignal && abortSignal.aborted) throw new Error('ABORTED');
 
         // Verify API key is set (look for quota display like "Quota: 34")
         await new Promise(r => setTimeout(r, 1500));
@@ -192,6 +234,9 @@ async function verifyWithPuppeteer(apiKey, verificationIds, onProgress = () => {
         const textareaSelector = 'textarea';
         await page.waitForSelector(textareaSelector, { timeout: 5000 });
 
+        // Check for abort
+        if (abortSignal && abortSignal.aborted) throw new Error('ABORTED');
+
         // Use native Puppeteer input simulation - MOST reliable for all frameworks
         // Step 1: Click to focus
         // Step 2: Select all (Ctrl+A / Cmd+A)
@@ -220,6 +265,9 @@ async function verifyWithPuppeteer(apiKey, verificationIds, onProgress = () => {
         // Type each line separately with explicit Enter key between them
         console.log('[Puppeteer] Typing', ids.length, 'IDs line by line...');
         for (let i = 0; i < ids.length; i++) {
+            // Check for abort during typing
+            if (abortSignal && abortSignal.aborted) throw new Error('ABORTED');
+
             const id = ids[i];
             console.log(`[Puppeteer] Typing ID[${i}]: "${id.substring(0, 80)}..."`);
             await page.keyboard.type(id, { delay: 1 }); // Fast typing with 1ms delay
@@ -252,6 +300,9 @@ async function verifyWithPuppeteer(apiKey, verificationIds, onProgress = () => {
 
         await new Promise(r => setTimeout(r, 500));
 
+        // Check for abort before clicking start
+        if (abortSignal && abortSignal.aborted) throw new Error('ABORTED');
+
         onProgress('starting', '▶️ 正在开始验证...');
         console.log('[Puppeteer] Clicking Start Verification...');
 
@@ -276,10 +327,12 @@ async function verifyWithPuppeteer(apiKey, verificationIds, onProgress = () => {
         console.log(`[Puppeteer] Waiting for batch verification results (${batchSize} IDs)...`);
 
         // Monitor for status changes with progress updates
-        const result = await waitForVerificationResult(page, ids, batchSize, onProgress);
+        const result = await waitForVerificationResult(page, ids, batchSize, onProgress, abortSignal);
 
         if (result.success) {
             onProgress('complete', `✅ ${result.message}`);
+        } else if (result.cancelled) {
+            onProgress('error', `🛑 ${result.message}`);
         } else {
             onProgress('failed', `❌ ${result.message}`);
         }
@@ -287,6 +340,16 @@ async function verifyWithPuppeteer(apiKey, verificationIds, onProgress = () => {
         return result;
 
     } catch (error) {
+        if (error.message === 'ABORTED') {
+            console.log('[Puppeteer] Process aborted by signal');
+            return {
+                success: false,
+                message: '验证已取消',
+                cancelled: true,
+                stats: { success: 0, failed: 0, total: batchSize }
+            };
+        }
+
         console.error('[Puppeteer] Error:', error.message);
         onProgress('error', `❌ 错误: ${error.message}`);
         return {
@@ -307,14 +370,69 @@ async function verifyWithPuppeteer(apiKey, verificationIds, onProgress = () => {
  * @param {string[]} ids - Array of verification IDs
  * @param {number} batchSize - Total number of IDs
  * @param {function} onProgress - Progress callback
+ * @param {AbortSignal} abortSignal - Signal to monitor for cancellation
  */
-async function waitForVerificationResult(page, ids, batchSize, onProgress) {
+async function waitForVerificationResult(page, ids, batchSize, onProgress, abortSignal) {
     const startTime = Date.now();
     let checkCount = 0;
     let lastSuccessCount = 0;
     let lastFailedCount = 0;
 
     while (Date.now() - startTime < VERIFICATION_TIMEOUT) {
+        // Check for cancellation
+        if (abortSignal && abortSignal.aborted) {
+            console.log('[Puppeteer] Abort signal received during wait loop. Attempting to click Cancel on page...');
+            onProgress('cancelling', '正在尝试取消远程任务...');
+
+            // Try to find and click any "Cancel" or "Stop" buttons on the page
+            try {
+                const cancelClicked = await page.evaluate(() => {
+                    // Try to find buttons with "Cancel" or "Stop" text
+                    const buttons = Array.from(document.querySelectorAll('button'));
+                    const cancelBtns = buttons.filter(btn => {
+                        const text = btn.textContent.toLowerCase();
+                        return text.includes('cancel') ||
+                            text.includes('stop') ||
+                            text.includes('abort') ||
+                            text.includes('取消') ||
+                            // Also check for red buttons which are often cancel/delete buttons
+                            window.getComputedStyle(btn).backgroundColor.includes('rgb(239, 68, 68)') ||
+                            window.getComputedStyle(btn).backgroundColor.includes('rgb(220, 38, 38)');
+                    });
+
+                    if (cancelBtns.length > 0) {
+                        console.log(`Found ${cancelBtns.length} potential cancel buttons`);
+                        // Click the most likely one (e.g. visible one)
+                        for (const btn of cancelBtns) {
+                            if (btn.offsetParent !== null) { // Check visibility
+                                btn.click();
+                                return true;
+                            }
+                        }
+                    }
+                    return false;
+                });
+
+                if (cancelClicked) {
+                    console.log('[Puppeteer] Cancel button clicked on page');
+                    onProgress('cancelling', '已点击页面取消按钮');
+                    // Wait a moment for the click to register
+                    await new Promise(r => setTimeout(r, 1000));
+                } else {
+                    console.log('[Puppeteer] No explicit cancel button found');
+                }
+            } catch (e) {
+                console.warn('[Puppeteer] Error while trying to click cancel:', e);
+            }
+
+            return {
+                success: false,
+                message: '验证已取消',
+                cancelled: true,
+                stats: { success: lastSuccessCount, failed: lastFailedCount, total: batchSize }
+            };
+        }
+
         await new Promise(r => setTimeout(r, 2000)); // Check every 2 seconds
         checkCount++;
 
