@@ -52,9 +52,14 @@ body {
 .main-wrapper {
     min-height: 100vh;
     display: flex;
+    flex-direction: column;
     justify-content: center;
     align-items: center;
+    page-break-after: always;
+    /* Ensure proper print breaking if needed, but mostly for structure */
     width: 100%;
+    gap: 0;
+    /* Control gap via margins explicitly */
 }
 
 /* 移动端优化 */
