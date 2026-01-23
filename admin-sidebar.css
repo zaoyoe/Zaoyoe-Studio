@@ -132,7 +132,8 @@
     transition: opacity 0.2s ease;
 }
 
-.admin-sidebar:hover .sidebar-brand-text {
+.admin-sidebar:hover .sidebar-brand-text,
+.admin-sidebar.open .sidebar-brand-text {
     opacity: 1;
 }
 
@@ -195,7 +196,8 @@
     transition: opacity 0.2s ease;
 }
 
-.admin-sidebar:hover .sidebar-item span {
+.admin-sidebar:hover .sidebar-item span,
+.admin-sidebar.open .sidebar-item span {
     opacity: 1;
 }
 
@@ -225,7 +227,8 @@
     transition: opacity 0.2s ease;
 }
 
-.admin-sidebar:hover .sidebar-item .coming-soon {
+.admin-sidebar:hover .sidebar-item .coming-soon,
+.admin-sidebar.open .sidebar-item .coming-soon {
     opacity: 1;
 }
 
@@ -281,7 +284,8 @@
     width: 100vw;
     height: 100vh;
     background: rgba(0, 0, 0, 0.5);
-    z-index: 999;
+    z-index: 9998;
+    /* Between sidebar (10000) and chat (9999) when active */
     opacity: 0;
     visibility: hidden;
     transition: opacity 0.3s, visibility 0.3s;
@@ -297,6 +301,8 @@
     .admin-sidebar.open {
         width: 220px;
         transform: translateX(0);
+        z-index: 10000;
+        /* Higher than chat container (9999) */
     }
 
     .admin-main-content {

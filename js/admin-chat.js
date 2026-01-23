@@ -24,6 +24,12 @@ class AdminChat {
         container.innerHTML = `
             <div class="chat-container" id="chatMainContainer">
                 <div class="chat-sidebar" id="chatSidebar">
+                    <div class="chat-sidebar-header">
+                        <button class="mobile-menu-btn chat-menu-btn" onclick="toggleMobileSidebar()">
+                            <i class="fas fa-bars"></i>
+                        </button>
+                        <span class="chat-sidebar-title">客服消息</span>
+                    </div>
                     <div class="chat-search">
                         <input type="text" id="sessionSearch" placeholder="搜索会话...">
                     </div>
