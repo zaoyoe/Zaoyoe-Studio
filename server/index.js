@@ -318,6 +318,143 @@ app.post('/api/verify', async (req, res) => {
     }
 });
 
+// =============================================
+// Afdian (爱发电) Webhook Endpoint
+// =============================================
+const crypto = require('crypto');
+
+// Price to points mapping
+const AFDIAN_PRICE_TO_POINTS = {
+    5: 5,
+    20: 20,
+    50: 50
+};
+
+// POST /api/afdian/webhook
+app.post('/api/afdian/webhook', async (req, res) => {
+    console.log('[Afdian] Webhook received');
+
+    try {
+        const { ec, em, data } = req.body;
+
+        // Log raw request for debugging
+        console.log('[Afdian] Raw payload:', JSON.stringify(req.body).substring(0, 500));
+
+        // Verify request is from Afdian (basic check)
+        if (ec !== 200) {
+            console.warn('[Afdian] Non-200 ec code:', ec, em);
+            return res.json({ ec: 200, em: '' }); // Still return 200 to prevent retries
+        }
+
+        // Verify signature if token is configured
+        const afdianToken = process.env.AFDIAN_TOKEN;
+        const afdianUserId = process.env.AFDIAN_USER_ID;
+
+        if (afdianToken && req.body.sign) {
+            // Afdian signature: md5(token + params_json)
+            const paramsJson = JSON.stringify(req.body.data || {});
+            const expectedSign = crypto.createHash('md5')
+                .update(afdianToken + paramsJson)
+                .digest('hex');
+
+            if (req.body.sign !== expectedSign) {
+                console.warn('[Afdian] Signature mismatch');
+                // Continue anyway for now, log for debugging
+            }
+        }
+
+        // Handle order notification
+        if (data?.type === 'order' && data?.order) {
+            const order = data.order;
+            const orderNo = order.out_trade_no;
+            const amount = parseFloat(order.total_amount || 0);
+            const planId = order.plan_id;
+            const afdianUid = order.user_id;
+            const remark = order.remark || '';
+            const status = order.status; // 2 = success
+
+            console.log(`[Afdian] Order: ${orderNo}, Amount: ${amount}, Status: ${status}`);
+
+            // Only process successful orders
+            if (status !== 2) {
+                console.log('[Afdian] Order not successful, skipping');
+                return res.json({ ec: 200, em: '' });
+            }
+
+            // Map amount to points
+            const roundedAmount = Math.round(amount);
+            const points = AFDIAN_PRICE_TO_POINTS[roundedAmount];
+
+            if (!points) {
+                console.warn(`[Afdian] Unknown amount: ${amount}, no points mapping`);
+                // Still create order but with 0 points, admin can fix manually
+            }
+
+            // Create order and generate code
+            const { data: codeResult, error: createError } = await supabase.rpc('fn_create_afdian_order', {
+                p_order_no: orderNo,
+                p_afdian_user_id: afdianUid,
+                p_plan_id: planId,
+                p_amount: amount,
+                p_points: points || 0,
+                p_remark: remark,
+                p_payload: req.body
+            });
+
+            if (createError) {
+                console.error('[Afdian] Failed to create order:', createError);
+            } else {
+                console.log(`[Afdian] Order created successfully, code: ${codeResult}`);
+            }
+        }
+
+        // Always respond with success to prevent retries
+        return res.json({ ec: 200, em: '' });
+
+    } catch (error) {
+        console.error('[Afdian] Webhook error:', error);
+        // Still return 200 to prevent infinite retries
+        return res.json({ ec: 200, em: 'internal error' });
+    }
+});
+
+// GET /api/afdian/query - Query redemption code by order number
+app.get('/api/afdian/query', async (req, res) => {
+    const { order_no } = req.query;
+
+    if (!order_no) {
+        return res.status(400).json({ success: false, message: '请输入订单号' });
+    }
+
+    try {
+        const { data, error } = await supabase.rpc('fn_query_afdian_code', {
+            p_order_no: order_no
+        });
+
+        if (error) {
+            console.error('[Afdian] Query error:', error);
+            return res.status(500).json({ success: false, message: '查询失败' });
+        }
+
+        if (!data || data.length === 0) {
+            return res.json({ success: false, message: '未找到该订单' });
+        }
+
+        const orderInfo = data[0];
+        return res.json({
+            success: true,
+            code: orderInfo.code,
+            points: orderInfo.points,
+            is_redeemed: orderInfo.is_redeemed,
+            created_at: orderInfo.created_at
+        });
+
+    } catch (error) {
+        console.error('[Afdian] Query exception:', error);
+        return res.status(500).json({ success: false, message: '服务暂时不可用' });
+    }
+});
+
 app.listen(PORT, () => {
     console.log(`🚀 Verify server running on port ${PORT}`);
 });
