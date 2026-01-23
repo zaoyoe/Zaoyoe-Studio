@@ -253,37 +253,6 @@
 
 /* Note: Light mode handled by CSS variables defined at top */
 
-/* Responsive */
-@media (max-width: 768px) {
-    .admin-sidebar {
-        width: 0;
-        transform: translateX(-100%);
-    }
-
-    .admin-sidebar.open {
-        width: 220px;
-        transform: translateX(0);
-    }
-
-    .admin-main-content {
-        margin-left: 0;
-        width: 100%;
-        /* Reset from calc(100vw - 56px) */
-        max-width: 100%;
-    }
-
-    /* Mobile Menu Button - Visible on Mobile */
-    .mobile-menu-btn {
-        display: flex;
-    }
-
-    /* Sidebar Overlay - Visible when sidebar open */
-    .sidebar-overlay.active {
-        opacity: 1;
-        visibility: visible;
-    }
-}
-
 /* Mobile Menu Button - Hidden on Desktop by default */
 .mobile-menu-btn {
     display: none;
@@ -313,10 +282,39 @@
     height: 100vh;
     background: rgba(0, 0, 0, 0.5);
     z-index: 999;
-    /* Below sidebar (1000) */
     opacity: 0;
     visibility: hidden;
     transition: opacity 0.3s, visibility 0.3s;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .admin-sidebar {
+        width: 0;
+        transform: translateX(-100%);
+    }
+
+    .admin-sidebar.open {
+        width: 220px;
+        transform: translateX(0);
+    }
+
+    .admin-main-content {
+        margin-left: 0;
+        width: 100%;
+        max-width: 100%;
+    }
+
+    /* Mobile Menu Button - Visible on Mobile */
+    .mobile-menu-btn {
+        display: flex;
+    }
+
+    /* Sidebar Overlay - Visible when sidebar open */
+    .sidebar-overlay.active {
+        opacity: 1;
+        visibility: visible;
+    }
 }
 
 /* ============================================
