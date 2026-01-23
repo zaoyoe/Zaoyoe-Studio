@@ -250,23 +250,27 @@
         </div>
 
         <!-- Verify Widget -->
-        <div id="verify-widget-container">
-            <!-- PRE-RENDER: Synchronous check of localStorage to prevent flash -->
-            <script>
-                (function () {
-                    try {
-                        const cached = localStorage.getItem('cached_user_profile');
-                        if (cached) {
-                            const user = JSON.parse(cached);
-                            if (user && (user.id || user.user_id)) {
-                                // User is logged in - show form, hide login prompt
-                                document.write('<style>#verifyLoginPrompt{display:none!important}#verifyForm{display:block!important}#verifyBalance{display:flex!important}</style>');
-                            }
+        <div id="verify-widget-container"></div>
+
+        <!-- PRE-RENDER: Synchronous check of localStorage - inject CSS into HEAD (won't be overwritten by render) -->
+        <script>
+            (function () {
+                try {
+                    const cached = localStorage.getItem('cached_user_profile');
+                    if (cached) {
+                        const user = JSON.parse(cached);
+                        if (user && (user.id || user.user_id)) {
+                            // User is logged in - inject CSS into HEAD (won't be removed by widget render)
+                            const style = document.createElement('style');
+                            style.id = 'verify-prerender-style';
+                            style.textContent = '#verifyLoginPrompt{display:none!important}#verifyForm{display:block!important}#verifyBalance{display:flex!important}';
+                            document.head.appendChild(style);
+                            console.log('[VerifyPreRender] Injected logged-in CSS into head');
                         }
-                    } catch (e) { }
-                })();
-            </script>
-        </div>
+                    }
+                } catch (e) { console.warn('[VerifyPreRender] Error:', e); }
+            })();
+        </script>
 
         <!-- Info Cards removed as requested -->
 
