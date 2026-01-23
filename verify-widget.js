@@ -14,7 +14,7 @@
         // Will be loaded from system_config
         pricePerVerify: 3,
         // Node.js Puppeteer server endpoint
-        nodeServerUrl: window.VERIFY_SERVER_URL || 'http://localhost:3001',
+        nodeServerUrl: 'http://localhost:3001', // window.VERIFY_SERVER_URL || 'http://localhost:3001',
         // Container element ID
         containerId: 'verify-widget-container'
     };
@@ -671,40 +671,37 @@
                 isCompleted = true; // Mark as completed BEFORE closing
                 try {
                     const data = JSON.parse(event.data);
-                    console.log('[VerifyWidget] Batch Result RAW:', JSON.stringify(data));
-                    console.log('[VerifyWidget] data.stats:', data.stats);
-                    console.log('[VerifyWidget] data.stats type:', typeof data.stats);
                     eventSource.close();
 
-                    // Update individual items based on batch stats
-                    const stats = data.stats || { success: 0, failed: 0, total: batchSize };
-                    console.log('[VerifyWidget] Final stats object:', JSON.stringify(stats));
-                    console.log('[VerifyWidget] Parsed stats:', stats, 'batchSize:', batchSize);
+                    if (data.stats) {
+                        // Update global batch stats tracking
+                        batchStats.success = data.stats.success || 0;
+                        batchStats.failed = data.stats.failed || 0;
+                        // Total is sum of known outcomes (or use server total if provided/larger)
+                        batchStats.total = Math.max(data.stats.total || 0, batchStats.success + batchStats.failed);
 
-                    // Since we don't have per-item results from 1key, 
-                    // we need to mark items based on overall stats
-                    if (stats.success === batchSize) {
-                        // All succeeded
-                        console.log('[VerifyWidget] All succeeded, updating items to success');
-                        validLinks.forEach(({ index }) => {
-                            console.log('[VerifyWidget] Updating item', index, 'to success');
-                            updateResultItem(index, 'success', '验证成功！');
-                        });
-                    } else if (stats.success === 0) {
-                        // All failed
-                        console.log('[VerifyWidget] All failed, updating items to error');
-                        validLinks.forEach(({ index }) => {
-                            updateResultItem(index, 'error', data.message || '验证失败');
-                        });
-                    } else {
-                        // Mixed results - mark first N as success, rest as failed
-                        console.log('[VerifyWidget] Mixed results:', stats.success, 'success,', stats.failed, 'failed');
-                        validLinks.forEach(({ index }, i) => {
-                            if (i < stats.success) {
+                        console.log('[VerifyWidget] Received stats:', batchStats);
+
+                        // Update UI with final stats
+                        showBatchSummary(batchStats);
+
+                        // Update individual item statuses based on stats
+                        // Strategy: Mark first N items as success, rest as failed (approximation since API doesn't return per-ID status)
+                        const items = document.querySelectorAll('.verify-result-item');
+                        let successCount = batchStats.success;
+
+                        items.forEach((item, i) => {
+                            const index = parseInt(item.id.replace('result-item-', '')); // Extract original index
+                            if (i < successCount) {
                                 updateResultItem(index, 'success', '验证成功！');
                             } else {
-                                updateResultItem(index, 'error', '验证失败');
+                                updateResultItem(index, 'error', data.message || '验证失败');
                             }
+                        });
+                    } else {
+                        // Fallback if stats are not provided, mark all as failed
+                        validLinks.forEach(({ index }) => {
+                            updateResultItem(index, 'error', data.message || '验证失败');
                         });
                     }
 
@@ -795,7 +792,6 @@
 
     function updateResultItem(index, status, message) {
         const item = document.getElementById(`result-item-${index}`);
-        console.log('[VerifyWidget] updateResultItem:', { index, status, message, itemFound: !!item });
         if (!item) {
             console.warn('[VerifyWidget] Item not found:', `result-item-${index}`);
             return;
@@ -809,20 +805,18 @@
             info: 'fa-info-circle'
         };
 
-        console.log('[VerifyWidget] Setting className:', `verify-result-item ${status}`);
         item.className = `verify-result-item ${status}`;
         // Force reflow to ensure class update takes effect
         item.offsetHeight;
 
         const iconEl = item.querySelector('.verify-result-item-icon i');
         if (iconEl) {
-            const newIconClass = `fas ${icons[status] || icons.pending}`;
-            console.log('[VerifyWidget] Setting icon:', newIconClass, 'on element:', iconEl);
-            // Use requestAnimationFrame to ensure DOM update happens
-            requestAnimationFrame(() => {
-                iconEl.className = newIconClass;
-                console.log('[VerifyWidget] Icon className after update:', iconEl.className);
-            });
+            // Remove all existing icon classes
+            iconEl.className = '';
+            // Force reflow
+            void iconEl.offsetWidth;
+            // Add new icon classes
+            iconEl.className = `fas ${icons[status] || icons.pending}`;
         } else {
             console.warn('[VerifyWidget] Icon element not found in item:', item.id);
         }

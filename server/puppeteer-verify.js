@@ -57,7 +57,8 @@ async function verifyWithPuppeteer(apiKey, verificationIds, onProgress = () => {
         console.log('[Puppeteer] Launching browser...');
 
         const launchOptions = {
-            headless: 'new',
+            headless: 'new', // Use new headless mode
+            ignoreDefaultArgs: ['--disable-extensions'],
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
@@ -66,13 +67,28 @@ async function verifyWithPuppeteer(apiKey, verificationIds, onProgress = () => {
                 '--no-first-run',
                 '--no-zygote',
                 '--disable-gpu',
-                '--single-process'
+                '--single-process',
+                '--disable-features=IsolateOrigins,site-per-process' // Additional stability
             ]
         };
 
         if (process.env.PUPPETEER_EXECUTABLE_PATH) {
             launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
             console.log('[Puppeteer] Using system Chromium:', launchOptions.executablePath);
+        } else if (process.platform === 'darwin') {
+            const fs = require('fs');
+            const possiblePaths = [
+                '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+                '/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary',
+                '/Applications/Chromium.app/Contents/MacOS/Chromium'
+            ];
+            for (const p of possiblePaths) {
+                if (fs.existsSync(p)) {
+                    launchOptions.executablePath = p;
+                    console.log('[Puppeteer] Found and using local Chrome installation:', p);
+                    break;
+                }
+            }
         }
 
         browser = await puppeteer.launch(launchOptions);
@@ -169,16 +185,6 @@ async function verifyWithPuppeteer(apiKey, verificationIds, onProgress = () => {
 
         // Join all IDs with newlines for batch submission
         const batchInput = ids.join('\n');
-
-        // DEBUG: Log exact input content
-        console.log('[Puppeteer] === BATCH INPUT DEBUG ===');
-        console.log('[Puppeteer] Number of IDs:', ids.length);
-        ids.forEach((id, i) => {
-            console.log(`[Puppeteer] ID[${i}]: "${id.substring(0, 100)}${id.length > 100 ? '...' : ''}"`);
-        });
-        console.log('[Puppeteer] batchInput length:', batchInput.length);
-        console.log('[Puppeteer] batchInput preview:', batchInput.substring(0, 300));
-        console.log('[Puppeteer] === END BATCH INPUT DEBUG ===');
 
         onProgress('entering', `✏️ 正在输入 ${batchSize} 个验证 ID...`);
         console.log(`[Puppeteer] Entering ${batchSize} verification IDs`);

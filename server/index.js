@@ -159,9 +159,9 @@ app.get('/api/verify-stream', async (req, res) => {
         // Run Puppeteer automation with progress callback (pass array of IDs)
         const result = await verifyWithPuppeteer(batchApiKey, verificationIds, onProgress);
 
-        console.log(`[Verify] Batch result:`, JSON.stringify(result));
-        console.log(`[Verify] result.stats:`, result.stats);
-        console.log(`[Verify] result.stats type:`, typeof result.stats);
+        // Log result summary
+        console.log(`[Verify] Batch result: ${result.success ? 'Success' : 'Failed'}, Message: ${result.message}`);
+        console.log(`[Verify] Stats: Success=${result.stats?.success}, Failed=${result.stats?.failed}, Total=${result.stats?.total}`);
 
         // Get batch stats - deduct only for successful verifications
         // More robust extraction with explicit type checking
