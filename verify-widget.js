@@ -34,6 +34,7 @@
     let isLoading = false;
     let batchResults = []; // Store results for batch mode
     let batchStats = { success: 0, failed: 0, total: 0 };
+    let activeEventSource = null; // Track active SSE connection for cancellation
 
     // =============================================
     // Initialize Widget
@@ -136,6 +137,10 @@
                             <button class="verify-submit-btn" id="verifySubmitBtn" onclick="VerifyWidget.submit()">
                                 <i class="fas fa-check-circle"></i>
                                 开始验证
+                            </button>
+                            <button class="verify-cancel-btn" id="verifyCancelBtn" onclick="VerifyWidget.cancel()">
+                                <i class="fas fa-times-circle"></i>
+                                取消验证
                             </button>
                         </div>
                     </div>
@@ -316,6 +321,7 @@
 
         const input = document.getElementById('verifyIdInput');
         const submitBtn = document.getElementById('verifySubmitBtn');
+        const cancelBtn = document.getElementById('verifyCancelBtn');
         const singleResult = document.getElementById('verifyResult');
         const batchResultsPanel = document.getElementById('verifyBatchResults');
 
@@ -383,6 +389,13 @@
 
         // Start loading
         isLoading = true;
+        submitBtn.style.display = 'none';
+
+        // Show cancel button
+        if (cancelBtn) {
+            cancelBtn.style.display = 'flex';
+        }
+
         submitBtn.disabled = true;
         submitBtn.innerHTML = '<div class="spinner"></div> 批量验证中...';
 
@@ -430,6 +443,8 @@
             showBatchSummary();
         } finally {
             isLoading = false;
+            submitBtn.style.display = 'flex';
+            if (cancelBtn) cancelBtn.style.display = 'none';
             submitBtn.disabled = false;
             submitBtn.innerHTML = '<i class="fas fa-check-circle"></i> 开始验证';
         }
@@ -609,6 +624,8 @@
 
             const endpoint = `${CONFIG.nodeServerUrl}/api/verify-stream?${params}`;
             const eventSource = new EventSource(endpoint);
+            activeEventSource = eventSource; // Store active connection
+
             const batchSize = validLinks.length;
             let isCompleted = false; // Track if we've received a result
 
@@ -672,6 +689,7 @@
                 try {
                     const data = JSON.parse(event.data);
                     eventSource.close();
+                    if (activeEventSource === eventSource) activeEventSource = null;
 
                     if (data.stats) {
                         // Update global batch stats tracking
@@ -710,6 +728,7 @@
                 } catch (e) {
                     console.warn('[VerifyWidget] Failed to parse batch result:', e);
                     eventSource.close();
+                    if (activeEventSource === eventSource) activeEventSource = null;
                     reject(new Error('解析响应失败'));
                 }
             });
@@ -728,12 +747,14 @@
                     console.log('[VerifyWidget] Batch Error:', data);
                     isCompleted = true;
                     eventSource.close();
+                    if (activeEventSource === eventSource) activeEventSource = null;
                     reject(new Error(data.message || '验证失败'));
                 } catch (e) {
                     // Generic error (connection lost, server error, etc.)
                     console.error('[VerifyWidget] SSE connection error:', event);
                     isCompleted = true;
                     eventSource.close();
+                    if (activeEventSource === eventSource) activeEventSource = null;
                     reject(new Error('连接中断，请重试'));
                 }
             });
@@ -743,6 +764,7 @@
                 if (!isCompleted) {
                     isCompleted = true;
                     eventSource.close();
+                    if (activeEventSource === eventSource) activeEventSource = null;
                     reject(new Error('批量验证超时，请稍后重试'));
                 }
             }, 480000);
@@ -923,11 +945,62 @@
     }
 
     // =============================================
+    // Cancel Verification
+    // =============================================
+    function cancel() {
+        if (!isLoading) return;
+
+        console.log('[VerifyWidget] User cancelled verification');
+
+        // Close SSE connection if active
+        if (activeEventSource) {
+            console.log('[VerifyWidget] Closing active EventSource');
+            activeEventSource.close();
+            activeEventSource = null;
+        }
+
+        // Reset UI state
+        isLoading = false;
+
+        const submitBtn = document.getElementById('verifySubmitBtn');
+        const cancelBtn = document.getElementById('verifyCancelBtn');
+
+        if (submitBtn) {
+            submitBtn.style.display = 'flex';
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="fas fa-check-circle"></i> 开始验证';
+        }
+
+        if (cancelBtn) {
+            cancelBtn.style.display = 'none';
+        }
+
+        // Mark processing items as cancelled
+        const processingItems = document.querySelectorAll('.verify-result-item.processing');
+        processingItems.forEach((item) => {
+            const index = parseInt(item.id.replace('result-item-', ''));
+            updateResultItem(index, 'error', '已取消验证');
+        });
+
+        // Update batch stats
+        const remaining = document.querySelectorAll('.verify-result-item.processing').length;
+        if (remaining > 0) {
+            batchStats.failed += remaining;
+        }
+        showBatchSummary();
+
+        // Show toast or message
+        // showSingleResult('error', '已取消', '验证已手动取消');
+    }
+
+    // =============================================
     // Public API
     // =============================================
     window.VerifyWidget = {
         init,
+        init,
         submit,
+        cancel,
         reload: loadConfig
     };
 

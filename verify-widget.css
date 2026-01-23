@@ -193,6 +193,36 @@
     }
 }
 
+/* Cancel Button */
+.verify-cancel-btn {
+    display: none;
+    /* Hidden by default */
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    width: 100%;
+    padding: 14px 20px;
+    background: rgba(239, 68, 68, 0.2);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 12px;
+    color: #fca5a5;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.verify-cancel-btn:hover {
+    background: rgba(239, 68, 68, 0.3);
+    border-color: rgba(239, 68, 68, 0.5);
+    color: #fff;
+    transform: translateY(-2px);
+}
+
+.verify-cancel-btn:active {
+    transform: translateY(0);
+}
+
 /* Price Info */
 .verify-price-info {
     display: flex;
