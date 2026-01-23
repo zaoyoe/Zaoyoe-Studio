@@ -163,7 +163,8 @@
     gap: 10px;
     width: 100%;
     padding: 14px 20px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    /* Starry Blue Gradient */
+    background: linear-gradient(135deg, #6b9ece 0%, #5a8cba 100%);
     border: none;
     border-radius: 12px;
     color: #fff;
@@ -175,7 +176,7 @@
 
 .verify-submit-btn:hover {
     transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4);
+    box-shadow: 0 8px 24px rgba(107, 158, 206, 0.4);
 }
 
 .verify-submit-btn:active {
