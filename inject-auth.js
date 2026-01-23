@@ -33,6 +33,14 @@
                 </svg>
                 个人资料
             </div>
+            <!-- My Wallet -->
+            <div class="menu-item wallet-menu-item" onclick="WalletModal.open()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect>
+                    <line x1="1" y1="10" x2="23" y2="10"></line>
+                </svg>
+                我的钱包
+            </div>
             <div class="divider" style="margin: 5px 0; border-top: 1px solid rgba(255,255,255,0.1);"></div>
             <div class="menu-item switch-account" onclick="window.handleSwitchAccount(event)">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

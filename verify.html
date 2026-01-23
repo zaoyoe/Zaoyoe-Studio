@@ -35,17 +35,30 @@
     <link rel="stylesheet" href="login_styles.css?v=DARK_BG_INPUTS_V1">
     <link rel="stylesheet" href="avatar-fix.css?v=UNIFIED_HOVER_V2">
     <link rel="stylesheet" href="verify-widget.css?v=2-batch">
+    <link rel="stylesheet" href="security-cards.css?v=DARK_BG_INPUTS_V1">
 
     <style>
         /* Page specific styles */
         body {
             min-height: 100vh;
-            background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+            background-color: #0f172a;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: flex-start;
             padding: 80px 20px 40px;
+        }
+
+        /* Starry Sky Canvas */
+        #starryCanvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            pointer-events: none;
+            opacity: 1;
         }
 
         .verify-page-container {
@@ -217,12 +230,11 @@
 </head>
 
 <body>
-    <!-- Background -->
-    <div class="background-blobs">
-        <div class="blob blob-1"></div>
-        <div class="blob blob-2"></div>
-        <div class="blob blob-3"></div>
-    </div>
+    <!-- Starry Sky Canvas -->
+    <canvas id="starryCanvas"></canvas>
+
+    <!-- Dropdown Blur Overlay -->
+    <div class="dropdown-overlay" id="dropdownOverlay"></div>
 
     <!-- Back Link -->
     <a href="index.html" class="back-link">
@@ -234,46 +246,37 @@
     <div class="verify-page-container">
         <!-- Page Header -->
         <div class="verify-page-header">
-            <h1><i class="fas fa-shield-check"></i> Gemini 验证服务</h1>
-            <p>快速验证您的 Gemini 账户状态</p>
+            <h1><i class="fas fa-shield-check"></i> Gemini</h1>
         </div>
 
         <!-- Verify Widget -->
         <div id="verify-widget-container"></div>
 
-        <!-- Info Cards -->
-        <div class="verify-info-cards">
-            <div class="verify-info-card success">
-                <i class="fas fa-bolt"></i>
-                <div class="info-value">30秒</div>
-                <div class="info-label">快速验证</div>
-            </div>
-            <div class="verify-info-card warning">
-                <i class="fas fa-coins"></i>
-                <div class="info-value" id="displayPrice">3</div>
-                <div class="info-label">积分/次</div>
-            </div>
-            <div class="verify-info-card info">
-                <i class="fas fa-check-double"></i>
-                <div class="info-value">95%+</div>
-                <div class="info-label">通过率</div>
-            </div>
-        </div>
+        <!-- Info Cards removed as requested -->
 
         <!-- Instructions -->
         <div class="verify-instructions">
             <h3><i class="fas fa-lightbulb"></i> 使用说明</h3>
             <ol>
-                <li>获取您的 <code>Verification ID</code> 或验证链接</li>
-                <li>粘贴到上方输入框</li>
-                <li>点击「开始验证」，系统自动处理</li>
-                <li>验证结果将实时显示</li>
+                <li>直接右键复制 <code>verify eligibility</code> / <code>验证学生资格</code> 蓝色按钮的链接（不在浏览器打开）成功率更高。</li>
+                <li>认证成功提示没有资格用这个链接进去: <br><a
+                        href="https://one.google.com/ai-student?g1_landing_page=75&utm_source=antigravity&utm_campaign=argon_limit_reached"
+                        target="_blank"
+                        style="word-break: break-all; color: #a5b4fc;">https://one.google.com/ai-student?g1_landing_page=75&utm_source=antigravity&utm_campaign=argon_limit_reached</a>
+                </li>
+                <li>在 <a href="https://one.google.com/ai-student" target="_blank"
+                        style="color: #a5b4fc;">https://one.google.com/ai-student</a> 的那个蓝色按钮上右键 别点进去 直接右键复制链接出来!
+                    建议用无痕窗口登录账户获取！</li>
+                <li>如果你的验证链接中 verificationID 后面是空的：1.刷新网页再试。2.直接点进去重新获取。3.换号</li>
             </ol>
         </div>
     </div>
 
     <!-- Points Service (for balance loading) -->
     <script src="./js/services/PointsService.js"></script>
+
+    <!-- Starry Sky Animation -->
+    <script src="./starry-sky.js?v=1"></script>
 
     <!-- Verify Widget Script -->
     <script src="./verify-widget.js?v=3-batch"></script>
@@ -296,6 +299,145 @@
             }
         });
     </script>
+    <!-- Commercial Points System (loaded at end of body for reliability) -->
+    <script src="js/services/PointsService.js?v=2"></script>
+
+    <!-- Auth Injection & Modals -->
+    <script src="inject-auth.js?v=VERIFY_PAGE" defer></script>
+    <script src="js/components/WalletModal.js?v=2" defer></script>
+    <script src="security-cards.js?v=1" defer></script>
+
+    <!-- Profile Modal Shim -->
+    <script>
+        window.openProfileModal = function (e) {
+            if (e) { e.preventDefault(); e.stopPropagation(); }
+            const dropdown = document.getElementById('userDropdown');
+            const overlay = document.getElementById('dropdownOverlay');
+            if (dropdown) dropdown.classList.remove('active');
+            if (overlay) overlay.classList.remove('active');
+
+            const modal = document.getElementById('profileModal');
+            if (modal) {
+                modal.classList.add('active');
+                if (typeof switchProfileTab === 'function') {
+                    switchProfileTab('profile');
+                }
+            }
+        };
+    </script>
+
+    <!-- Profile Modal -->
+    <div class="modal-overlay" id="profileModal" onmousedown="closeModal(event)" onmouseup="closeModal(event)">
+        <div class="modal-content profile-modal" onclick="event.stopPropagation()">
+            <div class="mac-controls">
+                <div class="mac-dot red" onclick="document.getElementById('profileModal').classList.remove('active')"><i
+                        class="fas fa-times"></i></div>
+                <div class="mac-dot yellow"></div>
+                <div class="mac-dot green"></div>
+            </div>
+
+            <div class="profile-tabs">
+                <div class="tab-item active" onclick="switchProfileTab('profile')">资料</div>
+                <div class="tab-item" onclick="switchProfileTab('security')">安全</div>
+            </div>
+
+            <div class="profile-flip-container">
+                <div class="profile-flip-inner">
+                    <!-- View 1: Profile -->
+                    <div id="view-profile" class="profile-view profile-front">
+                        <div class="modal-title">个人资料</div>
+                        <div class="profile-avatar-section" onclick="handleAvatarUpload(event)">
+                            <!-- simplified trigger -->
+                            <img id="profileModalAvatar" src="" alt="Avatar">
+                            <div class="avatar-upload-hint">
+                                <i class="fas fa-camera"></i>
+                                <span>更换头像</span>
+                            </div>
+                        </div>
+                        <input type="file" id="avatarUpload" accept="image/*" style="display: none;"
+                            onchange="handleAvatarUpload(event)">
+
+                        <div class="profile-nickname-section">
+                            <div id="nicknameDisplay" class="nickname-display">
+                                <span id="profileModalNickname">Loading...</span>
+                                <i class="fas fa-pen edit-icon" onclick="toggleNicknameEdit(true)"></i>
+                            </div>
+                            <div id="nicknameEdit" class="nickname-edit" style="display: none;">
+                                <input type="text" id="nicknameInput" placeholder="输入新昵称">
+                                <div class="edit-actions">
+                                    <button class="cancel-btn" onclick="toggleNicknameEdit(false)">取消</button>
+                                    <button class="save-btn" onclick="saveNickname()">保存</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="profile-email-section">
+                            <label>邮箱地址</label>
+                            <div id="profileModalEmail" class="profile-email-display"></div>
+                        </div>
+                    </div>
+
+                    <!-- View 2: Security (Simplified but functional) -->
+                    <div id="view-security" class="profile-view profile-back">
+                        <div class="modal-title">安全设置</div>
+                        <div class="security-cards-layout">
+                            <div class="security-menu">
+                                <div class="security-card active"
+                                    onclick="expandSecurityCard(event, 'change-password')">
+                                    <div class="security-card-icon"><i class="fas fa-key"></i></div>
+                                    <div class="security-card-content">
+                                        <div class="security-card-title">修改密码</div>
+                                    </div>
+                                    <i class="fas fa-chevron-right security-card-arrow"></i>
+                                </div>
+                                <div class="security-card danger-card"
+                                    onclick="expandSecurityCard(event, 'delete-account')">
+                                    <div class="security-card-icon danger"><i class="fas fa-exclamation-triangle"></i>
+                                    </div>
+                                    <div class="security-card-content">
+                                        <div class="security-card-title danger">注销账号</div>
+                                    </div>
+                                    <i class="fas fa-chevron-right security-card-arrow"></i>
+                                </div>
+                            </div>
+                            <div class="security-detail-panel" id="securityDetailPanel">
+                                <div class="security-detail-content" id="detail-security-overview"
+                                    style="display: block;">
+                                    <div style="text-align: center; padding: 20px; color: rgba(255,255,255,0.5);">
+                                        请选择左侧安全选项</div>
+                                </div>
+                                <div class="security-detail-content" id="detail-change-password" style="display: none;">
+                                    <h3 class="detail-title">修改密码</h3>
+                                    <input type="password" id="oldPasswordInput" placeholder="当前密码"
+                                        class="security-input">
+                                    <input type="password" id="newPasswordInput" placeholder="新密码"
+                                        class="security-input">
+                                    <button class="gradient-btn" onclick="changePassword()">更新密码</button>
+                                </div>
+                                <div class="security-detail-content" id="detail-delete-account" style="display: none;">
+                                    <h3 class="detail-title danger">注销账号</h3>
+                                    <button class="danger-btn" onclick="deleteAccount()">确认注销</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Coming Soon Modal -->
+    <div class="modal-overlay" id="comingSoonModal" onmousedown="closeModal(event)" onmouseup="closeModal(event)">
+        <div class="modal-content premium-modal"
+            style="position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 300px;">
+            <div class="mac-controls" style="position: absolute; top: 20px; left: 20px;">
+                <div class="mac-dot red" onclick="closeModal(event)"><i class="fas fa-times"></i></div>
+            </div>
+            <i class="fa-solid fa-rocket" style="font-size: 4rem; color: #8b5cf6; margin-bottom: 20px;"></i>
+            <div class="modal-title">敬请期待</div>
+            <p class="modal-subtitle">该功能正在紧锣密鼓地开发中...</p>
+        </div>
+    </div>
 </body>
 
 </html>

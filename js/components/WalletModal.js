@@ -127,7 +127,7 @@
                                 </div>
                                 
                                 <!-- Consolidated Redeem Section -->
-                                <div style="margin-top: auto; margin-bottom: 48px;">
+                                <div class="redeem-section">
                                     <div class="redeem-input-row">
                                         <input type="text" 
                                                id="redeem-code-input" 
@@ -145,6 +145,24 @@
                                 <h3 class="view-title">⚡ 充值套餐</h3>
                                 <div class="packages-container" id="wallet-packages">
                                     <div class="loading-text">加载中...</div>
+                                </div>
+                                
+                                <!-- Afdian Code Query Section -->
+                                <div class="afdian-section">
+                                    <div class="afdian-header">
+                                        <span class="afdian-icon">❤️</span>
+                                        <span>爱发电订单查询</span>
+                                    </div>
+                                    <p class="afdian-hint">在爱发电支付后，输入订单号获取兑换码</p>
+                                    <div class="afdian-input-row">
+                                        <input type="text" 
+                                               id="afdian-order-input" 
+                                               placeholder="爱发电订单号"
+                                               autocomplete="off"
+                                               onkeyup="if(event.key==='Enter') WalletModal.queryAfdianCode()" />
+                                        <button class="afdian-query-btn" onclick="WalletModal.queryAfdianCode()">查询</button>
+                                    </div>
+                                    <div id="afdian-result" class="afdian-result"></div>
                                 </div>
                             </div>
 
@@ -419,6 +437,72 @@
                     redeemBtn.disabled = false;
                 }
             }
+        },
+
+        /**
+         * Query Afdian order for redemption code
+         */
+        async queryAfdianCode() {
+            const input = document.getElementById('afdian-order-input');
+            const resultDiv = document.getElementById('afdian-result');
+            const orderNo = input?.value?.trim();
+
+            if (!orderNo) {
+                this.showToast('请输入订单号', 'error');
+                return;
+            }
+
+            const queryBtn = document.querySelector('.afdian-query-btn');
+            const originalText = queryBtn?.textContent;
+
+            try {
+                if (queryBtn) {
+                    queryBtn.textContent = '查询中...';
+                    queryBtn.disabled = true;
+                }
+
+                // Get server URL from verify config or default
+                const serverUrl = window.VERIFY_SERVER_URL || 'https://zaoyoe-verify-server-production.up.railway.app';
+
+                const response = await fetch(`${serverUrl}/api/afdian/query?order_no=${encodeURIComponent(orderNo)}`);
+                const data = await response.json();
+
+                if (data.success) {
+                    // Show code in result area
+                    resultDiv.innerHTML = `
+                        <div class="afdian-code-result">
+                            <div class="code-label">您的兑换码（${data.points}积分）：</div>
+                            <div class="code-value" onclick="WalletModal.copyAfdianCode('${data.code}')">${data.code}</div>
+                            <div class="code-hint">${data.is_redeemed ? '⚠️ 该兑换码已使用' : '点击复制，然后在余额页使用'}</div>
+                        </div>
+                    `;
+                    resultDiv.style.display = 'block';
+                } else {
+                    resultDiv.innerHTML = `<div class="afdian-error">${data.message || '查询失败'}</div>`;
+                    resultDiv.style.display = 'block';
+                }
+
+            } catch (err) {
+                console.error('[WalletModal] Afdian query failed:', err);
+                resultDiv.innerHTML = `<div class="afdian-error">查询失败，请稍后重试</div>`;
+                resultDiv.style.display = 'block';
+            } finally {
+                if (queryBtn) {
+                    queryBtn.textContent = originalText;
+                    queryBtn.disabled = false;
+                }
+            }
+        },
+
+        /**
+         * Copy Afdian code to clipboard
+         */
+        copyAfdianCode(code) {
+            navigator.clipboard.writeText(code).then(() => {
+                this.showToast('✅ 兑换码已复制', 'success');
+            }).catch(() => {
+                this.showToast('复制失败，请手动复制', 'error');
+            });
         },
 
         /**
