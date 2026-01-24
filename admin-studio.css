@@ -5481,27 +5481,42 @@ input:checked+.toggle-slider:before {
 
     .user-modal {
         width: 95vw;
-        height: 90vh;
+        height: auto;
+        max-height: 90vh;
+        min-height: 60vh;
     }
 
     .user-modal-body {
         flex-direction: column;
+        overflow-y: auto;
+        flex: 1;
     }
 
     .user-modal-left {
         width: 100%;
         border-right: none;
         border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-        max-height: 200px;
+        max-height: none;
+        flex-shrink: 0;
+        overflow: visible;
     }
 
     .user-modal-left .user-card {
         display: flex;
-        align-items: center;
-        gap: 16px;
+        align-items: flex-start;
+        flex-wrap: wrap;
+        gap: 12px;
         text-align: left;
         padding-bottom: 0;
         border-bottom: none;
+    }
+
+    /* Ensure superadmin badge is visible and not cut off */
+    .user-modal-left .super-admin-badge {
+        flex-shrink: 0;
+        white-space: nowrap;
+        font-size: 0.75rem;
+        padding: 6px 10px;
     }
 
     .user-modal-left .user-avatar-large {
@@ -5510,12 +5525,47 @@ input:checked+.toggle-slider:before {
         margin-bottom: 0;
     }
 
+    /* Tab navigation: 3x2 grid layout on mobile */
     .user-tab-nav {
-        overflow-x: auto;
+        display: grid !important;
+        grid-template-columns: repeat(3, 1fr) !important;
+        gap: 4px !important;
+        overflow: visible !important;
+        padding: 8px 12px !important;
+        justify-content: initial !important;
     }
 
+    .user-tab-nav .user-tab-btn {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 8px 4px;
+        font-size: 0.75rem;
+        white-space: nowrap;
+    }
+
+    /* Action buttons: 2x2 grid layout on mobile */
     .user-modal-actions {
-        flex-wrap: wrap;
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+        flex-shrink: 0;
+        position: sticky;
+        bottom: 0;
+        background: rgba(30, 41, 59, 0.95);
+        padding: 12px 16px;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .user-modal-actions .modal-action-btn {
+        justify-content: center;
+        padding: 10px 8px;
+        font-size: 0.8rem;
+    }
+
+    /* Make notification bell full width on its own row */
+    .user-modal-actions .modal-action-btn.notifications-bell {
+        grid-column: 1 / -1;
     }
 }
 
