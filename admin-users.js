@@ -365,12 +365,13 @@ function renderUsersTable() {
 
         tableHead.innerHTML = `
             ${checkboxHeader}
-            <th>用户 Identity</th>
-            <th>资产 Assets</th>
-            <th>活跃 Active</th>
-            <th>状态 Status</th>
-            <th>标签 Tags</th>
+            <th class="col-identity">用户 Identity</th>
+            <th class="col-assets">资产 Assets</th>
+            <th class="col-active">活跃 Active</th>
+            <th class="col-status">状态 Status</th>
+            <th class="col-tags">标签 Tags</th>
         `;
+
     }
 
     if (paginatedUsers.length === 0) {

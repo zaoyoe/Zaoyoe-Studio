@@ -16217,11 +16217,15 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
         /* Hide email on very narrow screens if needed, or keep */
     }
 
-    /* Show all columns but enable scroll */
-    #usersTable th:nth-child(4),
+    /* Show all columns using specific classes (Robust against checkbox column) */
+    #usersTable th.col-active,
     #usersTable td:has(.active-status),
-    #usersTable th:nth-child(6),
-    #usersTable td:has(.user-tags-cell) {
+    #usersTable th.col-tags,
+    #usersTable td:has(.user-tags-cell),
+    #usersTable th.col-assets,
+    #usersTable td:has(.assets-cell),
+    #usersTable th.col-status,
+    #usersTable td:has(.status-badge) {
         display: table-cell !important;
     }
 
