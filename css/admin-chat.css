@@ -422,3 +422,98 @@
         max-width: 85%;
     }
 }
+
+/* =========================================
+   LIGHT MODE ADAPTATION
+   ========================================= */
+:root:not([data-theme="dark"]) .chat-container {
+    background: rgba(255, 255, 255, 0.95);
+    border-color: rgba(0, 0, 0, 0.1);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+}
+
+:root:not([data-theme="dark"]) .chat-sidebar {
+    background: rgba(248, 250, 252, 0.8);
+    border-right-color: rgba(0, 0, 0, 0.06);
+}
+
+:root:not([data-theme="dark"]) .chat-sidebar-header,
+:root:not([data-theme="dark"]) .chat-main-header {
+    background: rgba(255, 255, 255, 0.9);
+    border-bottom-color: rgba(0, 0, 0, 0.06);
+}
+
+:root:not([data-theme="dark"]) .chat-sidebar-title,
+:root:not([data-theme="dark"]) .session-name,
+:root:not([data-theme="dark"]) .chat-user-title h3 {
+    color: #1e293b;
+}
+
+:root:not([data-theme="dark"]) .session-time,
+:root:not([data-theme="dark"]) .session-preview,
+:root:not([data-theme="dark"]) .chat-user-title span {
+    color: #64748b;
+}
+
+:root:not([data-theme="dark"]) .chat-search input {
+    background: #ffffff;
+    border-color: #e2e8f0;
+    color: #1e293b;
+}
+
+:root:not([data-theme="dark"]) .chat-search input:focus {
+    background: #ffffff;
+    border-color: #3b82f6;
+}
+
+:root:not([data-theme="dark"]) .session-item {
+    border-bottom-color: rgba(0, 0, 0, 0.04);
+}
+
+:root:not([data-theme="dark"]) .session-item:hover {
+    background: #f1f5f9;
+}
+
+:root:not([data-theme="dark"]) .session-item.active {
+    background: rgba(59, 130, 246, 0.1);
+    border-left-color: #3b82f6;
+}
+
+:root:not([data-theme="dark"]) .admin-message.received {
+    background: #f1f5f9;
+    color: #334155;
+    border-color: #e2e8f0;
+}
+
+:root:not([data-theme="dark"]) .chat-input-wrapper {
+    background: #ffffff;
+    border-top-color: #e2e8f0;
+}
+
+:root:not([data-theme="dark"]) .admin-chat-input {
+    background: #f8fafc;
+    border-color: #e2e8f0;
+    color: #1e293b;
+}
+
+:root:not([data-theme="dark"]) .admin-chat-input:focus {
+    background: #ffffff;
+    border-color: #3b82f6;
+}
+
+:root:not([data-theme="dark"]) .chat-empty-state {
+    color: #94a3b8;
+}
+
+/* Mobile Light Mode */
+@media (max-width: 768px) {
+    :root:not([data-theme="dark"]) .chat-container {
+        background: #ffffff;
+    }
+
+    :root:not([data-theme="dark"]) .mobile-back-btn,
+    :root:not([data-theme="dark"]) .chat-menu-btn {
+        color: #64748b;
+        background: #f1f5f9;
+    }
+}

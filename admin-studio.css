@@ -4479,13 +4479,27 @@ input:checked+.toggle-slider:before {
 /* Super Admin Badge */
 .super-admin-badge {
     text-align: center;
-    padding: 12px;
+    padding: 6px 12px;
+    /* Reduced from 12px */
     background: linear-gradient(135deg, rgba(251, 191, 36, 0.15), rgba(245, 158, 11, 0.1));
     border: 1px solid rgba(251, 191, 36, 0.3);
-    border-radius: 8px;
+    border-radius: 6px;
+    /* Slightly tighter radius */
     color: #fbbf24;
     font-weight: 600;
+    font-size: 0.85rem;
+    /* Explicit smaller font size */
+    display: inline-flex;
+    /* Ensure it wraps content tightly */
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: auto;
+    /* Prevent full width */
+    margin-left: auto;
+    /* Align properly if in flex container */
 }
+
 
 /* Points Ledger */
 .points-ledger {
@@ -13494,6 +13508,13 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     transition: 0.3s;
 }
 
+/* Light Mode Toggle Track Visibility */
+:root:not([data-theme="dark"]) .toggle-slider {
+    background: #e2e8f0;
+    /* Visible grey track on white bg */
+}
+
+
 .toggle-slider::before {
     content: '';
     position: absolute;
@@ -13507,8 +13528,15 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 }
 
 .toggle-switch input:checked+.toggle-slider {
-    background: var(--accent-starry);
+    background: var(--accent-starry, #6b9ece);
+    /* Fallback to hex if var missing in light mode */
 }
+
+/* Ensure Light Mode Active State is Blue */
+:root:not([data-theme="dark"]) .toggle-switch input:checked+.toggle-slider {
+    background: #6b9ece;
+}
+
 
 .toggle-switch input:checked+.toggle-slider::before {
     transform: translateX(18px);
@@ -13645,17 +13673,72 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     padding: 20px 24px;
 }
 
+@media (max-width: 1024px) {
+    #module-settings .module-content {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 768px) {
+    #module-settings .module-content {
+        display: flex;
+        flex-direction: column;
+        /* Stack vertically on mobile */
+        padding: 16px;
+        gap: 16px;
+    }
+}
+
+
 #module-settings .admin-tabs {
     justify-content: center;
     gap: 16px;
     padding: 20px 20px 0;
     margin-bottom: 0;
+    flex-wrap: wrap;
+    /* Allow wrapping on smaller desktop screens */
 }
 
 #module-settings .admin-tab {
     padding: 10px 20px;
     font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
 }
+
+/* Mobile Settings Layout */
+@media (max-width: 768px) {
+    #module-settings .admin-tabs {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        /* 3 columns for tabs */
+        padding: 12px;
+        gap: 8px;
+    }
+
+    #module-settings .admin-tab {
+        flex-direction: column;
+        text-align: center;
+        padding: 12px 4px;
+        white-space: normal;
+        /* Allow text wrapping if needed */
+        font-size: 0.8rem;
+        border-radius: 8px;
+        gap: 6px;
+    }
+
+    /* Ensure emoji icons are visible and centered */
+    #module-settings .admin-tab i,
+    /* If using font awesome */
+    #module-settings .admin-tab::before {
+        /* If relying on emoji as text content */
+        font-size: 1.2rem;
+        margin-bottom: 2px;
+    }
+}
+
 
 #module-settings .view-section {
     padding-top: 20px;
@@ -14228,7 +14311,32 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
 #settings-view-export .export-buttons-grid {
     grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
 }
+
+@media (max-width: 768px) {
+    #settings-view-export .export-buttons-grid {
+        grid-template-columns: 1fr;
+        /* Stack vertically on mobile */
+        gap: 12px;
+    }
+
+    #settings-view-export .settings-section {
+        max-width: 100%;
+        /* Use full available width */
+        padding: 16px;
+        /* Reduce padding from 20px */
+        box-sizing: border-box;
+    }
+
+    #settings-view-export .module-content {
+        padding: 12px;
+        /* Reduce container padding */
+        display: block;
+        /* Remove flex centering to verify normal flow */
+    }
+}
+
 
 
 /* Config Table */

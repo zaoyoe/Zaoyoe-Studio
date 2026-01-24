@@ -284,8 +284,8 @@
     width: 100vw;
     height: 100vh;
     background: rgba(0, 0, 0, 0.5);
-    z-index: 9998;
-    /* Between sidebar (10000) and chat (9999) when active */
+    z-index: 10000;
+    /* Above chat container (9999) */
     opacity: 0;
     visibility: hidden;
     transition: opacity 0.3s, visibility 0.3s;
@@ -299,10 +299,11 @@
     }
 
     .admin-sidebar.open {
-        width: 220px;
+        width: 260px;
+        /* Enhanced width */
         transform: translateX(0);
-        z-index: 10000;
-        /* Higher than chat container (9999) */
+        z-index: 10001;
+        /* Above overlay (10000) */
     }
 
     .admin-main-content {
