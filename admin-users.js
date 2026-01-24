@@ -66,6 +66,12 @@ function getTagLabel(tag) {
 function initUserModule() {
     console.log('👥 Initializing User Module...');
 
+    // Clear search input to prevent browser autofill (e.g., "100")
+    const searchInput = document.getElementById('userSearchInput');
+    if (searchInput) {
+        searchInput.value = '';
+    }
+
     // Bind Search
     document.getElementById('userSearchInput').addEventListener('input', debounce(handleUserSearch, 500));
 

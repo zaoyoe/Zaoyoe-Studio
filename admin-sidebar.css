@@ -1931,13 +1931,21 @@
         width: 100%;
     }
 
-    /* Filter dropdowns: Scrollable row */
+    /* Filter dropdowns: Scrollable row with batch actions inline */
     .admin-toolbar .filter-dropdowns {
         display: flex;
         gap: 8px;
         overflow-x: auto;
         padding-bottom: 4px;
         -webkit-overflow-scrolling: touch;
+        /* Include batch actions in same row */
+    }
+
+    /* Move batch actions (checkbox) to filter row instead of own line */
+    .admin-toolbar .batch-actions-wrapper {
+        flex-direction: row;
+        align-self: center;
+        margin-left: 0;
     }
 
     .admin-toolbar .filter-btn {
@@ -1946,24 +1954,22 @@
         white-space: nowrap;
     }
 
-    /* User Table: Hide less important columns */
-    .users-table-wrapper {
+    /* User Table: Enable horizontal scroll instead of hiding columns */
+    .users-table-panel {
         overflow-x: auto;
         -webkit-overflow-scrolling: touch;
     }
 
-    .users-table th:nth-child(3),
-    .users-table td:nth-child(3),
-    .users-table th:nth-child(4),
-    .users-table td:nth-child(4) {
-        /* Hide Assets & Activity columns */
-        display: none;
+    .users-table {
+        min-width: 700px;
+        /* Ensure table is wide enough to scroll */
     }
 
     .users-table th,
     .users-table td {
         padding: 10px 8px;
         font-size: 0.85rem;
+        white-space: nowrap;
     }
 
     /* User identity cell: More compact */
@@ -2107,6 +2113,12 @@
 @media (max-width: 768px) {
     .comment-toolbar-compact {
         padding: 0 12px;
+    }
+
+    /* Make search bar full width on mobile */
+    .search-pill {
+        width: 100%;
+        min-width: unset;
     }
 
     .comment-list-admin {
