@@ -99,6 +99,14 @@ function initUserModule() {
 
     // Fetch Prompt Cache
     fetchPromptCache();
+
+    // Enable horizontal scroll with mouse wheel on desktop
+    // Must use #module-users context to avoid selecting the wrong .users-table-panel (e.g., points batch table)
+    const usersModule = document.getElementById('module-users');
+    const tablePanel = usersModule ? usersModule.querySelector('.users-table-panel') : null;
+    if (tablePanel && window.enableHorizontalScroll) {
+        window.enableHorizontalScroll(tablePanel);
+    }
 }
 
 // Initialize Filter Dropdowns (Custom Component)

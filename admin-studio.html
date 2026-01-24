@@ -1626,6 +1626,23 @@
                                             <!-- Populated dynamically -->
                                         </div>
                                     </div>
+                                    <!-- Export Dropdown (moved here, next to Package filter) -->
+                                    <div class="filter-dropdown" data-filter="batchExport" id="batchExportDropdown">
+                                        <button class="filter-btn" onclick="toggleBatchExportMenu()">
+                                            <i class="fas fa-file-export"></i>
+                                            <span class="filter-label">导出</span>
+                                            <i class="fas fa-chevron-down filter-arrow"></i>
+                                        </button>
+                                        <div class="filter-popup glass-popup" id="batchExportPopup">
+                                            <div class="filter-option" onclick="exportBatchList()">
+                                                <i class="fas fa-list"></i> 导出批次列表
+                                            </div>
+                                            <div class="filter-option" onclick="exportSelectedBatches()"
+                                                id="exportSelectedOption" style="display: none;">
+                                                <i class="fas fa-check-double"></i> 导出选中批次
+                                            </div>
+                                        </div>
+                                    </div>
                                     <!-- Batch Select Toggle Button (after Package filter) -->
                                     <button class="btn-icon batch-select-btn" id="batchSelectToggle"
                                         onclick="toggleBatchSelectMode()" title="选择模式">
@@ -1655,23 +1672,6 @@
                                 <!-- Selected Count Display -->
                                 <div class="prompt-count" id="pointsBatchSelectedCountWrapper" style="display: none;">
                                     <span class="select-count">已选 <span id="pointsBatchSelectedCount">0</span> 项</span>
-                                </div>
-                                <!-- Export Dropdown -->
-                                <div class="filter-dropdown" data-filter="batchExport" id="batchExportDropdown">
-                                    <button class="filter-btn" onclick="toggleBatchExportMenu()">
-                                        <i class="fas fa-file-export"></i>
-                                        <span class="filter-label">导出</span>
-                                        <i class="fas fa-chevron-down filter-arrow"></i>
-                                    </button>
-                                    <div class="filter-popup glass-popup" id="batchExportPopup">
-                                        <div class="filter-option" onclick="exportBatchList()">
-                                            <i class="fas fa-list"></i> 导出批次列表
-                                        </div>
-                                        <div class="filter-option" onclick="exportSelectedBatches()"
-                                            id="exportSelectedOption" style="display: none;">
-                                            <i class="fas fa-check-double"></i> 导出选中批次
-                                        </div>
-                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -2034,12 +2034,12 @@
                             </tr>
                         </tbody>
                     </table>
-                    <!-- Pagination -->
-                    <div class="admin-pagination" id="usersPagination">
-                        <button class="page-btn prev" disabled><i class="fas fa-chevron-left"></i></button>
-                        <span class="page-info">第 1 页</span>
-                        <button class="page-btn next"><i class="fas fa-chevron-right"></i></button>
-                    </div>
+                </div>
+                <!-- Pagination (outside scroll container for fixed centering) -->
+                <div class="admin-pagination" id="usersPagination">
+                    <button class="page-btn prev" disabled><i class="fas fa-chevron-left"></i></button>
+                    <span class="page-info">第 1 页</span>
+                    <button class="page-btn next"><i class="fas fa-chevron-right"></i></button>
                 </div>
 
                 <!-- User Details Modal (Fullscreen Card) -->

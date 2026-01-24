@@ -8,6 +8,26 @@ function getSupabase() {
 }
 
 // ========================================
+// GLOBAL UTILITY: Enable horizontal scroll with mouse wheel
+// ========================================
+function enableHorizontalScroll(container) {
+    if (!container || container._horizontalScrollEnabled) return;
+
+    container.addEventListener('wheel', (e) => {
+        // Only intercept if content is wider than container (scrollable)
+        if (container.scrollWidth > container.clientWidth) {
+            e.preventDefault();
+            container.scrollLeft += e.deltaY;
+        }
+    }, { passive: false });
+
+    container._horizontalScrollEnabled = true; // Prevent duplicate listeners
+}
+
+// Make it globally available for other modules
+window.enableHorizontalScroll = enableHorizontalScroll;
+
+// ========================================
 // VIEW SWITCHING
 // ========================================
 function switchPointsView(viewName) {
@@ -128,10 +148,19 @@ async function loadBatches() {
 
         applyBatchFilters();
 
+        // Enable horizontal scroll with mouse wheel (like users module)
+        initBatchTableHorizontalScroll();
+
     } catch (err) {
         console.error('Failed to load batches:', err);
         tbody.innerHTML = `<tr><td colspan="8" class="error-cell">加载失败: ${err.message}</td></tr>`;
     }
+}
+
+// Enable horizontal scroll with mouse wheel on the batch table
+function initBatchTableHorizontalScroll() {
+    const tablePanel = document.querySelector('#points-view-batches .glass-panel.users-table-panel');
+    enableHorizontalScroll(tablePanel);
 }
 
 // Load packages for filter dropdown
@@ -780,13 +809,14 @@ function updatePaginationUI() {
     let paginationContainer = document.getElementById('batchPagination');
 
     // Create pagination container if it doesn't exist
+    // Place it OUTSIDE the scrollable .glass-panel, directly in #points-view-batches
     if (!paginationContainer) {
-        const tablePanel = document.querySelector('#points-view-batches .glass-panel');
-        if (tablePanel) {
+        const viewSection = document.getElementById('points-view-batches');
+        if (viewSection) {
             paginationContainer = document.createElement('div');
             paginationContainer.id = 'batchPagination';
             paginationContainer.className = 'pagination-controls';
-            tablePanel.appendChild(paginationContainer);
+            viewSection.appendChild(paginationContainer);
         }
     }
 
@@ -1331,6 +1361,9 @@ async function viewBatchCodes(batchId) {
 
         // Reset scroll to top AFTER content is set
         modalBody.scrollTop = 0;
+
+        // Enable horizontal scroll with mouse wheel on modal table
+        enableHorizontalScroll(modalBody);
 
     } catch (err) {
         const modalBody = document.querySelector('.codes-modal-body');
