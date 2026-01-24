@@ -16193,4 +16193,39 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     .user-modal-actions .modal-action-btn.notifications-bell {
         grid-column: 4 / 6 !important;
     }
+
+    /* Fix User Table Column Visibility */
+    /* Ensure Identity Column (Avatar/Name) is ALWAYS visible */
+    #usersTable td:has(.user-cell),
+    #usersTable th:nth-child(2) {
+        display: table-cell !important;
+        width: auto !important;
+        max-width: 140px;
+        /* Limit width */
+    }
+
+    /* Make user info stack compactly */
+    .user-info .user-email {
+        display: none;
+        /* Hide email on very narrow screens if needed, or keep */
+    }
+
+    /* Hide less important columns on mobile */
+    /* Hide Status (Active Time) column - usually column 4 */
+    #usersTable th:nth-child(4),
+    #usersTable td:has(.active-status) {
+        display: none !important;
+    }
+
+    /* Hide Tags column - usually column 6 */
+    #usersTable th:nth-child(6),
+    #usersTable td:has(.user-tags-cell) {
+        display: none !important;
+    }
+
+    /* Adjust Assets column width */
+    #usersTable td:has(.assets-cell) {
+        width: 80px;
+        text-align: right;
+    }
 }
