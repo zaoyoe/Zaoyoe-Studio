@@ -16195,14 +16195,21 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     }
 
     /* Fix User Table Column Visibility */
-    /* Ensure Identity Column (Avatar/Name) is ALWAYS visible */
+    /* Ensure Identity Column (Avatar/Name) is ALWAYS visible but SCROLLS with table */
     #usersTable td:has(.user-cell),
     #usersTable th:nth-child(2) {
         display: table-cell !important;
         width: auto !important;
         max-width: 140px;
         /* Limit width */
+        position: static;
+        /* Remove sticky */
+        background: transparent !important;
+        /* Allow row hover effect */
+        box-shadow: none;
     }
+
+
 
     /* Make user info stack compactly */
     .user-info .user-email {
@@ -16210,17 +16217,18 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
         /* Hide email on very narrow screens if needed, or keep */
     }
 
-    /* Hide less important columns on mobile */
-    /* Hide Status (Active Time) column - usually column 4 */
+    /* Show all columns but enable scroll */
     #usersTable th:nth-child(4),
-    #usersTable td:has(.active-status) {
-        display: none !important;
-    }
-
-    /* Hide Tags column - usually column 6 */
+    #usersTable td:has(.active-status),
     #usersTable th:nth-child(6),
     #usersTable td:has(.user-tags-cell) {
-        display: none !important;
+        display: table-cell !important;
+    }
+
+    /* Enable horizontal scroll on the panel */
+    .users-table-panel {
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
     }
 
     /* Adjust Assets column width */
