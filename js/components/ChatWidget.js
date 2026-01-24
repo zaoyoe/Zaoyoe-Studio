@@ -4,6 +4,9 @@ class ChatWidget {
         this.isOpen = false;
         this.sessionId = this.getSessionId();
         this.supabase = window.supabaseClient; // Assuming global supabase client
+        this.unreadCount = 0; // Track unread messages
+        this.lastMessageTime = null; // Track last seen message
+        this.unreadSessions = new Set(); // Track sessions with unread messages (admin mode)
 
         // Define common emojis
         this.emojis = ['😀', '😂', '😍', '🤔', '😭', '😡', '👍', '👎', '🎉', '🔥', '❤️', '👀', '🚀', '💯', '👋', '✨', '🤖', '👻'];
@@ -20,30 +23,1354 @@ class ChatWidget {
         return sid;
     }
 
-    init() {
-        this.render();
-        this.bindEvents();
-        this.subscribeToMessages();
-        this.loadHistory();
+    async init() {
+        this.renderFAB();
+        this.bindFabEvents();
+
+        // Check if user is admin
+        let isAdmin = false;
+        try {
+            const { data: { user } } = await this.supabase.auth.getUser();
+            // Hardcoded check for super admin as per request logic
+            if (user && user.email === 'zaoyoe@gmail.com') {
+                isAdmin = true;
+            }
+        } catch (e) { console.error(e); }
+
+        if (isAdmin) {
+            this.renderAdminMode();
+        } else {
+            // For logged-in users, use their email as session_id instead of guest ID
+            try {
+                const { data: { user } } = await this.supabase.auth.getUser();
+                if (user && user.email) {
+                    this.sessionId = user.email;
+                }
+            } catch (e) { console.error('Failed to get user for session:', e); }
+
+            this.renderUserMode();
+            // User mode specific logic
+            this.bindUserEvents(); // Split bindEvents
+            this.subscribeToMessages();
+            this.loadHistory();
+            this.checkAdminStatus();
+            setInterval(() => this.checkAdminStatus(), 60000);
+        }
     }
 
-    render() {
-        // Create FAB
+    async checkAdminStatus() {
+        try {
+            // Find the latest message from an admin
+            const { data, error } = await this.supabase
+                .from('chat_messages')
+                .select('created_at')
+                .eq('is_admin', true)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .single();
+
+            const statusText = this.chatWindow.querySelector('.target-admin-status');
+            const statusDot = this.chatWindow.querySelector('.status-dot');
+
+            if (!statusText || !statusDot) return;
+
+            if (error || !data) {
+                // No admin history, default to just "Active" or similar, or keep "Online" for positivity
+                // But honestly, if no data, maybe "客服离线"
+                statusText.innerText = "管理员离线";
+                statusDot.className = "status-dot offline";
+                return;
+            }
+
+            const lastActive = new Date(data.created_at);
+            const now = new Date();
+            const diffMinutes = Math.floor((now - lastActive) / (1000 * 60));
+
+            if (diffMinutes < 15) {
+                statusText.innerText = "管理员在线";
+                statusDot.className = "status-dot online";
+            } else if (diffMinutes < 60) {
+                statusText.innerText = `${diffMinutes}分钟前在线`;
+                statusDot.className = "status-dot away";
+            } else if (diffMinutes < 1440) {
+                const hours = Math.floor(diffMinutes / 60);
+                statusText.innerText = `${hours}小时前在线`;
+                statusDot.className = "status-dot away";
+            } else {
+                statusText.innerText = "管理员离线";
+                statusDot.className = "status-dot offline";
+            }
+
+        } catch (err) {
+            console.error('Error checking admin status:', err);
+        }
+    }
+
+    renderFAB() {
+        // Create FAB with Custom Mascot (CSS Art)
         this.fab = document.createElement('div');
         this.fab.className = 'chat-widget-fab';
-        this.fab.innerHTML = '<i class="fas fa-comment-alt"></i>';
+        this.fab.innerHTML = `
+            <div class="mascot-wrapper">
+                <div class="mascot-head">
+                    <div class="mascot-ears"></div>
+                    <div class="mascot-face">
+                        <div class="mascot-eyes">
+                            <span class="eye left"></span>
+                            <span class="eye right"></span>
+                        </div>
+                        <div class="mascot-mouth"></div>
+                    </div>
+                </div>
+            </div>
+        `;
         document.body.appendChild(this.fab);
+    }
 
+    bindFabEvents() {
+        this.fab.addEventListener('click', () => {
+            this.toggleChat();
+            // Clear unread count when opening chat
+            if (this.isOpen) {
+                this.clearUnread();
+            }
+        });
+    }
+
+    // ===== Notification System =====
+
+    showNotification(message, senderName = '新消息', forceShow = false) {
+        // Don't show notification if chat is open (unless forceShow is true)
+        if (this.isOpen && !forceShow) return;
+
+        // Increment unread count
+        this.unreadCount++;
+        this.updateBadge();
+
+        // Add animation classes
+        this.fab.classList.add('has-unread');
+        this.fab.classList.add('has-new-message');
+
+        // Remove bounce animation after it completes
+        setTimeout(() => {
+            this.fab.classList.remove('has-new-message');
+        }, 600);
+
+        // Add wiggle animation
+        setTimeout(() => {
+            this.fab.classList.add('wiggle');
+            setTimeout(() => this.fab.classList.remove('wiggle'), 500);
+        }, 700);
+
+        // Show message preview tooltip
+        this.showMessagePreview(message, senderName);
+
+        // Play notification sound (optional - subtle)
+        this.playNotificationSound();
+    }
+
+    updateBadge() {
+        // Remove existing badge
+        const existingBadge = this.fab.querySelector('.notification-badge');
+        if (existingBadge) existingBadge.remove();
+
+        if (this.unreadCount > 0) {
+            const badge = document.createElement('div');
+            badge.className = 'notification-badge';
+            badge.textContent = this.unreadCount > 99 ? '99+' : this.unreadCount;
+            this.fab.appendChild(badge);
+        }
+    }
+
+    clearUnread() {
+        this.unreadCount = 0;
+        this.fab.classList.remove('has-unread');
+        const badge = this.fab.querySelector('.notification-badge');
+        if (badge) badge.remove();
+        const preview = this.fab.querySelector('.message-preview');
+        if (preview) preview.remove();
+    }
+
+    showMessagePreview(message, senderName) {
+        // Remove existing preview
+        const existingPreview = this.fab.querySelector('.message-preview');
+        if (existingPreview) existingPreview.remove();
+
+        // Create preview tooltip
+        const preview = document.createElement('div');
+        preview.className = 'message-preview';
+        preview.innerHTML = `
+            <div class="preview-sender">${senderName}</div>
+            <div class="preview-text">${this.escapeHtml(message.substring(0, 100))}${message.length > 100 ? '...' : ''}</div>
+        `;
+        this.fab.appendChild(preview);
+
+        // Auto-hide after 5 seconds with cute retract animation
+        setTimeout(() => {
+            if (preview.parentNode) {
+                preview.classList.add('hiding');
+                setTimeout(() => preview.remove(), 400);
+            }
+        }, 5000);
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    playNotificationSound() {
+        // Create a subtle notification sound using Web Audio API
+        try {
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+
+            oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
+            oscillator.frequency.exponentialRampToValueAtTime(600, audioContext.currentTime + 0.1);
+
+            gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.15);
+
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 0.15);
+        } catch (e) {
+            // Audio not supported, ignore
+        }
+    }
+
+    // ===== End Notification System =====
+
+    renderAdminMode() {
+        // Two-column layout: Left = Session List, Right = Chat Area
+        this.isAdmin = true;
+        this.currentSessionId = null;
+        this.sessions = [];
+
+        this.chatWindow = document.createElement('div');
+        this.chatWindow.className = 'chat-window admin-mode-layout';
+
+        // Create overlay for clicking outside to close
+        this.overlay = document.createElement('div');
+        this.overlay.className = 'chat-overlay';
+        document.body.appendChild(this.overlay);
+
+        this.chatWindow.innerHTML = `
+            <!-- Left Sidebar: Session List -->
+            <div class="admin-sidebar">
+                <div class="admin-sidebar-header">
+                    <h3>客服消息</h3>
+                    <button class="chat-close"><i class="fas fa-times"></i></button>
+                </div>
+                <div class="admin-search">
+                    <input type="text" id="sessionSearch" placeholder="🔍 搜索会话或聊天记录...">
+                </div>
+                <div class="session-list" id="sessionList">
+                    <div class="session-loading">加载中...</div>
+                </div>
+            </div>
+            
+            <!-- Right Panel: Chat Area -->
+            <div class="admin-chat-area">
+                <div class="admin-chat-header" id="adminChatHeader">
+                    <button class="back-to-list-btn" id="backToListBtn">
+                        <i class="fas fa-arrow-left"></i>
+                    </button>
+                    <div class="chat-user-info">
+                        <span class="chat-user-name">选择一个会话</span>
+                        <span class="chat-user-id"></span>
+                    </div>
+                </div>
+                <div class="chat-messages" id="chatMessages">
+                    <div class="empty-state">
+                        <i class="fas fa-comments"></i>
+                        <p>请从左侧选择一个会话开始回复</p>
+                    </div>
+                </div>
+                <div class="chat-input-area">
+                    <input type="file" id="chatImageInput" accept="image/*" style="display: none;">
+                    <button class="chat-action-btn" id="chatUploadBtn"><i class="fas fa-plus"></i></button>
+                    <input type="text" class="chat-input" id="chatInput" placeholder="输入回复...">
+                    <button class="chat-action-btn" id="chatEmojiBtn"><i class="far fa-smile"></i></button>
+                    <button class="chat-send-btn" id="chatSendBtn"><i class="fas fa-paper-plane"></i></button>
+                </div>
+                <div class="emoji-picker-popover" id="emojiPicker">
+                    ${this.emojis.map(e => `<div class="emoji-item">${e}</div>`).join('')}
+                </div>
+            </div>
+        `;
+        document.body.appendChild(this.chatWindow);
+
+        this.messagesContainer = this.chatWindow.querySelector('#chatMessages');
+        this.input = this.chatWindow.querySelector('#chatInput');
+        this.emojiPicker = this.chatWindow.querySelector('#emojiPicker');
+        this.sessionList = this.chatWindow.querySelector('#sessionList');
+        this.chatHeader = this.chatWindow.querySelector('#adminChatHeader');
+
+        // Inject admin layout styles
+        this.injectAdminLayoutStyles();
+
+        // Bind events
+        this.bindAdminEvents();
+
+        // Load sessions
+        this.loadAdminSessions();
+
+        // Subscribe to all messages for admin
+        this.subscribeToAdminMessages();
+    }
+
+    injectAdminLayoutStyles() {
+        const style = document.createElement('style');
+        style.textContent = `
+            /* Admin Mode Layout - Two Column with Glassmorphism */
+            .chat-window.admin-mode-layout {
+                width: 700px !important;
+                max-width: 95vw;
+                height: 600px;
+                max-height: 85vh;
+                display: flex;
+                flex-direction: row;
+                border-radius: 20px;
+                overflow: hidden;
+                /* Glassmorphism effect - balanced transparency */
+                background: rgba(20, 20, 30, 0.7) !important;
+                backdrop-filter: blur(20px) saturate(150%) !important;
+                -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
+                border: 1px solid rgba(255, 255, 255, 0.2) !important;
+                box-shadow: 
+                    0 25px 50px -12px rgba(0, 0, 0, 0.6),
+                    0 0 0 1px rgba(255, 255, 255, 0.08),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.15) !important;
+            }
+            
+            /* Left Sidebar */
+            .admin-sidebar {
+                width: 240px;
+                min-width: 200px;
+                display: flex;
+                flex-direction: column;
+                background: rgba(0, 0, 0, 0.15);
+                border-right: 1px solid rgba(255, 255, 255, 0.1);
+            }
+            
+            .admin-sidebar-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 15px 15px;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            }
+            .admin-sidebar-header h3 {
+                margin: 0;
+                font-size: 16px;
+                color: white;
+                font-weight: 600;
+            }
+            
+            .admin-search {
+                padding: 10px 12px;
+            }
+            .admin-search input {
+                width: 100%;
+                padding: 8px 12px;
+                border-radius: 10px;
+                border: 1px solid rgba(255, 255, 255, 0.15);
+                background: rgba(255, 255, 255, 0.08);
+                color: white;
+                font-size: 13px;
+                box-sizing: border-box;
+            }
+            .admin-search input::placeholder {
+                color: rgba(255, 255, 255, 0.4);
+            }
+            
+            /* Session List */
+            .session-list {
+                flex: 1;
+                overflow-y: auto;
+            }
+            .session-list::-webkit-scrollbar { width: 4px; }
+            .session-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+            
+            .session-item {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                padding: 12px 15px;
+                cursor: pointer;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+                transition: background 0.2s;
+            }
+            .session-item:hover {
+                background: rgba(255, 255, 255, 0.08);
+            }
+            .session-item.active {
+                background: rgba(102, 126, 234, 0.2);
+                border-left: 3px solid #667eea;
+            }
+            
+            /* Unread session - attention-grabbing style */
+            .session-item.unread {
+                background: rgba(255, 107, 107, 0.1);
+                border-left: 3px solid #ff6b6b;
+                animation: unread-pulse 2s ease-in-out infinite;
+            }
+            .session-item.unread .session-name {
+                font-weight: 700;
+                color: #fff;
+            }
+            .session-item.unread .session-preview {
+                color: rgba(255, 255, 255, 0.9);
+            }
+            .session-item.unread .session-time {
+                color: #ff6b6b;
+                font-weight: 600;
+            }
+            
+            @keyframes unread-pulse {
+                0%, 100% {
+                    background: rgba(255, 107, 107, 0.1);
+                }
+                50% {
+                    background: rgba(255, 107, 107, 0.2);
+                }
+            }
+            
+            /* Unread badge on session item */
+            .session-item .unread-dot {
+                width: 8px;
+                height: 8px;
+                background: #ff6b6b;
+                border-radius: 50%;
+                flex-shrink: 0;
+                animation: dot-pulse 1.5s ease-in-out infinite;
+            }
+            
+            @keyframes dot-pulse {
+                0%, 100% { transform: scale(1); opacity: 1; }
+                50% { transform: scale(1.3); opacity: 0.7; }
+            }
+            
+            .session-avatar {
+                width: 36px;
+                height: 36px;
+                border-radius: 50%;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: white;
+                font-weight: 600;
+                font-size: 14px;
+                flex-shrink: 0;
+            }
+            
+            .session-info {
+                flex: 1;
+                min-width: 0;
+            }
+            .session-name {
+                color: white;
+                font-weight: 500;
+                font-size: 13px;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .session-preview {
+                color: rgba(255, 255, 255, 0.5);
+                font-size: 12px;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                margin-top: 2px;
+            }
+            .session-time {
+                color: rgba(255, 255, 255, 0.4);
+                font-size: 11px;
+                flex-shrink: 0;
+            }
+            .session-email {
+                color: rgba(255, 255, 255, 0.4);
+                font-size: 11px;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            
+            /* Search match count badge */
+            .search-match-count {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                font-size: 10px;
+                font-weight: 600;
+                padding: 3px 8px;
+                border-radius: 10px;
+                white-space: nowrap;
+                margin-left: auto;
+                flex-shrink: 0;
+                animation: badge-pop 0.3s ease;
+            }
+            
+            /* User online status in chat header */
+            .user-status-indicator {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                margin-top: 4px;
+            }
+            .user-status-indicator .status-dot {
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+            }
+            .user-status-indicator .status-dot.online {
+                background: #4cd964;
+                box-shadow: 0 0 8px rgba(76, 217, 100, 0.5);
+            }
+            .user-status-indicator .status-dot.away {
+                background: #ffcc00;
+            }
+            .user-status-indicator .status-dot.offline {
+                background: #8e8e93;
+            }
+            .user-status-indicator .status-text {
+                font-size: 11px;
+                color: rgba(255, 255, 255, 0.5);
+            }
+            
+            .session-loading {
+                padding: 20px;
+                text-align: center;
+                color: rgba(255, 255, 255, 0.5);
+            }
+            
+            /* Right Chat Area */
+            .admin-chat-area {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                min-width: 0;
+            }
+            
+            .admin-chat-header {
+                padding: 15px 20px;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+                background: rgba(255, 255, 255, 0.03);
+            }
+            .chat-user-name {
+                color: white;
+                font-weight: 600;
+                font-size: 15px;
+            }
+            .chat-user-id {
+                color: rgba(255, 255, 255, 0.5);
+                font-size: 12px;
+                margin-left: 8px;
+            }
+            
+            .admin-mode-layout .chat-messages {
+                flex: 1;
+                overflow-y: auto;
+                padding: 20px;
+            }
+            
+            .empty-state {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                height: 100%;
+                color: rgba(255, 255, 255, 0.4);
+            }
+            .empty-state i {
+                font-size: 48px;
+                margin-bottom: 15px;
+                opacity: 0.5;
+            }
+            .empty-state p {
+                margin: 0;
+                font-size: 14px;
+            }
+            
+            /* Limit image size in chat */
+            .message-image {
+                max-width: 200px;
+                max-height: 200px;
+                border-radius: 12px;
+                cursor: pointer;
+                object-fit: cover;
+            }
+            
+            /* Overlay for clicking outside to close */
+            .chat-overlay {
+                display: none;
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0, 0, 0, 0.25);
+                z-index: 9998;
+                backdrop-filter: blur(3px);
+            }
+            .chat-overlay.visible {
+                display: block;
+            }
+            
+            /* Shake hint animation for input */
+            .shake-hint {
+                animation: shake-input 0.4s ease;
+                border-color: #ff6b6b !important;
+                background: rgba(255, 107, 107, 0.1) !important;
+            }
+            
+            @keyframes shake-input {
+                0%, 100% { transform: translateX(0); }
+                20% { transform: translateX(-8px); }
+                40% { transform: translateX(8px); }
+                60% { transform: translateX(-4px); }
+                80% { transform: translateX(4px); }
+            }
+            
+            /* Message time stamp */
+            .message-time {
+                display: block;
+                font-size: 10px;
+                color: rgba(255, 255, 255, 0.4);
+                margin-top: 4px;
+                text-align: right;
+            }
+            .message.user .message-time {
+                color: rgba(255, 255, 255, 0.6);
+            }
+            .message-text {
+                display: block;
+            }
+            
+            /* Back button - hidden on desktop, visible on mobile */
+            .back-to-list-btn {
+                display: none;
+                background: none;
+                border: none;
+                color: white;
+                font-size: 18px;
+                padding: 8px 12px;
+                cursor: pointer;
+                margin-right: 8px;
+                border-radius: 8px;
+                transition: background 0.2s;
+            }
+            .back-to-list-btn:hover {
+                background: rgba(255, 255, 255, 0.1);
+            }
+            
+            /* Mobile/Narrow: Slide Navigation Pattern */
+            @media (max-width: 700px) {
+                .chat-window.admin-mode-layout {
+                    width: 380px !important;
+                    max-width: 95vw;
+                    height: 550px !important;
+                    max-height: 80vh;
+                    border-radius: 20px !important;
+                    overflow: hidden;
+                    /* Center the modal on mobile */
+                    position: fixed !important;
+                    top: 50% !important;
+                    left: 50% !important;
+                    right: auto !important;
+                    bottom: auto !important;
+                    transform: translate(-50%, -50%) !important;
+                }
+                
+                /* Mobile: Side by side sliding panels */
+                .admin-sidebar {
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    background: transparent;
+                    z-index: 2;
+                    transition: transform 0.3s ease-out;
+                    display: flex;
+                    flex-direction: column;
+                }
+                
+                /* Chat area also full size, positioned to the right */
+                .admin-chat-area {
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    transform: translateX(100%);
+                    transition: transform 0.3s ease-out;
+                    display: flex;
+                    flex-direction: column;
+                    z-index: 1;
+                }
+                
+                /* When chat is active: slide sidebar out, slide chat in */
+                .admin-mode-layout.chat-active .admin-sidebar {
+                    transform: translateX(-100%);
+                }
+                .admin-mode-layout.chat-active .admin-chat-area {
+                    transform: translateX(0);
+                }
+                
+                /* Show back button on mobile */
+                .back-to-list-btn {
+                    display: block;
+                }
+                
+                /* Session list takes full available space */
+                .session-list {
+                    flex: 1;
+                    overflow-y: auto;
+                }
+                
+                /* Chat header layout */
+                .admin-chat-header {
+                    display: flex;
+                    align-items: center;
+                }
+                
+                /* Messages area */
+                .admin-mode-layout .chat-messages {
+                    flex: 1;
+                    overflow-y: auto;
+                }
+                
+                /* Input always at bottom */
+                .admin-mode-layout .chat-input-area {
+                    flex: 0 0 auto;
+                    padding: 10px 12px;
+                }
+            }
+            
+            /* Very narrow screens */
+            @media (max-width: 480px) {
+                .chat-window.admin-mode-layout {
+                    width: 95vw;
+                    height: 75vh;
+                    border-radius: 16px;
+                }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    async loadAdminSessions() {
+        try {
+            // Get current admin user to exclude from list
+            const { data: { user: currentUser } } = await this.supabase.auth.getUser();
+            const adminUserId = currentUser?.id;
+
+            // Get all messages grouped by session, including user_id for lookup
+            const { data: messages, error } = await this.supabase
+                .from('chat_messages')
+                .select('session_id, created_at, content, is_admin, user_id')
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+
+            // Only use USER messages (not admin replies) for grouping sessions
+            const userMessages = messages.filter(m => !m.is_admin);
+
+            // Collect all user IDs from USER messages (for looking up guest sessions with logged-in users)
+            const userIds = [...new Set(userMessages.filter(m => m.user_id).map(m => m.user_id))];
+
+            // Fetch user info from profiles table using user IDs
+            let userMapById = new Map();
+
+            if (userIds.length > 0) {
+                const { data: profiles } = await this.supabase
+                    .from('profiles')
+                    .select('id, email, username')
+                    .in('id', userIds);
+
+                if (profiles) {
+                    profiles.forEach(u => {
+                        userMapById.set(u.id, u);
+                    });
+                }
+            }
+
+            // Group USER messages by user_id (for logged-in users) or session_id (for pure guests)
+            // This merges all sessions from the same user into one
+            const userSessionMap = new Map(); // key: user_id or session_id, value: { lastMsg, sessionIds[] }
+
+            userMessages.forEach(msg => {
+                // Determine the grouping key: prefer user_id for registered users
+                const groupKey = msg.user_id || msg.session_id;
+
+                // Skip admin's own messages (don't show admin as a chat session)
+                if (groupKey === adminUserId) return;
+
+                if (!userSessionMap.has(groupKey)) {
+                    userSessionMap.set(groupKey, {
+                        lastMsg: msg,
+                        sessionIds: new Set([msg.session_id]),
+                        userId: msg.user_id
+                    });
+                } else {
+                    // Add this session_id to the set (for loading all messages later)
+                    userSessionMap.get(groupKey).sessionIds.add(msg.session_id);
+                }
+            });
+
+            // Build sessions with user info
+            this.sessions = Array.from(userSessionMap.entries()).map(([groupKey, data]) => {
+                const msg = data.lastMsg;
+                const userInfo = data.userId ? userMapById.get(data.userId) : null;
+
+                // Determine display name: use username if available, else email username, else "访客" for guests
+                let displayNickname;
+                if (userInfo?.username) {
+                    displayNickname = userInfo.username;
+                } else if (userInfo?.email) {
+                    displayNickname = userInfo.email.split('@')[0];
+                } else if (groupKey.includes && groupKey.includes('@')) {
+                    displayNickname = groupKey.split('@')[0];
+                } else {
+                    displayNickname = '访客';
+                }
+
+                return {
+                    id: groupKey, // Use user_id or session_id as the identifier
+                    sessionIds: Array.from(data.sessionIds), // All session_ids for this user (for message loading)
+                    nickname: displayNickname,
+                    email: userInfo?.email || (groupKey.includes && groupKey.includes('@') ? groupKey : null),
+                    lastLogin: msg.created_at,
+                    lastMessage: msg.content,
+                    lastTime: msg.created_at,
+                    isAdmin: msg.is_admin,
+                    userId: data.userId
+                };
+            });
+
+            // Render session list
+            this.sessionList.innerHTML = '';
+            if (this.sessions.length === 0) {
+                this.sessionList.innerHTML = '<div class="session-loading">暂无会话</div>';
+                return;
+            }
+
+            this.sessions.forEach(s => {
+                const item = document.createElement('div');
+                item.className = 'session-item';
+                item.dataset.sessionId = s.id;
+
+                // Check if any of this user's session IDs are in unreadSessions
+                const sessionIds = s.sessionIds || [s.id];
+                const hasUnread = sessionIds.some(sid => this.unreadSessions.has(sid));
+                if (hasUnread) {
+                    item.classList.add('unread');
+                }
+
+                const initials = s.id.startsWith('guest_') ? 'G' : s.nickname.charAt(0).toUpperCase();
+                const preview = s.lastMessage.length > 20 ? s.lastMessage.slice(0, 20) + '...' : s.lastMessage;
+                const time = this.formatTime(s.lastTime);
+                const displayName = s.nickname.length > 12 ? s.nickname.slice(0, 12) + '...' : s.nickname;
+                const displayEmail = s.id.startsWith('guest_') ? '' : (s.email.length > 20 ? s.email.slice(0, 20) + '...' : s.email);
+
+                item.innerHTML = `
+                    <div class="session-avatar">${initials}</div>
+                    <div class="session-info">
+                        <div class="session-name">${displayName}</div>
+                        <div class="session-email">${displayEmail}</div>
+                        <div class="session-preview">${preview}</div>
+                    </div>
+                    <div class="session-time">${time}</div>
+                    ${hasUnread ? '<div class="unread-dot"></div>' : ''}
+                `;
+
+                item.addEventListener('click', () => this.selectSession(s.id, s));
+                this.sessionList.appendChild(item);
+            });
+
+        } catch (err) {
+            console.error('Failed to load sessions:', err);
+            this.sessionList.innerHTML = '<div class="session-loading">加载失败</div>';
+        }
+    }
+
+    formatTime(isoString) {
+        const date = new Date(isoString);
+        const now = new Date();
+        const diffMs = now - date;
+        const diffMins = Math.floor(diffMs / 60000);
+
+        if (diffMins < 1) return '刚刚';
+        if (diffMins < 60) return `${diffMins}分钟前`;
+
+        const diffHours = Math.floor(diffMins / 60);
+        if (diffHours < 24) return `${diffHours}小时前`;
+
+        return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
+    }
+
+    selectSession(sessionId, sessionInfo = null) {
+        // Update active state
+        this.sessionList.querySelectorAll('.session-item').forEach(item => {
+            item.classList.toggle('active', item.dataset.sessionId === sessionId);
+        });
+
+        // Find session info if not passed
+        if (!sessionInfo) {
+            sessionInfo = this.sessions.find(s => s.id === sessionId) || {
+                nickname: sessionId.startsWith('guest_') ? '访客' : sessionId.split('@')[0],
+                email: sessionId,
+                lastLogin: null
+            };
+        }
+
+        // Update header with user info
+        this.chatHeader.querySelector('.chat-user-name').textContent = sessionInfo.nickname;
+        // Show email if available, otherwise show session ID
+        const displayId = sessionInfo.email && !sessionInfo.email.startsWith('guest_')
+            ? sessionInfo.email
+            : (sessionInfo.id.includes('@') ? sessionInfo.id : sessionInfo.id);
+        this.chatHeader.querySelector('.chat-user-id').textContent = displayId;
+
+        // Update or add online status indicator
+        let statusContainer = this.chatHeader.querySelector('.user-status-indicator');
+        if (!statusContainer) {
+            statusContainer = document.createElement('div');
+            statusContainer.className = 'user-status-indicator';
+            this.chatHeader.querySelector('.chat-user-info').appendChild(statusContainer);
+        }
+
+        // Calculate online status based on last activity
+        const lastActivity = new Date(sessionInfo.lastLogin || sessionInfo.lastTime);
+        const now = new Date();
+        const diffMins = Math.floor((now - lastActivity) / 60000);
+
+        let statusClass, statusText;
+        if (diffMins < 5) {
+            statusClass = 'online';
+            statusText = '在线';
+        } else if (diffMins < 30) {
+            statusClass = 'away';
+            statusText = `${diffMins}分钟前活跃`;
+        } else if (diffMins < 60) {
+            statusClass = 'away';
+            statusText = `${diffMins}分钟前`;
+        } else if (diffMins < 1440) {
+            statusClass = 'offline';
+            statusText = `${Math.floor(diffMins / 60)}小时前`;
+        } else {
+            statusClass = 'offline';
+            statusText = `${Math.floor(diffMins / 1440)}天前`;
+        }
+
+        statusContainer.innerHTML = `<span class="status-dot ${statusClass}"></span><span class="status-text">${statusText}</span>`;
+
+        // Slide to chat view on mobile
+        this.chatWindow.classList.add('chat-active');
+
+        // Clear unread status for this session
+        const sessionIdsToMark = sessionInfo.sessionIds || [sessionId];
+        sessionIdsToMark.forEach(sid => this.unreadSessions.delete(sid));
+        // Refresh list to remove unread styling
+        this.loadAdminSessions();
+
+        // Load messages (pass all session IDs for merged sessions)
+        this.loadSessionMessages(sessionInfo.sessionIds || [sessionId]);
+    }
+
+    async loadSessionMessages(sessionIds) {
+        // sessionIds can be an array (merged user) or will be converted to array
+        const sessionIdArray = Array.isArray(sessionIds) ? sessionIds : [sessionIds];
+        this.currentSessionIds = sessionIdArray;
+        // Set currentSessionId for sending messages (use first one as the reply session)
+        this.currentSessionId = sessionIdArray[0];
+        this.messagesContainer.innerHTML = '<div class="message admin">加载中...</div>';
+
+        try {
+            const { data, error } = await this.supabase
+                .from('chat_messages')
+                .select('*')
+                .in('session_id', sessionIdArray)
+                .order('created_at', { ascending: true });
+
+            if (error) throw error;
+
+            this.messagesContainer.innerHTML = '';
+            data.forEach(msg => {
+                this.appendMessage(msg.content, msg.is_admin ? 'admin' : 'user', msg.message_type === 'image' ? 'image' : 'text', msg.created_at);
+            });
+            this.scrollToBottom();
+
+        } catch (err) {
+            console.error('Failed to load messages:', err);
+            this.messagesContainer.innerHTML = '<div class="message admin">加载失败</div>';
+        }
+    }
+
+    async searchSessions(query) {
+        // First, search in session list (name, email, preview)
+        this.sessionList.querySelectorAll('.session-item').forEach(item => {
+            item.style.display = 'flex';
+            // Remove previous match count
+            const existingCount = item.querySelector('.search-match-count');
+            if (existingCount) existingCount.remove();
+        });
+
+        // Then search in chat messages database
+        try {
+            const { data: messages, error } = await this.supabase
+                .from('chat_messages')
+                .select('session_id, content')
+                .ilike('content', `%${query}%`);
+
+            if (error) throw error;
+
+            // Count matches per session
+            const matchCounts = {};
+            if (messages) {
+                messages.forEach(msg => {
+                    matchCounts[msg.session_id] = (matchCounts[msg.session_id] || 0) + 1;
+                });
+            }
+
+            // Get all session IDs that have matched messages
+            const matchedSessionIds = new Set(Object.keys(matchCounts));
+
+            // Update UI
+            this.sessionList.querySelectorAll('.session-item').forEach(item => {
+                const sessionId = item.dataset.sessionId;
+                const name = item.querySelector('.session-name')?.textContent.toLowerCase() || '';
+                const email = item.querySelector('.session-email')?.textContent.toLowerCase() || '';
+                const preview = item.querySelector('.session-preview')?.textContent.toLowerCase() || '';
+
+                // Check if session info matches OR if there are message matches
+                const session = this.sessions?.find(s => s.id === sessionId);
+                const sessionIds = session?.sessionIds || [sessionId];
+                const hasMessageMatch = sessionIds.some(sid => matchedSessionIds.has(sid));
+                const hasInfoMatch = name.includes(query) || email.includes(query) || preview.includes(query);
+
+                if (hasInfoMatch || hasMessageMatch) {
+                    item.style.display = 'flex';
+
+                    // Show match count if there are message matches
+                    const totalMatches = sessionIds.reduce((sum, sid) => sum + (matchCounts[sid] || 0), 0);
+                    if (totalMatches > 0) {
+                        const countBadge = document.createElement('div');
+                        countBadge.className = 'search-match-count';
+                        countBadge.textContent = `${totalMatches} 条匹配`;
+                        item.appendChild(countBadge);
+                    }
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+        } catch (err) {
+            console.error('Search failed:', err);
+            // Fallback to basic search
+            this.sessionList.querySelectorAll('.session-item').forEach(item => {
+                const name = item.querySelector('.session-name')?.textContent.toLowerCase() || '';
+                const preview = item.querySelector('.session-preview')?.textContent.toLowerCase() || '';
+                const matches = name.includes(query) || preview.includes(query);
+                item.style.display = matches ? 'flex' : 'none';
+            });
+        }
+    }
+
+    bindAdminEvents() {
+        // Close button
+        this.chatWindow.querySelector('.chat-close').addEventListener('click', () => this.toggleChat());
+
+        // Overlay click to close
+        if (this.overlay) {
+            this.overlay.addEventListener('click', () => this.toggleChat());
+        }
+
+        // Back to list button (mobile slide navigation)
+        const backBtn = this.chatWindow.querySelector('#backToListBtn');
+        if (backBtn) {
+            backBtn.addEventListener('click', () => {
+                this.chatWindow.classList.remove('chat-active');
+            });
+        }
+
+        // Session search filter - enhanced with chat message search
+        const searchInput = this.chatWindow.querySelector('#sessionSearch');
+        if (searchInput) {
+            let searchTimeout;
+            searchInput.addEventListener('input', async (e) => {
+                const query = e.target.value.toLowerCase().trim();
+
+                // Clear previous search timeout
+                if (searchTimeout) clearTimeout(searchTimeout);
+
+                if (!query) {
+                    // Show all sessions when empty
+                    this.sessionList.querySelectorAll('.session-item').forEach(item => {
+                        item.style.display = 'flex';
+                        // Remove search highlights
+                        const highlight = item.querySelector('.search-match-count');
+                        if (highlight) highlight.remove();
+                    });
+                    return;
+                }
+
+                // Debounce search
+                searchTimeout = setTimeout(async () => {
+                    await this.searchSessions(query);
+                }, 300);
+            });
+        }
+
+        // Send Message (as admin)
+        this.chatWindow.querySelector('#chatSendBtn').addEventListener('click', () => this.sendAdminMessage());
+        this.input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') this.sendAdminMessage();
+        });
+
+        // Emoji Picker
+        const emojiBtn = this.chatWindow.querySelector('#chatEmojiBtn');
+        emojiBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.emojiPicker.classList.toggle('active');
+        });
+
+        this.emojiPicker.addEventListener('click', (e) => {
+            if (e.target.classList.contains('emoji-item')) {
+                this.input.value += e.target.textContent;
+                this.input.focus();
+            }
+        });
+
+        document.addEventListener('click', () => this.emojiPicker.classList.remove('active'));
+
+        // Image Upload
+        const uploadBtn = this.chatWindow.querySelector('#chatUploadBtn');
+        const imageInput = this.chatWindow.querySelector('#chatImageInput');
+        uploadBtn.addEventListener('click', () => imageInput.click());
+        imageInput.addEventListener('change', (e) => this.handleAdminImageUpload(e));
+    }
+
+    async sendAdminMessage() {
+        if (!this.currentSessionId) {
+            // Show friendly inline hint instead of alert
+            this.input.classList.add('shake-hint');
+            this.input.placeholder = '⚠️ 请先选择一个会话';
+            setTimeout(() => {
+                this.input.classList.remove('shake-hint');
+                this.input.placeholder = '输入回复...';
+            }, 2000);
+            return;
+        }
+
+        const text = this.input.value.trim();
+        if (!text) return;
+
+        // Optimistic UI update
+        this.appendMessage(text, 'admin');
+        this.input.value = '';
+        this.scrollToBottom();
+
+        try {
+            await this.supabase
+                .from('chat_messages')
+                .insert({
+                    session_id: this.currentSessionId,
+                    content: text,
+                    message_type: 'text',
+                    is_admin: true
+                });
+        } catch (err) {
+            console.error('Failed to send:', err);
+        }
+    }
+
+    async handleAdminImageUpload(event) {
+        if (!this.currentSessionId) {
+            // Show friendly inline hint instead of alert
+            this.input.classList.add('shake-hint');
+            this.input.placeholder = '⚠️ 请先选择一个会话';
+            setTimeout(() => {
+                this.input.classList.remove('shake-hint');
+                this.input.placeholder = '输入回复...';
+            }, 2000);
+            event.target.value = ''; // Clear file input
+            return;
+        }
+
+        const file = event.target.files[0];
+        if (!file) return;
+
+        try {
+            // Compress image
+            const compressedFile = await this.compressImage(file);
+
+            const fileName = `admin_${Date.now()}_${Math.random().toString(36).substring(7)}.webp`;
+            const { error: uploadError } = await this.supabase.storage
+                .from('chat-images')
+                .upload(fileName, compressedFile);
+
+            if (uploadError) throw uploadError;
+
+            const { data: urlData } = this.supabase.storage
+                .from('chat-images')
+                .getPublicUrl(fileName);
+
+            const imageUrl = urlData.publicUrl;
+
+            // Send as image message
+            await this.supabase
+                .from('chat_messages')
+                .insert({
+                    session_id: this.currentSessionId,
+                    content: imageUrl,
+                    message_type: 'image',
+                    is_admin: true
+                });
+
+            this.appendMessage(imageUrl, 'admin', true);
+            this.scrollToBottom();
+
+        } catch (err) {
+            console.error('Failed to upload:', err);
+            alert('上传失败: ' + err.message);
+        }
+
+        event.target.value = '';
+    }
+
+    subscribeToAdminMessages() {
+        this.supabase
+            .channel('admin-chat-global')
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, (payload) => {
+                const msg = payload.new;
+
+                // Skip admin's own messages
+                if (msg.is_admin) return;
+
+                // Check if we're currently ACTIVELY viewing this session's chat
+                // Must be: window open + selected this session + on mobile: must be in chat view (not list view)
+                const isMobile = window.innerWidth <= 700;
+                const isInChatView = !isMobile || (this.chatWindow && this.chatWindow.classList.contains('chat-active'));
+                const isViewingThisSession = this.isOpen &&
+                    this.currentSessionId &&
+                    msg.session_id === this.currentSessionId &&
+                    isInChatView;
+
+                if (isViewingThisSession) {
+                    // Append message to current chat
+                    this.appendMessage(msg.content, 'user', msg.message_type === 'image');
+                    this.scrollToBottom();
+                }
+
+                // Always show notification if not actively viewing the chat
+                if (!isViewingThisSession) {
+                    const messageContent = msg.message_type === 'image' ? '📷 发送了一张图片' : msg.content;
+                    const senderName = msg.session_id.includes('@') ? msg.session_id.split('@')[0] : '访客';
+                    this.showNotification(messageContent, `💬 ${senderName}`, true); // forceShow for admin
+
+                    // Mark session as unread
+                    this.unreadSessions.add(msg.session_id);
+                }
+
+                // Refresh session list to show new messages (will apply unread styling)
+                this.loadAdminSessions();
+            })
+            .subscribe();
+    }
+
+    injectUserLayoutStyles() {
+        // Avoid duplicate injection
+        if (document.getElementById('user-chat-styles')) return;
+
+        const style = document.createElement('style');
+        style.id = 'user-chat-styles';
+        style.textContent = `
+            /* User Mode Glassmorphism Enhancement */
+            .chat-window:not(.admin-mode-layout) {
+                /* Glassmorphism effect - same as admin mode */
+                background: rgba(20, 20, 30, 0.7) !important;
+                backdrop-filter: blur(20px) saturate(150%) !important;
+                -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
+                border: 1px solid rgba(255, 255, 255, 0.2) !important;
+                box-shadow: 
+                    0 25px 50px -12px rgba(0, 0, 0, 0.6),
+                    0 0 0 1px rgba(255, 255, 255, 0.08),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.15) !important;
+            }
+            
+            /* Overlay for user mode (same as admin) */
+            .chat-overlay {
+                display: none;
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0, 0, 0, 0.25);
+                z-index: 9997;
+                backdrop-filter: blur(3px);
+            }
+            .chat-overlay.visible {
+                display: block;
+            }
+            
+            /* Mobile: Center the chat window */
+            @media (max-width: 700px) {
+                .chat-window:not(.admin-mode-layout) {
+                    position: fixed !important;
+                    top: 50% !important;
+                    left: 50% !important;
+                    right: auto !important;
+                    bottom: auto !important;
+                    transform: translate(-50%, -50%) !important;
+                    width: 90vw !important;
+                    max-width: 400px !important;
+                    height: 70vh !important;
+                    max-height: 600px !important;
+                }
+                
+                .chat-window:not(.admin-mode-layout).active {
+                    transform: translate(-50%, -50%) scale(1) !important;
+                }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    renderUserMode() {
         // Create Chat Window
         this.chatWindow = document.createElement('div');
         this.chatWindow.className = 'chat-window';
         this.chatWindow.innerHTML = `
             <div class="chat-header">
                 <div class="chat-header-info">
-                    <div class="chat-avatar"><i class="fas fa-robot"></i></div>
+                    <div class="chat-avatar">
+                        <div class="mascot-wrapper" style="transform: scale(0.8);">
+                            <div class="mascot-head">
+                                <div class="mascot-ears"></div>
+                                <div class="mascot-face">
+                                    <div class="mascot-eyes">
+                                        <span class="eye left"></span>
+                                        <span class="eye right"></span>
+                                    </div>
+                                    <div class="mascot-mouth"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                     <div class="chat-title">
                         <h3>在线客服</h3>
-                        <p>通常在几分钟内回复</p>
+                        <div class="chat-status-indicator">
+                            <span class="status-dot online"></span>
+                            <span class="status-text target-admin-status">管理员在线</span>
+                        </div>
                     </div>
                 </div>
                 <button class="chat-close"><i class="fas fa-times"></i></button>
@@ -67,15 +1394,27 @@ class ChatWidget {
         `;
         document.body.appendChild(this.chatWindow);
 
+        // Create overlay for clicking outside to close (same as admin mode)
+        this.overlay = document.createElement('div');
+        this.overlay.className = 'chat-overlay';
+        document.body.appendChild(this.overlay);
+
+        // Inject user mode styles (glassmorphism enhancement)
+        this.injectUserLayoutStyles();
+
         this.messagesContainer = this.chatWindow.querySelector('#chatMessages');
         this.input = this.chatWindow.querySelector('#chatInput');
         this.emojiPicker = this.chatWindow.querySelector('#emojiPicker');
     }
 
-    bindEvents() {
-        // Toggle Chat
-        this.fab.addEventListener('click', () => this.toggleChat());
+    bindUserEvents() {
+        // Toggle Chat (Close button inside header)
         this.chatWindow.querySelector('.chat-close').addEventListener('click', () => this.toggleChat());
+
+        // Overlay click to close (same as admin mode)
+        if (this.overlay) {
+            this.overlay.addEventListener('click', () => this.toggleChat());
+        }
 
         // Send Message
         this.chatWindow.querySelector('#chatSendBtn').addEventListener('click', () => this.sendMessage());
@@ -101,11 +1440,9 @@ class ChatWidget {
 
         // Close UI when clicking outside
         document.addEventListener('click', (e) => {
-            if (!this.chatWindow.contains(e.target) && !this.fab.contains(e.target)) {
-                // accessing private property from outside, technically ok directly
-                // Logic: Close emoji picker if open
-                this.emojiPicker.classList.remove('active');
-            }
+            if (this.chatWindow.contains(e.target) || this.fab.contains(e.target)) return;
+            // logic: close emoji picker
+            if (this.emojiPicker) this.emojiPicker.classList.remove('active');
         });
 
         // Image Upload
@@ -122,10 +1459,14 @@ class ChatWidget {
             this.chatWindow.classList.add('active');
             this.fab.style.opacity = '0';
             this.fab.style.pointerEvents = 'none';
+            // Show overlay (for admin mode)
+            if (this.overlay) this.overlay.classList.add('visible');
         } else {
             this.chatWindow.classList.remove('active');
             this.fab.style.opacity = '1';
             this.fab.style.pointerEvents = 'all';
+            // Hide overlay
+            if (this.overlay) this.overlay.classList.remove('visible');
         }
     }
 
@@ -141,6 +1482,8 @@ class ChatWidget {
             // Check auth
             const { data: { user } } = await this.supabase.auth.getUser();
             const userId = user ? user.id : null;
+            // Use email as session_id for logged-in users, otherwise guest session
+            const sessionId = user?.email || this.sessionId;
 
             const { error } = await this.supabase
                 .from('chat_messages')
@@ -148,7 +1491,7 @@ class ChatWidget {
                     content: text,
                     message_type: 'text',
                     user_id: userId,
-                    session_id: this.sessionId, // Fallback for guests
+                    session_id: sessionId,
                     is_admin: false
                 });
 
@@ -159,19 +1502,65 @@ class ChatWidget {
         }
     }
 
+    // Client-side image compression
+    async compressImage(file) {
+        return new Promise((resolve, reject) => {
+            const maxWidth = 1920;
+            const quality = 0.7;
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = (event) => {
+                const img = new Image();
+                img.src = event.target.result;
+                img.onload = () => {
+                    let width = img.width;
+                    let height = img.height;
+
+                    if (width > maxWidth) {
+                        height = (maxWidth / width) * height;
+                        width = maxWidth;
+                    }
+
+                    const canvas = document.createElement('canvas');
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+
+                    canvas.toBlob((blob) => {
+                        if (blob) {
+                            // Create a new File object with .webp extension
+                            const newFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".webp", {
+                                type: 'image/webp',
+                                lastModified: Date.now(),
+                            });
+                            resolve(newFile);
+                        } else {
+                            reject(new Error('Canvas is empty'));
+                        }
+                    }, 'image/webp', quality);
+                };
+                img.onerror = (error) => reject(error);
+            };
+            reader.onerror = (error) => reject(error);
+        });
+    }
+
     async handleImageUpload(e) {
         const file = e.target.files[0];
         if (!file) return;
 
         try {
+            // Compress image
+            const compressedFile = await this.compressImage(file);
+
             // Upload to Supabase Storage
-            const fileExt = file.name.split('.').pop();
-            const fileName = `${Math.random()}.${fileExt}`;
-            const filePath = `chat-images/${fileName}`;
+            const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.webp`;
+            const filePath = `chat-images/${fileName}`; // Keep filePath structure but use webp
 
             const { error: uploadError } = await this.supabase.storage
-                .from('chat-assets') // Make sure this bucket exists or use a dedicated one
-                .upload(filePath, file);
+                .from('chat-assets') // Make sure this bucket exists
+                .upload(filePath, compressedFile);
 
             if (uploadError) throw uploadError;
 
@@ -186,6 +1575,8 @@ class ChatWidget {
             // Save to DB
             const { data: { user } } = await this.supabase.auth.getUser();
             const userId = user ? user.id : null;
+            // Use email as session_id for logged-in users, otherwise guest session
+            const sessionId = user?.email || this.sessionId;
 
             await this.supabase
                 .from('chat_messages')
@@ -193,7 +1584,7 @@ class ChatWidget {
                     content: publicUrl,
                     message_type: 'image',
                     user_id: userId,
-                    session_id: this.sessionId, // Fallback for guests
+                    session_id: sessionId,
                     is_admin: false
                 });
 
@@ -203,18 +1594,39 @@ class ChatWidget {
         }
     }
 
-    appendMessage(content, type, messageType = 'text') {
+    appendMessage(content, type, messageType = 'text', timestamp = null) {
         const msgDiv = document.createElement('div');
         msgDiv.className = `message ${type}`;
 
-        if (messageType === 'image') {
-            msgDiv.innerHTML = `<img src="${content}" class="message-image" onclick="window.open(this.src, '_blank')">`;
+        // Format time
+        let timeStr = '';
+        if (timestamp) {
+            const date = new Date(timestamp);
+            timeStr = date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
         } else {
-            msgDiv.textContent = content; // Text content safe from XSS
+            timeStr = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+        }
+
+        if (messageType === 'image') {
+            msgDiv.innerHTML = `
+                <img src="${content}" class="message-image" onclick="window.open(this.src, '_blank')">
+                <span class="message-time">${timeStr}</span>
+            `;
+        } else {
+            msgDiv.innerHTML = `
+                <span class="message-text">${this.escapeHtml(content)}</span>
+                <span class="message-time">${timeStr}</span>
+            `;
         }
 
         this.messagesContainer.appendChild(msgDiv);
         this.scrollToBottom();
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 
     scrollToBottom() {
@@ -237,7 +1649,10 @@ class ChatWidget {
                     // Or check if is_admin is true
                     if (payload.new.is_admin) {
                         this.appendMessage(payload.new.content, 'admin', payload.new.message_type);
-                        // Maybe play a sound
+
+                        // Show cute notification if chat is closed
+                        const messageContent = payload.new.message_type === 'image' ? '📷 发送了一张图片' : payload.new.content;
+                        this.showNotification(messageContent, '💬 客服');
                     }
                 }
             )

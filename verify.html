@@ -45,8 +45,10 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: center;
-            padding: 40px 20px;
+            position: relative;
+            padding: 70px 20px 40px;
+            padding-bottom: 100px;
+            /* Space for absolute footer */
         }
 
         /* Starry Sky Canvas */
@@ -61,10 +63,27 @@
             opacity: 1;
         }
 
+        /* Page layout */
+        .content-wrapper {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+        }
+
         .verify-page-container {
             width: 100%;
             max-width: 520px;
             animation: fadeInUp 0.5s ease;
+            position: relative;
+            z-index: 10;
+            padding-top: 50px;
+            /* Ensure content clears fixed header elements on all screens */
+        }
+
+        @media (max-width: 600px) {
+            /* Mobile specific styles if needed */
         }
 
         @keyframes fadeInUp {
@@ -106,26 +125,35 @@
             margin: 0;
         }
 
-        /* Back link */
+        /* Back link - Icon Button Style */
         .back-link {
             position: fixed;
-            top: 24px;
+            top: 32px;
             left: 24px;
             display: flex;
             align-items: center;
-            gap: 8px;
-            color: rgba(255, 255, 255, 0.6);
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            color: rgba(255, 255, 255, 0.85);
             text-decoration: none;
-            font-size: 0.9rem;
-            transition: all 0.3s ease;
-            padding: 10px 16px;
-            border-radius: 10px;
-            background: rgba(255, 255, 255, 0.05);
+            font-size: 1.1rem;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border-radius: 50%;
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            z-index: 100;
         }
 
         .back-link:hover {
+            background: rgba(15, 23, 42, 0.8);
             color: #fff;
-            background: rgba(255, 255, 255, 0.1);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.1);
+            border-color: rgba(255, 255, 255, 0.2);
         }
 
         /* Info Cards */
@@ -211,6 +239,20 @@
             color: #6b9ece;
         }
 
+        /* Footer Styles */
+        /* Footer Styles - Absolute Bottom (matches homepage) */
+        .verify-footer {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            text-align: center;
+            padding: 30px 0;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            opacity: 0.6;
+            z-index: 5;
+        }
+
         /* Responsive */
         @media (max-width: 600px) {
             .verify-info-cards {
@@ -218,7 +260,7 @@
             }
 
             .back-link {
-                top: 16px;
+                top: 32px;
                 left: 16px;
             }
 
@@ -236,58 +278,70 @@
     <!-- Dropdown Blur Overlay -->
     <div class="dropdown-overlay" id="dropdownOverlay"></div>
 
-    <!-- Back Link -->
-    <a href="index.html" class="back-link">
-        <i class="fas fa-arrow-left"></i>
-        返回首页
+    <!-- Back to Home Button -->
+    <a href="index.html" class="back-link" title="返回首页">
+        <i class="fas fa-house"></i>
     </a>
 
     <!-- Main Container -->
-    <div class="verify-page-container">
-        <!-- Page Header -->
+    <div class="content-wrapper">
+        <div class="verify-page-container">
+            <!-- Page Header -->
 
 
-        <!-- Verify Widget -->
-        <div id="verify-widget-container"></div>
+            <!-- Verify Widget -->
+            <div id="verify-widget-container"></div>
 
-        <!-- PRE-RENDER: Synchronous check of localStorage - inject CSS into HEAD (won't be overwritten by render) -->
-        <script>
-            (function () {
-                try {
-                    const cached = localStorage.getItem('cached_user_profile');
-                    if (cached) {
-                        const user = JSON.parse(cached);
-                        if (user && (user.id || user.user_id)) {
-                            // User is logged in - inject CSS into HEAD (won't be removed by widget render)
-                            const style = document.createElement('style');
-                            style.id = 'verify-prerender-style';
-                            style.textContent = '#verifyLoginPrompt{display:none!important}#verifyForm{display:block!important}#verifyBalance{display:flex!important}';
-                            document.head.appendChild(style);
-                            console.log('[VerifyPreRender] Injected logged-in CSS into head');
+            <!-- PRE-RENDER: Synchronous check of localStorage - inject CSS into HEAD (won't be overwritten by render) -->
+            <script>
+                (function () {
+                    try {
+                        const cached = localStorage.getItem('cached_user_profile');
+                        if (cached) {
+                            const user = JSON.parse(cached);
+                            if (user && (user.id || user.user_id)) {
+                                // User is logged in - inject CSS into HEAD (won't be removed by widget render)
+                                const style = document.createElement('style');
+                                style.id = 'verify-prerender-style';
+                                style.textContent = '#verifyLoginPrompt{display:none!important}#verifyForm{display:block!important}#verifyBalance{display:flex!important}';
+                                document.head.appendChild(style);
+                                console.log('[VerifyPreRender] Injected logged-in CSS into head');
+                            }
                         }
-                    }
-                } catch (e) { console.warn('[VerifyPreRender] Error:', e); }
-            })();
-        </script>
+                    } catch (e) { console.warn('[VerifyPreRender] Error:', e); }
+                })();
+            </script>
 
-        <!-- Info Cards removed as requested -->
+            <!-- Info Cards removed as requested -->
 
-        <!-- Instructions -->
-        <div class="verify-instructions">
-            <h3><i class="fas fa-lightbulb"></i> 使用说明</h3>
-            <ol>
-                <li>直接右键复制 <code>verify eligibility</code> / <code>验证学生资格</code> 蓝色按钮的链接（不在浏览器打开）成功率更高。</li>
-                <li>认证成功提示没有资格用这个链接进去: <br><a
-                        href="https://one.google.com/ai-student?g1_landing_page=75&utm_source=antigravity&utm_campaign=argon_limit_reached"
-                        target="_blank"
-                        style="word-break: break-all; color: #6b9ece;">https://one.google.com/ai-student?g1_landing_page=75&utm_source=antigravity&utm_campaign=argon_limit_reached</a>
-                </li>
-                <li>在 <a href="https://one.google.com/ai-student" target="_blank"
-                        style="color: #6b9ece;">https://one.google.com/ai-student</a> 的那个蓝色按钮上右键 别点进去 直接右键复制链接出来!
-                    建议用无痕窗口登录账户获取！</li>
-                <li>如果你的验证链接中 verificationID 后面是空的：1.刷新网页再试。2.直接点进去重新获取。3.换号</li>
-            </ol>
+            <!-- Instructions -->
+            <div class="verify-instructions">
+                <h3><i class="fas fa-lightbulb"></i> 使用说明</h3>
+                <ol>
+                    <li>直接右键复制 <code>verify eligibility</code> / <code>验证学生资格</code> 蓝色按钮的链接（不在浏览器打开）成功率更高。</li>
+                    <li>认证成功提示没有资格用这个链接进去: <br><a
+                            href="https://one.google.com/ai-student?g1_landing_page=75&utm_source=antigravity&utm_campaign=argon_limit_reached"
+                            target="_blank"
+                            style="word-break: break-all; color: #6b9ece;">https://one.google.com/ai-student?g1_landing_page=75&utm_source=antigravity&utm_campaign=argon_limit_reached</a>
+                    </li>
+                    <li>在 <a href="https://one.google.com/ai-student" target="_blank"
+                            style="color: #6b9ece;">https://one.google.com/ai-student</a> 的那个蓝色按钮上右键 别点进去 直接右键复制链接出来!
+                        建议用无痕窗口登录账户获取！</li>
+                    <li>如果你的验证链接中 verificationID 后面是空的：1.刷新网页再试。2.直接点进去重新获取。3.换号</li>
+                </ol>
+            </div>
         </div>
+    </div>
+
+    <!-- Afdian Support Link (Flow Sticky Footer) -->
+    <div class="verify-footer">
+        <span style="font-size: 13px; color: rgba(255, 255, 255, 0.8);">支持我们: <a href="https://afdian.com/a/zaoyoe"
+                target="_blank"
+                style="color: inherit; text-decoration: none; transition: all 0.3s; border-bottom: 1px dashed rgba(255,255,255,0.4);">afdian.com/a/zaoyoe</a>
+            <span style="margin: 0 10px; opacity: 0.4;">|</span>
+            交流组: <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank"
+                style="color: inherit; text-decoration: none; transition: all 0.3s; border-bottom: 1px dashed rgba(255,255,255,0.4);">点击加入</a>
+        </span>
     </div>
 
     <!-- Points Service (for balance loading) -->
@@ -456,6 +510,19 @@
             <p class="modal-subtitle">该功能正在紧锣密鼓地开发中...</p>
         </div>
     </div>
+
+    <!-- Chat Widget -->
+    <link rel="stylesheet" href="css/chat-widget.css">
+    <script src="js/components/ChatWidget.js?v=14"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // Initialize Chat Widget after DOM is ready
+            // Use typeof check instead of window. prefix for class definitions
+            if (typeof ChatWidget !== 'undefined') {
+                window.chatWidget = new ChatWidget(window.supabaseClient);
+            }
+        });
+    </script>
 </body>
 
 </html>

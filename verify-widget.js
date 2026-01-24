@@ -766,6 +766,31 @@
                         });
                     }
 
+                    if (batchStats.success > 0) {
+                        const widget = document.querySelector('.verify-widget');
+                        if (widget) {
+                            widget.classList.remove('success-pulse'); // Reset
+                            widget.classList.remove('error-pulse');
+                            void widget.offsetWidth; // Trigger reflow
+                            widget.classList.add('success-pulse');
+                            setTimeout(() => {
+                                widget.classList.remove('success-pulse');
+                            }, 4500); // 1.5s * 3 iterations
+                        }
+                    } else if (batchStats.failed > 0) {
+                        // All failed or no success
+                        const widget = document.querySelector('.verify-widget');
+                        if (widget) {
+                            widget.classList.remove('success-pulse');
+                            widget.classList.remove('error-pulse'); // Reset
+                            void widget.offsetWidth;
+                            widget.classList.add('error-pulse');
+                            setTimeout(() => {
+                                widget.classList.remove('error-pulse');
+                            }, 4500);
+                        }
+                    }
+
                     updateBatchProgress(batchSize, batchSize);
                     resolve(data);
                 } catch (e) {
@@ -1037,13 +1062,44 @@
     }
 
     // =============================================
+    // Debug: Trigger Success Animation
+    // =============================================
+    function debugSuccessAnimation() {
+        const widget = document.querySelector('.verify-widget');
+        if (widget) {
+            console.log('[VerifyWidget] Triggering debug success animation');
+            widget.classList.remove('success-pulse');
+            void widget.offsetWidth;
+            widget.classList.add('success-pulse');
+            setTimeout(() => {
+                widget.classList.remove('success-pulse');
+            }, 4500);
+        }
+    }
+
+    function debugErrorAnimation() {
+        const widget = document.querySelector('.verify-widget');
+        if (widget) {
+            console.log('[VerifyWidget] Triggering debug error animation');
+            widget.classList.remove('success-pulse');
+            widget.classList.remove('error-pulse');
+            void widget.offsetWidth;
+            widget.classList.add('error-pulse');
+            setTimeout(() => {
+                widget.classList.remove('error-pulse');
+            }, 4500);
+        }
+    }
+
+    // =============================================
     // Public API
     // =============================================
     window.VerifyWidget = {
         init,
-        init,
         submit,
         cancel,
+        debugSuccessAnimation, // Converience for testing
+        debugErrorAnimation,
         reload: loadConfig
     };
 

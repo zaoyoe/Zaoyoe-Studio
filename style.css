@@ -5290,7 +5290,10 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     font-size: 13px;
     font-weight: 400;
     margin: 2px 0;
+    white-space: nowrap;
+    /* Prevent text wrapping */
 }
+
 
 .menu-item:hover {
     background: rgba(0, 122, 255, 0.8);

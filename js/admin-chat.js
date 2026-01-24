@@ -1,23 +1,29 @@
 
 class AdminChat {
-    constructor() {
+    constructor(targetContainer = null) {
         this.supabase = window.supabaseClient;
         this.currentSessionId = null;
         this.sessions = [];
+        this.targetContainer = targetContainer; // Optional target
         this.init();
     }
 
     init() {
-        const container = document.getElementById('chat-admin-container');
+        // If targetContainer is provided, use it. Otherwise look for default admin page container.
+        const container = this.targetContainer || document.getElementById('chat-admin-container');
         if (!container) return;
 
         this.renderLayout(container);
         this.fetchSessions();
         this.subscribeToRealtime();
 
-        document.getElementById('sessionSearch').addEventListener('input', (e) => {
-            this.filterSessions(e.target.value);
-        });
+        // Scope search listener to the container to avoid conflicts
+        const searchInput = container.querySelector('#sessionSearch');
+        if (searchInput) {
+            searchInput.addEventListener('input', (e) => {
+                this.filterSessions(e.target.value);
+            });
+        }
     }
 
     renderLayout(container) {
@@ -58,23 +64,67 @@ class AdminChat {
                             <!-- Messages -->
                         </div>
                         <div class="chat-input-wrapper">
-                            <textarea class="admin-chat-input" id="adminChatInput" placeholder="输入回复... (Enter 发送)"></textarea>
+                            <input type="file" id="adminImageInput" accept="image/*" style="display: none;">
+                            <button class="chat-action-btn" id="adminUploadBtn"><i class="fas fa-plus"></i></button>
+                            <textarea class="admin-chat-input" id="adminChatInput" placeholder="输入回复..."></textarea>
+                            <button class="chat-action-btn" id="adminEmojiBtn"><i class="far fa-smile"></i></button>
                             <button class="admin-send-btn" id="adminSendBtn"><i class="fas fa-paper-plane"></i></button>
                         </div>
+                        <div class="emoji-picker-popover admin-emoji-picker" id="adminEmojiPicker" style="display: none;"></div>
                     </div>
                 </div>
             </div>
         `;
 
-        document.getElementById('adminSendBtn').addEventListener('click', () => this.sendReply());
-        document.getElementById('adminChatInput').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                this.sendReply();
-            }
-        });
+        const sendBtn = container.querySelector('#adminSendBtn');
+        const input = container.querySelector('#adminChatInput');
+        const backBtn = container.querySelector('#mobileBackBtn');
+        const uploadBtn = container.querySelector('#adminUploadBtn');
+        const imageInput = container.querySelector('#adminImageInput');
+        const emojiBtn = container.querySelector('#adminEmojiBtn');
+        const emojiPicker = container.querySelector('#adminEmojiPicker');
 
-        document.getElementById('mobileBackBtn').addEventListener('click', () => this.backToSessions());
+        // Common emojis for chat
+        const emojis = ['😀', '😂', '🥰', '😍', '🤔', '👍', '👎', '🙏', '🎉', '❤️', '🔥', '✨', '💯', '😊', '😅', '🤣', '😢', '😭', '😱', '🤗'];
+        if (emojiPicker) {
+            emojiPicker.innerHTML = emojis.map(e => `<div class="emoji-item">${e}</div>`).join('');
+            emojiPicker.addEventListener('click', (e) => {
+                if (e.target.classList.contains('emoji-item')) {
+                    input.value += e.target.textContent;
+                    input.focus();
+                    emojiPicker.style.display = 'none';
+                }
+            });
+        }
+
+        if (sendBtn) sendBtn.addEventListener('click', () => this.sendReply());
+        if (input) {
+            input.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    this.sendReply();
+                }
+            });
+        }
+        if (backBtn) backBtn.addEventListener('click', () => this.backToSessions());
+
+        // Upload button
+        if (uploadBtn && imageInput) {
+            uploadBtn.addEventListener('click', () => imageInput.click());
+            imageInput.addEventListener('change', (e) => this.handleImageUpload(e));
+        }
+
+        // Emoji button toggle
+        if (emojiBtn && emojiPicker) {
+            emojiBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                emojiPicker.style.display = emojiPicker.style.display === 'none' ? 'grid' : 'none';
+            });
+            // Close emoji picker when clicking outside
+            document.addEventListener('click', () => {
+                emojiPicker.style.display = 'none';
+            });
+        }
     }
 
     async fetchSessions() {
@@ -294,6 +344,68 @@ class AdminChat {
         } catch (err) {
             console.error('Failed to send:', err);
         }
+    }
+
+    async handleImageUpload(event) {
+        const file = event.target.files[0];
+        if (!file || !this.currentSessionId) return;
+
+        // Show loading indicator
+        const fakeMsg = {
+            id: 'temp-img-' + Date.now(),
+            content: '上传中...',
+            message_type: 'text',
+            is_admin: true,
+            created_at: new Date().toISOString()
+        };
+        this.appendMessage(fakeMsg);
+
+        try {
+            // Upload to Supabase Storage
+            const fileName = `admin_${Date.now()}_${file.name}`;
+            const { data: uploadData, error: uploadError } = await this.supabase.storage
+                .from('chat-images')
+                .upload(fileName, file);
+
+            if (uploadError) throw uploadError;
+
+            // Get public URL
+            const { data: urlData } = this.supabase.storage
+                .from('chat-images')
+                .getPublicUrl(fileName);
+
+            const imageUrl = urlData.publicUrl;
+
+            // Remove temp message
+            const area = document.getElementById('adminMessagesArea');
+            const tempMsg = area.querySelector(`[data-id="temp-img-${fakeMsg.id.split('-').pop()}"]`);
+            if (tempMsg) tempMsg.remove();
+
+            // Send image message
+            await this.supabase
+                .from('chat_messages')
+                .insert({
+                    session_id: this.currentSessionId,
+                    content: imageUrl,
+                    message_type: 'image',
+                    is_admin: true
+                });
+
+            // Append real message
+            this.appendMessage({
+                content: imageUrl,
+                message_type: 'image',
+                is_admin: true,
+                created_at: new Date().toISOString()
+            });
+
+        } catch (err) {
+            console.error('Failed to upload image:', err);
+            alert('图片上传失败: ' + err.message);
+        }
+
+        // Reset input
+        event.target.value = '';
     }
 
     scrollToBottom() {

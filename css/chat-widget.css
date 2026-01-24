@@ -10,36 +10,361 @@
 }
 
 /* Floating Action Button */
+/* Floating Action Button - Premium Glass Design */
 .chat-widget-fab {
     position: fixed;
-    bottom: 30px;
+    top: 85%;
     right: 30px;
-    width: 60px;
-    height: 60px;
+    width: 56px;
+    height: 56px;
     border-radius: 50%;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
+    /* Centering transform */
+    transform: translateY(-50%);
+
+    /* Glass Effect Background */
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    /* Gradient Border */
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    box-shadow:
+        0 8px 32px 0 rgba(0, 0, 0, 0.3),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+    /* Inner stroke */
+
     display: flex;
     justify-content: center;
     align-items: center;
     cursor: pointer;
     z-index: 9999;
-    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
+/* Hover State - Glow and Lift */
+/* Maintain vertical centering on hover */
 .chat-widget-fab:hover {
-    transform: scale(1.1) rotate(5deg);
-    box-shadow: 0 15px 35px rgba(102, 126, 234, 0.6);
+    transform: translateY(calc(-50% - 4px)) scale(1.05);
+    background: rgba(255, 255, 255, 0.1);
+    box-shadow:
+        0 15px 40px 0 rgba(102, 126, 234, 0.4),
+        /* Blueish glow */
+        0 0 20px rgba(102, 126, 234, 0.2),
+        /* Bloom */
+        inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.3);
 }
 
-.chat-widget-fab i {
-    font-size: 28px;
-    color: white;
-    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+.chat-widget-fab:active {
+    transform: translateY(-50%) scale(0.95);
 }
+
+/* Notification Badge - Cute bubble style */
+.chat-widget-fab .notification-badge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 6px;
+    background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
+    border-radius: 11px;
+    color: white;
+    font-size: 12px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow:
+        0 4px 12px rgba(255, 107, 107, 0.5),
+        0 0 0 3px rgba(255, 255, 255, 0.9);
+    animation: badge-pop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    z-index: 10;
+}
+
+/* Badge pop-in animation */
+@keyframes badge-pop {
+    0% {
+        transform: scale(0);
+        opacity: 0;
+    }
+
+    50% {
+        transform: scale(1.3);
+    }
+
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+/* Cute bounce animation when new message arrives */
+.chat-widget-fab.has-new-message {
+    animation: cute-bounce 0.6s ease;
+}
+
+@keyframes cute-bounce {
+
+    0%,
+    100% {
+        transform: translateY(-50%) scale(1);
+    }
+
+    20% {
+        transform: translateY(-50%) scale(1.15);
+    }
+
+    40% {
+        transform: translateY(calc(-50% - 12px)) scale(0.95);
+    }
+
+    60% {
+        transform: translateY(-50%) scale(1.05);
+    }
+
+    80% {
+        transform: translateY(calc(-50% - 4px)) scale(1);
+    }
+}
+
+/* Pulsing glow effect for attention */
+.chat-widget-fab.has-unread::before {
+    content: '';
+    position: absolute;
+    top: -8px;
+    left: -8px;
+    right: -8px;
+    bottom: -8px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(102, 126, 234, 0.3) 0%, transparent 70%);
+    animation: pulse-glow 2s ease-in-out infinite;
+    z-index: -1;
+}
+
+@keyframes pulse-glow {
+
+    0%,
+    100% {
+        transform: scale(1);
+        opacity: 0.5;
+    }
+
+    50% {
+        transform: scale(1.2);
+        opacity: 1;
+    }
+}
+
+/* Wiggle animation for extra cuteness */
+.chat-widget-fab.wiggle {
+    animation: wiggle 0.5s ease;
+}
+
+@keyframes wiggle {
+
+    0%,
+    100% {
+        transform: translateY(-50%) rotate(0deg);
+    }
+
+    20% {
+        transform: translateY(-50%) rotate(-12deg);
+    }
+
+    40% {
+        transform: translateY(-50%) rotate(10deg);
+    }
+
+    60% {
+        transform: translateY(-50%) rotate(-8deg);
+    }
+
+    80% {
+        transform: translateY(-50%) rotate(5deg);
+    }
+}
+
+/* Message preview tooltip */
+.chat-widget-fab .message-preview {
+    position: absolute;
+    bottom: 70px;
+    right: 0;
+    background: rgba(20, 20, 30, 0.95);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 16px;
+    padding: 12px 16px;
+    min-width: 180px;
+    max-width: 280px;
+    box-shadow:
+        0 10px 30px rgba(0, 0, 0, 0.5),
+        0 0 0 1px rgba(255, 255, 255, 0.05);
+    animation: preview-slide-up 0.3s ease;
+    z-index: 10;
+    white-space: normal;
+    word-wrap: break-word;
+}
+
+.message-preview::after {
+    content: '';
+    position: absolute;
+    bottom: -8px;
+    right: 20px;
+    width: 0;
+    height: 0;
+    border-left: 8px solid transparent;
+    border-right: 8px solid transparent;
+    border-top: 8px solid rgba(20, 20, 30, 0.9);
+}
+
+.message-preview .preview-sender {
+    font-size: 11px;
+    color: #667eea;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.message-preview .preview-text {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.9);
+    line-height: 1.4;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+@keyframes preview-slide-up {
+    from {
+        opacity: 0;
+        transform: translateY(10px) scale(0.9);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* Message preview slide-away (retract) animation */
+.message-preview.hiding {
+    animation: preview-slide-away 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@keyframes preview-slide-away {
+    0% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+
+    40% {
+        opacity: 0.8;
+        transform: translateY(-5px) scale(1.02);
+    }
+
+    100% {
+        opacity: 0;
+        transform: translateY(20px) scale(0.5);
+    }
+}
+
+/* CSS Art: Cute Robot Mascot */
+.mascot-wrapper {
+    position: relative;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: all 0.3s ease;
+}
+
+.chat-widget-fab:hover .mascot-wrapper {
+    transform: scale(1.1) rotate(10deg);
+}
+
+.mascot-head {
+    width: 28px;
+    height: 22px;
+    background: #ffffff;
+    border-radius: 8px;
+    /* Squircle Head */
+    position: relative;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+/* Ears/Antenna */
+.mascot-head::before,
+.mascot-head::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    width: 6px;
+    height: 6px;
+    background: #ffffff;
+    /* Match head color */
+    border-radius: 50%;
+    transform: translateY(-50%);
+    z-index: -1;
+}
+
+.mascot-head::before {
+    left: -3px;
+}
+
+.mascot-head::after {
+    right: -3px;
+}
+
+/* Eyes */
+.mascot-eyes {
+    display: flex;
+    gap: 8px;
+    margin-top: -2px;
+}
+
+.eye {
+    width: 4px;
+    height: 6px;
+    background: #667eea;
+    /* Primary Color eyes */
+    border-radius: 4px;
+    animation: blink 4s infinite;
+}
+
+@keyframes blink {
+
+    0%,
+    96%,
+    100% {
+        transform: scaleY(1);
+    }
+
+    98% {
+        transform: scaleY(0.1);
+    }
+}
+
+/* Mouth (Smile) */
+.mascot-mouth {
+    position: absolute;
+    bottom: 4px;
+    width: 6px;
+    height: 3px;
+    border-bottom: 1.5px solid #667eea;
+    border-radius: 0 0 4px 4px;
+}
+
+/* Remove old icon styles */
+
+
 
 /* Chat Window Container */
+/* Chat Window Container - Premium Glass */
 .chat-window {
     position: fixed;
     bottom: 100px;
@@ -47,17 +372,23 @@
     width: 380px;
     height: 600px;
     max-height: 80vh;
-    background: var(--chat-bg-dark);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border: 1px solid var(--chat-glass-border);
-    border-radius: 24px;
-    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+    /* Darker Glass for readability */
+    background: rgba(18, 18, 22, 0.8);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 20px;
+    box-shadow:
+        0 20px 60px -10px rgba(0, 0, 0, 0.6),
+        0 0 0 1px rgba(255, 255, 255, 0.05);
     display: flex;
     flex-direction: column;
     overflow: hidden;
     z-index: 9998;
     opacity: 0;
+    visibility: hidden;
+    /* Ensure children are also non-interactive */
+
     transform: translateY(20px) scale(0.95);
     pointer-events: none;
     transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
@@ -66,6 +397,7 @@
 
 .chat-window.active {
     opacity: 1;
+    visibility: visible;
     transform: translateY(0) scale(1);
     pointer-events: all;
 }
@@ -90,13 +422,16 @@
     width: 40px;
     height: 40px;
     border-radius: 50%;
-    background: white;
+    /* Glass background instead of white to show the white mascot */
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.1);
     display: flex;
     justify-content: center;
     align-items: center;
-    font-size: 24px;
-    color: var(--chat-primary);
+    overflow: hidden;
+    /* Ensure mascot stays inside if scaled */
 }
+
 
 .chat-title h3 {
     margin: 0;
@@ -105,10 +440,55 @@
     color: white;
 }
 
-.chat-title p {
-    margin: 2px 0 0;
+.chat-status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 2px;
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #ccc;
+    display: inline-block;
+}
+
+.status-dot.online {
+    background: #4cd964;
+    box-shadow: 0 0 8px rgba(76, 217, 100, 0.4);
+    animation: pulse 2s infinite;
+}
+
+.status-dot.away {
+    background: #ffcc00;
+}
+
+.status-dot.offline {
+    background: #8e8e93;
+}
+
+.status-text {
     font-size: 12px;
     color: rgba(255, 255, 255, 0.5);
+}
+
+@keyframes pulse {
+    0% {
+        transform: scale(0.95);
+        opacity: 0.8;
+    }
+
+    50% {
+        transform: scale(1.1);
+        opacity: 1;
+    }
+
+    100% {
+        transform: scale(0.95);
+        opacity: 0.8;
+    }
 }
 
 .chat-close {
@@ -307,7 +687,23 @@
     }
 
     .chat-widget-fab {
-        bottom: 20px;
+        top: auto;
+        /* Reset top */
+        bottom: 30px;
+        /* Keep consistent with previous layout */
         right: 20px;
+        transform: none;
+        /* Remove vertical centering */
+    }
+
+    /* Reset active state transform for mobile */
+    .chat-widget-fab:active {
+        transform: scale(0.95);
+    }
+
+    /* Adjust hover for mobile touch (optional, but good for hybrid) */
+    .chat-widget-fab:hover {
+        transform: scale(1.05);
+        /* Just scale, no translate */
     }
 }

@@ -124,10 +124,11 @@
     /* Hidden initially until JS calculates position */
 }
 
-.wallet-menu-item {
+.wallet-sidebar .wallet-menu-item {
     display: flex;
     align-items: center;
     gap: 10px;
+
     padding: 12px 14px;
     border-radius: 12px;
     cursor: pointer;
@@ -1035,13 +1036,14 @@
         /* Hide on mobile */
     }
 
-    .wallet-menu-item {
+    .wallet-sidebar .wallet-menu-item {
         padding: 10px 16px;
         flex-direction: column;
         gap: 4px;
         border-radius: 10px;
         min-width: auto;
     }
+
 
     .wallet-menu-item.active {
         background: rgba(255, 215, 0, 0.12);
