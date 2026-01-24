@@ -5544,11 +5544,11 @@ input:checked+.toggle-slider:before {
         white-space: nowrap;
     }
 
-    /* Action buttons: 2x2 grid layout on mobile */
+    /* Action buttons: symmetrical 3-column grid on mobile */
     .user-modal-actions {
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 8px;
+        display: grid !important;
+        grid-template-columns: repeat(3, 1fr) !important;
+        gap: 10px !important;
         flex-shrink: 0;
         position: sticky;
         bottom: 0;
@@ -5559,13 +5559,19 @@ input:checked+.toggle-slider:before {
 
     .user-modal-actions .modal-action-btn {
         justify-content: center;
-        padding: 10px 8px;
-        font-size: 0.8rem;
+        padding: 10px 6px;
+        font-size: 0.75rem;
+        width: 100%;
+        box-sizing: border-box;
     }
 
-    /* Make notification bell full width on its own row */
+    /* Second row: 清空内容 spans column 1-2, bell icon in column 3 */
+    .user-modal-actions .modal-action-btn.danger {
+        grid-column: 1 / 3;
+    }
+
     .user-modal-actions .modal-action-btn.notifications-bell {
-        grid-column: 1 / -1;
+        grid-column: 3;
     }
 }
 
@@ -6317,8 +6323,9 @@ input:checked+.toggle-slider:before {
 }
 
 [data-theme="dark"] .modal-input {
-    background: rgba(255, 255, 255, 0.05);
-    border-color: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.05) !important;
+    border-color: rgba(255, 255, 255, 0.1) !important;
+    color: #f8fafc !important;
 }
 
 .modal-input:focus {
@@ -6700,6 +6707,21 @@ input:checked+.toggle-slider:before {
     box-sizing: border-box;
 }
 
+/* MOBILE: Stack admin control header vertically for superadmin badge */
+@media (max-width: 768px) {
+    .admin-control-header {
+        flex-wrap: wrap;
+        height: auto;
+        gap: 8px;
+    }
+
+    .admin-control-header .super-admin-badge {
+        width: fit-content;
+        margin: 4px auto 0;
+        order: 1;
+    }
+}
+
 .admin-control-left {
     display: flex;
     align-items: center;
@@ -7010,6 +7032,24 @@ input:checked+.toggle-slider:before {
     border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
     display: flex !important;
     justify-content: space-between !important;
+}
+
+/* MOBILE: User tab navigation 3x2 grid - MUST be after the above rule to override */
+@media (max-width: 768px) {
+    .user-tab-nav {
+        display: grid !important;
+        grid-template-columns: repeat(3, 1fr) !important;
+        height: auto !important;
+        min-height: auto !important;
+        gap: 4px !important;
+        padding: 8px 12px !important;
+    }
+
+    .user-tab-btn {
+        height: auto !important;
+        padding: 8px 4px !important;
+        font-size: 0.72rem !important;
+    }
 }
 
 .user-tab-btn {
@@ -7513,6 +7553,36 @@ input:checked+.toggle-slider:before {
     flex-wrap: wrap !important;
 }
 
+/* MOBILE: Force grid layout for action buttons - ID selector for highest priority */
+@media (max-width: 768px) {
+    #userModalActions {
+        display: grid !important;
+        grid-template-columns: repeat(6, 1fr) !important;
+        gap: 10px !important;
+        padding: 12px !important;
+        min-height: auto !important;
+    }
+
+    /* Each button spans 2 columns (3 per row) */
+    #userModalActions .modal-action-btn {
+        grid-column: span 2 !important;
+        width: 100% !important;
+        justify-content: center !important;
+        padding: 10px 6px !important;
+        font-size: 0.75rem !important;
+    }
+
+    /* 4th button (清空内容) - center on second row */
+    #userModalActions .modal-action-btn:nth-child(4) {
+        grid-column: 2 / 4 !important;
+    }
+
+    /* 5th button (铃铛) - next to 4th button */
+    #userModalActions .modal-action-btn:nth-child(5) {
+        grid-column: 4 / 6 !important;
+    }
+}
+
 /* =========================================
    Admin Permissions Panel (v2.5 - Exquisite Edition)
    ========================================= */
@@ -7634,6 +7704,24 @@ input:checked+.toggle-slider:before {
     padding: 2px 0 !important;
     /* Tighter items */
     font-size: 0.85rem !important;
+}
+
+/* Dark Theme for Danger Modal Checklist */
+[data-theme="dark"] .custom-modal.danger-modal .checklist-container {
+    background: rgba(255, 255, 255, 0.05) !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+[data-theme="dark"] .custom-modal.danger-modal .checklist-container .checkbox-item {
+    color: #94a3b8 !important;
+}
+
+[data-theme="dark"] .custom-modal.danger-modal .checklist-container .checkbox-item span {
+    color: #cbd5e1 !important;
+}
+
+[data-theme="dark"] .custom-modal.danger-modal .checklist-container .checkbox-item:hover span {
+    color: #f8fafc !important;
 }
 
 /* =========================================
@@ -10465,20 +10553,46 @@ input:checked+.toggle-slider:before {
 
     /* Glassmorphism Base */
     background: rgba(30, 41, 59, 0.85);
-    /* Dark Slate / Navy */
     backdrop-filter: blur(24px) saturate(180%);
     -webkit-backdrop-filter: blur(24px) saturate(180%);
     border: 1px solid rgba(255, 255, 255, 0.08);
     box-shadow:
         0 25px 50px -12px rgba(0, 0, 0, 0.5),
-        /* Deep Shadow */
         0 0 0 1px rgba(0, 0, 0, 0.1),
-        /* Inner definition */
         inset 0 1px 0 rgba(255, 255, 255, 0.1);
-    /* Top Highlight */
     border-radius: 20px;
     color: #f8fafc;
     transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
+}
+
+/* MOBILE: Smaller ban modal with proper margins */
+@media (max-width: 768px) {
+    .ban-user-modal {
+        width: calc(100% - 32px) !important;
+        max-width: calc(100% - 32px) !important;
+        margin: 16px !important;
+        max-height: 80vh;
+        border-radius: 16px !important;
+    }
+
+    .ban-user-modal .modal-body {
+        padding: 0 16px 16px 16px !important;
+    }
+
+    .ban-scope-group {
+        margin-bottom: 16px !important;
+        padding: 12px !important;
+    }
+
+    .scope-pill {
+        font-size: 0.75rem !important;
+        padding: 6px 0 !important;
+    }
+
+    .ban-actions {
+        margin-top: 16px !important;
+        gap: 8px !important;
+    }
 }
 
 /* Specific width for Points Adjustment */
@@ -10827,8 +10941,8 @@ body:not([data-theme="dark"]) .ban-user-modal .ban-actions .modal-btn:not(.confi
 }
 
 /* Form inputs in light mode */
-:root:not([data-theme="dark"]) .ban-user-modal .modal-input,
-body:not([data-theme="dark"]) .ban-user-modal .modal-input {
+/* Form inputs in light mode */
+:root:not([data-theme="dark"]) .ban-user-modal .modal-input {
     background: #fff !important;
     border-color: rgba(0, 0, 0, 0.1) !important;
     color: #1e293b !important;
@@ -10877,6 +10991,354 @@ body:not([data-theme="dark"]) .ban-user-modal .checkbox-item span {
 :root:not([data-theme="dark"]) .ban-user-modal .modal-footer,
 body:not([data-theme="dark"]) .ban-user-modal .modal-footer {
     border-top: 1px solid rgba(0, 0, 0, 0.06) !important;
+}
+
+/* =========================================
+   EXPLICIT DARK THEME FOR BAN MODAL
+   ========================================= */
+[data-theme="dark"] .ban-user-modal,
+html[data-theme="dark"] .ban-user-modal {
+    background: rgba(30, 41, 59, 0.95) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    box-shadow:
+        0 25px 50px -12px rgba(0, 0, 0, 0.5),
+        0 0 0 1px rgba(0, 0, 0, 0.1),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+    color: #f8fafc !important;
+}
+
+[data-theme="dark"] .ban-user-modal .modal-header {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
+}
+
+[data-theme="dark"] .ban-user-modal .modal-close-btn {
+    color: #94a3b8 !important;
+}
+
+[data-theme="dark"] .ban-user-modal .ban-scope-group {
+    background: rgba(0, 0, 0, 0.2) !important;
+    border: 1px solid rgba(255, 255, 255, 0.04) !important;
+}
+
+[data-theme="dark"] .ban-user-modal .ban-scope-header {
+    color: #94a3b8 !important;
+}
+
+[data-theme="dark"] .ban-user-modal .scope-options-pills {
+    background: rgba(0, 0, 0, 0.2) !important;
+}
+
+[data-theme="dark"] .ban-user-modal .scope-pill {
+    color: #64748b !important;
+}
+
+[data-theme="dark"] .ban-user-modal .scope-pill:hover {
+    color: #cbd5e1 !important;
+}
+
+[data-theme="dark"] .ban-user-modal .scope-pill.selected {
+    color: #60a5fa !important;
+}
+
+[data-theme="dark"] .ban-user-modal .scope-pill.danger.selected {
+    color: #f87171 !important;
+}
+
+[data-theme="dark"] .ban-user-modal .scope-pill.success {
+    background: rgba(34, 197, 94, 0.15) !important;
+    color: #4ade80 !important;
+    border: 1px solid rgba(34, 197, 94, 0.3) !important;
+}
+
+[data-theme="dark"] .ban-user-modal .modal-btn {
+    background: transparent !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    color: #94a3b8 !important;
+}
+
+[data-theme="dark"] .ban-user-modal .modal-btn.confirm {
+    background: rgba(59, 130, 246, 0.2) !important;
+    border: 1px solid rgba(59, 130, 246, 0.4) !important;
+    color: #60a5fa !important;
+}
+
+/* Dark theme: Input fields in ban/points modal */
+[data-theme="dark"] .ban-user-modal .modal-input {
+    background: rgba(255, 255, 255, 0.05) !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    color: #f8fafc !important;
+}
+
+[data-theme="dark"] .ban-user-modal .modal-input:focus {
+    background: rgba(255, 255, 255, 0.08) !important;
+    border-color: #6b9ece !important;
+    box-shadow: 0 0 0 3px rgba(107, 158, 206, 0.2) !important;
+}
+
+/* ============================================
+   NUCLEAR SPECIFICITY OVERRIDES FOR MODALS
+   ============================================ */
+
+/* Force Modal Title White */
+html[data-theme="dark"] body .custom-modal-overlay .ban-user-modal .modal-title,
+html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-title {
+    color: #f8fafc !important;
+}
+
+/* Force Close Button Color */
+html[data-theme="dark"] body .custom-modal-overlay .ban-user-modal .modal-close-btn,
+html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-close-btn {
+    color: #94a3b8 !important;
+}
+
+html[data-theme="dark"] body .custom-modal-overlay .ban-user-modal .modal-close-btn:hover,
+html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-close-btn:hover {
+    color: #f1f5f9 !important;
+    background: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Force Form Labels Light Gray */
+html[data-theme="dark"] body .custom-modal-overlay .ban-user-modal .form-group label,
+html[data-theme="dark"] body .custom-modal-overlay .custom-modal .form-group label {
+    color: #cbd5e1 !important;
+}
+
+html[data-theme="dark"] body .custom-modal-overlay .ban-user-modal .form-group label small,
+html[data-theme="dark"] body .custom-modal-overlay .custom-modal .form-group label small {
+    color: #94a3b8 !important;
+}
+
+/* Force Input Fields Dark Bg / White Text */
+html[data-theme="dark"] body .custom-modal-overlay .ban-user-modal input.modal-input,
+html[data-theme="dark"] body .custom-modal-overlay .ban-user-modal textarea.modal-input,
+html[data-theme="dark"] body .custom-modal-overlay .custom-modal input.modal-input,
+html[data-theme="dark"] body .custom-modal-overlay .custom-modal textarea.modal-input {
+    background: rgba(255, 255, 255, 0.05) !important;
+    border-color: rgba(255, 255, 255, 0.1) !important;
+    color: #f8fafc !important;
+}
+
+/* Force Input Placeholders */
+html[data-theme="dark"] body .custom-modal-overlay .ban-user-modal .modal-input::placeholder,
+html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-input::placeholder {
+    color: #64748b !important;
+    opacity: 1 !important;
+}
+
+/* Force Data Row Labels & Values */
+html[data-theme="dark"] body .custom-modal-overlay .ban-user-modal .data-row .label,
+html[data-theme="dark"] body .custom-modal-overlay .custom-modal .data-row .label {
+    color: #94a3b8 !important;
+}
+
+html[data-theme="dark"] body .custom-modal-overlay .ban-user-modal .data-row .value,
+html[data-theme="dark"] body .custom-modal-overlay .custom-modal .data-row .value,
+html[data-theme="dark"] body .custom-modal-overlay .ban-user-modal .value-highlight,
+html[data-theme="dark"] body .custom-modal-overlay .custom-modal .value-highlight {
+    color: #f8fafc !important;
+}
+
+/* Force Scope Pills Text */
+html[data-theme="dark"] body .custom-modal-overlay .ban-user-modal .scope-pill {
+    color: #94a3b8 !important;
+    border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+html[data-theme="dark"] body .custom-modal-overlay .ban-user-modal .scope-pill:hover,
+html[data-theme="dark"] body .custom-modal-overlay .ban-user-modal .scope-pill.selected {
+    color: #f8fafc !important;
+}
+
+/* Modal Footer Border */
+html[data-theme="dark"] body .custom-modal-overlay .ban-user-modal .modal-footer,
+html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
+    border-top: 1px solid rgba(255, 255, 255, 0.06) !important;
+}
+
+
+/* Dark theme: Modal Title & Close Button */
+[data-theme="dark"] .ban-user-modal .modal-title {
+    color: #f8fafc !important;
+}
+
+[data-theme="dark"] .ban-user-modal .modal-close-btn {
+    color: #94a3b8 !important;
+}
+
+[data-theme="dark"] .ban-user-modal .modal-close-btn:hover {
+    color: #f1f5f9 !important;
+    background: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Dark theme: Secondary Buttons (Cancel/Details) */
+[data-theme="dark"] .ban-user-modal .modal-btn:not(.confirm) {
+    color: #94a3b8 !important;
+    border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+[data-theme="dark"] .ban-user-modal .modal-btn:not(.confirm):hover {
+    color: #f1f5f9 !important;
+    background: rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Dark theme: Scope Pills (Unselected) */
+[data-theme="dark"] .ban-user-modal .scope-pill {
+    color: #94a3b8 !important;
+    /* Brighter than #64748b */
+}
+
+[data-theme="dark"] .ban-user-modal .scope-pill:hover {
+    color: #f1f5f9 !important;
+    background: rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Dark theme: Data Labels & Values (Points Modal) */
+[data-theme="dark"] .ban-user-modal .data-row .label {
+    color: #94a3b8 !important;
+}
+
+[data-theme="dark"] .ban-user-modal .value-highlight {
+    color: #f8fafc !important;
+    text-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
+}
+
+/* Dark theme: Form Labels */
+[data-theme="dark"] .ban-user-modal .form-group label {
+    color: #cbd5e1 !important;
+}
+
+[data-theme="dark"] .ban-user-modal .form-group label small {
+    color: #94a3b8 !important;
+}
+
+/* ============================================
+   NOTIFICATION MODAL STYLES & DARK THEME
+   ============================================ */
+
+/* Type Selector Buttons */
+.notif-type-selector .type-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    background: #f8fafc;
+    border-radius: 8px;
+    color: #64748b;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 0.9rem;
+}
+
+.notif-type-selector .type-btn:hover {
+    background: #f1f5f9;
+}
+
+.notif-type-selector .type-btn.active {
+    font-weight: 600;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+}
+
+.notif-type-selector .type-btn[data-type="info"].active {
+    background: #eff6ff;
+    color: #3b82f6;
+    border-color: #3b82f6;
+}
+
+.notif-type-selector .type-btn[data-type="warning"].active {
+    background: #fffbeb;
+    color: #f59e0b;
+    border-color: #f59e0b;
+}
+
+.notif-type-selector .type-btn[data-type="success"].active {
+    background: #f0fdf4;
+    color: #22c55e;
+    border-color: #22c55e;
+}
+
+/* Send Button */
+.send-notification-btn {
+    background: #3b82f6;
+    color: white;
+    border: none;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.send-notification-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(59, 130, 246, 0.4);
+}
+
+/* Dark Theme for Notification Modal */
+[data-theme="dark"] #notificationModal .custom-modal {
+    background: rgba(30, 41, 59, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    color: #f8fafc;
+}
+
+[data-theme="dark"] #notificationModal .modal-title {
+    color: #f8fafc;
+}
+
+[data-theme="dark"] #notificationModal .modal-close-btn {
+    color: #94a3b8;
+}
+
+[data-theme="dark"] #notificationModal label {
+    color: #cbd5e1;
+}
+
+[data-theme="dark"] #notificationModal .modal-input {
+    background: rgba(255, 255, 255, 0.05) !important;
+    border-color: rgba(255, 255, 255, 0.1) !important;
+    color: #f8fafc !important;
+}
+
+[data-theme="dark"] #notificationModal .modal-input:focus {
+    background: rgba(255, 255, 255, 0.08) !important;
+    border-color: #3b82f6 !important;
+}
+
+/* Dark Theme Type Buttons */
+[data-theme="dark"] .notif-type-selector .type-btn {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.1);
+    color: #94a3b8;
+}
+
+[data-theme="dark"] .notif-type-selector .type-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #f1f5f9;
+}
+
+[data-theme="dark"] .notif-type-selector .type-btn[data-type="info"].active {
+    background: rgba(59, 130, 246, 0.15);
+    color: #60a5fa;
+    border-color: rgba(59, 130, 246, 0.5);
+}
+
+[data-theme="dark"] .notif-type-selector .type-btn[data-type="warning"].active {
+    background: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+    border-color: rgba(245, 158, 11, 0.5);
+}
+
+[data-theme="dark"] .notif-type-selector .type-btn[data-type="success"].active {
+    background: rgba(34, 197, 94, 0.15);
+    color: #4ade80;
+    border-color: rgba(34, 197, 94, 0.5);
 }
 
 /* ============================================
@@ -11524,6 +11986,124 @@ body:not([data-theme="dark"]) .ban-user-modal .modal-footer {
     border-radius: 6px;
     background: linear-gradient(to right, #ebedf0, #9be9a8, #40c463, #30a14e, #216e39);
 }
+
+/* ============================================
+   MOBILE LAYOUT FIXES
+   ============================================ */
+
+@media (max-width: 768px) {
+
+    /* Fix Permissions Switch Cutoff & Consistency */
+    /* Force single row layout for consistent alignment */
+    .admin-control-header {
+        flex-wrap: nowrap !important;
+        height: auto !important;
+        min-height: 40px;
+        padding-right: 12px !important;
+        justify-content: space-between !important;
+        align-items: center !important;
+    }
+
+    /* Target the right-side control (Badge or Switch) */
+    .admin-switch-reset,
+    .admin-control-header .super-admin-badge {
+        margin-right: 0 !important;
+        /* Reset any negative margins */
+        margin-top: 0 !important;
+        margin-bottom: 0 !important;
+        flex-shrink: 0;
+        order: 0 !important;
+        /* Reset order to stay on right */
+
+        /* Reset transform specific to mobile to ensure touch target and alignment */
+        transform: none !important;
+    }
+
+    /* Fix stretched switch: Restore block layout and fixed dimensions */
+    .admin-switch-reset {
+        display: inline-block !important;
+        /* NOT flex, because children are absolute */
+        width: 40px !important;
+        height: 22px !important;
+        vertical-align: middle;
+    }
+
+    /* Ensure title doesn't push switch out if text is long */
+    .admin-control-left {
+        flex: 1;
+        min-width: 0;
+        margin-right: 8px;
+    }
+
+    /* Fix Permissions Panel Cutoff & Squeeze */
+    /* Fix Permissions Panel Cutoff & Squeeze */
+    .modal-permissions-panel {
+        /* display: block !important;  <-- REMOVED to allow JS toggle (display: none) to work */
+        width: 100% !important;
+        min-width: 100% !important;
+        box-sizing: border-box !important;
+        padding: 12px !important;
+        margin: 12px 0 0 0 !important;
+        /* Top margin only */
+        overflow-x: hidden;
+        clear: both;
+        float: none;
+    }
+
+    /* Ensure parent container allows full width */
+    .info-block {
+        display: block !important;
+        width: 100% !important;
+    }
+
+    /* REORDERING: Move Permissions below User Card */
+    .user-modal-left {
+        display: flex !important;
+        flex-direction: column !important;
+    }
+
+    .user-modal-left .user-card {
+        order: -2 !important;
+        /* Always top */
+    }
+
+    /* Others */
+    .user-modal-left .permissions-block {
+        order: -1 !important;
+        margin-top: 12px !important;
+    }
+
+    /* FIX: Reduce padding to prevent narrow cutoff and gain space */
+    .user-modal-left {
+        padding: 16px 12px !important;
+        /* Reduced from 24px 20px */
+        width: 100% !important;
+        box-sizing: border-box !important;
+    }
+
+    /* FIX: Ensure permissions panel fits inside */
+    .modal-permissions-panel {
+        width: auto !important;
+        /* Allow it to fit naturally */
+        margin-left: 0 !important;
+        margin-right: 0 !important;
+        padding: 12px !important;
+        box-sizing: border-box !important;
+    }
+
+    /* FIX: Ensure save button doesn't overflow */
+    .perm-save-btn {
+        width: 100% !important;
+        box-sizing: border-box !important;
+        margin-left: 0 !important;
+        margin-right: 0 !important;
+    }
+
+    /* Other blocks (Assets, Tags) will default to order 0 and appear below */
+}
+
+
+
 
 [data-theme="dark"] .legend-gradient {
     background: linear-gradient(to right, #161b22, #0e4429, #006d32, #26a641, #39d353);
@@ -15474,4 +16054,35 @@ body:not([data-theme="dark"]) .ban-user-modal .modal-footer {
 
 [data-theme="dark"] .toggle-slider-mini {
     background: rgba(255, 255, 255, 0.2);
+}
+
+/* ========================================
+   MOBILE: User Modal Action Buttons Grid
+   - MUST be at END of file to override all other rules
+   - 5 buttons: 3 on first row, 2 centered on second row
+   ======================================== */
+@media (max-width: 768px) {
+    .user-modal-actions {
+        display: grid !important;
+        grid-template-columns: repeat(6, 1fr) !important;
+        gap: 10px !important;
+        padding: 12px !important;
+    }
+
+    .user-modal-actions .modal-action-btn {
+        width: 100% !important;
+        justify-content: center !important;
+        padding: 10px 6px !important;
+        font-size: 0.75rem !important;
+        grid-column: span 2 !important;
+    }
+
+    /* Second row: warning button (清空内容) and bell centered */
+    .user-modal-actions .modal-action-btn.warning {
+        grid-column: 2 / 4 !important;
+    }
+
+    .user-modal-actions .modal-action-btn.notifications-bell {
+        grid-column: 4 / 6 !important;
+    }
 }

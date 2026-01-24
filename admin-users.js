@@ -1398,7 +1398,7 @@ function renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans) {
         <!--Tags - Custom Dropdown-- >
         < !--Tags - Custom Dropdown-- >
             ${window.hasPermission && window.hasPermission('users.manage') ? `
-        <div class="info-block">
+        <div class="info-block tags-block">
             <div class="admin-control-header">
                 <div class="admin-control-left">
                     <div class="admin-control-icon"><i class="fas fa-tags"></i></div>
@@ -1436,14 +1436,14 @@ function renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans) {
 
         <!-- Admin Role (Super Admin Only) -->
             ${isSuperAdmin ? `
-        <div class="info-block">
+        <div class="info-block permissions-block">
             <div class="admin-control-header">
                 <div class="admin-control-left">
                     <div class="admin-control-icon"><i class="fas fa-user-shield"></i></div>
                     <span class="admin-control-title">权限</span>
                 </div>
                 ${['fjivvid@163.com', 'zaoyoe@gmail.com'].includes(user.email) ?
-                '<div class="super-admin-badge" style="font-size:0.75rem;padding:2px 6px;">⭐ 超管</div>' :
+                '<div class="super-admin-badge">⭐ 超管</div>' :
                 `<label class="toggle-switch admin-switch-reset">
                         <input type="checkbox" id="modalAdminToggle" ${roleInfo.is_admin ? 'checked' : ''} 
                             onchange="handleModalAdminToggle('${user.id}', this.checked)">
@@ -1583,11 +1583,26 @@ function renderModalActions(user) {
         <button class="modal-action-btn warning" onclick="clearAllUserContent('${user.id}')">
             <i class="fas fa-trash-alt"></i> 清空内容
         </button>
-         <div style="flex:1"></div>
-        <button class="modal-action-btn" onclick="showNotificationModal('${user.id}')" title="发送系统通知" style="position: relative; z-index: 10; pointer-events: auto;">
+        <button class="modal-action-btn notifications-bell" onclick="showNotificationModal('${user.id}')" title="发送系统通知">
             <i class="fas fa-bell"></i>
         </button>
     `;
+
+    // Force grid layout on mobile
+    if (window.innerWidth <= 768) {
+        actionsPanel.style.display = 'grid';
+        actionsPanel.style.gridTemplateColumns = 'repeat(3, 1fr)';
+        actionsPanel.style.gap = '10px';
+        actionsPanel.style.padding = '12px';
+
+        // Style each button
+        actionsPanel.querySelectorAll('.modal-action-btn').forEach(btn => {
+            btn.style.width = '100%';
+            btn.style.justifyContent = 'center';
+            btn.style.padding = '10px 6px';
+            btn.style.fontSize = '0.75rem';
+        });
+    }
 }
 
 // Switch Tab
