@@ -3048,14 +3048,30 @@ body {
     /* Add top margin to avoid overlapping with user avatar */
     .poetry-nav-container {
         padding-top: calc(8vh + 15px);
+        padding-left: 10px;
+        padding-right: 10px;
     }
 
     .nav-items {
-        gap: 1.5rem;
+        gap: 1.2rem 0;
+        /* Rem vertical, 0 horizontal (controlled by width margin) */
+        justify-content: center;
+    }
+
+    .nav-item {
+        min-width: 0;
+        width: 24%;
+        /* Force 4 items per row */
+        margin: 0;
     }
 
     .nav-item .en {
-        font-size: 1.1rem;
+        font-size: 0.85rem;
+        /* Smaller font to fit 4 cols */
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        width: 100%;
     }
 
     .modal-inner {
