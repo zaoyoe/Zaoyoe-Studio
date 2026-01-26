@@ -22,10 +22,20 @@
     <!-- Custom CSS -->
     <link rel="stylesheet" href="capsule-styles.css?v=GLOW_V3">
     <link rel="stylesheet" href="style.css?v=RADIUS_GRADIENT_V1">
+    <!-- Prevent flash of wrong theme -->
+    <script>
+        (function () {
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme === 'dark') {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            }
+        })();
+    </script>
     <style>
         /* Force 4 columns - Override any conflicts */
         .guestbook-main {
             max-width: 100% !important;
+            width: 100% !important;
             width: 100% !important;
             padding: 0 16px !important;
             /* Reduced padding */
@@ -114,6 +124,10 @@
                 -webkit-text-size-adjust: 100%;
             }
 
+            .guestbook-main {
+                padding-top: 100px !important;
+            }
+
             /* Force all inputs to 16px minimum */
             textarea,
             input,
@@ -180,6 +194,82 @@
         .add-comment-trigger-btn {
             color: rgba(0, 0, 0, 0.6) !important;
         }
+
+        /* Replicated Back Link from Verify Page */
+        .back-link {
+            position: fixed;
+            top: 32px;
+            left: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            color: rgba(255, 255, 255, 0.85);
+            /* Default Light text? Guestbook is Light Mode? */
+            /* Guestbook body background is blobs (light/color). */
+            /* Verify page is Dark/Starry. Back button there is Dark Glass with White Text. */
+            /* If Guestbook is Light, maybe Dark Glass is fine (high contrast)? */
+            text-decoration: none;
+            font-size: 1.1rem;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border-radius: 50%;
+            background: rgba(15, 23, 42, 0.6);
+            /* Dark Glass */
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            z-index: 100;
+        }
+
+        .back-link:hover {
+            background: rgba(15, 23, 42, 0.8);
+            color: #fff;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.1);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        /* Minimalist Adaptive Bell Icon (Match Prompts Page) */
+        #notifBtn {
+            background: transparent !important;
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+            border: none !important;
+            box-shadow: none !important;
+            border-radius: 0 !important;
+
+            /* Base Color (Light Mode) */
+            color: rgba(0, 0, 0, 0.7) !important;
+            transition: color 0.2s ease, transform 0.2s ease !important;
+        }
+
+        /* System Dark */
+        @media (prefers-color-scheme: dark) {
+            #notifBtn {
+                color: rgba(255, 255, 255, 0.9) !important;
+            }
+        }
+
+        /* Explicit Dark */
+        html[data-theme="dark"] #notifBtn {
+            color: rgba(255, 255, 255, 0.9) !important;
+        }
+
+        /* Explicit Light */
+        html[data-theme="light"] #notifBtn {
+            color: rgba(0, 0, 0, 0.7) !important;
+        }
+
+        #notifBtn:hover {
+            opacity: 0.8 !important;
+            transform: scale(1.1) !important;
+            /* No background on hover, just scale/opacity */
+            background: transparent !important;
+            border-color: transparent !important;
+            box-shadow: none !important;
+        }
     </style>
     <script>
         // Handle back button with exit animation
@@ -221,8 +311,9 @@
         <div class="blob blob-3"></div>
     </div>
     <!-- Floating Back Button -->
-    <a href="index.html" class="floating-back-btn">
-        <i class="fa-solid fa-house"></i>
+    <!-- Back to Home Button (Replicated) -->
+    <a href="index.html" class="back-link" title="返回首页">
+        <i class="fas fa-house"></i>
     </a>
 
     <!-- ✨ 智能通知胶囊 (v5.2 - Fixed Refresh) -->
@@ -281,6 +372,8 @@
     </script>
 
 
+    <!-- Notification Client (For Bell) -->
+    <script src="notification-client.js"></script>
     <!-- Supabase Auth -->
     <script src="./supabase-auth-functions.js?v=GUESTBOOK_MIGRATION" defer></script>
 

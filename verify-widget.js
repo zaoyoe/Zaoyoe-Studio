@@ -119,7 +119,7 @@
                     </div>
                     <div class="verify-widget-title">
                         <h3>Gemini 验证服务</h3>
-                        <p>支持批量验证账户状态</p>
+                        <p>支持批量验证</p>
                     </div>
                     <div class="verify-quota" id="verifyQuota" style="display: none;">
                         <i class="fas fa-ticket"></i>
@@ -146,7 +146,7 @@
                             <textarea 
                                 class="verify-textarea" 
                                 id="verifyIdInput"
-                                placeholder="输入 SheerID 验证链接&#10;每行一个，支持批量验证&#10;&#10;示例:&#10;https://services.sheerid.com/verify/xxx/?verificationId=yyy&#10;https://services.sheerid.com/verify/xxx/?verificationId=zzz"
+                                placeholder="输入 SheerID 验证链接，每行一个&#10;&#10;示例:&#10;https://services.sheerid.com/verify/xxx/?verificationId=yyy&#10;https://services.sheerid.com/verify/xxx/?verificationId=zzz"
                                 rows="5"
                             ></textarea>
                             <div class="verify-batch-info">

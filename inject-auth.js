@@ -17,47 +17,56 @@
     // 1. Define HTML Structure
     const authHTML = `
     <!-- Auth Button (Top Right) -->
-    <div class="top-right-nav" style="position: fixed; top: 28px; right: 30px; z-index: 2100;">
+    <div class="top-right-nav" style="position: fixed; top: 28px; right: 30px; z-index: 2100; display: flex; align-items: center; gap: 16px;">
+        <!-- Notification Bell -->
+        <div class="notif-wrapper" style="position: relative; display: none;" id="navNotifWrapper">
+            <button id="notifBtn" onclick="toggleNotifMenu(event)"
+                style="width: 40px; height: 40px; padding: 0; display: flex; align-items: center; justify-content: center; background: transparent; border: none; cursor: pointer; color: rgba(255,255,255,0.9); transition: color 0.2s;">
+                <i class="far fa-bell" style="font-size: 1.2rem;"></i>
+                <div class="notif-badge" id="notifBadge" style="display: none;"></div>
+            </button>
+        </div>
+
+
+
+
         <button id="authBtn" class="login-trigger-btn${isLoggedIn ? ' logged-in' : ''}" onclick="handleAuthClick(event)">
             <i id="defaultAuthIcon" class="fas fa-user-circle" style="display: ${defaultIconDisplay};"></i>
             <img id="navUserAvatar" class="nav-user-avatar show" src="${avatarUrl}" alt="Avatar" style="display: ${avatarDisplay}; opacity: ${avatarOpacity};">
             <span id="authBtnText" style="display: none;">Sign In</span>
         </button>
 
-
-        <div id="userDropdown" class="user-dropdown" style="z-index: 2100;">
-            <div class="menu-item profile-menu-item" onclick="window.openProfileModal(event)">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                    <circle cx="12" cy="7" r="4"></circle>
-                </svg>
-                个人资料
+        <!-- New Avatar Dropdown -->
+        <div id="userDropdown" class="avatar-dropdown" style="z-index: 2100;">
+            <div class="dropdown-header">
+                <span class="identity-name" id="dropdownUsername">Guest</span>
+                <button class="theme-toggle-btn" onclick="window.toggleTheme(event)">
+                    <span class="theme-icon sun-icon">☀️</span>
+                    <span class="theme-icon moon-icon">🌙</span>
+                </button>
             </div>
-            <!-- My Wallet -->
-            <div class="menu-item wallet-menu-item" onclick="WalletModal.open()">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect>
-                    <line x1="1" y1="10" x2="23" y2="10"></line>
-                </svg>
-                我的钱包
-            </div>
-            <div class="divider" style="margin: 5px 0; border-top: 1px solid rgba(255,255,255,0.1);"></div>
-            <div class="menu-item switch-account" onclick="window.handleSwitchAccount(event)">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                    <circle cx="9" cy="7" r="4"></circle>
-                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-                </svg>
-                切换账户
-            </div>
-            <div class="menu-item logout" onclick="window.handleLogout(event)">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-                    <polyline points="16 17 21 12 16 7"></polyline>
-                    <line x1="21" y1="12" x2="9" y2="12"></line>
-                </svg>
-                Log Out
+            
+            <div class="dropdown-actions">
+                <button class="dropdown-action" onclick="window.openProfileModal(event)">
+                    <i class="fas fa-user"></i>
+                    <span>个人资料</span>
+                </button>
+                <button class="dropdown-action" onclick="WalletModal.open()">
+                    <i class="fas fa-wallet"></i>
+                    <span>我的钱包</span>
+                </button>
+                <button class="dropdown-action" onclick="window.handleSwitchAccount(event)">
+                    <i class="fas fa-exchange-alt"></i>
+                    <span>切换账户</span>
+                </button>
+                <button class="dropdown-action" id="enterStudioBtn" style="display: none;" onclick="window.location.href='admin-studio.html'">
+                     <i class="fas fa-palette"></i>
+                     <span>Enter Studio</span>
+                </button>
+                <button class="dropdown-action" onclick="window.handleLogout(event)">
+                    <i class="fas fa-sign-out-alt"></i>
+                    <span>Logout</span>
+                </button>
             </div>
         </div>
     </div>
@@ -194,7 +203,326 @@
                 top: 28px !important;
                 right: 30px !important;
                 z-index: 2100 !important;
+                display: flex !important;
+                align-items: center !important;
+                gap: 16px !important;
             }
+
+            #notifBtn:hover {
+                transform: scale(1.1);
+                text-shadow: 0 0 10px rgba(255,255,255,0.5);
+            }
+            [data-theme="light"] #notifBtn { color: #475569 !important; }
+            [data-theme="light"] #notifBtn:hover {
+                 color: #1e293b !important;
+                 text-shadow: none !important;
+                 background: rgba(0,0,0,0.05) !important;
+                 border-radius: 50%;
+            }
+
+            /* Dropdown Styles (Refined Glassmorphism) */
+            .avatar-dropdown {
+                position: absolute;
+                top: calc(100% + 12px);
+                right: 0;
+                min-width: 220px;
+                /* Dark Mode Default: High transparency glass */
+                background: rgba(30, 41, 59, 0.65);
+                backdrop-filter: blur(20px);
+                -webkit-backdrop-filter: blur(20px);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 16px;
+                padding: 16px;
+                box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+                opacity: 0;
+                visibility: hidden;
+                transform: translateY(-10px) scale(0.95);
+                transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+                display: block;
+                text-align: left;
+            }
+            .avatar-dropdown.active {
+                opacity: 1;
+                visibility: visible;
+                transform: translateY(0) scale(1);
+            }
+            .dropdown-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding-bottom: 14px;
+                margin-bottom: 12px;
+                border-bottom: 1px solid rgba(255,255,255,0.1);
+            }
+            .identity-name {
+                font-family: 'Playfair Display', serif;
+                font-size: 1.1rem;
+                color: #fff;
+                font-weight: 600;
+            }
+            
+            /* Disable Global Blur for Dropdown Overlay */
+            .dropdown-overlay {
+                background: transparent !important;
+                backdrop-filter: none !important;
+                -webkit-backdrop-filter: none !important;
+            }
+
+            /* Theme Toggle Button (Springy Animation) */
+            .theme-toggle-btn {
+                width: 36px;
+                height: 36px;
+                border-radius: 50%;
+                border: 1px solid rgba(255,255,255,0.1);
+                background: rgba(255,255,255,0.05);
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                position: relative;
+                overflow: hidden;
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            }
+            .theme-toggle-btn:hover {
+                transform: scale(1.1);
+                box-shadow: 0 4px 12px rgba(93, 159, 216, 0.25);
+                border-color: rgba(93, 159, 216, 0.5);
+            }
+            .theme-toggle-btn::after {
+                content: '';
+                position: absolute;
+                inset: -2px;
+                border-radius: 50%;
+                background: radial-gradient(circle, rgba(93, 159, 216, 0.35) 0%, transparent 70%);
+                opacity: 0;
+                transition: opacity 0.3s ease;
+            }
+            .theme-toggle-btn:hover::after { opacity: 1; }
+            
+            .theme-icon {
+                position: absolute;
+                font-size: 1.1rem;
+                transition: all 0.5s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+            }
+
+            /* Theme Toggle Logic: Verify Default is Dark */
+            .sun-icon { 
+                opacity: 0;
+                transform: rotate(90deg) scale(0.5);
+                display: block; /* Visible in DOM, hidden by opacity */
+            }
+            .moon-icon { 
+                opacity: 1;
+                transform: rotate(0deg) scale(1);
+                display: block;
+            }
+            /* When clicked (to Light mode), .sun-icon becomes visible as switch target? */
+            /* Wait, Icons represent CURRENT state or TARGET state? */
+            /* In Prompts: Dark Mode -> shows Moon (to signify Dark Mode is ON? OR Moon is the Icon for Dark Mode?) */
+            /* Let's re-read Prompts CSS: [data-theme="dark"] .moon-icon { opacity: 1; } */
+            /* So Moon is Visible in Dark Mode. */
+            /* So Verify Default (Dark) should show Moon. */
+            
+            [data-theme="light"] .sun-icon {
+                opacity: 1;
+                transform: rotate(0deg) scale(1);
+            }
+            [data-theme="light"] .moon-icon {
+                opacity: 0;
+                transform: rotate(-90deg) scale(0.5);
+            }
+            
+            /* Toggle Button Light Mode Override */
+             [data-theme="light"] .theme-toggle-btn {
+                background: rgba(0,0,0,0.05);
+                border-color: rgba(0,0,0,0.1);
+            }
+            [data-theme="light"] .theme-toggle-btn:hover {
+                box-shadow: 0 4px 12px rgba(155, 93, 229, 0.2);
+                border-color: rgba(155, 93, 229, 0.4);
+            }
+            [data-theme="light"] .theme-toggle-btn::after {
+                background: radial-gradient(circle, rgba(155, 93, 229, 0.3) 0%, transparent 70%);
+            }
+
+            .dropdown-actions { padding-top: 12px; }
+            .dropdown-action {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                padding: 10px 12px;
+                border-radius: 10px;
+                color: #e2e8f0; /* Brighter Text (var(--text-main)) */
+                text-decoration: none;
+                transition: all 0.2s ease;
+                background: transparent;
+                border: none;
+                width: 100%;
+                text-align: left;
+                cursor: pointer;
+                font-size: 0.9rem;
+                font-family: 'Inter', sans-serif;
+                font-weight: 500;
+            }
+            .dropdown-action i {
+                width: 20px;
+                text-align: center;
+                color: #94a3b8; /* Refined Icon Color (var(--text-dim)) */
+                transition: color 0.2s ease;
+            }
+
+            /* Hover - Dark Mode (Default) */
+            .dropdown-action:hover {
+                background: rgba(93, 159, 216, 0.12);
+                color: #5d9fd8;
+                transform: translateX(0); /* Prompts doesn't translate */
+            }
+            .dropdown-action:hover i { color: #5d9fd8; }
+
+            /* Light Mode CSS */
+            [data-theme="light"] .avatar-dropdown {
+                background: rgba(255, 255, 255, 0.85); /* Glassy White */
+                border-color: rgba(0,0,0,0.1);
+                box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+                color: #333;
+            }
+            [data-theme="light"] .identity-name { color: #1e293b; }
+            [data-theme="light"] .dropdown-header { border-bottom-color: rgba(0,0,0,0.08); }
+            [data-theme="light"] .dropdown-action { color: #334155; }
+            [data-theme="light"] .dropdown-action i { color: #94a3b8; }
+            
+            [data-theme="light"] .dropdown-action:hover {
+                background: rgba(155, 93, 229, 0.1); /* Purple Tint */
+                color: #9b5de5;
+            }
+            [data-theme="light"] .dropdown-action:hover i {
+                color: #9b5de5;
+            }
+
+            /* Verify Widget Layout Optimization (Text + Points in one row) */
+            .verify-widget-header {
+                display: flex !important;
+                align-items: center !important;
+                flex-wrap: nowrap !important;
+                gap: 16px !important;
+                padding-bottom: 24px !important;
+            }
+            .verify-widget-icon {
+                margin: 0 !important;
+                flex-shrink: 0;
+            }
+            .verify-widget-title {
+                flex: 1 !important;
+                text-align: left !important;
+                margin: 0 !important;
+            }
+            .verify-widget-title h3 { margin: 0 0 4px 0 !important; font-size: 1.25rem !important; line-height: 1.2; }
+            .verify-widget-title p { margin: 0 !important; font-size: 0.85rem !important; opacity: 0.8; }
+            
+            .verify-balance {
+                margin: 0 !important;
+                width: auto !important;
+                padding: 6px 14px !important;
+                font-size: 0.9rem !important;
+                border-radius: 20px !important;
+                background: rgba(255,255,255,0.1); /* Default Dark Mode bg */
+                justify-content: center;
+                box-shadow: none !important;
+                flex-shrink: 0;
+                min-width: 0 !important; /* Allow shrink if needed, but flex-shrink 0 stops it */
+                height: 32px !important;
+                display: flex !important;
+                align-items: center !important;
+                gap: 6px !important;
+            }
+            .verify-balance i { font-size: 0.9rem !important; }
+            .verify-balance span { font-weight: 600 !important; }
+
+            /* Light Mode Overrides (Verify Page Content) */
+            [data-theme="light"] body {
+                background-color: #f1f5f9 !important;
+                color: #334155 !important;
+            }
+            /* Hide Starry Canvas in Light Mode */
+            [data-theme="light"] #starryCanvas { opacity: 0 !important; }
+            
+            [data-theme="light"] .verify-page-header h1 { color: #1e293b !important; }
+            [data-theme="light"] .verify-page-header p { color: #64748b !important; }
+            
+            [data-theme="light"] .verify-info-card,
+            [data-theme="light"] .verify-instructions {
+                background: #ffffff !important;
+                border: 1px solid #e2e8f0 !important;
+                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05) !important;
+            }
+            [data-theme="light"] .verify-info-card .info-value { color: #1e293b !important; }
+            [data-theme="light"] .verify-info-card .info-label { color: #94a3b8 !important; }
+            [data-theme="light"] .verify-instructions h3 { color: #334155 !important; }
+            [data-theme="light"] .verify-instructions ol { color: #475569 !important; }
+            [data-theme="light"] .verify-instructions code {
+                background: #f1f5f9 !important;
+                color: #0f172a !important;
+            }
+            
+            [data-theme="light"] .back-link {
+                background: #ffffff !important;
+                color: #64748b !important;
+                border-color: #e2e8f0 !important;
+                backdrop-filter: none !important;
+                box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1) !important;
+            }
+            [data-theme="light"] .back-link:hover {
+                color: #0f172a !important;
+                border-color: #cbd5e1 !important;
+                transform: translateY(-2px);
+                box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1) !important;
+            }
+            
+            [data-theme="light"] .verify-footer,
+            [data-theme="light"] .verify-footer a {
+                color: #64748b !important;
+                border-top-color: #e2e8f0 !important;
+                border-bottom-color: #cbd5e1 !important;
+            }
+
+            /* Verify Widget Light Mode Overrides */
+            [data-theme="light"] .verify-widget {
+                background: #ffffff !important;
+                border: 1px solid #e2e8f0 !important;
+                box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.05) !important;
+            }
+            [data-theme="light"] .verify-widget-title h3 { color: #1e293b !important; }
+            [data-theme="light"] .verify-widget-title p { color: #64748b !important; }
+            [data-theme="light"] .verify-widget-icon svg path { fill: #ffffff !important; }
+            [data-theme="light"] .verify-balance {
+                color: #d97706 !important; /* Amber 600 for visibility on light bg */
+                background: #f1f5f9 !important;
+            }
+            [data-theme="light"] .verify-balance i { color: #f59e0b !important; } /* Amber 500 Icon */
+            [data-theme="light"] .verify-quota { color: #334155 !important; }
+            
+            [data-theme="light"] .verify-batch-info { color: #475569 !important; }
+            [data-theme="light"] .verify-batch-count,
+            [data-theme="light"] .verify-price-info { color: #475569 !important; }
+            [data-theme="light"] .verify-batch-count i,
+            [data-theme="light"] .verify-price-info i { color: #64748b !important; }
+            [data-theme="light"] .verify-batch-count .count,
+            [data-theme="light"] .verify-price-info .price { color: #d97706 !important; }
+            
+            [data-theme="light"] .verify-footer span { color: #64748b !important; }
+            [data-theme="light"] .verify-footer a { color: #475569 !important; border-bottom-color: #cbd5e1 !important; }
+            [data-theme="light"] .verify-footer span span { opacity: 0.4 !important; color: #94a3b8 !important; } /* Pipe separator */
+            
+            [data-theme="light"] .verify-textarea {
+                background-color: #f8fafc !important;
+                border: 1px solid #cbd5e1 !important;
+                color: #334155 !important;
+            }
+            [data-theme="light"] .verify-textarea::placeholder { color: #94a3b8 !important; }
+            
+            /* Ensure login prompt text is visible */
+            [data-theme="light"] .verify-login-prompt p { color: #475569 !important; }
+
             
             /* Force Google button styles - MUST match main page */
             .google-login-btn {
@@ -399,6 +727,30 @@
             console.error('Failed to initialize auth:', error);
         }
     }
+
+    // ==================== Theme Toggle ====================
+    window.toggleTheme = function (e) {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
+        const html = document.documentElement;
+        const currentData = html.getAttribute('data-theme');
+        const isLight = currentData === 'light';
+
+        if (isLight) {
+            html.setAttribute('data-theme', 'dark');
+            localStorage.setItem('theme', 'dark');
+        } else {
+            html.setAttribute('data-theme', 'light');
+            localStorage.setItem('theme', 'light');
+        }
+    };
+
+    // Init Theme
+    try {
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'light') {
+            document.documentElement.setAttribute('data-theme', 'light');
+        }
+    } catch (e) { }
 
     // Run initialization
     if (document.readyState === 'loading') {

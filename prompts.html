@@ -99,8 +99,25 @@
     <!-- Starry Sky Canvas (Dark Mode Only) -->
     <canvas id="starryCanvas"></canvas>
 
+    <!-- Dropdown Blur Overlay -->
+    <div class="dropdown-overlay" id="dropdownOverlay"></div>
+
+    <!-- Home Button (Top Left) -->
+    <a href="index.html" class="home-btn" title="返回首页">
+        <i class="fas fa-house"></i>
+    </a>
     <!-- User Avatar Menu -->
     <div class="user-avatar-container" id="userAvatarContainer">
+
+        <!-- Notification Bell -->
+        <div class="notif-wrapper" style="position: relative; display: none;" id="navNotifWrapper">
+            <button id="notifBtn" onclick="toggleNotifMenu(event)"
+                style="width: 40px; height: 40px; padding: 0; display: flex; align-items: center; justify-content: center; background: transparent; border: none; cursor: pointer; color: var(--text-dim); transition: color 0.2s;">
+                <i class="far fa-bell" style="font-size: 1.2rem;"></i>
+                <div class="notif-badge" id="notifBadge" style="display: none;"></div>
+            </button>
+        </div>
+
         <button class="user-avatar-btn" id="userAvatarBtn" onclick="toggleAvatarMenu()">
             <script>
                 // Inline script to prevent flash - render avatar or icon based on cache
@@ -526,6 +543,7 @@
     <script src="prompts-poetry.js"></script>
     <script src="js/services/PointsService.js"></script>
     <script src="js/components/WalletModal.js"></script>
+    <script src="notification-client.js"></script>
     <script src="js/heartbeat.js"></script>
     <script>
         // Reveal page after content is ready

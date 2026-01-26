@@ -591,6 +591,13 @@ function updateUserUI(user) {
             btnText.textContent = user.nickname || user.username || 'User';
         }
 
+        const dropdownUsername = document.getElementById('dropdownUsername');
+        if (dropdownUsername) {
+            dropdownUsername.textContent = user.nickname || user.username || 'User';
+            // Add sparkle if admin (simplified)
+            if (isAdmin) dropdownUsername.innerHTML += ' <span style="color:#fbbf24;">✨</span>';
+        }
+
         const authBtn = document.getElementById('authBtn');
         if (authBtn) authBtn.classList.add('logged-in');
 
