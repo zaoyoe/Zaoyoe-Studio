@@ -1661,7 +1661,7 @@ body.no-scroll {
         gap: 10px;
         padding: 10px;
         /* Add top margin to avoid overlapping with user avatar */
-        margin-top: 60px;
+        margin-top: 35px;
     }
 
     /* Profile card spans full width */
@@ -1670,6 +1670,19 @@ body.no-scroll {
         grid-row: span 1;
         padding: 20px 16px !important;
         position: relative;
+        min-height: 120px;
+    }
+
+    /* Hide empty profile-header on mobile */
+    .box-profile .profile-header:empty {
+        display: none;
+    }
+
+    .box-profile .profile-main {
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
     }
 
     /* Reduce modal size on mobile to avoid "oppressive" feel - AGGRESSIVE OVERRIDE */
@@ -1799,8 +1812,8 @@ body.no-scroll {
     /* Adjust main content alignment */
     .profile-main {
         text-align: center;
-        margin-top: 30px !important;
-        padding-top: 10px;
+        margin-top: 10px !important;
+        padding-top: 0;
     }
 
     .shop-heading-large {
@@ -1881,7 +1894,7 @@ body.no-scroll {
     /* Reduce glass card padding */
     .glass-box {
         padding: 16px 10px !important;
-        margin-bottom: 15px !important;
+        margin-bottom: 0 !important;
         border-radius: 16px !important;
     }
 
