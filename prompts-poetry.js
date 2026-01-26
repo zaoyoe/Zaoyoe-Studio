@@ -405,6 +405,7 @@ async function checkAuthState() {
         const avatarBtn = document.getElementById('userAvatarBtn');
         const loginBtn = document.getElementById('loginBtn');
         const profileBtn = document.getElementById('profileBtn');
+        const walletBtn = document.getElementById('walletBtn');
         const switchAccountBtn = document.getElementById('switchAccountBtn');
         const logoutBtn = document.getElementById('logoutBtn');
         const adminStudioBtn = document.getElementById('adminStudioBtn');
@@ -508,6 +509,7 @@ async function checkAuthState() {
             // Hide login button, show other buttons for logged-in users
             if (loginBtn) loginBtn.style.display = 'none';
             if (profileBtn) profileBtn.style.display = 'flex';
+            if (walletBtn) walletBtn.style.display = 'flex';
             if (switchAccountBtn) switchAccountBtn.style.display = 'flex';
             if (logoutBtn) logoutBtn.style.display = 'flex';
 
@@ -518,6 +520,7 @@ async function checkAuthState() {
             if (identityName) identityName.textContent = 'Guest';
             if (loginBtn) loginBtn.style.display = 'flex';
             if (profileBtn) profileBtn.style.display = 'none';
+            if (walletBtn) walletBtn.style.display = 'none';
             if (switchAccountBtn) switchAccountBtn.style.display = 'none';
             if (logoutBtn) logoutBtn.style.display = 'none';
             if (adminStudioBtn) adminStudioBtn.style.display = 'none';

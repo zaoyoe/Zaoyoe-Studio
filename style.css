@@ -68,7 +68,9 @@ body {
 @media (max-width: 768px) {
     .main-wrapper {
         align-items: flex-start;
-        padding-top: 40px;
+        justify-content: flex-start;
+        /* Force top alignment */
+        padding-top: 8vh;
     }
 }
 

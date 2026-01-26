@@ -138,6 +138,11 @@
                     <i class="fas fa-user"></i>
                     <span>个人资料</span>
                 </button>
+                <!-- My Wallet (logged in users) -->
+                <button class="dropdown-action" id="walletBtn" style="display: none;" onclick="WalletModal.open()">
+                    <i class="fas fa-wallet"></i>
+                    <span>我的钱包</span>
+                </button>
                 <!-- Switch Account (logged in users) -->
                 <button class="dropdown-action" id="switchAccountBtn" style="display: none;"
                     onclick="switchGalleryAccount()">
@@ -213,11 +218,10 @@
 
     <!-- Detail Modal -->
     <div id="promptModal" class="poetry-modal">
-        <button class="close-modal-btn" onclick="closePromptModal()">
-            <i class="fas fa-times"></i>
-        </button>
-
         <div class="modal-inner">
+            <button class="close-modal-btn" onclick="closePromptModal()">
+                <i class="fas fa-times"></i>
+            </button>
             <div class="modal-image-col">
                 <img id="modalImg" src="" alt="Prompt Visual">
 
@@ -520,6 +524,8 @@
     <script src="prompts-data.js"></script>
     <script src="starry-sky.js"></script>
     <script src="prompts-poetry.js"></script>
+    <script src="js/services/PointsService.js"></script>
+    <script src="js/components/WalletModal.js"></script>
     <script src="js/heartbeat.js"></script>
     <script>
         // Reveal page after content is ready

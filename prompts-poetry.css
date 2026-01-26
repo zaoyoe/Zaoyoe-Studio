@@ -2157,7 +2157,9 @@ body {
 .modal-img-counter {
     position: absolute;
     top: 16px;
-    right: 16px;
+    left: 16px;
+    /* Moved to left to avoid closing button overlap */
+    right: auto;
     background: rgba(255, 255, 255, 0.9);
     backdrop-filter: blur(4px);
     color: #475569;
@@ -2999,9 +3001,9 @@ body {
 
 
 .close-modal-btn {
-    position: fixed;
-    top: 30px;
-    right: 30px;
+    position: absolute;
+    top: 16px;
+    right: 16px;
     width: 44px;
     height: 44px;
     border-radius: 50%;
@@ -3047,7 +3049,8 @@ body {
 
     /* Add top margin to avoid overlapping with user avatar */
     .poetry-nav-container {
-        padding-top: calc(8vh + 15px);
+        padding-top: calc(8vh + 40px);
+        /* Increased spacing from avatar */
         padding-left: 10px;
         padding-right: 10px;
     }
