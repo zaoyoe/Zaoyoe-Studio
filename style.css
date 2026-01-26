@@ -6531,10 +6531,13 @@ body {
 @media (max-width: 768px) {
 
     /* Fix all modal overlays on mobile */
+    /* Fix all modal overlays on mobile */
     .modal-overlay.active,
     .login-overlay.active {
-        align-items: flex-start !important;
-        padding-top: 20px !important;
+        align-items: center !important;
+        /* Fixed: was flex-start causing top positioning */
+        padding-top: calc(20px + env(safe-area-inset-top)) !important;
+        padding-bottom: calc(20px + env(safe-area-inset-bottom)) !important;
         overflow-y: auto !important;
         -webkit-overflow-scrolling: touch !important;
     }
