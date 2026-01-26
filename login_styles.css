@@ -5,8 +5,12 @@
     position: fixed;
     top: 0;
     left: 0;
-    width: 100%;
-    height: 100%;
+    right: 0;
+    bottom: 0;
+    /* Use inset 0 for full viewport coverage */
+    width: auto;
+    height: auto;
+    /* Mobile adjust */
     background: rgba(0, 0, 0, 0.6);
     /* Darker background for less transparency */
     backdrop-filter: blur(8px);
@@ -17,6 +21,19 @@
     display: flex;
     justify-content: center;
     align-items: center;
+
+    /* Safe Area Padding to Fix "Too High" Visual Center */
+    padding-top: calc(20px + env(safe-area-inset-top));
+    padding-bottom: calc(20px + env(safe-area-inset-bottom));
+    padding-left: 20px;
+    padding-right: 20px;
+    z-index: 2000;
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center !important;
+    flex-direction: row !important;
+    /* Ensure default axis */
+
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.3s ease;
@@ -94,7 +111,14 @@
     backface-visibility: hidden;
     color: white;
     cursor: default;
-
+    /* Mobile Centering Fixes */
+    /* Removed margin: auto to rely on flex align-items: center */
+    max-height: 90vh;
+    max-height: 90dvh;
+    overflow-y: auto;
+    /* Soft scrollbar for card */
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
 }
 
 /* 确保 login-card 的所有直接子元素可交互 */
