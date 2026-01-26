@@ -864,27 +864,29 @@ input.submit-btn {
 
 /* Glass Card Base with 3D Liquid Effect */
 .glass-box {
-    background: rgba(255, 255, 255, 0.05);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
+    background: rgba(255, 255, 255, 0.03);
+    /* Lighter background */
+    backdrop-filter: blur(16px);
+    /* Reduced blur for thinner feel */
+    -webkit-backdrop-filter: blur(16px);
 
-    /* 3D Border Effect: Top/Left lighter, Bottom/Right darker */
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    border-top: 1px solid rgba(255, 255, 255, 0.3);
-    border-left: 1px solid rgba(255, 255, 255, 0.3);
+    /* 3D Border Effect: Thinner and more subtle */
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-top: 1px solid rgba(255, 255, 255, 0.15);
+    border-left: 1px solid rgba(255, 255, 255, 0.15);
 
     border-radius: 32px;
     padding: 24px;
 
-    /* Multi-layer Shadows for Depth & Inner Glow */
+    /* Multi-layer Shadows for Depth & Inner Glow - Reduced Intensity */
     box-shadow:
         /* External Shadow (Depth) */
-        0 20px 40px -10px rgba(0, 0, 0, 0.5),
-        /* Inner Glow (Liquid Feel) */
-        inset 0 1px 0 rgba(255, 255, 255, 0.2),
-        inset 0 0 20px rgba(255, 255, 255, 0.02);
+        0 20px 40px -10px rgba(0, 0, 0, 0.4),
+        /* Inner Glow (Liquid Feel) - softer */
+        inset 0 1px 0 rgba(255, 255, 255, 0.1),
+        inset 0 0 20px rgba(255, 255, 255, 0.01);
 
-    transition: all 0.5s ease-out;
+    transition: transform 0.3s ease-out, box-shadow 0.3s ease-out, background-color 0.3s ease, border-color 0.3s ease;
     will-change: transform, box-shadow;
     transform: translateZ(0);
 
@@ -919,7 +921,7 @@ input.submit-btn {
         bottom: 0;
         border-radius: 24px;
         background: radial-gradient(600px circle at var(--mouse-x, 50%) var(--mouse-y, 50%),
-                rgba(255, 255, 255, 0.22),
+                rgba(255, 255, 255, 0.15),
                 transparent 40%);
         opacity: 0;
         transition: opacity 0.3s ease;
@@ -928,15 +930,22 @@ input.submit-btn {
     }
 
     .glass-box:hover::before {
-        opacity: 1;
+        opacity: 0.4;
+        /* Significantly reduced from 1 to avoid 'flash' */
     }
 
     .glass-box:hover {
-        background: rgba(255, 255, 255, 0.08);
-        border-color: rgba(255, 255, 255, 0.3);
-        transform: translateY(-6px);
-        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7),
-            0 12px 24px -8px rgba(0, 0, 0, 0.5);
+        background: rgba(255, 255, 255, 0.05);
+        border-color: rgba(255, 255, 255, 0.15);
+        /* Even softer border change */
+        transform: translateY(-1px);
+        /* Barely noticeable lift */
+        /* Corrected Shadow: Slight expansion to match lift, but very subtle */
+        box-shadow:
+            0 22px 42px -10px rgba(0, 0, 0, 0.45),
+            /* Slightly deeper than base */
+            inset 0 1px 0 rgba(255, 255, 255, 0.15),
+            inset 0 0 20px rgba(255, 255, 255, 0.05);
     }
 }
 
@@ -1624,11 +1633,10 @@ input.submit-btn {
 }
 
 /* Prevent body scroll when modal is open */
+/* Prevent body scroll when modal is open */
 body.no-scroll {
-    overflow: hidden;
-    height: 100vh;
-    touch-action: none;
-    /* Disable default touch actions on body */
+    overflow: hidden !important;
+    /* remove height: 100vh restriction which causes scroll jump on mobile */
 }
 
 /* Prevent scroll chaining */
@@ -3178,12 +3186,7 @@ input.login-submit-btn {
 }
 
 /* Prevent background scroll when modal open - especially on mobile */
-body.no-scroll {
-    overflow: hidden !important;
-    /* Removed position: fixed to prevent scroll jump and layout issues */
-    width: 100% !important;
-    height: 100% !important;
-}
+/* Consolidated into the earlier definition */
 
 .image-modal-content {
     position: relative;

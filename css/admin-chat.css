@@ -22,15 +22,17 @@
     height: 90vh;
     max-height: 850px;
 
-    background: rgba(20, 27, 45, 0.85);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    /* Lighter glass effect - more transparent for premium look */
+    background: linear-gradient(135deg,
+            rgba(20, 25, 45, 0.85) 0%,
+            rgba(15, 22, 40, 0.88) 50%,
+            rgba(18, 25, 42, 0.85) 100%);
 
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: none;
     border-radius: 12px;
     overflow: hidden;
     position: relative;
-    box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 25px 50px rgba(0, 0, 0, 0.4);
 }
 
 /* Left Sidebar: Session List */
@@ -233,7 +235,12 @@
     display: flex;
     flex-direction: column;
     gap: 20px;
-    scroll-behavior: smooth;
+    scroll-behavior: auto !important;
+    /* Changed from smooth - smooth causes ~1s scrollbar lag */
+
+    /* PERFORMANCE: GPU layer for smooth scroll, no contain (causes blank on fast scroll) */
+    transform: translateZ(0);
+    backface-visibility: hidden;
 }
 
 .chat-messages-area::-webkit-scrollbar {
@@ -258,18 +265,24 @@
     font-size: 14px;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     position: relative;
+    /* PERFORMANCE: Simple GPU layer (contain removed - causes blank on fast scroll) */
+    backface-visibility: hidden;
+}
+
+/* Only animate NEW messages */
+.admin-message.new-message {
     animation: fadeInUp 0.3s ease;
 }
 
 @keyframes fadeInUp {
     from {
         opacity: 0;
-        transform: translateY(10px);
+        transform: translateY(10px) translateZ(0);
     }
 
     to {
         opacity: 1;
-        transform: translateY(0);
+        transform: translateY(0) translateZ(0);
     }
 }
 
@@ -428,7 +441,7 @@
    ========================================= */
 :root:not([data-theme="dark"]) .chat-container {
     background: rgba(255, 255, 255, 0.95);
-    border-color: rgba(0, 0, 0, 0.1);
+    border: none;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
 }
 

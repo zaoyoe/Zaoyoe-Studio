@@ -232,6 +232,7 @@
     text-overflow: ellipsis;
     display: -webkit-box;
     -webkit-line-clamp: 2;
+    line-clamp: 2;
     -webkit-box-orient: vertical;
 }
 
@@ -364,7 +365,7 @@
 
 
 /* Chat Window Container */
-/* Chat Window Container - Premium Glass */
+/* Chat Window Container - Premium Glass (NO backdrop-filter for 240Hz performance) */
 .chat-window {
     position: fixed;
     bottom: 100px;
@@ -372,26 +373,27 @@
     width: 380px;
     height: 600px;
     max-height: 80vh;
-    /* Darker Glass for readability */
-    background: rgba(18, 18, 22, 0.8);
-    backdrop-filter: blur(24px) saturate(180%);
-    -webkit-backdrop-filter: blur(24px) saturate(180%);
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    /* Static glass effect - NO backdrop-filter for 240Hz monitors */
+    background: linear-gradient(135deg,
+            rgba(20, 20, 30, 0.92) 0%,
+            rgba(15, 15, 25, 0.94) 50%,
+            rgba(18, 18, 28, 0.92) 100%);
+    /* Clean shadow only - no border effects */
+    box-shadow: 0 20px 60px -10px rgba(0, 0, 0, 0.5);
+    border: none;
     border-radius: 20px;
-    box-shadow:
-        0 20px 60px -10px rgba(0, 0, 0, 0.6),
-        0 0 0 1px rgba(255, 255, 255, 0.05);
     display: flex;
     flex-direction: column;
     overflow: hidden;
     z-index: 9998;
     opacity: 0;
     visibility: hidden;
-    /* Ensure children are also non-interactive */
 
     transform: translateY(20px) scale(0.95);
     pointer-events: none;
-    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+        transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+        visibility 0.4s;
     transform-origin: bottom right;
 }
 
@@ -504,24 +506,59 @@
     color: white;
 }
 
-/* Messages Area */
+/* Messages Area - Clean Minimal Approach */
 .chat-messages {
     flex: 1;
     padding: 20px;
-    overflow-y: auto;
+    overflow-y: scroll;
+    /* Force scrollbar visibility for consistency */
+    -webkit-overflow-scrolling: touch;
+    /* iOS momentum scrolling */
     display: flex;
     flex-direction: column;
     gap: 15px;
+    scroll-behavior: auto !important;
+    overscroll-behavior-y: contain;
+    position: relative;
+    /* Required for overlay positioning */
+
+    /* PERFORMANCE: GPU layer for smooth scroll, no contain (causes blank on fast scroll) */
+    transform: translateZ(0);
+    backface-visibility: hidden;
 }
 
-/* Scrollbar styling */
+/* Scroll Lock State - Preloading */
+.chat-messages.scroll-locked {
+    overflow-y: hidden !important;
+    pointer-events: none;
+}
+
+.chat-messages.scroll-locked::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.1);
+    cursor: wait;
+    z-index: 5;
+}
+
+/* Native Scrollbar - Simple & Performant */
 .chat-messages::-webkit-scrollbar {
     width: 6px;
 }
 
-.chat-messages::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.2);
+.chat-messages::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.1);
     border-radius: 3px;
+}
+
+.chat-messages::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 3px;
+}
+
+.chat-messages::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.5);
 }
 
 .message {
@@ -532,27 +569,34 @@
     line-height: 1.5;
     word-wrap: break-word;
     position: relative;
+    /* PERFORMANCE: Simple GPU layer (contain removed - causes blank on fast scroll) */
+    backface-visibility: hidden;
+}
+
+/* Only animate NEW messages, not on scroll */
+.message.new-message {
     animation: fadeIn 0.3s ease;
 }
 
 @keyframes fadeIn {
     from {
         opacity: 0;
-        transform: translateY(10px);
+        transform: translateY(10px) translateZ(0);
     }
 
     to {
         opacity: 1;
-        transform: translateY(0);
+        transform: translateY(0) translateZ(0);
     }
 }
 
 .message.user {
     align-self: flex-end;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    /* Classic blue bubble - like iMessage */
+    background: #007AFF;
     color: white;
     border-bottom-right-radius: 4px;
-    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+    box-shadow: 0 2px 8px rgba(0, 122, 255, 0.3);
 }
 
 .message.admin {
@@ -568,10 +612,29 @@
     border-radius: 12px;
     cursor: pointer;
     transition: transform 0.2s;
+    display: block;
+}
+
+/* Image messages should have no background */
+.message:has(.message-image) {
+    background: transparent !important;
+    padding: 0;
+    box-shadow: none;
+    border: none;
 }
 
 .message-image:hover {
     transform: scale(1.02);
+}
+
+/* WeChat-style time separator - centered between messages */
+.message-time-separator {
+    text-align: center;
+    color: rgba(255, 255, 255, 0.45);
+    font-size: 12px;
+    padding: 8px 0;
+    margin: 5px 0;
+    user-select: none;
 }
 
 /* Input Area */

@@ -8,6 +8,13 @@ class ChatWidget {
         this.lastMessageTime = null; // Track last seen message
         this.unreadSessions = new Set(); // Track sessions with unread messages (admin mode)
 
+        // Preload configuration - lock scroll until messages are loaded
+        this.isPreloading = false;
+
+        // Smart time display - only show time if 5+ minutes gap
+        this.lastDisplayedTime = null;
+        this.timeDisplayThreshold = 5 * 60 * 1000; // 5 minutes in ms
+
         // Define common emojis
         this.emojis = ['😀', '😂', '😍', '🤔', '😭', '😡', '👍', '👎', '🎉', '🔥', '❤️', '👀', '🚀', '💯', '👋', '✨', '🤖', '👻'];
 
@@ -578,6 +585,8 @@ class ChatWidget {
                 flex: 1;
                 overflow-y: auto;
                 padding: 20px;
+                scroll-behavior: auto !important; /* Force instant scrolling */
+                overscroll-behavior-y: contain; /* Prevent scroll chaining */
             }
             
             .empty-state {
@@ -761,6 +770,20 @@ class ChatWidget {
                     height: 75vh;
                     border-radius: 16px;
                 }
+            }
+            
+            /* Loading Spinner for message loading */
+            .loading-overlay .loading-spinner {
+                width: 32px;
+                height: 32px;
+                border: 3px solid rgba(255, 255, 255, 0.2);
+                border-top-color: rgba(102, 126, 234, 0.8);
+                border-radius: 50%;
+                animation: spin 0.8s linear infinite;
+            }
+            
+            @keyframes spin {
+                to { transform: rotate(360deg); }
             }
         `;
         document.head.appendChild(style);
@@ -985,13 +1008,114 @@ class ChatWidget {
         this.loadSessionMessages(sessionInfo.sessionIds || [sessionId]);
     }
 
+    // Lock scroll during preloading
+    lockScroll() {
+        if (this.messagesContainer) {
+            this.isPreloading = true;
+            this.messagesContainer.classList.add('scroll-locked');
+            this.messagesContainer.style.overflowY = 'hidden';
+        }
+    }
+
+    // Unlock scroll after preloading complete
+    unlockScroll() {
+        if (this.messagesContainer) {
+            this.isPreloading = false;
+            this.messagesContainer.classList.remove('scroll-locked');
+            this.messagesContainer.style.overflowY = '';
+        }
+    }
+
+    // HIGH REFRESH RATE OPTIMIZATION: Disable expensive effects during scroll
+    // 240Hz and above monitors need frame times < 4.16ms, backdrop-filter can't keep up
+    setupScrollOptimization() {
+        if (!this.messagesContainer) return;
+
+        // Target element: chatWindow for user mode, or find .chat-container for admin mode
+        const targetElement = this.chatWindow || document.querySelector('.chat-container');
+        if (!targetElement) return;
+
+        let scrollTimeout = null;
+        let isScrolling = false;
+
+        const onScroll = () => {
+            // Add is-scrolling class immediately when scroll starts
+            if (!isScrolling) {
+                isScrolling = true;
+                targetElement.classList.add('is-scrolling');
+
+                // Also add to chat-container if it exists (admin mode)
+                const chatContainer = document.querySelector('.chat-container');
+                if (chatContainer && chatContainer !== targetElement) {
+                    chatContainer.classList.add('is-scrolling');
+                }
+            }
+
+            // Clear existing timeout
+            if (scrollTimeout) {
+                clearTimeout(scrollTimeout);
+            }
+
+            // Remove is-scrolling class 150ms after scroll stops
+            scrollTimeout = setTimeout(() => {
+                isScrolling = false;
+                targetElement.classList.remove('is-scrolling');
+
+                // Also remove from chat-container
+                const chatContainer = document.querySelector('.chat-container');
+                if (chatContainer && chatContainer !== targetElement) {
+                    chatContainer.classList.remove('is-scrolling');
+                }
+            }, 150);
+        };
+
+        // Use passive listener for best scroll performance
+        this.messagesContainer.addEventListener('scroll', onScroll, { passive: true });
+    }
+
     async loadSessionMessages(sessionIds) {
         // sessionIds can be an array (merged user) or will be converted to array
         const sessionIdArray = Array.isArray(sessionIds) ? sessionIds : [sessionIds];
         this.currentSessionIds = sessionIdArray;
         // Set currentSessionId for sending messages (use first one as the reply session)
         this.currentSessionId = sessionIdArray[0];
-        this.messagesContainer.innerHTML = '<div class="message admin">加载中...</div>';
+
+        // PRELOAD STRATEGY: Lock scroll during message loading
+        this.lockScroll();
+
+        // Preserve current scroll state and container height to prevent scroll jump
+        const currentHeight = this.messagesContainer.offsetHeight;
+
+        // Set min-height to preserve layout during content swap
+        this.messagesContainer.style.minHeight = currentHeight + 'px';
+
+        // Add loading overlay instead of clearing content (prevents scroll position loss)
+        let loadingOverlay = this.messagesContainer.querySelector('.loading-overlay');
+        if (!loadingOverlay) {
+            loadingOverlay = document.createElement('div');
+            loadingOverlay.className = 'loading-overlay';
+            loadingOverlay.innerHTML = '<div class="loading-spinner"></div><span>预加载消息中...</span>';
+            loadingOverlay.style.cssText = `
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(20, 20, 30, 0.85);
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                gap: 10px;
+                color: rgba(255, 255, 255, 0.7);
+                font-size: 14px;
+                z-index: 10;
+                backdrop-filter: blur(4px);
+            `;
+            // Ensure container has relative positioning for overlay
+            this.messagesContainer.style.position = 'relative';
+            this.messagesContainer.appendChild(loadingOverlay);
+        }
 
         try {
             const { data, error } = await this.supabase
@@ -1002,15 +1126,35 @@ class ChatWidget {
 
             if (error) throw error;
 
+            // Clear existing content first
             this.messagesContainer.innerHTML = '';
+            // Reset smart time display for new session
+            this.lastDisplayedTime = null;
+
+            // Batch render all messages (preload complete set before enabling scroll)
             data.forEach(msg => {
                 this.appendMessage(msg.content, msg.is_admin ? 'admin' : 'user', msg.message_type === 'image' ? 'image' : 'text', msg.created_at);
             });
+
+            // Remove min-height constraint after content is loaded
+            this.messagesContainer.style.minHeight = '';
+
+            // Scroll to bottom (new conversation loaded)
             this.scrollToBottom();
+
+            // PRELOAD COMPLETE: Unlock scroll after all messages are rendered
+            this.unlockScroll();
 
         } catch (err) {
             console.error('Failed to load messages:', err);
+            // Remove loading overlay on error
+            if (loadingOverlay && loadingOverlay.parentNode) {
+                loadingOverlay.remove();
+            }
+            this.messagesContainer.style.minHeight = '';
             this.messagesContainer.innerHTML = '<div class="message admin">加载失败</div>';
+            // Unlock scroll even on error
+            this.unlockScroll();
         }
     }
 
@@ -1155,6 +1299,9 @@ class ChatWidget {
         const imageInput = this.chatWindow.querySelector('#chatImageInput');
         uploadBtn.addEventListener('click', () => imageInput.click());
         imageInput.addEventListener('change', (e) => this.handleAdminImageUpload(e));
+
+        // HIGH REFRESH RATE: Setup scroll optimization
+        this.setupScrollOptimization();
     }
 
     async sendAdminMessage() {
@@ -1264,8 +1411,8 @@ class ChatWidget {
                     isInChatView;
 
                 if (isViewingThisSession) {
-                    // Append message to current chat
-                    this.appendMessage(msg.content, 'user', msg.message_type === 'image');
+                    // Append message to current chat - with animation (isNewMessage=true)
+                    this.appendMessage(msg.content, 'user', msg.message_type === 'image' ? 'image' : 'text', null, true);
                     this.scrollToBottom();
                 }
 
@@ -1339,6 +1486,12 @@ class ChatWidget {
                 .chat-window:not(.admin-mode-layout).active {
                     transform: translate(-50%, -50%) scale(1) !important;
                 }
+            }
+            
+            /* Enforce instant scrolling for user mode too */
+            .chat-window:not(.admin-mode-layout) .chat-messages {
+                scroll-behavior: auto !important;
+                overscroll-behavior-y: contain;
             }
         `;
         document.head.appendChild(style);
@@ -1451,6 +1604,9 @@ class ChatWidget {
 
         uploadBtn.addEventListener('click', () => fileInput.click());
         fileInput.addEventListener('change', (e) => this.handleImageUpload(e));
+
+        // HIGH REFRESH RATE: Setup scroll optimization
+        this.setupScrollOptimization();
     }
 
     toggleChat() {
@@ -1461,12 +1617,21 @@ class ChatWidget {
             this.fab.style.pointerEvents = 'none';
             // Show overlay (for admin mode)
             if (this.overlay) this.overlay.classList.add('visible');
+
+            // LOCK SCROLL - CSS only approach (no JS event blocking for performance)
+            document.body.classList.add('no-scroll');
+            document.documentElement.classList.add('no-scroll');
+
         } else {
             this.chatWindow.classList.remove('active');
             this.fab.style.opacity = '1';
             this.fab.style.pointerEvents = 'all';
             // Hide overlay
             if (this.overlay) this.overlay.classList.remove('visible');
+
+            // UNLOCK SCROLL
+            document.body.classList.remove('no-scroll');
+            document.documentElement.classList.remove('no-scroll');
         }
     }
 
@@ -1594,33 +1759,48 @@ class ChatWidget {
         }
     }
 
-    appendMessage(content, type, messageType = 'text', timestamp = null) {
-        const msgDiv = document.createElement('div');
-        msgDiv.className = `message ${type}`;
+    // isNewMessage: true for real-time messages, false for history (skip animation)
+    appendMessage(content, type, messageType = 'text', timestamp = null, isNewMessage = false) {
+        // Smart time display - only show if 5+ minutes since last shown time
+        const currentTime = timestamp ? new Date(timestamp) : new Date();
+        let showTime = false;
 
-        // Format time
-        let timeStr = '';
-        if (timestamp) {
-            const date = new Date(timestamp);
-            timeStr = date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+        if (!this.lastDisplayedTime) {
+            // First message - always show time
+            showTime = true;
         } else {
-            timeStr = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+            const timeDiff = Math.abs(currentTime.getTime() - this.lastDisplayedTime.getTime());
+            if (timeDiff >= this.timeDisplayThreshold) {
+                showTime = true;
+            }
         }
 
+        // If time needs to be shown, insert a time separator BEFORE the message
+        if (showTime) {
+            this.lastDisplayedTime = currentTime;
+            const timeStr = currentTime.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+            const timeSeparator = document.createElement('div');
+            timeSeparator.className = 'message-time-separator';
+            timeSeparator.textContent = timeStr;
+            this.messagesContainer.appendChild(timeSeparator);
+        }
+
+        // Create the message bubble (no time inside)
+        const msgDiv = document.createElement('div');
+        msgDiv.className = `message ${type}${isNewMessage ? ' new-message' : ''}`;
+
         if (messageType === 'image') {
-            msgDiv.innerHTML = `
-                <img src="${content}" class="message-image" onclick="window.open(this.src, '_blank')">
-                <span class="message-time">${timeStr}</span>
-            `;
+            msgDiv.innerHTML = `<img src="${content}" class="message-image" onclick="window.open(this.src, '_blank')">`;
         } else {
-            msgDiv.innerHTML = `
-                <span class="message-text">${this.escapeHtml(content)}</span>
-                <span class="message-time">${timeStr}</span>
-            `;
+            msgDiv.innerHTML = `<span class="message-text">${this.escapeHtml(content)}</span>`;
         }
 
         this.messagesContainer.appendChild(msgDiv);
-        this.scrollToBottom();
+
+        // Only scroll for new messages (not history batch loads)
+        if (isNewMessage) {
+            this.scrollToBottom();
+        }
     }
 
     escapeHtml(text) {
@@ -1648,7 +1828,8 @@ class ChatWidget {
                     // Only append if it's NOT from us (avoid duplicate since we did optimistic UI)
                     // Or check if is_admin is true
                     if (payload.new.is_admin) {
-                        this.appendMessage(payload.new.content, 'admin', payload.new.message_type);
+                        // Real-time message - animate with isNewMessage=true
+                        this.appendMessage(payload.new.content, 'admin', payload.new.message_type, null, true);
 
                         // Show cute notification if chat is closed
                         const messageContent = payload.new.message_type === 'image' ? '📷 发送了一张图片' : payload.new.content;
@@ -1660,6 +1841,9 @@ class ChatWidget {
     }
 
     async loadHistory() {
+        // PRELOAD STRATEGY: Lock scroll during history loading
+        this.lockScroll();
+
         try {
             const { data, error } = await this.supabase
                 .from('chat_messages')
@@ -1668,15 +1852,23 @@ class ChatWidget {
                 .order('created_at', { ascending: true });
 
             if (data) {
-                // Clear default welcome? or keep it at top
-                // let's keep welcome, just append history
+                // Batch render all history messages before enabling scroll
                 data.forEach(msg => {
                     const type = msg.is_admin ? 'admin' : 'user';
                     this.appendMessage(msg.content, type, msg.message_type);
                 });
+
+                // Scroll to bottom after all messages loaded
+                this.scrollToBottom();
             }
+
+            // PRELOAD COMPLETE: Unlock scroll
+            this.unlockScroll();
+
         } catch (err) {
             console.error('Error loading history:', err);
+            // Unlock scroll even on error
+            this.unlockScroll();
         }
     }
 }

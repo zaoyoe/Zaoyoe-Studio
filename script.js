@@ -286,10 +286,10 @@ function initMagneticEffect(selector) {
             const x = e.clientX - rect.left - rect.width / 2;
             const y = e.clientY - rect.top - rect.height / 2;
 
-            const moveX = x * 0.05;
-            const moveY = y * 0.05;
+            const moveX = x * 0.015; // Reduced from 0.05 for subtler wobble
+            const moveY = y * 0.015;
 
-            card.style.transform = `translateY(-8px) translate(${moveX}px, ${moveY}px)`;
+            card.style.transform = `translateY(-2px) translate(${moveX}px, ${moveY}px)`; // Reduced from -8px
         });
 
         card.addEventListener('mouseleave', () => {
