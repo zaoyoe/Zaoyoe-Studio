@@ -1660,6 +1660,8 @@ body.no-scroll {
         grid-template-rows: auto;
         gap: 10px;
         padding: 10px;
+        /* Add top margin to avoid overlapping with user avatar */
+        margin-top: 60px;
     }
 
     /* Profile card spans full width */
