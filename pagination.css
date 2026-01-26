@@ -1,0 +1,68 @@
+/* Pagination Styles */
+.pagination-nav {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    margin: 40px auto 60px;
+    padding-bottom: 40px;
+    font-family: var(--font-main);
+    opacity: 0;
+    /* Animated in via JS */
+}
+
+.pagination-btn {
+    min-width: 44px;
+    height: 44px;
+    padding: 0 16px;
+    border: 1px solid var(--card-border);
+    background: var(--card-bg);
+    color: var(--text-color);
+    border-radius: 12px;
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(10px);
+}
+
+.pagination-btn:hover:not(:disabled):not(.active) {
+    background: rgba(var(--pagination-hover-rgb), 0.2);
+    border-color: rgba(var(--pagination-hover-rgb), 0.4);
+    color: var(--text-color);
+    transform: translateY(-2px);
+}
+
+.pagination-btn.active:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(var(--pagination-hover-rgb), 0.4);
+}
+
+.pagination-btn.active {
+    background: var(--accent-gradient);
+    border-color: transparent;
+    color: white;
+    font-weight: 600;
+    box-shadow: 0 4px 12px rgba(var(--pagination-hover-rgb), 0.3);
+}
+
+.pagination-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background: rgba(255, 255, 255, 0.05);
+}
+
+/* Mobile Pagination */
+@media (max-width: 768px) {
+    .pagination-btn {
+        height: 36px;
+        min-width: 36px;
+        padding: 0 10px;
+        font-size: 0.85rem;
+    }
+
+    /* Hide some page numbers on small screens but keep arrows */
+    /* This logic is best handled in JS by checking window width, or just accept wrapping */
+}

@@ -16,6 +16,10 @@
     --footer-border: rgba(0, 0, 0, 0.05);
     --ambient-color-1: rgba(155, 93, 229, 0.15);
     --ambient-color-2: rgba(139, 92, 246, 0.12);
+    /* Define gradient for pagination and other elements */
+    --accent-gradient: linear-gradient(135deg, #9b5de5 0%, #a78bfa 100%);
+    --pagination-hover-rgb: 155, 93, 229;
+    /* Diamond Purple */
 }
 
 /* ========================================
@@ -3031,8 +3035,21 @@ body {
     color: #1e293b;
 }
 
+[data-theme="dark"] {
+    /* Starry blue gradient for pagination in dark mode */
+    --accent-gradient: linear-gradient(135deg, #6b9ece 0%, #5a8ac6 100%);
+    --pagination-hover-rgb: 107, 158, 206;
+    /* Starry Blue #6b9ece */
+}
+
 /* Mobile Responsive */
 @media (max-width: 768px) {
+
+    /* Add top margin to avoid overlapping with user avatar */
+    .poetry-nav-container {
+        padding-top: calc(8vh + 15px);
+    }
+
     .nav-items {
         gap: 1.5rem;
     }

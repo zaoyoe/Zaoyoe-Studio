@@ -3015,7 +3015,7 @@ function initSpotlight() {
 }
 
 // --- Pagination State ---
-let CARDS_PER_PAGE = 24; // Default, will be overwritten by config
+let CARDS_PER_PAGE = 20; // Default: 5 rows * 4 columns
 let currentFilter = 'all';
 let isLoading = false;
 let allFilteredItems = [];
@@ -3168,16 +3168,9 @@ function renderGallery(filter, reset = true) {
 
     currentFilter = filter;
 
-    // If cards already exist, just filter them via CSS
-    if (allCardsRendered) {
-        filterCardsCSS(filter);
-        return;
-    }
-
+    // Reset pagination state when filtering
     if (reset) {
-        grid.innerHTML = '';
-        currentPage = 0;
-
+        currentPage = 1; // Start at page 1 for standard pagination
         // Filter items based on current filter
         if (filter === 'favorites') {
             allFilteredItems = PROMPTS.filter(p => favorites.has(p.id));
@@ -3211,166 +3204,29 @@ function renderGallery(filter, reset = true) {
         }
     }
 
-    loadMoreCards();
+    renderCurrentPage();
 }
 
-// Filter cards using CSS classes for smooth animations
-function filterCardsCSS(filter) {
-    const cards = Array.from(document.querySelectorAll('.prompt-card'));
-
-    // Phase 0: Mark all cards as filtering (disable breathing + scroll-reveal)
-    cards.forEach(card => {
-        card.classList.add('filtering');
-        card.classList.remove('scroll-reveal', 'visible', 'breathing');
-    });
-
-    // FIRST: Record positions of currently visible cards
-    const firstPositions = new Map();
-    cards.forEach(card => {
-        if (card.style.display !== 'none') {
-            const rect = card.getBoundingClientRect();
-            firstPositions.set(card.dataset.id, { x: rect.left, y: rect.top });
-        }
-    });
-
-    // Determine visibility
-    const visibleCards = [];
-    const hiddenCards = [];
-
-    cards.forEach(card => {
-        const cardTags = card.dataset.tags ? card.dataset.tags.split(',') : [];
-        const cardId = parseInt(card.dataset.id);
-        const item = PROMPTS[cardId];
-
-        let isVisible = false;
-        if (filter === 'all') {
-            isVisible = true;
-        } else if (filter === 'favorites') {
-            isVisible = favorites.has(cardId);
-        } else if (filter.startsWith('seasonal:')) {
-            // Seasonal filter - search by keywords
-            const seasonalName = filter.replace('seasonal:', '');
-            const navItem = document.querySelector(`[data-filter="${filter}"]`);
-            const keywords = navItem?.dataset.keywords?.split(',') || [];
-
-            if (item) {
-                const searchText = [
-                    item.title || '',
-                    item.description || '',
-                    item.prompt || '',
-                    ...(item.tags || []),
-                    ...(item.aiTags?.styles?.en || []),
-                    ...(item.aiTags?.styles?.zh || []),
-                    ...(item.aiTags?.mood?.en || []),
-                    ...(item.aiTags?.mood?.zh || []),
-                    ...(item.aiTags?.scenes?.en || []),
-                    ...(item.aiTags?.scenes?.zh || []),
-                ].join(' ').toLowerCase();
-
-                isVisible = keywords.some(kw => searchText.includes(kw.toLowerCase()));
-            }
-        } else if (cardTags.includes(filter)) {
-            isVisible = true;
-        } else if (item && item.aiTags) {
-            const filterLower = filter.toLowerCase();
-            const checkTags = (tags) => {
-                if (!tags) return false;
-                return ['en', 'zh'].some(lang =>
-                    tags[lang] && tags[lang].some(t => t.toLowerCase().includes(filterLower))
-                );
-            };
-            isVisible = checkTags(item.aiTags.styles) ||
-                checkTags(item.aiTags.mood) ||
-                checkTags(item.aiTags.scenes) ||
-                checkTags(item.aiTags.objects);
-        }
-
-        if (isVisible) {
-            visibleCards.push(card);
-        } else {
-            hiddenCards.push(card);
-        }
-    });
-
-    // Phase 1: Fade out hidden cards
-    hiddenCards.forEach(card => {
-        if (card.style.display !== 'none') {
-            card.classList.add('filter-fading-out');
-        }
-    });
-
-    // Phase 2: After fade-out, update layout and animate visible cards
-    setTimeout(() => {
-        // Hide faded cards
-        hiddenCards.forEach(card => {
-            card.style.display = 'none';
-            card.classList.remove('filter-fading-out');
-        });
-
-        // Show visible cards
-        visibleCards.forEach(card => card.style.display = '');
-
-        // Force layout calculation
-        void document.body.offsetHeight;
-
-        // LAST: Get new positions and animate
-        visibleCards.forEach((card, index) => {
-            const cardId = card.dataset.id;
-            const first = firstPositions.get(cardId);
-            const last = card.getBoundingClientRect();
-
-            if (first) {
-                // Card was visible - FLIP it to new position
-                const dx = first.x - last.left;
-                const dy = first.y - last.top;
-
-                if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
-                    // Set initial inverted position (no transition)
-                    card.style.transform = `translate(${dx}px, ${dy}px)`;
-
-                    // Force reflow then add transition
-                    requestAnimationFrame(() => {
-                        card.classList.add('filter-moving');
-                        card.style.transform = '';
-                    });
-                }
-            } else {
-                // New card entering - fade in with stagger
-                card.style.opacity = '0';
-                card.style.transform = 'scale(0.95) translateY(12px)';
-
-                setTimeout(() => {
-                    card.classList.add('filter-entering');
-                    card.style.opacity = '';
-                    card.style.transform = '';
-                }, index * 25);
-            }
-        });
-
-        // Phase 3: Cleanup after animations complete
-        setTimeout(() => {
-            cards.forEach(card => {
-                card.classList.remove('filtering', 'filter-moving', 'filter-entering');
-                card.style.transform = '';
-                card.style.opacity = '';
-                // Re-enable breathing on visible cards
-                if (card.style.display !== 'none') {
-                    card.classList.add('breathing');
-                }
-            });
-        }, 500);
-    }, 180);
-}
-
-function loadMoreCards() {
+function renderCurrentPage() {
     const grid = document.querySelector('.gallery-container');
-    if (!grid || isLoading) return;
+    if (!grid) return;
 
-    const startIndex = currentPage * CARDS_PER_PAGE;
-    const endIndex = startIndex + CARDS_PER_PAGE;
+    // Clear grid for standard pagination
+    grid.innerHTML = '';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    const totalItems = allFilteredItems.length;
+    const totalPages = Math.ceil(totalItems / CARDS_PER_PAGE);
+
+    // Ensure currentPage is valid
+    if (currentPage < 1) currentPage = 1;
+    if (currentPage > totalPages && totalPages > 0) currentPage = totalPages;
+
+    const startIndex = (currentPage - 1) * CARDS_PER_PAGE;
+    const endIndex = Math.min(startIndex + CARDS_PER_PAGE, totalItems);
     const itemsToLoad = allFilteredItems.slice(startIndex, endIndex);
 
-    if (itemsToLoad.length === 0) return; // No more items
+    if (itemsToLoad.length === 0 && totalItems > 0) return;
 
     isLoading = true;
 
@@ -3440,35 +3296,123 @@ function loadMoreCards() {
 
         grid.appendChild(card);
 
-        // Trigger animation with stagger delay (similar to featured-banner animation-delay)
-        const staggerDelay = index * 50; // 50ms stagger per card
+        // Trigger animation with stagger delay
+        const staggerDelay = index * 50;
         setTimeout(() => {
             card.classList.add('card-visible');
-            // Add breathing class AFTER entrance animation completes (0.8s)
             setTimeout(() => {
                 card.classList.add('breathing');
             }, 850);
         }, staggerDelay);
     });
 
-    currentPage++;
     isLoading = false;
 
-    // Show container if first load
-    if (currentPage === 1) {
-        requestAnimationFrame(() => {
-            grid.classList.add('visible');
-        });
+    // Show container
+    requestAnimationFrame(() => {
+        grid.classList.add('visible');
+    });
+
+    // Render Pagination Controls
+    renderPaginationControls(totalPages);
+}
+
+function renderPaginationControls(totalPages) {
+    const existingNav = document.querySelector('.pagination-nav');
+    if (existingNav) existingNav.remove();
+
+    const grid = document.querySelector('.gallery-container');
+    if (!grid || totalPages <= 1) return;
+
+    const nav = document.createElement('div');
+    nav.className = 'pagination-nav';
+    nav.style.cssText = `
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 10px;
+        margin: 40px auto 60px;
+        padding-bottom: 40px;
+    `;
+
+    // Helper to create button
+    const createBtn = (text, page, isActive = false, isDisabled = false) => {
+        const btn = document.createElement('button');
+        btn.textContent = text;
+        btn.className = `pagination-btn${isActive ? ' active' : ''}`;
+        if (isDisabled) btn.disabled = true;
+
+        if (!isDisabled && !isActive) {
+            btn.onclick = () => {
+                currentPage = page;
+                renderCurrentPage();
+            };
+        }
+        return btn;
+    };
+
+    // Prev Button
+    nav.appendChild(createBtn('← Prev', currentPage - 1, false, currentPage === 1));
+
+    // Page Numbers
+    // Simple logic: Show first, last, and around current
+    // Pattern: 1 ... 4 5 6 ... 10
+    const range = [];
+
+    if (totalPages <= 7) {
+        for (let i = 1; i <= totalPages; i++) range.push(i);
+    } else {
+        range.push(1);
+        if (currentPage > 3) range.push('...');
+
+        let start = Math.max(2, currentPage - 1);
+        let end = Math.min(totalPages - 1, currentPage + 1);
+
+        if (currentPage === 1) end = 3;
+        if (currentPage === totalPages) start = totalPages - 2;
+
+        for (let i = start; i <= end; i++) range.push(i);
+
+        if (currentPage < totalPages - 2) range.push('...');
+        range.push(totalPages);
     }
 
-    // Check if all cards are rendered
-    if (currentPage * CARDS_PER_PAGE >= PROMPTS.length) {
-        allCardsRendered = true;
-    }
+    range.forEach(p => {
+        if (p === '...') {
+            const span = document.createElement('span');
+            span.textContent = '...';
+            span.style.color = 'var(--text-dim)';
+            nav.appendChild(span);
+        } else {
+            nav.appendChild(createBtn(String(p), p, p === currentPage));
+        }
+    });
+
+    // Next Button
+    nav.appendChild(createBtn('Next →', currentPage + 1, false, currentPage === totalPages));
+
+    grid.parentNode.insertBefore(nav, grid.nextSibling);
+
+    // Animate in
+    nav.animate([
+        { opacity: 0, transform: 'translateY(20px)' },
+        { opacity: 1, transform: 'translateY(0)' }
+    ], { duration: 500, easing: 'ease-out', fill: 'forwards' });
+}
+
+// Filter cards using CSS classes for smooth animations (Only used for filter switching animations if staying on same page, but we are resetting page now)
+// We can simplify this or keep it for small transitions, but standard pagination usually redraws.
+// Keeping a simplified version for small updates if needed, but renderGallery now resets.
+
+function loadMoreCards() {
+    // Deprecated for pagination
+    renderCurrentPage();
 }
 
 // --- Infinite Scroll ---
 function setupInfiniteScroll() {
+    // Disabled in favor of Pagination
+    /*
     window.addEventListener('scroll', () => {
         if (isLoading) return;
 
@@ -3481,6 +3425,8 @@ function setupInfiniteScroll() {
             loadMoreCards();
         }
     });
+    */
+    console.log('Infinite scroll disabled, using pagination.');
 }
 
 // --- Filter Interactivity ---
@@ -3529,12 +3475,8 @@ function handleNavClick(filterType, clickedItem) {
         showAISubTags(filterType, navContainer);
     }
 
-    // Apply filter
-    if (allCardsRendered) {
-        filterCardsCSS(filterType);
-    } else {
-        renderGallery(filterType);
-    }
+    // Always reset to page 1 and render
+    renderGallery(filterType, true);
 }
 
 // Get AI-derived sub-tags for a category (with Chinese translations from aiTags)
