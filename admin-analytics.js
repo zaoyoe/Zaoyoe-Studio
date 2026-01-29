@@ -3089,7 +3089,7 @@ async function updateOnlineUsers() {
         // 1. Query comments for recent activity
         try {
             const { data: comments } = await supabaseClient
-                .from('comments')
+                .from('prompt_comments')
                 .select('user_id')
                 .gte('created_at', fiveMinutesAgo);
 

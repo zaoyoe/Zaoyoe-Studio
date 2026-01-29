@@ -392,11 +392,11 @@
             [data-theme="light"] .dropdown-action i { color: #94a3b8; }
             
             [data-theme="light"] .dropdown-action:hover {
-                background: rgba(155, 93, 229, 0.1); /* Purple Tint */
-                color: #9b5de5;
+                background: rgba(107, 158, 206, 0.12); /* Starry Blue Tint */
+                color: #6b9ece; /* Starry Blue */
             }
             [data-theme="light"] .dropdown-action:hover i {
-                color: #9b5de5;
+                color: #6b9ece;
             }
 
             /* Verify Widget Layout Optimization (Text + Points in one row) */

@@ -32,6 +32,9 @@
 }
 
 /* Modal Container - Frosted Glass Effect (Matches Profile Modal) */
+/* Modal Container - Frosted Glass Effect (Matches Profile Modal) */
+/* Modal Container - Frosted Glass Effect (Matches Profile Modal) */
+/* Modal Container - Frosted Glass Effect (Matches Profile Modal) */
 .wallet-modal {
     /* Lighter Glassmorphism - Same as profile modal */
     background: rgba(255, 255, 255, 0.03);
@@ -91,12 +94,18 @@
 }
 
 /* Split Layout */
+/* Split Layout */
+/* Split Layout -> Vertical Layout */
+/* Split Layout */
 .wallet-layout {
     display: flex;
     flex: 1;
     overflow: hidden;
 }
 
+/* Left Sidebar */
+/* Left Sidebar */
+/* Top Navigation Bar (Was Sidebar) */
 /* Left Sidebar */
 .wallet-sidebar {
     width: 140px;
@@ -110,6 +119,9 @@
     /* For indicator positioning */
 }
 
+/* Sliding Indicator */
+/* Sliding Indicator */
+/* Sliding Indicator - HIDDEN for simplicity in compact mode */
 /* Sliding Indicator */
 .sidebar-indicator {
     position: absolute;
@@ -144,12 +156,13 @@
     border: 1px solid transparent;
 }
 
-.wallet-menu-item:hover {
-    background: rgba(255, 255, 255, 0.08);
+.wallet-sidebar .wallet-menu-item:hover {
+    background: rgba(255, 255, 255, 0.05);
 }
 
-.wallet-menu-item.active {
-    /* Background handled by .sidebar-indicator */
+.wallet-sidebar .wallet-menu-item.active {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.1);
 }
 
 .menu-icon {
@@ -1205,4 +1218,237 @@
     .packages-container {
         grid-template-columns: 1fr;
     }
+}
+
+/* ========================================
+   Orders Section Styles
+   ======================================== */
+.orders-container {
+    max-height: 320px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+}
+
+.order-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    cursor: pointer;
+    transition: background 0.2s;
+    margin: 0 -8px;
+    padding-left: 8px;
+    padding-right: 8px;
+    border-radius: 8px;
+}
+
+.order-item:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.order-item:last-child {
+    border-bottom: none;
+}
+
+.order-main {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.order-product {
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.9);
+    font-weight: 500;
+}
+
+.order-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.4);
+}
+
+.order-qty {
+    background: rgba(255, 255, 255, 0.08);
+    padding: 2px 8px;
+    border-radius: 10px;
+}
+
+.order-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+}
+
+.order-cost {
+    font-size: 14px;
+    font-weight: 600;
+    color: #ff6b6b;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.order-status {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-weight: 500;
+}
+
+.order-status.status-completed {
+    background: rgba(34, 197, 94, 0.15);
+    color: #22c55e;
+}
+
+.order-status.status-refunded {
+    background: rgba(251, 191, 36, 0.15);
+    color: #fbbf24;
+}
+
+.order-status.status-pending {
+    background: rgba(96, 165, 250, 0.15);
+    color: #60a5fa;
+}
+
+/* ========================================
+   Order Detail Modal Styles
+   ======================================== */
+.order-detail-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10005;
+    padding: 20px;
+}
+
+.order-detail-modal {
+    background: rgba(25, 25, 30, 0.95);
+    backdrop-filter: blur(40px);
+    -webkit-backdrop-filter: blur(40px);
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    max-width: 420px;
+    width: 100%;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    overflow: hidden;
+    animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.order-detail-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 24px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.order-detail-header h3 {
+    margin: 0;
+    font-size: 18px;
+    color: #fff;
+}
+
+.order-detail-close {
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.6);
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s;
+}
+
+.order-detail-close:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: #fff;
+}
+
+.order-detail-body {
+    padding: 24px;
+}
+
+.order-detail-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.order-detail-row:last-of-type {
+    border-bottom: none;
+}
+
+.order-detail-row .detail-label {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.order-detail-row .detail-value {
+    font-size: 14px;
+    color: #fff;
+    font-weight: 500;
+}
+
+.order-detail-content {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.order-detail-content .content-label {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.5);
+    margin-bottom: 10px;
+}
+
+.order-detail-content .content-box {
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 16px;
+    font-family: 'Monaco', 'Consolas', monospace;
+    font-size: 14px;
+    color: #22c55e;
+    word-break: break-all;
+    cursor: pointer;
+    transition: all 0.2s;
+    line-height: 1.6;
+}
+
+.order-detail-content .content-box:hover {
+    background: rgba(0, 0, 0, 0.5);
+    border-color: rgba(34, 197, 94, 0.3);
+}
+
+.order-detail-content .content-hint {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.35);
+    text-align: center;
+    margin-top: 10px;
 }

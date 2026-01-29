@@ -376,7 +376,7 @@
 
     <!-- Auth Injection & Modals -->
     <script src="inject-auth.js?v=VERIFY_PAGE" defer></script>
-    <script src="js/components/WalletModal.js?v=2" defer></script>
+    <script src="js/components/WalletModal.js?v=WALLET_PREMIUM_UI" defer></script>
     <script src="notification-client.js"></script>
     <script src="security-cards.js?v=1" defer></script>
 
@@ -453,19 +453,39 @@
                     <!-- View 2: Security (Simplified but functional) -->
                     <div id="view-security" class="profile-view profile-back">
                         <div class="modal-title">安全设置</div>
+
                         <div class="security-cards-layout">
+                            <!-- Left: Security Menu Cards -->
                             <div class="security-menu">
+                                <!-- 1. Change Password Card -->
+
                                 <div class="security-card active"
                                     onclick="expandSecurityCard(event, 'change-password')">
-                                    <div class="security-card-icon"><i class="fas fa-key"></i></div>
+                                    <div class="security-card-icon">
+                                        <i class="fas fa-key"></i>
+                                    </div>
                                     <div class="security-card-content">
                                         <div class="security-card-title">修改密码</div>
                                     </div>
                                     <i class="fas fa-chevron-right security-card-arrow"></i>
                                 </div>
+
+                                <!-- 2. Bind Phone Card -->
+                                <div class="security-card" onclick="expandSecurityCard(event, 'bind-phone')">
+                                    <div class="security-card-icon">
+                                        <i class="fas fa-mobile-alt"></i>
+                                    </div>
+                                    <div class="security-card-content">
+                                        <div class="security-card-title">绑定手机号</div>
+                                    </div>
+                                    <i class="fas fa-chevron-right security-card-arrow"></i>
+                                </div>
+
+                                <!-- 3. Delete Account Card -->
                                 <div class="security-card danger-card"
                                     onclick="expandSecurityCard(event, 'delete-account')">
-                                    <div class="security-card-icon danger"><i class="fas fa-exclamation-triangle"></i>
+                                    <div class="security-card-icon danger">
+                                        <i class="fas fa-exclamation-triangle"></i>
                                     </div>
                                     <div class="security-card-content">
                                         <div class="security-card-title danger">注销账号</div>
@@ -473,25 +493,137 @@
                                     <i class="fas fa-chevron-right security-card-arrow"></i>
                                 </div>
                             </div>
+
+                            <!-- Right: Expanded Content Area -->
                             <div class="security-detail-panel" id="securityDetailPanel">
+                                <!-- Change Password Panel -->
+
+                                <!-- Default Security Overview Panel -->
                                 <div class="security-detail-content" id="detail-security-overview"
                                     style="display: block;">
-                                    <div style="text-align: center; padding: 20px; color: rgba(255,255,255,0.5);">
-                                        请选择左侧安全选项</div>
+                                    <div
+                                        style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%;">
+                                        <div class="security-overview-icon-container" style="
+                                            width: 80px; 
+                                            height: 80px; 
+                                            background: rgba(155, 93, 229, 0.1); 
+                                            border-radius: 50%; 
+                                            display: flex; 
+                                            align-items: center; 
+                                            justify-content: center; 
+                                            margin-bottom: 24px;
+                                            box-shadow: 0 0 30px rgba(155, 93, 229, 0.2);
+                                        ">
+                                            <i class="fas fa-shield-alt" style="font-size: 36px; color: #9b5de5;"></i>
+                                        </div>
+                                        <h3 class="detail-title">账号安全中心</h3>
+                                        <p class="detail-desc">您的账号当前处于安全保护中</p>
+                                        <div style="
+                                            margin-top: 20px; 
+                                            padding: 12px 20px; 
+                                            background: rgba(255, 255, 255, 0.05); 
+                                            border-radius: 12px; 
+                                            font-size: 13px; 
+                                            color: rgba(255, 255, 255, 0.5);
+                                            display: flex; 
+                                            align-items: center; 
+                                            gap: 8px;
+                                        ">
+                                            <i class="fas fa-info-circle"></i>
+                                            请从左侧选择项目进行安全设置
+                                        </div>
+                                    </div>
                                 </div>
+
+                                <!-- Change Password Panel -->
+
                                 <div class="security-detail-content" id="detail-change-password" style="display: none;">
                                     <h3 class="detail-title">修改密码</h3>
                                     <input type="password" id="oldPasswordInput" placeholder="当前密码"
-                                        class="security-input">
-                                    <input type="password" id="newPasswordInput" placeholder="新密码"
-                                        class="security-input">
+                                        class="security-input" autocomplete="new-password">
+                                    <input type="password" id="newPasswordInput" placeholder="新密码 (至少6位)"
+                                        class="security-input" autocomplete="new-password">
                                     <button class="gradient-btn" onclick="changePassword()">更新密码</button>
                                 </div>
-                                <div class="security-detail-content" id="detail-delete-account" style="display: none;">
-                                    <h3 class="detail-title danger">注销账号</h3>
-                                    <button class="danger-btn" onclick="deleteAccount()">确认注销</button>
+
+                                <!-- Bind Phone Panel -->
+                                <div class="security-detail-content" id="detail-bind-phone" style="display: none;">
+                                    <h3 class="detail-title">绑定手机号</h3>
+                                    <p class="detail-desc">绑定手机号可以增强账户安全性</p>
+                                    <div class="input-group input-with-action"
+                                        style="max-width: 100%; margin-bottom: 12px;">
+                                        <input type="tel" id="phoneNumberInput" placeholder="输入手机号"
+                                            class="security-input" maxlength="11">
+                                        <button type="button" class="verify-code-btn" id="sendPhoneCodeBtn"
+                                            onclick="sendPhoneVerificationCode()">
+                                            获取验证码
+                                        </button>
+                                    </div>
+                                    <input type="text" id="phoneCodeInput" placeholder="输入6位验证码" class="security-input"
+                                        maxlength="6">
+                                    <button class="gradient-btn" onclick="bindPhone()">绑定手机号</button>
                                 </div>
+
+                                <!-- Delete Account Panel -->
+                                <div class="security-detail-content" id="detail-delete-account">
+                                    <h3 class="detail-title danger">注销账号</h3>
+                                    <p class="detail-desc">⚠️ 此操作不可恢复，您的所有数据将被永久删除。</p>
+                                    <div class="danger-zone">
+                                        <button class="danger-btn" onclick="deleteAccount()">
+                                            <i class="fas fa-trash-alt"></i>
+                                            确认注销
+                                        </button>
+                                    </div>
+                                </div>
+
+
                             </div>
+                        </div>
+
+                        <!-- Mobile Security Layout (Visible only on mobile) -->
+                        <div class="mobile-security-layout">
+                            <!-- Section 1: Change Password -->
+                            <div class="mobile-security-section">
+                                <h3 class="mobile-section-title">修改密码</h3>
+                                <div class="input-group">
+                                    <input type="password" id="mobile_oldPassword" class="security-input"
+                                        placeholder="当前密码" autocomplete="new-password">
+                                </div>
+                                <div class="input-group">
+                                    <input type="password" id="mobile_newPassword" class="security-input"
+                                        placeholder="新密码 (至少6位)" autocomplete="new-password">
+                                </div>
+                                <button class="gradient-btn" onclick="changePassword('mobile')">更新密码</button>
+                            </div>
+
+                            <!-- Section 2: Bind Phone -->
+                            <div class="mobile-security-section">
+                                <h3 class="mobile-section-title">绑定手机号</h3>
+                                <p class="mobile-section-desc">绑定手机号可以增强账户安全性</p>
+                                <div class="input-group">
+                                    <input type="tel" id="mobile_phoneNumberInput" class="security-input"
+                                        placeholder="输入手机号">
+                                </div>
+                                <div class="input-group" style="display: flex; gap: 10px;">
+                                    <input type="text" id="mobile_phoneCodeInput" class="security-input"
+                                        placeholder="输入6位验证码" style="flex: 1;">
+                                    <button class="code-btn" id="mobile_sendPhoneCodeBtn"
+                                        onclick="sendPhoneVerificationCode('mobile')">获取验证码</button>
+                                </div>
+                                <button class="gradient-btn" onclick="bindPhone('mobile')">绑定手机号</button>
+                            </div>
+
+                            <!-- Section 3: Delete Account -->
+                            <div class="mobile-security-section">
+                                <h3 class="mobile-section-title danger">注销账号</h3>
+                                <p class="mobile-section-desc">⚠️ 此操作不可恢复，您的所有数据将被永久删除。</p>
+                                <button class="danger-btn" onclick="deleteAccount()">
+                                    <i class="fas fa-trash-alt"></i>
+                                    确认注销
+                                </button>
+                            </div>
+
+                            <!-- Spacer removed as requested -->
                         </div>
                     </div>
                 </div>

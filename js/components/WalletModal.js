@@ -48,6 +48,7 @@
             }
 
             this.isOpen = true;
+            this.ordersLoaded = false; // Reset loaded flag for new session
             document.body.style.overflow = 'hidden'; // Lock body scroll
             this.render();
 
@@ -68,6 +69,7 @@
             }
             document.body.style.overflow = ''; // Unlock body scroll
             this.isOpen = false;
+            this.ordersLoaded = false;
             console.log('[WalletModal] Closed');
         },
 
@@ -102,6 +104,11 @@
                             <div class="wallet-menu-item" data-view="history" onclick="WalletModal.switchView('history')">
                                 <span class="menu-icon">📜</span>
                                 <span class="menu-text">记录</span>
+                            </div>
+                            
+                            <div class="wallet-menu-item" data-view="orders" onclick="WalletModal.switchView('orders')">
+                                <span class="menu-icon">📦</span>
+                                <span class="menu-text">订单</span>
                             </div>
                         </div>
                         
@@ -193,6 +200,14 @@
                                     <div class="loading-text">加载中...</div>
                                 </div>
                             </div>
+                            
+                            <!-- Orders View (Shop Purchase History) -->
+                            <div class="wallet-view" id="view-orders">
+                                <h3 class="view-title">📦 我的订单</h3>
+                                <div class="orders-container" id="wallet-orders">
+                                    <div class="loading-text">加载中...</div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -226,6 +241,11 @@
             document.querySelectorAll('.wallet-view').forEach(view => {
                 view.classList.toggle('active', view.id === `view-${viewId}`);
             });
+
+            // Load orders when switching to orders view
+            if (viewId === 'orders' && !this.ordersLoaded) {
+                this.loadOrders();
+            }
         },
 
         /**
@@ -910,6 +930,446 @@
         toggleItemDetails(element) {
             // Toggle expanded class
             element.classList.toggle('expanded');
+        },
+
+        /**
+         * Load shop orders
+         */
+        async loadOrders() {
+            try {
+                console.log('[WalletModal] 🔄 Loading orders...');
+                const container = document.getElementById('wallet-orders');
+                if (!container) return;
+
+                const { data: { session } } = await supabase.auth.getSession();
+                if (!session) {
+                    container.innerHTML = '<div class="empty-text">请先登录</div>';
+                    return;
+                }
+
+                // Fetch orders from shop_orders table joined with items
+                const { data: orders, error } = await supabase
+                    .from('shop_orders')
+                    .select(`
+                        id, 
+                        total_price, 
+                        item_count, 
+                        status, 
+                        created_at, 
+                        snapshot_product_name,
+                        shop_order_items (
+                            id,
+                            snapshot_product_name
+                        )
+                    `)
+                    .eq('user_id', session.user.id)
+                    .order('created_at', { ascending: false })
+                    .limit(50);
+
+                if (error) throw error;
+
+                this.ordersLoaded = true;
+                this.renderOrders(orders || []);
+
+            } catch (err) {
+                console.error('[WalletModal] ❌ Load orders failed:', err);
+                const container = document.getElementById('wallet-orders');
+                if (container) {
+                    container.innerHTML = '<div class="empty-text">加载失败</div>';
+                }
+            }
+        },
+
+        /**
+         * Render shop orders
+         */
+        renderOrders(orders) {
+            const container = document.getElementById('wallet-orders');
+            if (!orders || orders.length === 0) {
+                container.innerHTML = '<div class="empty-text">暂无订单记录</div>';
+                return;
+            }
+
+            container.innerHTML = orders.map(order => {
+                const date = new Date(order.created_at);
+                const dateStr = `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
+
+                // Map status to display status
+                const statusMap = {
+                    'completed': { text: '已完成', class: 'status-completed' },
+                    'full_refund': { text: '已退款', class: 'status-refunded' },
+                    'partial_refund': { text: '部分退款', class: 'status-refunded' }
+                };
+
+                // Fallback for old data compatibility
+                let statusInfo = statusMap[order.status];
+                if (!statusInfo) {
+                    // Check refund_status for old orders if status is missing
+                    if (order.refund_status === 'refunded') statusInfo = { text: '已退款', class: 'status-refunded' };
+                    else statusInfo = { text: '已完成', class: 'status-completed' };
+                }
+
+                // Display name: "Product Name" or "Product Name 等 X 件"
+                let displayName = order.snapshot_product_name || '未知商品';
+                const count = order.item_count || (order.shop_order_items ? order.shop_order_items.length : 1);
+
+                if (count > 1) {
+                    displayName = `${displayName} 等 ${count} 件`;
+                }
+
+                // Price display: order.total_price (new) or order.price_paid (old)
+                const price = order.total_price != null ? order.total_price : order.price_paid;
+
+                return `
+                    <div class="order-item" onclick="event.stopPropagation(); WalletModal.showOrderDetail('${order.id}')">
+                        <div class="order-main">
+                            <div class="order-product">${this.escapeHtml(displayName)}</div>
+                            <div class="order-meta">
+                                <span class="order-date">${dateStr}</span>
+                            </div>
+                        </div>
+                        <div class="order-right">
+                            <div class="order-cost">-${price} 积分</div>
+                            <div class="order-status ${statusInfo.class}">${statusInfo.text}</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        },
+
+        /**
+         * Show order detail with purchased content
+         */
+        /**
+         * Show order detail with purchased content (Premium Dark Glass UI)
+         */
+        async showOrderDetail(orderId) {
+            try {
+                // Fetch order basic info
+                const { data: order, error } = await supabase
+                    .from('shop_orders')
+                    .select('*')
+                    .eq('id', orderId)
+                    .single();
+
+                if (error) throw error;
+                if (!order) {
+                    this.showToast('订单不存在', 'error');
+                    return;
+                }
+
+                // Fetch items with inventory content
+                let items = [];
+                let contentHtml = '';
+
+                // Try to fetch from order_items first
+                const { data: orderItems, error: itemsError } = await supabase
+                    .from('shop_order_items')
+                    .select(`
+                        id,
+                        snapshot_product_name,
+                        price_paid,
+                        shop_inventory ( content )
+                    `)
+                    .eq('order_id', orderId);
+
+                if (orderItems && orderItems.length > 0) {
+                    items = orderItems.map(item => ({
+                        name: item.snapshot_product_name,
+                        content: item.shop_inventory?.content || '内容加载失败',
+                        price: item.price_paid
+                    }));
+                } else if (order.inventory_id) {
+                    // Legacy fallback: single item in order table
+                    const { data: inventory } = await supabase
+                        .from('shop_inventory')
+                        .select('content')
+                        .eq('id', order.inventory_id)
+                        .single();
+
+                    items.push({
+                        name: order.snapshot_product_name,
+                        content: inventory?.content || '内容加载失败',
+                        price: order.price_paid
+                    });
+                }
+
+                const date = new Date(order.created_at);
+                const dateStr = `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
+
+                // Helper to escape content for attribute
+                const escapeAttr = (str) => (str || '').replace(/"/g, '&quot;');
+
+                // Build content HTML using new premium structure
+                contentHtml = items.map((item) => `
+                    <div class="content-card">
+                        <div class="item-name">
+                             <span style="width:6px;height:6px;background:#6b9ece;border-radius:50%;display:inline-block;"></span>
+                             ${this.escapeHtml(item.name)}
+                        </div>
+                        <div class="item-content-box">
+                            <div class="item-text">${this.escapeHtml(item.content)}</div>
+                        </div>
+                    </div>
+                `).join('');
+
+                const totalPrice = order.total_price != null ? order.total_price : order.price_paid;
+
+                // Create detail modal overlay with Premium UI
+                const detailOverlay = document.createElement('div');
+                detailOverlay.className = 'order-detail-overlay';
+
+                // Embedded Premium Styles
+                const styleId = 'order-detail-premium-style';
+                if (!document.getElementById(styleId)) {
+                    const style = document.createElement('style');
+                    style.id = styleId;
+                    style.innerHTML = `
+                        .premium-modal-overlay {
+                            position: fixed !important; top: 0 !important; left: 0 !important; width: 100% !important; height: 100% !important;
+                            background: rgba(0, 0, 0, 0.7) !important;
+                            backdrop-filter: blur(4px) !important; -webkit-backdrop-filter: blur(4px) !important;
+                            z-index: 200000 !important;
+                            display: flex !important; justify-content: center !important; align-items: center !important;
+                            animation: fadeIn 0.3s ease-out;
+                        }
+                        /* Standardized Premium Modal - Forced consistency across pages */
+                        .premium-modal {
+                            width: 90% !important; max-width: 380px !important;
+                            background: rgba(30, 41, 59, 0.75) !important;
+                            backdrop-filter: blur(24px) !important; -webkit-backdrop-filter: blur(24px) !important;
+                            border: 1px solid rgba(255, 255, 255, 0.1) !important;
+                            border-radius: 24px !important;
+                            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5) !important;
+                            overflow: hidden !important;
+                            display: flex !important; flex-direction: column !important;
+                            max-height: 85vh !important;
+                            color: #fff !important;
+                            animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+                            opacity: 1;
+                        }
+                        .premium-modal-header {
+                            padding: 24px 24px 10px;
+                            /* No border bottom for cleaner look */
+                            display: flex; justify-content: space-between; align-items: center;
+                        }
+                        .premium-modal-title {
+                            font-size: 18px; font-weight: 700; color: #fff;
+                            display: flex; align-items: center; gap: 8px;
+                            letter-spacing: -0.5px;
+                        }
+                        .premium-close-btn {
+                            width: 30px; height: 30px;
+                            border-radius: 50%;
+                            border: none;
+                            background: rgba(255, 255, 255, 0.05);
+                            color: rgba(255, 255, 255, 0.6);
+                            cursor: pointer;
+                            display: flex; align-items: center; justify-content: center;
+                            transition: all 0.2s;
+                        }
+                        .premium-close-btn:hover {
+                            background: rgba(255, 255, 255, 0.15);
+                            color: #fff;
+                        }
+                        .premium-modal-body {
+                            padding: 0 24px 24px;
+                            overflow-y: auto;
+                        }
+                        
+                        /* Metadata Section */
+                        .meta-section {
+                            margin-bottom: 20px;
+                            padding-top: 10px;
+                        }
+                        .detail-row {
+                            display: flex; justify-content: space-between; align-items: center;
+                            margin-bottom: 10px;
+                            font-size: 13px;
+                        }
+                        .detail-label { color: rgba(255, 255, 255, 0.4); }
+                        .detail-val { color: rgba(255, 255, 255, 0.9); font-weight: 500; font-family: 'Outfit', sans-serif;}
+                        .detail-val.mono { font-family: monospace; letter-spacing: 0.5px; opacity: 0.8; }
+                        .detail-val.highlight { color: #f87171; font-weight: 700; }
+                        
+                        /* Action Buttons */
+                        .modal-actions {
+                            display: flex; gap: 10px; margin-bottom: 20px;
+                        }
+                        .action-btn.primary {
+                            flex: 1;
+                            background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
+                            color: #052e16;
+                            border: none;
+                            padding: 10px;
+                            border-radius: 50px;
+                            font-weight: 600;
+                            font-size: 13px;
+                            cursor: pointer;
+                            display: flex; align-items: center; justify-content: center; gap: 6px;
+                            box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3);
+                            transition: all 0.2s;
+                        }
+                        .action-btn.primary:hover {
+                            transform: translateY(-1px);
+                            box-shadow: 0 6px 16px rgba(34, 197, 94, 0.4);
+                            filter: brightness(1.05);
+                        }
+                         .action-btn.secondary {
+                            flex: 1;
+                            background: rgba(255, 255, 255, 0.05);
+                            color: rgba(255, 255, 255, 0.8);
+                            border: 1px solid rgba(255, 255, 255, 0.1);
+                            padding: 10px;
+                            border-radius: 50px;
+                            font-weight: 500;
+                            font-size: 13px;
+                            cursor: pointer;
+                            display: flex; align-items: center; justify-content: center; gap: 6px;
+                            transition: all 0.2s;
+                        }
+                        .action-btn.secondary:hover {
+                            background: rgba(255, 255, 255, 0.1);
+                            color: #fff;
+                        }
+                        
+                        /* Content Box */
+                        .content-section { margin-top: 0; }
+                        .content-section-title {
+                            font-size: 12px; font-weight: 600; color: rgba(255, 255, 255, 0.3);
+                            margin-bottom: 10px; text-align: center;
+                        }
+                        
+                        .content-card {
+                            background: rgba(255, 255, 255, 0.05);
+                            backdrop-filter: blur(12px);
+                            -webkit-backdrop-filter: blur(12px);
+                            border-radius: 16px;
+                            padding: 16px;
+                            margin-bottom: 12px;
+                            border: 1px solid rgba(255, 255, 255, 0.1);
+                            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+                        }
+                        
+                        .item-name {
+                            font-size: 13px; font-weight: 600; color: #e2e8f0;
+                            margin-bottom: 8px;
+                            display: flex; align-items: center; gap: 6px;
+                        }
+                        .item-content-box {
+                            background: transparent;
+                            border-radius: 0;
+                            padding: 0;
+                        }
+                        .item-text {
+                            font-family: 'Monaco', monospace;
+                            font-size: 12px; color: #10b981;
+                            word-break: break-all;
+                            line-height: 1.5;
+                            opacity: 0.9;
+                        }
+
+                        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+                        @keyframes slideUp { from { opacity: 0; transform: translateY(20px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
+                    `;
+                    document.head.appendChild(style);
+                }
+
+                detailOverlay.className = 'premium-modal-overlay';
+                detailOverlay.onclick = (e) => {
+                    if (e.target === detailOverlay) detailOverlay.remove();
+                };
+
+                // Prepare content for export/copy
+                const allContent = items.map(i => `${i.name}:\n${i.content}`).join('\n\n=====\n\n');
+
+                // Attach button handlers
+                window.WalletModal_export = () => {
+                    const blob = new Blob([`订单编号: ${order.id}\n下单时间: ${dateStr}\n\n${allContent}`], { type: 'text/plain' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `order_${order.id.split('-')[0]}.txt`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                };
+
+                window.WalletModal_copyAll = () => {
+                    navigator.clipboard.writeText(allContent).then(() => {
+                        this.showToast('✅ 已复制全部内容', 'success');
+                    }).catch(() => this.showToast('复制失败', 'error'));
+                };
+
+                detailOverlay.innerHTML = `
+                    <div class="premium-modal">
+                        <div class="premium-modal-header">
+                            <div class="premium-modal-title">
+                                <i class="fas fa-box-open" style="color: #6b9ece;"></i> 订单详情
+                            </div>
+                            <button class="premium-close-btn" onclick="this.closest('.premium-modal-overlay').remove()">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <div class="premium-modal-body">
+                            <div class="meta-section">
+                                <div class="detail-row">
+                                    <span class="detail-label">订单编号</span>
+                                    <span class="detail-val mono" title="${order.id}">${order.id.split('-')[0]}...${order.id.slice(-4)}</span>
+                                </div>
+                                <div class="detail-row">
+                                    <span class="detail-label">下单时间</span>
+                                    <span class="detail-val">${dateStr}</span>
+                                </div>
+                                <div class="detail-row">
+                                    <span class="detail-label">支付积分</span>
+                                    <span class="detail-val highlight">-${totalPrice} 积分</span>
+                                </div>
+                            </div>
+
+                            <div class="modal-actions">
+                                <button class="action-btn primary" onclick="WalletModal_copyAll()">
+                                    <i class="fas fa-copy"></i> 全部复制
+                                </button>
+                                <button class="action-btn secondary" onclick="WalletModal_export()">
+                                    <i class="fas fa-download"></i> 导出
+                                </button>
+                            </div>
+                            
+                            <div class="content-section">
+                                <div class="content-section-title">购买内容 (${items.length})</div>
+                                ${contentHtml}
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                document.body.appendChild(detailOverlay);
+
+            } catch (err) {
+                console.error('[WalletModal] Show order detail failed:', err);
+                this.showToast('加载订单详情失败', 'error');
+            }
+        },
+
+        /**
+         * Escape HTML to prevent XSS
+         */
+        escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        },
+
+        /**
+         * Copy order content to clipboard
+         */
+        copyOrderContent(element) {
+            const content = element.textContent;
+            navigator.clipboard.writeText(content).then(() => {
+                this.showToast('✅ 内容已复制', 'success');
+            }).catch(() => {
+                this.showToast('复制失败，请手动复制', 'error');
+            });
         }
     };
 

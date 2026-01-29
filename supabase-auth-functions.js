@@ -1123,12 +1123,12 @@ function switchProfileTab(tabName) {
     const profileBack = document.querySelector('.profile-back');
 
     // Update tab buttons
-    document.querySelectorAll('.tab-item').forEach(item => {
+    document.querySelectorAll('.profile-tabs .tab-item').forEach(item => {
         item.classList.remove('active');
     });
 
     if (tabName === 'profile') {
-        document.querySelector('.tab-item:first-child').classList.add('active');
+        document.querySelectorAll('.profile-tabs .tab-item')[0].classList.add('active');
         if (flipInner) flipInner.classList.remove('flipped');
         if (profileModal) profileModal.classList.remove('wide');
 
@@ -1140,12 +1140,10 @@ function switchProfileTab(tabName) {
             void profileFront.offsetWidth;
             profileFront.classList.add('animate-in');
         }
-        if (profileBack) {
-            profileBack.classList.remove('animate-in');
-        }
 
     } else if (tabName === 'security') {
-        document.querySelector('.tab-item:last-child').classList.add('active');
+        // Now security is the 2nd tab (index 1) after removing orders
+        document.querySelectorAll('.profile-tabs .tab-item')[1].classList.add('active');
         if (flipInner) flipInner.classList.add('flipped');
         if (profileModal) profileModal.classList.add('wide');
 
@@ -1160,9 +1158,6 @@ function switchProfileTab(tabName) {
             profileBack.classList.remove('animate-in');
             void profileBack.offsetWidth;
             profileBack.classList.add('animate-in');
-        }
-        if (profileFront) {
-            profileFront.classList.remove('animate-in');
         }
     }
 }

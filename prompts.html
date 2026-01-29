@@ -28,21 +28,7 @@
             }
         })();
     </script>
-    <!-- Prevent avatar flash - Pre-render from cache -->
-    <script>
-        (function () {
-            try {
-                const cached = localStorage.getItem('cached_user_profile');
-                if (cached) {
-                    const profile = JSON.parse(cached);
-                    if (profile && profile.avatarUrl) {
-                        // Store for use after DOM ready
-                        window.__cachedUserProfile = profile;
-                    }
-                }
-            } catch (e) { /* ignore */ }
-        })();
-    </script>
+
     <style>
         /* Critical CSS - Nav instant, content fades in */
         html {
@@ -73,12 +59,7 @@
             opacity: 1;
         }
     </style>
-    <!-- Pre-show logged-in buttons if cache exists -->
-    <script>
-        if (window.__cachedUserProfile) {
-            document.write('<style>#profileBtn, #switchAccountBtn, #logoutBtn { display: flex !important; }</style>');
-        }
-    </script>
+
 </head>
 
 <body>
@@ -106,79 +87,7 @@
     <a href="index.html" class="home-btn" title="返回首页">
         <i class="fas fa-house"></i>
     </a>
-    <!-- User Avatar Menu -->
-    <div class="user-avatar-container" id="userAvatarContainer">
-
-        <!-- Notification Bell -->
-        <div class="notif-wrapper" style="position: relative; display: none;" id="navNotifWrapper">
-            <button id="notifBtn" onclick="toggleNotifMenu(event)"
-                style="width: 40px; height: 40px; padding: 0; display: flex; align-items: center; justify-content: center; background: transparent; border: none; cursor: pointer; color: var(--text-dim); transition: color 0.2s;">
-                <i class="far fa-bell" style="font-size: 1.2rem;"></i>
-                <div class="notif-badge" id="notifBadge" style="display: none;"></div>
-            </button>
-        </div>
-
-        <button class="user-avatar-btn" id="userAvatarBtn" onclick="toggleAvatarMenu()">
-            <script>
-                // Inline script to prevent flash - render avatar or icon based on cache
-                if (window.__cachedUserProfile && window.__cachedUserProfile.avatarUrl) {
-                    // Add onerror to hide broken image and show fallback icon
-                    document.write('<img src="' + window.__cachedUserProfile.avatarUrl + '" alt="Avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" onerror="this.style.display=\'none\';this.parentElement.innerHTML=\'<i class=fa fa-user></i>\';"><i class="fas fa-user" style="display:none;"></i>');
-                } else {
-                    document.write('<i class="fas fa-user"></i>');
-                }
-            </script>
-        </button>
-
-        <!-- Glassmorphism Dropdown -->
-        <div class="avatar-dropdown" id="avatarDropdown">
-            <div class="dropdown-header">
-                <span class="identity-name">
-                    <script>document.write(window.__cachedUserProfile ? (window.__cachedUserProfile.nickname || window.__cachedUserProfile.username || 'Guest') : 'Guest');</script>
-                </span>
-                <button class="theme-toggle-btn" id="themeToggleBtn" onclick="toggleTheme(event)">
-                    <span class="theme-icon sun-icon">☀️</span>
-                    <span class="theme-icon moon-icon">🌙</span>
-                </button>
-            </div>
-
-
-            <div class="dropdown-actions">
-                <!-- Login (guest users only) -->
-                <button class="dropdown-action" id="loginBtn" style="display: flex;" onclick="handleGalleryLogin()">
-                    <i class="fas fa-sign-in-alt"></i>
-                    <span>Login</span>
-                </button>
-
-                <!-- Profile (logged in users) -->
-                <button class="dropdown-action" id="profileBtn" style="display: none;" onclick="openGalleryProfile()">
-                    <i class="fas fa-user"></i>
-                    <span>个人资料</span>
-                </button>
-                <!-- My Wallet (logged in users) -->
-                <button class="dropdown-action" id="walletBtn" style="display: none;" onclick="WalletModal.open()">
-                    <i class="fas fa-wallet"></i>
-                    <span>我的钱包</span>
-                </button>
-                <!-- Switch Account (logged in users) -->
-                <button class="dropdown-action" id="switchAccountBtn" style="display: none;"
-                    onclick="switchGalleryAccount()">
-                    <i class="fas fa-exchange-alt"></i>
-                    <span>切换账户</span>
-                </button>
-                <!-- Enter Studio (admin only) -->
-                <button class="dropdown-action" id="adminStudioBtn" style="display: none;" onclick="enterAdminStudio()">
-                    <i class="fas fa-palette"></i>
-                    <span>Enter Studio</span>
-                </button>
-                <!-- Logout (logged in users) -->
-                <button class="dropdown-action" id="logoutBtn" style="display: none;" onclick="logoutUser()">
-                    <i class="fas fa-sign-out-alt"></i>
-                    <span>Logout</span>
-                </button>
-            </div>
-        </div>
-    </div>
+    <!-- User Header injected by inject-auth.js -->
 
     <!-- Navigation / Categories -->
     <div class="poetry-nav-container">
@@ -542,7 +451,9 @@
     <script src="starry-sky.js"></script>
     <script src="prompts-poetry.js"></script>
     <script src="js/services/PointsService.js"></script>
-    <script src="js/components/WalletModal.js"></script>
+    <script src="js/components/WalletModal.js?v=WALLET_FIX_V7"></script>
+    <script src="supabase-auth-functions.js?v=UNIFIED_HEADER_V1" defer></script>
+    <script src="inject-auth.js?v=UNIFIED_HEADER_V1" defer></script>
     <script src="notification-client.js"></script>
     <script src="js/heartbeat.js"></script>
     <script>

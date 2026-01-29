@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-visual">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>资源商城 - Zaoyoe</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;700;800&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="security-cards.css?v=DARK_BG_INPUTS_V1">
+    <link rel="stylesheet" href="login_styles.css?v=DARK_BG_INPUTS_V1">
+    <link rel="stylesheet" href="login_dual_mode.css?v=DARK_BG_INPUTS_V1">
+    <link rel="stylesheet" href="avatar-fix.css?v=UNIFIED_HOVER_V2">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="capsule-styles.css?v=GLOW_V3">
+    <link rel="stylesheet" href="style.css?v=RADIUS_GRADIENT_V1">
+    <!-- Prevent flash of wrong theme -->
+    <script>
+        (function () {
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme === 'dark') {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            }
+        })();
+    </script>
+    <style>
+        /* Theme Variables (Copied from Prompts Poetry) */
+        :root {
+            /* Light Mode Defaults */
+            --bg-color: #ffffff;
+            --text-main: #1e293b;
+            --text-dim: #94a3b8;
+            --text-bold: #0f172a;
+            --card-bg: #f8fafc;
+            --card-border: #e2e8f0;
+            --accent-purple: #9b5de5;
+            --font-serif: 'Playfair Display', serif;
+            --font-sans: 'Outfit', sans-serif;
+            --accent-color: #3b82f6;
+        }
+
+        [data-theme="dark"] {
+            /* Dark Mode Overrides */
+            --bg-color: #0f172a;
+            /* Starry Blue Background (matches Admin Studio) */
+            --text-main: #f1f5f9;
+            --text-dim: #94a3b8;
+            --text-bold: #ffffff;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            /* Slightly transparent for starry sky */
+            --card-border: rgba(255, 255, 255, 0.08);
+            --accent-purple: #a78bfa;
+            --accent-color: #60a5fa;
+            --starry-blue: #5d9fd8;
+        }
+
+        /* Force background color to override style.css #000000 !important */
+        html,
+        body {
+            background-color: var(--bg-color) !important;
+        }
+
+        /* Shop Card Styles (Prompt Card Style) */
+        .shop-card {
+            position: relative;
+            border-radius: 16px;
+            overflow: hidden;
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+            transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            padding: 0;
+            /* Remove padding for cover image */
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            height: 100%;
+        }
+
+        .shop-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 30px rgba(93, 159, 216, 0.2);
+            /* Starry blue glow shadow on hover */
+            border-color: #5d9fd8;
+        }
+
+        [data-theme="dark"] .shop-card:hover {
+            box-shadow: 0 12px 30px rgba(93, 159, 216, 0.25);
+            background: rgba(30, 41, 59, 0.9);
+            border-color: var(--starry-blue);
+        }
+
+        /* Inner Elements */
+        .shop-card-image {
+            width: 100%;
+            height: 160px;
+            background: rgba(155, 93, 229, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            border-bottom: 1px solid var(--card-border);
+        }
+
+        .shop-icon-wrapper {
+            /* Now used as a fallback container or inner icon style */
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(155, 93, 229, 0.1);
+            color: var(--accent-purple);
+            font-size: 3rem;
+            margin-bottom: 0;
+            border-radius: 0;
+            /* No radius for cover */
+        }
+
+        .shop-content-padding {
+            padding: 24px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        [data-theme="dark"] .shop-icon-wrapper {
+            background: rgba(155, 93, 229, 0.2);
+        }
+
+        .shop-stock-badge {
+            font-size: 12px;
+            font-weight: 500;
+            padding: 4px 10px;
+            border-radius: 20px;
+        }
+
+        .shop-stock-badge.in-stock {
+            color: #4ade80;
+            background: rgba(40, 40, 40, 0.6);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid rgba(74, 222, 128, 0.3);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+            font-weight: 600;
+        }
+
+        .shop-stock-badge.out-of-stock {
+            color: #ff6b6b;
+            background: rgba(40, 40, 40, 0.6);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 107, 107, 0.3);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+            font-weight: 600;
+        }
+
+        .shop-card-title {
+            margin: 0 0 8px 0;
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--text-bold);
+            font-family: var(--font-display);
+            line-height: 1.3;
+        }
+
+        .shop-card-desc {
+            margin: 0;
+            font-size: 0.9rem;
+            color: var(--text-dim);
+            line-height: 1.6;
+            height: 44px;
+            /* Limit to 2 lines approximately */
+            overflow: hidden;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+        }
+
+        .shop-card-price {
+            font-weight: 800;
+            color: #f59e0b;
+            font-size: 1.25rem;
+            font-family: var(--font-display);
+        }
+
+        .shop-card-price span {
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: var(--text-dim);
+            margin-left: 2px;
+        }
+
+        .shop-buy-btn {
+            border: none;
+            padding: 8px 24px;
+            border-radius: 24px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.1s ease;
+            font-family: var(--font-sans);
+        }
+
+        .shop-btn-primary {
+            background: var(--accent-purple);
+            color: white;
+            box-shadow: 0 4px 12px rgba(155, 93, 229, 0.3);
+        }
+
+        .shop-btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(155, 93, 229, 0.5);
+            filter: brightness(1.1);
+        }
+
+        .shop-btn-disabled {
+            background: var(--text-dim);
+            color: white;
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Quantity Stepper (Ultra-minimal) */
+        .shop-quantity-wrapper {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 25px;
+        }
+
+        .shop-quantity-label {
+            display: none;
+        }
+
+        .shop-quantity-control {
+            display: inline-flex;
+            align-items: center;
+            gap: 0;
+        }
+
+        .shop-qty-btn {
+            width: 44px;
+            height: 44px;
+            border: none;
+            background: transparent;
+            color: rgba(255, 255, 255, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            font-size: 1.5rem;
+            font-weight: 300;
+        }
+
+        .shop-qty-btn:hover {
+            color: #fff;
+            transform: scale(1.1);
+        }
+
+        .shop-qty-btn:active {
+            transform: scale(0.95);
+        }
+
+        .shop-qty-input {
+            width: 60px;
+            height: 44px;
+            text-align: center;
+            background: rgba(255, 255, 255, 0.08);
+            border: none;
+            border-radius: 8px;
+            color: #fff;
+            font-family: var(--font-display);
+            font-size: 1.25rem;
+            font-weight: 600;
+            outline: none;
+            margin: 0 8px;
+        }
+
+        .shop-qty-input:focus {
+            background: rgba(255, 255, 255, 0.12);
+            box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.2);
+        }
+
+        /* Remove number spinner arrows */
+        input[type=number]::-webkit-inner-spin-button,
+        input[type=number]::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            appearance: none;
+            margin: 0;
+        }
+
+        input[type=number] {
+            -moz-appearance: textfield;
+            appearance: textfield;
+        }
+
+
+
+        /* Shop Specific Styles */
+        .shop-main {
+            max-width: 1200px;
+            margin: 120px auto 40px;
+            padding: 0 40px;
+        }
+
+        .shop-header {
+            text-align: center;
+            margin-bottom: 40px;
+            position: relative;
+            z-index: 10;
+        }
+
+        .shop-title {
+            font-size: 2.5rem;
+            font-weight: 800;
+            margin-bottom: 10px;
+            background: linear-gradient(135deg, #fff 0%, #a5b4fc 100%);
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        }
+
+        .shop-subtitle {
+            font-size: 1.1rem;
+            color: rgba(255, 255, 255, 0.6);
+        }
+
+        /* Modal Buttons */
+        .shop-btn {
+            border: none;
+            border-radius: 12px;
+            padding: 12px 20px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            text-decoration: none;
+        }
+
+        .shop-btn-primary {
+            background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
+            color: #052e16;
+            box-shadow: 0 4px 12px rgba(74, 222, 128, 0.3);
+        }
+
+        .shop-btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(74, 222, 128, 0.4);
+            filter: brightness(1.1);
+        }
+
+        /* Modal Confirm Button - Fast Response with Float */
+        /* Explicitly match global entrance duration (0.5s) AND add delay (0.35s) for staggered effect */
+        #confirmPurchaseBtn {
+            transition: all 0.5s ease-out 0.35s;
+        }
+
+        /* On hover, switch to fast transition for snappy response */
+        #confirmPurchaseBtn:hover {
+            transform: translateY(-2px);
+            filter: brightness(1.15);
+            box-shadow: 0 6px 20px rgba(74, 222, 128, 0.5);
+            transition: all 0.1s ease;
+        }
+
+        #confirmPurchaseBtn:active {
+            transform: translateY(0);
+            filter: brightness(0.95);
+            transition: all 0.05s ease;
+        }
+
+        .shop-btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: rgba(255, 255, 255, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .shop-btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.2);
+            color: #fff;
+            transform: translateY(-2px);
+        }
+
+        .shop-btn:active {
+            transform: translateY(0);
+            filter: brightness(0.9);
+        }
+
+        /* Quantity Input Reset */
+        .shop-quantity-input {
+            width: 50px;
+            text-align: center;
+            background: transparent;
+            border: none;
+            color: #fff;
+            font-weight: 700;
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.2rem;
+            -moz-appearance: textfield;
+            appearance: textfield;
+        }
+
+        .shop-quantity-input::-webkit-outer-spin-button,
+        .shop-quantity-input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+
+        .shop-quantity-input:focus {
+            outline: none;
+        }
+
+        .shop-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 24px;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .shop-main {
+                padding: 100px 20px 40px 20px;
+                margin-top: 0;
+                background: var(--bg-color);
+                min-height: 100vh;
+            }
+
+            .shop-header {
+                display: none;
+            }
+
+            .shop-title {
+                font-size: 2rem;
+            }
+        }
+
+        /* Home Button (Replica from Prompts Page) */
+        .home-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            box-sizing: border-box;
+            border-radius: 50%;
+            text-decoration: none;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+            /* Fixed Position (Top Left) */
+            position: fixed;
+            top: 28px;
+            left: 30px;
+            z-index: 100;
+
+            /* Styles adapted for Dark Theme primarily, as Shop is dark-themed */
+            color: rgba(255, 255, 255, 0.85);
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(8px);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        .home-btn i {
+            font-size: 1.1rem;
+        }
+
+        .home-btn:hover {
+            background: rgba(15, 23, 42, 0.8);
+            color: #fff;
+            border-color: rgba(255, 255, 255, 0.2);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2);
+            transform: translateY(-2px);
+        }
+
+        /* Standardized Premium Modal (Frosted Glass) */
+        .premium-modal {
+            max-width: 380px !important;
+            background: rgba(30, 41, 59, 0.75);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            border-radius: 24px;
+            color: #fff;
+        }
+    </style>
+</head>
+
+<body class="guestbook-page">
+    <!-- Dropdown Blur Overlay -->
+    <div class="dropdown-overlay" id="dropdownOverlay"></div>
+
+    <!-- Background Blobs -->
+    <!-- Ambient Light Canvas (Living Background) -->
+    <canvas id="ambientCanvas"></canvas>
+    <!-- Starry Sky Canvas (Dark Mode Only) -->
+    <canvas id="starryCanvas"></canvas>
+
+    <style>
+        /* Background Canvas Styles */
+        #ambientCanvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            opacity: 0.6;
+            pointer-events: none;
+            transition: opacity 0.5s ease;
+        }
+
+        [data-theme="dark"] #ambientCanvas {
+            opacity: 0.4;
+        }
+
+        #starryCanvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 1.5s ease;
+        }
+
+        [data-theme="dark"] #starryCanvas {
+            opacity: 1;
+        }
+
+        /* Breathing (Water Flow) Animation */
+        @keyframes breathe {
+
+            0%,
+            100% {
+                transform: translateY(0);
+            }
+
+            50% {
+                transform: translateY(-6px);
+            }
+        }
+
+        .shop-card.breathing {
+            animation: breathe 4s ease-in-out infinite;
+            animation-delay: var(--breathe-delay, 0s);
+            will-change: transform;
+        }
+
+        /* Pause animation on hover (prioritize hover lift effect) */
+        .shop-card.breathing:hover {
+            animation-play-state: paused;
+        }
+    </style>
+
+    <!-- Overlay Elements -->
+    <div class="dropdown-overlay" id="dropdownOverlay"></div>
+    <a href="index.html" class="home-btn" title="返回首页">
+        <i class="fas fa-house"></i>
+    </a>
+
+    <!-- Main Content -->
+    <div class="shop-main">
+        <div class="shop-header" style="margin-bottom: 20px;">
+            <!-- Title removed per request -->
+        </div>
+
+        <div id="shopCategoryFilters" class="category-filters">
+            <button class="filter-tab active" onclick="ShopClient.filterCategory('all', this)">全部</button>
+            <!-- Dynamic categories loaded by JS -->
+        </div>
+
+        <style>
+            .category-filters {
+                display: flex;
+                gap: 10px;
+                margin-bottom: 20px;
+                padding: 5px 0;
+                justify-content: center;
+                flex-wrap: wrap;
+                /* Auto wrap for mobile/narrow screens */
+            }
+
+            .shop-main .filter-tab {
+                padding: 8px 20px;
+                border-radius: 20px;
+                background: rgba(0, 0, 0, 0.05);
+                /* Light mode default */
+                border: 1px solid rgba(0, 0, 0, 0.1);
+                color: #64748b;
+                /* Slate-500 */
+                cursor: pointer;
+                font-size: 14px;
+                transition: all 0.2s;
+                white-space: nowrap;
+                backdrop-filter: blur(10px);
+            }
+
+            .shop-main .filter-tab:hover {
+                background: rgba(0, 0, 0, 0.1);
+                color: #1e293b;
+                transform: translateY(-2px);
+                box-shadow: 0 4px 12px rgba(107, 158, 206, 0.15), 0 0 20px rgba(107, 158, 206, 0.1);
+            }
+
+            /* Dark Mode Overrides */
+            [data-theme="dark"] .shop-main .filter-tab {
+                background: rgba(255, 255, 255, 0.05);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                color: rgba(255, 255, 255, 0.6);
+            }
+
+            [data-theme="dark"] .shop-main .filter-tab:hover {
+                background: rgba(255, 255, 255, 0.15);
+                color: #fff;
+                box-shadow: 0 4px 12px rgba(107, 158, 206, 0.25), 0 0 20px rgba(107, 158, 206, 0.15);
+            }
+
+            .shop-main .filter-tab.active {
+                background: #6b9ece;
+                border-color: #6b9ece;
+                color: #fff;
+                box-shadow: 0 4px 15px rgba(107, 158, 206, 0.3);
+            }
+        </style>
+
+        <div id="userShopGrid" class="shop-grid">
+            <!-- Products will be injected here by JS -->
+            <div style="grid-column:1/-1;text-align:center;padding:40px;color:rgba(255,255,255,0.3);">
+                <i class="fas fa-spinner fa-spin"></i> 加载中...
+            </div>
+        </div>
+    </div>
+
+    <!-- Purchase Confirmation Modal (Quantity) -->
+    <div class="modal-overlay" id="shopPurchaseModal" onclick="ShopClient.closePurchaseModal()">
+        <div class="modal-content premium-modal" onclick="event.stopPropagation()">
+            <!-- Close Button -->
+            <div class="mac-controls">
+                <div class="mac-dot red" onclick="ShopClient.closePurchaseModal()">
+                    <i class="fas fa-times"></i>
+                </div>
+            </div>
+
+            <div style="text-align: center; margin-bottom: 20px;">
+                <h3 class="card-title" style="font-size: 1.2rem; margin-bottom: 5px;">确认购买</h3>
+                <p id="modalProductName" style="color: rgba(255,255,255,0.6); font-size: 0.9rem;">Product Name</p>
+            </div>
+
+            <!-- Quantity Selector -->
+            <div class="shop-quantity-wrapper">
+                <div class="shop-quantity-control">
+                    <button class="shop-qty-btn" onclick="ShopClient.adjustQuantity(-1)">−</button>
+                    <input type="number" id="purchaseQuantity" value="1" min="1" max="99" class="shop-qty-input"
+                        oninput="ShopClient.onQuantityInput(this)">
+                    <button class="shop-qty-btn" onclick="ShopClient.adjustQuantity(1)">+</button>
+                </div>
+            </div>
+
+            <!-- Price Summary -->
+            <div
+                style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 25px; padding: 0 10px;">
+                <div style="text-align: left;">
+                    <div style="font-size: 12px; color: rgba(255,255,255,0.4); margin-bottom: 2px;">单价</div>
+                    <div style="font-family: 'Outfit'; color: #fbbf24;"><span id="modalUnitPrice">0</span> 积分</div>
+                </div>
+                <div style="text-align: right;">
+                    <div style="font-size: 12px; color: rgba(255,255,255,0.4); margin-bottom: 2px;">总计</div>
+                    <div style="font-family: 'Outfit'; font-size: 1.4rem; color: #4ade80; font-weight: 700;">
+                        <span id="modalTotalPrice">0</span> <span style="font-size: 0.9rem; font-weight: 500;">积分</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <button id="confirmPurchaseBtn" onclick="ShopClient.confirmPurchase()" class="shop-btn shop-btn-primary"
+                style="width: 100%;">
+                确认支付
+            </button>
+        </div>
+    </div>
+
+    <!-- Success Modal (Re-used structure) -->
+    <div class="modal-overlay" id="shopSuccessModal" style="z-index: 99999;"
+        onclick="if(event.target === this) document.getElementById('shopSuccessModal').classList.remove('active')">
+        <div class="modal-content premium-modal" onclick="event.stopPropagation()" style="text-align: center;">
+            <div
+                style="width: 60px; height: 60px; background: rgba(56, 158, 13, 0.2); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px;">
+                <i class="fas fa-check" style="font-size: 30px; color: #389e0d;"></i>
+            </div>
+            <h2 class="card-title">购买成功!</h2>
+            <p class="card-subtitle">您的商品已发放。</p>
+
+            <div class="glass-box"
+                style="margin: 20px 0; padding: 15px; word-break: break-all; user-select: text; text-align: left; max-height: 300px; overflow-y: auto;">
+                <div style="font-size: 12px; color: rgba(255,255,255,0.5); margin-bottom: 5px;">商品内容:</div>
+                <div id="purchasedContent"
+                    style="font-family: monospace; font-size: 14px; color: #fff; white-space: pre-wrap; overflow-x: auto;">
+                    <!-- Content Here -->
+                </div>
+            </div>
+
+            <!-- Warning Box (Initially Hidden) -->
+            <div id="purchasedWarning" class="glass-box"
+                style="margin-bottom: 20px; padding: 12px; background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.3); text-align: left; display: none;">
+                <div style="display: flex; gap: 10px; align-items: flex-start;">
+                    <i class="fas fa-exclamation-triangle" style="color: #fbbf24; margin-top: 3px;"></i>
+                    <div style="color: #fbbf24; font-size: 13px; line-height: 1.4;">
+                        <div style="font-weight: 600; margin-bottom: 2px;">特别提示</div>
+                        <div id="purchasedWarningText"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-top: 16px;">
+                <button id="copyContentBtn" onclick="ShopClient.copyContent()" class="shop-btn shop-btn-primary"
+                    style="flex: 1;">
+                    <i class="fas fa-copy"></i> 复制
+                </button>
+                <button id="exportContentBtn" onclick="ShopClient.exportContent()" class="shop-btn shop-btn-secondary"
+                    style="flex: 1;">
+                    <i class="fas fa-download"></i> 导出
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Login Modal (Injected by inject-auth.js) -->
+
+    <!-- Supabase Client -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+        const SUPABASE_URL = 'https://mmkugdibsaeoevliebzk.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_lwkiF-sQ80z8e9oMcejFPQ_j7oezjcF';
+        window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        console.log('Supabase browser client initialized');
+    </script>
+
+    <!-- Supabase Auth & UI -->
+    <script src="./supabase-auth-functions.js?v=SHOP_PAGE" defer></script>
+    <script src="inject-auth.js?v=SHOP_PAGE" defer></script>
+
+    <!-- Wallet Modal Component -->
+    <script src="js/services/PointsService.js?v=SHOP_V1" defer></script>
+    <script src="js/components/WalletModal.js?v=WALLET_FIX_V7" defer></script>
+
+    <!-- Shop Logic -->
+    <script src="js/shop-client.js?v=ORDER_FIX_V5" defer></script>
+
+    <!-- Background Animations -->
+    <script src="starry-sky.js"></script>
+    <script src="js/ambient-light.js"></script>
+
+</body>
+
+</html>

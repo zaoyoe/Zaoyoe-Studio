@@ -1,0 +1,1 @@
+ALTER TABLE shop_inventory ADD COLUMN IF NOT EXISTS remark TEXT;
