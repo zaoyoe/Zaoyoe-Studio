@@ -1125,7 +1125,7 @@
                     const style = document.createElement('style');
                     style.id = styleId;
                     style.innerHTML = `
-                        .premium-modal-overlay {
+                        .wallet-order-modal-overlay {
                             position: fixed !important; top: 0 !important; left: 0 !important; width: 100% !important; height: 100% !important;
                             background: rgba(0, 0, 0, 0.7) !important;
                             backdrop-filter: blur(4px) !important; -webkit-backdrop-filter: blur(4px) !important;
@@ -1133,14 +1133,16 @@
                             display: flex !important; justify-content: center !important; align-items: center !important;
                             animation: fadeIn 0.3s ease-out;
                         }
-                        /* Standardized Premium Modal - Forced consistency across pages */
-                        .premium-modal {
+                        /* Wallet Order Modal - Unique class to avoid conflicts with global .premium-modal */
+                        .wallet-order-modal {
                             width: 90% !important; max-width: 380px !important;
-                            background: rgba(30, 41, 59, 0.75) !important;
-                            backdrop-filter: blur(24px) !important; -webkit-backdrop-filter: blur(24px) !important;
-                            border: 1px solid rgba(255, 255, 255, 0.1) !important;
+                            /* Premium Glass - Neutral Dark (Matches Wallet Modal) */
+                            background: rgba(20, 20, 22, 0.75) !important;
+                            backdrop-filter: blur(40px) !important; -webkit-backdrop-filter: blur(40px) !important;
+                            border: 1px solid rgba(255, 255, 255, 0.12) !important;
+                            border-top: 1px solid rgba(255, 255, 255, 0.25) !important; /* Premium Top Highlight */
                             border-radius: 24px !important;
-                            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5) !important;
+                            box-shadow: 0 40px 80px -20px rgba(0, 0, 0, 0.7) !important;
                             overflow: hidden !important;
                             display: flex !important; flex-direction: column !important;
                             max-height: 85vh !important;
@@ -1148,17 +1150,17 @@
                             animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
                             opacity: 1;
                         }
-                        .premium-modal-header {
-                            padding: 24px 24px 10px;
-                            /* No border bottom for cleaner look */
+                        .wallet-order-modal-header {
+                            padding: 24px 24px 16px;
+                            border-bottom: 1px solid rgba(255, 255, 255, 0.08); /* Subtle separator */
                             display: flex; justify-content: space-between; align-items: center;
                         }
-                        .premium-modal-title {
+                        .wallet-order-modal-title {
                             font-size: 18px; font-weight: 700; color: #fff;
                             display: flex; align-items: center; gap: 8px;
                             letter-spacing: -0.5px;
                         }
-                        .premium-close-btn {
+                        .wallet-order-close-btn {
                             width: 30px; height: 30px;
                             border-radius: 50%;
                             border: none;
@@ -1168,11 +1170,11 @@
                             display: flex; align-items: center; justify-content: center;
                             transition: all 0.2s;
                         }
-                        .premium-close-btn:hover {
+                        .wallet-order-close-btn:hover {
                             background: rgba(255, 255, 255, 0.15);
                             color: #fff;
                         }
-                        .premium-modal-body {
+                        .wallet-order-modal-body {
                             padding: 0 24px 24px;
                             overflow-y: auto;
                         }
@@ -1241,14 +1243,18 @@
                         }
                         
                         .content-card {
-                            background: rgba(255, 255, 255, 0.05);
-                            backdrop-filter: blur(12px);
-                            -webkit-backdrop-filter: blur(12px);
-                            border-radius: 16px;
-                            padding: 16px;
-                            margin-bottom: 12px;
-                            border: 1px solid rgba(255, 255, 255, 0.1);
-                            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+                            background: rgba(255, 255, 255, 0.05) !important;
+                            backdrop-filter: blur(12px) !important;
+                            -webkit-backdrop-filter: blur(12px) !important;
+                            border-radius: 16px !important;
+                            padding: 16px !important;
+                            margin-bottom: 12px !important;
+                            border: 1px solid rgba(255, 255, 255, 0.1) !important;
+                            border-width: 1px !important;
+                            border-style: solid !important;
+                            box-sizing: border-box !important;
+                            outline: none !important;
+                            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2) !important;
                         }
                         
                         .item-name {
@@ -1275,13 +1281,15 @@
                     document.head.appendChild(style);
                 }
 
-                detailOverlay.className = 'premium-modal-overlay';
+                detailOverlay.className = 'wallet-order-modal-overlay';
                 detailOverlay.onclick = (e) => {
                     if (e.target === detailOverlay) detailOverlay.remove();
                 };
 
+
                 // Prepare content for export/copy
-                const allContent = items.map(i => `${i.name}:\n${i.content}`).join('\n\n=====\n\n');
+                // Use clean single newline join, removing visual separators for copy
+                const allContent = items.map(i => `${i.name}:\n${i.content}`).join('\n');
 
                 // Attach button handlers
                 window.WalletModal_export = () => {
@@ -1301,16 +1309,16 @@
                 };
 
                 detailOverlay.innerHTML = `
-                    <div class="premium-modal">
-                        <div class="premium-modal-header">
-                            <div class="premium-modal-title">
+                    <div class="wallet-order-modal">
+                        <div class="wallet-order-modal-header">
+                            <div class="wallet-order-modal-title">
                                 <i class="fas fa-box-open" style="color: #6b9ece;"></i> 订单详情
                             </div>
-                            <button class="premium-close-btn" onclick="this.closest('.premium-modal-overlay').remove()">
+                            <button class="wallet-order-close-btn" onclick="this.closest('.wallet-order-modal-overlay').remove()">
                                 <i class="fas fa-times"></i>
                             </button>
                         </div>
-                        <div class="premium-modal-body">
+                        <div class="wallet-order-modal-body">
                             <div class="meta-section">
                                 <div class="detail-row">
                                     <span class="detail-label">订单编号</span>

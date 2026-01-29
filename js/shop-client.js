@@ -297,33 +297,122 @@ const ShopClient = {
         }
     },
 
+    injectPremiumStyles: function () {
+        if (document.getElementById('shop-premium-card-style')) return;
+        const style = document.createElement('style');
+        style.id = 'shop-premium-card-style';
+        style.innerHTML = `
+            .content-card {
+                background: rgba(255, 255, 255, 0.05) !important;
+                backdrop-filter: blur(12px) !important;
+                -webkit-backdrop-filter: blur(12px) !important;
+                border-radius: 16px !important;
+                padding: 16px !important;
+                margin-bottom: 12px !important;
+                border: 1px solid rgba(255, 255, 255, 0.1) !important;
+                border-width: 1px !important;
+                border-style: solid !important;
+                box-sizing: border-box !important;
+                outline: none !important;
+                box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2) !important;
+                cursor: default !important;
+                transition: none !important;
+                transform: none !important;
+            }
+            .content-card:hover {
+                background: rgba(255, 255, 255, 0.05) !important;
+                border: 1px solid rgba(255, 255, 255, 0.1) !important;
+                box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2) !important;
+                transform: none !important;
+                filter: none !important;
+            }
+            .item-name {
+                font-size: 13px; font-weight: 600; color: #e2e8f0;
+                margin-bottom: 8px;
+                display: flex; align-items: center; gap: 6px;
+            }
+            .item-content-box {
+                background: transparent;
+                border-radius: 0;
+                padding: 0;
+            }
+            .item-text {
+                font-family: 'Monaco', monospace;
+                font-size: 12px; color: #10b981;
+                word-break: break-all;
+                line-height: 1.5;
+                opacity: 0.9;
+            }
+        `;
+        document.head.appendChild(style);
+    },
+
     showSuccessModal: function (content, warning) {
+        this.injectPremiumStyles();
         const modal = document.getElementById('shopSuccessModal');
         const contentBox = document.getElementById('purchasedContent');
         const warningBox = document.getElementById('purchasedWarning');
         const warningText = document.getElementById('purchasedWarningText');
+        const parentBox = contentBox.parentElement;
+
+        // Reset parent box styles to be cleaner (remove padding if we want cards to flush, but padding is fine)
+        // Ensure parent box is transparent to let cards stand out
+        if (parentBox && parentBox.classList.contains('glass-box')) {
+            parentBox.classList.remove('glass-box'); // Completely remove class to kill all hover effects
+            parentBox.style.background = 'transparent';
+            parentBox.style.border = 'none';
+            parentBox.style.boxShadow = 'none';
+            parentBox.style.padding = '0'; // Let cards handle spacing
+        }
 
         if (modal && contentBox) {
             // Split content by separator (----) to get individual items
             const items = content.split(/\n----\n/);
             const totalItems = items.length;
+            const productName = this.currentPurchase?.productName || '商品内容';
 
             // Store original content for copying (before adding UI elements)
             contentBox.dataset.originalContent = content;
 
+            // Helper to create card HTML
+            const createCardMsg = (text) => `
+                <div class="content-card">
+                    <div class="item-name">
+                        <i class="fas fa-circle" style="font-size: 8px; color: #60a5fa;"></i>
+                        <span>${this.escapeHtml(productName)}</span>
+                    </div>
+                    <div class="item-content-box">
+                        <div class="item-text">${this.escapeHtml(text)}</div>
+                    </div>
+                </div>`;
+
+            // Clear previous content style that might conflict
+            contentBox.style.whiteSpace = 'normal';
+            contentBox.style.fontFamily = 'inherit';
+
             if (totalItems <= 2) {
                 // 2 or fewer items: show directly
-                contentBox.innerHTML = `< div style = "white-space: pre-wrap; word-break: break-all;" > ${this.escapeHtml(content)}</div > `;
+                contentBox.innerHTML = items.map(createCardMsg).join('');
             } else {
                 // More than 2 items: show first 2, collapse rest
-                const visibleItems = items.slice(0, 2).join('\n----\n');
-                const hiddenItems = items.slice(2).join('\n----\n');
+                const visibleHTML = items.slice(0, 2).map(createCardMsg).join('');
+                const hiddenHTML = items.slice(2).map(createCardMsg).join('');
                 const hiddenCount = totalItems - 2;
 
-                // Build HTML without extra whitespace (pre-wrap renders template indentation)
-                const expandBtn = `< div style = "margin-top:8px;text-align:right;" > <span id="expandContentBtn" onclick="ShopClient.toggleExpandContent()" style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;font-size:12px;color:#4ade80;" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'"><span>展开其余 ${hiddenCount} 个</span><i class="fas fa-chevron-down" style="font-size:10px;"></i></span></div > `;
-                const hiddenSection = `< div id = "hiddenContent" style = "display:none;margin-top:6px;max-height:200px;overflow-y:auto;border-top:1px solid rgba(255,255,255,0.1);padding-top:6px;" > <div style="white-space:pre-wrap;word-break:break-all;">${this.escapeHtml(hiddenItems)}</div></div > `;
-                contentBox.innerHTML = `< div style = "white-space:pre-wrap;word-break:break-all;" > ${this.escapeHtml(visibleItems)}</div > ${expandBtn}${hiddenSection} `;
+                const expandBtn = `
+                    <div style="margin-top:12px;text-align:center;">
+                        <span id="expandContentBtn" onclick="ShopClient.toggleExpandContent()" 
+                              style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;
+                                     font-size:12px;color:rgba(255,255,255,0.6);background:rgba(255,255,255,0.1);
+                                     padding:8px 16px;border-radius:20px;transition:all 0.2s;">
+                            <span>展开其余 ${hiddenCount} 个</span>
+                            <i class="fas fa-chevron-down" style="font-size:10px;"></i>
+                        </span>
+                    </div>`;
+
+                const hiddenSection = `<div id="hiddenContent" style="display:none;margin-top:12px;">${hiddenHTML}</div>`;
+
+                contentBox.innerHTML = visibleHTML + expandBtn + hiddenSection;
             }
 
             // Handle Warning
@@ -426,18 +515,29 @@ const ShopClient = {
     },
 
     viewOrderContent: function (id, encodedContent) {
-        const content = decodeURIComponent(encodedContent);
-        this.showSuccessModal(content);
-        // Change title to detail view style
-        const modal = document.getElementById('shopSuccessModal');
-        const title = modal.querySelector('.card-title');
-        if (title) title.textContent = "订单详情";
+        // Use unified WalletModal order detail view (premium glass style)
+        if (window.WalletModal && window.WalletModal.showOrderDetail) {
+            WalletModal.showOrderDetail(id);
+        } else {
+            // Fallback to old modal if WalletModal not loaded
+            const content = decodeURIComponent(encodedContent);
+            this.showSuccessModal(content);
+            const modal = document.getElementById('shopSuccessModal');
+            const title = modal.querySelector('.card-title');
+            if (title) title.textContent = "订单详情";
+        }
     },
 
     copyContent: function () {
         const contentBox = document.getElementById('purchasedContent');
         // Use stored original content instead of textContent (which includes UI button text)
-        const text = contentBox.dataset.originalContent || contentBox.textContent;
+        let text = contentBox.dataset.originalContent || contentBox.textContent;
+
+        // Remove '----' separators and replace with single newline for clean separation
+        if (text) {
+            text = text.split(/\n----\n/).join('\n');
+        }
+
         navigator.clipboard.writeText(text).then(() => {
             const btn = document.getElementById('copyContentBtn');
             const originalHTML = btn.innerHTML;
