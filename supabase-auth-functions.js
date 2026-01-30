@@ -489,6 +489,16 @@ async function handleAuthClick(event) {
         const loginModal = document.getElementById('loginModal');
         if (loginModal) {
             loginModal.classList.add('active');
+            // 🆕 Reset visibility/opacity that toggleLoginModal sets when closing
+            loginModal.style.visibility = 'visible';
+            loginModal.style.opacity = '1';
+            // 🆕 Also reset the card visibility
+            const card = loginModal.querySelector('.login-card');
+            if (card) {
+                card.style.display = 'block';
+                card.style.opacity = '1';
+                card.style.visibility = 'visible';
+            }
         }
     }
 }

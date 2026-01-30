@@ -165,8 +165,8 @@
 }
 
 .mac-dot {
-    width: 12px;
-    height: 12px;
+    width: 16px;
+    height: 16px;
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -181,14 +181,16 @@
 
 .mac-dot.yellow {
     background: #ffbd2e;
+    display: none;
 }
 
 .mac-dot.green {
     background: #27c93f;
+    display: none;
 }
 
 .mac-dot i {
-    font-size: 6px;
+    font-size: 8px;
     color: rgba(0, 0, 0, 0.6);
     opacity: 0;
     transition: opacity 0.2s;
@@ -385,7 +387,7 @@
 .login-submit-btn {
     width: 100%;
     padding: 14px;
-    background: linear-gradient(135deg, #9b5de5 0%, #7b3fc9 100%);
+    background: linear-gradient(135deg, #9b5de5 0%, #f15bb5 100%);
     border: none;
     border-radius: 12px;
     color: white;

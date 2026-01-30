@@ -220,6 +220,57 @@
                  border-radius: 50%;
             }
 
+            /* ===========================================
+               UNIFIED AVATAR STYLING (Fix for all pages)
+               =========================================== */
+            
+            /* Login trigger button - transparent background */
+            .login-trigger-btn,
+            button.login-trigger-btn,
+            #authBtn {
+                background: transparent !important;
+                background-color: transparent !important;
+                border: none !important;
+                box-shadow: none !important;
+                outline: none !important;
+                border-radius: 50% !important;
+                padding: 0 !important;
+                width: 48px !important;
+                height: 48px !important;
+                cursor: pointer !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+            }
+            
+            /* Default auth icon - gray transparent style */
+            #defaultAuthIcon {
+                filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.4)) drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3)) !important;
+                font-size: 1.8rem !important;
+                color: rgba(255, 255, 255, 0.5) !important;
+                transition: all 0.3s ease !important;
+            }
+            
+            /* Default icon hover effect */
+            #defaultAuthIcon:hover,
+            .login-trigger-btn:hover #defaultAuthIcon,
+            #authBtn:hover #defaultAuthIcon {
+                transform: scale(1.1) !important;
+                filter: drop-shadow(0 0 0 3px rgba(255, 255, 255, 0.9)) drop-shadow(0 0 15px rgba(255, 255, 255, 0.7)) brightness(1.3) !important;
+            }
+            
+            /* Light mode adjustments */
+            [data-theme="light"] #defaultAuthIcon {
+                color: rgba(100, 116, 139, 0.7) !important;
+                filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.15)) !important;
+            }
+            
+            [data-theme="light"] #defaultAuthIcon:hover,
+            [data-theme="light"] .login-trigger-btn:hover #defaultAuthIcon {
+                color: rgba(30, 41, 59, 0.9) !important;
+                filter: drop-shadow(0 0 10px rgba(155, 93, 229, 0.4)) brightness(1.1) !important;
+            }
+
             /* Dropdown Styles (Refined Glassmorphism) */
             .avatar-dropdown {
                 position: absolute;
@@ -538,6 +589,57 @@
                 border-color: rgba(255, 255, 255, 0.25) !important;
             }
             
+            /* ===========================================
+               UNIFIED LOGIN MODAL DIMENSIONS (All Pages)
+               Force exact match with homepage style
+               =========================================== */
+            
+            /* Login Card - Fixed narrow width matching homepage */
+            .login-card,
+            #loginModal .login-card {
+                width: 360px !important;
+                max-width: 90vw !important;
+                padding: 40px !important;
+                border-radius: 24px !important;
+                background: rgba(255, 255, 255, 0.03) !important;
+                backdrop-filter: blur(20px) saturate(150%) !important;
+                -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
+                box-sizing: border-box !important;
+            }
+            
+            /* Submit Button - Centered, narrow width like homepage */
+            .login-submit-btn,
+            .login-card .login-submit-btn,
+            #loginView .login-submit-btn,
+            #registerView .login-submit-btn,
+            #resetView .login-submit-btn {
+                width: auto !important;
+                min-width: 160px !important;
+                max-width: 200px !important;
+                padding: 14px 48px !important;
+                margin: 8px auto 0 auto !important;
+                display: block !important;
+                border-radius: 12px !important;
+                background: linear-gradient(135deg, #9b5de5 0%, #f15bb5 100%) !important;
+                font-size: 16px !important;
+                font-weight: 600 !important;
+            }
+            
+            /* Google Button - Full width within card */
+            .google-login-btn,
+            .login-card .google-login-btn {
+                width: 100% !important;
+                padding: 14px !important;
+                border-radius: 16px !important;
+                background: transparent !important;
+                border: 1px solid rgba(255, 255, 255, 0.15) !important;
+            }
+            
+            /* Input group spacing */
+            .login-card .input-group {
+                margin-bottom: 20px !important;
+            }
+            
             /* Force input transparency to match main page EXACTLY */
             .login-overlay .glass-input,
             .login-card .glass-input,
@@ -545,6 +647,8 @@
             #loginView .glass-input,
             #registerView .glass-input,
             #resetView .glass-input {
+                width: 100% !important;
+                box-sizing: border-box !important;
                 background: rgba(0, 0, 0, 0.3) !important;
                 border: 1px solid rgba(155, 93, 229, 0.3) !important;
                 backdrop-filter: blur(20px) !important;

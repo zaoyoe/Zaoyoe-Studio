@@ -43,7 +43,7 @@ CREATE POLICY "Authenticated users can read config" ON public.system_config
 -- 解锁定价
 INSERT INTO public.system_config (config_key, config_value, description) VALUES
 ('unlock_pricing', '{
-    "default_points": 10,
+    "default_points": 1,
     "vip_discount": 0.9,
     "bulk_discounts": [
         {"min_count": 5, "discount": 0.8},

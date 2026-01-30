@@ -3260,12 +3260,9 @@ function renderCurrentPage() {
                 <i class="fas fa-heart"></i>
             </button>
             <img src="${item.images[0]}" class="card-image" loading="lazy" alt="${item.title}" onload="this.classList.add('loaded')">
-            ${indicators}
             <div class="card-overlay">
                 <div class="card-title">${item.title}</div>
-                <div class="card-tags">
-                    ${item.tags.map(t => `<span>#${t}</span>`).join('')}
-                </div>
+                ${indicators}
             </div>
         `;
 
@@ -4290,7 +4287,7 @@ function openPromptModal(id) {
     const unlockBtn = document.getElementById('unlockPromptBtn');
     const promptText = document.getElementById('modalPromptText');
     promptText.classList.add('blur-masked');
-    unlockBtn.innerHTML = '<i class="fas fa-gem"></i> 10';
+    unlockBtn.innerHTML = `<i class="fas fa-gem"></i> ${_unlockPrice}`;
     unlockBtn.className = 'unlock-btn';
     unlockBtn.disabled = false;
     unlockBtn.onclick = handleUnlockPrompt;
@@ -4364,6 +4361,7 @@ function openPromptModal(id) {
 
     modal.classList.add('active');
     document.body.style.overflow = 'hidden';
+    document.body.classList.add('prompt-modal-open'); // Hide header behind modal
 }
 
 // --- Spatial Flow & Comment Logic ---
@@ -4489,6 +4487,28 @@ async function checkUnlockStatus(promptId) {
 // UNLOCK PROMPT V2 - 完全重写
 // ============================================
 let _unlockInProgress = false;
+let _unlockPrice = 1; // 默认值，将从配置加载
+
+// 从数据库加载解锁价格配置
+async function loadUnlockPrice() {
+    try {
+        if (!window.supabaseClient) return;
+        const { data, error } = await window.supabaseClient
+            .from('system_config')
+            .select('config_value')
+            .eq('config_key', 'unlock_pricing')
+            .single();
+        if (!error && data?.config_value?.default_points) {
+            _unlockPrice = data.config_value.default_points;
+            console.log('[Unlock] Price loaded from config:', _unlockPrice);
+        }
+    } catch (err) {
+        console.warn('[Unlock] Failed to load price config, using default:', err.message);
+    }
+}
+
+// 页面加载时预加载价格
+loadUnlockPrice();
 
 async function handleUnlockPrompt() {
     // 单一全局锁
@@ -4499,7 +4519,7 @@ async function handleUnlockPrompt() {
     _unlockInProgress = true;
 
     const btn = document.getElementById('unlockPromptBtn');
-    const originalHTML = btn?.innerHTML || '<i class="fas fa-gem"></i> 10';
+    const originalHTML = btn?.innerHTML || `<i class="fas fa-gem"></i> ${_unlockPrice}`;
 
     try {
         // 立即禁用按钮
@@ -4525,7 +4545,7 @@ async function handleUnlockPrompt() {
         const { data, error } = await window.supabaseClient
             .rpc('unlock_prompt_v2', {
                 p_prompt_id: String(currentPromptId),
-                p_cost: 10
+                p_cost: _unlockPrice
             });
 
         console.log('[Unlock] RPC result:', data, error);
@@ -6014,6 +6034,7 @@ function closePromptModal() {
 
     modal.classList.remove('active');
     document.body.style.overflow = '';
+    document.body.classList.remove('prompt-modal-open'); // Restore header z-index
 }
 
 // Close modal on outside click

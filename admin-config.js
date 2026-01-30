@@ -55,12 +55,12 @@ async function loadAllSystemConfig() {
 // ============================================
 
 function renderUnlockPricingConfig() {
-    const config = systemConfigCache['unlock_pricing'] || { default_points: 10, vip_discount: 0.9 };
+    const config = systemConfigCache['unlock_pricing'] || { default_points: 1, vip_discount: 0.9 };
 
     const pointsInput = document.getElementById('cfgUnlockPoints');
     const discountInput = document.getElementById('cfgVipDiscount');
 
-    if (pointsInput) pointsInput.value = config.default_points || 10;
+    if (pointsInput) pointsInput.value = config.default_points || 1;
     if (discountInput) discountInput.value = (config.vip_discount || 0.9) * 100;
 }
 
@@ -245,7 +245,7 @@ function setupConfigEventListeners() {
     if (unlockPointsInput) {
         unlockPointsInput.addEventListener('change', async (e) => {
             const config = systemConfigCache['unlock_pricing'] || {};
-            config.default_points = parseInt(e.target.value) || 10;
+            config.default_points = parseInt(e.target.value) || 1;
             if (await saveConfig('unlock_pricing', config)) {
                 showSaveIndicator(e.target);
             }
