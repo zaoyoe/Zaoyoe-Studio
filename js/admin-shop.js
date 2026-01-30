@@ -9,18 +9,49 @@ const ShopAdmin = {
     ordersPage: 1,
     pageSize: 10,
     currentCategory: 'all', // State for category filter
+    currentStatusFilter: 'active', // State for status filter: 'active' or 'deleted'
     currentImportCategory: 'all', // State for import filter
-    allProductsForImport: [], // Cache for import list
+    allProductsForImport: [], // Cache for import list (active products)
+    deletedProductsForImport: [], // Cache for deleted products (recycle bin)
     isProductSelectionMode: false, // State for product multi-select mode
 
     // Category Filter Logic
     filterCategory: function (category, btn) {
         this.currentCategory = category;
 
-        // Update UI
-        const tabs = btn.parentNode.querySelectorAll('.filter-tab');
-        tabs.forEach(t => t.classList.remove('active'));
+        // Update UI - only update category tabs, not status tabs
+        const container = document.getElementById('productCategoryFilters');
+        const categoryTabs = container.querySelectorAll('.filter-tab:not(.status-filter)');
+        categoryTabs.forEach(t => t.classList.remove('active'));
         btn.classList.add('active');
+
+        // Reload Grid
+        this.loadProducts();
+    },
+
+    // Status Filter Logic (Active vs Deleted/Recycle Bin)
+    filterStatus: function (status, btn) {
+        this.currentStatusFilter = status;
+
+        // Update ALL status tabs (both desktop and mobile)
+        const allStatusTabs = document.querySelectorAll('.status-filter');
+        allStatusTabs.forEach(t => {
+            t.classList.remove('active');
+            t.style.background = 'rgba(255,255,255,0.03)';
+            t.style.borderColor = 'rgba(255,255,255,0.1)';
+
+            // If this tab matches the selected status, activate it
+            if (t.dataset.status === status) {
+                t.classList.add('active');
+                if (status === 'active') {
+                    t.style.background = 'rgba(74, 222, 128, 0.15)';
+                    t.style.borderColor = 'rgba(74, 222, 128, 0.4)';
+                } else {
+                    t.style.background = 'rgba(255, 100, 100, 0.15)';
+                    t.style.borderColor = 'rgba(255, 100, 100, 0.4)';
+                }
+            }
+        });
 
         // Reload Grid
         this.loadProducts();
@@ -81,6 +112,34 @@ const ShopAdmin = {
                 btn.onclick = () => this.filterCategory(cat.name, btn);
                 container.appendChild(btn);
             });
+
+            // Add flex spacer to push status filters to the right
+            const spacer = document.createElement('div');
+            spacer.style.cssText = 'flex: 1;';
+            container.appendChild(spacer);
+
+            // Active Status Button
+            const activeBtn = document.createElement('button');
+            activeBtn.className = 'filter-tab status-filter' + (this.currentStatusFilter === 'active' ? ' active' : '');
+            activeBtn.dataset.status = 'active';
+            activeBtn.innerHTML = '<i class="fas fa-eye" style="margin-right:6px; font-size:11px;"></i>上架中';
+            activeBtn.style.cssText = this.currentStatusFilter === 'active'
+                ? 'background:rgba(74, 222, 128, 0.15); border-color:rgba(74, 222, 128, 0.4);'
+                : 'background:rgba(255,255,255,0.03);';
+            activeBtn.onclick = () => this.filterStatus('active', activeBtn);
+            container.appendChild(activeBtn);
+
+            // Recycle Bin Status Button
+            const deletedBtn = document.createElement('button');
+            deletedBtn.className = 'filter-tab status-filter' + (this.currentStatusFilter === 'deleted' ? ' active' : '');
+            deletedBtn.dataset.status = 'deleted';
+            deletedBtn.innerHTML = '<i class="fas fa-trash" style="margin-right:6px; font-size:11px;"></i>回收站';
+            deletedBtn.style.cssText = this.currentStatusFilter === 'deleted'
+                ? 'background:rgba(255, 100, 100, 0.15); border-color:rgba(255, 100, 100, 0.4);'
+                : 'background:rgba(255,255,255,0.03);';
+            deletedBtn.onclick = () => this.filterStatus('deleted', deletedBtn);
+            container.appendChild(deletedBtn);
+
         } catch (e) {
             console.error('Failed to load category filters:', e);
         }
@@ -192,6 +251,13 @@ const ShopAdmin = {
                 .select('*')
                 .order('display_order', { ascending: false });
 
+            // Apply Status Filter (active vs deleted/recycle bin)
+            if (this.currentStatusFilter === 'active') {
+                query = query.eq('is_active', true);
+            } else {
+                query = query.eq('is_active', false);
+            }
+
             // Apply Category Filter
             if (this.currentCategory !== 'all') {
                 query = query.eq('category', this.currentCategory);
@@ -235,7 +301,7 @@ const ShopAdmin = {
                 const stockColor = stock < 5 ? '#ff4d4f' : '#389e0d';
 
                 const card = document.createElement('div');
-                card.className = 'shop-card';
+                card.className = 'shop-card' + (p.is_active ? '' : ' inactive-product');
                 card.style.cssText = `
                     background: rgba(30, 35, 50, 0.6); 
                     border: 1px solid rgba(255, 255, 255, 0.08);
@@ -317,10 +383,8 @@ const ShopAdmin = {
                         else { btn.style.background = 'rgba(255,255,255,0.05)'; btn.style.color = 'rgba(255,255,255,0.7)'; }
                     };
                     // Stop propagation on buttons to prevent triggering card selection
-                    btn.onclick = (e) => {
-                        e.stopPropagation();
-                        // The original onclick handler in HTML attribute is still called
-                    };
+                    // Use addEventListener instead of onclick to avoid overwriting HTML onclick attribute
+                    btn.addEventListener('click', (e) => e.stopPropagation());
                 });
 
                 // Card Click Selection
@@ -456,12 +520,14 @@ const ShopAdmin = {
             return;
         }
 
-        if (!confirm(`确定删除这 ${selectedIds.length} 个商品吗？此操作不可撤销。`)) return;
+        if (!confirm(`确定删除这 ${selectedIds.length} 个商品吗？商品将被下架但保留历史订单记录。`)) return;
 
         try {
+            // Soft delete: set is_active=false instead of hard delete
+            // This preserves order history (foreign key references)
             const { error } = await supabaseClient
                 .from('shop_products')
-                .delete()
+                .update({ is_active: false })
                 .in('id', selectedIds);
 
             if (error) throw error;
@@ -953,23 +1019,20 @@ const ShopAdmin = {
     },
 
     deleteProduct: async function (id, name) {
-        if (!confirm(`⚠️ 危险操作\n\n确定要永久删除商品 "${name}" 吗？\n如果该商品已有订单，删除可能会失败（或建议仅下架）。`)) return;
+        if (!confirm(`确定要删除商品 "${name}" 吗？\n商品将被下架但保留历史订单记录。`)) return;
 
         try {
-            const { error } = await supabaseClient.from('shop_products').delete().eq('id', id);
+            // Soft delete: set is_active=false instead of hard delete
+            // This preserves order history (foreign key references)
+            const { error } = await supabaseClient
+                .from('shop_products')
+                .update({ is_active: false })
+                .eq('id', id);
 
-            if (error) {
-                // Check for FK violation
-                if (error.code === '23503') { // ForeignKeyViolation
-                    alert('无法删除：该商品已有库存或订单关联。\n请尝试将其“下架”而不是删除。');
-                } else {
-                    throw error;
-                }
-            } else {
-                // Success
-                alert('商品已删除');
-                this.loadProducts();
-            }
+            if (error) throw error;
+
+            alert('商品已删除');
+            this.loadProducts();
         } catch (err) {
             alert('删除失败: ' + err.message);
         }
@@ -2623,14 +2686,24 @@ const ShopAdmin = {
             // Load categories first
             await this.loadCategories();
 
-            // Fetch products with Category
-            const { data, error } = await supabaseClient.from('shop_products')
+            // Fetch active products
+            const { data: activeData, error: activeError } = await supabaseClient.from('shop_products')
+                .select('id, name, category, sort_order')
+                .eq('is_active', true)
+                .order('sort_order');
+
+            if (activeError) throw activeError;
+
+            // Fetch deleted products for recycle bin
+            const { data: deletedData, error: deletedError } = await supabaseClient.from('shop_products')
                 .select('id, name, category')
+                .eq('is_active', false)
                 .order('name');
 
-            if (error) throw error;
+            if (deletedError) throw deletedError;
 
-            this.allProductsForImport = data || [];
+            this.allProductsForImport = activeData || [];
+            this.deletedProductsForImport = deletedData || [];
             this.renderImportList();
 
         } catch (e) {
@@ -2972,6 +3045,47 @@ const ShopAdmin = {
             catDiv.appendChild(children);
             treeContainer.appendChild(catDiv);
         });
+
+        // Add Recycle Bin folder at the end (for deleted products)
+        if (this.deletedProductsForImport && this.deletedProductsForImport.length > 0) {
+            const recycleBinDiv = document.createElement('div');
+            const isRecycleBinExpanded = expandedCategories.has('__recycle_bin__');
+            recycleBinDiv.className = 'tree-category recycle-bin-category' + (isRecycleBinExpanded ? ' expanded' : '');
+            recycleBinDiv.dataset.category = '__recycle_bin__';
+
+            const recycleBinHeader = document.createElement('div');
+            recycleBinHeader.className = 'tree-category-header recycle-bin-header';
+            recycleBinHeader.dataset.category = '__recycle_bin__';
+            recycleBinHeader.innerHTML = `
+                <i class="fas fa-chevron-right tree-chevron"></i>
+                <i class="fas fa-trash tree-folder-icon" style="color: #ef4444;"></i>
+                <span class="tree-category-name" style="color: rgba(255,255,255,0.5);">回收站</span>
+                <span class="tree-category-count" style="background:rgba(239, 68, 68, 0.2); color:#ef4444;">${this.deletedProductsForImport.length}</span>
+            `;
+            recycleBinHeader.onclick = () => this.toggleTreeCategory(recycleBinDiv);
+
+            const recycleBinChildren = document.createElement('div');
+            recycleBinChildren.className = 'tree-children';
+            recycleBinChildren.dataset.category = '__recycle_bin__';
+
+            this.deletedProductsForImport.forEach(p => {
+                const item = document.createElement('div');
+                item.className = 'tree-product-item deleted-product';
+                item.dataset.id = p.id;
+                item.dataset.name = p.name;
+                item.style.opacity = '0.6';
+                item.onclick = () => this.selectImportProduct(p.id, p.name);
+                item.innerHTML = `
+                    <i class="fas fa-file-alt tree-product-icon" style="color: #ef4444;"></i>
+                    <span class="tree-product-name">${p.name}</span>
+                `;
+                recycleBinChildren.appendChild(item);
+            });
+
+            recycleBinDiv.appendChild(recycleBinHeader);
+            recycleBinDiv.appendChild(recycleBinChildren);
+            treeContainer.appendChild(recycleBinDiv);
+        }
     },
 
     // Helper: Get element after which to insert the dragged item

@@ -2633,6 +2633,25 @@
                             .mobile-import-toggle {
                                 display: none !important;
                             }
+
+                            /* Hide mobile status filters on desktop */
+                            #mobileStatusFilters {
+                                display: none !important;
+                            }
+                        }
+
+                        /* Mobile: show mobile status filters, hide desktop ones */
+                        @media (max-width: 768px) {
+                            #mobileStatusFilters {
+                                display: flex !important;
+                            }
+
+                            /* Hide desktop status filters (spacer, divider, buttons in filter row) */
+                            #productCategoryFilters .status-filter:not(.mobile-status),
+                            #productCategoryFilters>span[style*="rgba(255,255,255,0.2)"],
+                            #productCategoryFilters>div[style*="flex: 1"] {
+                                display: none !important;
+                            }
                         }
 
                         .import-sidebar,
@@ -2724,9 +2743,24 @@
                     </style>
 
                     <div id="productCategoryFilters" class="category-filters"
-                        style="display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap; padding-bottom:5px;">
+                        style="display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap; padding-bottom:5px; align-items:center;">
                         <button class="filter-tab active" onclick="ShopAdmin.filterCategory('all', this)">全部</button>
                         <!-- Dynamic category buttons will be inserted here by JS -->
+
+                        <!-- Status Filter Divider -->
+                        <span style="margin:0 8px; color:rgba(255,255,255,0.2); font-size:18px;">|</span>
+
+                        <!-- Status Filter Tabs -->
+                        <button class="filter-tab status-filter active" data-status="active"
+                            onclick="ShopAdmin.filterStatus('active', this)"
+                            style="background:rgba(74, 222, 128, 0.15); border-color:rgba(74, 222, 128, 0.4);">
+                            <i class="fas fa-eye" style="margin-right:6px; font-size:11px;"></i>上架中
+                        </button>
+                        <button class="filter-tab status-filter" data-status="deleted"
+                            onclick="ShopAdmin.filterStatus('deleted', this)"
+                            style="background:rgba(255,255,255,0.03);">
+                            <i class="fas fa-trash" style="margin-right:6px; font-size:11px;"></i>回收站
+                        </button>
                     </div>
 
                     <!-- Product Selection Controls (Inventory Style) -->
@@ -2737,6 +2771,21 @@
                             onclick="ShopAdmin.toggleProductSelectionMode()" title="多选模式">
                             <i class="fas fa-check-square"></i>
                         </button>
+
+                        <!-- Mobile Status Filters (hidden on desktop) -->
+                        <div id="mobileStatusFilters" class="mobile-status-filters"
+                            style="display:none; gap:8px; margin-left:auto;">
+                            <button class="filter-tab status-filter mobile-status active" data-status="active"
+                                onclick="ShopAdmin.filterStatus('active', this)"
+                                style="background:rgba(74, 222, 128, 0.15); border-color:rgba(74, 222, 128, 0.4); padding:6px 12px; font-size:12px;">
+                                <i class="fas fa-eye" style="margin-right:4px; font-size:10px;"></i>上架中
+                            </button>
+                            <button class="filter-tab status-filter mobile-status" data-status="deleted"
+                                onclick="ShopAdmin.filterStatus('deleted', this)"
+                                style="background:rgba(255,255,255,0.03); padding:6px 12px; font-size:12px;">
+                                <i class="fas fa-trash" style="margin-right:4px; font-size:10px;"></i>回收站
+                            </button>
+                        </div>
 
                         <!-- Batch Actions Button & Menu -->
                         <div class="batch-action-wrapper" style="position: relative;">
@@ -3261,7 +3310,6 @@
                                             style="color: #6b9ece; margin-left: 8px; font-weight: normal;">(0个)</span>
                                     </label>
                                     <textarea id="importViewContentInput" class="glass-input import-textarea"
-                                        placeholder="请粘贴账号数据，每行一条&#10;格式：邮箱----密码----恢复邮箱"
                                         style="flex: 1; height: 100%; min-height: 200px;"
                                         oninput="document.getElementById('importViewLineCount').textContent = '(' + (this.value.trim() ? this.value.trim().split('\n').length : 0) + '个)'"></textarea>
                                 </div>

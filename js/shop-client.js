@@ -60,6 +60,8 @@ const ShopClient = {
                 .select('*')
                 .order('sort_order');
 
+            console.log('🛍️ Shop categories from DB:', { data, error });
+
             let categories = data || [];
 
             // Fallback to defaults if empty
