@@ -2813,6 +2813,61 @@ const ShopAdmin = {
             // Right-click context menu
             header.oncontextmenu = (e) => this.showCategoryContextMenu(e, catKey);
 
+            // Touch long-press for mobile context menu
+            let longPressTimer = null;
+            let touchStartX = 0;
+            let touchStartY = 0;
+
+            header.addEventListener('touchstart', (e) => {
+                const touch = e.touches[0];
+                touchStartX = touch.clientX;
+                touchStartY = touch.clientY;
+
+                longPressTimer = setTimeout(() => {
+                    // Prevent the click event from firing
+                    e.preventDefault();
+                    // Create a synthetic event with touch coordinates
+                    const syntheticEvent = {
+                        preventDefault: () => { },
+                        stopPropagation: () => { },
+                        clientX: touchStartX,
+                        clientY: touchStartY
+                    };
+                    this.showCategoryContextMenu(syntheticEvent, catKey);
+                    // Add haptic feedback if available
+                    if (navigator.vibrate) {
+                        navigator.vibrate(50);
+                    }
+                }, 500); // 500ms long press threshold
+            }, { passive: false });
+
+            header.addEventListener('touchmove', (e) => {
+                // Cancel if finger moved too much
+                const touch = e.touches[0];
+                const moveThreshold = 10;
+                if (Math.abs(touch.clientX - touchStartX) > moveThreshold ||
+                    Math.abs(touch.clientY - touchStartY) > moveThreshold) {
+                    if (longPressTimer) {
+                        clearTimeout(longPressTimer);
+                        longPressTimer = null;
+                    }
+                }
+            });
+
+            header.addEventListener('touchend', () => {
+                if (longPressTimer) {
+                    clearTimeout(longPressTimer);
+                    longPressTimer = null;
+                }
+            });
+
+            header.addEventListener('touchcancel', () => {
+                if (longPressTimer) {
+                    clearTimeout(longPressTimer);
+                    longPressTimer = null;
+                }
+            });
+
             // Drop zone events
             header.ondragover = (e) => {
                 e.preventDefault();
@@ -3016,10 +3071,34 @@ const ShopAdmin = {
         const menu = document.getElementById('categoryContextMenu');
         if (!menu) return;
 
-        // Position the menu
-        menu.style.left = e.clientX + 'px';
-        menu.style.top = e.clientY + 'px';
+        // Show menu first to measure its dimensions
         menu.classList.add('show');
+
+        // Get viewport dimensions
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+        const menuRect = menu.getBoundingClientRect();
+
+        // Calculate position, ensuring menu stays within viewport
+        let left = e.clientX;
+        let top = e.clientY;
+
+        // Adjust horizontal position if menu would overflow right edge
+        if (left + menuRect.width > viewportWidth - 10) {
+            left = viewportWidth - menuRect.width - 10;
+        }
+
+        // Adjust vertical position if menu would overflow bottom edge
+        if (top + menuRect.height > viewportHeight - 10) {
+            top = viewportHeight - menuRect.height - 10;
+        }
+
+        // Ensure minimum position
+        left = Math.max(10, left);
+        top = Math.max(10, top);
+
+        menu.style.left = left + 'px';
+        menu.style.top = top + 'px';
 
         // Highlight current color
         const currentColor = this.getCategoryColor(categoryKey);
@@ -3027,14 +3106,18 @@ const ShopAdmin = {
             opt.classList.toggle('selected', opt.style.background === currentColor);
         });
 
-        // Close on click outside
+        // Close on click or touch outside
         const closeHandler = (evt) => {
             if (!menu.contains(evt.target)) {
                 menu.classList.remove('show');
                 document.removeEventListener('click', closeHandler);
+                document.removeEventListener('touchstart', closeHandler);
             }
         };
-        setTimeout(() => document.addEventListener('click', closeHandler), 10);
+        setTimeout(() => {
+            document.addEventListener('click', closeHandler);
+            document.addEventListener('touchstart', closeHandler, { passive: true });
+        }, 10);
     },
 
     // Create new category

@@ -3084,6 +3084,40 @@
                         .color-option.selected {
                             border-color: white;
                         }
+
+                        /* Mobile optimizations for context menu */
+                        @media (max-width: 768px) {
+                            .tree-context-menu {
+                                min-width: 160px;
+                                padding: 4px;
+                            }
+
+                            .context-menu-item {
+                                padding: 10px 12px;
+                                font-size: 13px;
+                                -webkit-tap-highlight-color: transparent;
+                            }
+
+                            .context-menu-item:active {
+                                background: rgba(255, 255, 255, 0.15);
+                            }
+
+                            .context-menu-colors {
+                                gap: 8px;
+                                padding: 8px 12px;
+                            }
+
+                            .color-option {
+                                width: 24px;
+                                height: 24px;
+                                border-width: 2px;
+                                -webkit-tap-highlight-color: transparent;
+                            }
+
+                            .color-option:active {
+                                transform: scale(0.9);
+                            }
+                        }
                     </style>
 
                     <!-- Mobile Toggle for Import View -->
