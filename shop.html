@@ -611,13 +611,24 @@
                 transition: all 0.2s;
                 white-space: nowrap;
                 backdrop-filter: blur(10px);
+                -webkit-tap-highlight-color: transparent;
+                /* Prevent iOS tap highlight */
             }
 
-            .shop-main .filter-tab:hover {
-                background: rgba(0, 0, 0, 0.1);
-                color: #1e293b;
-                transform: translateY(-2px);
-                box-shadow: 0 4px 12px rgba(107, 158, 206, 0.15), 0 0 20px rgba(107, 158, 206, 0.1);
+            /* Only apply hover effects on devices that support hover (not touch) */
+            @media (hover: hover) {
+                .shop-main .filter-tab:hover {
+                    background: rgba(0, 0, 0, 0.1);
+                    color: #1e293b;
+                    transform: translateY(-2px);
+                    box-shadow: 0 4px 12px rgba(107, 158, 206, 0.15), 0 0 20px rgba(107, 158, 206, 0.1);
+                }
+
+                [data-theme="dark"] .shop-main .filter-tab:hover {
+                    background: rgba(255, 255, 255, 0.15);
+                    color: #fff;
+                    box-shadow: 0 4px 12px rgba(107, 158, 206, 0.25), 0 0 20px rgba(107, 158, 206, 0.15);
+                }
             }
 
             /* Dark Mode Overrides */
@@ -625,12 +636,6 @@
                 background: rgba(255, 255, 255, 0.05);
                 border: 1px solid rgba(255, 255, 255, 0.1);
                 color: rgba(255, 255, 255, 0.6);
-            }
-
-            [data-theme="dark"] .shop-main .filter-tab:hover {
-                background: rgba(255, 255, 255, 0.15);
-                color: #fff;
-                box-shadow: 0 4px 12px rgba(107, 158, 206, 0.25), 0 0 20px rgba(107, 158, 206, 0.15);
             }
 
             .shop-main .filter-tab.active {
