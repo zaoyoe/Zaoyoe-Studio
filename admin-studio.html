@@ -2746,46 +2746,32 @@
                         style="display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap; padding-bottom:5px; align-items:center;">
                         <button class="filter-tab active" onclick="ShopAdmin.filterCategory('all', this)">全部</button>
                         <!-- Dynamic category buttons will be inserted here by JS -->
-
-                        <!-- Status Filter Divider -->
-                        <span style="margin:0 8px; color:rgba(255,255,255,0.2); font-size:18px;">|</span>
-
-                        <!-- Status Filter Tabs -->
-                        <button class="filter-tab status-filter active" data-status="active"
-                            onclick="ShopAdmin.filterStatus('active', this)"
-                            style="background:rgba(74, 222, 128, 0.15); border-color:rgba(74, 222, 128, 0.4);">
-                            <i class="fas fa-eye" style="margin-right:6px; font-size:11px;"></i>上架中
-                        </button>
-                        <button class="filter-tab status-filter" data-status="deleted"
-                            onclick="ShopAdmin.filterStatus('deleted', this)"
-                            style="background:rgba(255,255,255,0.03);">
-                            <i class="fas fa-trash" style="margin-right:6px; font-size:11px;"></i>回收站
-                        </button>
                     </div>
 
                     <!-- Product Selection Controls (Inventory Style) -->
                     <div id="productSelectControls"
                         style="display:flex; align-items:center; gap:8px; margin-bottom:16px;">
+
+                        <!-- Status Filter Icon Buttons (moved here, before checkbox) -->
+                        <button id="statusActiveBtn" class="icon-btn-square status-filter active" data-status="active"
+                            onclick="ShopAdmin.filterStatus('active', this)" title="上架中"
+                            style="background:rgba(74, 222, 128, 0.2); border-color:rgba(74, 222, 128, 0.5); color:#4ade80;">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                        <button id="statusDeletedBtn" class="icon-btn-square status-filter" data-status="deleted"
+                            onclick="ShopAdmin.filterStatus('deleted', this)" title="回收站"
+                            style="background:rgba(255,255,255,0.03); color:rgba(255,255,255,0.5);">
+                            <i class="fas fa-trash"></i>
+                        </button>
+
+                        <!-- Divider -->
+                        <span style="width:1px; height:24px; background:rgba(255,255,255,0.1); margin:0 4px;"></span>
+
                         <!-- Toggle Selection Mode Button -->
                         <button id="toggleProductSelectionBtn" class="icon-btn-square"
                             onclick="ShopAdmin.toggleProductSelectionMode()" title="多选模式">
                             <i class="fas fa-check-square"></i>
                         </button>
-
-                        <!-- Mobile Status Filters (hidden on desktop) -->
-                        <div id="mobileStatusFilters" class="mobile-status-filters"
-                            style="display:none; gap:8px; margin-left:auto;">
-                            <button class="filter-tab status-filter mobile-status active" data-status="active"
-                                onclick="ShopAdmin.filterStatus('active', this)"
-                                style="background:rgba(74, 222, 128, 0.15); border-color:rgba(74, 222, 128, 0.4); padding:6px 12px; font-size:12px;">
-                                <i class="fas fa-eye" style="margin-right:4px; font-size:10px;"></i>上架中
-                            </button>
-                            <button class="filter-tab status-filter mobile-status" data-status="deleted"
-                                onclick="ShopAdmin.filterStatus('deleted', this)"
-                                style="background:rgba(255,255,255,0.03); padding:6px 12px; font-size:12px;">
-                                <i class="fas fa-trash" style="margin-right:4px; font-size:10px;"></i>回收站
-                            </button>
-                        </div>
 
                         <!-- Batch Actions Button & Menu -->
                         <div class="batch-action-wrapper" style="position: relative;">

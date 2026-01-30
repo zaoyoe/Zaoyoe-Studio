@@ -10,10 +10,33 @@ const ShopClient = {
 
         // Check if we are on the shop page (by checking for the grid container)
         const container = document.getElementById('userShopGrid');
+        const filtersContainer = document.getElementById('shopCategoryFilters');
+
         if (container) {
-            // Load category filters first, then products
-            await this.loadCategoryFilters();
-            this.loadProducts();
+            // Fallback timeout - show error after 5 seconds if loading fails
+            const fallbackTimer = setTimeout(() => {
+                console.warn('🛍️ Shop loading timeout');
+                container.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:rgba(255,100,100,0.7);">加载超时，请刷新重试</div>';
+            }, 5000);
+
+            try {
+                // Wait for Supabase to be ready
+                if (!window.supabaseClient) {
+                    console.warn('🛍️ Waiting for Supabase...');
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                }
+
+                // Load category filters first, then products
+                await this.loadCategoryFilters();
+                await this.loadProducts();
+
+                clearTimeout(fallbackTimer);
+
+            } catch (err) {
+                console.error('🛍️ Shop loading error:', err);
+                clearTimeout(fallbackTimer);
+                container.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:rgba(255,100,100,0.7);">加载失败，请刷新重试</div>';
+            }
         }
 
         // Listen for Modal Open (Backwards compatibility or for index.html link if we still used modal)
@@ -44,17 +67,6 @@ const ShopClient = {
         if (!container) return;
 
         try {
-            // Remove previously added dynamic categories (keep static "全部" button)
-            const dynamicTabs = container.querySelectorAll('.filter-tab.dynamic');
-            dynamicTabs.forEach(tab => tab.remove());
-
-            // Ensure the static "全部" button has click handler (in case JS re-runs)
-            const allBtn = container.querySelector('.filter-tab:not(.dynamic)');
-            if (allBtn && !allBtn._shopClickBound) {
-                allBtn._shopClickBound = true;
-                allBtn.onclick = () => this.filterCategory('all', allBtn);
-            }
-
             const { data, error } = await supabaseClient
                 .from('shop_categories')
                 .select('*')
@@ -74,10 +86,20 @@ const ShopClient = {
                 ];
             }
 
-            // Add dynamic category buttons (marked with 'dynamic' class)
+            // Clear skeleton placeholders and rebuild all buttons
+            container.innerHTML = '';
+
+            // Add "全部" button first
+            const allBtn = document.createElement('button');
+            allBtn.className = 'filter-tab active';
+            allBtn.textContent = '全部';
+            allBtn.onclick = () => this.filterCategory('all', allBtn);
+            container.appendChild(allBtn);
+
+            // Add dynamic category buttons
             categories.forEach(cat => {
                 const btn = document.createElement('button');
-                btn.className = 'filter-tab dynamic';
+                btn.className = 'filter-tab';
                 btn.textContent = cat.name;
                 btn.onclick = () => this.filterCategory(cat.name, btn);
                 container.appendChild(btn);
@@ -85,7 +107,8 @@ const ShopClient = {
 
         } catch (e) {
             console.error('Failed to load category filters:', e);
-            // On error, the static "全部" button remains functional
+            // On error, show a simple "全部" button
+            container.innerHTML = '<button class="filter-tab active" onclick="ShopClient.filterCategory(\'all\', this)">全部</button>';
         }
     },
 

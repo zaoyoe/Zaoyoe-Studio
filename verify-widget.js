@@ -14,7 +14,7 @@
         // Will be loaded from system_config
         pricePerVerify: 3,
         // Node.js Puppeteer server endpoint
-        nodeServerUrl: 'http://localhost:3001', // window.VERIFY_SERVER_URL || 'http://localhost:3001',
+        nodeServerUrl: window.VERIFY_SERVER_URL || 'https://zaoyoe-verify-server-production.up.railway.app',
         // Container element ID
         containerId: 'verify-widget-container'
     };

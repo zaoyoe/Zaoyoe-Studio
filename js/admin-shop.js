@@ -33,22 +33,25 @@ const ShopAdmin = {
     filterStatus: function (status, btn) {
         this.currentStatusFilter = status;
 
-        // Update ALL status tabs (both desktop and mobile)
+        // Update ALL status tabs (icon buttons)
         const allStatusTabs = document.querySelectorAll('.status-filter');
         allStatusTabs.forEach(t => {
             t.classList.remove('active');
             t.style.background = 'rgba(255,255,255,0.03)';
             t.style.borderColor = 'rgba(255,255,255,0.1)';
+            t.style.color = 'rgba(255,255,255,0.5)';
 
             // If this tab matches the selected status, activate it
             if (t.dataset.status === status) {
                 t.classList.add('active');
                 if (status === 'active') {
-                    t.style.background = 'rgba(74, 222, 128, 0.15)';
-                    t.style.borderColor = 'rgba(74, 222, 128, 0.4)';
+                    t.style.background = 'rgba(74, 222, 128, 0.2)';
+                    t.style.borderColor = 'rgba(74, 222, 128, 0.5)';
+                    t.style.color = '#4ade80';
                 } else {
-                    t.style.background = 'rgba(255, 100, 100, 0.15)';
-                    t.style.borderColor = 'rgba(255, 100, 100, 0.4)';
+                    t.style.background = 'rgba(239, 68, 68, 0.2)';
+                    t.style.borderColor = 'rgba(239, 68, 68, 0.5)';
+                    t.style.color = '#ef4444';
                 }
             }
         });
@@ -112,33 +115,6 @@ const ShopAdmin = {
                 btn.onclick = () => this.filterCategory(cat.name, btn);
                 container.appendChild(btn);
             });
-
-            // Add flex spacer to push status filters to the right
-            const spacer = document.createElement('div');
-            spacer.style.cssText = 'flex: 1;';
-            container.appendChild(spacer);
-
-            // Active Status Button
-            const activeBtn = document.createElement('button');
-            activeBtn.className = 'filter-tab status-filter' + (this.currentStatusFilter === 'active' ? ' active' : '');
-            activeBtn.dataset.status = 'active';
-            activeBtn.innerHTML = '<i class="fas fa-eye" style="margin-right:6px; font-size:11px;"></i>上架中';
-            activeBtn.style.cssText = this.currentStatusFilter === 'active'
-                ? 'background:rgba(74, 222, 128, 0.15); border-color:rgba(74, 222, 128, 0.4);'
-                : 'background:rgba(255,255,255,0.03);';
-            activeBtn.onclick = () => this.filterStatus('active', activeBtn);
-            container.appendChild(activeBtn);
-
-            // Recycle Bin Status Button
-            const deletedBtn = document.createElement('button');
-            deletedBtn.className = 'filter-tab status-filter' + (this.currentStatusFilter === 'deleted' ? ' active' : '');
-            deletedBtn.dataset.status = 'deleted';
-            deletedBtn.innerHTML = '<i class="fas fa-trash" style="margin-right:6px; font-size:11px;"></i>回收站';
-            deletedBtn.style.cssText = this.currentStatusFilter === 'deleted'
-                ? 'background:rgba(255, 100, 100, 0.15); border-color:rgba(255, 100, 100, 0.4);'
-                : 'background:rgba(255,255,255,0.03);';
-            deletedBtn.onclick = () => this.filterStatus('deleted', deletedBtn);
-            container.appendChild(deletedBtn);
 
         } catch (e) {
             console.error('Failed to load category filters:', e);

@@ -568,6 +568,86 @@
         .shop-card.breathing:hover {
             animation-play-state: paused;
         }
+
+        /* Skeleton Loading Styles */
+        @keyframes shimmer {
+            0% {
+                background-position: -200% 0;
+            }
+
+            100% {
+                background-position: 200% 0;
+            }
+        }
+
+        .skeleton {
+            background: linear-gradient(90deg,
+                    rgba(255, 255, 255, 0.03) 25%,
+                    rgba(255, 255, 255, 0.08) 50%,
+                    rgba(255, 255, 255, 0.03) 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+            border-radius: 8px;
+        }
+
+        .skeleton-filter {
+            width: 60px;
+            height: 36px;
+            border-radius: 20px;
+        }
+
+        .skeleton-card {
+            border-radius: 16px;
+            overflow: hidden;
+            background: rgba(30, 41, 59, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .skeleton-image {
+            width: 100%;
+            height: 160px;
+        }
+
+        .skeleton-content {
+            padding: 24px;
+        }
+
+        .skeleton-title {
+            height: 20px;
+            width: 70%;
+            margin-bottom: 12px;
+        }
+
+        .skeleton-desc {
+            height: 14px;
+            width: 90%;
+            margin-bottom: 8px;
+        }
+
+        .skeleton-desc-short {
+            height: 14px;
+            width: 60%;
+            margin-bottom: 20px;
+        }
+
+        .skeleton-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: auto;
+            padding-top: 20px;
+        }
+
+        .skeleton-price {
+            height: 24px;
+            width: 80px;
+        }
+
+        .skeleton-btn {
+            height: 36px;
+            width: 70px;
+            border-radius: 24px;
+        }
     </style>
 
     <!-- Overlay Elements -->
@@ -583,8 +663,12 @@
         </div>
 
         <div id="shopCategoryFilters" class="category-filters">
-            <button class="filter-tab active" onclick="ShopClient.filterCategory('all', this)">全部</button>
-            <!-- Dynamic categories loaded by JS -->
+            <!-- Skeleton filters shown initially -->
+            <div class="skeleton skeleton-filter"></div>
+            <div class="skeleton skeleton-filter" style="width:50px"></div>
+            <div class="skeleton skeleton-filter" style="width:70px"></div>
+            <div class="skeleton skeleton-filter" style="width:55px"></div>
+            <!-- Real filters loaded by JS -->
         </div>
 
         <style>
@@ -647,9 +731,42 @@
         </style>
 
         <div id="userShopGrid" class="shop-grid">
-            <!-- Products will be injected here by JS -->
-            <div style="grid-column:1/-1;text-align:center;padding:40px;color:rgba(255,255,255,0.3);">
-                <i class="fas fa-spinner fa-spin"></i> 加载中...
+            <!-- Skeleton cards shown initially -->
+            <div class="skeleton-card">
+                <div class="skeleton skeleton-image"></div>
+                <div class="skeleton-content">
+                    <div class="skeleton skeleton-title"></div>
+                    <div class="skeleton skeleton-desc"></div>
+                    <div class="skeleton skeleton-desc-short"></div>
+                    <div class="skeleton-footer">
+                        <div class="skeleton skeleton-price"></div>
+                        <div class="skeleton skeleton-btn"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="skeleton-card">
+                <div class="skeleton skeleton-image"></div>
+                <div class="skeleton-content">
+                    <div class="skeleton skeleton-title"></div>
+                    <div class="skeleton skeleton-desc"></div>
+                    <div class="skeleton skeleton-desc-short"></div>
+                    <div class="skeleton-footer">
+                        <div class="skeleton skeleton-price"></div>
+                        <div class="skeleton skeleton-btn"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="skeleton-card">
+                <div class="skeleton skeleton-image"></div>
+                <div class="skeleton-content">
+                    <div class="skeleton skeleton-title"></div>
+                    <div class="skeleton skeleton-desc"></div>
+                    <div class="skeleton skeleton-desc-short"></div>
+                    <div class="skeleton-footer">
+                        <div class="skeleton skeleton-price"></div>
+                        <div class="skeleton skeleton-btn"></div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -767,7 +884,7 @@
     <script src="js/components/WalletModal.js?v=WALLET_FIX_V7" defer></script>
 
     <!-- Shop Logic -->
-    <script src="js/shop-client.js?v=ORDER_FIX_V5" defer></script>
+    <script src="js/shop-client.js?v=SKELETON_V2" defer></script>
 
     <!-- Background Animations -->
     <script src="starry-sky.js"></script>
