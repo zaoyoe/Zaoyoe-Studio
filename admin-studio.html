@@ -2566,6 +2566,75 @@
                             box-sizing: border-box;
                         }
 
+                        /* Mobile Import Layout */
+                        @media (max-width: 768px) {
+                            .import-layout {
+                                grid-template-columns: 1fr;
+                                height: auto;
+                                gap: 0;
+                                padding: 0 10px;
+                                margin: 10px auto;
+                            }
+
+                            .import-sidebar {
+                                border-radius: 16px 16px 0 0;
+                                max-height: 300px;
+                                min-height: 200px;
+                            }
+
+                            .import-main {
+                                border-radius: 0 0 16px 16px;
+                                border-top: none;
+                                min-height: 400px;
+                            }
+
+                            /* Hide sidebar by default on mobile, show via toggle */
+                            .import-layout.show-main .import-sidebar {
+                                display: none;
+                            }
+
+                            .import-layout.show-sidebar .import-main {
+                                display: none;
+                            }
+
+                            .import-layout.show-sidebar .import-sidebar {
+                                max-height: none;
+                                border-radius: 16px;
+                            }
+
+                            /* Mobile Toggle Button */
+                            .mobile-import-toggle {
+                                display: flex;
+                                margin-bottom: 12px;
+                                gap: 8px;
+                            }
+
+                            .mobile-import-toggle button {
+                                flex: 1;
+                                padding: 10px;
+                                border-radius: 10px;
+                                border: 1px solid rgba(255, 255, 255, 0.1);
+                                background: rgba(255, 255, 255, 0.05);
+                                color: rgba(255, 255, 255, 0.6);
+                                font-size: 13px;
+                                cursor: pointer;
+                                transition: all 0.2s;
+                            }
+
+                            .mobile-import-toggle button.active {
+                                background: #6b9ece;
+                                border-color: #6b9ece;
+                                color: #fff;
+                            }
+                        }
+
+                        /* Hide mobile toggle on desktop */
+                        @media (min-width: 769px) {
+                            .mobile-import-toggle {
+                                display: none !important;
+                            }
+                        }
+
                         .import-sidebar,
                         .import-main {
                             background: rgba(15, 23, 42, 0.6);
@@ -3017,7 +3086,36 @@
                         }
                     </style>
 
-                    <div class="import-layout">
+                    <!-- Mobile Toggle for Import View -->
+                    <div class="mobile-import-toggle">
+                        <button id="mobileImportSidebarBtn" onclick="toggleMobileImportView('sidebar')">
+                            <i class="fas fa-folder-tree"></i> 选择分类
+                        </button>
+                        <button id="mobileImportMainBtn" class="active" onclick="toggleMobileImportView('main')">
+                            <i class="fas fa-file-import"></i> 导入内容
+                        </button>
+                    </div>
+                    <script>
+                        function toggleMobileImportView(view) {
+                            const layout = document.querySelector('.import-layout');
+                            const sidebarBtn = document.getElementById('mobileImportSidebarBtn');
+                            const mainBtn = document.getElementById('mobileImportMainBtn');
+
+                            if (view === 'sidebar') {
+                                layout.classList.remove('show-main');
+                                layout.classList.add('show-sidebar');
+                                sidebarBtn.classList.add('active');
+                                mainBtn.classList.remove('active');
+                            } else {
+                                layout.classList.remove('show-sidebar');
+                                layout.classList.add('show-main');
+                                mainBtn.classList.add('active');
+                                sidebarBtn.classList.remove('active');
+                            }
+                        }
+                    </script>
+
+                    <div class="import-layout show-main">
                         <!-- Left Sidebar: Tree View -->
                         <div class="import-sidebar">
                             <!-- Sidebar Header -->
