@@ -8,9 +8,9 @@ const ShopClient = {
     init: async function () {
         console.log('🛍️ Shop Client Initialized');
 
-        // Check if we are on the standalone shop page
+        // Check if we are on the shop page (by checking for the grid container)
         const container = document.getElementById('userShopGrid');
-        if (container && window.location.pathname.includes('shop.html')) {
+        if (container) {
             // Load category filters first, then products
             await this.loadCategoryFilters();
             this.loadProducts();
@@ -44,6 +44,17 @@ const ShopClient = {
         if (!container) return;
 
         try {
+            // Remove previously added dynamic categories (keep static "全部" button)
+            const dynamicTabs = container.querySelectorAll('.filter-tab.dynamic');
+            dynamicTabs.forEach(tab => tab.remove());
+
+            // Ensure the static "全部" button has click handler (in case JS re-runs)
+            const allBtn = container.querySelector('.filter-tab:not(.dynamic)');
+            if (allBtn && !allBtn._shopClickBound) {
+                allBtn._shopClickBound = true;
+                allBtn.onclick = () => this.filterCategory('all', allBtn);
+            }
+
             const { data, error } = await supabaseClient
                 .from('shop_categories')
                 .select('*')
@@ -61,20 +72,10 @@ const ShopClient = {
                 ];
             }
 
-            // Clear and rebuild: keep only "全部" button, add dynamic categories
-            container.innerHTML = '';
-
-            // Add "全部" button first
-            const allBtn = document.createElement('button');
-            allBtn.className = 'filter-tab active';
-            allBtn.textContent = '全部';
-            allBtn.onclick = () => this.filterCategory('all', allBtn);
-            container.appendChild(allBtn);
-
-            // Add category buttons
+            // Add dynamic category buttons (marked with 'dynamic' class)
             categories.forEach(cat => {
                 const btn = document.createElement('button');
-                btn.className = 'filter-tab';
+                btn.className = 'filter-tab dynamic';
                 btn.textContent = cat.name;
                 btn.onclick = () => this.filterCategory(cat.name, btn);
                 container.appendChild(btn);
@@ -82,6 +83,7 @@ const ShopClient = {
 
         } catch (e) {
             console.error('Failed to load category filters:', e);
+            // On error, the static "全部" button remains functional
         }
     },
 
