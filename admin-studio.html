@@ -3346,21 +3346,21 @@
                             <div class="inv-stat-card"
                                 style="background: linear-gradient(135deg, rgba(107, 158, 206, 0.2), rgba(107, 158, 206, 0.05)); border: 1px solid rgba(107, 158, 206, 0.3); border-radius: 12px; padding: 15px;">
                                 <div style="color: #93c5fd; font-size: 12px; margin-bottom: 5px;"><i
-                                        class="fas fa-archive"></i> 储备库存</div>
+                                        class="fas fa-archive"></i> 储备</div>
                                 <div id="statReserve" style="font-size: 24px; font-weight: bold; color: #bfdbfe;">--
                                 </div>
                             </div>
                             <div class="inv-stat-card"
                                 style="background: linear-gradient(135deg, rgba(16,185,129,0.2), rgba(16,185,129,0.05)); border: 1px solid rgba(16,185,129,0.3); border-radius: 12px; padding: 15px;">
                                 <div style="color: #10b981; font-size: 12px; margin-bottom: 5px;"><i
-                                        class="fas fa-check-circle"></i> 在售库存</div>
+                                        class="fas fa-check-circle"></i> 在售</div>
                                 <div id="statAvailable" style="font-size: 24px; font-weight: bold; color: #34d399;">--
                                 </div>
                             </div>
                             <div class="inv-stat-card"
                                 style="background: linear-gradient(135deg, rgba(239,68,68,0.2), rgba(239,68,68,0.05)); border: 1px solid rgba(239,68,68,0.3); border-radius: 12px; padding: 15px;">
                                 <div style="color: #ef4444; font-size: 12px; margin-bottom: 5px;"><i
-                                        class="fas fa-shopping-cart"></i> 已售出</div>
+                                        class="fas fa-shopping-cart"></i> 已售</div>
                                 <div id="statSold" style="font-size: 24px; font-weight: bold; color: #f87171;">--</div>
                             </div>
                             <div class="inv-stat-card"
@@ -3384,6 +3384,7 @@
                         <style>
                             .inv-filter-bar {
                                 display: flex;
+                                flex-wrap: wrap;
                                 gap: 12px;
                                 margin-bottom: 20px;
                                 align-items: center;
@@ -3436,6 +3437,15 @@
                                 display: none;
                                 max-height: 250px;
                                 overflow-y: auto;
+                            }
+
+                            /* Mobile: Align date dropdown to the right to prevent clipping */
+                            @media (max-width: 768px) {
+                                #invDateFilterDropdown .custom-dropdown-menu {
+                                    left: auto;
+                                    right: 0;
+                                    max-width: calc(100vw - 40px);
+                                }
                             }
 
                             .custom-dropdown-menu.show {
@@ -3631,17 +3641,17 @@
                                     <div class="custom-dropdown-item" data-value="month"
                                         onclick="ShopAdmin.selectDropdown('date', 'month', '本月')">本月</div>
                                     <div style="height:1px; background:rgba(255,255,255,0.1); margin:4px 0;"></div>
-                                    <div style="padding: 10px;">
+                                    <div style="padding: 10px;" onclick="event.stopPropagation()">
                                         <label
                                             style="display:block; font-size:12px; color:rgba(255,255,255,0.5); margin-bottom:5px;">自定义范围</label>
                                         <div style="display:flex; gap:5px; align-items:center;">
                                             <input type="text" id="invDateFrom" class="flatpickr-input" placeholder="开始"
                                                 readonly
-                                                style="width:100%; height:28px; background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.1); border-radius:4px; color:#fff; font-size:12px; padding:0 5px;">
+                                                style="width:100%; height:28px; background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.1); border-radius:4px; color:#fff; font-size:12px; padding:0 5px; cursor:pointer;">
                                             <span style="color:rgba(255,255,255,0.3);">-</span>
                                             <input type="text" id="invDateTo" class="flatpickr-input" placeholder="结束"
                                                 readonly
-                                                style="width:100%; height:28px; background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.1); border-radius:4px; color:#fff; font-size:12px; padding:0 5px;">
+                                                style="width:100%; height:28px; background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.1); border-radius:4px; color:#fff; font-size:12px; padding:0 5px; cursor:pointer;">
                                         </div>
                                     </div>
                                 </div>
@@ -3688,14 +3698,16 @@
                             <div class="spacer"></div>
 
                             <!-- Action Buttons -->
-                            <button onclick="ShopAdmin.openReleaseModal()" class="btn btn-primary"
-                                style="padding: 10px 18px; font-size: 13px; background: #3d5a80; border-color: #3d5a80;">
-                                <i class="fas fa-rocket"></i> 释放储备
-                            </button>
-                            <button onclick="ShopAdmin.exportInventory()" class="btn btn-secondary"
-                                style="padding: 10px 18px; font-size: 13px;">
-                                <i class="fas fa-file-excel"></i> 导出
-                            </button>
+                            <div style="display: flex; gap: 8px; flex-shrink: 0;">
+                                <button onclick="ShopAdmin.exportInventory()" class="btn btn-secondary"
+                                    style="padding: 10px 18px; font-size: 13px; white-space: nowrap;">
+                                    <i class="fas fa-file-excel"></i> 导出
+                                </button>
+                                <button onclick="ShopAdmin.openReleaseModal()" class="btn btn-primary"
+                                    style="padding: 10px 18px; font-size: 13px; background: #3d5a80; border-color: #3d5a80; white-space: nowrap;">
+                                    <i class="fas fa-rocket"></i> 释放
+                                </button>
+                            </div>
                         </div>
 
                         <!-- Inventory Table -->
@@ -3897,6 +3909,7 @@
                             font-size: 0.9em;
                             text-transform: uppercase;
                             letter-spacing: 0.5px;
+                            white-space: nowrap;
                         }
 
                         .shop-table td {
@@ -3904,6 +3917,7 @@
                             border-bottom: 1px solid rgba(255, 255, 255, 0.05);
                             color: #e2e8f0;
                             font-size: 0.95em;
+                            white-space: nowrap;
                         }
 
                         .shop-table tr:last-child td {

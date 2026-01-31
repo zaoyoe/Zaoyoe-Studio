@@ -1429,6 +1429,12 @@ const ShopAdmin = {
             // Render Pagination
             this.renderPagination('ordersPagination', page, count || 0, this.pageSize, 'searchOrders');
 
+            // Enable horizontal scroll with mouse wheel for mobile
+            const ordersTableContainer = document.querySelector('#shop-view-orders .shop-table-container');
+            if (ordersTableContainer && window.enableHorizontalScroll) {
+                window.enableHorizontalScroll(ordersTableContainer);
+            }
+
         } catch (err) {
             console.error(err);
             tbody.innerHTML = `< tr > <td colspan="6" class="text-danger">Error: ${err.message}</td></tr > `;
@@ -1899,7 +1905,41 @@ const ShopAdmin = {
                 });
             }
         }
+
+        // Initialize Flatpickr for date inputs if not already initialized
+        this.initInventoryDatePickers();
+
         this.loadInventoryList();
+    },
+
+    initInventoryDatePickers: function () {
+        if (!window.flatpickr) return;
+
+        const fromInput = document.getElementById('invDateFrom');
+        const toInput = document.getElementById('invDateTo');
+
+        // Skip if already initialized
+        if (fromInput && fromInput._flatpickr) return;
+
+        const config = {
+            locale: 'zh',
+            dateFormat: 'Y-m-d',
+            theme: "dark",
+            allowInput: false,
+            clickOpens: true,
+            onChange: (selectedDates, dateStr, instance) => {
+                const from = document.getElementById('invDateFrom').value;
+                const to = document.getElementById('invDateTo').value;
+                if (from || to) {
+                    if (typeof ShopAdmin.selectDropdown === 'function') {
+                        ShopAdmin.selectDropdown('date', 'custom', '自定义');
+                    }
+                }
+            }
+        };
+
+        if (fromInput) flatpickr(fromInput, config);
+        if (toInput) flatpickr(toInput, config);
     },
 
     toggleDropdown: function (dropdownId) {
@@ -2108,6 +2148,12 @@ const ShopAdmin = {
             // Calculate total for pagination
             const total = (stats.reserve || 0) + (stats.available || 0) + (stats.sold || 0) + (stats.frozen || 0) + (stats.fault || 0);
             this.renderPagination('inventoryPagination', page, total, this.pageSize, 'loadInventoryList');
+
+            // Enable horizontal scroll with mouse wheel for mobile
+            const invTableContainer = document.querySelector('#shop-view-inventory .shop-table-container');
+            if (invTableContainer && window.enableHorizontalScroll) {
+                window.enableHorizontalScroll(invTableContainer);
+            }
 
         } catch (err) {
             console.error('[ShopAdmin] Load inventory error:', err);

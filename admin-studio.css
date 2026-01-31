@@ -4145,6 +4145,11 @@ body {
     gap: 10px;
 }
 
+/* Fix dropdown menus being clipped by overflow */
+#module-users .filter-dropdowns {
+    overflow: visible;
+}
+
 /* Search Bar - Pill Style */
 #module-users .search-bar {
     position: relative;

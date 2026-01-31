@@ -466,11 +466,14 @@ async function handleAuthClick(event) {
     }
     console.log('🔘 handleAuthClick triggered');
 
-    const { data: { user } } = await window.supabaseClient.auth.getUser();
-    console.log('👤 Current User:', user ? user.id : 'null');
+    // 🚀 OPTIMIZATION: Use cached profile for instant dropdown (no network delay)
+    const cachedProfile = localStorage.getItem('cached_user_profile');
+    const isLoggedIn = !!cachedProfile;
 
-    if (user) {
-        // User is logged in - toggle dropdown
+    console.log('👤 Using cached login state:', isLoggedIn ? 'logged in' : 'not logged in');
+
+    if (isLoggedIn) {
+        // User is logged in - toggle dropdown INSTANTLY
         const dropdown = document.getElementById('userDropdown');
         const overlay = document.getElementById('dropdownOverlay');
 
@@ -484,6 +487,9 @@ async function handleAuthClick(event) {
                 if (overlay) overlay.classList.add('active');
             }
         }
+
+        // Note: Background verification happens via auth state listener, 
+        // no need to await getUser() here for dropdown toggle
     } else {
         // User is not logged in - open login modal
         const loginModal = document.getElementById('loginModal');

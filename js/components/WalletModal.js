@@ -97,18 +97,13 @@
                                 <span class="menu-text">余额</span>
                             </div>
                             <div class="wallet-menu-item" data-view="recharge" onclick="WalletModal.switchView('recharge')">
-                                <span class="menu-icon">⚡</span>
+                                <span class="menu-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="boltGradientSidebar" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#fbbf24"/><stop offset="100%" style="stop-color:#f97316"/></linearGradient></defs><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z" fill="url(#boltGradientSidebar)"/></svg></span>
                                 <span class="menu-text">充值</span>
                             </div>
 
-                            <div class="wallet-menu-item" data-view="history" onclick="WalletModal.switchView('history')">
-                                <span class="menu-icon">📜</span>
-                                <span class="menu-text">记录</span>
-                            </div>
-                            
                             <div class="wallet-menu-item" data-view="orders" onclick="WalletModal.switchView('orders')">
-                                <span class="menu-icon">📦</span>
-                                <span class="menu-text">订单</span>
+                                <span class="menu-icon">📋</span>
+                                <span class="menu-text">记录</span>
                             </div>
                         </div>
                         
@@ -149,7 +144,7 @@
                             
                             <!-- Recharge View -->
                             <div class="wallet-view" id="view-recharge">
-                                <h3 class="view-title">⚡ 充值套餐</h3>
+                                <h3 class="view-title"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align: -3px; margin-right: 4px;"><defs><linearGradient id="boltGradientTitle" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#fbbf24"/><stop offset="100%" style="stop-color:#f97316"/></linearGradient></defs><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z" fill="url(#boltGradientTitle)"/></svg>充值套餐</h3>
                                 <div class="packages-container" id="wallet-packages">
                                     <div class="loading-text">加载中...</div>
                                 </div>
@@ -173,37 +168,42 @@
                                 </div>
                             </div>
 
-                            
-                            <!-- History View -->
-                            <div class="wallet-view" id="view-history">
-                                <div class="history-header">
-                                    <h3 class="view-title">📜 交易记录</h3>
-                                    <div class="history-actions">
-                                        <div class="filter-wrapper">
-                                            <div class="filter-chip" onclick="WalletModal.toggleFilterMenu(event)">
-                                                <span id="filter-label">全部</span>
-                                                <span class="filter-arrow">▼</span>
-                                            </div>
-                                            <div class="filter-popup" id="filter-popup">
-                                                <div class="filter-option active" data-value="all" onclick="WalletModal.selectFilter('all', '全部')">全部</div>
-                                                <div class="filter-option" data-value="today" onclick="WalletModal.selectFilter('today', '今天')">今天</div>
-                                                <div class="filter-option" data-value="week" onclick="WalletModal.selectFilter('week', '本周')">本周</div>
-                                                <div class="filter-option" data-value="month" onclick="WalletModal.selectFilter('month', '本月')">本月</div>
-                                                <div class="filter-divider"></div>
-                                                <div class="filter-option" data-value="custom" onclick="WalletModal.showCustomDate()">📅 自定义...</div>
-                                            </div>
-                                        </div>
-                                        <div class="clear-chip" onclick="WalletModal.clearHistory()">🗑</div>
-                                    </div>
-                                </div>
-                                <div class="history-container" id="wallet-history">
-                                    <div class="loading-text">加载中...</div>
-                                </div>
-                            </div>
-                            
+
                             <!-- Orders View (Shop Purchase History) -->
                             <div class="wallet-view" id="view-orders">
-                                <h3 class="view-title">📦 我的订单</h3>
+                                <div class="history-header">
+                                    <h3 class="view-title">📋 交易记录</h3>
+                                    <div class="history-actions">
+                                        <div class="filter-wrapper">
+                                            <div class="filter-chip" onclick="WalletModal.toggleOrderTimeFilterMenu(event)">
+                                                <span id="order-time-filter-label">全部</span>
+                                                <span class="filter-arrow">▼</span>
+                                            </div>
+                                            <div class="filter-popup" id="order-time-filter-popup">
+                                                <div class="filter-option active" data-value="all" onclick="WalletModal.selectOrderTimeFilter('all', '全部')">全部</div>
+                                                <div class="filter-option" data-value="today" onclick="WalletModal.selectOrderTimeFilter('today', '今天')">今天</div>
+                                                <div class="filter-option" data-value="week" onclick="WalletModal.selectOrderTimeFilter('week', '本周')">本周</div>
+                                                <div class="filter-option" data-value="month" onclick="WalletModal.selectOrderTimeFilter('month', '本月')">本月</div>
+                                                <div class="filter-divider"></div>
+                                                <div class="filter-option" data-value="custom" onclick="WalletModal.showOrderCustomDate()">📅 自定义...</div>
+                                            </div>
+                                        </div>
+                                        <div class="filter-wrapper">
+                                            <div class="filter-chip" onclick="WalletModal.toggleOrderFilterMenu(event)">
+                                                <span id="order-filter-label">全部</span>
+                                                <span class="filter-arrow">▼</span>
+                                            </div>
+                                            <div class="filter-popup" id="order-filter-popup">
+                                                <div class="filter-option active" data-value="all" onclick="WalletModal.selectOrderFilter('all', '全部')">全部</div>
+                                                <div class="filter-option" data-value="recharge" onclick="WalletModal.selectOrderFilter('recharge', '充值')"><i class="fas fa-bolt" style="color: #fbbf24;"></i> 充值</div>
+                                                <div class="filter-option" data-value="redeem" onclick="WalletModal.selectOrderFilter('redeem', '兑换码')"><i class="fas fa-ticket-alt" style="color: #f472b6;"></i> 兑换码</div>
+                                                <div class="filter-option" data-value="shop" onclick="WalletModal.selectOrderFilter('shop', '商品')"><i class="fas fa-shopping-bag" style="color: #22c55e;"></i> 商品</div>
+                                                <div class="filter-option" data-value="prompt" onclick="WalletModal.selectOrderFilter('prompt', '提示词')"><i class="fas fa-lightbulb" style="color: #fde68a;"></i> 提示词</div>
+                                            </div>
+                                        </div>
+                                        <div class="clear-chip" onclick="WalletModal.clearOrders()">🗑</div>
+                                    </div>
+                                </div>
                                 <div class="orders-container" id="wallet-orders">
                                     <div class="loading-text">加载中...</div>
                                 </div>
@@ -323,17 +323,12 @@
                     }
                 }
 
-                // Store history data for filtering
+                // Store history data for filtering (used by old history view, now deprecated)
                 this.historyData = history;
 
-                // Update history count (if element exists)
-                const historyCount = document.getElementById('history-count');
-                if (historyCount) {
-                    historyCount.textContent = history.length > 0 ? `(${history.length})` : '';
-                }
+                // Note: History tab has been merged into Orders tab
+                // The renderHistory() call has been removed as the wallet-history element no longer exists
 
-                // Render history
-                this.renderHistory(history);
             } catch (err) {
                 console.error('[WalletModal] ❌ Load data failed:', err);
                 this.showToast('数据加载失败', 'error');
@@ -531,7 +526,29 @@
         showToast(message, type = 'info') {
             const toast = document.createElement('div');
             toast.className = `wallet-toast wallet-toast-${type}`;
-            toast.innerHTML = message;
+
+            // Replace ✅ emoji with custom CSS checkmark icon
+            const checkmarkIcon = `<span style="
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 18px;
+                height: 18px;
+                background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+                border-radius: 50%;
+                margin-right: 2px;
+            "><svg width="10" height="10" viewBox="0 0 12 12" fill="none" style="display:block;">
+                <path d="M2 6.5L4.5 9L10 3" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg></span>`;
+
+            // Replace emoji with custom icon
+            const processedMessage = message.replace(/✅\s*/g, '');
+
+            if (type === 'success') {
+                toast.innerHTML = checkmarkIcon + processedMessage;
+            } else {
+                toast.innerHTML = message;
+            }
 
             const borderColor = type === 'success'
                 ? '#10b981'
@@ -554,7 +571,7 @@
                 font-size: 14px;
                 font-weight: 500;
                 letter-spacing: 0.5px;
-                z-index: 10001;
+                z-index: 300000;
                 box-shadow: 0 8px 32px rgba(0,0,0,0.4);
                 opacity: 0;
                 animation: toastSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
@@ -907,6 +924,282 @@
             }
         },
 
+        // Order filter state
+        orderFilter: 'all',
+        ordersData: [],
+
+        /**
+         * Toggle order filter menu
+         */
+        toggleOrderFilterMenu(event) {
+            event.stopPropagation();
+            const popup = document.getElementById('order-filter-popup');
+            if (popup) {
+                popup.classList.toggle('open');
+                // Close when clicking outside
+                const closeHandler = (e) => {
+                    if (!popup.contains(e.target) && !e.target.closest('.filter-chip')) {
+                        popup.classList.remove('open');
+                        document.removeEventListener('click', closeHandler);
+                    }
+                };
+                setTimeout(() => document.addEventListener('click', closeHandler), 10);
+            }
+        },
+
+        /**
+         * Select order filter
+         */
+        selectOrderFilter(value, label) {
+            this.orderFilter = value;
+            const labelEl = document.getElementById('order-filter-label');
+            if (labelEl) labelEl.textContent = label;
+
+            // Update active state
+            document.querySelectorAll('#order-filter-popup .filter-option').forEach(opt => {
+                opt.classList.toggle('active', opt.dataset.value === value);
+            });
+
+            // Close popup
+            const popup = document.getElementById('order-filter-popup');
+            if (popup) popup.classList.remove('open');
+
+            // Apply filter
+            this.applyOrderFilter();
+        },
+
+        // Order time filter state
+        orderTimeFilter: 'all',
+
+        /**
+         * Toggle order time filter menu
+         */
+        toggleOrderTimeFilterMenu(event) {
+            event.stopPropagation();
+            const popup = document.getElementById('order-time-filter-popup');
+            if (popup) {
+                popup.classList.toggle('open');
+                // Close when clicking outside
+                const closeHandler = (e) => {
+                    if (!popup.contains(e.target) && !e.target.closest('.filter-chip')) {
+                        popup.classList.remove('open');
+                        document.removeEventListener('click', closeHandler);
+                    }
+                };
+                setTimeout(() => document.addEventListener('click', closeHandler), 10);
+            }
+        },
+
+        /**
+         * Select order time filter
+         */
+        selectOrderTimeFilter(value, label) {
+            this.orderTimeFilter = value;
+            const labelEl = document.getElementById('order-time-filter-label');
+            if (labelEl) labelEl.textContent = label;
+
+            // Update active state
+            document.querySelectorAll('#order-time-filter-popup .filter-option').forEach(opt => {
+                opt.classList.toggle('active', opt.dataset.value === value);
+            });
+
+            // Close popup
+            const popup = document.getElementById('order-time-filter-popup');
+            if (popup) popup.classList.remove('open');
+
+            // Apply filter
+            this.applyOrderFilter();
+        },
+
+        // Order custom date range state
+        orderCustomDateStart: null,
+        orderCustomDateEnd: null,
+
+        /**
+         * Show custom date picker for orders
+         */
+        showOrderCustomDate() {
+            // Close the popup first
+            const popup = document.getElementById('order-time-filter-popup');
+            if (popup) popup.classList.remove('open');
+
+            // Create date picker modal with premium glass style
+            const modal = document.createElement('div');
+            modal.className = 'wallet-order-modal-overlay';
+            modal.innerHTML = `
+                <div class="wallet-order-modal" style="max-width: 360px;">
+                    <div class="wallet-order-modal-header">
+                        <div class="wallet-order-modal-title">
+                            📅 选择日期范围
+                        </div>
+                        <button class="wallet-order-close-btn date-cancel-btn">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div class="wallet-order-modal-body">
+                        <div class="meta-section">
+                            <div class="detail-row" style="flex-direction: column; align-items: stretch; gap: 8px;">
+                                <span class="detail-label" style="margin-bottom: 4px;">开始日期</span>
+                                <input type="date" id="order-date-start" style="
+                                    width: 100%;
+                                    padding: 12px 14px;
+                                    background: rgba(0, 0, 0, 0.3);
+                                    border: 1px solid rgba(255, 255, 255, 0.15);
+                                    border-radius: 10px;
+                                    color: white;
+                                    font-size: 14px;
+                                    box-sizing: border-box;
+                                " value="${this.orderCustomDateStart ? this.orderCustomDateStart.toISOString().split('T')[0] : ''}">
+                            </div>
+                            <div class="detail-row" style="flex-direction: column; align-items: stretch; gap: 8px; margin-top: 16px;">
+                                <span class="detail-label" style="margin-bottom: 4px;">结束日期</span>
+                                <input type="date" id="order-date-end" style="
+                                    width: 100%;
+                                    padding: 12px 14px;
+                                    background: rgba(0, 0, 0, 0.3);
+                                    border: 1px solid rgba(255, 255, 255, 0.15);
+                                    border-radius: 10px;
+                                    color: white;
+                                    font-size: 14px;
+                                    box-sizing: border-box;
+                                " value="${this.orderCustomDateEnd ? this.orderCustomDateEnd.toISOString().split('T')[0] : new Date().toISOString().split('T')[0]}">
+                            </div>
+                        </div>
+                        <div class="modal-actions" style="margin-top: 20px;">
+                            <button class="action-btn secondary date-cancel-btn" style="flex: 1;">
+                                取消
+                            </button>
+                            <button class="action-btn primary date-confirm-btn" style="flex: 1;">
+                                <i class="fas fa-check"></i> 确定
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // Cancel buttons (close icon and cancel button)
+            modal.querySelectorAll('.date-cancel-btn').forEach(btn => {
+                btn.onclick = () => modal.remove();
+            });
+
+            // Confirm button
+            modal.querySelector('.date-confirm-btn').onclick = () => {
+                const startInput = document.getElementById('order-date-start').value;
+                const endInput = document.getElementById('order-date-end').value;
+
+                if (!startInput || !endInput) {
+                    this.showToast('请选择完整的日期范围', 'error');
+                    return;
+                }
+
+                this.orderCustomDateStart = new Date(startInput);
+                this.orderCustomDateEnd = new Date(endInput);
+                this.orderCustomDateEnd.setHours(23, 59, 59, 999); // Include the entire end day
+
+                // Update label
+                const startStr = `${this.orderCustomDateStart.getMonth() + 1}/${this.orderCustomDateStart.getDate()}`;
+                const endStr = `${this.orderCustomDateEnd.getMonth() + 1}/${this.orderCustomDateEnd.getDate()}`;
+                const labelEl = document.getElementById('order-time-filter-label');
+                if (labelEl) labelEl.textContent = `${startStr}-${endStr}`;
+
+                // Update active state
+                document.querySelectorAll('#order-time-filter-popup .filter-option').forEach(opt => {
+                    opt.classList.toggle('active', opt.dataset.value === 'custom');
+                });
+
+                this.orderTimeFilter = 'custom';
+                this.applyOrderFilter();
+                modal.remove();
+            };
+
+            // Close on overlay click
+            modal.onclick = (e) => {
+                if (e.target === modal) modal.remove();
+            };
+
+            document.body.appendChild(modal);
+        },
+
+        /**
+         * Apply order filter (both type and time)
+         */
+        applyOrderFilter() {
+            const typeFilter = this.orderFilter;
+            const timeFilter = this.orderTimeFilter;
+            let filtered = [...(this.ordersData || [])];
+
+            // Apply type filter using transactionType
+            if (typeFilter === 'shop') {
+                filtered = filtered.filter(order => order.transactionType === 'shop');
+            } else if (typeFilter === 'prompt') {
+                filtered = filtered.filter(order => order.transactionType === 'prompt');
+            } else if (typeFilter === 'recharge') {
+                filtered = filtered.filter(order => order.transactionType === 'recharge');
+            } else if (typeFilter === 'redeem') {
+                filtered = filtered.filter(order => order.transactionType === 'redeem');
+            }
+
+            // Apply time filter
+            const now = new Date();
+            if (timeFilter === 'today') {
+                const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                filtered = filtered.filter(order => new Date(order.created_at) >= todayStart);
+            } else if (timeFilter === 'week') {
+                const weekAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
+                filtered = filtered.filter(order => new Date(order.created_at) >= weekAgo);
+            } else if (timeFilter === 'month') {
+                const monthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+                filtered = filtered.filter(order => new Date(order.created_at) >= monthAgo);
+            } else if (timeFilter === 'custom' && this.orderCustomDateStart && this.orderCustomDateEnd) {
+                filtered = filtered.filter(order => {
+                    const date = new Date(order.created_at);
+                    return date >= this.orderCustomDateStart && date <= this.orderCustomDateEnd;
+                });
+            }
+
+            this.renderOrders(filtered);
+        },
+
+        /**
+         * Clear all orders (delete from database)
+         */
+        async clearOrders() {
+            const currentCount = (this.ordersData || []).length;
+            if (currentCount === 0) {
+                this.showToast('暂无订单可清除', 'info');
+                return;
+            }
+
+            if (!confirm(`确定要清除 ${currentCount} 条订单记录吗？\n\n此操作不可恢复！`)) {
+                return;
+            }
+
+            try {
+                const session = await supabase.auth.getSession();
+                if (!session?.data?.session?.user?.id) {
+                    this.showToast('请先登录', 'error');
+                    return;
+                }
+                const userId = session.data.session.user.id;
+
+                // Delete shop orders
+                const { error: shopError } = await supabase
+                    .from('shop_orders')
+                    .delete()
+                    .eq('user_id', userId);
+
+                if (shopError) console.warn('Clear shop orders failed:', shopError);
+
+                // Clear ordersData and re-render
+                this.ordersData = [];
+                this.renderOrders([]);
+                this.showToast(`已清除 ${currentCount} 条订单`, 'success');
+            } catch (err) {
+                console.error('[WalletModal] Clear orders failed:', err);
+                alert('清除失败: ' + (err.message || '未知错误'));
+            }
+        },
+
         /**
          * Expand item to show details
          */
@@ -933,11 +1226,11 @@
         },
 
         /**
-         * Load shop orders
+         * Load all transactions: shop orders, prompt unlocks, recharges, redemptions
          */
         async loadOrders() {
             try {
-                console.log('[WalletModal] 🔄 Loading orders...');
+                console.log('[WalletModal] 🔄 Loading all transactions...');
                 const container = document.getElementById('wallet-orders');
                 if (!container) return;
 
@@ -947,32 +1240,131 @@
                     return;
                 }
 
-                // Fetch orders from shop_orders table joined with items
-                const { data: orders, error } = await supabase
-                    .from('shop_orders')
-                    .select(`
-                        id, 
-                        total_price, 
-                        item_count, 
-                        status, 
-                        created_at, 
-                        snapshot_product_name,
-                        shop_order_items (
-                            id,
-                            snapshot_product_name
-                        )
-                    `)
-                    .eq('user_id', session.user.id)
-                    .order('created_at', { ascending: false })
-                    .limit(50);
+                // Fetch shop orders AND all ledger entries in parallel
+                const [shopOrdersResult, ledgerResult] = await Promise.all([
+                    // Shop orders
+                    supabase
+                        .from('shop_orders')
+                        .select(`
+                            id, 
+                            total_price, 
+                            item_count, 
+                            status, 
+                            created_at, 
+                            snapshot_product_name,
+                            shop_order_items (
+                                id,
+                                snapshot_product_name
+                            )
+                        `)
+                        .eq('user_id', session.user.id)
+                        .order('created_at', { ascending: false })
+                        .limit(100),
 
-                if (error) throw error;
+                    // All points ledger entries (prompts, recharges, redemptions)
+                    supabase
+                        .from('points_ledger')
+                        .select('id, amount, reason, reference_id, created_at')
+                        .eq('user_id', session.user.id)
+                        .order('created_at', { ascending: false })
+                        .limit(100)
+                ]);
+
+                if (shopOrdersResult.error) throw shopOrdersResult.error;
+
+                const shopOrders = shopOrdersResult.data || [];
+                const ledgerEntries = ledgerResult.data || [];
+
+                // Fetch prompt titles for unlock entries
+                const promptIds = ledgerEntries
+                    .filter(e => e.reason === 'unlock_prompt' && e.reference_id)
+                    .map(e => e.reference_id);
+
+                let promptTitles = {};
+                if (promptIds.length > 0) {
+                    const { data: prompts } = await supabase
+                        .from('prompts')
+                        .select('id, title')
+                        .in('id', promptIds);
+
+                    if (prompts) {
+                        prompts.forEach(p => {
+                            promptTitles[p.id] = p.title;
+                        });
+                    }
+                }
+
+                // Convert ledger entries to order-like format
+                const ledgerOrders = ledgerEntries.map(entry => {
+                    let transactionType = 'other';
+                    let displayName = entry.reason || '交易';
+                    let icon = '💳';
+
+                    // Categorize by reason
+                    if (entry.reason === 'unlock_prompt') {
+                        transactionType = 'prompt';
+                        displayName = promptTitles[entry.reference_id] || `提示词 #${entry.reference_id}`;
+                        icon = '💡';
+                    } else if (entry.reason && (entry.reason.startsWith('模拟充值') || entry.reason === 'package_purchase' || entry.reason === 'afdian_recharge')) {
+                        // Package recharges (mock or real)
+                        transactionType = 'recharge';
+                        displayName = entry.reason.replace('模拟充值:', '').replace('模拟充值：', '').trim() || '积分充值';
+                        icon = '⚡';
+                    } else if (entry.reason === 'redeem_code' || (entry.reason && entry.reason.includes('兑换码'))) {
+                        transactionType = 'redeem';
+                        displayName = '兑换码兑换';
+                        icon = '🎟️';
+                    } else if (entry.reason && entry.reason.startsWith('admin_manual')) {
+                        transactionType = 'recharge'; // Treat admin adjustments as recharge type
+                        displayName = entry.reason.replace(/admin_manual:\s*\[.*?\]\s*/, '管理员调整: ');
+                        if (displayName.startsWith('admin_manual:')) {
+                            displayName = displayName.replace('admin_manual:', '管理员调整');
+                        }
+                        icon = '👤';
+                    } else if (entry.amount > 0) {
+                        // Positive amounts that don't match other patterns - likely recharges
+                        transactionType = 'recharge';
+                        displayName = entry.reason || '积分充值';
+                        icon = '⚡';
+                    }
+
+                    return {
+                        id: entry.id,
+                        created_at: entry.created_at,
+                        total_price: Math.abs(entry.amount),
+                        amount: entry.amount, // Keep original for display
+                        status: 'completed',
+                        snapshot_product_name: displayName,
+                        item_count: 1,
+                        transactionType: transactionType,
+                        isPromptUnlock: transactionType === 'prompt',
+                        isRecharge: transactionType === 'recharge',
+                        isRedeem: transactionType === 'redeem',
+                        promptId: entry.reason === 'unlock_prompt' ? entry.reference_id : null,
+                        redeemCode: transactionType === 'redeem' ? entry.reference_id : null,
+                        icon: icon
+                    };
+                });
+
+                // Add shop orders with their type
+                const shopOrdersList = shopOrders.map(order => ({
+                    ...order,
+                    transactionType: 'shop',
+                    isShopOrder: true,
+                    icon: '🛒'
+                }));
+
+                // Merge and sort by date
+                const allOrders = [...shopOrdersList, ...ledgerOrders].sort((a, b) =>
+                    new Date(b.created_at) - new Date(a.created_at)
+                );
 
                 this.ordersLoaded = true;
-                this.renderOrders(orders || []);
+                this.ordersData = allOrders; // Save for filtering
+                this.applyOrderFilter();
 
             } catch (err) {
-                console.error('[WalletModal] ❌ Load orders failed:', err);
+                console.error('[WalletModal] ❌ Load transactions failed:', err);
                 const container = document.getElementById('wallet-orders');
                 if (container) {
                     container.innerHTML = '<div class="empty-text">加载失败</div>';
@@ -981,12 +1373,12 @@
         },
 
         /**
-         * Render shop orders
+         * Render all transactions (shop orders, prompts, recharges, redemptions)
          */
         renderOrders(orders) {
             const container = document.getElementById('wallet-orders');
             if (!orders || orders.length === 0) {
-                container.innerHTML = '<div class="empty-text">暂无订单记录</div>';
+                container.innerHTML = '<div class="empty-text">暂无记录</div>';
                 return;
             }
 
@@ -994,43 +1386,75 @@
                 const date = new Date(order.created_at);
                 const dateStr = `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
 
-                // Map status to display status
-                const statusMap = {
-                    'completed': { text: '已完成', class: 'status-completed' },
-                    'full_refund': { text: '已退款', class: 'status-refunded' },
-                    'partial_refund': { text: '部分退款', class: 'status-refunded' }
-                };
+                // Handle display based on transaction type
+                let displayName;
+                let clickHandler = '';
+                let amountDisplay;
+                let amountClass;
+                let statusText = '已完成';
+                let statusClass = 'status-completed';
 
-                // Fallback for old data compatibility
-                let statusInfo = statusMap[order.status];
-                if (!statusInfo) {
-                    // Check refund_status for old orders if status is missing
-                    if (order.refund_status === 'refunded') statusInfo = { text: '已退款', class: 'status-refunded' };
-                    else statusInfo = { text: '已完成', class: 'status-completed' };
+                // Determine amount display and color
+                if (order.transactionType === 'recharge' || order.transactionType === 'redeem') {
+                    // Positive: recharge and redemption
+                    const amount = order.amount || order.total_price;
+                    amountDisplay = `+${Math.abs(amount)} 积分`;
+                    amountClass = 'positive';
+                } else {
+                    // Negative: purchases (shop, prompt)
+                    const amount = order.total_price || order.amount;
+                    amountDisplay = `-${Math.abs(amount)} 积分`;
+                    amountClass = 'negative';
                 }
 
-                // Display name: "Product Name" or "Product Name 等 X 件"
-                let displayName = order.snapshot_product_name || '未知商品';
-                const count = order.item_count || (order.shop_order_items ? order.shop_order_items.length : 1);
+                // Handle display name and click based on type
+                if (order.transactionType === 'prompt') {
+                    displayName = `<i class="fas fa-lightbulb" style="color: #fde68a;"></i> ${this.escapeHtml(order.snapshot_product_name)}`;
+                    clickHandler = `WalletModal.showPromptOrderDetail('${order.id}', '${this.escapeHtml(order.snapshot_product_name).replace(/'/g, "\\'")}', ${order.total_price}, '${order.created_at}', '${order.promptId || ''}')`;
+                } else if (order.transactionType === 'shop') {
+                    displayName = order.snapshot_product_name || '未知商品';
+                    const count = order.item_count || (order.shop_order_items ? order.shop_order_items.length : 1);
+                    if (count > 1) {
+                        displayName = `${displayName} 等 ${count} 件`;
+                    }
+                    displayName = `<i class="fas fa-shopping-bag" style="color: #22c55e;"></i> ${this.escapeHtml(displayName)}`;
+                    clickHandler = `WalletModal.showOrderDetail('${order.id}')`;
 
-                if (count > 1) {
-                    displayName = `${displayName} 等 ${count} 件`;
+                    // Map status for shop orders
+                    const statusMap = {
+                        'completed': { text: '已完成', class: 'status-completed' },
+                        'full_refund': { text: '已退款', class: 'status-refunded' },
+                        'partial_refund': { text: '部分退款', class: 'status-refunded' }
+                    };
+                    const statusInfo = statusMap[order.status] || { text: '已完成', class: 'status-completed' };
+                    statusText = statusInfo.text;
+                    statusClass = statusInfo.class;
+                } else if (order.transactionType === 'recharge') {
+                    displayName = `<i class="fas fa-bolt" style="color: #fbbf24;"></i> ${this.escapeHtml(order.snapshot_product_name)}`;
+                    clickHandler = ''; // No detail view for recharge
+                } else if (order.transactionType === 'redeem') {
+                    displayName = `<i class="fas fa-ticket-alt" style="color: #f472b6;"></i> ${this.escapeHtml(order.snapshot_product_name)}`;
+                    clickHandler = `WalletModal.showRedeemOrderDetail('${order.id}', ${order.amount}, '${order.created_at}', '${order.redeemCode || ''}')`;
+                } else {
+                    // Fallback for other types
+                    displayName = `${order.icon || '💳'} ${order.snapshot_product_name || '交易'}`;
+                    clickHandler = '';
                 }
 
-                // Price display: order.total_price (new) or order.price_paid (old)
-                const price = order.total_price != null ? order.total_price : order.price_paid;
+                const clickAttr = clickHandler ? `onclick="event.stopPropagation(); ${clickHandler}"` : '';
+                const cursorStyle = clickHandler ? 'cursor: pointer;' : '';
 
                 return `
-                    <div class="order-item" onclick="event.stopPropagation(); WalletModal.showOrderDetail('${order.id}')">
+                    <div class="order-item" ${clickAttr} style="${cursorStyle}">
                         <div class="order-main">
-                            <div class="order-product">${this.escapeHtml(displayName)}</div>
+                            <div class="order-product">${displayName}</div>
                             <div class="order-meta">
                                 <span class="order-date">${dateStr}</span>
                             </div>
                         </div>
                         <div class="order-right">
-                            <div class="order-cost">-${price} 积分</div>
-                            <div class="order-status ${statusInfo.class}">${statusInfo.text}</div>
+                            <div class="order-cost ${amountClass}">${amountDisplay}</div>
+                            <div class="order-status ${statusClass}">${statusText}</div>
                         </div>
                     </div>
                 `;
@@ -1038,41 +1462,222 @@
         },
 
         /**
+         * Show prompt unlock order detail modal (Same style as shop order detail)
+         */
+        showPromptOrderDetail(orderId, promptName, price, createdAt, promptId) {
+            const date = new Date(createdAt);
+            const dateStr = `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
+
+            // Create modal overlay using same classes as shop order detail
+            const detailOverlay = document.createElement('div');
+            detailOverlay.className = 'wallet-order-modal-overlay';
+            detailOverlay.onclick = (e) => {
+                if (e.target === detailOverlay) detailOverlay.remove();
+            };
+
+            detailOverlay.innerHTML = `
+                <div class="wallet-order-modal">
+                    <div class="wallet-order-modal-header">
+                        <div class="wallet-order-modal-title">
+                            💡 订单详情
+                        </div>
+                        <button class="wallet-order-close-btn" onclick="this.closest('.wallet-order-modal-overlay').remove()">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div class="wallet-order-modal-body">
+                        <div class="meta-section">
+                            <div class="detail-row">
+                                <span class="detail-label">订单编号</span>
+                                <span class="detail-val mono" onclick="WalletModal.copyToClipboard('${orderId}', event)" style="cursor:pointer;" title="点击复制完整订单号">${orderId.substring(0, 8)}...${orderId.slice(-4)}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">商品类型</span>
+                                <span class="detail-val" style="color: #fbbf24;">提示词</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">商品名称</span>
+                                <span class="detail-val">${promptName}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">下单时间</span>
+                                <span class="detail-val">${dateStr}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">支付积分</span>
+                                <span class="detail-val highlight">-${price} 积分</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">状态</span>
+                                <span class="detail-val" style="color: #10b981;">✓ 已完成</span>
+                            </div>
+                        </div>
+                        ${promptId ? `
+                        <div class="modal-actions">
+                            <button class="action-btn primary" onclick="window.location.href='prompts.html?id=${promptId}'">
+                                <i class="fas fa-eye"></i> 查看提示词
+                            </button>
+                        </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(detailOverlay);
+        },
+
+        /**
+         * Show redeem code order detail modal
+         */
+        showRedeemOrderDetail(orderId, amount, createdAt, redeemCode) {
+            const date = new Date(createdAt);
+            const dateStr = `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
+
+            // Create modal overlay
+            const detailOverlay = document.createElement('div');
+            detailOverlay.className = 'wallet-order-modal-overlay';
+            detailOverlay.onclick = (e) => {
+                if (e.target === detailOverlay) detailOverlay.remove();
+            };
+
+            detailOverlay.innerHTML = `
+                <div class="wallet-order-modal">
+                    <div class="wallet-order-modal-header">
+                        <div class="wallet-order-modal-title">
+                            🎫 兑换详情
+                        </div>
+                        <button class="wallet-order-close-btn" onclick="this.closest('.wallet-order-modal-overlay').remove()">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div class="wallet-order-modal-body">
+                        <div class="meta-section">
+                            <div class="detail-row">
+                                <span class="detail-label">订单编号</span>
+                                <span class="detail-val mono" onclick="WalletModal.copyToClipboard('${orderId}', event)" style="cursor:pointer;" title="点击复制完整订单号">${orderId.substring(0, 8)}...${orderId.slice(-4)}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">交易类型</span>
+                                <span class="detail-val" style="color: #f472b6;">兑换码兑换</span>
+                            </div>
+                            ${redeemCode ? `
+                            <div class="detail-row">
+                                <span class="detail-label">兑换码</span>
+                                <span class="detail-val mono" onclick="WalletModal.copyToClipboard('${redeemCode}', event)" style="cursor:pointer; color: #22c55e; font-weight: 600;" title="点击复制兑换码">${redeemCode}</span>
+                            </div>
+                            ` : ''}
+                            <div class="detail-row">
+                                <span class="detail-label">兑换时间</span>
+                                <span class="detail-val">${dateStr}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">获得积分</span>
+                                <span class="detail-val" style="color: #10b981; font-weight: 600;">+${amount} 积分</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">状态</span>
+                                <span class="detail-val" style="color: #10b981;">✓ 已完成</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(detailOverlay);
+        },
+
+        /**
          * Show order detail with purchased content
          */
         /**
          * Show order detail with purchased content (Premium Dark Glass UI)
+         * 🚀 OPTIMIZED: Skeleton screen shows instantly, data loads in background
          */
         async showOrderDetail(orderId) {
+            // 🚀 STEP 1: Inject styles immediately (only once)
+            this._ensureOrderDetailStyles();
+
+            // 🚀 STEP 2: Show skeleton modal INSTANTLY (no await)
+            const detailOverlay = document.createElement('div');
+            detailOverlay.className = 'wallet-order-modal-overlay';
+            detailOverlay.id = `order-detail-${orderId}`;
+            detailOverlay.onclick = (e) => {
+                if (e.target === detailOverlay) detailOverlay.remove();
+            };
+
+            // Skeleton HTML - shows immediately with loading animation
+            detailOverlay.innerHTML = `
+                <div class="wallet-order-modal">
+                    <div class="wallet-order-modal-header">
+                        <div class="wallet-order-modal-title">
+                            <i class="fas fa-box-open" style="color: #6b9ece;"></i> 订单详情
+                        </div>
+                        <button class="wallet-order-close-btn" onclick="this.closest('.wallet-order-modal-overlay').remove()">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div class="wallet-order-modal-body">
+                        <div class="meta-section">
+                            <div class="detail-row">
+                                <span class="detail-label">订单编号</span>
+                                <span class="skeleton-text" style="width: 120px;"></span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">下单时间</span>
+                                <span class="skeleton-text" style="width: 140px;"></span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">支付积分</span>
+                                <span class="skeleton-text" style="width: 80px;"></span>
+                            </div>
+                        </div>
+                        <div class="modal-actions">
+                            <button class="action-btn primary skeleton-btn" disabled>
+                                <i class="fas fa-copy"></i> 加载中...
+                            </button>
+                            <button class="action-btn secondary skeleton-btn" disabled>
+                                <i class="fas fa-download"></i> 加载中...
+                            </button>
+                        </div>
+                        <div class="content-section">
+                            <div class="content-section-title">购买内容 <span class="skeleton-text" style="width: 30px; display: inline-block;"></span></div>
+                            <div class="content-card skeleton-card">
+                                <div class="skeleton-text" style="width: 60%; height: 16px; margin-bottom: 12px;"></div>
+                                <div class="skeleton-text" style="width: 100%; height: 40px;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // 🚀 Append skeleton immediately - user sees modal in ~0ms
+            document.body.appendChild(detailOverlay);
+
+            // 🚀 STEP 3: Load data in background
             try {
-                // Fetch order basic info
-                const { data: order, error } = await supabase
-                    .from('shop_orders')
-                    .select('*')
-                    .eq('id', orderId)
-                    .single();
+                const [orderResult, orderItemsResult] = await Promise.all([
+                    supabase.from('shop_orders').select('*').eq('id', orderId).single(),
+                    supabase.from('shop_order_items').select(`
+                        id, snapshot_product_name, price_paid,
+                        shop_inventory ( content )
+                    `).eq('order_id', orderId)
+                ]);
+
+                const { data: order, error } = orderResult;
+                const { data: orderItems, error: itemsError } = orderItemsResult;
+
+                // Check if modal was closed while loading
+                if (!document.getElementById(`order-detail-${orderId}`)) return;
 
                 if (error) throw error;
                 if (!order) {
+                    detailOverlay.remove();
                     this.showToast('订单不存在', 'error');
                     return;
                 }
 
-                // Fetch items with inventory content
+                // Process items
                 let items = [];
-                let contentHtml = '';
-
-                // Try to fetch from order_items first
-                const { data: orderItems, error: itemsError } = await supabase
-                    .from('shop_order_items')
-                    .select(`
-                        id,
-                        snapshot_product_name,
-                        price_paid,
-                        shop_inventory ( content )
-                    `)
-                    .eq('order_id', orderId);
-
                 if (orderItems && orderItems.length > 0) {
                     items = orderItems.map(item => ({
                         name: item.snapshot_product_name,
@@ -1080,13 +1685,8 @@
                         price: item.price_paid
                     }));
                 } else if (order.inventory_id) {
-                    // Legacy fallback: single item in order table
                     const { data: inventory } = await supabase
-                        .from('shop_inventory')
-                        .select('content')
-                        .eq('id', order.inventory_id)
-                        .single();
-
+                        .from('shop_inventory').select('content').eq('id', order.inventory_id).single();
                     items.push({
                         name: order.snapshot_product_name,
                         content: inventory?.content || '内容加载失败',
@@ -1096,12 +1696,9 @@
 
                 const date = new Date(order.created_at);
                 const dateStr = `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
+                const totalPrice = order.total_price != null ? order.total_price : order.price_paid;
 
-                // Helper to escape content for attribute
-                const escapeAttr = (str) => (str || '').replace(/"/g, '&quot;');
-
-                // Build content HTML using new premium structure
-                contentHtml = items.map((item) => `
+                const contentHtml = items.map((item) => `
                     <div class="content-card">
                         <div class="item-name">
                              <span style="width:6px;height:6px;background:#6b9ece;border-radius:50%;display:inline-block;"></span>
@@ -1113,185 +1710,7 @@
                     </div>
                 `).join('');
 
-                const totalPrice = order.total_price != null ? order.total_price : order.price_paid;
-
-                // Create detail modal overlay with Premium UI
-                const detailOverlay = document.createElement('div');
-                detailOverlay.className = 'order-detail-overlay';
-
-                // Embedded Premium Styles
-                const styleId = 'order-detail-premium-style';
-                if (!document.getElementById(styleId)) {
-                    const style = document.createElement('style');
-                    style.id = styleId;
-                    style.innerHTML = `
-                        .wallet-order-modal-overlay {
-                            position: fixed !important; top: 0 !important; left: 0 !important; width: 100% !important; height: 100% !important;
-                            background: rgba(0, 0, 0, 0.7) !important;
-                            backdrop-filter: blur(4px) !important; -webkit-backdrop-filter: blur(4px) !important;
-                            z-index: 200000 !important;
-                            display: flex !important; justify-content: center !important; align-items: center !important;
-                            animation: fadeIn 0.3s ease-out;
-                        }
-                        /* Wallet Order Modal - Unique class to avoid conflicts with global .premium-modal */
-                        .wallet-order-modal {
-                            width: 90% !important; max-width: 380px !important;
-                            /* Premium Glass - Neutral Dark (Matches Wallet Modal) */
-                            background: rgba(20, 20, 22, 0.75) !important;
-                            backdrop-filter: blur(40px) !important; -webkit-backdrop-filter: blur(40px) !important;
-                            border: 1px solid rgba(255, 255, 255, 0.12) !important;
-                            border-top: 1px solid rgba(255, 255, 255, 0.25) !important; /* Premium Top Highlight */
-                            border-radius: 24px !important;
-                            box-shadow: 0 40px 80px -20px rgba(0, 0, 0, 0.7) !important;
-                            overflow: hidden !important;
-                            display: flex !important; flex-direction: column !important;
-                            max-height: 85vh !important;
-                            color: #fff !important;
-                            animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-                            opacity: 1;
-                        }
-                        .wallet-order-modal-header {
-                            padding: 24px 24px 16px;
-                            border-bottom: 1px solid rgba(255, 255, 255, 0.08); /* Subtle separator */
-                            display: flex; justify-content: space-between; align-items: center;
-                        }
-                        .wallet-order-modal-title {
-                            font-size: 18px; font-weight: 700; color: #fff;
-                            display: flex; align-items: center; gap: 8px;
-                            letter-spacing: -0.5px;
-                        }
-                        .wallet-order-close-btn {
-                            width: 30px; height: 30px;
-                            border-radius: 50%;
-                            border: none;
-                            background: rgba(255, 255, 255, 0.05);
-                            color: rgba(255, 255, 255, 0.6);
-                            cursor: pointer;
-                            display: flex; align-items: center; justify-content: center;
-                            transition: all 0.2s;
-                        }
-                        .wallet-order-close-btn:hover {
-                            background: rgba(255, 255, 255, 0.15);
-                            color: #fff;
-                        }
-                        .wallet-order-modal-body {
-                            padding: 0 24px 24px;
-                            overflow-y: auto;
-                        }
-                        
-                        /* Metadata Section */
-                        .meta-section {
-                            margin-bottom: 20px;
-                            padding-top: 10px;
-                        }
-                        .detail-row {
-                            display: flex; justify-content: space-between; align-items: center;
-                            margin-bottom: 10px;
-                            font-size: 13px;
-                        }
-                        .detail-label { color: rgba(255, 255, 255, 0.4); }
-                        .detail-val { color: rgba(255, 255, 255, 0.9); font-weight: 500; font-family: 'Outfit', sans-serif;}
-                        .detail-val.mono { font-family: monospace; letter-spacing: 0.5px; opacity: 0.8; }
-                        .detail-val.highlight { color: #f87171; font-weight: 700; }
-                        
-                        /* Action Buttons */
-                        .modal-actions {
-                            display: flex; gap: 10px; margin-bottom: 20px;
-                        }
-                        .action-btn.primary {
-                            flex: 1;
-                            background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
-                            color: #052e16;
-                            border: none;
-                            padding: 10px;
-                            border-radius: 50px;
-                            font-weight: 600;
-                            font-size: 13px;
-                            cursor: pointer;
-                            display: flex; align-items: center; justify-content: center; gap: 6px;
-                            box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3);
-                            transition: all 0.2s;
-                        }
-                        .action-btn.primary:hover {
-                            transform: translateY(-1px);
-                            box-shadow: 0 6px 16px rgba(34, 197, 94, 0.4);
-                            filter: brightness(1.05);
-                        }
-                         .action-btn.secondary {
-                            flex: 1;
-                            background: rgba(255, 255, 255, 0.05);
-                            color: rgba(255, 255, 255, 0.8);
-                            border: 1px solid rgba(255, 255, 255, 0.1);
-                            padding: 10px;
-                            border-radius: 50px;
-                            font-weight: 500;
-                            font-size: 13px;
-                            cursor: pointer;
-                            display: flex; align-items: center; justify-content: center; gap: 6px;
-                            transition: all 0.2s;
-                        }
-                        .action-btn.secondary:hover {
-                            background: rgba(255, 255, 255, 0.1);
-                            color: #fff;
-                        }
-                        
-                        /* Content Box */
-                        .content-section { margin-top: 0; }
-                        .content-section-title {
-                            font-size: 12px; font-weight: 600; color: rgba(255, 255, 255, 0.3);
-                            margin-bottom: 10px; text-align: center;
-                        }
-                        
-                        .content-card {
-                            background: rgba(255, 255, 255, 0.05) !important;
-                            backdrop-filter: blur(12px) !important;
-                            -webkit-backdrop-filter: blur(12px) !important;
-                            border-radius: 16px !important;
-                            padding: 16px !important;
-                            margin-bottom: 12px !important;
-                            border: 1px solid rgba(255, 255, 255, 0.1) !important;
-                            border-width: 1px !important;
-                            border-style: solid !important;
-                            box-sizing: border-box !important;
-                            outline: none !important;
-                            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2) !important;
-                        }
-                        
-                        .item-name {
-                            font-size: 13px; font-weight: 600; color: #e2e8f0;
-                            margin-bottom: 8px;
-                            display: flex; align-items: center; gap: 6px;
-                        }
-                        .item-content-box {
-                            background: transparent;
-                            border-radius: 0;
-                            padding: 0;
-                        }
-                        .item-text {
-                            font-family: 'Monaco', monospace;
-                            font-size: 12px; color: #10b981;
-                            word-break: break-all;
-                            line-height: 1.5;
-                            opacity: 0.9;
-                        }
-
-                        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-                        @keyframes slideUp { from { opacity: 0; transform: translateY(20px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
-                    `;
-                    document.head.appendChild(style);
-                }
-
-                detailOverlay.className = 'wallet-order-modal-overlay';
-                detailOverlay.onclick = (e) => {
-                    if (e.target === detailOverlay) detailOverlay.remove();
-                };
-
-
-                // Prepare content for export/copy
-                // Use clean single newline join, removing visual separators for copy
                 const allContent = items.map(i => `${i.name}:\n${i.content}`).join('\n');
-
-                // Attach button handlers
                 window.WalletModal_export = () => {
                     const blob = new Blob([`订单编号: ${order.id}\n下单时间: ${dateStr}\n\n${allContent}`], { type: 'text/plain' });
                     const url = URL.createObjectURL(blob);
@@ -1301,15 +1720,16 @@
                     a.click();
                     URL.revokeObjectURL(url);
                 };
-
                 window.WalletModal_copyAll = () => {
                     navigator.clipboard.writeText(allContent).then(() => {
                         this.showToast('✅ 已复制全部内容', 'success');
                     }).catch(() => this.showToast('复制失败', 'error'));
                 };
 
-                detailOverlay.innerHTML = `
-                    <div class="wallet-order-modal">
+                // 🚀 STEP 4: Replace skeleton with real content (smooth transition)
+                const modal = detailOverlay.querySelector('.wallet-order-modal');
+                if (modal) {
+                    modal.innerHTML = `
                         <div class="wallet-order-modal-header">
                             <div class="wallet-order-modal-title">
                                 <i class="fas fa-box-open" style="color: #6b9ece;"></i> 订单详情
@@ -1318,11 +1738,11 @@
                                 <i class="fas fa-times"></i>
                             </button>
                         </div>
-                        <div class="wallet-order-modal-body">
+                        <div class="wallet-order-modal-body" style="animation: fadeIn 0.2s ease-out;">
                             <div class="meta-section">
                                 <div class="detail-row">
                                     <span class="detail-label">订单编号</span>
-                                    <span class="detail-val mono" title="${order.id}">${order.id.split('-')[0]}...${order.id.slice(-4)}</span>
+                                    <span class="detail-val mono" onclick="WalletModal.copyToClipboard('${order.id}', event)" style="cursor:pointer;" title="点击复制完整订单号">${order.id.split('-')[0]}...${order.id.slice(-4)}</span>
                                 </div>
                                 <div class="detail-row">
                                     <span class="detail-label">下单时间</span>
@@ -1333,7 +1753,6 @@
                                     <span class="detail-val highlight">-${totalPrice} 积分</span>
                                 </div>
                             </div>
-
                             <div class="modal-actions">
                                 <button class="action-btn primary" onclick="WalletModal_copyAll()">
                                     <i class="fas fa-copy"></i> 全部复制
@@ -1342,21 +1761,173 @@
                                     <i class="fas fa-download"></i> 导出
                                 </button>
                             </div>
-                            
                             <div class="content-section">
                                 <div class="content-section-title">购买内容 (${items.length})</div>
                                 ${contentHtml}
                             </div>
                         </div>
-                    </div>
-                `;
-
-                document.body.appendChild(detailOverlay);
-
+                    `;
+                }
             } catch (err) {
                 console.error('[WalletModal] Show order detail failed:', err);
+                // Remove skeleton and show error
+                if (document.getElementById(`order-detail-${orderId}`)) {
+                    detailOverlay.remove();
+                }
                 this.showToast('加载订单详情失败', 'error');
             }
+        },
+
+        /**
+         * Ensure order detail styles are injected (skeleton + premium styles)
+         */
+        _ensureOrderDetailStyles() {
+            const styleId = 'order-detail-premium-style';
+            if (document.getElementById(styleId)) return;
+
+            const style = document.createElement('style');
+            style.id = styleId;
+            style.innerHTML = `
+                /* Skeleton Loading Animation */
+                @keyframes skeletonPulse {
+                    0%, 100% { opacity: 0.4; }
+                    50% { opacity: 0.7; }
+                }
+                .skeleton-text {
+                    display: inline-block;
+                    height: 14px;
+                    background: linear-gradient(90deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.2) 50%, rgba(255,255,255,0.1) 100%);
+                    background-size: 200% 100%;
+                    border-radius: 6px;
+                    animation: skeletonPulse 1.5s ease-in-out infinite;
+                }
+                .skeleton-card {
+                    animation: skeletonPulse 1.5s ease-in-out infinite;
+                }
+                .skeleton-btn {
+                    opacity: 0.5 !important;
+                    cursor: not-allowed !important;
+                }
+                
+                /* Modal Styles */
+                .wallet-order-modal-overlay {
+                    position: fixed !important; top: 0 !important; left: 0 !important; width: 100% !important; height: 100% !important;
+                    background: rgba(0, 0, 0, 0.7) !important;
+                    backdrop-filter: blur(4px) !important; -webkit-backdrop-filter: blur(4px) !important;
+                    z-index: 200000 !important;
+                    display: flex !important; justify-content: center !important; align-items: center !important;
+                    animation: fadeIn 0.3s ease-out;
+                }
+                .wallet-order-modal {
+                    width: 90% !important; max-width: 380px !important;
+                    background: rgba(20, 20, 22, 0.75) !important;
+                    backdrop-filter: blur(40px) !important; -webkit-backdrop-filter: blur(40px) !important;
+                    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+                    border-top: 1px solid rgba(255, 255, 255, 0.25) !important;
+                    border-radius: 24px !important;
+                    box-shadow: 0 40px 80px -20px rgba(0, 0, 0, 0.7) !important;
+                    overflow: hidden !important;
+                    display: flex !important; flex-direction: column !important;
+                    max-height: 85vh !important;
+                    color: #fff !important;
+                    animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+                    opacity: 1;
+                }
+                .wallet-order-modal-header {
+                    padding: 24px 24px 16px;
+                    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+                    display: flex; justify-content: space-between; align-items: center;
+                }
+                .wallet-order-modal-title {
+                    font-size: 18px; font-weight: 700; color: #fff;
+                    display: flex; align-items: center; gap: 8px;
+                    letter-spacing: -0.5px;
+                }
+                .wallet-order-close-btn {
+                    width: 30px; height: 30px;
+                    border-radius: 50%;
+                    border: none;
+                    background: rgba(255, 255, 255, 0.05);
+                    color: rgba(255, 255, 255, 0.6);
+                    cursor: pointer;
+                    display: flex; align-items: center; justify-content: center;
+                    transition: all 0.2s;
+                }
+                .wallet-order-close-btn:hover {
+                    background: rgba(255, 255, 255, 0.15);
+                    color: #fff;
+                }
+                .wallet-order-modal-body {
+                    padding: 0 24px 24px;
+                    overflow-y: auto;
+                }
+                .meta-section { margin-bottom: 20px; padding-top: 10px; }
+                .detail-row {
+                    display: flex; justify-content: space-between; align-items: center;
+                    margin-bottom: 10px; font-size: 13px;
+                }
+                .detail-label { color: rgba(255, 255, 255, 0.4); }
+                .detail-val { color: rgba(255, 255, 255, 0.9); font-weight: 500; font-family: 'Outfit', sans-serif;}
+                .detail-val.mono { font-family: monospace; letter-spacing: 0.5px; opacity: 0.8; }
+                .detail-val.highlight { color: #f87171; font-weight: 700; }
+                .modal-actions { display: flex; gap: 10px; margin-bottom: 20px; }
+                .action-btn.primary {
+                    flex: 1;
+                    background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
+                    color: #052e16;
+                    border: none; padding: 10px; border-radius: 50px;
+                    font-weight: 600; font-size: 13px; cursor: pointer;
+                    display: flex; align-items: center; justify-content: center; gap: 6px;
+                    box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3);
+                    transition: all 0.2s;
+                }
+                .action-btn.primary:hover {
+                    transform: translateY(-1px);
+                    box-shadow: 0 6px 16px rgba(34, 197, 94, 0.4);
+                    filter: brightness(1.05);
+                }
+                .action-btn.secondary {
+                    flex: 1;
+                    background: rgba(255, 255, 255, 0.05);
+                    color: rgba(255, 255, 255, 0.8);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    padding: 10px; border-radius: 50px;
+                    font-weight: 500; font-size: 13px; cursor: pointer;
+                    display: flex; align-items: center; justify-content: center; gap: 6px;
+                    transition: all 0.2s;
+                }
+                .action-btn.secondary:hover {
+                    background: rgba(255, 255, 255, 0.1);
+                    color: #fff;
+                }
+                .content-section { margin-top: 0; }
+                .content-section-title {
+                    font-size: 12px; font-weight: 600; color: rgba(255, 255, 255, 0.3);
+                    margin-bottom: 10px; text-align: center;
+                }
+                .content-card {
+                    background: rgba(255, 255, 255, 0.05) !important;
+                    backdrop-filter: blur(12px) !important;
+                    -webkit-backdrop-filter: blur(12px) !important;
+                    border-radius: 16px !important; padding: 16px !important;
+                    margin-bottom: 12px !important;
+                    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+                    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2) !important;
+                }
+                .item-name {
+                    font-size: 13px; font-weight: 600; color: #e2e8f0;
+                    margin-bottom: 8px; display: flex; align-items: center; gap: 6px;
+                }
+                .item-content-box { background: transparent; border-radius: 0; padding: 0; }
+                .item-text {
+                    font-family: 'Monaco', monospace;
+                    font-size: 12px; color: #10b981;
+                    word-break: break-all; line-height: 1.5; opacity: 0.9;
+                }
+                @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+                @keyframes slideUp { from { opacity: 0; transform: translateY(20px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
+            `;
+            document.head.appendChild(style);
         },
 
         /**
