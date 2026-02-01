@@ -9308,6 +9308,77 @@ input:checked+.toggle-slider:before {
         padding: 16px 12px;
     }
 
+    /* CRITICAL FIX: Allow toolbar to show filter dropdowns above overflow:auto container */
+    #points-view-batches .admin-toolbar.batch-toolbar-inside {
+        position: relative;
+        z-index: 100;
+        overflow: visible;
+    }
+
+    /* CRITICAL FIX: Filter dropdowns need to escape the overflow container */
+    #points-view-batches .filter-dropdown {
+        position: static;
+        /* Reset to allow fixed popup positioning */
+    }
+
+    #points-view-batches .filter-dropdown .filter-popup,
+    #points-view-batches .filter-dropdown .glass-popup,
+    #points-view-batches #batchExportPopup {
+        position: fixed;
+        left: -9999px;
+        right: auto;
+        top: -9999px;
+        bottom: auto;
+        width: auto;
+        min-width: 160px;
+        max-width: calc(100vw - 24px);
+        max-height: 60vh;
+        overflow-y: auto;
+        z-index: 9999;
+        transform: none !important;
+        margin-top: 0;
+        transition: none !important;
+        opacity: 1;
+        visibility: visible;
+    }
+
+    /* Position popup below the button using JS-set --popup-top and --popup-left */
+    #points-view-batches .filter-dropdown.open .filter-popup,
+    #points-view-batches .filter-dropdown.open .glass-popup,
+    #points-view-batches #batchExportPopup.show {
+        top: var(--popup-top, 200px);
+        left: var(--popup-left, 12px);
+        position: fixed !important;
+        transform: none !important;
+        margin-top: 0 !important;
+        right: auto !important;
+        transition: none !important;
+    }
+
+    /* Remove button highlight/focus effect on mobile */
+    #points-view-batches .filter-btn:focus,
+    #points-view-batches .filter-btn:active,
+    #points-view-batches .filter-dropdown.open .filter-btn {
+        outline: none;
+        box-shadow: none;
+        background-color: rgba(255, 255, 255, 0.05);
+        border-color: rgba(255, 255, 255, 0.15);
+    }
+
+    /* Also fix batch menu popup */
+    #points-view-batches .batch-menu-popup {
+        position: fixed;
+        left: 12px;
+        right: 12px;
+        top: auto;
+        bottom: auto;
+        z-index: 9999;
+    }
+
+    #points-view-batches .batch-menu-popup.show {
+        top: var(--popup-top, 200px);
+    }
+
     /* Toolbar: Stack vertically */
     #points-view-batches .admin-toolbar.batch-toolbar-inside {
         flex-direction: column;

@@ -545,9 +545,35 @@ let batchDateFilterValue = 'all';
 let batchCustomDateFrom = null;
 let batchCustomDateTo = null;
 
+// Helper: Position fixed popup for mobile
+function positionMobilePopup(filterElement) {
+    if (window.innerWidth > 768) return; // Desktop uses absolute positioning
+    const btn = filterElement.querySelector('.filter-btn');
+    // Also support glass-popup (used by export dropdown)
+    const popup = filterElement.querySelector('.filter-popup') || filterElement.querySelector('.glass-popup');
+    if (btn && popup) {
+        const rect = btn.getBoundingClientRect();
+        // Set vertical position - place popup directly below button with small gap
+        filterElement.style.setProperty('--popup-top', `${rect.bottom + 4}px`);
+        // Set horizontal position - align to button's right edge for better fit
+        const popupWidth = popup.offsetWidth || 180; // use actual width or estimate
+        let left = rect.right - popupWidth; // align right edge of popup with right edge of button
+        if (left < 12) left = 12;
+        if (left + popupWidth > window.innerWidth - 12) {
+            left = window.innerWidth - popupWidth - 12;
+        }
+        filterElement.style.setProperty('--popup-left', `${left}px`);
+    }
+}
+
 function toggleBatchDateFilter() {
     const filter = document.getElementById('batchDateFilter');
-    filter.classList.toggle('open');
+    const wasOpen = filter.classList.contains('open');
+    closeAllBatchDropdowns();
+    if (!wasOpen) {
+        filter.classList.add('open');
+        positionMobilePopup(filter);
+    }
 }
 
 function filterBatchByDate(value) {
@@ -733,6 +759,7 @@ function toggleBatchChannelFilter() {
     closeAllBatchDropdowns();
     if (!isOpen) {
         filter.classList.add('open');
+        positionMobilePopup(filter);
     }
 }
 
@@ -756,6 +783,7 @@ function toggleBatchPackageFilter() {
     closeAllBatchDropdowns();
     if (!isOpen) {
         filter.classList.add('open');
+        positionMobilePopup(filter);
     }
 }
 
@@ -1486,8 +1514,14 @@ function toggleBatchExportMenu() {
     closeAllBatchDropdowns();
 
     if (dropdown && popup) {
+        const wasOpen = dropdown.classList.contains('open');
         dropdown.classList.toggle('open');
         popup.classList.toggle('show');
+
+        // Position for mobile
+        if (!wasOpen) {
+            positionMobilePopup(dropdown);
+        }
     }
 
     // Show/hide "export selected" option based on selection
