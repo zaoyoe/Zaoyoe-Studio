@@ -2036,11 +2036,17 @@
         font-size: 0.8rem;
     }
 
-    /* Filter popup: Full width on mobile */
+    /* Filter popup: Left-aligned on mobile to prevent left-side clipping */
     .filter-popup.glass-popup {
         min-width: 180px;
-        right: 0;
+        left: 0;
+        right: auto;
+    }
+
+    /* Export dropdown: Right-aligned on mobile to prevent right-side clipping */
+    .filter-dropdown[data-filter="export"] .filter-popup.glass-popup {
         left: auto;
+        right: 0;
     }
 }
 
