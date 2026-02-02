@@ -9360,44 +9360,55 @@ input:checked+.toggle-slider:before {
         overflow: visible;
     }
 
-    /* CRITICAL FIX: Filter dropdowns need to escape the overflow container */
+    /* CRITICAL FIX: Filter dropdowns - use relative positioning for parent */
     #points-view-batches .filter-dropdown {
-        position: static;
-        /* Reset to allow fixed popup positioning */
+        position: relative;
     }
 
+    /* Filter popups - use absolute positioning to scroll with page */
     #points-view-batches .filter-dropdown .filter-popup,
     #points-view-batches .filter-dropdown .glass-popup,
     #points-view-batches #batchExportPopup {
-        position: fixed;
-        left: -9999px;
+        position: absolute;
+        top: calc(100% + 4px);
+        left: 0;
         right: auto;
-        top: -9999px;
-        bottom: auto;
         width: auto;
-        min-width: 160px;
+        min-width: 100px;
         max-width: calc(100vw - 24px);
         max-height: 60vh;
         overflow-y: auto;
+        overflow-x: hidden;
         z-index: 9999;
         transform: none !important;
         margin-top: 0;
         transition: none !important;
-        opacity: 1;
-        visibility: visible;
+        box-sizing: border-box;
     }
 
-    /* Position popup below the button using JS-set --popup-top and --popup-left */
-    #points-view-batches .filter-dropdown.open .filter-popup,
-    #points-view-batches .filter-dropdown.open .glass-popup,
-    #points-view-batches #batchExportPopup.show {
-        top: var(--popup-top, 200px);
-        left: var(--popup-left, 12px);
-        position: fixed !important;
-        transform: none !important;
-        margin-top: 0 !important;
-        right: auto !important;
-        transition: none !important;
+    /* Custom date range on mobile - more compact */
+    #points-view-batches .filter-custom-date {
+        padding: 6px;
+        text-align: center;
+    }
+
+    #points-view-batches .filter-custom-date label {
+        font-size: 0.7rem;
+        margin-bottom: 4px;
+        text-align: center;
+    }
+
+    #points-view-batches .filter-custom-date input {
+        width: 100%;
+        max-width: 100px;
+        padding: 4px 6px;
+        font-size: 0.75rem;
+        text-align: center;
+    }
+
+    #points-view-batches .filter-custom-date span {
+        font-size: 0.7rem;
+        margin: 2px 0;
     }
 
     /* Remove button highlight/focus effect on mobile */
