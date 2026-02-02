@@ -4285,6 +4285,44 @@ body {
 }
 
 /* ============================================
+   User Management - Mobile Responsive Filters
+   ============================================ */
+@media (max-width: 768px) {
+
+    #module-users .filter-dropdown .filter-popup,
+    #module-users .filter-dropdown .glass-popup {
+        min-width: 140px;
+        max-width: calc(100vw - 32px);
+        left: 0;
+        right: auto;
+    }
+
+    /* Ensure filter dropdowns allow popup to escape container */
+    #module-users .filter-dropdowns {
+        overflow: visible;
+    }
+
+    #module-users .admin-toolbar {
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+
+    #module-users .toolbar-left {
+        flex-wrap: wrap;
+        width: 100%;
+    }
+
+    #module-users .search-bar {
+        width: 100%;
+        max-width: none;
+    }
+
+    #module-users .filter-group {
+        flex-wrap: wrap;
+    }
+}
+
+/* ============================================
    Admin Role Management Styles
    ============================================ */
 

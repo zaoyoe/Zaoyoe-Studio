@@ -2038,7 +2038,9 @@
 
     /* Filter popup: Left-aligned on mobile to prevent left-side clipping */
     .filter-popup.glass-popup {
-        min-width: 180px;
+        min-width: 140px;
+        max-width: calc(100vw - 32px);
+        /* Prevent overflow on mobile Safari */
         left: 0;
         right: auto;
     }
@@ -2047,6 +2049,17 @@
     .filter-dropdown[data-filter="export"] .filter-popup.glass-popup {
         left: auto;
         right: 0;
+    }
+
+    /* Date filter custom range: Stack inputs vertically on mobile */
+    .filter-custom-date {
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .filter-custom-date input {
+        width: 100%;
+        max-width: 140px;
     }
 }
 
