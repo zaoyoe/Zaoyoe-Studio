@@ -515,9 +515,10 @@
     position: absolute;
     top: calc(100% + 8px);
     left: 0;
-    min-width: 160px;
+    min-width: 90px;
     padding: 8px;
     border-radius: 12px;
+    box-sizing: border-box;
 
     /* Glass morphism effect - enhanced transparency */
     background: rgba(30, 41, 59, 0.75);
@@ -642,6 +643,7 @@
     cursor: pointer;
     color: var(--text-primary);
     transition: background 0.15s;
+    text-align: center;
 }
 
 .filter-option:hover {
@@ -689,6 +691,7 @@
 .filter-checkbox {
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 8px;
     padding: 10px 12px;
     border-radius: 8px;
@@ -711,6 +714,7 @@
 /* Custom Date Range */
 .filter-custom-date {
     padding: 8px;
+    text-align: center;
 }
 
 .filter-custom-date label {
@@ -718,6 +722,7 @@
     font-size: 0.75rem;
     color: var(--text-dim);
     margin-bottom: 6px;
+    text-align: center;
 }
 
 /* Updated selector for Flatpickr input */
@@ -734,6 +739,7 @@
     margin-bottom: 4px;
     box-sizing: border-box;
     /* Fix overflow */
+    text-align: center;
 }
 
 /* Light mode override for date input */

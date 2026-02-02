@@ -8737,6 +8737,11 @@ input:checked+.toggle-slider:before {
     gap: 8px;
     cursor: pointer;
     transition: all 0.2s;
+    /* Safari mobile touch event fixes */
+    -webkit-tap-highlight-color: rgba(107, 158, 206, 0.3);
+    touch-action: manipulation;
+    position: relative;
+    z-index: 10;
 }
 
 #points-view-batches .filter-btn:hover {
@@ -8821,6 +8826,7 @@ input:checked+.toggle-slider:before {
 #points-view-batches .filter-popup .filter-option {
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 10px;
     padding: 10px 14px;
     cursor: pointer;
@@ -8829,6 +8835,7 @@ input:checked+.toggle-slider:before {
     color: var(--text-color, #1e293b);
     transition: background 0.15s;
     white-space: nowrap;
+    text-align: center;
 }
 
 #points-view-batches .filter-popup .filter-option:hover {
