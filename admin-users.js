@@ -172,6 +172,97 @@ function initUserFilterDropdowns() {
     });
 }
 
+// ========================================
+// FILTER TOGGLE FUNCTIONS (Inline onclick handlers)
+// ========================================
+function toggleUserStatusFilter() {
+    const filter = document.querySelector('#module-users .filter-dropdown[data-filter="userStatus"]');
+    if (!filter) return;
+    const wasOpen = filter.classList.contains('open');
+    closeUserFilterDropdowns();
+    if (!wasOpen) {
+        filter.classList.add('open');
+    }
+}
+
+function toggleUserLevelFilter() {
+    const filter = document.querySelector('#module-users .filter-dropdown[data-filter="userLevel"]');
+    if (!filter) return;
+    const wasOpen = filter.classList.contains('open');
+    closeUserFilterDropdowns();
+    if (!wasOpen) {
+        filter.classList.add('open');
+    }
+}
+
+function toggleUserRoleFilter() {
+    const filter = document.querySelector('#module-users .filter-dropdown[data-filter="userRole"]');
+    if (!filter) return;
+    const wasOpen = filter.classList.contains('open');
+    closeUserFilterDropdowns();
+    if (!wasOpen) {
+        filter.classList.add('open');
+    }
+}
+
+function closeUserFilterDropdowns() {
+    const userModule = document.getElementById('module-users');
+    if (!userModule) return;
+    userModule.querySelectorAll('.filter-dropdown.open').forEach(d => d.classList.remove('open'));
+}
+
+function filterUserByStatus(value) {
+    userState.filters.status = value;
+    const labels = { all: '状态', active: '正常', banned: '封禁中' };
+    const label = document.querySelector('#module-users .filter-dropdown[data-filter="userStatus"] .filter-label');
+    if (label) label.textContent = labels[value] || '状态';
+
+    document.querySelectorAll('#module-users .filter-dropdown[data-filter="userStatus"] .filter-option').forEach(opt => {
+        opt.classList.toggle('selected', opt.dataset.value === value);
+    });
+
+    closeUserFilterDropdowns();
+    userState.currentPage = 1;
+    renderUsersTable();
+}
+
+function filterUserByLevel(value) {
+    userState.filters.level = value;
+    const labels = { all: '等级', vip: 'VIP 会员' };
+    const label = document.querySelector('#module-users .filter-dropdown[data-filter="userLevel"] .filter-label');
+    if (label) label.textContent = labels[value] || '等级';
+
+    document.querySelectorAll('#module-users .filter-dropdown[data-filter="userLevel"] .filter-option').forEach(opt => {
+        opt.classList.toggle('selected', opt.dataset.value === value);
+    });
+
+    closeUserFilterDropdowns();
+    userState.currentPage = 1;
+    renderUsersTable();
+}
+
+function filterUserByRole(value) {
+    userState.filters.role = value;
+    const labels = { all: '角色', admin: '管理员', user: '普通用户' };
+    const label = document.querySelector('#module-users .filter-dropdown[data-filter="userRole"] .filter-label');
+    if (label) label.textContent = labels[value] || '角色';
+
+    document.querySelectorAll('#module-users .filter-dropdown[data-filter="userRole"] .filter-option').forEach(opt => {
+        opt.classList.toggle('selected', opt.dataset.value === value);
+    });
+
+    closeUserFilterDropdowns();
+    userState.currentPage = 1;
+    renderUsersTable();
+}
+
+// Close user filter dropdowns when clicking outside
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('#module-users .filter-dropdown')) {
+        closeUserFilterDropdowns();
+    }
+});
+
 // Debounce Helper
 function debounce(func, wait) {
     let timeout;

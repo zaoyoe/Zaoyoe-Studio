@@ -1924,43 +1924,51 @@
                         <div class="filter-dropdowns">
                             <!-- Status Filter -->
                             <div class="filter-dropdown" data-filter="userStatus">
-                                <button class="filter-btn">
+                                <button class="filter-btn" onclick="toggleUserStatusFilter()">
                                     <i class="fas fa-shield-alt"></i>
                                     <span class="filter-label">状态</span>
                                     <i class="fas fa-chevron-down filter-arrow"></i>
                                 </button>
                                 <div class="filter-popup glass-popup">
-                                    <div class="filter-option selected" data-value="all">全部</div>
-                                    <div class="filter-option" data-value="active">正常</div>
-                                    <div class="filter-option" data-value="banned">封禁中</div>
+                                    <div class="filter-option selected" data-value="all"
+                                        onclick="filterUserByStatus('all')">全部</div>
+                                    <div class="filter-option" data-value="active"
+                                        onclick="filterUserByStatus('active')">正常</div>
+                                    <div class="filter-option" data-value="banned"
+                                        onclick="filterUserByStatus('banned')">封禁中</div>
                                 </div>
                             </div>
 
                             <!-- Level Filter -->
                             <div class="filter-dropdown" data-filter="userLevel">
-                                <button class="filter-btn">
+                                <button class="filter-btn" onclick="toggleUserLevelFilter()">
                                     <i class="fas fa-star"></i>
                                     <span class="filter-label">等级</span>
                                     <i class="fas fa-chevron-down filter-arrow"></i>
                                 </button>
                                 <div class="filter-popup glass-popup">
-                                    <div class="filter-option selected" data-value="all">全部</div>
-                                    <div class="filter-option" data-value="vip">VIP 会员</div>
+                                    <div class="filter-option selected" data-value="all"
+                                        onclick="filterUserByLevel('all')">全部</div>
+                                    <div class="filter-option" data-value="vip" onclick="filterUserByLevel('vip')">VIP
+                                        会员</div>
                                 </div>
                             </div>
 
                             <!-- Role Filter (Super Admin Only) -->
                             <div class="filter-dropdown" data-filter="userRole" id="adminRoleFilter"
                                 style="display: none;">
-                                <button class="filter-btn">
+                                <button class="filter-btn" onclick="toggleUserRoleFilter()">
                                     <i class="fas fa-user-shield"></i>
                                     <span class="filter-label">角色</span>
                                     <i class="fas fa-chevron-down filter-arrow"></i>
                                 </button>
                                 <div class="filter-popup glass-popup">
-                                    <div class="filter-option selected" data-value="all">全部</div>
-                                    <div class="filter-option" data-value="admin">管理员</div>
-                                    <div class="filter-option" data-value="user">普通用户</div>
+                                    <div class="filter-option selected" data-value="all"
+                                        onclick="filterUserByRole('all')">全部</div>
+                                    <div class="filter-option" data-value="admin" onclick="filterUserByRole('admin')">
+                                        管理员</div>
+                                    <div class="filter-option" data-value="user" onclick="filterUserByRole('user')">普通用户
+                                    </div>
                                 </div>
                             </div>
                         </div>
