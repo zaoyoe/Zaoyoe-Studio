@@ -9360,6 +9360,18 @@ input:checked+.toggle-slider:before {
         overflow: visible;
     }
 
+    /* Ensure glass-panel allows overflow for toolbar */
+    #points-view-batches .glass-panel:not(.users-table-panel) {
+        overflow: visible;
+    }
+
+    /* Ensure filter-dropdowns container allows overflow */
+    #points-view-batches .filter-dropdowns {
+        overflow: visible;
+        position: relative;
+        z-index: 101;
+    }
+
     /* CRITICAL FIX: Filter dropdowns - use relative positioning for parent */
     #points-view-batches .filter-dropdown {
         position: relative;
