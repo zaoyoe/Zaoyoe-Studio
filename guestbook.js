@@ -26,7 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Show loading state
     if (messageContainer) {
-        messageContainer.innerHTML = '<div style="text-align:center; padding:20px; color:rgba(255,255,255,0.5); font-size:0.9rem;">加载中...</div>';
+        messageContainer.innerHTML = `<div style="text-align:center; padding:20px; color:rgba(255,255,255,0.5); font-size:0.9rem;">${window.i18n?.t('common.loading') || '加载中...'}</div>`;
     }
 
     // Wait for Supabase to be ready, then load messages
@@ -345,7 +345,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 transition: opacity 0.3s, visibility 0.3s;
                 pointer-events: none; /* Prevent clicks */
             `;
-            loadingIndicator.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 加载中...';
+            loadingIndicator.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${window.i18n?.t('common.loading') || '加载中...'}`;
             // Insert BEFORE sentinel so sentinel is always last
             messageContainer.parentElement.insertBefore(loadingIndicator, sentinel);
         }
@@ -505,7 +505,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const toggleButtonHtml = shouldCollapse
             ? `<button class="comment-toggle-btn" data-message-id="${msg.id}" data-count="${commentCount}">
-                <span>展开</span>
+                <span>${window.i18n?.t('guestbook.expand') || '展开'}</span>
                 <i class="fas fa-chevron-down"></i>
                </button>`
             : '';
@@ -636,7 +636,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // ⚡ FIX: Add 50px buffer to prevent snap at end of animation
                 commentList.style.maxHeight = (fullHeight + 50) + 'px';
                 icon.className = 'fas fa-chevron-up';
-                span.textContent = '收起';
+                span.textContent = window.i18n?.t('guestbook.collapse') || '收起';
 
                 // Timeout = duration + 0.2s buffer
                 setTimeout(() => {
@@ -689,7 +689,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 // 🔧 FIX: Revert button text and icon
                 icon.className = 'fas fa-chevron-down';
-                span.textContent = '展开';
+                span.textContent = window.i18n?.t('guestbook.expand') || '展开';
             }
         });
 
@@ -728,7 +728,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Check Auth - Supabase
             const { data: { user } } = await window.supabaseClient.auth.getUser();
             if (!user) {
-                alert("请先登录后再评论");
+                alert(window.i18n?.t('auth.loginRequired') || '请先登录后再评论');
                 if (typeof toggleLoginModal === 'function') {
                     toggleLoginModal();
                 }
@@ -782,7 +782,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } else {
             console.error("❌ addCommentToMessage function not found!");
-            alert("评论功能暂时不可用");
+            alert(window.i18n?.t('auth.commentUnavailable') || '评论功能暂时不可用');
         }
     }
     // Mobile Scroll Highlight - Optimized with IntersectionObserver
@@ -877,7 +877,7 @@ window.openCommentModal = async function (messageId, parentCommentId = null) {
 
     if (!user) {
         console.warn('⚠️ No user logged in, showing login prompt');
-        alert("请先登录后再评论");
+        alert(window.i18n?.t('auth.loginRequired') || '请先登录后再评论');
         // Trigger login modal
         if (typeof toggleLoginModal === 'function') {
             console.log('Calling toggleLoginModal...');

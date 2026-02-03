@@ -321,7 +321,7 @@
         onclick="CapsuleManager.applyUpdates()">
         <div class="capsule-content">
             <span class="capsule-icon">🔔</span>
-            <span id="capsule-text" class="capsule-text">有新动态</span>
+            <span id="capsule-text" class="capsule-text" data-i18n="guestbook.newUpdates">有新动态</span>
         </div>
     </div>
 
@@ -332,8 +332,8 @@
             <!-- Messages will be inserted here by JavaScript -->
         </div>
         <div id="emptyState" class="empty-state-large" style="display: none;"><i class="fas fa-comments"></i>
-            <p>还没有留言哦</p>
-            <p class="empty-hint">快去首页留下你的第一条留言吧 !</p>
+            <p data-i18n="guestbook.noMessages">还没有留言哦</p>
+            <p class="empty-hint" data-i18n="guestbook.leaveFirstMessage">快去首页留下你的第一条留言吧 !</p>
         </div>
     </div>
     <!-- Comment Modal -->
@@ -346,15 +346,13 @@
                 </div>
             </div>
 
-            <h2 class="modal-title">发表评论</h2>
+            <h2 class="modal-title" data-i18n="guestbook.postComment">发表评论</h2>
 
             <form id="commentForm" class="add-comment-form">
                 <input type="hidden" id="commentMessageId">
                 <input type="hidden" id="commentParentId">
                 <textarea id="commentContent" placeholder="写下您的评论..." rows="3" required></textarea>
-                <button type="submit" class="submit-btn">
-                    <i class="fa-solid fa-paper-plane"></i>
-                    发送
+                <span data-i18n="guestbook.submit">发送</span>
                 </button>
             </form>
         </div>
@@ -388,9 +386,13 @@
     <script src="smooth-scroll.js"></script>
     <script src="guestbook.js?v=MOBILE_CLEANUP_FIX" defer></script>
     <script src="guestbook-hover-effect.js" defer></script>
+    <script src="js/i18n.js?v=1" defer></script>
     <script src="inject-auth.js?v=1733030269" defer></script>
     <script src="prevent-zoom.js?v=20251130" defer></script>
     <script src="image-zoom.js?v=20251130_FIX" defer></script>
+
+    <!-- System Announcement Loader -->
+    <script src="announcement-loader.js?v=8"></script>
 </body>
 
 </html>

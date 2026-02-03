@@ -16,7 +16,7 @@ const ShopClient = {
             // Fallback timeout - show error after 5 seconds if loading fails
             const fallbackTimer = setTimeout(() => {
                 console.warn('🛍️ Shop loading timeout');
-                container.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:rgba(255,100,100,0.7);">加载超时，请刷新重试</div>';
+                container.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:rgba(255,100,100,0.7);">${window.i18n?.t('common.error') || '加载超时，请刷新重试'}</div>`;
             }, 5000);
 
             try {
@@ -35,7 +35,7 @@ const ShopClient = {
             } catch (err) {
                 console.error('🛍️ Shop loading error:', err);
                 clearTimeout(fallbackTimer);
-                container.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:rgba(255,100,100,0.7);">加载失败，请刷新重试</div>';
+                container.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:rgba(255,100,100,0.7);">${window.i18n?.t('common.error') || '加载失败，请刷新重试'}</div>`;
             }
         }
 
@@ -49,6 +49,13 @@ const ShopClient = {
                 window.location.href = 'shop.html';
             });
         }
+
+        // Listen for language change to reload products in real-time
+        window.addEventListener('languageChanged', () => {
+            console.log('🌐 Language changed, reloading shop content...');
+            this.loadCategoryFilters();
+            this.loadProducts();
+        });
     },
 
     currentCategory: 'all',
@@ -89,10 +96,10 @@ const ShopClient = {
             // Clear skeleton placeholders and rebuild all buttons
             container.innerHTML = '';
 
-            // Add "全部" button first
             const allBtn = document.createElement('button');
             allBtn.className = 'filter-tab active';
-            allBtn.textContent = '全部';
+            allBtn.textContent = window.i18n?.t('shop.allCategories') || '全部';
+            allBtn.setAttribute('data-i18n', 'shop.allCategories');
             allBtn.onclick = () => this.filterCategory('all', allBtn);
             container.appendChild(allBtn);
 
@@ -108,7 +115,7 @@ const ShopClient = {
         } catch (e) {
             console.error('Failed to load category filters:', e);
             // On error, show a simple "全部" button
-            container.innerHTML = '<button class="filter-tab active" onclick="ShopClient.filterCategory(\'all\', this)">全部</button>';
+            container.innerHTML = `<button class="filter-tab active" data-i18n="shop.allCategories" onclick="ShopClient.filterCategory('all', this)">${window.i18n?.t('shop.allCategories') || '全部'}</button>`;
         }
     },
 
@@ -116,7 +123,7 @@ const ShopClient = {
         const container = document.getElementById('userShopGrid');
         if (!container) return;
 
-        container.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text-dim);"><i class="fas fa-spinner fa-spin"></i> 加载中...</div>';
+        container.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text-dim);"><i class="fas fa-spinner fa-spin"></i> ${window.i18n?.t('common.loading') || '加载中...'}</div>`;
 
         try {
             // Fetch ONLY active products
@@ -136,7 +143,7 @@ const ShopClient = {
 
             container.innerHTML = '';
             if (!data || data.length === 0) {
-                container.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text-dim);">暂无商品上架</div>';
+                container.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text-dim);" data-i18n="shop.noProducts">${window.i18n?.t('shop.noProducts') || '暂无商品上架'}</div>`;
                 return;
             }
 
@@ -154,7 +161,12 @@ const ShopClient = {
 
                 const stockCount = p.stock_count || 0;
                 const noStock = stockCount <= 0;
-                const buyBtnText = noStock ? '售罄' : '购买';
+                const buyBtnText = noStock
+                    ? (window.i18n?.t('shop.outOfStock') || '售罄')
+                    : (window.i18n?.t('shop.redeem') || '兑换');
+                const stockLabel = noStock
+                    ? (window.i18n?.t('shop.noStock') || '无货')
+                    : `${window.i18n?.t('shop.stock') || '库存'}: ${stockCount}`;
 
                 // Use class for button style
                 const buyBtnClass = noStock ? 'shop-btn-disabled' : 'shop-btn-primary';
@@ -164,23 +176,30 @@ const ShopClient = {
                     ? `<img src="${p.icon_url}" style="width:100%; height:100%; object-fit:cover;">`
                     : `<div class="shop-icon-wrapper">${iconHtml.replace('font-size: 24px', 'font-size: 3rem;')}</div>`;
 
+                // Select language-appropriate content
+                const currentLang = window.i18n?.getCurrentLanguage() || 'zh';
+                const displayName = (currentLang === 'en' && p.name_en) ? p.name_en : p.name;
+                const displayDesc = (currentLang === 'en' && p.description_en)
+                    ? p.description_en
+                    : (p.description || (window.i18n?.t('shop.noDescription') || '暂无描述'));
+
                 el.innerHTML = `
                     <div class="shop-card-image">
                         ${displayHtml}
                         <div class="shop-stock-badge ${noStock ? 'out-of-stock' : 'in-stock'}" style="position:absolute; top:12px; right:12px;">
-                            ${noStock ? '无货' : `库存: ${stockCount}`}
+                            ${stockLabel}
                         </div>
                     </div>
                     
                     <div class="shop-content-padding">
-                        <h3 class="shop-card-title">${p.name}</h3>
-                        <p class="shop-card-desc">${p.description || '暂无描述'}</p>
+                        <h3 class="shop-card-title">${displayName}</h3>
+                        <p class="shop-card-desc">${displayDesc}</p>
                         
                         <div style="margin-top:auto; padding-top:20px; display:flex; justify-content:space-between; align-items:center;">
-                            <div class="shop-card-price">${p.price_points} <span>积分</span></div>
-                            <button onclick="ShopClient.buyProduct('${p.id}', '${p.name}', ${p.price_points})" 
-                                    ${noStock ? 'disabled' : ''}
-                                    class="shop-buy-btn ${buyBtnClass}">
+                            <div class="shop-card-price">${p.price_points} <span data-i18n="shop.points">${window.i18n?.t('shop.points') || '积分'}</span></div>
+                            <button onclick="ShopClient.buyProduct('${p.id}', '${p.name}', '${p.name_en || ''}', ${p.price_points})"
+                                ${noStock ? 'disabled' : ''}
+                                class="shop-buy-btn ${buyBtnClass}">
                                 ${buyBtnText}
                             </button>
                         </div>
@@ -191,7 +210,7 @@ const ShopClient = {
 
         } catch (err) {
             console.error('[ShopClient] Load Error:', err);
-            container.innerHTML = `< div style = "grid-column:1/-1;text-align:center;padding:20px;color:#ff4d4f;" > 加载失败: ${err.message}</div > `;
+            container.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:20px;color:#ff4d4f;">加载失败: ${err.message}</div>`;
         }
     },
 
@@ -200,23 +219,26 @@ const ShopClient = {
 
     // ---- New Purchase Flow via Modal ----
 
-    buyProduct: async function (productId, productName, price) {
-        // 1. Auth Check
+    buyProduct: async function (productId, productName, productNameEn, price) {
+        // 1. Open Modal immediately for instant feedback
+        this.openPurchaseModal(productId, productName, productNameEn, price);
+
+        // 2. Auth Check in background
         const { data: { user } } = await supabaseClient.auth.getUser();
         if (!user) {
-            alert('请先登录再进行购买');
+            this.closePurchaseModal();
+            alert(window.i18n?.t('shop.loginRequired') || '请先登录再进行兑换');
             return;
         }
-
-        // 2. Open Modal instead of confirm()
-        this.openPurchaseModal(productId, productName, price);
     },
 
-    openPurchaseModal: function (productId, productName, price) {
-        this.currentPurchase = { productId, productName, unitPrice: price, quantity: 1 };
+    openPurchaseModal: function (productId, productName, productNameEn, price) {
+        this.currentPurchase = { productId, productName, productNameEn, unitPrice: price, quantity: 1 };
 
-        // Update UI
-        document.getElementById('modalProductName').textContent = productName;
+        // Update UI - show name based on current language
+        const currentLang = window.i18n?.getCurrentLanguage() || 'zh';
+        const displayName = (currentLang === 'en' && productNameEn) ? productNameEn : productName;
+        document.getElementById('modalProductName').textContent = displayName;
         document.getElementById('modalUnitPrice').textContent = price;
         document.getElementById('modalTotalPrice').textContent = price;
         document.getElementById('purchaseQuantity').value = 1;
@@ -224,7 +246,8 @@ const ShopClient = {
         // Reset purchase button state (in case previous purchase left it disabled)
         const btn = document.getElementById('confirmPurchaseBtn');
         if (btn) {
-            btn.innerHTML = '<i class="fas fa-shopping-cart"></i> 确认购买';
+            const confirmText = window.i18n?.t('shop.confirmRedeem') || '确认兑换';
+            btn.innerHTML = `<i class="fas fa-shopping-cart"></i> ${confirmText}`;
             btn.disabled = false;
         }
 
@@ -267,12 +290,13 @@ const ShopClient = {
         // Disable button
         const btn = document.getElementById('confirmPurchaseBtn');
         const originalText = btn.innerHTML;
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 处理中...';
+        const processingText = window.i18n?.t('shop.processing') || '处理中...';
+        btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${processingText}`;
         btn.disabled = true;
 
         try {
             const { data: { user } } = await supabaseClient.auth.getUser();
-            if (!user) throw new Error("未登录");
+            if (!user) throw new Error(window.i18n?.t('shop.loginRequired') || "未登录");
 
             // Previous logic used a loop (client-side batch). 
             // New logic uses atomic server-side batch via p_quantity.
@@ -288,14 +312,14 @@ const ShopClient = {
             }
 
             if (!data.success) {
-                throw new Error(data.message || '购买失败');
+                throw new Error(data.message || (window.i18n?.t('shop.redeemFailed') || '兑换失败'));
             }
 
             // Success
             const purchaseData = data.data;
             const finalContent = (purchaseData.contents && purchaseData.contents.length > 0)
                 ? purchaseData.contents.join('\n----\n')
-                : (purchaseData.content || '（无内容）');
+                : (purchaseData.content || (window.i18n?.t('shop.noContent') || '（无内容）'));
 
             const remainingPoints = purchaseData.remaining_points;
 
@@ -316,7 +340,7 @@ const ShopClient = {
 
         } catch (err) {
             console.error(err);
-            alert('购买失败: ' + (err.message || '未知错误'));
+            alert((window.i18n?.t('shop.redeemFailed') || '兑换失败') + ': ' + (err.message || (window.i18n?.t('shop.unknownError') || '未知错误')));
 
             // Re-enable button on error
             btn.innerHTML = originalText;
@@ -329,48 +353,48 @@ const ShopClient = {
         const style = document.createElement('style');
         style.id = 'shop-premium-card-style';
         style.innerHTML = `
-            .content-card {
-                background: rgba(255, 255, 255, 0.05) !important;
-                backdrop-filter: blur(12px) !important;
-                -webkit-backdrop-filter: blur(12px) !important;
-                border-radius: 16px !important;
-                padding: 16px !important;
-                margin-bottom: 12px !important;
-                border: 1px solid rgba(255, 255, 255, 0.1) !important;
-                border-width: 1px !important;
-                border-style: solid !important;
-                box-sizing: border-box !important;
-                outline: none !important;
-                box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2) !important;
-                cursor: default !important;
-                transition: none !important;
-                transform: none !important;
-            }
-            .content-card:hover {
-                background: rgba(255, 255, 255, 0.05) !important;
-                border: 1px solid rgba(255, 255, 255, 0.1) !important;
-                box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2) !important;
-                transform: none !important;
-                filter: none !important;
-            }
-            .item-name {
-                font-size: 13px; font-weight: 600; color: #e2e8f0;
-                margin-bottom: 8px;
-                display: flex; align-items: center; gap: 6px;
-            }
-            .item-content-box {
-                background: transparent;
-                border-radius: 0;
-                padding: 0;
-            }
-            .item-text {
-                font-family: 'Monaco', monospace;
-                font-size: 12px; color: #10b981;
-                word-break: break-all;
-                line-height: 1.5;
-                opacity: 0.9;
-            }
-        `;
+    .content - card {
+    background: rgba(255, 255, 255, 0.05)!important;
+    backdrop - filter: blur(12px)!important;
+    -webkit - backdrop - filter: blur(12px)!important;
+    border - radius: 16px!important;
+    padding: 16px!important;
+    margin - bottom: 12px!important;
+    border: 1px solid rgba(255, 255, 255, 0.1)!important;
+    border - width: 1px!important;
+    border - style: solid!important;
+    box - sizing: border - box!important;
+    outline: none!important;
+    box - shadow: 0 4px 16px rgba(0, 0, 0, 0.2)!important;
+    cursor: default !important;
+    transition: none!important;
+    transform: none!important;
+}
+            .content - card:hover {
+    background: rgba(255, 255, 255, 0.05)!important;
+    border: 1px solid rgba(255, 255, 255, 0.1)!important;
+    box - shadow: 0 4px 16px rgba(0, 0, 0, 0.2)!important;
+    transform: none!important;
+    filter: none!important;
+}
+            .item - name {
+    font - size: 13px; font - weight: 600; color: #e2e8f0;
+    margin - bottom: 8px;
+    display: flex; align - items: center; gap: 6px;
+}
+            .item - content - box {
+    background: transparent;
+    border - radius: 0;
+    padding: 0;
+}
+            .item - text {
+    font - family: 'Monaco', monospace;
+    font - size: 12px; color: #10b981;
+    word -break: break-all;
+    line - height: 1.5;
+    opacity: 0.9;
+}
+`;
         document.head.appendChild(style);
     },
 
@@ -396,18 +420,23 @@ const ShopClient = {
             // Split content by separator (----) to get individual items
             const items = content.split(/\n----\n/);
             const totalItems = items.length;
-            const productName = this.currentPurchase?.productName || '商品内容';
+            // Get product name based on current language
+            const currentLang = window.i18n?.getCurrentLanguage() || 'zh';
+            const productName = (currentLang === 'en' && this.currentPurchase?.productNameEn)
+                ? this.currentPurchase.productNameEn
+                : (this.currentPurchase?.productName || '商品内容');
 
             // Store original content for copying (before adding UI elements)
             contentBox.dataset.originalContent = content;
 
-            // Helper to create card HTML
+            // Update the header dot with product name tooltip
+            const productNameDot = document.getElementById('productNameDot');
+            if (productNameDot) {
+                productNameDot.setAttribute('data-tooltip', productName);
+            }
+
             const createCardMsg = (text) => `
                 <div class="content-card">
-                    <div class="item-name">
-                        <i class="fas fa-circle" style="font-size: 8px; color: #60a5fa;"></i>
-                        <span>${this.escapeHtml(productName)}</span>
-                    </div>
                     <div class="item-content-box">
                         <div class="item-text">${this.escapeHtml(text)}</div>
                     </div>
@@ -427,15 +456,15 @@ const ShopClient = {
                 const hiddenCount = totalItems - 2;
 
                 const expandBtn = `
-                    <div style="margin-top:12px;text-align:center;">
-                        <span id="expandContentBtn" onclick="ShopClient.toggleExpandContent()" 
-                              style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;
-                                     font-size:12px;color:rgba(255,255,255,0.6);background:rgba(255,255,255,0.1);
-                                     padding:8px 16px;border-radius:20px;transition:all 0.2s;">
-                            <span>展开其余 ${hiddenCount} 个</span>
-                            <i class="fas fa-chevron-down" style="font-size:10px;"></i>
-                        </span>
-                    </div>`;
+                <div style="margin-top:12px;text-align:center;">
+                    <span id="expandContentBtn" onclick="ShopClient.toggleExpandContent()"
+                        style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;
+                               font-size:12px;color:rgba(255,255,255,0.6);background:rgba(255,255,255,0.1);
+                               padding:8px 16px;border-radius:20px;transition:all 0.2s;">
+                        <span>${window.i18n?.t('shop.expandMore') || '展开其余'} ${hiddenCount} ${window.i18n?.t('shop.items') || '个'}</span>
+                        <i class="fas fa-chevron-down" style="font-size:10px;"></i>
+                    </span>
+                </div>`;
 
                 const hiddenSection = `<div id="hiddenContent" style="display:none;margin-top:12px;">${hiddenHTML}</div>`;
 
@@ -470,8 +499,8 @@ const ShopClient = {
             const isHidden = hiddenContent.style.display === 'none';
             hiddenContent.style.display = isHidden ? 'block' : 'none';
             expandBtn.innerHTML = isHidden
-                ? '<span>收起</span><i class="fas fa-chevron-up" style="font-size: 10px;"></i>'
-                : '<span>展开其余</span><i class="fas fa-chevron-down" style="font-size: 10px;"></i>';
+                ? `<span>${window.i18n?.t('shop.collapse') || '收起'}</span><i class="fas fa-chevron-up" style="font-size: 10px;"></i>`
+                : `<span>${window.i18n?.t('shop.expandMore') || '展开其余'}</span><i class="fas fa-chevron-down" style="font-size: 10px;"></i>`;
         }
     },
 
@@ -479,11 +508,11 @@ const ShopClient = {
         const list = document.getElementById('ordersList');
         if (!list) return;
 
-        list.innerHTML = '<div style="text-align:center; color:rgba(255,255,255,0.4); padding:20px;"><i class="fas fa-spinner fa-spin"></i> 加载中...</div>';
+        list.innerHTML = `<div style="text-align:center; color:rgba(255,255,255,0.4); padding:20px;"><i class="fas fa-spinner fa-spin"></i> ${window.i18n?.t('common.loading') || '加载中...'}</div>`;
 
         const { data: { user } } = await supabaseClient.auth.getUser();
         if (!user) {
-            list.innerHTML = '<div style="text-align:center; padding:20px;">请先登录</div>';
+            list.innerHTML = `<div style="text-align:center; padding:20px;">${window.i18n?.t('shop.loginRequired') || '请先登录'}</div>`;
             return;
         }
 
@@ -501,7 +530,7 @@ const ShopClient = {
 
             list.innerHTML = '';
             if (!data || data.length === 0) {
-                list.innerHTML = '<div style="text-align:center; color:rgba(255,255,255,0.3); padding:40px;">暂无订单记录</div>';
+                list.innerHTML = `<div style="text-align:center; color:rgba(255,255,255,0.3); padding:40px;">${window.i18n?.t('shop.noOrders') || '暂无订单记录'}</div>`;
                 return;
             }
 
@@ -516,28 +545,28 @@ const ShopClient = {
 
                 const date = new Date(order.created_at).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
                 const icon = order.shop_products?.icon_url || 'fas fa-box';
-                const iconHtml = icon.startsWith('http') ? `< img src = "${icon}" style = "width:24px;height:24px;border-radius:4px;margin-right:8px;" > ` : ` < i class="${icon}" style = "margin-right:8px;color:#6b9ece;" ></i > `;
+                const iconHtml = icon.startsWith('http') ? `<img src="${icon}" style="width:24px;height:24px;border-radius:4px;margin-right:8px;">` : `<i class="${icon}" style="margin-right:8px;color:#6b9ece;"></i>`;
 
                 item.innerHTML = `
-    < div style = "flex:1;" >
+                    <div style="flex:1;">
                         <div style="display:flex; align-items:center; margin-bottom:4px;">
                             ${iconHtml}
-                            <span style="font-weight:600; font-size:14px; color:#fff;">${order.shop_products?.name || '未知商品'}</span>
+                            <span style="font-weight:600; font-size:14px; color:#fff;">${order.shop_products?.name || (window.i18n?.t('shop.unknownProduct') || '未知商品')}</span>
                         </div>
                         <div style="font-size:12px; color:rgba(255,255,255,0.4);">
-                            ${date} · <span style="color:#fbbf24;">-${order.price_points} 积分</span>
+                            ${date} · <span style="color:#fbbf24;">-${order.price_points} ${window.i18n?.t('shop.points') || '积分'}</span>
                         </div>
-                    </div >
-    <button onclick="event.stopPropagation(); ShopClient.viewOrderContent('${order.id}', '${encodeURIComponent(order.content_delivered || '')}')"
-        style="padding:6px 12px; border-radius:12px; background:rgba(255,255,255,0.1); border:none; color:#fff; cursor:pointer;">
-        查看
-    </button>
-`;
+                    </div>
+                    <button onclick="event.stopPropagation(); ShopClient.viewOrderContent('${order.id}', '${encodeURIComponent(order.content_delivered || '')}')"
+                        style="padding:6px 12px; border-radius:12px; background:rgba(255,255,255,0.1); border:none; color:#fff; cursor:pointer;">
+                        ${window.i18n?.t('shop.view') || '查看'}
+                    </button>
+                `;
                 list.appendChild(item);
             });
         } catch (err) {
             console.error(err);
-            list.innerHTML = '<div style="text-align:center; color:#ff4d4f;">加载失败</div>';
+            list.innerHTML = `<div style="text-align:center; color:#ff4d4f;">${window.i18n?.t('common.error') || '加载失败'}</div>`;
         }
     },
 
@@ -551,7 +580,7 @@ const ShopClient = {
             this.showSuccessModal(content);
             const modal = document.getElementById('shopSuccessModal');
             const title = modal.querySelector('.card-title');
-            if (title) title.textContent = "订单详情";
+            if (title) title.textContent = window.i18n?.t('shop.orderDetails') || "订单详情";
         }
     },
 
@@ -568,7 +597,7 @@ const ShopClient = {
         navigator.clipboard.writeText(text).then(() => {
             const btn = document.getElementById('copyContentBtn');
             const originalHTML = btn.innerHTML;
-            btn.innerHTML = '<i class="fas fa-check"></i> 已复制';
+            btn.innerHTML = `<i class="fas fa-check"></i> ${window.i18n?.t('common.copied') || '已复制'}`;
             btn.style.background = '#4ade80';
             btn.style.color = '#fff';
             setTimeout(() => {
@@ -582,7 +611,7 @@ const ShopClient = {
     exportContent: function () {
         const contentBox = document.getElementById('purchasedContent');
         const content = contentBox.dataset.originalContent || contentBox.textContent;
-        const productName = this.currentPurchase?.productName || '商品';
+        const productName = this.currentPurchase?.productName || (window.i18n?.t('shop.unknownProduct') || '商品');
         const orderId = this.currentPurchase?.orderId || '';
         const timestamp = new Date().toLocaleString('zh-CN');
 
@@ -591,7 +620,7 @@ const ShopClient = {
 
         // Build CSV content with BOM for Excel Chinese support
         const BOM = '\uFEFF';
-        let csv = BOM + '订单号,序号,商品名称,账号信息,购买时间\n';
+        let csv = BOM + `${window.i18n?.t('shop.csvOrderId') || '订单号'},${window.i18n?.t('shop.csvIndex') || '序号'},${window.i18n?.t('shop.csvProductName') || '商品名称'},${window.i18n?.t('shop.csvAccountInfo') || '账号信息'},${window.i18n?.t('shop.csvRedeemTime') || '兑换时间'}\n`;
 
         items.forEach((item, index) => {
             // Escape quotes and wrap in quotes for CSV
@@ -604,7 +633,7 @@ const ShopClient = {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `订单_${productName}_${new Date().toISOString().slice(0, 10)}.csv`;
+        a.download = `${window.i18n?.t('shop.orderPrefix') || '订单'}_${productName}_${new Date().toISOString().slice(0, 10)}.csv`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -613,7 +642,7 @@ const ShopClient = {
         // Button feedback
         const btn = document.getElementById('exportContentBtn');
         const originalHTML = btn.innerHTML;
-        btn.innerHTML = '<i class="fas fa-check"></i> 已导出';
+        btn.innerHTML = `<i class="fas fa-check"></i> ${window.i18n?.t('common.exported') || '已导出'}`;
         btn.style.background = '#4ade80';
         btn.style.color = '#fff';
         setTimeout(() => {

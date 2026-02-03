@@ -351,6 +351,60 @@
         .notif-card.sliding-in {
             animation: notifEnter 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
         }
+
+        /* ====== MOBILE RESPONSIVE STYLES ====== */
+        @media (max-width: 768px) {
+            .notif-drawer {
+                top: -100%;
+                right: 0;
+                width: 100%;
+                max-height: 70vh;
+                border-radius: 0 0 20px 20px;
+                transition: top 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+            }
+            .notif-drawer.active {
+                top: 0;
+                right: 0;
+            }
+
+            .notif-drawer-header {
+                padding: 40px 20px 20px;
+                background: transparent;
+                backdrop-filter: none;
+                -webkit-backdrop-filter: none;
+                border-bottom: none;
+                margin-bottom: 8px;
+                justify-content: center;
+                position: relative;
+            }
+
+            .notif-drawer-title {
+                text-align: center;
+                font-size: 1.3rem;
+            }
+
+            /* Hide X button on mobile - tap outside to close */
+            .notif-clear-all {
+                display: none;
+            }
+
+            .notif-drawer-list {
+                padding: 12px 16px;
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                min-height: 50vh;
+            }
+
+            .notif-empty {
+                flex: 1;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 0.9rem;
+                min-height: 40vh;
+            }
+        }
     `;
     document.head.appendChild(style);
 
@@ -375,14 +429,14 @@
         drawer.className = 'notif-drawer';
         drawer.innerHTML = `
             <div class="notif-drawer-header">
-                <span class="notif-drawer-title">通知中心</span>
+                <span class="notif-drawer-title" data-i18n="nav.notification">通知中心</span>
                 <div class="notif-clear-all" onclick="clearAllNotifications(event)">
                     <i class="fas fa-times icon-x"></i>
-                    <span class="text-clear">全部清除</span>
+                    <span class="text-clear" data-i18n="nav.clearAll">全部清除</span>
                 </div>
             </div>
             <div class="notif-drawer-list" id="notifDrawerList">
-                <div class="notif-empty">暂无通知</div>
+                <div class="notif-empty" data-i18n="nav.noNotifications">暂无通知</div>
             </div>
         `;
         document.body.appendChild(drawer);
@@ -518,7 +572,7 @@
         if (!list) return;
 
         if (!notifications.length) {
-            list.innerHTML = `<div class="notif-empty">暂无通知</div>`;
+            list.innerHTML = `<div class="notif-empty" data-i18n="nav.noNotifications">${window.i18n?.t('nav.noNotifications') || '暂无通知'}</div>`;
             return;
         }
 
@@ -638,7 +692,7 @@
         const list = document.getElementById('notifDrawerList');
         // Scenario 0: List Empty
         if (notifications.length === 0) {
-            if (list) list.innerHTML = '<div class="notif-empty">暂无通知</div>';
+            if (list) list.innerHTML = `<div class="notif-empty" data-i18n="nav.noNotifications">${window.i18n?.t('nav.noNotifications') || '暂无通知'}</div>`;
             localStorage.removeItem('notifications_v1');
         }
         // Scenario 1: Collapsed Mode - Need to pull in a stored notification

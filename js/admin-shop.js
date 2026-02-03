@@ -15,6 +15,51 @@ const ShopAdmin = {
     deletedProductsForImport: [], // Cache for deleted products (recycle bin)
     isProductSelectionMode: false, // State for product multi-select mode
 
+    // Translate Chinese text to English using Gemini API
+    translateToEnglish: async function (name, description) {
+        const apiKey = window.GEMINI_API_KEY;
+        if (!apiKey) {
+            console.warn('[ShopAdmin] No Gemini API key, skipping translation');
+            return { name_en: null, description_en: null };
+        }
+
+        const prompt = `Translate the following Chinese product information to English. Return ONLY a JSON object with "name" and "description" fields, no markdown or extra text.
+
+Product Name: ${name}
+Description: ${description || 'N/A'}
+
+Example output format:
+{"name": "English Name", "description": "English description"}`;
+
+        try {
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: prompt }] }],
+                    generationConfig: { temperature: 0.1, maxOutputTokens: 500 }
+                })
+            });
+
+            const data = await response.json();
+            const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+            // Parse JSON from response
+            const jsonMatch = text.match(/\{[\s\S]*?\}/);
+            if (jsonMatch) {
+                const parsed = JSON.parse(jsonMatch[0]);
+                console.log('[ShopAdmin] Translation result:', parsed);
+                return {
+                    name_en: parsed.name || null,
+                    description_en: parsed.description || null
+                };
+            }
+        } catch (err) {
+            console.error('[ShopAdmin] Translation failed:', err);
+        }
+        return { name_en: null, description_en: null };
+    },
+
     // Category Filter Logic
     filterCategory: function (category, btn) {
         this.currentCategory = category;
@@ -941,16 +986,38 @@ const ShopAdmin = {
         const id = document.getElementById('editProductId').value;
         const name = document.getElementById('prodName').value;
         const price = document.getElementById('prodPrice').value;
+        const description = document.getElementById('prodDesc').value;
 
         if (!name || !price) { alert('名称和价格必填'); return; }
+
+        // Auto-translate to English if Gemini API is available
+        let name_en = null, description_en = null;
+        try {
+            const saveBtn = document.querySelector('#productModal .primary-btn');
+            if (saveBtn) {
+                saveBtn.disabled = true;
+                saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 翻译中...';
+            }
+            const translation = await this.translateToEnglish(name, description);
+            name_en = translation.name_en;
+            description_en = translation.description_en;
+            if (saveBtn) {
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = '保存';
+            }
+        } catch (e) {
+            console.warn('[ShopAdmin] Translation step failed, continuing without:', e);
+        }
 
         const payload = {
             name,
             price_points: parseInt(price),
             icon_url: document.getElementById('prodIcon').value,
             category: document.getElementById('prodCategory').value,
-            description: document.getElementById('prodDesc').value,
-            display_order: parseInt(document.getElementById('prodSort').value)
+            description,
+            display_order: parseInt(document.getElementById('prodSort').value),
+            name_en,
+            description_en
         };
 
         try {
@@ -986,7 +1053,7 @@ const ShopAdmin = {
             this.pendingCategory = null;
 
             document.getElementById('productModal').style.display = 'none';
-            alert('保存成功');
+            alert('保存成功' + (name_en ? ' (已自动翻译)' : ''));
 
             // Refresh products and category filters
             this.loadProducts();

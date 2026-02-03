@@ -687,7 +687,8 @@ function renderNotificationsConfig() {
         announcement_type: 'banner',
         announcement_color: 'purple',
         announcement_size: 'medium',
-        announcement_decoration: 'none'
+        announcement_decoration: 'none',
+        announcement_pages: ['all']
     };
 
     // New user notification toggle
@@ -730,6 +731,10 @@ function renderNotificationsConfig() {
         decorationSelector.classList.add('active');
         selectDecoration(savedDecoration);
     }
+
+    // Page target selector - restore saved pages
+    const savedPages = config.announcement_pages || ['all'];
+    restorePageSelector(savedPages);
 
     // Update preview
     updateAnnouncementPreview();
@@ -775,6 +780,10 @@ async function saveAnnouncement() {
     config.announcement_type = typeRadio?.value || 'banner';
     // Save decoration theme
     config.announcement_decoration = getCurrentDecoration();
+    // Save target pages
+    config.announcement_pages = getSelectedPages();
+    // Add timestamp so each publish generates a new ackKey
+    config.announcement_updated_at = new Date().toISOString();
 
     const success = await saveConfig('notifications', config);
 
@@ -914,7 +923,87 @@ function toggleEmojiPicker() {
     }
 }
 
-// Close emoji picker when clicking outside
+// ============================================
+// CUSTOM DROPDOWN FUNCTIONS
+// ============================================
+
+function toggleDropdown(dropdownId) {
+    const dropdown = document.getElementById(dropdownId);
+    if (!dropdown) return;
+
+    const trigger = dropdown.querySelector('.dropdown-trigger, .toolbar-btn');
+    const menu = dropdown.querySelector('.dropdown-menu');
+
+    // Close all other dropdowns first (both custom-dropdown and toolbar-dropdown)
+    document.querySelectorAll('.custom-dropdown, .toolbar-dropdown').forEach(dd => {
+        if (dd.id !== dropdownId) {
+            dd.querySelector('.dropdown-trigger, .toolbar-btn')?.classList.remove('active');
+            dd.querySelector('.dropdown-menu')?.classList.remove('show');
+        }
+    });
+
+    // Toggle this dropdown
+    trigger?.classList.toggle('active');
+    menu?.classList.toggle('show');
+}
+
+function selectColor(color) {
+    const editor = document.getElementById('cfgAnnouncementContent');
+    if (!editor) return;
+
+    // Apply color using execCommand
+    editor.focus();
+    document.execCommand('foreColor', false, color);
+    updateAnnouncementPreview();
+
+    // Update preview swatch
+    const preview = document.getElementById('colorPreview');
+    if (preview) preview.style.background = color;
+
+    // Update selected state
+    const dropdown = document.getElementById('colorDropdown');
+    dropdown.querySelectorAll('.dropdown-item').forEach(item => {
+        item.classList.remove('selected');
+        if (item.onclick.toString().includes(color)) {
+            item.classList.add('selected');
+        }
+    });
+
+    // Close dropdown
+    dropdown.querySelector('.dropdown-trigger, .toolbar-btn')?.classList.remove('active');
+    dropdown.querySelector('.dropdown-menu')?.classList.remove('show');
+}
+
+function selectFontSize(size, sizeClass) {
+    const editor = document.getElementById('cfgAnnouncementContent');
+    if (!editor) return;
+
+    // Apply size using execCommand
+    editor.focus();
+    document.execCommand('fontSize', false, size);
+    updateAnnouncementPreview();
+
+    // Update indicator
+    const dropdown = document.getElementById('sizeDropdown');
+    const indicator = dropdown.querySelector('.toolbar-btn .size-indicator, .dropdown-trigger .size-indicator');
+    if (indicator) {
+        indicator.className = 'size-indicator ' + sizeClass;
+    }
+
+    // Update selected state
+    dropdown.querySelectorAll('.dropdown-item').forEach(item => {
+        item.classList.remove('selected');
+        if (item.onclick.toString().includes(size)) {
+            item.classList.add('selected');
+        }
+    });
+
+    // Close dropdown
+    dropdown.querySelector('.dropdown-trigger, .toolbar-btn')?.classList.remove('active');
+    dropdown.querySelector('.dropdown-menu')?.classList.remove('show');
+}
+
+// Close emoji picker and custom dropdowns when clicking outside
 document.addEventListener('click', (e) => {
     const picker = document.getElementById('emojiPicker');
     const btn = document.getElementById('emojiPickerBtn');
@@ -928,6 +1017,14 @@ document.addEventListener('click', (e) => {
     if (alignPicker && alignBtn && !alignPicker.contains(e.target) && !alignBtn.contains(e.target)) {
         alignPicker.classList.remove('active');
     }
+
+    // Close custom dropdowns and toolbar dropdowns
+    document.querySelectorAll('.custom-dropdown, .toolbar-dropdown').forEach(dropdown => {
+        if (!dropdown.contains(e.target)) {
+            dropdown.querySelector('.dropdown-trigger, .toolbar-btn')?.classList.remove('active');
+            dropdown.querySelector('.dropdown-menu')?.classList.remove('show');
+        }
+    });
 });
 
 // ============================================
@@ -1286,6 +1383,91 @@ function getCurrentDecoration() {
 }
 
 // ============================================
+// PAGE TARGET SELECTOR FUNCTIONS
+// ============================================
+
+// Toggle page target selection
+function togglePageTarget(page) {
+    const selector = document.getElementById('pageTargetSelector');
+    if (!selector) return;
+
+    const allBtn = selector.querySelector('[data-page="all"]');
+    const pageBtns = selector.querySelectorAll('[data-page]:not([data-page="all"])');
+    const clickedBtn = selector.querySelector(`[data-page="${page}"]`);
+
+    if (page === 'all') {
+        // Toggle "all" - if clicking "all", select only "all" and deselect others
+        if (allBtn.classList.contains('active')) {
+            // Already selected, do nothing (must have at least one page)
+            return;
+        }
+        // Select "all", deselect individual pages
+        allBtn.classList.add('active');
+        pageBtns.forEach(btn => btn.classList.remove('active'));
+    } else {
+        // Toggle individual page
+        clickedBtn.classList.toggle('active');
+
+        // If any individual page is selected, deselect "all"
+        const anyPageSelected = Array.from(pageBtns).some(btn => btn.classList.contains('active'));
+        if (anyPageSelected) {
+            allBtn.classList.remove('active');
+        } else {
+            // No individual pages selected, auto-select "all"
+            allBtn.classList.add('active');
+        }
+
+        // If all individual pages are selected, switch to "all"
+        const allPagesSelected = Array.from(pageBtns).every(btn => btn.classList.contains('active'));
+        if (allPagesSelected) {
+            allBtn.classList.add('active');
+            pageBtns.forEach(btn => btn.classList.remove('active'));
+        }
+    }
+}
+
+// Get selected pages from UI
+function getSelectedPages() {
+    const selector = document.getElementById('pageTargetSelector');
+    if (!selector) return ['all'];
+
+    const allBtn = selector.querySelector('[data-page="all"]');
+    if (allBtn && allBtn.classList.contains('active')) {
+        return ['all'];
+    }
+
+    const selectedPages = [];
+    selector.querySelectorAll('[data-page]:not([data-page="all"])').forEach(btn => {
+        if (btn.classList.contains('active')) {
+            selectedPages.push(btn.dataset.page);
+        }
+    });
+
+    return selectedPages.length > 0 ? selectedPages : ['all'];
+}
+
+// Restore page selector state from saved config
+function restorePageSelector(pages) {
+    const selector = document.getElementById('pageTargetSelector');
+    if (!selector) return;
+
+    // Clear all active states
+    selector.querySelectorAll('.page-btn').forEach(btn => btn.classList.remove('active'));
+
+    if (!pages || pages.length === 0 || pages.includes('all')) {
+        // Select "all" button
+        const allBtn = selector.querySelector('[data-page="all"]');
+        if (allBtn) allBtn.classList.add('active');
+    } else {
+        // Select individual pages
+        pages.forEach(page => {
+            const btn = selector.querySelector(`[data-page="${page}"]`);
+            if (btn) btn.classList.add('active');
+        });
+    }
+}
+
+// ============================================
 // EXPORTS
 // ============================================
 
@@ -1302,3 +1484,4 @@ window.saveAnnouncement = saveAnnouncement;
 window.saveSensitiveWords = saveSensitiveWords;
 window.toggleDecoration = toggleDecoration;
 window.selectDecoration = selectDecoration;
+window.togglePageTarget = togglePageTarget;

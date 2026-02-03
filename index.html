@@ -202,14 +202,14 @@
             <a href="shop.html" class="glass-box box-wide"
                 style="cursor: pointer; text-decoration: none; color: inherit;">
                 <i class="fa-solid fa-store icon-large" style="color: #4ade80;"></i>
-                <div class="box-label">资源商城</div>
+                <div class="box-label" data-i18n="index.resourceShop">资源商城</div>
             </a>
 
             <!-- Banana Pro Gallery (2x1) - Wide (NEW) -->
             <a href="prompts.html" class="glass-box box-wide">
                 <!-- Magic/Feather Icon -->
                 <i class="fa-solid fa-wand-magic-sparkles icon-large" style="color: #f472b6;"></i>
-                <div class="box-label">灵感图库</div>
+                <div class="box-label" data-i18n="index.inspirationGallery">灵感图库</div>
             </a>
 
 
@@ -219,7 +219,7 @@
             <!-- Gemini Verification Service (2x1) - Wide -->
             <a href="verify.html" class="glass-box box-wide box-gemini-verify">
                 <i class="fas fa-robot icon-large" style="color: #667eea;"></i>
-                <div class="box-label">Gemini 验证</div>
+                <div class="box-label" data-i18n="index.geminiVerify">Gemini 验证</div>
             </a>
 
             <!-- Gemini Verification Service (2x1) - Wide -->
@@ -228,20 +228,20 @@
             <!-- Guestbook Card (2x1) - Wide (Resized) -->
             <div class="glass-box box-wide" data-modal-target="guestbookModal">
                 <i class="fa-regular fa-comment-dots icon-large" style="color: #f59e0b;"></i>
-                <div class="box-label">留言板</div>
+                <div class="box-label" data-i18n="index.messageBoard">留言板</div>
             </div>
 
             <!-- Contact Card (1x1) - Clickable -->
             <div class="glass-box box-small" data-modal-target="contactModal">
                 <i class="fa-solid fa-address-card icon-large" style="color: #d946ef;"></i>
-                <div class="box-label">联系我们</div>
+                <div class="box-label" data-i18n="common.contactUs">联系我们</div>
             </div>
 
             <!-- Xianyu Card (1x1) - Small (Resized) -->
             <div class="glass-box box-small" onclick="window.open('https://m.tb.cn/h.7bLXxwt?tk=71mMfrE5Orz', '_blank')"
                 style="cursor: pointer;">
                 <i class="fa-solid fa-fish icon-large" style="color: #ffda44;"></i>
-                <div class="box-label">闲鱼店铺</div>
+                <div class="box-label" data-i18n="index.xianyuShop">闲鱼店铺</div>
             </div>
         </div>
         <!-- Afdian Support Link (Styled Footer) -->
@@ -252,7 +252,8 @@
                     style="color: inherit; text-decoration: none; transition: all 0.3s; border-bottom: 1px dashed rgba(255,255,255,0.4);">afdian.com/a/zaoyoe</a>
                 <span style="margin: 0 10px; opacity: 0.4;">|</span>
                 交流组: <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank"
-                    style="color: inherit; text-decoration: none; transition: all 0.3s; border-bottom: 1px dashed rgba(255,255,255,0.4);">点击加入</a>
+                    style="color: inherit; text-decoration: none; transition: all 0.3s; border-bottom: 1px dashed rgba(255,255,255,0.4);"
+                    data-i18n="common.clickToJoin">点击加入</a>
             </span>
         </div>
 
@@ -271,7 +272,7 @@
                 <div class="mac-dot yellow"></div>
                 <div class="mac-dot green"></div>
             </div>
-            <div class="modal-title">留言板</div>
+            <div class="modal-title" data-i18n="guestbook.title">留言板</div>
 
 
             <form class="guestbook-form" id="guestbookForm">
@@ -320,12 +321,13 @@
             <div style="font-size: 48px; color: #4ade80; margin-bottom: 10px;">
                 <i class="fas fa-check-circle"></i>
             </div>
-            <h2 class="card-title" style="font-size: 20px;">购买成功!</h2>
-            <p class="card-subtitle" style="margin-bottom: 20px;">请妥善保存您的卡密信息</p>
+            <h2 class="card-title" style="font-size: 20px;" data-i18n="index.purchaseSuccess">购买成功!</h2>
+            <p class="card-subtitle" style="margin-bottom: 20px;" data-i18n="index.saveCardInfo">请妥善保存您的卡密信息</p>
 
             <div class="glass-box"
                 style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 12px; margin-bottom: 20px; text-align: left; max-height: 300px; overflow-y: auto;">
-                <div style="font-size: 12px; color: rgba(255,255,255,0.4); margin-bottom: 4px;">商品内容:</div>
+                <div style="font-size: 12px; color: rgba(255,255,255,0.4); margin-bottom: 4px;"
+                    data-i18n="index.productContent">商品内容:</div>
                 <div id="purchasedContent"
                     style="font-family: monospace; font-size: 14px; color: #fff; word-break: break-all; user-select: text;">
                     <!-- JS Injected -->
@@ -354,7 +356,7 @@
                 </div>
             </div>
 
-            <div class="modal-title">联系我们</div>
+            <div class="modal-title" data-i18n="common.contactUs">联系我们</div>
 
 
             <div class="modal-grid">
@@ -404,8 +406,9 @@
 
             <!-- Tab Navigation -->
             <div class="profile-tabs">
-                <div class="tab-item active" onclick="switchProfileTab('profile')">资料</div>
-                <div class="tab-item" onclick="switchProfileTab('security')">安全</div>
+                <div class="tab-item active" onclick="switchProfileTab('profile')" data-i18n="profile.profileTab">资料
+                </div>
+                <div class="tab-item" onclick="switchProfileTab('security')" data-i18n="profile.securityTab">安全</div>
             </div>
 
             <!-- Flip Container -->
@@ -413,14 +416,14 @@
                 <div class="profile-flip-inner">
                     <!-- View 1: Profile (Front) -->
                     <div id="view-profile" class="profile-view profile-front">
-                        <div class="modal-title">个人资料</div>
+                        <div class="modal-title" data-i18n="profile.title">个人资料</div>
 
                         <!-- Avatar Section -->
                         <div class="profile-avatar-section" onclick="triggerAvatarUpload()">
                             <img id="profileModalAvatar" src="" alt="Avatar">
                             <div class="avatar-upload-hint">
                                 <i class="fas fa-camera"></i>
-                                <span>更换头像</span>
+                                <span data-i18n="profile.changeAvatar">更换头像</span>
                             </div>
                         </div>
 
@@ -436,15 +439,17 @@
                             <div id="nicknameEdit" class="nickname-edit" style="display: none;">
                                 <input type="text" id="nicknameInput" placeholder="输入新昵称">
                                 <div class="edit-actions">
-                                    <button class="cancel-btn" onclick="toggleNicknameEdit(false)">取消</button>
-                                    <button class="save-btn" onclick="saveNickname()">保存</button>
+                                    <button class="cancel-btn" onclick="toggleNicknameEdit(false)"
+                                        data-i18n="common.cancel">取消</button>
+                                    <button class="save-btn" onclick="saveNickname()"
+                                        data-i18n="common.save">保存</button>
                                 </div>
                             </div>
                         </div>
 
                         <!-- Email Display -->
                         <div class="profile-email-section">
-                            <label>邮箱地址</label>
+                            <label data-i18n="profile.emailAddress">邮箱地址</label>
                             <div id="profileModalEmail" class="profile-email-display"></div>
                         </div>
 
@@ -461,7 +466,7 @@
 
                     <!--  View 2: Security (Collapsible Cards) -->
                     <div id="view-security" class="profile-view profile-back">
-                        <div class="modal-title">安全设置</div>
+                        <div class="modal-title" data-i18n="security.title">安全设置</div>
 
                         <div class="security-cards-layout">
                             <!-- Left: Security Menu Cards -->
@@ -474,7 +479,7 @@
                                         <i class="fas fa-key"></i>
                                     </div>
                                     <div class="security-card-content">
-                                        <div class="security-card-title">修改密码</div>
+                                        <div class="security-card-title" data-i18n="security.changePassword">修改密码</div>
                                     </div>
                                     <i class="fas fa-chevron-right security-card-arrow"></i>
                                 </div>
@@ -485,7 +490,7 @@
                                         <i class="fas fa-mobile-alt"></i>
                                     </div>
                                     <div class="security-card-content">
-                                        <div class="security-card-title">绑定手机号</div>
+                                        <div class="security-card-title" data-i18n="security.bindPhone">绑定手机号</div>
                                     </div>
                                     <i class="fas fa-chevron-right security-card-arrow"></i>
                                 </div>
@@ -497,7 +502,8 @@
                                         <i class="fas fa-exclamation-triangle"></i>
                                     </div>
                                     <div class="security-card-content">
-                                        <div class="security-card-title danger">注销账号</div>
+                                        <div class="security-card-title danger" data-i18n="security.deleteAccount">注销账号
+                                        </div>
                                     </div>
                                     <i class="fas fa-chevron-right security-card-arrow"></i>
                                 </div>
@@ -525,8 +531,8 @@
                                         ">
                                             <i class="fas fa-shield-alt" style="font-size: 36px; color: #9b5de5;"></i>
                                         </div>
-                                        <h3 class="detail-title">账号安全中心</h3>
-                                        <p class="detail-desc">您的账号当前处于安全保护中</p>
+                                        <h3 class="detail-title" data-i18n="security.securityCenter">账号安全中心</h3>
+                                        <p class="detail-desc" data-i18n="security.accountProtected">您的账号当前处于安全保护中</p>
                                         <div style="
                                             margin-top: 20px; 
                                             padding: 12px 20px; 
@@ -547,35 +553,35 @@
                                 <!-- Change Password Panel -->
 
                                 <div class="security-detail-content" id="detail-change-password" style="display: none;">
-                                    <h3 class="detail-title">修改密码</h3>
+                                    <h3 class="detail-title" data-i18n="security.changePassword">修改密码</h3>
                                     <input type="password" id="oldPasswordInput" placeholder="当前密码"
                                         class="security-input" autocomplete="new-password">
                                     <input type="password" id="newPasswordInput" placeholder="新密码 (至少6位)"
                                         class="security-input" autocomplete="new-password">
-                                    <button class="gradient-btn" onclick="changePassword()">更新密码</button>
+                                    <button class="gradient-btn" onclick="changePassword()"
+                                        data-i18n="security.updatePassword">更新密码</button>
                                 </div>
 
                                 <!-- Bind Phone Panel -->
                                 <div class="security-detail-content" id="detail-bind-phone" style="display: none;">
-                                    <h3 class="detail-title">绑定手机号</h3>
-                                    <p class="detail-desc">绑定手机号可以增强账户安全性</p>
+                                    <h3 class="detail-title" data-i18n="security.bindPhone">绑定手机号</h3>
+                                    <p class="detail-desc" data-i18n="security.bindPhoneDesc">绑定手机号可以增强账户安全性</p>
                                     <div class="input-group input-with-action"
                                         style="max-width: 100%; margin-bottom: 12px;">
                                         <input type="tel" id="phoneNumberInput" placeholder="输入手机号"
                                             class="security-input" maxlength="11">
-                                        <button type="button" class="verify-code-btn" id="sendPhoneCodeBtn"
-                                            onclick="sendPhoneVerificationCode()">
-                                            获取验证码
+                                        <span data-i18n="security.getVerifyCode">获取验证码</span>
                                         </button>
                                     </div>
                                     <input type="text" id="phoneCodeInput" placeholder="输入6位验证码" class="security-input"
                                         maxlength="6">
-                                    <button class="gradient-btn" onclick="bindPhone()">绑定手机号</button>
+                                    <button class="gradient-btn" onclick="bindPhone()"
+                                        data-i18n="security.bindPhone">绑定手机号</button>
                                 </div>
 
                                 <!-- Delete Account Panel -->
                                 <div class="security-detail-content" id="detail-delete-account">
-                                    <h3 class="detail-title danger">注销账号</h3>
+                                    <h3 class="detail-title danger" data-i18n="security.deleteAccount">注销账号</h3>
                                     <p class="detail-desc">⚠️ 此操作不可恢复，您的所有数据将被永久删除。</p>
                                     <div class="danger-zone">
                                         <button class="danger-btn" onclick="deleteAccount()">
@@ -593,7 +599,7 @@
                         <div class="mobile-security-layout">
                             <!-- Section 1: Change Password -->
                             <div class="mobile-security-section">
-                                <h3 class="mobile-section-title">修改密码</h3>
+                                <h3 class="mobile-section-title" data-i18n="security.changePassword">修改密码</h3>
                                 <div class="input-group">
                                     <input type="password" id="mobile_oldPassword" class="security-input"
                                         placeholder="当前密码" autocomplete="new-password">
@@ -602,13 +608,14 @@
                                     <input type="password" id="mobile_newPassword" class="security-input"
                                         placeholder="新密码 (至少6位)" autocomplete="new-password">
                                 </div>
-                                <button class="gradient-btn" onclick="changePassword('mobile')">更新密码</button>
+                                <button class="gradient-btn" onclick="changePassword('mobile')"
+                                    data-i18n="security.updatePassword">更新密码</button>
                             </div>
 
                             <!-- Section 2: Bind Phone -->
                             <div class="mobile-security-section">
-                                <h3 class="mobile-section-title">绑定手机号</h3>
-                                <p class="mobile-section-desc">绑定手机号可以增强账户安全性</p>
+                                <h3 class="mobile-section-title" data-i18n="security.bindPhone">绑定手机号</h3>
+                                <p class="mobile-section-desc" data-i18n="security.bindPhoneDesc">绑定手机号可以增强账户安全性</p>
                                 <div class="input-group">
                                     <input type="tel" id="mobile_phoneNumberInput" class="security-input"
                                         placeholder="输入手机号">
@@ -616,15 +623,16 @@
                                 <div class="input-group" style="display: flex; gap: 10px;">
                                     <input type="text" id="mobile_phoneCodeInput" class="security-input"
                                         placeholder="输入6位验证码" style="flex: 1;">
-                                    <button class="code-btn" id="mobile_sendPhoneCodeBtn"
-                                        onclick="sendPhoneVerificationCode('mobile')">获取验证码</button>
+                                    onclick="sendPhoneVerificationCode('mobile')"
+                                    data-i18n="security.getVerifyCode">获取验证码</button>
                                 </div>
-                                <button class="gradient-btn" onclick="bindPhone('mobile')">绑定手机号</button>
+                                <button class="gradient-btn" onclick="bindPhone('mobile')"
+                                    data-i18n="security.bindPhone">绑定手机号</button>
                             </div>
 
                             <!-- Section 3: Delete Account -->
                             <div class="mobile-security-section">
-                                <h3 class="mobile-section-title danger">注销账号</h3>
+                                <h3 class="mobile-section-title danger" data-i18n="security.deleteAccount">注销账号</h3>
                                 <p class="mobile-section-desc">⚠️ 此操作不可恢复，您的所有数据将被永久删除。</p>
                                 <button class="danger-btn" onclick="deleteAccount()">
                                     <i class="fas fa-trash-alt"></i>
@@ -650,12 +658,12 @@
                 </div>
 
                 <i class="fa-solid fa-rocket" style="font-size: 4rem; color: #8b5cf6; margin-bottom: 20px;"></i>
-                <div class="modal-title">敬请期待</div>
-                <p class="modal-subtitle">
-                    该功能正在紧锣密鼓地开发中...
+                <div class="modal-title" data-i18n="common.comingSoon">敬请期待</div>
+                <span data-i18n="common.comingSoonDesc">该功能正在紧锣密鼓地开发中...</span>
                 </p>
             </div>
             <link rel="stylesheet" href="style.css?v=FIX_INPUT_AVATAR_FINAL">
+            <script src="js/i18n.js?v=1" defer></script>
             <script src="inject-auth.js?v=1733030269" defer></script>
             <script src="prevent-zoom.js?v=20251130" defer></script>
             <script src="script.js?v=FIX_UI_OPTIMIZATIONS_V6" defer></script>
@@ -684,6 +692,9 @@
                     initChat();
                 });
             </script>
+
+            <!-- System Announcement Loader -->
+            <script src="announcement-loader.js?v=8"></script>
 </body>
 
 </html>

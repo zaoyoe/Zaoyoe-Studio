@@ -655,6 +655,17 @@ function enterAdminStudio() {
 
 let currentAnnouncementElement = null;
 
+// Get current page ID for announcement targeting
+function getCurrentPageId() {
+    const path = window.location.pathname.toLowerCase();
+    if (path.includes('prompts')) return 'prompts';
+    if (path.includes('shop')) return 'shop';
+    if (path.includes('verify')) return 'verify';
+    if (path.includes('guestbook')) return 'guestbook';
+    if (path === '/' || path.includes('index') || path.endsWith('/')) return 'index';
+    return 'unknown';
+}
+
 async function loadAnnouncement() {
     console.log('📢 loadAnnouncement() 开始执行...');
 
@@ -680,6 +691,16 @@ async function loadAnnouncement() {
         const config = data;
         console.log('📢 配置:', config);
 
+        // Check if current page is in target pages
+        const targetPages = config.announcement_pages || ['all'];
+        const currentPage = getCurrentPageId();
+        console.log('📢 目标页面:', targetPages, '当前页面:', currentPage);
+
+        if (!targetPages.includes('all') && !targetPages.includes(currentPage)) {
+            console.log('📢 当前页面不在公告目标页面中，跳过显示');
+            return;
+        }
+
         if (config.announcement_enabled && config.announcement_content) {
             const type = config.announcement_type || 'banner';
             const color = config.announcement_color || 'purple';
@@ -688,9 +709,18 @@ async function loadAnnouncement() {
             const content = config.announcement_content.replace(/\n/g, '<br>');
 
             // Check if user already acknowledged this announcement (permanent)
-            const ackKey = 'announcement_acked_' + btoa(encodeURIComponent(config.announcement_content.substring(0, 100)));
+            // Use simple hash of FULL content + timestamp for unique key
+            const contentForHash = (config.announcement_content || '') + '|' + (config.announcement_updated_at || '');
+            let hash = 0;
+            for (let i = 0; i < contentForHash.length; i++) {
+                const char = contentForHash.charCodeAt(i);
+                hash = ((hash << 5) - hash) + char;
+                hash = hash & hash; // Convert to 32bit integer
+            }
+            const ackKey = 'announcement_acked_' + Math.abs(hash).toString(36);
+            console.log('📢 公告标识:', ackKey, '更新时间:', config.announcement_updated_at);
             if (localStorage.getItem(ackKey)) {
-                console.log('该公告已被用户确认');
+                console.log('📢 该公告已被用户确认');
                 return;
             }
 

@@ -229,6 +229,78 @@
             cursor: not-allowed;
         }
 
+        /* Success Modal Content Card Styles */
+        .content-card {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 12px;
+        }
+
+        .content-card .item-name {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 600;
+            font-size: 14px;
+            color: #fff;
+            margin-bottom: 10px;
+        }
+
+        .content-card .item-content-box {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 10px;
+            padding: 12px;
+        }
+
+        .content-card .item-text {
+            font-family: monospace;
+            font-size: 13px;
+            color: #22c55e;
+            word-break: break-all;
+            line-height: 1.5;
+        }
+
+        /* Product Name Tooltip Dot (in header) */
+        .product-name-dot {
+            position: relative;
+            cursor: pointer;
+            opacity: 0.7;
+            transition: opacity 0.2s;
+            padding: 4px 8px;
+            user-select: none;
+        }
+
+        .product-name-dot:hover {
+            opacity: 1;
+        }
+
+        .product-name-dot::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: calc(100% + 8px);
+            right: 0;
+            background: rgba(30, 33, 40, 0.98);
+            color: #fff;
+            padding: 10px 16px;
+            border-radius: 10px;
+            font-size: 13px;
+            white-space: nowrap;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.15s, visibility 0.15s;
+            pointer-events: none;
+            z-index: 99999;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .product-name-dot:hover::after {
+            opacity: 1;
+            visibility: visible;
+        }
+
         /* Quantity Stepper (Ultra-minimal) */
         .shop-quantity-wrapper {
             display: flex;
@@ -782,7 +854,8 @@
             </div>
 
             <div style="text-align: center; margin-bottom: 20px;">
-                <h3 class="card-title" style="font-size: 1.2rem; margin-bottom: 5px;">确认购买</h3>
+                <h3 class="card-title" style="font-size: 1.2rem; margin-bottom: 5px;" data-i18n="shop.confirmRedeem">
+                    确认兑换</h3>
                 <p id="modalProductName" style="color: rgba(255,255,255,0.6); font-size: 0.9rem;">Product Name</p>
             </div>
 
@@ -800,13 +873,17 @@
             <div
                 style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 25px; padding: 0 10px;">
                 <div style="text-align: left;">
-                    <div style="font-size: 12px; color: rgba(255,255,255,0.4); margin-bottom: 2px;">单价</div>
-                    <div style="font-family: 'Outfit'; color: #fbbf24;"><span id="modalUnitPrice">0</span> 积分</div>
+                    <div style="font-size: 12px; color: rgba(255,255,255,0.4); margin-bottom: 2px;"
+                        data-i18n="shop.unitPrice">单价</div>
+                    <div style="font-family: 'Outfit'; color: #fbbf24;"><span id="modalUnitPrice">0</span> <span
+                            data-i18n="shop.points">积分</span></div>
                 </div>
                 <div style="text-align: right;">
-                    <div style="font-size: 12px; color: rgba(255,255,255,0.4); margin-bottom: 2px;">总计</div>
+                    <div style="font-size: 12px; color: rgba(255,255,255,0.4); margin-bottom: 2px;"
+                        data-i18n="shop.total">总计</div>
                     <div style="font-family: 'Outfit'; font-size: 1.4rem; color: #4ade80; font-weight: 700;">
-                        <span id="modalTotalPrice">0</span> <span style="font-size: 0.9rem; font-weight: 500;">积分</span>
+                        <span id="modalTotalPrice">0</span> <span style="font-size: 0.9rem; font-weight: 500;"
+                            data-i18n="shop.points">积分</span>
                     </div>
                 </div>
             </div>
@@ -814,7 +891,7 @@
             <!-- Actions -->
             <button id="confirmPurchaseBtn" onclick="ShopClient.confirmPurchase()" class="shop-btn shop-btn-primary"
                 style="width: 100%;">
-                确认支付
+                <i class="fas fa-shopping-cart"></i> <span data-i18n="shop.confirmRedeem">确认兑换</span>
             </button>
         </div>
     </div>
@@ -827,12 +904,19 @@
                 style="width: 60px; height: 60px; background: rgba(56, 158, 13, 0.2); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px;">
                 <i class="fas fa-check" style="font-size: 30px; color: #389e0d;"></i>
             </div>
-            <h2 class="card-title">购买成功!</h2>
-            <p class="card-subtitle">您的商品已发放。</p>
+            <h2 class="card-title" data-i18n="shop.redeemSuccess">兑换成功!</h2>
+
+            <!-- Product content header with tooltip dot (outside overflow container) -->
+            <div
+                style="font-size: 12px; color: rgba(255,255,255,0.5); margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+                <span data-i18n="shop.productContent">商品内容:</span>
+                <span id="productNameDot" class="product-name-dot" data-tooltip="">
+                    <i class="fas fa-circle" style="font-size: 8px; color: #60a5fa;"></i>
+                </span>
+            </div>
 
             <div class="glass-box"
-                style="margin: 20px 0; padding: 15px; word-break: break-all; user-select: text; text-align: left; max-height: 300px; overflow-y: auto;">
-                <div style="font-size: 12px; color: rgba(255,255,255,0.5); margin-bottom: 5px;">商品内容:</div>
+                style="margin-bottom: 20px; padding: 15px; word-break: break-all; user-select: text; text-align: left; max-height: 280px; overflow-y: auto;">
                 <div id="purchasedContent"
                     style="font-family: monospace; font-size: 14px; color: #fff; white-space: pre-wrap; overflow-x: auto;">
                     <!-- Content Here -->
@@ -845,7 +929,7 @@
                 <div style="display: flex; gap: 10px; align-items: flex-start;">
                     <i class="fas fa-exclamation-triangle" style="color: #fbbf24; margin-top: 3px;"></i>
                     <div style="color: #fbbf24; font-size: 13px; line-height: 1.4;">
-                        <div style="font-weight: 600; margin-bottom: 2px;">特别提示</div>
+                        <div style="font-weight: 600; margin-bottom: 2px;" data-i18n="shop.specialTip">特别提示</div>
                         <div id="purchasedWarningText"></div>
                     </div>
                 </div>
@@ -854,11 +938,11 @@
             <div style="display: flex; gap: 10px; margin-top: 16px;">
                 <button id="copyContentBtn" onclick="ShopClient.copyContent()" class="shop-btn shop-btn-primary"
                     style="flex: 1;">
-                    <i class="fas fa-copy"></i> 复制
+                    <i class="fas fa-copy"></i> <span data-i18n="common.copy">复制</span>
                 </button>
                 <button id="exportContentBtn" onclick="ShopClient.exportContent()" class="shop-btn shop-btn-secondary"
                     style="flex: 1;">
-                    <i class="fas fa-download"></i> 导出
+                    <i class="fas fa-download"></i> <span data-i18n="common.export">导出</span>
                 </button>
             </div>
         </div>
@@ -877,7 +961,9 @@
 
     <!-- Supabase Auth & UI -->
     <script src="./supabase-auth-functions.js?v=SHOP_PAGE" defer></script>
+    <script src="js/i18n.js?v=1" defer></script>
     <script src="inject-auth.js?v=SHOP_PAGE" defer></script>
+    <script src="notification-client.js" defer></script>
 
     <!-- Wallet Modal Component -->
     <script src="js/services/PointsService.js?v=SHOP_V1" defer></script>
@@ -889,6 +975,9 @@
     <!-- Background Animations -->
     <script src="starry-sky.js"></script>
     <script src="js/ambient-light.js"></script>
+
+    <!-- System Announcement Loader -->
+    <script src="announcement-loader.js?v=8"></script>
 
 </body>
 

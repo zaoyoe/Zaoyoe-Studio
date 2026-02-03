@@ -962,6 +962,43 @@
                                     </div>
                                 </div>
 
+                                <!-- Page Target Selector -->
+                                <div class="editor-section">
+                                    <div class="editor-section-label">显示页面</div>
+                                    <div class="page-target-selector" id="pageTargetSelector">
+                                        <button type="button" class="page-btn active" data-page="all"
+                                            onclick="togglePageTarget('all')" title="所有页面">
+                                            <span class="page-icon"><i class="fas fa-globe-americas"></i></span>
+                                            <span class="page-label">全部</span>
+                                        </button>
+                                        <button type="button" class="page-btn" data-page="prompts"
+                                            onclick="togglePageTarget('prompts')" title="灵感图库">
+                                            <span class="page-icon"><i class="fas fa-images"></i></span>
+                                            <span class="page-label">图库</span>
+                                        </button>
+                                        <button type="button" class="page-btn" data-page="index"
+                                            onclick="togglePageTarget('index')" title="主页">
+                                            <span class="page-icon"><i class="fas fa-home"></i></span>
+                                            <span class="page-label">主页</span>
+                                        </button>
+                                        <button type="button" class="page-btn" data-page="shop"
+                                            onclick="togglePageTarget('shop')" title="资源商城">
+                                            <span class="page-icon"><i class="fas fa-shopping-cart"></i></span>
+                                            <span class="page-label">商城</span>
+                                        </button>
+                                        <button type="button" class="page-btn" data-page="verify"
+                                            onclick="togglePageTarget('verify')" title="Gemini验证">
+                                            <span class="page-icon"><i class="fas fa-check-circle"></i></span>
+                                            <span class="page-label">验证</span>
+                                        </button>
+                                        <button type="button" class="page-btn" data-page="guestbook"
+                                            onclick="togglePageTarget('guestbook')" title="留言板">
+                                            <span class="page-icon"><i class="fas fa-comment-dots"></i></span>
+                                            <span class="page-label">留言</span>
+                                        </button>
+                                    </div>
+                                </div>
+
                                 <!-- Content Editor -->
                                 <div class="editor-section">
                                     <div class="editor-section-label">公告内容</div>
@@ -1028,23 +1065,61 @@
                                                 </div>
                                             </div>
                                         </div>
-                                        <div class="toolbar-divider"></div>
-                                        <select id="textColorSelect" class="toolbar-select"
-                                            onchange="applyTextColor(this.value)" title="颜色">
-                                            <option value="">文字颜色</option>
-                                            <option value="#ffffff">⬜ 白色</option>
-                                            <option value="#ffeb3b">🟨 黄色</option>
-                                            <option value="#ff9800">🟧 橙色</option>
-                                            <option value="#4caf50">🟩 绿色</option>
-                                            <option value="#e57373">🟥 红色</option>
-                                        </select>
-                                        <select id="textSizeSelect" class="toolbar-select"
-                                            onchange="applyTextSize(this.value)" title="字号">
-                                            <option value="">字号</option>
-                                            <option value="2">小</option>
-                                            <option value="3">中</option>
-                                            <option value="5">大</option>
-                                        </select>
+                                        <!-- Color Picker -->
+                                        <div class="toolbar-dropdown" id="colorDropdown">
+                                            <button type="button" class="toolbar-btn"
+                                                onclick="toggleDropdown('colorDropdown')" title="文字颜色">
+                                                <span class="color-swatch preview" id="colorPreview"
+                                                    style="background:#6b9ece"></span>
+                                            </button>
+                                            <div class="dropdown-menu">
+                                                <button type="button" class="dropdown-item"
+                                                    onclick="selectColor('#ffffff')">
+                                                    <span class="color-swatch" style="background:#ffffff"></span> 白色
+                                                </button>
+                                                <button type="button" class="dropdown-item"
+                                                    onclick="selectColor('#ffeb3b')">
+                                                    <span class="color-swatch" style="background:#ffeb3b"></span> 黄色
+                                                </button>
+                                                <button type="button" class="dropdown-item"
+                                                    onclick="selectColor('#ff9800')">
+                                                    <span class="color-swatch" style="background:#ff9800"></span> 橙色
+                                                </button>
+                                                <button type="button" class="dropdown-item"
+                                                    onclick="selectColor('#4caf50')">
+                                                    <span class="color-swatch" style="background:#4caf50"></span> 绿色
+                                                </button>
+                                                <button type="button" class="dropdown-item"
+                                                    onclick="selectColor('#e57373')">
+                                                    <span class="color-swatch" style="background:#e57373"></span> 红色
+                                                </button>
+                                                <button type="button" class="dropdown-item"
+                                                    onclick="selectColor('#6b9ece')">
+                                                    <span class="color-swatch" style="background:#6b9ece"></span> 蓝色
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <!-- Font Size -->
+                                        <div class="toolbar-dropdown" id="sizeDropdown">
+                                            <button type="button" class="toolbar-btn"
+                                                onclick="toggleDropdown('sizeDropdown')" title="字号">
+                                                <span class="size-indicator medium" id="sizePreview">A</span>
+                                            </button>
+                                            <div class="dropdown-menu">
+                                                <button type="button" class="dropdown-item"
+                                                    onclick="selectFontSize('2', 'small')">
+                                                    <span class="size-indicator small">A</span> 小
+                                                </button>
+                                                <button type="button" class="dropdown-item selected"
+                                                    onclick="selectFontSize('3', 'medium')">
+                                                    <span class="size-indicator medium">A</span> 中
+                                                </button>
+                                                <button type="button" class="dropdown-item"
+                                                    onclick="selectFontSize('5', 'large')">
+                                                    <span class="size-indicator large">A</span> 大
+                                                </button>
+                                            </div>
+                                        </div>
                                     </div>
                                     <div class="wysiwyg-editor" id="cfgAnnouncementContent" contenteditable="true"
                                         data-placeholder="输入公告内容..."></div>
@@ -4768,6 +4843,102 @@
             .upload-text {
                 font-size: 13px;
                 color: rgba(255, 255, 255, 0.6);
+            }
+
+            /* ====== MOBILE RESPONSIVE STYLES ====== */
+            @media (max-width: 768px) {
+                .premium-modal-layout {
+                    grid-template-columns: 1fr;
+                    max-width: 85vw;
+                    max-height: 75vh;
+                    overflow-y: auto;
+                    margin: 12.5vh auto;
+                }
+
+                .modal-preview-sidebar {
+                    display: none;
+                    /* Hide preview on mobile */
+                }
+
+                .modal-form-content {
+                    padding: 20px;
+                    min-width: 0;
+                }
+
+                .form-header {
+                    padding-bottom: 16px;
+                    margin-bottom: 16px;
+                }
+
+                .form-title {
+                    font-size: 1.3rem;
+                }
+
+                /* Stack form rows vertically on mobile */
+                .input-group-row {
+                    flex-direction: column;
+                    gap: 12px;
+                }
+
+                .input-group-row .modern-form-group {
+                    flex: none !important;
+                    width: 100%;
+                }
+
+                .modern-input,
+                .modern-textarea,
+                .modern-select {
+                    font-size: 16px;
+                    /* Prevent iOS zoom */
+                }
+
+                .upload-box {
+                    flex-direction: column;
+                    text-align: center;
+                    gap: 10px;
+                    padding: 16px;
+                }
+
+                .btn-save {
+                    width: 100%;
+                    padding: 14px;
+                    font-size: 15px;
+                }
+
+                .custom-category-dropdown {
+                    max-width: 100%;
+                }
+
+                .custom-category-options {
+                    max-height: 200px;
+                }
+
+                /* Center form title on mobile */
+                .form-header {
+                    justify-content: center;
+                    position: relative;
+                }
+
+                .form-title {
+                    text-align: center;
+                    flex: 1;
+                }
+
+                .form-close-btn {
+                    position: absolute;
+                    right: 0;
+                    top: 50%;
+                    transform: translateY(-50%);
+                }
+
+                /* Hide cancel button on mobile - closing modal = cancel */
+                .action-bar .btn-cancel {
+                    display: none;
+                }
+
+                .action-bar {
+                    justify-content: center;
+                }
             }
         </style>
 

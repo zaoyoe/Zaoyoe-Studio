@@ -27,7 +27,17 @@
             </button>
         </div>
 
-
+        <!-- Language Toggle -->
+        <button id="langToggleBtn" onclick="window.i18n?.toggleLanguage()" 
+            style="height: 32px; padding: 0 10px; display: flex; align-items: center; justify-content: center; 
+                   background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); 
+                   border-radius: 16px; cursor: pointer; color: rgba(255,255,255,0.85); 
+                   font-size: 12px; font-weight: 500; transition: all 0.2s; gap: 4px;"
+            title="切换语言 / Switch Language">
+            <span id="langZh" class="lang-text" style="opacity: 1;">中</span>
+            <span style="color: rgba(255,255,255,0.3);">|</span>
+            <span id="langEn" class="lang-text" style="opacity: 0.5;">EN</span>
+        </button>
 
 
         <button id="authBtn" class="login-trigger-btn${isLoggedIn ? ' logged-in' : ''}" onclick="handleAuthClick(event)">
@@ -49,15 +59,15 @@
             <div class="dropdown-actions">
                 <button class="dropdown-action" onclick="window.openProfileModal(event)">
                     <i class="fas fa-user"></i>
-                    <span>个人资料</span>
+                    <span data-i18n="common.profile">个人资料</span>
                 </button>
                 <button class="dropdown-action" onclick="WalletModal.open()">
                     <i class="fas fa-wallet"></i>
-                    <span>我的钱包</span>
+                    <span data-i18n="wallet.title">我的钱包</span>
                 </button>
                 <button class="dropdown-action" onclick="window.handleSwitchAccount(event)">
                     <i class="fas fa-exchange-alt"></i>
-                    <span>切换账户</span>
+                    <span data-i18n="auth.switchAccount">切换账户</span>
                 </button>
                 <button class="dropdown-action" id="enterStudioBtn" style="display: none;" onclick="window.location.href='admin-studio.html'">
                      <i class="fas fa-palette"></i>
@@ -65,7 +75,7 @@
                 </button>
                 <button class="dropdown-action" onclick="window.handleLogout(event)">
                     <i class="fas fa-sign-out-alt"></i>
-                    <span>Logout</span>
+                    <span data-i18n="common.logout">退出登录</span>
                 </button>
             </div>
         </div>
@@ -862,5 +872,26 @@
     } else {
         initAuth();
     }
+
+    // Language Toggle Sync
+    function updateLangToggle(lang) {
+        const zhEl = document.getElementById('langZh');
+        const enEl = document.getElementById('langEn');
+        if (zhEl && enEl) {
+            zhEl.style.opacity = lang === 'zh' ? '1' : '0.5';
+            enEl.style.opacity = lang === 'en' ? '1' : '0.5';
+        }
+    }
+
+    // Listen for language changes
+    window.addEventListener('languageChanged', (e) => {
+        updateLangToggle(e.detail.lang);
+    });
+
+    // Sync initial state
+    setTimeout(() => {
+        const lang = window.i18n?.getCurrentLanguage() || 'zh';
+        updateLangToggle(lang);
+    }, 100);
 
 })();
