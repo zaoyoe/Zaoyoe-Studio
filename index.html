@@ -225,8 +225,8 @@
             <!-- Gemini Verification Service (2x1) - Wide -->
             <!-- Gemini Verification Service (2x1) - Wide -->
             <!-- Xianyu Card (2x1) - Wide (Resized for layout) -->
-            <!-- Guestbook Card (2x1) - Wide (Resized) -->
-            <div class="glass-box box-wide" data-modal-target="guestbookModal">
+            <!-- Guestbook Card (1x1) - Small -->
+            <div class="glass-box box-small" data-modal-target="guestbookModal">
                 <i class="fa-regular fa-comment-dots icon-large" style="color: #f59e0b;"></i>
                 <div class="box-label" data-i18n="index.messageBoard">留言板</div>
             </div>
@@ -237,21 +237,16 @@
                 <div class="box-label" data-i18n="common.contactUs">联系我们</div>
             </div>
 
-            <!-- Xianyu Card (1x1) - Small (Resized) -->
-            <div class="glass-box box-small" onclick="window.open('https://m.tb.cn/h.7bLXxwt?tk=71mMfrE5Orz', '_blank')"
-                style="cursor: pointer;">
-                <i class="fa-solid fa-fish icon-large" style="color: #ffda44;"></i>
-                <div class="box-label" data-i18n="index.xianyuShop">闲鱼店铺</div>
-            </div>
+
         </div>
         <!-- Afdian Support Link (Styled Footer) -->
         <div class="home-footer"
             style="position: absolute; bottom: 0; width: 100%; text-align: center; padding-top: 30px; padding-bottom: 30px; border-top: 1px solid rgba(255, 255, 255, 0.1); opacity: 0.6;">
-            <span style="font-size: 13px; color: rgba(255, 255, 255, 0.8);">支持我们: <a href="https://afdian.com/a/zaoyoe"
-                    target="_blank"
+            <span style="font-size: 13px; color: rgba(255, 255, 255, 0.8);"><span
+                    data-i18n="common.supportUs">支持我们</span>: <a href="https://afdian.com/a/zaoyoe" target="_blank"
                     style="color: inherit; text-decoration: none; transition: all 0.3s; border-bottom: 1px dashed rgba(255,255,255,0.4);">afdian.com/a/zaoyoe</a>
                 <span style="margin: 0 10px; opacity: 0.4;">|</span>
-                交流组: <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank"
+                <span data-i18n="common.chatGroup">交流组</span>: <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank"
                     style="color: inherit; text-decoration: none; transition: all 0.3s; border-bottom: 1px dashed rgba(255,255,255,0.4);"
                     data-i18n="common.clickToJoin">点击加入</a>
             </span>
@@ -277,13 +272,15 @@
 
             <form class="guestbook-form" id="guestbookForm">
                 <div class="input-group relative-container">
-                    <textarea id="guestMessage" placeholder="畅所欲言..."></textarea>
+                    <textarea id="guestMessage" placeholder="畅所欲言..."
+                        data-i18n-placeholder="guestbook.placeholder"></textarea>
 
                     <!-- Integrated Upload Icon -->
                     <div class="upload-icon-wrapper">
                         <input type="file" id="imageUpload" accept="image/*" style="display: none;">
                         <button type="button" class="upload-icon-btn"
-                            onclick="document.getElementById('imageUpload').click()" title="上传图片">
+                            onclick="document.getElementById('imageUpload').click()" title="上传图片"
+                            data-i18n-title="guestbook.uploadImage">
                             <i class="fas fa-camera"></i>
                         </button>
                     </div>
@@ -299,14 +296,14 @@
                 <button type="submit" class="submit-btn"
                     style="display: flex; align-items: center; justify-content: center; gap: 8px;">
                     <i class="fas fa-paper-plane"></i>
-                    留言
+                    <span data-i18n="guestbook.submit">留言</span>
                 </button>
             </form>
 
             <!-- View More Button -->
             <a href="guestbook.html" class="guestbook-view-more">
                 <i class="fas fa-comment-dots"></i>
-                查看更多
+                <span data-i18n="guestbook.viewMore">查看更多</span>
             </a>
         </div>
     </div>
@@ -545,7 +542,7 @@
                                             gap: 8px;
                                         ">
                                             <i class="fas fa-info-circle"></i>
-                                            请从左侧选择项目进行安全设置
+                                            <span data-i18n="security.selectFromLeft">请从左侧选择项目进行安全设置</span>
                                         </div>
                                     </div>
                                 </div>
@@ -555,9 +552,11 @@
                                 <div class="security-detail-content" id="detail-change-password" style="display: none;">
                                     <h3 class="detail-title" data-i18n="security.changePassword">修改密码</h3>
                                     <input type="password" id="oldPasswordInput" placeholder="当前密码"
-                                        class="security-input" autocomplete="new-password">
+                                        class="security-input" autocomplete="new-password"
+                                        data-i18n-placeholder="security.currentPassword">
                                     <input type="password" id="newPasswordInput" placeholder="新密码 (至少6位)"
-                                        class="security-input" autocomplete="new-password">
+                                        class="security-input" autocomplete="new-password"
+                                        data-i18n-placeholder="security.newPassword">
                                     <button class="gradient-btn" onclick="changePassword()"
                                         data-i18n="security.updatePassword">更新密码</button>
                                 </div>
@@ -569,12 +568,14 @@
                                     <div class="input-group input-with-action"
                                         style="max-width: 100%; margin-bottom: 12px;">
                                         <input type="tel" id="phoneNumberInput" placeholder="输入手机号"
-                                            class="security-input" maxlength="11">
-                                        <span data-i18n="security.getVerifyCode">获取验证码</span>
-                                        </button>
+                                            class="security-input" maxlength="11"
+                                            data-i18n-placeholder="security.enterPhone">
+                                        <button type="button" class="verify-code-btn" id="sendPhoneCodeBtn"
+                                            onclick="sendPhoneVerificationCode()"
+                                            data-i18n="security.getVerifyCode">获取验证码</button>
                                     </div>
                                     <input type="text" id="phoneCodeInput" placeholder="输入6位验证码" class="security-input"
-                                        maxlength="6">
+                                        maxlength="6" data-i18n-placeholder="security.enterVerifyCode">
                                     <button class="gradient-btn" onclick="bindPhone()"
                                         data-i18n="security.bindPhone">绑定手机号</button>
                                 </div>
@@ -582,11 +583,12 @@
                                 <!-- Delete Account Panel -->
                                 <div class="security-detail-content" id="detail-delete-account">
                                     <h3 class="detail-title danger" data-i18n="security.deleteAccount">注销账号</h3>
-                                    <p class="detail-desc">⚠️ 此操作不可恢复，您的所有数据将被永久删除。</p>
+                                    <p class="detail-desc" data-i18n="security.deleteWarning">⚠️ 此操作不可恢复，您的所有数据将被永久删除。
+                                    </p>
                                     <div class="danger-zone">
                                         <button class="danger-btn" onclick="deleteAccount()">
                                             <i class="fas fa-trash-alt"></i>
-                                            确认注销
+                                            <span data-i18n="security.confirmDelete">确认注销</span>
                                         </button>
                                     </div>
                                 </div>
@@ -602,11 +604,13 @@
                                 <h3 class="mobile-section-title" data-i18n="security.changePassword">修改密码</h3>
                                 <div class="input-group">
                                     <input type="password" id="mobile_oldPassword" class="security-input"
-                                        placeholder="当前密码" autocomplete="new-password">
+                                        placeholder="当前密码" autocomplete="new-password"
+                                        data-i18n-placeholder="security.currentPassword">
                                 </div>
                                 <div class="input-group">
                                     <input type="password" id="mobile_newPassword" class="security-input"
-                                        placeholder="新密码 (至少6位)" autocomplete="new-password">
+                                        placeholder="新密码 (至少6位)" autocomplete="new-password"
+                                        data-i18n-placeholder="security.newPassword">
                                 </div>
                                 <button class="gradient-btn" onclick="changePassword('mobile')"
                                     data-i18n="security.updatePassword">更新密码</button>
@@ -618,13 +622,15 @@
                                 <p class="mobile-section-desc" data-i18n="security.bindPhoneDesc">绑定手机号可以增强账户安全性</p>
                                 <div class="input-group">
                                     <input type="tel" id="mobile_phoneNumberInput" class="security-input"
-                                        placeholder="输入手机号">
+                                        placeholder="输入手机号" data-i18n-placeholder="security.enterPhone">
                                 </div>
                                 <div class="input-group" style="display: flex; gap: 10px;">
                                     <input type="text" id="mobile_phoneCodeInput" class="security-input"
-                                        placeholder="输入6位验证码" style="flex: 1;">
-                                    onclick="sendPhoneVerificationCode('mobile')"
-                                    data-i18n="security.getVerifyCode">获取验证码</button>
+                                        placeholder="输入6位验证码" style="flex: 1;"
+                                        data-i18n-placeholder="security.enterVerifyCode">
+                                    <button class="code-btn" id="mobile_sendPhoneCodeBtn"
+                                        onclick="sendPhoneVerificationCode('mobile')"
+                                        data-i18n="security.getVerifyCode">获取验证码</button>
                                 </div>
                                 <button class="gradient-btn" onclick="bindPhone('mobile')"
                                     data-i18n="security.bindPhone">绑定手机号</button>
@@ -633,10 +639,11 @@
                             <!-- Section 3: Delete Account -->
                             <div class="mobile-security-section">
                                 <h3 class="mobile-section-title danger" data-i18n="security.deleteAccount">注销账号</h3>
-                                <p class="mobile-section-desc">⚠️ 此操作不可恢复，您的所有数据将被永久删除。</p>
+                                <p class="mobile-section-desc" data-i18n="security.deleteWarning">⚠️
+                                    此操作不可恢复，您的所有数据将被永久删除。</p>
                                 <button class="danger-btn" onclick="deleteAccount()">
                                     <i class="fas fa-trash-alt"></i>
-                                    确认注销
+                                    <span data-i18n="security.confirmDelete">确认注销</span>
                                 </button>
                             </div>
 

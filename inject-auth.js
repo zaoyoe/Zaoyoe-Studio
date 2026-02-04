@@ -21,18 +21,24 @@
         <!-- Notification Bell -->
         <div class="notif-wrapper" style="position: relative; display: none;" id="navNotifWrapper">
             <button id="notifBtn" onclick="toggleNotifMenu(event)"
-                style="width: 40px; height: 40px; padding: 0; display: flex; align-items: center; justify-content: center; background: transparent; border: none; cursor: pointer; color: rgba(255,255,255,0.9); transition: color 0.2s;">
-                <i class="far fa-bell" style="font-size: 1.2rem;"></i>
+                style="width: 36px; height: 36px; padding: 0; display: flex; align-items: center; justify-content: center; 
+                       background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255,255,255,0.1); border-radius: 50%; 
+                       cursor: pointer; transition: all 0.2s;
+                       backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+                       box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+                <i class="far fa-bell" style="font-size: 1rem; color: rgba(255,255,255,0.9);"></i>
                 <div class="notif-badge" id="notifBadge" style="display: none;"></div>
             </button>
         </div>
 
         <!-- Language Toggle -->
         <button id="langToggleBtn" onclick="window.i18n?.toggleLanguage()" 
-            style="height: 32px; padding: 0 10px; display: flex; align-items: center; justify-content: center; 
-                   background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); 
-                   border-radius: 16px; cursor: pointer; color: rgba(255,255,255,0.85); 
-                   font-size: 12px; font-weight: 500; transition: all 0.2s; gap: 4px;"
+            style="height: 36px; padding: 0 12px; display: flex; align-items: center; justify-content: center; 
+                   background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255,255,255,0.1); 
+                   border-radius: 18px; cursor: pointer; color: rgba(255,255,255,0.85); 
+                   font-size: 12px; font-weight: 500; transition: all 0.2s; gap: 6px;
+                   backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+                   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);"
             title="切换语言 / Switch Language">
             <span id="langZh" class="lang-text" style="opacity: 1;">中</span>
             <span style="color: rgba(255,255,255,0.3);">|</span>
@@ -95,101 +101,101 @@
 
             <!-- Login View -->
             <div id="loginView" class="form-view">
-                <h2 class="card-title">欢迎回来</h2>
-                <p class="card-subtitle">请输入您的账号信息以登录</p>
+                <h2 class="card-title" data-i18n="auth.welcomeBack">欢迎回来</h2>
+                <p class="card-subtitle" data-i18n="auth.loginSubtitle">请输入您的账号信息以登录</p>
 
                 <!-- Google Login Button -->
                 <button type="button" class="google-login-btn" onclick="handleGoogleLogin()">
                     <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" width="18" height="18">
-                    使用 Google 登录
+                    <span data-i18n="auth.googleLogin">使用 Google 登录</span>
                 </button>
 
                 <!-- Divider -->
                 <div class="login-divider">
-                    <span>或者</span>
+                    <span data-i18n="auth.or">或者</span>
                 </div>
 
                 <form id="loginForm" onsubmit="handleLogin(event)">
                     <div class="input-group">
-                        <input type="email" id="login-email" class="glass-input" placeholder="邮箱地址" required>
+                        <input type="email" id="login-email" class="glass-input" placeholder="邮箱地址" data-i18n-placeholder="auth.emailPlaceholder" required>
                     </div>
                     <div class="input-group">
-                        <input type="password" id="login-password" class="glass-input" placeholder="密码" required>
+                        <input type="password" id="login-password" class="glass-input" placeholder="密码" data-i18n-placeholder="auth.passwordPlaceholder" required>
                     </div>
 
                     <!-- Forgot Password Link -->
                     <div style="text-align: right; margin-bottom: 16px;">
-                        <span class="forgot-password-link" onclick="switchAuthView('reset')">忘记密码了吗？</span>
+                        <span class="forgot-password-link" onclick="switchAuthView('reset')" data-i18n="auth.forgotPassword">忘记密码了吗？</span>
                     </div>
 
                     <!-- Remember Me Checkbox -->
                     <div class="checkbox-wrapper" style="margin-bottom: 24px; display: flex; align-items: center; gap: 8px; color: rgba(255,255,255,0.7); font-size: 13px;">
-                        <input type="checkbox" id="rememberMe" class="custom-checkbox" style="width: 16px; height: 16px; accent-color: #9b5de5; cursor: pointer;" title="勾选后将自动保存您的登录信息，30天内无需重复输入密码">
-                        <label for="rememberMe" style="cursor: pointer;" title="勾选后将自动保存您的登录信息，30天内无需重复输入密码">记住密码</label>
+                        <input type="checkbox" id="rememberMe" class="custom-checkbox" style="width: 16px; height: 16px; accent-color: #9b5de5; cursor: pointer;">
+                        <label for="rememberMe" style="cursor: pointer;" data-i18n="auth.rememberMe">记住密码</label>
                     </div>
 
-                    <button type="submit" class="login-submit-btn">登录</button>
+                    <button type="submit" class="login-submit-btn" data-i18n="common.login">登录</button>
                 </form>
 
                 <div class="switch-text">
-                    还没有账号？
-                    <span class="switch-link" onclick="switchAuthView('register')">立即注册</span>
+                    <span data-i18n="auth.noAccount">还没有账号？</span>
+                    <span class="switch-link" onclick="switchAuthView('register')" data-i18n="auth.signUpNow">立即注册</span>
                 </div>
             </div>
 
             <!-- Register View -->
             <div id="registerView" class="form-view hidden">
-                <h2 class="card-title">创建账号</h2>
-                <p class="card-subtitle">加入我们以获取更多高级功能</p>
+                <h2 class="card-title" data-i18n="auth.createAccount">创建账号</h2>
+                <p class="card-subtitle" data-i18n="auth.registerSubtitle">加入我们以获取更多高级功能</p>
 
                 <form id="registerForm" onsubmit="handleRegister(event)" autocomplete="off">
                     <div class="input-group">
-                        <input type="text" id="reg-username" class="glass-input" placeholder="用户名" autocomplete="off" data-form-type="other" required>
+                        <input type="text" id="reg-username" class="glass-input" placeholder="用户名" data-i18n-placeholder="auth.usernamePlaceholder" autocomplete="off" data-form-type="other" required>
                     </div>
 
                     <div class="input-group">
-                        <input type="text" id="reg-email" class="glass-input" placeholder="邮箱地址" autocomplete="off" data-form-type="other" required>
+                        <input type="text" id="reg-email" class="glass-input" placeholder="邮箱地址" data-i18n-placeholder="auth.emailPlaceholder" autocomplete="off" data-form-type="other" required>
                     </div>
 
                     <div class="input-group input-with-action">
-                        <input type="text" id="reg-code" class="glass-input" placeholder="输入6位验证码" maxlength="6" autocomplete="off" data-form-type="other" required>
-                        <button type="button" class="verify-code-btn" id="sendBtn" onclick="sendVerificationCode()">
+                        <input type="text" id="reg-code" class="glass-input" placeholder="输入6位验证码" data-i18n-placeholder="auth.enterVerifyCode" maxlength="6" autocomplete="off" data-form-type="other" required>
+                        <button type="button" class="verify-code-btn" id="sendBtn" onclick="sendVerificationCode()" data-i18n="auth.getVerifyCode">
                             获取验证码
                         </button>
                     </div>
 
                     <div class="input-group">
-                        <input type="password" id="reg-password" class="glass-input" placeholder="设置密码" autocomplete="new-password" data-form-type="other" required>
+                        <input type="password" id="reg-password" class="glass-input" placeholder="设置密码" data-i18n-placeholder="auth.setPassword" autocomplete="new-password" data-form-type="other" required>
                     </div>
 
-                    <button type="submit" class="login-submit-btn">创建账号</button>
+                    <button type="submit" class="login-submit-btn" data-i18n="auth.createAccount">创建账号</button>
                 </form>
 
                 <div class="switch-text">
-                    已有账号？
-                    <span class="switch-link" onclick="switchAuthView('login')">直接登录</span>
+                    <span data-i18n="auth.hasAccount">已有账号？</span>
+                    <span class="switch-link" onclick="switchAuthView('login')" data-i18n="auth.loginNow">直接登录</span>
                 </div>
             </div>
 
             <!-- Password Reset View -->
             <div id="resetView" class="form-view hidden">
-                <h2 class="card-title">找回密码</h2>
-                <p class="card-subtitle">请输入您的注册邮箱以重置密码</p>
+                <h2 class="card-title" data-i18n="auth.resetPassword">找回密码</h2>
+                <p class="card-subtitle" data-i18n="auth.resetSubtitle">请输入您的注册邮箱以重置密码</p>
 
                 <form id="resetForm" onsubmit="handlePasswordReset(event)">
                     <div class="input-group">
-                        <input type="email" id="reset-email" class="glass-input" placeholder="电子邮箱" required>
+                        <input type="email" id="reset-email" class="glass-input" placeholder="邮箱地址" data-i18n-placeholder="auth.emailPlaceholder" required>
                     </div>
 
-                    <button type="submit" class="login-submit-btn" style="margin-top: 24px;">找回</button>
+                    <button type="submit" class="login-submit-btn" style="margin-top: 24px;" data-i18n="auth.recover">找回</button>
                 </form>
 
                 <div class="switch-text">
-                    没有账户？
-                    <span class="switch-link" onclick="switchAuthView('register')">注册</span>
+                    <span data-i18n="auth.noAccountYet">没有账户？</span>
+                    <span class="switch-link" onclick="switchAuthView('register')" data-i18n="auth.register">注册</span>
                 </div>
                 <div class="switch-text" style="margin-top: 10px;">
-                    <span class="switch-link back-to-login" onclick="switchAuthView('login')">返回登录</span>
+                    <span class="switch-link back-to-login" onclick="switchAuthView('login')" data-i18n="auth.backToLogin">返回登录</span>
                 </div>
             </div>
 

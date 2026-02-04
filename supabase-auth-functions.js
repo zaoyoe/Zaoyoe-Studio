@@ -1049,7 +1049,15 @@ async function openProfileModal(event) {
         const year = createdAt.getFullYear();
         const month = createdAt.getMonth() + 1;
         const day = createdAt.getDate();
-        memberSinceSpan.textContent = `注册于 ${year}年${month}月${day}日`;
+
+        // Use i18n for member since text
+        const isEnglish = window.i18n?.isEnglish?.();
+        if (isEnglish) {
+            const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            memberSinceSpan.textContent = `Member since ${monthNames[month - 1]} ${day}, ${year}`;
+        } else {
+            memberSinceSpan.textContent = `注册于 ${year}年${month}月${day}日`;
+        }
     }
 
     // 打开模态框

@@ -36,6 +36,14 @@
     let batchStats = { success: 0, failed: 0, total: 0 };
     let activeEventSource = null; // Track active SSE connection for cancellation
 
+    // i18n helper with fallback
+    function t(key, fallback) {
+        if (window.i18n && typeof window.i18n.t === 'function') {
+            return window.i18n.t(key);
+        }
+        return fallback || key;
+    }
+
     // =============================================
     // Initialize Widget
     // =============================================
@@ -67,11 +75,47 @@
             console.warn('[VerifyWidget] Error reading cached profile:', e);
         }
 
+        // Wait for i18n to be ready (with timeout fallback)
+        if (!window.i18n || typeof window.i18n.t !== 'function') {
+            console.log('[VerifyWidget] Waiting for i18n to load...');
+            await new Promise(resolve => {
+                let checkCount = 0;
+                const checkI18n = setInterval(() => {
+                    checkCount++;
+                    if (window.i18n && typeof window.i18n.t === 'function') {
+                        clearInterval(checkI18n);
+                        resolve();
+                    } else if (checkCount > 20) { // 2 second timeout
+                        clearInterval(checkI18n);
+                        console.warn('[VerifyWidget] i18n not loaded, using fallback');
+                        resolve();
+                    }
+                }, 100);
+            });
+        }
+
         // Render widget with initial auth state
         render(container, isLoggedIn);
 
         // Setup auth listener (will verify token and update final state)
         setupAuthListener();
+
+        // Listen for language changes to re-render with new translations
+        setupLanguageChangeListener(container);
+    }
+
+    // =============================================
+    // Language Change Listener
+    // =============================================
+    function setupLanguageChangeListener(container) {
+        // Listen for language change event from i18n system (dispatched on window)
+        window.addEventListener('languageChanged', () => {
+            console.log('[VerifyWidget] Language changed, re-rendering...');
+            const isLoggedIn = !!currentUser;
+            render(container, isLoggedIn);
+            // Re-attach event listeners after re-render
+            setupTextareaListeners();
+        });
     }
 
     // =============================================
@@ -118,12 +162,12 @@
                         </svg>
                     </div>
                     <div class="verify-widget-title">
-                        <h3>Gemini 验证服务</h3>
-                        <p>支持批量验证</p>
+                        <h3>${t('verify.title', 'Gemini 验证服务')}</h3>
+                        <p>${t('verify.subtitle', '支持批量验证')}</p>
                     </div>
                     <div class="verify-quota" id="verifyQuota" style="display: none;">
                         <i class="fas fa-ticket"></i>
-                        剩余: <span id="verifyQuotaValue">--</span>
+                        ${t('verify.remaining', '剩余')}: <span id="verifyQuotaValue">--</span>
                     </div>
                     <div class="verify-balance" id="verifyBalance" style="display: ${balanceDisplay};">
                         <i class="fas fa-coins"></i>
@@ -134,10 +178,10 @@
                 <div id="verifyContent">
                     <!-- Content will be dynamically loaded based on auth state -->
                     <div class="verify-login-prompt" id="verifyLoginPrompt" style="display: ${loginPromptDisplay};">
-                        <p>登录后即可使用验证服务</p>
+                        <p>${t('verify.loginPrompt', '登录后即可使用验证服务')}</p>
                         <button class="verify-login-btn" onclick="window.toggleLoginModal && window.toggleLoginModal()">
                             <i class="fas fa-sign-in-alt"></i>
-                            登录 / 注册
+                            ${t('verify.loginBtn', '登录 / 注册')}
                         </button>
                     </div>
 
@@ -146,27 +190,27 @@
                             <textarea 
                                 class="verify-textarea" 
                                 id="verifyIdInput"
-                                placeholder="输入 SheerID 验证链接，每行一个&#10;&#10;示例:&#10;https://services.sheerid.com/verify/xxx/?verificationId=yyy&#10;https://services.sheerid.com/verify/xxx/?verificationId=zzz"
+                                placeholder="${t('verify.placeholder', '输入 SheerID 验证链接，每行一个')}"
                                 rows="5"
                             ></textarea>
                             <div class="verify-batch-info">
                                 <div class="verify-batch-count">
                                     <i class="fas fa-list-ol"></i>
-                                    待验证: <span class="count" id="verifyLinkCount">0</span> 个
+                                    ${t('verify.pendingCount', '待验证')}: <span class="count" id="verifyLinkCount">0</span> ${t('verify.items', '个')}
                                 </div>
                                 <div class="verify-price-info">
                                     <i class="fas fa-coins"></i>
-                                    共需 <span class="price" id="verifyTotalCost">0</span> 积分
-                                    <span class="per-price">（${CONFIG.pricePerVerify}积分/次）</span>
+                                    ${t('verify.totalCost', '共需')} <span class="price" id="verifyTotalCost">0</span> ${t('verify.points', '积分')}
+                                    <span class="per-price">（${CONFIG.pricePerVerify}${t('verify.perPrice', '积分/次')}）</span>
                                 </div>
                             </div>
                             <button class="verify-submit-btn" id="verifySubmitBtn" onclick="VerifyWidget.submit()">
                                 <i class="fas fa-check-circle"></i>
-                                开始验证
+                                ${t('verify.startVerify', '开始验证')}
                             </button>
                             <button class="verify-cancel-btn" id="verifyCancelBtn" onclick="VerifyWidget.cancel()">
                                 <i class="fas fa-times-circle"></i>
-                                取消验证
+                                ${t('verify.cancelVerify', '取消验证')}
                             </button>
                         </div>
                     </div>
@@ -177,25 +221,25 @@
                     <div class="verify-batch-results-header">
                         <div class="verify-batch-results-title">
                             <i class="fas fa-list-check"></i>
-                            验证结果
+                            ${t('verify.results', '验证结果')}
                         </div>
                         <div class="verify-batch-progress" id="verifyBatchProgress">
-                            进度: <span class="current">0</span>/<span class="total">0</span>
+                            ${t('verify.progress', '进度')}: <span class="current">0</span>/<span class="total">0</span>
                         </div>
                     </div>
                     <div id="verifyResultsList"></div>
                     <div class="verify-batch-summary" id="verifyBatchSummary" style="display: none;">
                         <div class="verify-batch-stat success">
                             <i class="fas fa-check-circle"></i>
-                            成功: <span id="successCount">0</span>
+                            ${t('verify.success', '成功')}: <span id="successCount">0</span>
                         </div>
                         <div class="verify-batch-stat error">
                             <i class="fas fa-times-circle"></i>
-                            失败: <span id="failedCount">0</span>
+                            ${t('verify.failed', '失败')}: <span id="failedCount">0</span>
                         </div>
                         <div class="verify-batch-stat total">
                             <i class="fas fa-list"></i>
-                            总计: <span id="totalCount">0</span>
+                            ${t('verify.total', '总计')}: <span id="totalCount">0</span>
                         </div>
                     </div>
                 </div>
@@ -206,7 +250,7 @@
                         <div class="verify-result-icon">
                             <i class="fas fa-check"></i>
                         </div>
-                        <div class="verify-result-title" id="verifyResultTitle">验证成功</div>
+                        <div class="verify-result-title" id="verifyResultTitle">${t('verify.verifySuccess', '验证成功')}</div>
                     </div>
                     <div class="verify-result-message" id="verifyResultMessage"></div>
                 </div>
@@ -372,22 +416,25 @@
 
         const inputValue = input.value.trim();
         if (!inputValue) {
-            showSingleResult('error', '请输入内容', '请输入 SheerID 验证链接');
+            showSingleResult('error', t('verify.enterContent', '请输入内容'), t('verify.enterSheerIdLink', '请输入 SheerID 验证链接'));
             return;
         }
 
         // Parse all links
         const links = parseLinks(inputValue);
         if (links.length === 0) {
-            showSingleResult('error', '格式错误', '无法识别有效的验证链接');
+            showSingleResult('error', t('verify.formatError', '格式错误'), t('verify.invalidLink', '无法识别有效的验证链接'));
             return;
         }
 
         // Calculate total cost
         const totalCost = links.length * CONFIG.pricePerVerify;
         if (userBalance < totalCost) {
-            showSingleResult('error', '积分不足',
-                `验证 ${links.length} 个链接需要 ${totalCost} 积分，当前余额: ${userBalance}`);
+            const msg = t('verify.needPoints', '验证 {count} 个链接需要 {cost} 积分，当前余额: {balance}')
+                .replace('{count}', links.length)
+                .replace('{cost}', totalCost)
+                .replace('{balance}', userBalance);
+            showSingleResult('error', t('verify.insufficientPoints', '积分不足'), msg);
             return;
         }
 
@@ -414,12 +461,12 @@
             console.log(`[VerifyWidget] Extracted ID[${i}]: "${verificationId ? verificationId.substring(0, 80) : 'NULL'}${verificationId && verificationId.length > 80 ? '...' : ''}"`);
 
             if (!verificationId) {
-                addResultItem(i, link, 'error', '无效的链接格式');
+                addResultItem(i, link, 'error', t('verify.invalidFormat', '无效的链接格式'));
                 batchStats.failed++;
                 invalidIndices.push(i);
             } else {
                 validLinks.push({ index: i, link, verificationId });
-                addResultItem(i, link, 'processing', '等待验证...');
+                addResultItem(i, link, 'processing', t('verify.waiting', '等待验证...'));
             }
         }
         console.log('[VerifyWidget] === END EXTRACTION DEBUG ===');
@@ -440,7 +487,7 @@
         }
 
         submitBtn.disabled = true;
-        submitBtn.innerHTML = '<div class="spinner"></div> 批量验证中...';
+        submitBtn.innerHTML = `<div class="spinner"></div> ${t('verify.verifying', '批量验证中...')}`;
 
         try {
             // Send all valid verification IDs in a single batch request
@@ -480,7 +527,7 @@
             console.error('[VerifyWidget] Batch verification error:', e);
             // Mark all processing items as failed
             validLinks.forEach(({ index }) => {
-                updateResultItem(index, 'error', e.message || '验证失败');
+                updateResultItem(index, 'error', e.message || t('verify.failed', '验证失败'));
             });
             batchStats.failed += validLinks.length;
             showBatchSummary();
@@ -489,7 +536,7 @@
             submitBtn.style.display = 'flex';
             if (cancelBtn) cancelBtn.style.display = 'none';
             submitBtn.disabled = false;
-            submitBtn.innerHTML = '<i class="fas fa-check-circle"></i> 开始验证';
+            submitBtn.innerHTML = `<i class="fas fa-check-circle"></i> ${t('verify.startVerify', '开始验证')}`;
         }
     }
 
@@ -539,7 +586,7 @@
         const userId = userData?.user?.id;
 
         if (!userId) {
-            throw new Error('请先登录');
+            throw new Error(t('verify.pleaseLogin', '请先登录'));
         }
 
         return new Promise((resolve, reject) => {
@@ -606,7 +653,7 @@
                 } catch (e) {
                     console.warn('[VerifyWidget] Failed to parse result:', e);
                     eventSource.close();
-                    reject(new Error('解析响应失败'));
+                    reject(new Error(t('verify.parseFailed', '解析响应失败')));
                 }
             });
 
@@ -623,13 +670,13 @@
                     console.log('[VerifyWidget] Error:', data);
                     isCompleted = true;
                     eventSource.close();
-                    reject(new Error(data.message || '验证失败'));
+                    reject(new Error(data.message || t('verify.failed', '验证失败')));
                 } catch (e) {
                     // Generic error
                     console.error('[VerifyWidget] SSE error:', event);
                     isCompleted = true;
                     eventSource.close();
-                    reject(new Error('连接中断，请重试'));
+                    reject(new Error(t('verify.connectionLost', '连接中断，请重试')));
                 }
             });
 
@@ -638,7 +685,7 @@
                 if (!isCompleted) {
                     isCompleted = true;
                     eventSource.close();
-                    reject(new Error('验证超时，请稍后重试'));
+                    reject(new Error(t('verify.timeout', '验证超时，请稍后重试')));
                 }
             }, 360000);
         });
@@ -754,15 +801,15 @@
                         items.forEach((item, i) => {
                             const index = parseInt(item.id.replace('result-item-', '')); // Extract original index
                             if (i < successCount) {
-                                updateResultItem(index, 'success', '验证成功！');
+                                updateResultItem(index, 'success', t('verify.verifySuccess', '验证成功！'));
                             } else {
-                                updateResultItem(index, 'error', data.message || '验证失败');
+                                updateResultItem(index, 'error', data.message || t('verify.failed', '验证失败'));
                             }
                         });
                     } else {
                         // Fallback if stats are not provided, mark all as failed
                         validLinks.forEach(({ index }) => {
-                            updateResultItem(index, 'error', data.message || '验证失败');
+                            updateResultItem(index, 'error', data.message || t('verify.failed', '验证失败'));
                         });
                     }
 
@@ -797,7 +844,7 @@
                     console.warn('[VerifyWidget] Failed to parse batch result:', e);
                     eventSource.close();
                     if (activeEventSource === eventSource) activeEventSource = null;
-                    reject(new Error('解析响应失败'));
+                    reject(new Error(t('verify.parseFailed', '解析响应失败')));
                 }
             });
 
@@ -816,14 +863,14 @@
                     isCompleted = true;
                     eventSource.close();
                     if (activeEventSource === eventSource) activeEventSource = null;
-                    reject(new Error(data.message || '验证失败'));
+                    reject(new Error(data.message || t('verify.failed', '验证失败')));
                 } catch (e) {
                     // Generic error (connection lost, server error, etc.)
-                    console.error('[VerifyWidget] SSE connection error:', event);
+                    console.error('[VerifyWidget] Batch SSE error:', event);
                     isCompleted = true;
                     eventSource.close();
                     if (activeEventSource === eventSource) activeEventSource = null;
-                    reject(new Error('连接中断，请重试'));
+                    reject(new Error(t('verify.connectionLost', '连接中断，请重试')));
                 }
             });
 
@@ -833,7 +880,7 @@
                     isCompleted = true;
                     eventSource.close();
                     if (activeEventSource === eventSource) activeEventSource = null;
-                    reject(new Error('批量验证超时，请稍后重试'));
+                    reject(new Error(t('verify.timeout', '批量验证超时，请稍后重试')));
                 }
             }, 480000);
         });
@@ -920,7 +967,7 @@
     function updateBatchProgress(current, total) {
         const progressEl = document.getElementById('verifyBatchProgress');
         if (progressEl) {
-            progressEl.innerHTML = `进度: <span class="current">${current}</span>/<span class="total">${total}</span>`;
+            progressEl.innerHTML = `${t('verify.progress', '进度')}: <span class="current">${current}</span>/<span class="total">${total}</span>`;
         }
     }
 
@@ -981,7 +1028,7 @@
         // Update the per-price text
         const perPriceElements = document.querySelectorAll('.per-price');
         perPriceElements.forEach(el => {
-            el.textContent = `（${CONFIG.pricePerVerify}积分/次）`;
+            el.textContent = `（${CONFIG.pricePerVerify}${t('verify.perPrice', '积分/次')}）`;
         });
         // Update total cost display
         updateLinkCount();
@@ -1006,7 +1053,7 @@
         if (remaining === 0) {
             quotaEl.classList.add('danger');
             // Show warning message
-            showSingleResult('error', '服务暂不可用', 'API验证次数已用完，请联系管理员补货');
+            showSingleResult('error', t('verify.serviceUnavailable', '服务暂不可用'), t('verify.quotaExhausted', 'API验证次数已用完，请联系管理员补货'));
         } else if (remaining <= 5) {
             quotaEl.classList.add('warning');
         }
@@ -1036,7 +1083,7 @@
         if (submitBtn) {
             submitBtn.style.display = 'flex';
             submitBtn.disabled = false;
-            submitBtn.innerHTML = '<i class="fas fa-check-circle"></i> 开始验证';
+            submitBtn.innerHTML = `<i class="fas fa-check-circle"></i> ${t('verify.startVerify', '开始验证')}`;
         }
 
         if (cancelBtn) {
@@ -1047,7 +1094,7 @@
         const processingItems = document.querySelectorAll('.verify-result-item.processing');
         processingItems.forEach((item) => {
             const index = parseInt(item.id.replace('result-item-', ''));
-            updateResultItem(index, 'error', '已取消验证');
+            updateResultItem(index, 'error', t('verify.cancelled', '已取消验证'));
         });
 
         // Update batch stats

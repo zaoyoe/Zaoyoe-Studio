@@ -1103,10 +1103,14 @@ async function callGeminiVision(imageBase64) {
 
 {
     "title": "A creative, descriptive title in English (2-5 words)",
+    "title_en": "Same as title - the English version of the title",
     "title_zh": "创意标题的中文版本",
     "category": "One of: Photography, Illustration, 3D Art, Miniature, Creative, Animation",
-    "description": "A brief 1-2 sentence description of the image",
+    "description": "A brief 1-2 sentence description of the image in English",
+    "description_en": "Same as description - English version",
     "description_zh": "描述的中文版本",
+    "prompt_suggestion_en": "A suggested prompt in English that could recreate this image style (2-4 sentences)",
+    "prompt_suggestion_zh": "一个建议的中文提示词，可以重现这种图像风格（2-4句话）",
     "objects": {
         "en": ["5-8 objects or subjects visible in the image"],
         "zh": ["对应的中文翻译"]
@@ -1339,6 +1343,69 @@ async function savePrompt(e) {
                 styles: analysisResult.styles,
                 mood: analysisResult.mood
             };
+            // Bilingual fields from AI analysis
+            promptData.title_en = analysisResult.title_en || analysisResult.title || title;
+            promptData.title_zh = analysisResult.title_zh || '';
+            promptData.description_en = analysisResult.description_en || analysisResult.description || description;
+            promptData.description_zh = analysisResult.description_zh || '';
+            promptData.prompt_text_en = analysisResult.prompt_suggestion_en || '';
+            promptData.prompt_text_zh = analysisResult.prompt_suggestion_zh || '';
+        }
+
+        // Auto-translate missing bilingual fields using PromptTranslator
+        if (window.PromptTranslator && window.GEMINI_API_KEY) {
+            try {
+                // Show translation UI feedback
+                updateStatus('Translating...', 'processing');
+                const statusBtn = document.querySelector('.status-text');
+                if (statusBtn) {
+                    const originalText = statusBtn.textContent;
+                    statusBtn.textContent = '🌐 翻译中...';
+                    setTimeout(() => statusBtn.textContent = originalText, 3000);
+                }
+
+                // Translate title
+                if (promptData.title) {
+                    if (!promptData.title_zh?.trim() && !PromptTranslator.isChinese(promptData.title)) {
+                        promptData.title_zh = await PromptTranslator.translateToChinese(promptData.title);
+                    }
+                    if (!promptData.title_en?.trim() && PromptTranslator.isChinese(promptData.title)) {
+                        promptData.title_en = await PromptTranslator.translateToEnglish(promptData.title);
+                    }
+                }
+
+                // Translate description
+                if (promptData.description) {
+                    if (!promptData.description_zh?.trim() && !PromptTranslator.isChinese(promptData.description)) {
+                        promptData.description_zh = await PromptTranslator.translateToChinese(promptData.description);
+                    }
+                    if (!promptData.description_en?.trim() && PromptTranslator.isChinese(promptData.description)) {
+                        promptData.description_en = await PromptTranslator.translateToEnglish(promptData.description);
+                    }
+                }
+
+                // Translate prompt text
+                if (promptData.prompt) {
+                    if (!promptData.prompt_text_zh?.trim() && !PromptTranslator.isChinese(promptData.prompt)) {
+                        promptData.prompt_text_zh = await PromptTranslator.translateToChinese(promptData.prompt);
+                    }
+                    if (!promptData.prompt_text_en?.trim() && PromptTranslator.isChinese(promptData.prompt)) {
+                        promptData.prompt_text_en = await PromptTranslator.translateToEnglish(promptData.prompt);
+                    }
+                }
+
+
+                console.log('[Gallery] Auto-translation complete:', {
+                    title_zh: promptData.title_zh,
+                    title_en: promptData.title_en,
+                    description_zh: promptData.description_zh,
+                    description_en: promptData.description_en
+                });
+                updateStatus('Saving...', 'processing');
+            } catch (translateError) {
+                console.warn('[Gallery] Translation failed, continuing without:', translateError);
+                // Don't block save if translation fails
+            }
         }
 
         // Always save to Supabase database (storage availability doesn't matter for DB save)
@@ -1364,6 +1431,13 @@ async function savePrompt(e) {
                 if (promptData.aiTags) {
                     updateData.ai_tags = promptData.aiTags;
                 }
+                // Include bilingual fields if available
+                if (promptData.title_en) updateData.title_en = promptData.title_en;
+                if (promptData.title_zh) updateData.title_zh = promptData.title_zh;
+                if (promptData.description_en) updateData.description_en = promptData.description_en;
+                if (promptData.description_zh) updateData.description_zh = promptData.description_zh;
+                if (promptData.prompt_text_en) updateData.prompt_text_en = promptData.prompt_text_en;
+                if (promptData.prompt_text_zh) updateData.prompt_text_zh = promptData.prompt_text_zh;
 
                 ({ data, error } = await supabaseClient
                     .from('prompts')
@@ -1381,7 +1455,14 @@ async function savePrompt(e) {
                         prompt_text: promptData.prompt,
                         images: promptData.images,
                         dominant_colors: promptData.dominantColors,
-                        ai_tags: promptData.aiTags
+                        ai_tags: promptData.aiTags,
+                        // Bilingual fields
+                        title_en: promptData.title_en,
+                        title_zh: promptData.title_zh,
+                        description_en: promptData.description_en,
+                        description_zh: promptData.description_zh,
+                        prompt_text_en: promptData.prompt_text_en,
+                        prompt_text_zh: promptData.prompt_text_zh
                     }])
                     .select());
             }

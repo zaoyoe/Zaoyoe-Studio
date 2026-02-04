@@ -85,7 +85,7 @@
                     <button class="wallet-close-btn" onclick="WalletModal.close()">✕</button>
                     
                     <div class="wallet-header">
-                        <h2>💰 我的钱包</h2>
+                        <h2>💰 ${window.i18n?.t('wallet.title') || '我的钱包'}</h2>
                     </div>
                     
                     <div class="wallet-layout">
@@ -94,16 +94,16 @@
                             <div class="sidebar-indicator"></div>
                             <div class="wallet-menu-item active" data-view="balance" onclick="WalletModal.switchView('balance')">
                                 <span class="menu-icon">💳</span>
-                                <span class="menu-text">余额</span>
+                                <span class="menu-text">${window.i18n?.t('wallet.balance') || '余额'}</span>
                             </div>
                             <div class="wallet-menu-item" data-view="recharge" onclick="WalletModal.switchView('recharge')">
                                 <span class="menu-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="boltGradientSidebar" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#fbbf24"/><stop offset="100%" style="stop-color:#f97316"/></linearGradient></defs><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z" fill="url(#boltGradientSidebar)"/></svg></span>
-                                <span class="menu-text">充值</span>
+                                <span class="menu-text">${window.i18n?.t('wallet.recharge') || '充值'}</span>
                             </div>
 
                             <div class="wallet-menu-item" data-view="orders" onclick="WalletModal.switchView('orders')">
                                 <span class="menu-icon">📋</span>
-                                <span class="menu-text">记录</span>
+                                <span class="menu-text">${window.i18n?.t('wallet.records') || '记录'}</span>
                             </div>
                         </div>
                         
@@ -113,16 +113,16 @@
                             <div class="wallet-view active" id="view-balance">
                                 <div class="balance-card compact-premium-card">
                                     <div class="card-left">
-                                        <label>当前可用积分</label>
+                                        <label>${window.i18n?.t('wallet.currentPoints') || '当前可用积分'}</label>
                                         <div class="balance-amount" id="wallet-total">--</div>
                                     </div>
                                     <div class="card-right">
                                         <div class="balance-detail-row">
-                                            <span class="detail-label">付费</span>
+                                            <span class="detail-label">${window.i18n?.t('wallet.paid') || '付费'}</span>
                                             <strong id="wallet-paid" class="detail-val">--</strong>
                                         </div>
                                         <div class="balance-detail-row">
-                                            <span class="detail-label">赠送</span>
+                                            <span class="detail-label">${window.i18n?.t('wallet.bonus') || '赠送'}</span>
                                             <strong id="wallet-bonus" class="detail-val">--</strong>
                                         </div>
                                     </div>
@@ -133,36 +133,36 @@
                                     <div class="redeem-input-row">
                                         <input type="text" 
                                                id="redeem-code-input" 
-                                               placeholder="输入兑换码"
+                                               placeholder="${window.i18n?.t('wallet.enterCode') || '输入兑换码'}"
                                                maxlength="19"
                                                autocomplete="off"
                                                onkeyup="if(event.key==='Enter') WalletModal.redeemCode()" />
-                                        <button class="redeem-btn" onclick="WalletModal.redeemCode()">兑换</button>
+                                        <button class="redeem-btn" onclick="WalletModal.redeemCode()">${window.i18n?.t('wallet.redeem') || '兑换'}</button>
                                     </div>
                                 </div>
                             </div>
                             
                             <!-- Recharge View -->
                             <div class="wallet-view" id="view-recharge">
-                                <h3 class="view-title"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align: -3px; margin-right: 4px;"><defs><linearGradient id="boltGradientTitle" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#fbbf24"/><stop offset="100%" style="stop-color:#f97316"/></linearGradient></defs><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z" fill="url(#boltGradientTitle)"/></svg>充值套餐</h3>
+                                <h3 class="view-title"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align: -3px; margin-right: 4px;"><defs><linearGradient id="boltGradientTitle" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#fbbf24"/><stop offset="100%" style="stop-color:#f97316"/></linearGradient></defs><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z" fill="url(#boltGradientTitle)"/></svg>${window.i18n?.t('wallet.rechargePackages') || '充值套餐'}</h3>
                                 <div class="packages-container" id="wallet-packages">
-                                    <div class="loading-text">加载中...</div>
+                                    <div class="loading-text">${window.i18n?.t('common.loading') || '加载中...'}</div>
                                 </div>
                                 
                                 <!-- Afdian Code Query Section -->
                                 <div class="afdian-section">
                                     <div class="afdian-header">
                                         <span class="afdian-icon">❤️</span>
-                                        <span>爱发电订单查询</span>
+                                        <span>${window.i18n?.t('wallet.afdianQuery') || '爱发电订单查询'}</span>
                                     </div>
-                                    <p class="afdian-hint">在爱发电支付后，输入订单号获取兑换码</p>
+                                    <p class="afdian-hint">${window.i18n?.t('wallet.afdianHint') || '在爱发电支付后，输入订单号获取兑换码'}</p>
                                     <div class="afdian-input-row">
                                         <input type="text" 
                                                id="afdian-order-input" 
-                                               placeholder="爱发电订单号"
+                                               placeholder="${window.i18n?.t('wallet.afdianOrderNo') || '爱发电订单号'}"
                                                autocomplete="off"
                                                onkeyup="if(event.key==='Enter') WalletModal.queryAfdianCode()" />
-                                        <button class="afdian-query-btn" onclick="WalletModal.queryAfdianCode()">查询</button>
+                                        <button class="afdian-query-btn" onclick="WalletModal.queryAfdianCode()">${window.i18n?.t('wallet.query') || '查询'}</button>
                                     </div>
                                     <div id="afdian-result" class="afdian-result"></div>
                                 </div>
@@ -172,40 +172,40 @@
                             <!-- Orders View (Shop Purchase History) -->
                             <div class="wallet-view" id="view-orders">
                                 <div class="history-header">
-                                    <h3 class="view-title">📋 交易记录</h3>
+                                    <h3 class="view-title">📋 ${window.i18n?.t('wallet.transactionRecords') || '交易记录'}</h3>
                                     <div class="history-actions">
                                         <div class="filter-wrapper">
                                             <div class="filter-chip" onclick="WalletModal.toggleOrderTimeFilterMenu(event)">
-                                                <span id="order-time-filter-label">全部</span>
+                                                <span id="order-time-filter-label">${window.i18n?.t('wallet.all') || '全部'}</span>
                                                 <span class="filter-arrow">▼</span>
                                             </div>
                                             <div class="filter-popup" id="order-time-filter-popup">
-                                                <div class="filter-option active" data-value="all" onclick="WalletModal.selectOrderTimeFilter('all', '全部')">全部</div>
-                                                <div class="filter-option" data-value="today" onclick="WalletModal.selectOrderTimeFilter('today', '今天')">今天</div>
-                                                <div class="filter-option" data-value="week" onclick="WalletModal.selectOrderTimeFilter('week', '本周')">本周</div>
-                                                <div class="filter-option" data-value="month" onclick="WalletModal.selectOrderTimeFilter('month', '本月')">本月</div>
+                                                <div class="filter-option active" data-value="all" onclick="WalletModal.selectOrderTimeFilter('all', window.i18n?.t('wallet.all') || '全部')">${window.i18n?.t('wallet.all') || '全部'}</div>
+                                                <div class="filter-option" data-value="today" onclick="WalletModal.selectOrderTimeFilter('today', window.i18n?.t('wallet.today') || '今天')">${window.i18n?.t('wallet.today') || '今天'}</div>
+                                                <div class="filter-option" data-value="week" onclick="WalletModal.selectOrderTimeFilter('week', window.i18n?.t('wallet.thisWeek') || '本周')">${window.i18n?.t('wallet.thisWeek') || '本周'}</div>
+                                                <div class="filter-option" data-value="month" onclick="WalletModal.selectOrderTimeFilter('month', window.i18n?.t('wallet.thisMonth') || '本月')">${window.i18n?.t('wallet.thisMonth') || '本月'}</div>
                                                 <div class="filter-divider"></div>
-                                                <div class="filter-option" data-value="custom" onclick="WalletModal.showOrderCustomDate()">📅 自定义...</div>
+                                                <div class="filter-option" data-value="custom" onclick="WalletModal.showOrderCustomDate()">📅 ${window.i18n?.t('wallet.custom') || '自定义...'}</div>
                                             </div>
                                         </div>
                                         <div class="filter-wrapper">
                                             <div class="filter-chip" onclick="WalletModal.toggleOrderFilterMenu(event)">
-                                                <span id="order-filter-label">全部</span>
+                                                <span id="order-filter-label">${window.i18n?.t('wallet.all') || '全部'}</span>
                                                 <span class="filter-arrow">▼</span>
                                             </div>
                                             <div class="filter-popup" id="order-filter-popup">
-                                                <div class="filter-option active" data-value="all" onclick="WalletModal.selectOrderFilter('all', '全部')">全部</div>
-                                                <div class="filter-option" data-value="recharge" onclick="WalletModal.selectOrderFilter('recharge', '充值')"><i class="fas fa-bolt" style="color: #fbbf24;"></i> 充值</div>
-                                                <div class="filter-option" data-value="redeem" onclick="WalletModal.selectOrderFilter('redeem', '兑换码')"><i class="fas fa-ticket-alt" style="color: #f472b6;"></i> 兑换码</div>
-                                                <div class="filter-option" data-value="shop" onclick="WalletModal.selectOrderFilter('shop', '商品')"><i class="fas fa-shopping-bag" style="color: #22c55e;"></i> 商品</div>
-                                                <div class="filter-option" data-value="prompt" onclick="WalletModal.selectOrderFilter('prompt', '提示词')"><i class="fas fa-lightbulb" style="color: #fde68a;"></i> 提示词</div>
+                                                <div class="filter-option active" data-value="all" onclick="WalletModal.selectOrderFilter('all', window.i18n?.t('wallet.all') || '全部')">${window.i18n?.t('wallet.all') || '全部'}</div>
+                                                <div class="filter-option" data-value="recharge" onclick="WalletModal.selectOrderFilter('recharge', window.i18n?.t('wallet.rechargeType') || '充值')"><i class="fas fa-bolt" style="color: #fbbf24;"></i> ${window.i18n?.t('wallet.rechargeType') || '充值'}</div>
+                                                <div class="filter-option" data-value="redeem" onclick="WalletModal.selectOrderFilter('redeem', window.i18n?.t('wallet.redeemCode') || '兑换码')"><i class="fas fa-ticket-alt" style="color: #f472b6;"></i> ${window.i18n?.t('wallet.redeemCode') || '兑换码'}</div>
+                                                <div class="filter-option" data-value="shop" onclick="WalletModal.selectOrderFilter('shop', window.i18n?.t('wallet.shopPurchase') || '商品')"><i class="fas fa-shopping-bag" style="color: #22c55e;"></i> ${window.i18n?.t('wallet.shopPurchase') || '商品'}</div>
+                                                <div class="filter-option" data-value="prompt" onclick="WalletModal.selectOrderFilter('prompt', window.i18n?.t('wallet.promptPurchase') || '提示词')"><i class="fas fa-lightbulb" style="color: #fde68a;"></i> ${window.i18n?.t('wallet.promptPurchase') || '提示词'}</div>
                                             </div>
                                         </div>
                                         <div class="clear-chip" onclick="WalletModal.clearOrders()">🗑</div>
                                     </div>
                                 </div>
                                 <div class="orders-container" id="wallet-orders">
-                                    <div class="loading-text">加载中...</div>
+                                    <div class="loading-text">${window.i18n?.t('common.loading') || '加载中...'}</div>
                                 </div>
                             </div>
                         </div>
@@ -311,15 +311,19 @@
                 const pkgContainer = document.getElementById('wallet-packages');
                 if (pkgContainer) {
                     if (packages.length === 0) {
-                        pkgContainer.innerHTML = '<div class="empty-text">暂无套餐</div>';
+                        pkgContainer.innerHTML = `<div class="empty-text">${window.i18n?.t('wallet.noPackages') || '暂无套餐'}</div>`;
                     } else {
-                        pkgContainer.innerHTML = packages.map(pkg => `
+                        const isEnglish = window.i18n?.isEnglish?.();
+                        const pointsUnit = window.i18n?.t('wallet.pointsUnit') || '分';
+                        pkgContainer.innerHTML = packages.map(pkg => {
+                            const displayName = isEnglish && pkg.name_en ? pkg.name_en : pkg.name;
+                            return `
                             <div class="package-item" onclick="WalletModal.buyPackage('${pkg.id}', '${pkg.name}')">
-                                <div class="pkg-name">${pkg.name}</div>
-                                <div class="pkg-points">${pkg.points_amount} 分${pkg.bonus_points > 0 ? ` <span class="pkg-bonus">+${pkg.bonus_points}</span>` : ''}</div>
+                                <div class="pkg-name">${displayName}</div>
+                                <div class="pkg-points">${pkg.points_amount} ${pointsUnit}${pkg.bonus_points > 0 ? ` <span class="pkg-bonus">+${pkg.bonus_points}</span>` : ''}</div>
                                 <div class="pkg-price">¥${pkg.price_cny}</div>
                             </div>
-                        `).join('');
+                        `}).join('');
                     }
                 }
 
@@ -1378,9 +1382,17 @@
         renderOrders(orders) {
             const container = document.getElementById('wallet-orders');
             if (!orders || orders.length === 0) {
-                container.innerHTML = '<div class="empty-text">暂无记录</div>';
+                container.innerHTML = `<div class="empty-text">${window.i18n?.t('wallet.noRecords') || '暂无记录'}</div>`;
                 return;
             }
+
+            const pointsUnit = window.i18n?.t('wallet.pointsUnit') || '积分';
+            const completedText = window.i18n?.t('wallet.completed') || '已完成';
+            const refundedText = window.i18n?.t('wallet.refunded') || '已退款';
+            const partialRefundText = window.i18n?.t('wallet.partialRefund') || '部分退款';
+            const unknownProductText = window.i18n?.t('wallet.unknownProduct') || '未知商品';
+            const itemsText = window.i18n?.t('wallet.items') || '件';
+            const isEnglish = window.i18n?.isEnglish?.();
 
             container.innerHTML = orders.map(order => {
                 const date = new Date(order.created_at);
@@ -1391,19 +1403,19 @@
                 let clickHandler = '';
                 let amountDisplay;
                 let amountClass;
-                let statusText = '已完成';
+                let statusText = completedText;
                 let statusClass = 'status-completed';
 
                 // Determine amount display and color
                 if (order.transactionType === 'recharge' || order.transactionType === 'redeem') {
                     // Positive: recharge and redemption
                     const amount = order.amount || order.total_price;
-                    amountDisplay = `+${Math.abs(amount)} 积分`;
+                    amountDisplay = `+${Math.abs(amount)} ${pointsUnit}`;
                     amountClass = 'positive';
                 } else {
                     // Negative: purchases (shop, prompt)
                     const amount = order.total_price || order.amount;
-                    amountDisplay = `-${Math.abs(amount)} 积分`;
+                    amountDisplay = `-${Math.abs(amount)} ${pointsUnit}`;
                     amountClass = 'negative';
                 }
 
@@ -1412,21 +1424,21 @@
                     displayName = `<i class="fas fa-lightbulb" style="color: #fde68a;"></i> ${this.escapeHtml(order.snapshot_product_name)}`;
                     clickHandler = `WalletModal.showPromptOrderDetail('${order.id}', '${this.escapeHtml(order.snapshot_product_name).replace(/'/g, "\\'")}', ${order.total_price}, '${order.created_at}', '${order.promptId || ''}')`;
                 } else if (order.transactionType === 'shop') {
-                    displayName = order.snapshot_product_name || '未知商品';
+                    displayName = order.snapshot_product_name || unknownProductText;
                     const count = order.item_count || (order.shop_order_items ? order.shop_order_items.length : 1);
                     if (count > 1) {
-                        displayName = `${displayName} 等 ${count} 件`;
+                        displayName = isEnglish ? `${displayName} +${count - 1} ${itemsText}` : `${displayName} 等 ${count} ${itemsText}`;
                     }
                     displayName = `<i class="fas fa-shopping-bag" style="color: #22c55e;"></i> ${this.escapeHtml(displayName)}`;
                     clickHandler = `WalletModal.showOrderDetail('${order.id}')`;
 
                     // Map status for shop orders
                     const statusMap = {
-                        'completed': { text: '已完成', class: 'status-completed' },
-                        'full_refund': { text: '已退款', class: 'status-refunded' },
-                        'partial_refund': { text: '部分退款', class: 'status-refunded' }
+                        'completed': { text: completedText, class: 'status-completed' },
+                        'full_refund': { text: refundedText, class: 'status-refunded' },
+                        'partial_refund': { text: partialRefundText, class: 'status-refunded' }
                     };
-                    const statusInfo = statusMap[order.status] || { text: '已完成', class: 'status-completed' };
+                    const statusInfo = statusMap[order.status] || { text: completedText, class: 'status-completed' };
                     statusText = statusInfo.text;
                     statusClass = statusInfo.class;
                 } else if (order.transactionType === 'recharge') {
@@ -1479,7 +1491,7 @@
                 <div class="wallet-order-modal">
                     <div class="wallet-order-modal-header">
                         <div class="wallet-order-modal-title">
-                            💡 订单详情
+                            💡 ${window.i18n?.t('wallet.orderDetails') || '订单详情'}
                         </div>
                         <button class="wallet-order-close-btn" onclick="this.closest('.wallet-order-modal-overlay').remove()">
                             <i class="fas fa-times"></i>
@@ -1488,34 +1500,34 @@
                     <div class="wallet-order-modal-body">
                         <div class="meta-section">
                             <div class="detail-row">
-                                <span class="detail-label">订单编号</span>
-                                <span class="detail-val mono" onclick="WalletModal.copyToClipboard('${orderId}', event)" style="cursor:pointer;" title="点击复制完整订单号">${orderId.substring(0, 8)}...${orderId.slice(-4)}</span>
+                                <span class="detail-label">${window.i18n?.t('wallet.orderNumber') || '订单编号'}</span>
+                                <span class="detail-val mono" onclick="WalletModal.copyToClipboard('${orderId}', event)" style="cursor:pointer;" title="${window.i18n?.t('wallet.clickToCopy') || '点击复制'}">${orderId.substring(0, 8)}...${orderId.slice(-4)}</span>
                             </div>
                             <div class="detail-row">
-                                <span class="detail-label">商品类型</span>
-                                <span class="detail-val" style="color: #fbbf24;">提示词</span>
+                                <span class="detail-label">${window.i18n?.t('wallet.productType') || '商品类型'}</span>
+                                <span class="detail-val" style="color: #fbbf24;">${window.i18n?.t('wallet.prompt') || '提示词'}</span>
                             </div>
                             <div class="detail-row">
-                                <span class="detail-label">商品名称</span>
+                                <span class="detail-label">${window.i18n?.t('wallet.productName') || '商品名称'}</span>
                                 <span class="detail-val">${promptName}</span>
                             </div>
                             <div class="detail-row">
-                                <span class="detail-label">下单时间</span>
+                                <span class="detail-label">${window.i18n?.t('wallet.orderTime') || '下单时间'}</span>
                                 <span class="detail-val">${dateStr}</span>
                             </div>
                             <div class="detail-row">
-                                <span class="detail-label">支付积分</span>
-                                <span class="detail-val highlight">-${price} 积分</span>
+                                <span class="detail-label">${window.i18n?.t('wallet.pointsPaid') || '支付积分'}</span>
+                                <span class="detail-val highlight">-${price} ${window.i18n?.t('wallet.pointsUnit') || '积分'}</span>
                             </div>
                             <div class="detail-row">
-                                <span class="detail-label">状态</span>
-                                <span class="detail-val" style="color: #10b981;">✓ 已完成</span>
+                                <span class="detail-label">${window.i18n?.t('wallet.status') || '状态'}</span>
+                                <span class="detail-val" style="color: #10b981;">✓ ${window.i18n?.t('wallet.completed') || '已完成'}</span>
                             </div>
                         </div>
                         ${promptId ? `
                         <div class="modal-actions">
                             <button class="action-btn primary" onclick="window.location.href='prompts.html?id=${promptId}'">
-                                <i class="fas fa-eye"></i> 查看提示词
+                                <i class="fas fa-eye"></i> ${window.i18n?.t('wallet.viewPrompt') || '查看提示词'}
                             </button>
                         </div>
                         ` : ''}
@@ -1544,7 +1556,7 @@
                 <div class="wallet-order-modal">
                     <div class="wallet-order-modal-header">
                         <div class="wallet-order-modal-title">
-                            🎫 兑换详情
+                            🎫 ${window.i18n?.t('wallet.redeemDetails') || '兑换详情'}
                         </div>
                         <button class="wallet-order-close-btn" onclick="this.closest('.wallet-order-modal-overlay').remove()">
                             <i class="fas fa-times"></i>
@@ -1553,30 +1565,30 @@
                     <div class="wallet-order-modal-body">
                         <div class="meta-section">
                             <div class="detail-row">
-                                <span class="detail-label">订单编号</span>
-                                <span class="detail-val mono" onclick="WalletModal.copyToClipboard('${orderId}', event)" style="cursor:pointer;" title="点击复制完整订单号">${orderId.substring(0, 8)}...${orderId.slice(-4)}</span>
+                                <span class="detail-label">${window.i18n?.t('wallet.orderNumber') || '订单编号'}</span>
+                                <span class="detail-val mono" onclick="WalletModal.copyToClipboard('${orderId}', event)" style="cursor:pointer;" title="${window.i18n?.t('wallet.clickToCopy') || '点击复制'}">${orderId.substring(0, 8)}...${orderId.slice(-4)}</span>
                             </div>
                             <div class="detail-row">
-                                <span class="detail-label">交易类型</span>
-                                <span class="detail-val" style="color: #f472b6;">兑换码兑换</span>
+                                <span class="detail-label">${window.i18n?.t('wallet.transactionType') || '交易类型'}</span>
+                                <span class="detail-val" style="color: #f472b6;">${window.i18n?.t('wallet.redeemCode') || '兑换码'}</span>
                             </div>
                             ${redeemCode ? `
                             <div class="detail-row">
-                                <span class="detail-label">兑换码</span>
-                                <span class="detail-val mono" onclick="WalletModal.copyToClipboard('${redeemCode}', event)" style="cursor:pointer; color: #22c55e; font-weight: 600;" title="点击复制兑换码">${redeemCode}</span>
+                                <span class="detail-label">${window.i18n?.t('wallet.redeemCode') || '兑换码'}</span>
+                                <span class="detail-val mono" onclick="WalletModal.copyToClipboard('${redeemCode}', event)" style="cursor:pointer; color: #22c55e; font-weight: 600;" title="${window.i18n?.t('wallet.clickToCopy') || '点击复制'}">${redeemCode}</span>
                             </div>
                             ` : ''}
                             <div class="detail-row">
-                                <span class="detail-label">兑换时间</span>
+                                <span class="detail-label">${window.i18n?.t('wallet.redeemTime') || '兑换时间'}</span>
                                 <span class="detail-val">${dateStr}</span>
                             </div>
                             <div class="detail-row">
-                                <span class="detail-label">获得积分</span>
-                                <span class="detail-val" style="color: #10b981; font-weight: 600;">+${amount} 积分</span>
+                                <span class="detail-label">${window.i18n?.t('wallet.receivedPoints') || '获得积分'}</span>
+                                <span class="detail-val" style="color: #10b981; font-weight: 600;">+${amount} ${window.i18n?.t('wallet.pointsUnit') || '积分'}</span>
                             </div>
                             <div class="detail-row">
-                                <span class="detail-label">状态</span>
-                                <span class="detail-val" style="color: #10b981;">✓ 已完成</span>
+                                <span class="detail-label">${window.i18n?.t('wallet.status') || '状态'}</span>
+                                <span class="detail-val" style="color: #10b981;">✓ ${window.i18n?.t('wallet.completed') || '已完成'}</span>
                             </div>
                         </div>
                     </div>
@@ -1606,11 +1618,12 @@
             };
 
             // Skeleton HTML - shows immediately with loading animation
+            const t = (key, fallback) => window.i18n?.t(key) || fallback;
             detailOverlay.innerHTML = `
                 <div class="wallet-order-modal">
                     <div class="wallet-order-modal-header">
                         <div class="wallet-order-modal-title">
-                            <i class="fas fa-box-open" style="color: #6b9ece;"></i> 订单详情
+                            <i class="fas fa-box-open" style="color: #6b9ece;"></i> ${t('wallet.orderDetails', '订单详情')}
                         </div>
                         <button class="wallet-order-close-btn" onclick="this.closest('.wallet-order-modal-overlay').remove()">
                             <i class="fas fa-times"></i>
@@ -1619,28 +1632,28 @@
                     <div class="wallet-order-modal-body">
                         <div class="meta-section">
                             <div class="detail-row">
-                                <span class="detail-label">订单编号</span>
+                                <span class="detail-label">${t('wallet.orderNumber', '订单编号')}</span>
                                 <span class="skeleton-text" style="width: 120px;"></span>
                             </div>
                             <div class="detail-row">
-                                <span class="detail-label">下单时间</span>
+                                <span class="detail-label">${t('wallet.orderTime', '下单时间')}</span>
                                 <span class="skeleton-text" style="width: 140px;"></span>
                             </div>
                             <div class="detail-row">
-                                <span class="detail-label">支付积分</span>
+                                <span class="detail-label">${t('wallet.pointsPaid', '支付积分')}</span>
                                 <span class="skeleton-text" style="width: 80px;"></span>
                             </div>
                         </div>
                         <div class="modal-actions">
                             <button class="action-btn primary skeleton-btn" disabled>
-                                <i class="fas fa-copy"></i> 加载中...
+                                <i class="fas fa-copy"></i> ${t('wallet.loading', '加载中...')}
                             </button>
                             <button class="action-btn secondary skeleton-btn" disabled>
-                                <i class="fas fa-download"></i> 加载中...
+                                <i class="fas fa-download"></i> ${t('wallet.loading', '加载中...')}
                             </button>
                         </div>
                         <div class="content-section">
-                            <div class="content-section-title">购买内容 <span class="skeleton-text" style="width: 30px; display: inline-block;"></span></div>
+                            <div class="content-section-title">${t('wallet.purchaseContent', '购买内容')} <span class="skeleton-text" style="width: 30px; display: inline-block;"></span></div>
                             <div class="content-card skeleton-card">
                                 <div class="skeleton-text" style="width: 60%; height: 16px; margin-bottom: 12px;"></div>
                                 <div class="skeleton-text" style="width: 100%; height: 40px;"></div>
@@ -1672,7 +1685,7 @@
                 if (error) throw error;
                 if (!order) {
                     detailOverlay.remove();
-                    this.showToast('订单不存在', 'error');
+                    this.showToast(window.i18n?.t('wallet.orderNotFound') || '订单不存在', 'error');
                     return;
                 }
 
@@ -1681,7 +1694,7 @@
                 if (orderItems && orderItems.length > 0) {
                     items = orderItems.map(item => ({
                         name: item.snapshot_product_name,
-                        content: item.shop_inventory?.content || '内容加载失败',
+                        content: item.shop_inventory?.content || (window.i18n?.t('wallet.contentLoadFailed') || '内容加载失败'),
                         price: item.price_paid
                     }));
                 } else if (order.inventory_id) {
@@ -1689,7 +1702,7 @@
                         .from('shop_inventory').select('content').eq('id', order.inventory_id).single();
                     items.push({
                         name: order.snapshot_product_name,
-                        content: inventory?.content || '内容加载失败',
+                        content: inventory?.content || (window.i18n?.t('wallet.contentLoadFailed') || '内容加载失败'),
                         price: order.price_paid
                     });
                 }
@@ -1700,19 +1713,20 @@
 
                 const contentHtml = items.map((item) => `
                     <div class="content-card">
-                        <div class="item-name">
-                             <span style="width:6px;height:6px;background:#6b9ece;border-radius:50%;display:inline-block;"></span>
-                             ${this.escapeHtml(item.name)}
-                        </div>
                         <div class="item-content-box">
                             <div class="item-text">${this.escapeHtml(item.content)}</div>
                         </div>
                     </div>
                 `).join('');
 
-                const allContent = items.map(i => `${i.name}:\n${i.content}`).join('\n');
+                // Format: product name once at top, then all content items
+                const productName = items.length > 0 ? items[0].name : '';
+                const allContentItems = items.map(i => i.content).join('\n');
+                const allContent = productName ? `${productName}:\n${allContentItems}` : allContentItems;
+                const orderNumberLabel = window.i18n?.t('wallet.orderNumber') || '订单编号';
+                const orderTimeLabel = window.i18n?.t('wallet.orderTime') || '下单时间';
                 window.WalletModal_export = () => {
-                    const blob = new Blob([`订单编号: ${order.id}\n下单时间: ${dateStr}\n\n${allContent}`], { type: 'text/plain' });
+                    const blob = new Blob([`${orderNumberLabel}: ${order.id}\n${orderTimeLabel}: ${dateStr}\n\n${allContent}`], { type: 'text/plain' });
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
@@ -1722,8 +1736,8 @@
                 };
                 window.WalletModal_copyAll = () => {
                     navigator.clipboard.writeText(allContent).then(() => {
-                        this.showToast('✅ 已复制全部内容', 'success');
-                    }).catch(() => this.showToast('复制失败', 'error'));
+                        this.showToast(`✅ ${window.i18n?.t('wallet.copiedAll') || '已复制全部内容'}`, 'success');
+                    }).catch(() => this.showToast(window.i18n?.t('wallet.copyFailed') || '复制失败', 'error'));
                 };
 
                 // 🚀 STEP 4: Replace skeleton with real content (smooth transition)
@@ -1732,7 +1746,7 @@
                     modal.innerHTML = `
                         <div class="wallet-order-modal-header">
                             <div class="wallet-order-modal-title">
-                                <i class="fas fa-box-open" style="color: #6b9ece;"></i> 订单详情
+                                <i class="fas fa-box-open" style="color: #6b9ece;"></i> ${window.i18n?.t('wallet.orderDetails') || '订单详情'}
                             </div>
                             <button class="wallet-order-close-btn" onclick="this.closest('.wallet-order-modal-overlay').remove()">
                                 <i class="fas fa-times"></i>
@@ -1741,28 +1755,28 @@
                         <div class="wallet-order-modal-body" style="animation: fadeIn 0.2s ease-out;">
                             <div class="meta-section">
                                 <div class="detail-row">
-                                    <span class="detail-label">订单编号</span>
-                                    <span class="detail-val mono" onclick="WalletModal.copyToClipboard('${order.id}', event)" style="cursor:pointer;" title="点击复制完整订单号">${order.id.split('-')[0]}...${order.id.slice(-4)}</span>
+                                    <span class="detail-label">${window.i18n?.t('wallet.orderNumber') || '订单编号'}</span>
+                                    <span class="detail-val mono" onclick="WalletModal.copyToClipboard('${order.id}', event)" style="cursor:pointer;" title="${window.i18n?.t('wallet.clickToCopy') || '点击复制'}">${order.id.split('-')[0]}...${order.id.slice(-4)}</span>
                                 </div>
                                 <div class="detail-row">
-                                    <span class="detail-label">下单时间</span>
+                                    <span class="detail-label">${window.i18n?.t('wallet.orderTime') || '下单时间'}</span>
                                     <span class="detail-val">${dateStr}</span>
                                 </div>
                                 <div class="detail-row">
-                                    <span class="detail-label">支付积分</span>
-                                    <span class="detail-val highlight">-${totalPrice} 积分</span>
+                                    <span class="detail-label">${window.i18n?.t('wallet.pointsPaid') || '支付积分'}</span>
+                                    <span class="detail-val highlight">-${totalPrice} ${window.i18n?.t('wallet.pointsUnit') || '积分'}</span>
                                 </div>
                             </div>
                             <div class="modal-actions">
                                 <button class="action-btn primary" onclick="WalletModal_copyAll()">
-                                    <i class="fas fa-copy"></i> 全部复制
+                                    <i class="fas fa-copy"></i> ${window.i18n?.t('wallet.copyAll') || '全部复制'}
                                 </button>
                                 <button class="action-btn secondary" onclick="WalletModal_export()">
-                                    <i class="fas fa-download"></i> 导出
+                                    <i class="fas fa-download"></i> ${window.i18n?.t('wallet.export') || '导出'}
                                 </button>
                             </div>
                             <div class="content-section">
-                                <div class="content-section-title">购买内容 (${items.length})</div>
+                                <div class="content-section-title">${window.i18n?.t('wallet.purchaseContent') || '购买内容'} (${items.length}) <span class="product-dot" data-tooltip="${items.length > 0 ? items[0].name.replace(/"/g, '&quot;') : ''}" style="width:8px;height:8px;background:#6b9ece;border-radius:50%;display:inline-block;margin-left:8px;cursor:pointer;transition:all 0.2s ease;position:relative;"></span></div>
                                 ${contentHtml}
                             </div>
                         </div>
@@ -1774,7 +1788,7 @@
                 if (document.getElementById(`order-detail-${orderId}`)) {
                     detailOverlay.remove();
                 }
-                this.showToast('加载订单详情失败', 'error');
+                this.showToast(window.i18n?.t('wallet.orderDetailFailed') || '加载订单详情失败', 'error');
             }
         },
 
@@ -1923,6 +1937,34 @@
                     font-family: 'Monaco', monospace;
                     font-size: 12px; color: #10b981;
                     word-break: break-all; line-height: 1.5; opacity: 0.9;
+                }
+                .product-dot:hover {
+                    transform: scale(1.4);
+                    box-shadow: 0 0 8px 3px rgba(107, 158, 206, 0.6);
+                    background: #8bb8e8 !important;
+                }
+                .product-dot::after {
+                    content: attr(data-tooltip);
+                    position: absolute;
+                    bottom: 150%;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    background: rgba(20, 20, 22, 0.95);
+                    color: #fff;
+                    padding: 6px 12px;
+                    border-radius: 8px;
+                    font-size: 12px;
+                    white-space: nowrap;
+                    opacity: 0;
+                    visibility: hidden;
+                    transition: all 0.2s ease;
+                    pointer-events: none;
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+                }
+                .product-dot:hover::after {
+                    opacity: 1;
+                    visibility: visible;
                 }
                 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
                 @keyframes slideUp { from { opacity: 0; transform: translateY(20px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }

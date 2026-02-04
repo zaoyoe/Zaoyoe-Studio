@@ -402,6 +402,13 @@
         display: flex;
         align-items: center;
         justify-content: center;
+        transition: all 0.2s ease;
+    }
+
+    .mobile-security-layout .code-btn:hover {
+        background: rgba(255, 255, 255, 0.2);
+        border-color: rgba(255, 255, 255, 0.25);
+        transform: translateY(-1px);
     }
 
     .mobile-security-layout .gradient-btn {

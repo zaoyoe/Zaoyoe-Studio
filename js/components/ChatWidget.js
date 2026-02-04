@@ -21,6 +21,14 @@ class ChatWidget {
         this.init();
     }
 
+    // i18n helper with fallback
+    t(key, fallback) {
+        if (window.i18n && typeof window.i18n.t === 'function') {
+            return window.i18n.t(key);
+        }
+        return fallback || key;
+    }
+
     getSessionId() {
         let sid = localStorage.getItem('chat_session_id');
         if (!sid) {
@@ -46,6 +54,13 @@ class ChatWidget {
 
         if (isAdmin) {
             this.renderAdminMode();
+
+            // Listen for language changes and update text
+            window.addEventListener('languageChanged', () => {
+                if (this.isAdmin && this.chatWindow) {
+                    this.updateAdminModeText();
+                }
+            });
         } else {
             // For logged-in users, use their email as session_id instead of guest ID
             try {
@@ -83,8 +98,8 @@ class ChatWidget {
 
             if (error || !data) {
                 // No admin history, default to just "Active" or similar, or keep "Online" for positivity
-                // But honestly, if no data, maybe "客服离线"
-                statusText.innerText = "管理员离线";
+                // But honestly, if no data, maybe "admin offline"
+                statusText.innerText = this.t('chat.adminOffline', '管理员离线');
                 statusDot.className = "status-dot offline";
                 return;
             }
@@ -94,17 +109,17 @@ class ChatWidget {
             const diffMinutes = Math.floor((now - lastActive) / (1000 * 60));
 
             if (diffMinutes < 15) {
-                statusText.innerText = "管理员在线";
+                statusText.innerText = this.t('chat.adminOnline', '管理员在线');
                 statusDot.className = "status-dot online";
             } else if (diffMinutes < 60) {
-                statusText.innerText = `${diffMinutes}分钟前在线`;
+                statusText.innerText = this.t('chat.minutesAgo', '{minutes}分钟前在线').replace('{minutes}', diffMinutes);
                 statusDot.className = "status-dot away";
             } else if (diffMinutes < 1440) {
                 const hours = Math.floor(diffMinutes / 60);
-                statusText.innerText = `${hours}小时前在线`;
+                statusText.innerText = this.t('chat.hoursAgo', '{hours}小时前在线').replace('{hours}', hours);
                 statusDot.className = "status-dot away";
             } else {
-                statusText.innerText = "管理员离线";
+                statusText.innerText = this.t('chat.adminOffline', '管理员离线');
                 statusDot.className = "status-dot offline";
             }
 
@@ -146,7 +161,8 @@ class ChatWidget {
 
     // ===== Notification System =====
 
-    showNotification(message, senderName = '新消息', forceShow = false) {
+    showNotification(message, senderName = null, forceShow = false) {
+        senderName = senderName || this.t('chat.newMessage', '新消息');
         // Don't show notification if chat is open (unless forceShow is true)
         if (this.isOpen && !forceShow) return;
 
@@ -270,14 +286,14 @@ class ChatWidget {
             <!-- Left Sidebar: Session List -->
             <div class="admin-sidebar">
                 <div class="admin-sidebar-header">
-                    <h3>客服消息</h3>
+                    <h3>${this.t('chat.sidebarTitle', '客服消息')}</h3>
                     <button class="chat-close"><i class="fas fa-times"></i></button>
                 </div>
                 <div class="admin-search">
-                    <input type="text" id="sessionSearch" placeholder="🔍 搜索会话或聊天记录...">
+                    <input type="text" id="sessionSearch" placeholder="🔍 ${this.t('chat.searchPlaceholderFull', '搜索会话或聊天记录...')}">
                 </div>
                 <div class="session-list" id="sessionList">
-                    <div class="session-loading">加载中...</div>
+                    <div class="session-loading">${this.t('chat.loading', '加载中...')}</div>
                 </div>
             </div>
             
@@ -288,20 +304,20 @@ class ChatWidget {
                         <i class="fas fa-arrow-left"></i>
                     </button>
                     <div class="chat-user-info">
-                        <span class="chat-user-name">选择一个会话</span>
+                        <span class="chat-user-name">${this.t('chat.selectConversation', '选择一个会话')}</span>
                         <span class="chat-user-id"></span>
                     </div>
                 </div>
                 <div class="chat-messages" id="chatMessages">
                     <div class="empty-state">
                         <i class="fas fa-comments"></i>
-                        <p>请从左侧选择一个会话开始回复</p>
+                        <p>${this.t('chat.emptyState', '请从左侧选择一个会话开始回复')}</p>
                     </div>
                 </div>
                 <div class="chat-input-area">
                     <input type="file" id="chatImageInput" accept="image/*" style="display: none;">
                     <button class="chat-action-btn" id="chatUploadBtn"><i class="fas fa-plus"></i></button>
-                    <input type="text" class="chat-input" id="chatInput" placeholder="输入回复...">
+                    <input type="text" class="chat-input" id="chatInput" placeholder="${this.t('chat.inputPlaceholder', '输入回复...')}">
                     <button class="chat-action-btn" id="chatEmojiBtn"><i class="far fa-smile"></i></button>
                     <button class="chat-send-btn" id="chatSendBtn"><i class="fas fa-paper-plane"></i></button>
                 </div>
@@ -329,6 +345,47 @@ class ChatWidget {
 
         // Subscribe to all messages for admin
         this.subscribeToAdminMessages();
+    }
+
+    // Update admin mode text when language changes
+    updateAdminModeText() {
+        if (!this.chatWindow || !this.isAdmin) return;
+
+        // Update sidebar header title
+        const sidebarTitle = this.chatWindow.querySelector('.admin-sidebar-header h3');
+        if (sidebarTitle) {
+            sidebarTitle.textContent = this.t('chat.sidebarTitle', '客服消息');
+        }
+
+        // Update search placeholder
+        const searchInput = this.chatWindow.querySelector('#sessionSearch');
+        if (searchInput) {
+            searchInput.placeholder = `🔍 ${this.t('chat.searchPlaceholderFull', '搜索会话或聊天记录...')}`;
+        }
+
+        // Update chat header (if no session selected)
+        const chatUserName = this.chatWindow.querySelector('.chat-user-name');
+        if (chatUserName && !this.currentSessionId) {
+            chatUserName.textContent = this.t('chat.selectConversation', '选择一个会话');
+        }
+
+        // Update empty state message
+        const emptyState = this.chatWindow.querySelector('.empty-state p');
+        if (emptyState) {
+            emptyState.textContent = this.t('chat.emptyState', '请从左侧选择一个会话开始回复');
+        }
+
+        // Update input placeholder
+        const chatInput = this.chatWindow.querySelector('#chatInput');
+        if (chatInput) {
+            chatInput.placeholder = this.t('chat.inputPlaceholder', '输入回复...');
+        }
+
+        // Update loading text if visible
+        const loadingText = this.chatWindow.querySelector('.session-loading');
+        if (loadingText) {
+            loadingText.textContent = this.t('chat.loading', '加载中...');
+        }
     }
 
     injectAdminLayoutStyles() {
@@ -862,7 +919,7 @@ class ChatWidget {
                 } else if (groupKey.includes && groupKey.includes('@')) {
                     displayNickname = groupKey.split('@')[0];
                 } else {
-                    displayNickname = '访客';
+                    displayNickname = this.t('chat.guest', '访客');
                 }
 
                 return {
@@ -881,7 +938,7 @@ class ChatWidget {
             // Render session list
             this.sessionList.innerHTML = '';
             if (this.sessions.length === 0) {
-                this.sessionList.innerHTML = '<div class="session-loading">暂无会话</div>';
+                this.sessionList.innerHTML = `<div class="session-loading">${this.t('chat.noSessions', '暂无会话')}</div>`;
                 return;
             }
 
@@ -920,7 +977,7 @@ class ChatWidget {
 
         } catch (err) {
             console.error('Failed to load sessions:', err);
-            this.sessionList.innerHTML = '<div class="session-loading">加载失败</div>';
+            this.sessionList.innerHTML = `<div class="session-loading">${this.t('chat.loadFailed', '加载失败')}</div>`;
         }
     }
 
@@ -930,13 +987,14 @@ class ChatWidget {
         const diffMs = now - date;
         const diffMins = Math.floor(diffMs / 60000);
 
-        if (diffMins < 1) return '刚刚';
-        if (diffMins < 60) return `${diffMins}分钟前`;
+        if (diffMins < 1) return this.t('chat.justNow', '刚刚');
+        if (diffMins < 60) return this.t('chat.minutesAgo', '{minutes}分钟前').replace('{minutes}', diffMins);
 
         const diffHours = Math.floor(diffMins / 60);
-        if (diffHours < 24) return `${diffHours}小时前`;
+        if (diffHours < 24) return this.t('chat.hoursAgo', '{hours}小时前').replace('{hours}', diffHours);
 
-        return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
+        const isEnglish = window.i18n && window.i18n.isEnglish && window.i18n.isEnglish();
+        return date.toLocaleDateString(isEnglish ? 'en-US' : 'zh-CN', { month: 'short', day: 'numeric' });
     }
 
     selectSession(sessionId, sessionInfo = null) {
@@ -948,7 +1006,7 @@ class ChatWidget {
         // Find session info if not passed
         if (!sessionInfo) {
             sessionInfo = this.sessions.find(s => s.id === sessionId) || {
-                nickname: sessionId.startsWith('guest_') ? '访客' : sessionId.split('@')[0],
+                nickname: sessionId.startsWith('guest_') ? this.t('chat.guest', '访客') : sessionId.split('@')[0],
                 email: sessionId,
                 lastLogin: null
             };
@@ -978,19 +1036,19 @@ class ChatWidget {
         let statusClass, statusText;
         if (diffMins < 5) {
             statusClass = 'online';
-            statusText = '在线';
+            statusText = this.t('chat.online', '在线');
         } else if (diffMins < 30) {
             statusClass = 'away';
-            statusText = `${diffMins}分钟前活跃`;
+            statusText = this.t('chat.activeMinutesAgo', '{minutes}分钟前活跃').replace('{minutes}', diffMins);
         } else if (diffMins < 60) {
             statusClass = 'away';
-            statusText = `${diffMins}分钟前`;
+            statusText = this.t('chat.minutesAgo', '{minutes}分钟前').replace('{minutes}', diffMins);
         } else if (diffMins < 1440) {
             statusClass = 'offline';
-            statusText = `${Math.floor(diffMins / 60)}小时前`;
+            statusText = this.t('chat.hoursAgo', '{hours}小时前').replace('{hours}', Math.floor(diffMins / 60));
         } else {
             statusClass = 'offline';
-            statusText = `${Math.floor(diffMins / 1440)}天前`;
+            statusText = this.t('chat.daysAgo', '{days}天前').replace('{days}', Math.floor(diffMins / 1440));
         }
 
         statusContainer.innerHTML = `<span class="status-dot ${statusClass}"></span><span class="status-text">${statusText}</span>`;
@@ -1519,10 +1577,10 @@ class ChatWidget {
                         </div>
                     </div>
                     <div class="chat-title">
-                        <h3>在线客服</h3>
+                        <h3>${this.t('chat.onlineSupport', '在线客服')}</h3>
                         <div class="chat-status-indicator">
                             <span class="status-dot online"></span>
-                            <span class="status-text target-admin-status">管理员在线</span>
+                            <span class="status-text target-admin-status">${this.t('chat.adminOnline', '管理员在线')}</span>
                         </div>
                     </div>
                 </div>
@@ -1531,13 +1589,13 @@ class ChatWidget {
             <div class="chat-messages" id="chatMessages">
                 <!-- Welcome Message -->
                 <div class="message admin">
-                    您好！有什么可以帮您的吗？
+                    ${this.t('chat.welcomeMessage', '您好！有什么可以帮您的吗？')}
                 </div>
             </div>
             <div class="chat-input-area">
                 <input type="file" id="chatImageInput" accept="image/*" style="display: none;">
                 <button class="chat-action-btn" id="chatUploadBtn"><i class="fas fa-plus"></i></button>
-                <input type="text" class="chat-input" id="chatInput" placeholder="输入消息...">
+                <input type="text" class="chat-input" id="chatInput" placeholder="${this.t('chat.inputMessagePlaceholder', '输入消息...')}">
                 <button class="chat-action-btn" id="chatEmojiBtn"><i class="far fa-smile"></i></button>
                 <button class="chat-send-btn" id="chatSendBtn"><i class="fas fa-paper-plane"></i></button>
             </div>

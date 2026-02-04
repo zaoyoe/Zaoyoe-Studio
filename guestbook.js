@@ -851,87 +851,64 @@ document.addEventListener('DOMContentLoaded', () => {
 // --- Global Modal Functions (Must be outside DOMContentLoaded) ---
 
 window.openCommentModal = async function (messageId, parentCommentId = null) {
-    console.log('=== openCommentModal called ===');
-    console.log('Message ID:', messageId);
-    console.log('Parent Comment ID:', parentCommentId);
+    console.log('💬 openCommentModal:', messageId, parentCommentId);
 
-    // Check Auth First - Supabase
+    // ⚡ PERF: Use getSession (cached) instead of getUser (network call)
+    // getSession uses local storage cache, getUser always makes a network request
     let user;
     try {
-        const { data: { user: currentUser }, error } = await window.supabaseClient.auth.getUser();
-        user = currentUser;
-        console.log('Supabase user:', user);
+        const { data: { session }, error } = await window.supabaseClient.auth.getSession();
+        user = session?.user;
 
-        if (user) {
-            console.log('✅ User authenticated');
-            console.log('User ID:', user.id);
-            console.log('Email:', user.email);
-        } else {
-            console.log('❌ No current user');
+        if (error) {
+            console.error('Session error:', error);
         }
     } catch (error) {
-        console.error('Error getting current user:', error);
+        console.error('Error getting session:', error);
         alert("获取用户信息失败\n\n错误: " + error.message);
         return;
     }
 
     if (!user) {
-        console.warn('⚠️ No user logged in, showing login prompt');
         alert(window.i18n?.t('auth.loginRequired') || '请先登录后再评论');
-        // Trigger login modal
         if (typeof toggleLoginModal === 'function') {
-            console.log('Calling toggleLoginModal...');
             toggleLoginModal();
-        } else {
-            console.error('toggleLoginModal function not found!');
         }
         return;
     }
 
-    console.log('✅ User authenticated, opening comment modal');
     const modal = document.getElementById('commentModal');
     const messageIdInput = document.getElementById('commentMessageId');
     const parentIdInput = document.getElementById('commentParentId');
 
-    console.log('Modal element:', modal);
-    console.log('Message ID input:', messageIdInput);
-    console.log('Parent ID input:', parentIdInput);
-
     if (modal && messageIdInput) {
-        messageIdInput.value = messageId;
-        // CRITICAL: Reset all inline styles to allow CSS animations
+        // Reset inline styles
         modal.style.display = '';
         modal.style.visibility = '';
         modal.style.opacity = '';
         modal.style.pointerEvents = '';
-        modal.style.backdropFilter = ''; // Also clear backdrop-filter
-        modal.style.webkitBackdropFilter = ''; // Also clear webkit-backdrop-filter
+        modal.style.backdropFilter = '';
+        modal.style.webkitBackdropFilter = '';
 
         // Set messageId
         messageIdInput.value = messageId;
         if (parentIdInput) {
-            parentIdInput.value = parentCommentId || ''; // Set or clear parent ID
+            parentIdInput.value = parentCommentId || '';
         }
 
         // Add body class
         document.body.classList.add('modal-active');
 
-
-
         // Add active class to trigger CSS animation
         modal.classList.add('active');
-        modal.classList.add('overlay-visible'); // Keep this for consistency with close
-        modal.classList.remove('overlay-hidden'); // Keep this for consistency with close
-
-        console.log('✅ Modal opened successfully');
-        console.log('✅ body.modal-active class added');
+        modal.classList.add('overlay-visible');
+        modal.classList.remove('overlay-hidden');
 
         // Focus content input
         setTimeout(() => {
             const contentInput = document.getElementById('commentContent');
             if (contentInput) {
                 contentInput.focus();
-                console.log('✅ Content input focused');
             }
         }, 100);
     } else {
@@ -1924,3 +1901,31 @@ window.syncUserAvatars = async function () {
         console.error('❌ 头像同步失败:', error);
     }
 };
+
+// ==================== Language Change Handler ====================
+// Update dynamically generated text when language is switched
+window.addEventListener('languageChanged', () => {
+    console.log('🌍 [Guestbook] Language changed, updating dynamic text...');
+
+    // Update expand/collapse toggle buttons
+    document.querySelectorAll('.comment-toggle-btn').forEach(btn => {
+        const span = btn.querySelector('span');
+        const icon = btn.querySelector('i');
+
+        if (span && icon) {
+            // Check current state by icon class
+            const isExpanded = icon.classList.contains('fa-chevron-up');
+            span.textContent = isExpanded
+                ? (window.i18n?.t('guestbook.collapse') || '收起')
+                : (window.i18n?.t('guestbook.expand') || '展开');
+        }
+    });
+
+    // Update loading indicator text
+    const loadingIndicator = document.getElementById('loadingIndicator');
+    if (loadingIndicator) {
+        loadingIndicator.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${window.i18n?.t('common.loading') || '加载中...'}`;
+    }
+
+    console.log('✅ [Guestbook] Dynamic text updated');
+});

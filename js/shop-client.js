@@ -228,6 +228,10 @@ const ShopClient = {
         if (!user) {
             this.closePurchaseModal();
             alert(window.i18n?.t('shop.loginRequired') || '请先登录再进行兑换');
+            // Open login modal after user clicks OK on alert
+            if (typeof toggleLoginModal === 'function') {
+                toggleLoginModal();
+            }
             return;
         }
     },

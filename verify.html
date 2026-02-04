@@ -6,7 +6,7 @@
     <meta name="viewport"
         content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-    <title>Gemini 验证服务 - Zaoyoe</title>
+    <title data-i18n="verify.pageTitle">Gemini 验证服务 - Zaoyoe</title>
 
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -279,7 +279,7 @@
     <div class="dropdown-overlay" id="dropdownOverlay"></div>
 
     <!-- Back to Home Button -->
-    <a href="index.html" class="back-link" title="返回首页">
+    <a href="index.html" class="back-link" data-i18n-title="verify.backHome" title="返回首页">
         <i class="fas fa-house"></i>
     </a>
 
@@ -316,18 +316,18 @@
 
             <!-- Instructions -->
             <div class="verify-instructions">
-                <h3><i class="fas fa-lightbulb"></i> 使用说明</h3>
+                <h3><i class="fas fa-lightbulb"></i> <span data-i18n="verify.instructionsTitle">使用说明</span></h3>
                 <ol>
-                    <li>直接右键复制 <code>verify eligibility</code> / <code>验证学生资格</code> 蓝色按钮的链接（不在浏览器打开）成功率更高。</li>
-                    <li>认证成功提示没有资格用这个链接进去: <br><a
+                    <li data-i18n="verify.instruction1">直接右键复制 <code>verify eligibility</code> / <code>验证学生资格</code>
+                        蓝色按钮的链接（不在浏览器打开）成功率更高。</li>
+                    <li><span data-i18n="verify.instruction2">认证成功提示没有资格用这个链接进去:</span> <br><a
                             href="https://one.google.com/ai-student?g1_landing_page=75&utm_source=antigravity&utm_campaign=argon_limit_reached"
                             target="_blank"
                             style="word-break: break-all; color: #6b9ece;">https://one.google.com/ai-student?g1_landing_page=75&utm_source=antigravity&utm_campaign=argon_limit_reached</a>
                     </li>
-                    <li>在 <a href="https://one.google.com/ai-student" target="_blank"
-                            style="color: #6b9ece;">https://one.google.com/ai-student</a> 的那个蓝色按钮上右键 别点进去 直接右键复制链接出来!
+                    <li data-i18n="verify.instruction3">在 https://one.google.com/ai-student 的那个蓝色按钮上右键 别点进去 直接右键复制链接出来!
                         建议用无痕窗口登录账户获取！</li>
-                    <li>如果你的验证链接中 verificationID 后面是空的：1.刷新网页再试。2.直接点进去重新获取。3.换号</li>
+                    <li data-i18n="verify.instruction4">如果你的验证链接中 verificationID 后面是空的：1.刷新网页再试。2.直接点进去重新获取。3.换号</li>
                 </ol>
             </div>
         </div>
@@ -335,13 +335,13 @@
 
     <!-- Afdian Support Link (Flow Sticky Footer) -->
     <div class="verify-footer">
-        <span style="font-size: 13px; color: rgba(255, 255, 255, 0.8);">支持我们: <a href="https://afdian.com/a/zaoyoe"
-                target="_blank"
+        <span style="font-size: 13px; color: rgba(255, 255, 255, 0.8);"><span data-i18n="verify.supportUs">支持我们</span>:
+            <a href="https://afdian.com/a/zaoyoe" target="_blank"
                 style="color: inherit; text-decoration: none; transition: all 0.3s; border-bottom: 1px dashed rgba(255,255,255,0.4);">afdian.com/a/zaoyoe</a>
             <span style="margin: 0 10px; opacity: 0.4;">|</span>
-            交流组: <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank"
+            <span data-i18n="verify.chatGroup">交流群</span>: <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank"
                 style="color: inherit; text-decoration: none; transition: all 0.3s; border-bottom: 1px dashed rgba(255,255,255,0.4);"
-                data-i18n="common.clickToJoin">点击加入</a>
+                data-i18n="verify.clickToJoin">点击加入</a>
         </span>
     </div>
 
@@ -536,7 +536,7 @@
                                             gap: 8px;
                                         ">
                                             <i class="fas fa-info-circle"></i>
-                                            请从左侧选择项目进行安全设置
+                                            <span data-i18n="security.selectFromLeft">请从左侧选择项目进行安全设置</span>
                                         </div>
                                     </div>
                                 </div>
@@ -546,9 +546,11 @@
                                 <div class="security-detail-content" id="detail-change-password" style="display: none;">
                                     <h3 class="detail-title" data-i18n="security.changePassword">修改密码</h3>
                                     <input type="password" id="oldPasswordInput" placeholder="当前密码"
-                                        class="security-input" autocomplete="new-password">
+                                        class="security-input" autocomplete="new-password"
+                                        data-i18n-placeholder="security.currentPassword">
                                     <input type="password" id="newPasswordInput" placeholder="新密码 (至少6位)"
-                                        class="security-input" autocomplete="new-password">
+                                        class="security-input" autocomplete="new-password"
+                                        data-i18n-placeholder="security.newPassword">
                                     <button class="gradient-btn" onclick="changePassword()"
                                         data-i18n="security.updatePassword">更新密码</button>
                                 </div>
@@ -560,14 +562,15 @@
                                     <div class="input-group input-with-action"
                                         style="max-width: 100%; margin-bottom: 12px;">
                                         <input type="tel" id="phoneNumberInput" placeholder="输入手机号"
-                                            class="security-input" maxlength="11">
+                                            class="security-input" maxlength="11"
+                                            data-i18n-placeholder="security.enterPhone">
                                         <button type="button" class="verify-code-btn" id="sendPhoneCodeBtn"
-                                            onclick="sendPhoneVerificationCode()">
+                                            onclick="sendPhoneVerificationCode()" data-i18n="security.getVerifyCode">
                                             获取验证码
                                         </button>
                                     </div>
                                     <input type="text" id="phoneCodeInput" placeholder="输入6位验证码" class="security-input"
-                                        maxlength="6">
+                                        maxlength="6" data-i18n-placeholder="security.enterVerifyCode">
                                     <button class="gradient-btn" onclick="bindPhone()"
                                         data-i18n="security.bindPhone">绑定手机号</button>
                                 </div>
@@ -575,11 +578,12 @@
                                 <!-- Delete Account Panel -->
                                 <div class="security-detail-content" id="detail-delete-account">
                                     <h3 class="detail-title danger" data-i18n="security.deleteAccount">注销账号</h3>
-                                    <p class="detail-desc">⚠️ 此操作不可恢复，您的所有数据将被永久删除。</p>
+                                    <p class="detail-desc" data-i18n="security.deleteWarning">⚠️ 此操作不可恢复，您的所有数据将被永久删除。
+                                    </p>
                                     <div class="danger-zone">
                                         <button class="danger-btn" onclick="deleteAccount()">
                                             <i class="fas fa-trash-alt"></i>
-                                            确认注销
+                                            <span data-i18n="security.confirmDelete">确认注销</span>
                                         </button>
                                     </div>
                                 </div>
@@ -595,11 +599,13 @@
                                 <h3 class="mobile-section-title" data-i18n="security.changePassword">修改密码</h3>
                                 <div class="input-group">
                                     <input type="password" id="mobile_oldPassword" class="security-input"
-                                        placeholder="当前密码" autocomplete="new-password">
+                                        placeholder="当前密码" autocomplete="new-password"
+                                        data-i18n-placeholder="security.currentPassword">
                                 </div>
                                 <div class="input-group">
                                     <input type="password" id="mobile_newPassword" class="security-input"
-                                        placeholder="新密码 (至少6位)" autocomplete="new-password">
+                                        placeholder="新密码 (至少6位)" autocomplete="new-password"
+                                        data-i18n-placeholder="security.newPassword">
                                 </div>
                                 <button class="gradient-btn" onclick="changePassword('mobile')"
                                     data-i18n="security.updatePassword">更新密码</button>
@@ -611,13 +617,15 @@
                                 <p class="mobile-section-desc" data-i18n="security.bindPhoneDesc">绑定手机号可以增强账户安全性</p>
                                 <div class="input-group">
                                     <input type="tel" id="mobile_phoneNumberInput" class="security-input"
-                                        placeholder="输入手机号">
+                                        placeholder="输入手机号" data-i18n-placeholder="security.enterPhone">
                                 </div>
                                 <div class="input-group" style="display: flex; gap: 10px;">
                                     <input type="text" id="mobile_phoneCodeInput" class="security-input"
-                                        placeholder="输入6位验证码" style="flex: 1;">
+                                        placeholder="输入6位验证码" style="flex: 1;"
+                                        data-i18n-placeholder="security.enterVerifyCode">
                                     <button class="code-btn" id="mobile_sendPhoneCodeBtn"
-                                        onclick="sendPhoneVerificationCode('mobile')">获取验证码</button>
+                                        onclick="sendPhoneVerificationCode('mobile')"
+                                        data-i18n="security.getVerifyCode">获取验证码</button>
                                 </div>
                                 <button class="gradient-btn" onclick="bindPhone('mobile')"
                                     data-i18n="security.bindPhone">绑定手机号</button>
@@ -626,10 +634,11 @@
                             <!-- Section 3: Delete Account -->
                             <div class="mobile-security-section">
                                 <h3 class="mobile-section-title danger" data-i18n="security.deleteAccount">注销账号</h3>
-                                <p class="mobile-section-desc">⚠️ 此操作不可恢复，您的所有数据将被永久删除。</p>
+                                <p class="mobile-section-desc" data-i18n="security.deleteWarning">⚠️
+                                    此操作不可恢复，您的所有数据将被永久删除。</p>
                                 <button class="danger-btn" onclick="deleteAccount()">
                                     <i class="fas fa-trash-alt"></i>
-                                    确认注销
+                                    <span data-i18n="security.confirmDelete">确认注销</span>
                                 </button>
                             </div>
 

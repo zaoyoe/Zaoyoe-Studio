@@ -231,44 +231,23 @@
             border-color: rgba(255, 255, 255, 0.2);
         }
 
-        /* Minimalist Adaptive Bell Icon (Match Prompts Page) */
+        /* Frosted Glass Bell Icon (Match inject-auth.js style) */
         #notifBtn {
-            background: transparent !important;
-            backdrop-filter: none !important;
-            -webkit-backdrop-filter: none !important;
-            border: none !important;
-            box-shadow: none !important;
-            border-radius: 0 !important;
-
-            /* Base Color (Light Mode) */
-            color: rgba(0, 0, 0, 0.7) !important;
-            transition: color 0.2s ease, transform 0.2s ease !important;
-        }
-
-        /* System Dark */
-        @media (prefers-color-scheme: dark) {
-            #notifBtn {
-                color: rgba(255, 255, 255, 0.9) !important;
-            }
-        }
-
-        /* Explicit Dark */
-        html[data-theme="dark"] #notifBtn {
+            width: 36px !important;
+            height: 36px !important;
+            background: rgba(15, 23, 42, 0.6) !important;
+            backdrop-filter: blur(8px) !important;
+            -webkit-backdrop-filter: blur(8px) !important;
+            border: 1px solid rgba(255, 255, 255, 0.1) !important;
+            border-radius: 50% !important;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
             color: rgba(255, 255, 255, 0.9) !important;
-        }
-
-        /* Explicit Light */
-        html[data-theme="light"] #notifBtn {
-            color: rgba(0, 0, 0, 0.7) !important;
+            transition: all 0.2s ease !important;
         }
 
         #notifBtn:hover {
-            opacity: 0.8 !important;
-            transform: scale(1.1) !important;
-            /* No background on hover, just scale/opacity */
-            background: transparent !important;
-            border-color: transparent !important;
-            box-shadow: none !important;
+            background: rgba(15, 23, 42, 0.8) !important;
+            transform: scale(1.05) !important;
         }
     </style>
     <script>
@@ -352,7 +331,8 @@
                 <input type="hidden" id="commentMessageId">
                 <input type="hidden" id="commentParentId">
                 <textarea id="commentContent" placeholder="写下您的评论..." rows="3" required></textarea>
-                <span data-i18n="guestbook.submit">发送</span>
+                <button type="submit" class="submit-btn">
+                    <span data-i18n="guestbook.submit">发送</span>
                 </button>
             </form>
         </div>

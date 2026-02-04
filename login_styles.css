@@ -157,11 +157,11 @@
     opacity: 1;
 }
 
-/* Mac Window Controls */
+/* Mac Window Controls - Hidden */
 .mac-controls {
-    display: flex;
+    display: none !important;
     gap: 8px;
-    margin-bottom: 20px;
+    margin-bottom: 0;
 }
 
 .mac-dot {
@@ -418,7 +418,50 @@
     font-size: 14px;
 }
 
-/* switch-link and forgot-password-link styles are inherited from style.css - DO NOT override */
+/* Forgot Password Link - Pink/Magenta Theme */
+.forgot-password-link,
+.login-card .forgot-password-link {
+    color: #f472b6 !important;
+    /* Pink-purple theme */
+    font-size: 14px;
+    cursor: pointer !important;
+    transition: color 0.2s, transform 0.2s;
+    font-weight: 500;
+    display: inline-block;
+}
+
+.forgot-password-link:hover,
+.login-card .forgot-password-link:hover {
+    color: #ff85c0 !important;
+    /* Lighter pink on hover */
+    text-decoration: none;
+    transform: translateY(-1px);
+}
+
+/* Switch Link - Pink/Magenta Theme */
+.switch-link,
+.login-card .switch-link {
+    color: #f15bb5 !important;
+    /* Magenta */
+    cursor: pointer !important;
+    font-weight: 600;
+    transition: all 0.2s ease;
+    margin-left: 6px;
+    display: inline-block;
+}
+
+.switch-link:hover,
+.login-card .switch-link:hover {
+    color: #ff85c0 !important;
+    /* Lighter pink on hover */
+    text-decoration: none;
+    transform: translateY(-1px);
+}
+
+.switch-link:active,
+.login-card .switch-link:active {
+    transform: translateY(0);
+}
 
 
 /* Form View Toggle */

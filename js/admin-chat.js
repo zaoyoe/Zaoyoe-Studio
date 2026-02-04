@@ -8,6 +8,14 @@ class AdminChat {
         this.init();
     }
 
+    // i18n helper with fallback
+    t(key, fallback) {
+        if (window.i18n && typeof window.i18n.t === 'function') {
+            return window.i18n.t(key);
+        }
+        return fallback || key;
+    }
+
     init() {
         // If targetContainer is provided, use it. Otherwise look for default admin page container.
         const container = this.targetContainer || document.getElementById('chat-admin-container');
@@ -34,10 +42,10 @@ class AdminChat {
                         <button class="mobile-menu-btn chat-menu-btn" onclick="toggleMobileSidebar()">
                             <i class="fas fa-bars"></i>
                         </button>
-                        <span class="chat-sidebar-title">客服消息</span>
+                        <span class="chat-sidebar-title">${this.t('chat.sidebarTitle', '客服消息')}</span>
                     </div>
                     <div class="chat-search">
-                        <input type="text" id="sessionSearch" placeholder="搜索会话...">
+                        <input type="text" id="sessionSearch" placeholder="${this.t('chat.searchPlaceholder', '搜索会话...')}">
                     </div>
                     <div class="session-list" id="sessionList">
                         <!-- Sessions will be loaded here -->
@@ -47,7 +55,7 @@ class AdminChat {
                 <div class="chat-main" id="chatMainPanel">
                     <div id="chatEmptyState" class="chat-empty-state">
                         <i class="fas fa-comments"></i>
-                        <p>请从左侧选择一个会话开始聊天</p>
+                        <p>${this.t('chat.emptyStateChat', '请从左侧选择一个会话开始聊天')}</p>
                     </div>
                     <div id="chatInterface" style="display: none; height: 100%; flex-direction: column;">
                         <div class="chat-main-header">
@@ -56,7 +64,7 @@ class AdminChat {
                             </div>
                             
                             <div class="chat-user-title">
-                                <h3 id="currentChatUser">访客</h3>
+                                <h3 id="currentChatUser">${this.t('chat.guest', '访客')}</h3>
                                 <span id="currentChatId">ID: ...</span>
                             </div>
                         </div>
@@ -66,7 +74,7 @@ class AdminChat {
                         <div class="chat-input-wrapper">
                             <input type="file" id="adminImageInput" accept="image/*" style="display: none;">
                             <button class="chat-action-btn" id="adminUploadBtn"><i class="fas fa-plus"></i></button>
-                            <textarea class="admin-chat-input" id="adminChatInput" placeholder="输入回复..."></textarea>
+                            <textarea class="admin-chat-input" id="adminChatInput" placeholder="${this.t('chat.inputPlaceholder', '输入回复...')}"></textarea>
                             <button class="chat-action-btn" id="adminEmojiBtn"><i class="far fa-smile"></i></button>
                             <button class="admin-send-btn" id="adminSendBtn"><i class="fas fa-paper-plane"></i></button>
                         </div>
@@ -157,7 +165,7 @@ class AdminChat {
 
                 sessionMap.set(msg.session_id, {
                     sessionId: msg.session_id,
-                    lastMessage: msg.message_type === 'image' ? '[图片]' : msg.content,
+                    lastMessage: msg.message_type === 'image' ? this.t('chat.image', '[图片]') : msg.content,
                     timestamp: new Date(msg.created_at),
                     userId: msg.user_id,
                     unread: 0,
@@ -210,14 +218,14 @@ class AdminChat {
                 const timeStr = session.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
                 // Determine Display Info
-                let displayName = '访客';
+                let displayName = this.t('chat.guest', '访客');
                 let displaySub = session.sessionId.substr(0, 8) + '...';
                 let avatarContent = session.sessionId.substr(0, 2).toUpperCase();
                 let avatarImg = '';
 
                 if (session.profile) {
-                    displayName = session.profile.username || '未命名用户';
-                    displaySub = session.profile.email || '无邮箱';
+                    displayName = session.profile.username || this.t('chat.unnamed', '未命名用户');
+                    displaySub = session.profile.email || this.t('chat.noEmail', '无邮箱');
 
                     if (session.profile.avatar_url) {
                         // Handle potential external vs Supabase storage URLs? Assume standard URL
@@ -226,7 +234,7 @@ class AdminChat {
                         avatarContent = displayName.substr(0, 1).toUpperCase();
                     }
                 } else if (session.sessionId.startsWith('guest')) {
-                    displayName = '访客';
+                    displayName = this.t('chat.guest', '访客');
                 }
 
                 // Avatar Container Style
@@ -264,11 +272,11 @@ class AdminChat {
 
         // Find Session Data for Header
         const session = this.sessions.find(s => s.sessionId === sessionId);
-        let title = sessionId.startsWith('guest') ? '访客' : '用户';
-        let sub = 'Session: ' + sessionId;
+        let title = sessionId.startsWith('guest') ? this.t('chat.guest', '访客') : this.t('chat.user', '用户');
+        let sub = this.t('chat.session', 'Session') + ': ' + sessionId;
 
         if (session && session.profile) {
-            title = session.profile.username || '未命名用户';
+            title = session.profile.username || this.t('chat.unnamed', '未命名用户');
             sub = session.profile.email || sessionId;
         }
 
@@ -276,7 +284,7 @@ class AdminChat {
         document.getElementById('currentChatId').textContent = sub;
 
         const area = document.getElementById('adminMessagesArea');
-        area.innerHTML = '<div style="text-align:center; padding:20px; color:#64748b;">加载中...</div>';
+        area.innerHTML = `<div style="text-align:center; padding:20px; color:#64748b;">${this.t('chat.loading', '加载中...')}</div>`;
 
         const { data, error } = await this.supabase
             .from('chat_messages')
@@ -353,7 +361,7 @@ class AdminChat {
         // Show loading indicator
         const fakeMsg = {
             id: 'temp-img-' + Date.now(),
-            content: '上传中...',
+            content: this.t('chat.uploading', '上传中...'),
             message_type: 'text',
             is_admin: true,
             created_at: new Date().toISOString()
@@ -401,7 +409,7 @@ class AdminChat {
 
         } catch (err) {
             console.error('Failed to upload image:', err);
-            alert('图片上传失败: ' + err.message);
+            alert(this.t('chat.uploadFailed', '图片上传失败') + ': ' + err.message);
         }
 
         // Reset input
@@ -443,7 +451,7 @@ class AdminChat {
 
         const sessionData = {
             sessionId: msg.session_id,
-            lastMessage: msg.message_type === 'image' ? '[图片]' : msg.content,
+            lastMessage: msg.message_type === 'image' ? this.t('chat.image', '[图片]') : msg.content,
             timestamp: new Date(msg.created_at),
             userId: msg.user_id,
             unread: 0,

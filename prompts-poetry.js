@@ -31,6 +31,43 @@ const ADMIN_EMAIL = 'zaoyoe@gmail.com';
 let isAdmin = false;
 
 // ========================================
+// INTERNATIONALIZATION (i18n) HELPERS
+// ========================================
+// Get current language preference (defaults to Chinese)
+function getCurrentLanguage() {
+    // Check localStorage first (user preference) - must match i18n.js key
+    const saved = localStorage.getItem('zaoyoe_language');
+    if (saved) return saved;
+
+    // Fall back to browser language
+    const browserLang = navigator.language || navigator.userLanguage;
+    return browserLang.startsWith('en') ? 'en' : 'zh';
+}
+
+// Get localized field from prompt data
+// @param {Object} item - Prompt object
+// @param {string} field - Base field name (e.g., 'title', 'description', 'prompt_text')
+// @returns {string} - Localized value or fallback to default
+function getLocalizedField(item, field) {
+    const lang = getCurrentLanguage();
+    const localizedKey = `${field}_${lang}`;
+    const otherLangKey = `${field}_${lang === 'en' ? 'zh' : 'en'}`;
+
+    // Priority 1: Try current language field
+    if (item[localizedKey] && item[localizedKey].trim()) {
+        return item[localizedKey];
+    }
+
+    // Priority 2: Try other language field
+    if (item[otherLangKey] && item[otherLangKey].trim()) {
+        return item[otherLangKey];
+    }
+
+    // Priority 3: Fall back to base field
+    return item[field] || '';
+}
+
+// ========================================
 // SEARCH OPTIMIZATION CONFIG
 // ========================================
 // Gemini 2.0 Flash for semantic search (high RPD: 1,500/day)
@@ -2187,9 +2224,16 @@ async function loadPromptsFromSupabase() {
                 id: index,
                 supabaseId: item.id, // Keep the real Supabase ID for reference
                 title: item.title,
+                title_en: item.title_en || '',
+                title_zh: item.title_zh || '',
                 tags: item.tags || [],
                 description: item.description || '',
+                description_en: item.description_en || '',
+                description_zh: item.description_zh || '',
                 prompt: item.prompt_text || '',
+                prompt_text: item.prompt_text || '',
+                prompt_text_en: item.prompt_text_en || '',
+                prompt_text_zh: item.prompt_text_zh || '',
                 images: item.images || [],
                 dominantColors: item.dominant_colors || [],
                 aiTags: item.ai_tags || {}
@@ -3289,9 +3333,9 @@ function renderCurrentPage() {
             <button class="card-fav-btn ${isSaved ? 'saved' : ''}" onclick="toggleFavorite(${item.id}, this, event)">
                 <i class="fas fa-heart"></i>
             </button>
-            <img src="${item.images[0]}" class="card-image" loading="lazy" alt="${item.title}" onload="this.classList.add('loaded')">
+            <img src="${item.images[0]}" class="card-image" loading="lazy" alt="${getLocalizedField(item, 'title')}" onload="this.classList.add('loaded')">
             <div class="card-overlay">
-                <div class="card-title">${item.title}</div>
+                <div class="card-title">${getLocalizedField(item, 'title')}</div>
                 ${indicators}
             </div>
         `;
@@ -4325,6 +4369,9 @@ function openPromptModal(id) {
     // Reset unlock lock for new prompt
     _unlockInProgress = false;
 
+    // Reset copy lock for new prompt
+    _copyInProgress = false;
+
     // Store images for navigation
     currentModalImages = item.images || [];
     currentModalImageIndex = 0;
@@ -4342,18 +4389,18 @@ function openPromptModal(id) {
     newImg.id = 'modalImg';
     newImg.className = 'active';
     newImg.src = currentModalImages[0];
-    newImg.alt = item.title;
+    newImg.alt = getLocalizedField(item, 'title');
 
     // Insert before nav buttons
     const firstBtn = imgContainer.querySelector('.modal-img-nav');
     imgContainer.insertBefore(newImg, firstBtn);
 
-    // Populate Data
-    document.getElementById('modalTitle').textContent = item.title;
-    document.getElementById('modalDesc').textContent = item.description;
+    // Populate Data (with i18n support)
+    document.getElementById('modalTitle').textContent = getLocalizedField(item, 'title');
+    document.getElementById('modalDesc').textContent = getLocalizedField(item, 'description');
 
-    // Set prompt text (ensure clean connection)
-    promptText.textContent = item.prompt;
+    // Set prompt text (ensure clean connection) - use localized version if available
+    promptText.textContent = getLocalizedField(item, 'prompt_text') || item.prompt;
 
     // Tags hidden as per user request
     const tagsContainer = document.getElementById('modalTags');
@@ -4518,6 +4565,7 @@ async function checkUnlockStatus(promptId) {
 // ============================================
 let _unlockInProgress = false;
 let _unlockPrice = 1; // 默认值，将从配置加载
+let _copyInProgress = false; // 防止重复复制操作
 
 // 从数据库加载解锁价格配置
 async function loadUnlockPrice() {
@@ -4616,30 +4664,60 @@ function setPromptUnlocked() {
     // Remove blur
     promptText.classList.remove('blur-masked');
 
-    // 🔓 SECURITY FIX: Inject real text now
+    // 🔓 SECURITY FIX: Inject real text now (with i18n support)
     const promptId = currentPromptId; // Global variable set in openPromptModal
     // Find prompt in PROMPTS (supabaseId or id match)
     const promptItem = PROMPTS.find(p => p.supabaseId === promptId || p.id === promptId);
     if (promptItem) {
-        promptText.textContent = promptItem.prompt;
+        // Use localized field to respect language preference
+        promptText.textContent = getLocalizedField(promptItem, 'prompt_text') || promptItem.prompt;
     }
 
+    // Reset copy lock when unlocking (in case it's stuck)
+    _copyInProgress = false;
+    console.log('[Copy] Reset lock in setPromptUnlocked, _copyInProgress:', _copyInProgress);
+
     // Transform button to Copy
-    unlockBtn.innerHTML = '<i class="fas fa-copy"></i> Copy';
+    unlockBtn.innerHTML = '<i class="fas fa-copy"></i>';
     unlockBtn.className = 'copy-btn'; // Switch to simple style
-    unlockBtn.onclick = function () { copyPromptText(this); };
+    unlockBtn.disabled = false; // Re-enable button (it was disabled during unlock)
+
+    // Clear any existing onclick handler and set new one
+    unlockBtn.onclick = null;
+    unlockBtn.onclick = function () {
+        console.log('[Copy] Button clicked, _copyInProgress:', _copyInProgress);
+        copyPromptText(this);
+    };
+
+    console.log('[Copy] Button setup complete, disabled:', unlockBtn.disabled);
 }
 
 function copyPromptText(btn) {
+    // Prevent multiple simultaneous copy operations
+    if (_copyInProgress) {
+        console.log('[Copy] Already copying, skipping');
+        return;
+    }
+
+    _copyInProgress = true;
     const text = document.getElementById('modalPromptText').textContent;
+
     navigator.clipboard.writeText(text).then(() => {
         const originalContent = btn.innerHTML;
-        btn.innerHTML = '<i class="fas fa-check"></i> Copied';
+        btn.innerHTML = '<i class="fas fa-check"></i>';
+        btn.classList.add('copied');
+
         setTimeout(() => {
             btn.innerHTML = originalContent;
+            btn.classList.remove('copied');
+            _copyInProgress = false;
         }, 2000);
+    }).catch(err => {
+        console.error('Copy failed:', err);
+        _copyInProgress = false;
     });
 }
+
 
 // --- Comment System (Supabase) ---
 
@@ -5341,7 +5419,7 @@ function initCommentCollapse() {
     console.log('[Collapse] Initializing with', total, 'total,', parentCount, 'parents');
 
     // Update title text (no count, just action text)
-    title.textContent = 'View all';
+    title.textContent = window.i18n?.t('gallery.viewAll') || 'View all';
 
     // If 3 or fewer parent comments, no collapse needed
     if (parentCount <= COLLAPSE_SHOW_COUNT) {
@@ -5400,7 +5478,7 @@ function handleCollapseToggle() {
         // EXPAND: Show all comments
         allComments.forEach(c => c.style.display = '');
         list.setAttribute('data-collapsed', 'false');
-        title.textContent = 'Hide comments';
+        title.textContent = window.i18n?.t('gallery.hideComments') || 'Hide comments';
 
         // Ensure list is scrollable and scroll to top
         list.style.overflowY = 'auto';
@@ -5425,7 +5503,7 @@ function handleCollapseToggle() {
         });
 
         list.setAttribute('data-collapsed', 'true');
-        title.textContent = 'View all';
+        title.textContent = window.i18n?.t('gallery.viewAll') || 'View all';
 
         // Scroll to top when collapsed
         list.scrollTop = 0;
@@ -5454,7 +5532,7 @@ function renderComment(comment, overrideAvatar = null, replyToProfile = null, ha
 
     // Build "Replying to" HTML if this is a reply
     const replyingToHtml = isReply
-        ? `<div class="comment-replying-to">Replying to <span class="comment-mention">@${escapeHtml(replyToName)}</span></div>`
+        ? `<div class="comment-replying-to">${window.i18n?.t('gallery.replyingTo') || 'Replying to'} <span class="comment-mention">@${escapeHtml(replyToName)}</span></div>`
         : '';
 
     // Remove leading @replyToName from content if it duplicates the "Replying to" display
@@ -5494,10 +5572,10 @@ function renderComment(comment, overrideAvatar = null, replyToProfile = null, ha
                 <button class="comment-action-btn like-btn" data-liked="${isLiked}">
                     <i class="${heartIconClass}" ${heartStyle}></i> <span class="like-count">${likeCount}</span>
                 </button>
-                <button class="comment-action-btn reply-btn">Reply</button>
+                <button class="comment-action-btn reply-btn">${window.i18n?.t('gallery.reply') || 'Reply'}</button>
                 ${comment.image_url ? `
                     <button class="comment-action-btn view-image-btn" onclick="openImageLightbox('${comment.image_url}')">
-                        <i class="far fa-image"></i> View Image
+                        <i class="far fa-image"></i> ${window.i18n?.t('gallery.viewImage') || 'View Image'}
                     </button>
                 ` : ''}
             </div>
@@ -6079,6 +6157,17 @@ window.onclick = function (event) {
 if (window.supabaseClient) {
     initCommentRealtime();
 }
+
+// ===================================
+// LANGUAGE CHANGE HANDLER
+// ===================================
+// Listen for language changes from i18n.js and re-render cards
+window.addEventListener('languageChanged', () => {
+    console.log('🌐 Language changed, re-rendering cards...');
+    // Re-render current page to update all card titles with new language
+    renderCurrentPage();
+});
+
 
 // ===================================
 // EXPORTS to allow external usage (e.g. admin-config.js)

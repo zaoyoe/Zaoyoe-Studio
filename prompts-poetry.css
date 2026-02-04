@@ -169,9 +169,23 @@
 }
 
 [data-theme="dark"] .copy-btn {
-    background: rgba(255, 255, 255, 0.1);
-    border-color: rgba(255, 255, 255, 0.2);
-    color: var(--text-dim);
+    color: var(--accent-starry);
+}
+
+[data-theme="dark"] .copy-btn::before {
+    background: rgba(93, 159, 216, 0.15);
+}
+
+[data-theme="dark"] .copy-btn:hover {
+    color: #7db3e8;
+}
+
+[data-theme="dark"] .copy-btn.copied {
+    color: #10b981;
+}
+
+[data-theme="dark"] .copy-btn.copied::before {
+    background: rgba(16, 185, 129, 0.2);
 }
 
 [data-theme="dark"] .modal-img-counter {
@@ -1826,6 +1840,15 @@ body {
     font-weight: 300;
 }
 
+/* Language-conditional display for nav items */
+html[lang="en"] .nav-item .cn {
+    display: none;
+}
+
+html[lang="en"] .nav-item .en {
+    margin-bottom: 0;
+}
+
 .nav-item:hover {
     color: var(--text-main);
     /* Dark on hover */
@@ -2372,6 +2395,69 @@ body.prompt-modal-open .top-right-nav {
     border-color: rgba(139, 92, 246, 0.2);
     transform: translateY(-1px);
 }
+
+/* Copy Button - Simple Icon Style */
+.copy-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    background: transparent;
+    color: var(--accent-purple);
+    border: none;
+    border-radius: 50%;
+    font-size: 1.1rem;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: none;
+    position: relative;
+    overflow: hidden;
+}
+
+.copy-btn::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(155, 93, 229, 0.1);
+    border-radius: 50%;
+    opacity: 0;
+    transform: scale(0.8);
+    transition: all 0.3s ease;
+}
+
+.copy-btn:hover {
+    color: #8b5cf6;
+    transform: translateY(-2px) scale(1.05);
+}
+
+.copy-btn:hover::before {
+    opacity: 1;
+    transform: scale(1);
+}
+
+.copy-btn:active {
+    transform: translateY(0) scale(1);
+}
+
+/* Copied Success State */
+.copy-btn.copied {
+    color: #10b981;
+}
+
+.copy-btn.copied::before {
+    background: rgba(16, 185, 129, 0.15);
+    opacity: 1;
+    transform: scale(1);
+}
+
+.copy-btn i {
+    font-size: 1.1rem;
+    position: relative;
+    z-index: 1;
+}
+
 
 /* The Subtle "Ripple" Trigger */
 .comment-trigger-btn {
