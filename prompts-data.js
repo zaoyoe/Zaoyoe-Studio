@@ -2569,3 +2569,6 @@ const PROMPTS = [
         }
     }
 ];
+
+// Export to window for global access
+window.PROMPTS = PROMPTS;

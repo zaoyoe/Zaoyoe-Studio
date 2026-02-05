@@ -128,6 +128,19 @@
         // Update HTML lang
         document.documentElement.lang = lang;
 
+        // Update language toggle button active state
+        const langZh = document.getElementById('langZh');
+        const langEn = document.getElementById('langEn');
+        if (langZh && langEn) {
+            if (lang === 'zh') {
+                langZh.classList.add('active');
+                langEn.classList.remove('active');
+            } else {
+                langZh.classList.remove('active');
+                langEn.classList.add('active');
+            }
+        }
+
         // Dispatch event for custom handlers
         window.dispatchEvent(new CustomEvent('languageChanged', { detail: { lang } }));
 

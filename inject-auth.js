@@ -31,20 +31,6 @@
             </button>
         </div>
 
-        <!-- Language Toggle -->
-        <button id="langToggleBtn" onclick="window.i18n?.toggleLanguage()" 
-            style="height: 36px; padding: 0 12px; display: flex; align-items: center; justify-content: center; 
-                   background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255,255,255,0.1); 
-                   border-radius: 18px; cursor: pointer; color: rgba(255,255,255,0.85); 
-                   font-size: 12px; font-weight: 500; transition: all 0.2s; gap: 6px;
-                   backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
-                   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);"
-            title="切换语言 / Switch Language">
-            <span id="langZh" class="lang-text" style="opacity: 1;">中</span>
-            <span style="color: rgba(255,255,255,0.3);">|</span>
-            <span id="langEn" class="lang-text" style="opacity: 0.5;">EN</span>
-        </button>
-
 
         <button id="authBtn" class="login-trigger-btn${isLoggedIn ? ' logged-in' : ''}" onclick="handleAuthClick(event)">
             <i id="defaultAuthIcon" class="fas fa-user-circle" style="display: ${defaultIconDisplay};"></i>
@@ -251,8 +237,8 @@
                 outline: none !important;
                 border-radius: 50% !important;
                 padding: 0 !important;
-                width: 48px !important;
-                height: 48px !important;
+                width: 32px !important;
+                height: 32px !important;
                 cursor: pointer !important;
                 display: flex !important;
                 align-items: center !important;

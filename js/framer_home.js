@@ -1,0 +1,782 @@
+/**
+ * ==========================================
+ * Framer Home - Dynamic Content Engine
+ * ==========================================
+ */
+
+const FramerHome = {
+  // Cached data
+  cachedData: null,
+  config: null,
+
+  /**
+   * Initialize the homepage
+   */
+  async init() {
+    console.log('🚀 Initializing Framer Home...');
+
+    // Check performance and apply degradation if needed
+    this.checkPerformance();
+
+    // Load configuration and data
+    await this.loadAll();
+
+    // Render all sections
+    this.renderAll();
+
+    // Initialize interactions
+    this.initInteractions();
+
+    // Initialize scroll animations
+    this.initScrollAnimations();
+
+    console.log('✅ Framer Home initialized successfully');
+  },
+
+  /**
+   * Performance check - disable glassmorphism on low-end devices
+   */
+  checkPerformance() {
+    const isLowEnd = navigator.hardwareConcurrency < 4 ||
+      /iPhone [4-6]/.test(navigator.userAgent) ||
+      /Android [2-4]/.test(navigator.userAgent);
+
+    if (isLowEnd) {
+      document.body.classList.add('low-performance');
+      console.warn('⚡ Low-end device detected, glassmorphism disabled');
+    }
+  },
+
+  /**
+   * Load all configuration and aggregate data
+   */
+  async loadAll() {
+    try {
+      // Fetch homepage config from Supabase
+      this.config = await this.fetchHomepageConfig();
+
+      // Aggregate all section data
+      this.cachedData = {
+        hero: this.buildHeroData(this.config.hero),
+        prompts: await this.aggregatePrompts(this.config.prompts),
+        shop: await this.aggregateShop(this.config.shop),
+        verify: this.buildVerifyData(this.config.verify),
+        guestbook: await this.aggregateGuestbook(this.config.guestbook),
+        ticker: await this.buildTickerData(this.config.ticker)
+      };
+
+      console.log('📦 Data aggregated:', this.cachedData);
+    } catch (error) {
+      console.error('❌ Failed to load data:', error);
+      // Use fallback default data
+      this.useFallbackData();
+    }
+  },
+
+  /**
+   * Fetch homepage configuration from Supabase
+   */
+  async fetchHomepageConfig() {
+    const { data, error } = await window.supabaseClient
+      .from('homepage_config')
+      .select('*')
+      .eq('is_visible', true)
+      .order('display_order', { ascending: true });
+
+    if (error) throw error;
+
+    // Convert array to object keyed by section
+    const config = {};
+    data.forEach(item => {
+      config[item.section] = item.content;
+    });
+
+    return config;
+  },
+
+  /**
+   * Build hero section data
+   */
+  buildHeroData(config) {
+    return {
+      title: config.title || '早鸟工作室',
+      subtitle: config.subtitle || '创意 · 效率 · 无限可能',
+      cta: config.cta || {
+        primary: { text: '开始探索', link: '#prompts' },
+        secondary: { text: '了解更多', link: '#about' }
+      },
+      customImage: config.custom_image || null,
+      entries: [
+        { icon: 'fa-wand-magic-sparkles', text: '提示词', link: '#prompts', color: '#f472b6' },
+        { icon: 'fa-store', text: '商城', link: '#shop', color: '#4ade80' },
+        { icon: 'fa-robot', text: '验证', link: '#verify', color: '#667eea' },
+        { icon: 'fa-comment-dots', text: '留言板', link: '#guestbook', color: '#f59e0b' }
+      ]
+    };
+  },
+
+  /**
+   * Aggregate prompts data (auto or manual)
+   */
+  async aggregatePrompts(config) {
+    // Manual mode - use custom selected items
+    if (!config.enable_auto && config.featured_items?.length > 0) {
+      return config.featured_items
+        .map(item => window.PROMPTS.find(p => p.id === item.id))
+        .filter(Boolean)
+        .slice(0, config.max_items || 24);
+    }
+
+    // Auto mode - sort by strategy
+    const maxItems = config.max_items || 24;
+    const sortStrategy = config.sort || 'popular';
+
+    let sorted = [...window.PROMPTS];
+
+    if (sortStrategy === 'popular') {
+      // Sort by number of AI tags (rough popularity metric)
+      sorted.sort((a, b) => {
+        const aCount = Object.values(a.aiTags || {}).flat().length;
+        const bCount = Object.values(b.aiTags || {}).flat().length;
+        return bCount - aCount;
+      });
+    } else if (sortStrategy === 'latest') {
+      // Prompts are already in order, just reverse
+      sorted.reverse();
+    } else if (sortStrategy === 'random') {
+      // Fisher-Yates shuffle
+      for (let i = sorted.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [sorted[i], sorted[j]] = [sorted[j], sorted[i]];
+      }
+    }
+
+    return sorted.slice(0, maxItems);
+  },
+
+  /**
+   * Aggregate shop products from Supabase
+   */
+  async aggregateShop(config) {
+    if (!config.enable_auto && config.custom_items?.length > 0) {
+      return config.custom_items;
+    }
+
+    try {
+      let query = window.supabaseClient
+        .from('shop_products')
+        .select('id, name, description, icon_url, price_points, stock_count, category')
+        .eq('is_active', true);
+
+      if (config.category && config.category !== 'all') {
+        query = query.eq('category', config.category);
+      }
+
+      const { data, error } = await query
+        .order('display_order', { ascending: false })
+        .limit(config.max_items || 8);
+
+      if (error) throw error;
+
+      return data || [];
+    } catch (error) {
+      console.error('Failed to fetch shop products:', error);
+      return [];
+    }
+  },
+
+  /**
+   * Build Gemini verify section data
+   */
+  buildVerifyData(config) {
+    return {
+      title: 'Gemini 验证', // Hardcoded to override DB config
+      subtitle: config.section_subtitle || '快速验证您的 API 密钥，实时返回结果',
+      screenshot: config.screenshot_path || '/assets/verify-preview.png',
+      features: config.features || ['免费', '实时', '安全'],
+      link: '/verify.html'
+    };
+  },
+
+  /**
+   * Aggregate guestbook messages
+   */
+  async aggregateGuestbook(config) {
+    if (!config.enable_auto) return [];
+
+    try {
+      const { data, error } = await window.supabaseClient
+        .from('guestbook_messages')
+        .select(`
+          id, 
+          content, 
+          image_url,
+          like_count,
+          created_at,
+          user_id,
+          profiles:user_id (username, avatar_url)
+        `)
+        .order('created_at', { ascending: false })
+        .limit(config.max_items || 5);
+
+      if (error) throw error;
+
+      return data || [];
+    } catch (error) {
+      console.error('Failed to fetch guestbook:', error);
+      return [];
+    }
+  },
+
+  /**
+   * Build ticker data (tags + products)
+   */
+  async buildTickerData(config) {
+    // Extract unique tags from prompts
+    const tags = [...new Set(
+      window.PROMPTS.flatMap(p => p.tags || [])
+    )].slice(0, 20);
+
+    // Get product names from cached shop data
+    const productNames = this.cachedData?.shop?.map(p => p.name) || [];
+
+    return {
+      top: tags,
+      bottom: productNames,
+      speed: config.speed || 30
+    };
+  },
+
+  /**
+  * Fallback data when config fails to load
+  */
+  useFallbackData() {
+    console.warn('⚠️ Using fallback data');
+    this.config = {
+      hero: { enable_auto: true },
+      prompts: { enable_auto: true, max_items: 24, sort: 'popular', section_title: 'AI 提示词工作室', section_subtitle: '让创作更高效，让灵感更自由' },
+      shop: { enable_auto: true, max_items: 8, section_title: '精选资源商城', section_subtitle: '优质资源，助力成长' },
+      verify: { enable_auto: true, section_title: 'Gemini 验证', section_subtitle: '快速验证您的 API 密钥' },
+      guestbook: { enable_auto: true, max_items: 5, section_title: '留言板', section_subtitle: '用户的声音' },
+      ticker: { enable_auto: true, speed: 30 }
+    };
+
+    // Rebuild cachedData with fallback config
+    this.cachedData = {
+      hero: this.buildHeroData(this.config.hero),
+      prompts: window.PROMPTS ? window.PROMPTS.slice(0, 6) : [],
+      shop: [],
+      verify: this.buildVerifyData(this.config.verify),
+      guestbook: [],
+      ticker: {
+        top: window.PROMPTS ? [...new Set(window.PROMPTS.flatMap(p => p.tags || []))].slice(0, 20) : [],
+        bottom: []
+      }
+    };
+  },
+
+  /**
+   * Render all sections
+   */
+  renderAll() {
+    this.renderHero();
+    this.renderPrompts();
+    this.renderShop();
+    this.renderVerify();
+    this.renderGuestbook();
+    this.renderTicker();
+  },
+
+  /**
+   * Render Hero section
+   */
+  renderHero() {
+    const data = this.cachedData.hero;
+    const section = document.getElementById('hero-section');
+
+    section.innerHTML = `
+      <div class="hero-glow" ${data.customImage ? `style="background-image: url(${data.customImage})"` : ''}></div>
+      <h1 class="hero-title fade-in-up">${data.title}</h1>
+      <p class="hero-subtitle fade-in-up">${data.subtitle}</p>
+      
+      <div class="hero-cta fade-in-up">
+        <a href="${data.cta.primary.link}" class="btn btn-hero-primary">${data.cta.primary.text}</a>
+        <a href="${data.cta.secondary.link}" class="btn btn-hero-secondary">${data.cta.secondary.text}</a>
+      </div>
+      
+      <div class="hero-entries">
+        ${data.entries.map(entry => `
+          <a href="${entry.link}" class="entry-card fade-in-up">
+            <i class="fas ${entry.icon}" style="color: ${entry.color}"></i>
+            <span>${entry.text}</span>
+          </a>
+        `).join('')}
+      </div>
+    `;
+  },
+
+  /**
+   * Distribute cards across masonry columns using shortest column algorithm
+   * @param {Array} cards - Array of card data
+   * @param {number} columnCount - Number of columns
+   * @returns {Array} Array of columns, each containing card data
+   */
+  distributeCardsToColumns(cards, columnCount = 5) {
+    const columns = Array.from({ length: columnCount }, () => []);
+    const columnHeights = Array(columnCount).fill(0);
+
+    // Fixed height estimation for consistent distribution
+    cards.forEach(card => {
+      // Find the shortest column
+      const shortestIndex = columnHeights.indexOf(Math.min(...columnHeights));
+
+      // Add card to shortest column
+      columns[shortestIndex].push(card);
+
+      // Use fixed height estimate + gap
+      const estimatedHeight = 280; // Fixed base height
+      columnHeights[shortestIndex] += estimatedHeight + 12; // +12 for margin-bottom
+    });
+
+    return columns;
+  },
+
+  /**
+   * Render Prompts section with masonry layout
+   */
+  renderPrompts() {
+    const prompts = this.cachedData.prompts;
+    const config = this.config.prompts;
+    const section = document.getElementById('prompts-section');
+
+    // Change section class to masonry style
+    section.className = 'prompts-masonry-section';
+
+    // Distribute cards across 5 columns for balanced layout
+    const columns = this.distributeCardsToColumns(prompts, 5);
+
+    section.innerHTML = `
+      <div class="section-header fade-in-up">
+        <h2 class="section-title">${config.section_title || 'AI 提示词工作室'}</h2>
+        <p class="section-subtitle">${config.section_subtitle || '让创作更高效，让灵感更自由'}</p>
+      </div>
+      
+      <div class="prompts-masonry-wrapper">
+        <div class="masonry-container">
+          ${columns.map((columnCards, columnIndex) => `
+            <div class="masonry-column" data-column="${columnIndex}">
+              ${columnCards.map(prompt => {
+      // Extract 2-3 key tags for overlay
+      const displayTags = (prompt.ai_tags || []).slice(0, 3);
+
+      return `
+                  <div class="masonry-card">
+                    <img src="${prompt.images[0]}" 
+                         alt="${prompt.title}" 
+                         loading="lazy" />
+                    <div class="masonry-card-tags">
+                      ${displayTags.map(tag => `<span class="masonry-tag">${tag}</span>`).join('')}
+                    </div>
+                  </div>
+                `;
+    }).join('')}
+            </div>
+          `).join('')}
+        </div>
+        
+        ${(() => {
+        // Collect all unique tags for the mask
+        const allTags = new Set();
+        prompts.forEach(p => {
+          if (p.aiTags) {
+            ['styles', 'objects', 'scenes', 'mood'].forEach(c => {
+              if (p.aiTags[c] && p.aiTags[c].zh) p.aiTags[c].zh.forEach(t => allTags.add(t));
+            });
+          } else if (p.tags) p.tags.forEach(t => allTags.add(t));
+        });
+        const tagList = Array.from(allTags).slice(0, 30); // Top 30 tags
+
+        // Randomize slightly for variety
+        const shuffled = tagList.sort(() => 0.5 - Math.random());
+        const row1 = shuffled.slice(0, 15);
+        const row2 = shuffled.slice(15, 30);
+
+        return `
+          <div class="prompts-gradient-mask" onclick="window.location.href='/prompts.html'">
+            <div class="mask-labels-container">
+              <div class="mask-labels-row">
+                ${row1.map(tag => `<span class="mask-tag">${tag}</span>`).join('')}
+              </div>
+              <div class="mask-labels-row" style="margin-top: 12px; margin-left: 24px;">
+                ${row2.map(tag => `<span class="mask-tag">${tag}</span>`).join('')}
+              </div>
+            </div>
+            
+            <div class="mask-cta">
+              <a href="/prompts.html" class="btn btn-secondary" style="pointer-events: none;">查看更多提示词</a>
+            </div>
+          </div>
+          `;
+      })()}
+      </div>
+    `;
+
+    // Initialize parallax after render
+    this.initMasonryParallax();
+  },
+
+  /**
+   * Render Shop section
+   */
+  renderShop() {
+    const products = this.cachedData.shop;
+    const config = this.config.shop;
+    const section = document.getElementById('shop-section');
+
+    if (!products || products.length === 0) {
+      section.style.display = 'none';
+      return;
+    }
+
+    section.innerHTML = `
+      <div class="section-header fade-in-up">
+        <h2 class="section-title">${config.section_title || '精选资源商城'}</h2>
+        <p class="section-subtitle">${config.section_subtitle || '优质资源，助力成长'}</p>
+      </div>
+      
+      <div class="grid-4">
+        ${products.map(product => `
+          <div class="glass-card fade-in-up" style="padding: 12px; display: flex; flex-direction: column; gap: 12px; transform: none !important; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05) !important;">
+            <div style="width: 100%; aspect-ratio: 4/3; border-radius: 12px; overflow: hidden; background: rgba(255,255,255,0.05); display: flex; align-items: center; justify-content: center;">
+              ${product.icon_url.startsWith('http')
+        ? `<img src="${product.icon_url}" style="width: 100%; height: 100%; object-fit: cover;">`
+        : (product.icon_url.startsWith('fa-') ? `<i class="fas ${product.icon_url}" style="font-size: 48px; color: var(--accent-blue);"></i>` : `<img src="${product.icon_url}" style="width: 64px; height: 64px;">`)
+      }
+            </div>
+            
+            <div>
+              <h3 style="font-size: 16px; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${product.name}</h3>
+              <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; height: 38px;">${product.description || ''}</p>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+      
+      <div style="text-align: center; margin-top: 48px;">
+        <a href="/shop.html" class="btn btn-secondary">前往商城</a>
+      </div>
+    `;
+  },
+
+  /**
+   * Render Gemini Verify section
+   */
+  renderVerify() {
+    const data = this.cachedData.verify;
+    const section = document.getElementById('verify-section');
+
+    section.innerHTML = `
+      <div class="grid-2 fade-in-up" style="align-items: center; gap: 80px; grid-template-columns: 0.8fr 1.2fr;">
+        <div>
+          <h2 class="section-title">${data.title}</h2>
+          <p class="section-subtitle">${data.subtitle}</p>
+          
+          <div style="margin-top: 32px; display: flex; gap: 12px; flex-wrap: wrap;">
+            ${data.features.map(feature => `
+              <span style="padding: 8px 16px; background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple)); border-radius: 999px; font-size: 14px; font-weight: 600;">
+                ${feature}
+              </span>
+            `).join('')}
+          </div>
+          
+          <div style="margin-top: 48px;">
+            <a href="${data.link}" class="btn btn-primary">立即验证</a>
+          </div>
+        </div>
+        
+        <div class="verify-3d-container">
+          <div class="verify-card-3d">
+            <img src="/assets/verify-card-3d.png" alt="Gemini Verify" style="width: 100%; border-radius: 12px;">
+            <div class="verify-card-shine"></div>
+          </div>
+        </div>
+      </div>
+      </div>
+    `;
+
+    // Initialize 3D interaction
+    this.initVerifyAnimation();
+  },
+
+  /**
+   * Initialize Verify 3D Card Animation
+   * - Entrance: Zoom in when visible
+   * - Scroll: Parallax scale effect (Focus on center)
+   */
+  initVerifyAnimation() {
+    const card = document.querySelector('.verify-card-3d');
+    if (!card) return;
+
+    // 1. Entrance Observer
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          card.classList.add('visible');
+          observer.unobserve(card);
+        }
+      });
+    }, { threshold: 0.15 });
+
+    observer.observe(card);
+
+    // 2. Scroll Interaction (Parallax Scale)
+    let ticking = false;
+    window.addEventListener('scroll', () => {
+      if (!ticking && card.classList.contains('visible')) {
+        window.requestAnimationFrame(() => {
+          const rect = card.getBoundingClientRect();
+          const viewHeight = window.innerHeight;
+
+          // Only animate if roughly in view
+          if (rect.top < viewHeight && rect.bottom > 0) {
+            const center = viewHeight / 2;
+            const cardCenter = rect.top + rect.height / 2;
+
+            // Calculate distance from center (-0.5 to 0.5 relative to viewport)
+            const dist = (center - cardCenter) / viewHeight;
+
+            // Scale logic: 
+            // Center (dist~0) -> Max Scale (1.02)
+            // Edges (dist~0.5) -> Min Scale (0.92)
+            // This creates a "breathing" effect where it grows as it hits center screen
+            const targetScale = 1.02 - (Math.abs(dist) * 0.2);
+
+            // Apply transform (maintain rotation)
+            card.style.transform = `rotateY(-12deg) rotateX(6deg) scale(${Math.max(0.9, targetScale)})`;
+          }
+          ticking = false;
+        });
+        ticking = true;
+      }
+    });
+  },
+
+  /**
+   * Render Guestbook section
+   */
+  renderGuestbook() {
+    const messages = this.cachedData.guestbook;
+    const config = this.config.guestbook;
+    const section = document.getElementById('guestbook-section');
+
+    if (!messages || messages.length === 0) {
+      section.style.display = 'none';
+      return;
+    }
+
+    section.innerHTML = `
+      <div class="section-header fade-in-up">
+        <h2 class="section-title">${config.section_title || '留言板'}</h2>
+        <p class="section-subtitle">${config.section_subtitle || '用户的声音'}</p>
+      </div>
+      
+      <div style="display: flex; flex-direction: column; gap: 24px; max-width: 800px; margin: 0 auto;">
+        ${messages.map(msg => `
+          <div class="glass-card fade-in-up" style="display: flex; gap: 16px;">
+            <img src="${msg.profiles?.avatar_url || '/assets/default-avatar.png'}" 
+                 style="width: 48px; height: 48px; border-radius: 50%; border: 2px solid var(--border-subtle);">
+            <div style="flex: 1;">
+              <div style="font-weight: 600; margin-bottom: 4px;">${msg.profiles?.username || '匿名用户'}</div>
+              <p style="color: var(--text-secondary); font-size: 14px; line-height: 1.6;">${msg.content}</p>
+              <div style="font-size: 12px; color: var(--text-tertiary); margin-top: 8px;">
+                ${new Date(msg.created_at).toLocaleDateString('zh-CN')}
+              </div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+      
+      <div style="text-align: center; margin-top: 48px;">
+        <a href="/guestbook.html" class="btn btn-secondary">查看全部留言</a>
+      </div>
+    `;
+  },
+
+  /**
+   * Render infinite ticker section
+   */
+  renderTicker() {
+    const data = this.cachedData.ticker;
+    const section = document.getElementById('ticker-section');
+
+    // Duplicate data for seamless loop
+    const topItems = [...data.top, ...data.top];
+    const bottomItems = [...data.bottom, ...data.bottom];
+
+    section.innerHTML = `
+      <div class="ticker-row">
+        <div class="ticker ticker-left">
+          <div class="ticker-track">
+            ${topItems.map(tag => `<div class="ticker-item">${tag}</div>`).join('')}
+          </div>
+        </div>
+      </div>
+      
+      <div class="ticker-row">
+        <div class="ticker ticker-right">
+          <div class="ticker-track">
+            ${bottomItems.map(name => `<div class="ticker-item">${name}</div>`).join('')}
+          </div>
+        </div>
+      </div>
+    `;
+  },
+
+  /**
+   * Initialize interactions (nav, mobile menu)
+   */
+  initInteractions() {
+    // Scroll effect on navbar
+    window.addEventListener('scroll', () => {
+      const nav = document.querySelector('.framer-nav');
+      if (window.scrollY > 50) {
+        nav.classList.add('scrolled');
+      } else {
+        nav.classList.remove('scrolled');
+      }
+    });
+
+    // Mobile menu toggle
+    const hamburger = document.querySelector('.nav-hamburger');
+    const mobileMenu = document.querySelector('.mobile-menu');
+
+    if (hamburger && mobileMenu) {
+      hamburger.addEventListener('click', () => {
+        hamburger.classList.toggle('active');
+        mobileMenu.classList.toggle('active');
+      });
+
+      // Close on link click
+      mobileMenu.querySelectorAll('a').forEach(link => {
+        link.addEventListener('click', () => {
+          hamburger.classList.remove('active');
+          mobileMenu.classList.remove('active');
+        });
+      });
+    }
+  },
+
+  /**
+   * Initialize parallax scroll effect for masonry columns
+   */
+  initMasonryParallax() {
+    const columns = document.querySelectorAll('.masonry-column');
+    if (columns.length === 0) return;
+
+    // Define alternating scroll speed multipliers (Every other column slides faster)
+    // 1.0 = normal scroll, 1.2 = moves faster (slides up)
+    const speedMultipliers = [1.0, 1.2, 1.0, 1.2];
+
+    let ticking = false;
+
+    const updateParallax = () => {
+      const scrollY = window.pageYOffset;
+      const section = document.querySelector('.prompts-masonry-section');
+
+      if (!section) {
+        ticking = false;
+        return;
+      }
+
+      const sectionTop = section.offsetTop;
+      const sectionHeight = section.offsetHeight;
+      const viewportHeight = window.innerHeight;
+
+      // Only apply parallax when section is in view
+      if (scrollY + viewportHeight > sectionTop && scrollY < sectionTop + sectionHeight) {
+        // Calculate progress relative to the section top
+        // Anchor exactly at section start so it begins aligned
+        const relativeScroll = scrollY - sectionTop;
+
+        columns.forEach((column, index) => {
+          // Use modulus to cycle through multipliers for any number of columns
+          const speed = speedMultipliers[index % speedMultipliers.length];
+
+          // Calculate offset: 
+          // If speed is 1.0, offset is 0.
+          // If speed is 1.2, offset is negative (moves UP faster than scroll)
+          let offset = relativeScroll * (1 - speed) * 0.4;
+
+          // Prevent "sinking": Clamp offset to be <= 0
+          // This ensures columns never move DOWN below their original position,
+          // keeping the top edge perfectly aligned when at the top of the section.
+          // They will only slide UP (negative y) as you scroll down.
+          if (offset > 0) offset = 0;
+
+          column.style.transform = `translate3d(0, ${offset}px, 0)`;
+        });
+      }
+
+      ticking = false;
+    };
+
+    const requestTick = () => {
+      if (!ticking) {
+        requestAnimationFrame(updateParallax);
+        ticking = true;
+      }
+    };
+
+    window.addEventListener('scroll', requestTick, { passive: true });
+    updateParallax(); // Initial position
+  },
+
+  /**
+   * Initialize scroll-triggered animations
+   */
+  initScrollAnimations() {
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+        }
+      });
+    }, {
+      threshold: 0.1,
+      rootMargin: '0px 0px -100px 0px'
+    });
+
+    document.querySelectorAll('.fade-in-up').forEach(el => {
+      observer.observe(el);
+    });
+  }
+};
+
+// Auto-initialize when DOM is ready and dependencies are loaded
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', async () => {
+    // Wait for PROMPTS and supabaseClient to be available
+    const waitForDeps = setInterval(() => {
+      if (window.PROMPTS && window.supabaseClient) {
+        clearInterval(waitForDeps);
+        FramerHome.init();
+      }
+    }, 100);
+  });
+} else {
+  // DOM already loaded, check for deps
+  const waitForDeps = setInterval(() => {
+    if (window.PROMPTS && window.supabaseClient) {
+      clearInterval(waitForDeps);
+      FramerHome.init();
+    }
+  }, 100);
+}
+
+// Export to window for global access
+window.FramerHome = FramerHome;
+
+// Export for module usage
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = FramerHome;
+}

@@ -1,0 +1,51 @@
+/* ========== Language Toggle Styles ========== */
+.lang-toggle-btn {
+    height: 36px;
+    padding: 0 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 18px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    margin-right: 12px;
+}
+
+.lang-toggle-btn:hover {
+    background: rgba(15, 23, 42, 0.8);
+    border-color: rgba(255, 255, 255, 0.2);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.lang-toggle-btn .lang-text {
+    color: rgba(255, 255, 255, 0.5);
+    transition: all 0.3s ease;
+}
+
+.lang-toggle-btn .lang-text.active {
+    color: rgba(255, 255, 255, 0.95);
+    font-weight: 600;
+}
+
+.lang-toggle-btn .lang-separator {
+    color: rgba(255, 255, 255, 0.3);
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+    .lang-toggle-btn {
+        height: 32px;
+        padding: 0 10px;
+        font-size: 12px;
+        margin-right: 8px;
+    }
+}
