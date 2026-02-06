@@ -303,20 +303,29 @@ const FramerHome = {
       <h1 class="hero-title fade-in-up">${data.title}</h1>
       <p class="hero-subtitle fade-in-up">${data.subtitle}</p>
       
-      <div class="hero-cta fade-in-up">
-        <a href="${data.cta.primary.link}" class="btn btn-hero-primary">${data.cta.primary.text}</a>
-        <a href="${data.cta.secondary.link}" class="btn btn-hero-secondary">${data.cta.secondary.text}</a>
+      <!-- Progress Indicator (Ruler Style) -->
+      <div class="hero-progress fade-in-up">
+        <div class="hero-progress-track">
+          <div class="hero-progress-thumb"></div>
+          ${Array(20).fill(0).map(() => `<span class="progress-tick"></span>`).join('')}
+        </div>
       </div>
       
-      <div class="hero-entries">
-        ${data.entries.map(entry => `
-          <a href="${entry.link}" class="entry-card fade-in-up">
-            <i class="fas ${entry.icon}" style="color: ${entry.color}"></i>
-            <span>${entry.text}</span>
-          </a>
-        `).join('')}
+      <!-- Horizontal Scroll Carousel -->
+      <div class="hero-carousel fade-in-up">
+        <div class="hero-carousel-track">
+          ${data.entries.map((entry, index) => `
+            <a href="${entry.link}" class="entry-card" data-index="${index}">
+              <i class="fas ${entry.icon}" style="color: ${entry.color}"></i>
+              <span>${entry.text}</span>
+            </a>
+          `).join('')}
+        </div>
       </div>
     `;
+
+    // Initialize carousel interactions
+    this.initCarousel();
   },
 
   /**
@@ -633,6 +642,106 @@ const FramerHome = {
         </div>
       </div>
     `;
+  },
+
+  /**
+   * Initialize hero carousel with horizontal scroll and scaling
+   */
+  initCarousel() {
+    const carousel = document.querySelector('.hero-carousel');
+    const track = document.querySelector('.hero-carousel-track');
+    const cards = document.querySelectorAll('.hero-carousel .entry-card');
+    const thumb = document.querySelector('.hero-progress-thumb');
+
+    console.log('🎠 initCarousel called', { carousel, track, cards: cards.length, thumb });
+
+    if (!carousel || !track || cards.length === 0) {
+      console.warn('⚠️ Carousel elements not found, skipping init');
+      return;
+    }
+
+    console.log('✅ Carousel elements found, binding events...');
+    console.log('📏 Carousel dimensions:', {
+      scrollWidth: carousel.scrollWidth,
+      clientWidth: carousel.clientWidth,
+      canScroll: carousel.scrollWidth > carousel.clientWidth
+    });
+
+    let currentIndex = 0;
+    const cardCount = cards.length;
+
+    // Update card scales and progress indicator
+    const updateCarousel = () => {
+      const scrollLeft = carousel.scrollLeft;
+      const scrollWidth = carousel.scrollWidth - carousel.clientWidth;
+      const progress = scrollWidth > 0 ? scrollLeft / scrollWidth : 0;
+
+      // Update progress indicator position (relative to track)
+      if (thumb) {
+        const track = document.querySelector('.hero-progress-track');
+        if (track) {
+          const trackWidth = track.offsetWidth;
+          const thumbWidth = thumb.offsetWidth;
+          // Move thumb from 0 to (trackWidth - thumbWidth)
+          const maxOffset = trackWidth - thumbWidth;
+          thumb.style.left = `${progress * maxOffset}px`;
+        }
+      }
+
+      // Calculate which card is centered and apply scaling
+      const viewportCenter = window.innerWidth / 2;
+
+      cards.forEach((card) => {
+        const rect = card.getBoundingClientRect();
+        const cardCenter = rect.left + rect.width / 2;
+        const distanceFromCenter = Math.abs(cardCenter - viewportCenter);
+        const maxDistance = rect.width * 1.5;
+
+        // Scale: 1.1 when centered, 0.85 when far (more dramatic effect)
+        const scale = Math.max(0.85, 1.1 - (distanceFromCenter / maxDistance) * 0.25);
+        // Opacity: 1.0 when centered, 0.5 when far
+        const opacity = Math.max(0.5, 1 - (distanceFromCenter / maxDistance) * 0.5);
+
+        card.style.transform = `scale(${scale})`;
+        card.style.opacity = opacity;
+      });
+    };
+
+    // Wheel scroll -> horizontal scroll when hovering over carousel
+    carousel.addEventListener('wheel', (e) => {
+      console.log('🔄 Wheel event on carousel', { deltaY: e.deltaY, deltaX: e.deltaX });
+      // Use deltaY for vertical scroll wheels, deltaX for horizontal
+      const delta = e.deltaY !== 0 ? e.deltaY : e.deltaX;
+
+      if (delta !== 0) {
+        e.preventDefault();
+        e.stopPropagation();
+        carousel.scrollLeft += delta;
+        console.log('📜 Scrolled to:', carousel.scrollLeft);
+        updateCarousel();
+      }
+    }, { passive: false });
+
+    // Touch swipe support for mobile
+    let touchStartX = 0;
+    let touchStartScrollLeft = 0;
+
+    carousel.addEventListener('touchstart', (e) => {
+      touchStartX = e.touches[0].clientX;
+      touchStartScrollLeft = carousel.scrollLeft;
+    }, { passive: true });
+
+    carousel.addEventListener('touchmove', (e) => {
+      const deltaX = touchStartX - e.touches[0].clientX;
+      carousel.scrollLeft = touchStartScrollLeft + deltaX;
+      updateCarousel();
+    }, { passive: true });
+
+    // Scroll event for smooth updates
+    carousel.addEventListener('scroll', updateCarousel);
+
+    // Initial update
+    requestAnimationFrame(updateCarousel);
   },
 
   /**
