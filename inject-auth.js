@@ -275,24 +275,26 @@
 
             /* Dropdown Styles (Refined Glassmorphism) */
             .avatar-dropdown {
-                position: absolute;
-                top: calc(100% + 12px);
-                right: 0;
+                position: fixed;
+                top: 63px;
+                right: 30px;
                 min-width: 220px;
-                /* Dark Mode Default: High transparency glass */
-                background: rgba(30, 41, 59, 0.65);
+                /* Match nav bar glass effect */
+                background: rgba(0, 0, 0, 0.65);
                 backdrop-filter: blur(20px);
                 -webkit-backdrop-filter: blur(20px);
                 border: 1px solid rgba(255, 255, 255, 0.1);
-                border-radius: 16px;
+                border-top: none;
+                border-radius: 12px;
                 padding: 16px;
-                box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+                box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
                 opacity: 0;
                 visibility: hidden;
                 transform: translateY(-10px) scale(0.95);
                 transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
                 display: block;
                 text-align: left;
+                z-index: 9999;
             }
             .avatar-dropdown.active {
                 opacity: 1;
@@ -432,24 +434,23 @@
             }
             .dropdown-action:hover i { color: #5d9fd8; }
 
-            /* Light Mode CSS */
+            /* Light Mode CSS - Keep dropdown consistent with nav bar */
             [data-theme="light"] .avatar-dropdown {
-                background: rgba(255, 255, 255, 0.85); /* Glassy White */
-                border-color: rgba(0,0,0,0.1);
-                box-shadow: 0 10px 40px rgba(0,0,0,0.1);
-                color: #333;
+                background: rgba(0, 0, 0, 0.65);
+                border-color: rgba(255, 255, 255, 0.1);
+                box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
             }
-            [data-theme="light"] .identity-name { color: #1e293b; }
-            [data-theme="light"] .dropdown-header { border-bottom-color: rgba(0,0,0,0.08); }
-            [data-theme="light"] .dropdown-action { color: #334155; }
-            [data-theme="light"] .dropdown-action i { color: #94a3b8; }
+            [data-theme="light"] .identity-name { color: rgba(255, 255, 255, 0.95); }
+            [data-theme="light"] .dropdown-header { border-bottom-color: rgba(255, 255, 255, 0.15); }
+            [data-theme="light"] .dropdown-action { color: rgba(255, 255, 255, 0.85); }
+            [data-theme="light"] .dropdown-action i { color: rgba(255, 255, 255, 0.6); }
             
             [data-theme="light"] .dropdown-action:hover {
-                background: rgba(107, 158, 206, 0.12); /* Starry Blue Tint */
-                color: #6b9ece; /* Starry Blue */
+                background: rgba(255, 255, 255, 0.1);
+                color: rgba(255, 255, 255, 0.95);
             }
             [data-theme="light"] .dropdown-action:hover i {
-                color: #6b9ece;
+                color: rgba(255, 255, 255, 0.95);
             }
 
             /* Verify Widget Layout Optimization (Text + Points in one row) */
@@ -685,9 +686,27 @@
                 filter: drop-shadow(0 0 0 3px rgba(255, 255, 255, 0.9)) drop-shadow(0 0 15px rgba(255, 255, 255, 0.7)) brightness(1.3) !important;
             }
             
-            .nav-user-avatar:hover {
-                transform: scale(1.1) !important;
-                box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.9), 0 0 15px rgba(255, 255, 255, 0.7) !important;
+            /* ========================================
+               ULTIMATE PRIORITY: Avatar Shrink on Hover
+               Overrides ALL other CSS files
+               ======================================== */
+            .nav-user-avatar,
+            #navUserAvatar {
+                transform: none !important;
+                transition: transform 0.3s ease !important;
+            }
+            
+            .nav-user-avatar:hover,
+            #navUserAvatar:hover,
+            .login-trigger-btn:hover .nav-user-avatar,
+            .login-trigger-btn:hover #navUserAvatar,
+            button.login-trigger-btn:hover .nav-user-avatar,
+            button.login-trigger-btn:hover #navUserAvatar,
+            .login-trigger-btn.logged-in:hover .nav-user-avatar,
+            .login-trigger-btn.logged-in:hover #navUserAvatar {
+                transform: scale(0.9) !important;
+                box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4) !important;
+                transition: all 0.3s ease !important;
             }
         `;
         document.head.appendChild(forceStyle);
@@ -887,5 +906,52 @@
         const lang = window.i18n?.getCurrentLanguage() || 'zh';
         updateLangToggle(lang);
     }, 100);
+
+    // ========================================
+    // ULTIMATE FIX: Direct JavaScript Control for Avatar Hover
+    // This bypasses ALL CSS conflicts by using inline styles
+    // ========================================
+    function applyAvatarHoverFix() {
+        const avatar = document.querySelector('.nav-user-avatar') || document.getElementById('navUserAvatar');
+
+        if (avatar) {
+            // Remove any existing listeners to prevent duplicates
+            const newAvatar = avatar.cloneNode(true);
+            avatar.parentNode.replaceChild(newAvatar, avatar);
+
+            // Set default state
+            newAvatar.style.transform = 'scale(1)';
+            newAvatar.style.transition = 'transform 0.3s ease';
+
+            // Add mouseenter event - shrink to 0.9
+            newAvatar.addEventListener('mouseenter', () => {
+                newAvatar.style.transform = 'scale(0.9)';
+            });
+
+            // Add mouseleave event - return to normal
+            newAvatar.addEventListener('mouseleave', () => {
+                newAvatar.style.transform = 'scale(1)';
+            });
+
+            console.log('✅ Avatar hover fix applied via JavaScript');
+        }
+    }
+
+    // Apply immediately if avatar exists
+    applyAvatarHoverFix();
+
+    // Also apply after a short delay (in case avatar loads later)
+    setTimeout(applyAvatarHoverFix, 500);
+    setTimeout(applyAvatarHoverFix, 1000);
+
+    // Watch for avatar changes in DOM
+    const observer = new MutationObserver(() => {
+        applyAvatarHoverFix();
+    });
+
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
 
 })();

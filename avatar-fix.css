@@ -59,7 +59,7 @@ button.login-trigger-btn.logged-in {
 .login-trigger-btn:hover #navUserAvatar,
 .login-trigger-btn:hover .nav-user-avatar,
 .login-trigger-btn.logged-in:hover .nav-user-avatar {
-    transform: scale(1.1) !important;
+    transform: scale(0.9) !important;
     box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4) !important;
     transition: all 0.3s ease !important;
 }

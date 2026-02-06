@@ -3271,7 +3271,7 @@ input.login-submit-btn {
 .login-trigger-btn:hover .nav-user-avatar,
 #navUserAvatar:hover,
 .nav-user-avatar:hover {
-    transform: scale(1.1);
+    transform: scale(0.9);
     /* Enhanced shadow without white ring */
     box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4) !important;
     background: transparent !important;

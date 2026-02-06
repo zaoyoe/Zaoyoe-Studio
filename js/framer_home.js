@@ -340,6 +340,20 @@ const FramerHome = {
       shop: {
         items: getShopCategories(),
         urlPrefix: '/shop.html?category='
+      },
+      settings: {
+        type: 'custom',
+        render: () => {
+          return `
+            <div class="settings-dropdown-content">
+              <button id="langToggleDropdown" onclick="window.i18n?.toggleLanguage()" class="lang-toggle-simple">
+                <span id="langZhDropdown" class="lang-text active">中</span>
+                <span class="lang-separator">|</span>
+                <span id="langEnDropdown" class="lang-text">EN</span>
+              </button>
+            </div>
+          `;
+        }
       }
     };
 
@@ -355,9 +369,16 @@ const FramerHome = {
       const dropdown = document.createElement('div');
       dropdown.className = 'nav-dropdown-portal';
       dropdown.id = `dropdown-${dropdownType}`;
-      dropdown.innerHTML = data.items.map(item =>
-        `<a href="${data.urlPrefix}${encodeURIComponent(item)}">${item}</a>`
-      ).join('');
+
+      // Handle custom rendering or standard list
+      if (data.type === 'custom' && data.render) {
+        dropdown.innerHTML = data.render();
+      } else {
+        dropdown.innerHTML = data.items.map(item =>
+          `<a href="${data.urlPrefix}${encodeURIComponent(item)}">${item}</a>`
+        ).join('');
+      }
+
       document.body.appendChild(dropdown);
 
       let hideTimeout = null;

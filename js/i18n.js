@@ -131,6 +131,9 @@
         // Update language toggle button active state
         const langZh = document.getElementById('langZh');
         const langEn = document.getElementById('langEn');
+        const langZhDropdown = document.getElementById('langZhDropdown');
+        const langEnDropdown = document.getElementById('langEnDropdown');
+
         if (langZh && langEn) {
             if (lang === 'zh') {
                 langZh.classList.add('active');
@@ -138,6 +141,17 @@
             } else {
                 langZh.classList.remove('active');
                 langEn.classList.add('active');
+            }
+        }
+
+        // Update dropdown button state
+        if (langZhDropdown && langEnDropdown) {
+            if (lang === 'zh') {
+                langZhDropdown.classList.add('active');
+                langEnDropdown.classList.remove('active');
+            } else {
+                langZhDropdown.classList.remove('active');
+                langEnDropdown.classList.add('active');
             }
         }
 

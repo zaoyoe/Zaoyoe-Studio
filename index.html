@@ -35,7 +35,7 @@
     <script src="./prompts-data.js?v=20260205"></script>
 
     <!-- Framer Home Styles -->
-    <link rel="stylesheet" href="./css/framer_home.css">
+    <link rel="stylesheet" href="./css/framer_home.css?v=20260206_2">
 
     <!-- Disable browser scroll restoration -->
     <script>
@@ -59,18 +59,11 @@
                 <a href="#verify">验证</a>
                 <a href="#guestbook">留言板</a>
                 <a href="/prompts.html">图库</a>
+                <a href="#settings" class="nav-trigger" data-dropdown="settings">设置</a>
             </div>
 
             <!-- Actions -->
             <div class="nav-actions">
-                <!-- Language Toggle -->
-                <button id="langToggleBtn" onclick="window.i18n?.toggleLanguage()" class="lang-toggle-btn"
-                    title="切换语言 / Switch Language">
-                    <span id="langZh" class="lang-text active">中</span>
-                    <span class="lang-separator">|</span>
-                    <span id="langEn" class="lang-text">EN</span>
-                </button>
-
                 <div id="auth-container"></div>
                 <button class="nav-hamburger">
                     <span></span>

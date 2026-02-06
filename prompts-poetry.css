@@ -319,21 +319,22 @@ body.has-banner .home-btn {
 
 /* Glassmorphism Dropdown */
 .avatar-dropdown {
-    position: absolute;
-    top: calc(100% + 12px);
-    right: 0;
+    position: fixed;
+    top: 64px;
+    right: 30px;
     min-width: 220px;
-    background: rgba(255, 255, 255, 0.70);
+    background: rgba(0, 0, 0, 0.65);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
     padding: 16px;
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
     opacity: 0;
     visibility: hidden;
     transform: translateY(-10px) scale(0.95);
     transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    z-index: 9999;
 }
 
 .avatar-dropdown.active {
@@ -343,7 +344,7 @@ body.has-banner .home-btn {
 }
 
 [data-theme="dark"] .avatar-dropdown {
-    background: rgba(30, 41, 59, 0.65);
+    background: rgba(0, 0, 0, 0.65);
     border-color: rgba(255, 255, 255, 0.1);
 }
 
@@ -354,13 +355,13 @@ body.has-banner .home-btn {
     justify-content: space-between;
     padding-bottom: 14px;
     margin-bottom: 12px;
-    border-bottom: 1px solid var(--card-border);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.15);
 }
 
 .identity-name {
     font-family: var(--font-serif);
     font-size: 1.1rem;
-    color: var(--text-main);
+    color: rgba(255, 255, 255, 0.95);
     display: flex;
     align-items: center;
     gap: 6px;
@@ -531,7 +532,7 @@ body.has-banner .home-btn {
     border: none;
     border-radius: 10px;
     cursor: pointer;
-    color: var(--text-main);
+    color: rgba(255, 255, 255, 0.85);
     font-size: 0.9rem;
     font-family: var(--font-sans);
     transition: all 0.2s ease;
@@ -539,28 +540,28 @@ body.has-banner .home-btn {
 }
 
 .dropdown-action:hover {
-    background: rgba(155, 93, 229, 0.1);
-    color: var(--accent-purple);
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.95);
 }
 
 [data-theme="dark"] .dropdown-action:hover {
-    background: rgba(93, 159, 216, 0.12);
-    color: #5d9fd8;
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.95);
 }
 
 [data-theme="dark"] .dropdown-action:hover i {
-    color: #5d9fd8;
+    color: rgba(255, 255, 255, 0.95);
 }
 
 .dropdown-action i {
     width: 20px;
     text-align: center;
-    color: var(--text-dim);
+    color: rgba(255, 255, 255, 0.6);
     transition: color 0.2s ease;
 }
 
 .dropdown-action:hover i {
-    color: var(--accent-purple);
+    color: rgba(255, 255, 255, 0.95);
 }
 
 /* Back button dark mode */
