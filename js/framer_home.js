@@ -15,6 +15,8 @@ const FramerHome = {
   async init() {
     console.log('🚀 Initializing Framer Home...');
 
+    // Scroll to top on page load
+    window.scrollTo(0, 0);
     // Check performance and apply degradation if needed
     this.checkPerformance();
 
@@ -107,10 +109,10 @@ const FramerHome = {
       },
       customImage: config.custom_image || null,
       entries: [
-        { icon: 'fa-wand-magic-sparkles', text: '提示词', link: '#prompts', color: '#f472b6' },
-        { icon: 'fa-store', text: '商城', link: '#shop', color: '#4ade80' },
-        { icon: 'fa-robot', text: '验证', link: '#verify', color: '#667eea' },
-        { icon: 'fa-comment-dots', text: '留言板', link: '#guestbook', color: '#f59e0b' }
+        { icon: 'fa-wand-magic-sparkles', text: '提示词', link: '/prompts.html', color: '#f472b6' },
+        { icon: 'fa-store', text: '商城', link: '/shop.html', color: '#4ade80' },
+        { icon: 'fa-robot', text: '验证', link: '/verify.html', color: '#667eea' },
+        { icon: 'fa-comment-dots', text: '留言板', link: '/guestbook.html', color: '#f59e0b' }
       ]
     };
   },
@@ -174,11 +176,13 @@ const FramerHome = {
 
       const { data, error } = await query
         .order('display_order', { ascending: false })
-        .limit(config.max_items || 8);
+        .limit(50); // Fetch more for random selection
 
       if (error) throw error;
 
-      return data || [];
+      // Randomly select 6 products
+      const shuffled = (data || []).sort(() => Math.random() - 0.5);
+      return shuffled.slice(0, 6);
     } catch (error) {
       console.error('Failed to fetch shop products:', error);
       return [];
@@ -438,32 +442,31 @@ const FramerHome = {
       return;
     }
 
+    // Duplicate products for seamless infinite scroll
+    const duplicatedProducts = [...products, ...products];
+
     section.innerHTML = `
       <div class="section-header fade-in-up">
         <h2 class="section-title">${config.section_title || '精选资源商城'}</h2>
         <p class="section-subtitle">${config.section_subtitle || '优质资源，助力成长'}</p>
       </div>
       
-      <div class="grid-4">
-        ${products.map(product => `
-          <div class="glass-card fade-in-up" style="padding: 12px; display: flex; flex-direction: column; gap: 12px; transform: none !important; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05) !important;">
-            <div style="width: 100%; aspect-ratio: 4/3; border-radius: 12px; overflow: hidden; background: rgba(255,255,255,0.05); display: flex; align-items: center; justify-content: center;">
-              ${product.icon_url.startsWith('http')
-        ? `<img src="${product.icon_url}" style="width: 100%; height: 100%; object-fit: cover;">`
-        : (product.icon_url.startsWith('fa-') ? `<i class="fas ${product.icon_url}" style="font-size: 48px; color: var(--accent-blue);"></i>` : `<img src="${product.icon_url}" style="width: 64px; height: 64px;">`)
-      }
-            </div>
-            
-            <div>
-              <h3 style="font-size: 16px; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${product.name}</h3>
-              <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; height: 38px;">${product.description || ''}</p>
-            </div>
-          </div>
-        `).join('')}
-      </div>
-      
-      <div style="text-align: center; margin-top: 48px;">
-        <a href="/shop.html" class="btn btn-secondary">前往商城</a>
+      <div class="shop-carousel-wrapper">
+        <div class="shop-carousel-track">
+          ${duplicatedProducts.map(product => `
+            <a href="/shop.html" class="shop-carousel-card">
+              <div class="shop-card-image">
+                ${product.icon_url.startsWith('http')
+        ? `<img src="${product.icon_url}" alt="${product.name}">`
+        : (product.icon_url.startsWith('fa-') ? `<i class="fas ${product.icon_url}" style="font-size: 48px; color: var(--accent-blue);"></i>` : `<img src="${product.icon_url}" alt="${product.name}">`)}
+              </div>
+              <div class="shop-card-info">
+                <h3>${product.name}</h3>
+                <p>${product.description || ''}</p>
+              </div>
+            </a>
+          `).join('')}
+        </div>
       </div>
     `;
   },

@@ -74,7 +74,7 @@
     </div>
 
     <!-- Login Modal -->
-    <div class="login-overlay" id="loginModal" onmousedown="handleLoginOverlayClick(event)" onmouseup="handleLoginOverlayClick(event)">
+    <div class="login-overlay" id="loginModal" style="display: none; opacity: 0; visibility: hidden;" onmousedown="handleLoginOverlayClick(event)" onmouseup="handleLoginOverlayClick(event)">
         <div class="login-card" onclick="event.stopPropagation()">
             <!-- Mac Window Controls -->
             <div class="mac-controls">
@@ -101,12 +101,12 @@
                     <span data-i18n="auth.or">或者</span>
                 </div>
 
-                <form id="loginForm" onsubmit="handleLogin(event)">
+                <form id="loginForm" onsubmit="handleLogin(event)" autocomplete="off">
                     <div class="input-group">
                         <input type="email" id="login-email" class="glass-input" placeholder="邮箱地址" data-i18n-placeholder="auth.emailPlaceholder" required>
                     </div>
                     <div class="input-group">
-                        <input type="password" id="login-password" class="glass-input" placeholder="密码" data-i18n-placeholder="auth.passwordPlaceholder" required>
+                        <input type="password" id="login-password" class="glass-input" placeholder="密码" data-i18n-placeholder="auth.passwordPlaceholder" autocomplete="new-password" data-form-type="other" required>
                     </div>
 
                     <!-- Forgot Password Link -->
@@ -767,6 +767,7 @@
                     const isActive = modal.classList.contains('active');
 
                     if (isActive) {
+                        modal.style.display = 'flex';
                         modal.style.visibility = 'visible';
                         modal.style.opacity = '1';
                         // 🆕 Force card visibility
@@ -777,6 +778,7 @@
                             card.style.visibility = 'visible';
                         }
                     } else {
+                        modal.style.display = 'none';
                         modal.style.visibility = 'hidden';
                         modal.style.opacity = '0';
                     }
