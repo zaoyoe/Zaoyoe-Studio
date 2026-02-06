@@ -707,17 +707,28 @@ const FramerHome = {
       });
     };
 
+    // Track scroll activity for thumb glow effect
+    let scrollTimeout = null;
+
+    const activateThumb = () => {
+      if (thumb) thumb.classList.add('active');
+      if (scrollTimeout) clearTimeout(scrollTimeout);
+      scrollTimeout = setTimeout(() => {
+        if (thumb) thumb.classList.remove('active');
+      }, 300);
+    };
+
     // Wheel scroll -> horizontal scroll when hovering over carousel
     carousel.addEventListener('wheel', (e) => {
-      console.log('🔄 Wheel event on carousel', { deltaY: e.deltaY, deltaX: e.deltaX });
       // Use deltaY for vertical scroll wheels, deltaX for horizontal
       const delta = e.deltaY !== 0 ? e.deltaY : e.deltaX;
 
       if (delta !== 0) {
         e.preventDefault();
         e.stopPropagation();
-        carousel.scrollLeft += delta;
-        console.log('📜 Scrolled to:', carousel.scrollLeft);
+        // Slow down scroll speed (0.5x)
+        carousel.scrollLeft += delta * 0.5;
+        activateThumb();
         updateCarousel();
       }
     }, { passive: false });

@@ -438,10 +438,30 @@ h3 {
     width: 36px;
     height: 20px;
     background: transparent;
-    border: 2px solid var(--text-primary);
+    border: 2px solid rgba(255, 255, 255, 0.3);
     border-radius: 4px;
-    transition: left 0.1s ease-out;
+    transition: border-color 0.3s ease-out,
+        box-shadow 0.3s ease-out;
     pointer-events: none;
+    z-index: 2;
+}
+
+/* Inner fill to mask ticks behind the hollow thumb (extends beyond border) */
+.hero-progress-thumb::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    left: -4px;
+    right: -4px;
+    height: 16px;
+    background: #0a0e17;
+    z-index: -1;
+}
+
+.hero-progress-thumb.active {
+    border-color: var(--text-primary);
+    box-shadow: 0 0 12px rgba(255, 255, 255, 0.3);
 }
 
 /* ========== Hero Carousel =========== */
@@ -461,8 +481,9 @@ h3 {
 
 .hero-carousel-track {
     display: flex;
-    gap: 24px;
-    padding: 0 calc(50vw - 100px);
+    gap: 48px;
+    /* Padding allows first card at left edge, last card at right edge */
+    padding: 0 calc(50vw - 90px);
     width: fit-content;
 }
 
