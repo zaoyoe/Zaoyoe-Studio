@@ -376,13 +376,17 @@ const FramerHome = {
       const hideDropdown = () => {
         hideTimeout = setTimeout(() => {
           dropdown.classList.remove('visible');
-        }, 200);
+        }, 300);
+      };
+
+      const keepDropdownOpen = () => {
+        clearTimeout(hideTimeout);
       };
 
       // Events
       trigger.addEventListener('mouseenter', showDropdown);
       trigger.addEventListener('mouseleave', hideDropdown);
-      dropdown.addEventListener('mouseenter', () => clearTimeout(hideTimeout));
+      dropdown.addEventListener('mouseenter', keepDropdownOpen);
       dropdown.addEventListener('mouseleave', hideDropdown);
     });
   },
