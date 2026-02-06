@@ -394,26 +394,26 @@ const FramerHome = {
             });
           } else if (p.tags) p.tags.forEach(t => allTags.add(t));
         });
-        const tagList = Array.from(allTags).slice(0, 30); // Top 30 tags
+        const tagList = Array.from(allTags).slice(0, 8); // Top 8 tags
 
         // Randomize slightly for variety
         const shuffled = tagList.sort(() => 0.5 - Math.random());
-        const row1 = shuffled.slice(0, 15);
-        const row2 = shuffled.slice(15, 30);
+        const row1 = shuffled.slice(0, 4);
+        const row2 = shuffled.slice(4, 8);
 
         return `
-          <div class="prompts-gradient-mask" onclick="window.location.href='/prompts.html'">
-            <div class="mask-labels-container">
+          <div class="prompts-gradient-mask">
+            <div class="mask-labels-container" onclick="window.location.href='/prompts.html'">
               <div class="mask-labels-row">
                 ${row1.map(tag => `<span class="mask-tag">${tag}</span>`).join('')}
               </div>
-              <div class="mask-labels-row" style="margin-top: 12px; margin-left: 24px;">
+              <div class="mask-cta">
+                <span class="mask-cta-text">查看更多</span>
+                <span class="mask-cta-arrow">›</span>
+              </div>
+              <div class="mask-labels-row">
                 ${row2.map(tag => `<span class="mask-tag">${tag}</span>`).join('')}
               </div>
-            </div>
-            
-            <div class="mask-cta">
-              <a href="/prompts.html" class="btn btn-secondary" style="pointer-events: none;">查看更多提示词</a>
             </div>
           </div>
           `;
