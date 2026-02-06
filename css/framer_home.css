@@ -10,7 +10,7 @@ Inspired by Framer.com design aesthetics
     /* Colors - Pure Black Theme */
     --bg-black: #000000;
     --bg-card: rgba(0, 0, 0, 0.6);
-    --bg-nav: rgba(0, 0, 0, 0.85);
+    --bg-nav: rgba(0, 0, 0, 0.65);
     --bg-mobile-menu: rgba(0, 0, 0, 0.85);
 
     /* Text Colors */
@@ -129,7 +129,7 @@ h3 {
 }
 
 .framer-nav.scrolled {
-    background-color: rgba(0, 0, 0, 0.85);
+    background-color: rgba(0, 0, 0, 0.65);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
 }
