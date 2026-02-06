@@ -289,6 +289,102 @@ const FramerHome = {
     this.renderVerify();
     this.renderGuestbook();
     this.renderTicker();
+    this.initNavDropdowns();
+  },
+
+  /**
+   * Initialize navigation dropdown menus
+   * Dropdowns are appended to body (outside nav) to enable backdrop-filter
+   */
+  initNavDropdowns() {
+    const self = this;
+
+    // Get top 6 tags from prompts data
+    const getTopTags = () => {
+      const tagCounts = {};
+      (this.cachedData.prompts || []).forEach(p => {
+        // Handle multiple tag formats
+        if (p.ai_tags && Array.isArray(p.ai_tags)) {
+          p.ai_tags.forEach(tag => tagCounts[tag] = (tagCounts[tag] || 0) + 1);
+        }
+        if (p.aiTags && typeof p.aiTags === 'object') {
+          ['styles', 'objects', 'scenes', 'mood'].forEach(cat => {
+            if (p.aiTags[cat]?.zh) p.aiTags[cat].zh.forEach(tag => tagCounts[tag] = (tagCounts[tag] || 0) + 1);
+          });
+        }
+        if (p.tags && Array.isArray(p.tags)) {
+          p.tags.forEach(tag => tagCounts[tag] = (tagCounts[tag] || 0) + 1);
+        }
+      });
+
+      let topTags = Object.entries(tagCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 6)
+        .map(([tag]) => tag);
+
+      return topTags.length > 0 ? topTags : ['卡通风格', '3D艺术', '渲染', '可爱', '数字艺术', '微缩'];
+    };
+
+    // Get shop categories
+    const getShopCategories = () => {
+      const categories = [...new Set((this.cachedData.shop || []).map(p => p.category).filter(Boolean))];
+      return categories.length > 0 ? categories : ['全部商品', 'API密钥', '会员服务', '资源包'];
+    };
+
+    // Dropdown content data
+    const dropdownData = {
+      prompts: {
+        items: getTopTags(),
+        urlPrefix: '/prompts.html?tag='
+      },
+      shop: {
+        items: getShopCategories(),
+        urlPrefix: '/shop.html?category='
+      }
+    };
+
+    // Create dropdown elements and attach to body
+    const triggers = document.querySelectorAll('.nav-trigger[data-dropdown]');
+
+    triggers.forEach(trigger => {
+      const dropdownType = trigger.dataset.dropdown;
+      const data = dropdownData[dropdownType];
+      if (!data) return;
+
+      // Create dropdown element
+      const dropdown = document.createElement('div');
+      dropdown.className = 'nav-dropdown-portal';
+      dropdown.id = `dropdown-${dropdownType}`;
+      dropdown.innerHTML = data.items.map(item =>
+        `<a href="${data.urlPrefix}${encodeURIComponent(item)}">${item}</a>`
+      ).join('');
+      document.body.appendChild(dropdown);
+
+      let hideTimeout = null;
+
+      const showDropdown = () => {
+        clearTimeout(hideTimeout);
+        // Position dropdown below nav bar (not trigger)
+        const nav = document.querySelector('.framer-nav');
+        const navRect = nav.getBoundingClientRect();
+        const triggerRect = trigger.getBoundingClientRect();
+        dropdown.style.left = `${triggerRect.left + triggerRect.width / 2}px`;
+        dropdown.style.top = `${navRect.bottom}px`;
+        dropdown.classList.add('visible');
+      };
+
+      const hideDropdown = () => {
+        hideTimeout = setTimeout(() => {
+          dropdown.classList.remove('visible');
+        }, 200);
+      };
+
+      // Events
+      trigger.addEventListener('mouseenter', showDropdown);
+      trigger.addEventListener('mouseleave', hideDropdown);
+      dropdown.addEventListener('mouseenter', () => clearTimeout(hideTimeout));
+      dropdown.addEventListener('mouseleave', hideDropdown);
+    });
   },
 
   /**
@@ -718,20 +814,6 @@ const FramerHome = {
       }, 300);
     };
 
-    // Wheel scroll -> horizontal scroll when hovering over carousel
-    carousel.addEventListener('wheel', (e) => {
-      // Use deltaY for vertical scroll wheels, deltaX for horizontal
-      const delta = e.deltaY !== 0 ? e.deltaY : e.deltaX;
-
-      if (delta !== 0) {
-        e.preventDefault();
-        e.stopPropagation();
-        // Slow down scroll speed (0.5x)
-        carousel.scrollLeft += delta * 0.5;
-        activateThumb();
-        updateCarousel();
-      }
-    }, { passive: false });
 
     // Touch swipe support for mobile
     let touchStartX = 0;
@@ -750,6 +832,35 @@ const FramerHome = {
 
     // Scroll event for smooth updates
     carousel.addEventListener('scroll', updateCarousel);
+
+    // Click behavior: center card first, then navigate
+    const centerThreshold = 50; // pixels - how close to center to be considered "centered"
+
+    cards.forEach((card) => {
+      card.addEventListener('click', (e) => {
+        const viewportCenter = window.innerWidth / 2;
+        const rect = card.getBoundingClientRect();
+        const cardCenter = rect.left + rect.width / 2;
+        const distanceFromCenter = Math.abs(cardCenter - viewportCenter);
+
+        // If card is not centered, scroll to center it and prevent navigation
+        if (distanceFromCenter > centerThreshold) {
+          e.preventDefault();
+          e.stopPropagation();
+
+          // Calculate how much to scroll to center this card
+          const scrollDelta = cardCenter - viewportCenter;
+
+          carousel.scrollTo({
+            left: carousel.scrollLeft + scrollDelta,
+            behavior: 'smooth'
+          });
+
+          activateThumb();
+        }
+        // If already centered, let the click through to navigate
+      });
+    });
 
     // Initial update
     requestAnimationFrame(updateCarousel);
