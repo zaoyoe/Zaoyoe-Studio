@@ -907,51 +907,5 @@
         updateLangToggle(lang);
     }, 100);
 
-    // ========================================
-    // ULTIMATE FIX: Direct JavaScript Control for Avatar Hover
-    // This bypasses ALL CSS conflicts by using inline styles
-    // ========================================
-    function applyAvatarHoverFix() {
-        const avatar = document.querySelector('.nav-user-avatar') || document.getElementById('navUserAvatar');
-
-        if (avatar) {
-            // Remove any existing listeners to prevent duplicates
-            const newAvatar = avatar.cloneNode(true);
-            avatar.parentNode.replaceChild(newAvatar, avatar);
-
-            // Set default state
-            newAvatar.style.transform = 'scale(1)';
-            newAvatar.style.transition = 'transform 0.3s ease';
-
-            // Add mouseenter event - shrink to 0.9
-            newAvatar.addEventListener('mouseenter', () => {
-                newAvatar.style.transform = 'scale(0.9)';
-            });
-
-            // Add mouseleave event - return to normal
-            newAvatar.addEventListener('mouseleave', () => {
-                newAvatar.style.transform = 'scale(1)';
-            });
-
-            console.log('✅ Avatar hover fix applied via JavaScript');
-        }
-    }
-
-    // Apply immediately if avatar exists
-    applyAvatarHoverFix();
-
-    // Also apply after a short delay (in case avatar loads later)
-    setTimeout(applyAvatarHoverFix, 500);
-    setTimeout(applyAvatarHoverFix, 1000);
-
-    // Watch for avatar changes in DOM
-    const observer = new MutationObserver(() => {
-        applyAvatarHoverFix();
-    });
-
-    observer.observe(document.body, {
-        childList: true,
-        subtree: true
-    });
 
 })();
