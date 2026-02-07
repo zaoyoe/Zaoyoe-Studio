@@ -26,11 +26,34 @@ const FramerHome = {
     // Render all sections
     this.renderAll();
 
+    // Initialize navigation dropdowns (only once, after initial render)
+    this.initNavDropdowns();
+
     // Initialize interactions
     this.initInteractions();
 
     // Initialize scroll animations
     this.initScrollAnimations();
+
+    // Listen for language changes and re-render all content
+    window.addEventListener('languageChanged', async (e) => {
+      console.log(`🌐 Homepage language changed to: ${e.detail.lang}, re-rendering...`);
+
+      // Re-build all data with new language
+      this.cachedData.hero = this.buildHeroData(this.config.hero || {});
+
+      // CRITICAL: Rebuild ticker data with new language-specific tags
+      this.cachedData.ticker = await this.buildTickerData(this.config.ticker);
+
+      // Re-render everything (but DON'T re-init dropdowns)
+      this.renderAll();
+
+      // CRITICAL: Re-initialize scroll animations for new DOM elements
+      // Without this, new .fade-in-up elements stay at opacity: 0
+      this.initScrollAnimations();
+
+      console.log('✅ Homepage content re-rendered with new language');
+    });
 
     console.log('✅ Framer Home initialized successfully');
   },
@@ -101,18 +124,18 @@ const FramerHome = {
    */
   buildHeroData(config) {
     return {
-      title: config.title || '早鸟工作室',
-      subtitle: config.subtitle || '创意 · 效率 · 无限可能',
+      title: config.title || window.i18n?.t('home.hero.title') || '早鸟工作室',
+      subtitle: config.subtitle || window.i18n?.t('home.hero.subtitle') || '创意 · 效率 · 无限可能',
       cta: config.cta || {
         primary: { text: '开始探索', link: '#prompts' },
         secondary: { text: '了解更多', link: '#about' }
       },
       customImage: config.custom_image || null,
       entries: [
-        { icon: 'fa-wand-magic-sparkles', text: '提示词', link: '/prompts.html', color: '#f472b6' },
-        { icon: 'fa-store', text: '商城', link: '/shop.html', color: '#4ade80' },
-        { icon: 'fa-robot', text: '验证', link: '/verify.html', color: '#667eea' },
-        { icon: 'fa-comment-dots', text: '留言板', link: '/guestbook.html', color: '#f59e0b' }
+        { icon: 'fa-wand-magic-sparkles', text: window.i18n?.t('home.entries.prompts') || '提示词', link: '/prompts.html', color: '#f472b6' },
+        { icon: 'fa-store', text: window.i18n?.t('home.entries.shop') || '商城', link: '/shop.html', color: '#4ade80' },
+        { icon: 'fa-robot', text: window.i18n?.t('home.entries.verify') || '验证', link: '/verify.html', color: '#667eea' },
+        { icon: 'fa-comment-dots', text: window.i18n?.t('home.entries.guestbook') || '留言板', link: '/guestbook.html', color: '#f59e0b' }
       ]
     };
   },
@@ -236,13 +259,18 @@ const FramerHome = {
    * Build ticker data (tags + products)
    */
   async buildTickerData(config) {
-    // Extract unique tags from prompts
+    const lang = window.i18n?.getCurrentLanguage() || 'zh';
+    const tagsField = lang === 'en' ? 'tags_en' : 'tags';
+
+    // Extract unique tags from prompts using language-specific field
     const tags = [...new Set(
-      window.PROMPTS.flatMap(p => p.tags || [])
+      window.PROMPTS.flatMap(p => p[tagsField] || p.tags || [])
     )].slice(0, 20);
 
-    // Get product names from cached shop data
-    const productNames = this.cachedData?.shop?.map(p => p.name) || [];
+    // Get product names using localized fields
+    const productNames = this.cachedData?.shop?.map(p =>
+      this.getLocalizedField(p, 'name')
+    ) || [];
 
     return {
       top: tags,
@@ -280,6 +308,29 @@ const FramerHome = {
   },
 
   /**
+   * Get localized field value based on current language
+   * @param {Object} obj - Object with bilingual fields
+   * @param {String} fieldBase - Base field name (e.g., 'title', 'name', 'description')
+   * @returns {String} Localized value
+   */
+  getLocalizedField(obj, fieldBase) {
+    if (!obj) return '';
+    const lang = window.i18n?.getCurrentLanguage() || 'zh';
+
+    // Try language-specific field first (field_en / field_zh)
+    const langField = `${fieldBase}_${lang}`;
+    if (obj[langField]) return obj[langField];
+
+    // Fallback to base field
+    if (obj[fieldBase]) return obj[fieldBase];
+
+    // Last resort: try the other language
+    const otherLang = lang === 'en' ? 'zh' : 'en';
+    const otherField = `${fieldBase}_${otherLang}`;
+    return obj[otherField] || '';
+  },
+
+  /**
    * Render all sections
    */
   renderAll() {
@@ -289,7 +340,8 @@ const FramerHome = {
     this.renderVerify();
     this.renderGuestbook();
     this.renderTicker();
-    this.initNavDropdowns();
+    // Don't re-initialize dropdowns - they are already initialized once on page load
+    // Re-initializing causes duplicate event listeners and breaks language toggle
   },
 
   /**
@@ -346,7 +398,7 @@ const FramerHome = {
         render: () => {
           return `
             <div class="settings-dropdown-content">
-              <button id="langToggleDropdown" onclick="window.i18n?.toggleLanguage()" class="lang-toggle-simple">
+              <button id="langToggleDropdown" class="lang-toggle-simple">
                 <span id="langZhDropdown" class="lang-text active">中</span>
                 <span class="lang-separator">|</span>
                 <span id="langEnDropdown" class="lang-text">EN</span>
@@ -380,6 +432,39 @@ const FramerHome = {
       }
 
       document.body.appendChild(dropdown);
+
+      // Bind language toggle event (for settings dropdown only)
+      if (dropdownType === 'settings') {
+        const langToggleBtn = document.getElementById('langToggleDropdown');
+        if (langToggleBtn) {
+          langToggleBtn.addEventListener('click', (e) => {
+            e.stopPropagation(); // Prevent dropdown from closing
+            if (window.i18n && typeof window.i18n.toggleLanguage === 'function') {
+              window.i18n.toggleLanguage();
+              console.log('🌐 Language toggle clicked');
+            } else {
+              console.error('❌ i18n.toggleLanguage not available');
+            }
+          });
+
+          // Listen for language changes to update button states
+          window.addEventListener('languageChanged', (e) => {
+            const langZh = document.getElementById('langZhDropdown');
+            const langEn = document.getElementById('langEnDropdown');
+
+            if (langZh && langEn) {
+              if (e.detail.lang === 'zh') {
+                langZh.classList.add('active');
+                langEn.classList.remove('active');
+              } else {
+                langZh.classList.remove('active');
+                langEn.classList.add('active');
+              }
+              console.log(`✅ Dropdown button state updated: ${e.detail.lang}`);
+            }
+          });
+        }
+      }
 
       let hideTimeout = null;
 
@@ -491,8 +576,8 @@ const FramerHome = {
 
     section.innerHTML = `
       <div class="section-header fade-in-up">
-        <h2 class="section-title">${config.section_title || 'AI 提示词工作室'}</h2>
-        <p class="section-subtitle">${config.section_subtitle || '让创作更高效，让灵感更自由'}</p>
+        <h2 class="section-title">${this.getLocalizedField(config, 'section_title') || window.i18n?.t('home.prompts.title') || 'AI 提示词工作室'}</h2>
+        <p class="section-subtitle">${this.getLocalizedField(config, 'section_subtitle') || window.i18n?.t('home.prompts.subtitle') || '让创作更高效，让灵感更自由'}</p>
       </div>
       
       <div class="prompts-masonry-wrapper">
@@ -542,7 +627,7 @@ const FramerHome = {
                 ${row1.map(tag => `<span class="mask-tag">${tag}</span>`).join('')}
               </div>
               <div class="mask-cta">
-                <span class="mask-cta-text">查看更多</span>
+                <span class="mask-cta-text">${window.i18n?.t('home.prompts.viewMore') || '查看更多'}</span>
                 <span class="mask-cta-arrow">›</span>
               </div>
               <div class="mask-labels-row">
@@ -550,7 +635,7 @@ const FramerHome = {
               </div>
             </div>
           </div>
-          `;
+        `;
       })()}
       </div>
     `;
@@ -577,8 +662,8 @@ const FramerHome = {
 
     section.innerHTML = `
       <div class="section-header fade-in-up">
-        <h2 class="section-title">${config.section_title || '精选资源商城'}</h2>
-        <p class="section-subtitle">${config.section_subtitle || '优质资源，助力成长'}</p>
+        <h2 class="section-title">${this.getLocalizedField(config, 'section_title') || window.i18n?.t('home.shop.title') || '精选资源商城'}</h2>
+        <p class="section-subtitle">${this.getLocalizedField(config, 'section_subtitle') || window.i18n?.t('home.shop.subtitle') || '优质资源，助力成长'}</p>
       </div>
       
       <div class="shop-carousel-wrapper">
@@ -587,12 +672,12 @@ const FramerHome = {
             <a href="/shop.html" class="shop-carousel-card">
               <div class="shop-card-image">
                 ${product.icon_url.startsWith('http')
-        ? `<img src="${product.icon_url}" alt="${product.name}">`
-        : (product.icon_url.startsWith('fa-') ? `<i class="fas ${product.icon_url}" style="font-size: 48px; color: var(--accent-blue);"></i>` : `<img src="${product.icon_url}" alt="${product.name}">`)}
+        ? `<img src="${product.icon_url}" alt="${this.getLocalizedField(product, 'name')}">`
+        : (product.icon_url.startsWith('fa-') ? `<i class="fas ${product.icon_url}" style="font-size: 48px; color: var(--accent-blue);"></i>` : `<img src="${product.icon_url}" alt="${this.getLocalizedField(product, 'name')}">`)}
               </div>
               <div class="shop-card-info">
-                <h3>${product.name}</h3>
-                <p>${product.description || ''}</p>
+                <h3>${this.getLocalizedField(product, 'name')}</h3>
+                <p>${this.getLocalizedField(product, 'description')}</p>
               </div>
             </a>
           `).join('')}
@@ -611,8 +696,8 @@ const FramerHome = {
     section.innerHTML = `
       <div class="grid-2 fade-in-up" style="align-items: center; gap: 80px; grid-template-columns: 0.8fr 1.2fr;">
         <div>
-          <h2 class="section-title">${data.title}</h2>
-          <p class="section-subtitle">${data.subtitle}</p>
+          <h2 class="section-title">${data.title || window.i18n?.t('home.verify.title') || 'Gemini 验证'}</h2>
+          <p class="section-subtitle">${data.subtitle || window.i18n?.t('home.verify.subtitle') || '快速验证您的 API 密钥，实时返回结果'}</p>
           
           <div style="margin-top: 32px; display: flex; gap: 12px; flex-wrap: wrap;">
             ${data.features.map(feature => `
@@ -623,7 +708,7 @@ const FramerHome = {
           </div>
           
           <div style="margin-top: 48px;">
-            <a href="${data.link}" class="btn btn-primary">立即验证</a>
+            <a href="${data.link}" class="btn btn-primary">${window.i18n?.t('home.verify.cta') || '立即验证'}</a>
           </div>
         </div>
         
@@ -709,8 +794,8 @@ const FramerHome = {
 
     section.innerHTML = `
       <div class="section-header fade-in-up">
-        <h2 class="section-title">${config.section_title || '留言板'}</h2>
-        <p class="section-subtitle">${config.section_subtitle || '用户的声音'}</p>
+        <h2 class="section-title">${this.getLocalizedField(config, 'section_title') || window.i18n?.t('home.guestbook.title') || '留言板'}</h2>
+        <p class="section-subtitle">${this.getLocalizedField(config, 'section_subtitle') || window.i18n?.t('home.guestbook.subtitle') || '用户的声音'}</p>
       </div>
       
       <div style="display: flex; flex-direction: column; gap: 24px; max-width: 800px; margin: 0 auto;">
@@ -730,7 +815,7 @@ const FramerHome = {
       </div>
       
       <div style="text-align: center; margin-top: 48px;">
-        <a href="/guestbook.html" class="btn btn-secondary">查看全部留言</a>
+        <a href="/guestbook.html" class="btn btn-secondary">${window.i18n?.t('home.guestbook.viewAll') || '查看全部留言'}</a>
       </div>
     `;
   },

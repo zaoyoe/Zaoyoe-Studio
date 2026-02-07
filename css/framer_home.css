@@ -88,6 +88,8 @@ body {
     line-height: 1.1;
     margin: 0;
     margin-top: -40px;
+    transition: font-size 0.3s ease, margin-top 0.3s ease;
+    /* Smooth resize and spacing */
 }
 
 .section-title {
@@ -612,6 +614,8 @@ h3 {
     margin-top: var(--spacing-md);
     margin-bottom: var(--spacing-xl);
     max-width: 600px;
+    transition: margin-top 0.3s ease, margin-bottom 0.3s ease;
+    /* Smooth spacing */
 }
 
 .hero-cta {
@@ -1144,8 +1148,10 @@ h3 {
 
     /* Typography adjustments */
     .hero-title {
-        font-size: 48px;
+        /* Removed fixed font-size to let clamp() work smoothly */
         letter-spacing: -2.4px;
+        transition: font-size 0.3s ease;
+        /* Smooth breakpoint transition */
     }
 
     .section-title {
@@ -1265,6 +1271,22 @@ h3 {
         opacity: 1;
         transform: scale(1);
     }
+}
+
+/* Hero Section Transitions */
+.hero-title,
+.hero-subtitle,
+.hero-progress {
+    transition: margin 0.3s ease;
+    /* Smooth spacing */
+}
+
+.hero-progress {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 64px 0;
+    position: relative;
 }
 
 /* Verify 3D Card Animation */

@@ -28,10 +28,52 @@
         "contactUs": "Contact Us"
     },
     "nav": {
+        "prompts": "Prompts",
+        "shop": "Shop",
+        "verify": "Verify",
+        "guestbook": "Guestbook",
+        "gallery": "Gallery",
+        "settings": "Settings",
         "notification": "Notifications",
         "noNotifications": "No notifications",
         "clearAll": "Clear all",
         "switchLang": "Switch language"
+    },
+    "home": {
+        "hero": {
+            "title": "Zaoyoe Studio",
+            "subtitle": "Creativity · Efficiency · Endless Possibilities"
+        },
+        "entries": {
+            "prompts": "Prompts",
+            "shop": "Shop",
+            "verify": "Verify",
+            "guestbook": "Guestbook"
+        },
+        "prompts": {
+            "title": "AI Prompt Studio",
+            "subtitle": "Make creation more efficient, inspiration more free",
+            "viewMore": "View more"
+        },
+        "shop": {
+            "title": "Featured Resource Store",
+            "subtitle": "Quality resources for growth"
+        },
+        "verify": {
+            "title": "Gemini Verification",
+            "subtitle": "Quickly verify your API key with real-time results",
+            "features": {
+                "free": "Free",
+                "realtime": "Real-time",
+                "secure": "Secure"
+            },
+            "cta": "Verify Now"
+        },
+        "guestbook": {
+            "title": "Guestbook",
+            "subtitle": "Community Voice",
+            "viewAll": "View all messages"
+        }
     },
     "index": {
         "title": "Our Store - Resource Navigation",

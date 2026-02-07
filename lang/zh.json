@@ -28,10 +28,52 @@
         "contactUs": "联系我们"
     },
     "nav": {
+        "prompts": "提示词",
+        "shop": "商城",
+        "verify": "验证",
+        "guestbook": "留言板",
+        "gallery": "图库",
+        "settings": "设置",
         "notification": "通知中心",
         "noNotifications": "暂无通知",
         "clearAll": "全部清除",
         "switchLang": "切换语言"
+    },
+    "home": {
+        "hero": {
+            "title": "早鸟工作室",
+            "subtitle": "创意 · 效率 · 无限可能"
+        },
+        "entries": {
+            "prompts": "提示词",
+            "shop": "商城",
+            "verify": "验证",
+            "guestbook": "留言板"
+        },
+        "prompts": {
+            "title": "AI 提示词工作室",
+            "subtitle": "让创作更高效，让灵感更自由",
+            "viewMore": "查看更多"
+        },
+        "shop": {
+            "title": "精选资源商城",
+            "subtitle": "优质资源，助力成长"
+        },
+        "verify": {
+            "title": "Gemini 验证",
+            "subtitle": "快速验证您的 API 密钥，实时返回结果",
+            "features": {
+                "free": "免费",
+                "realtime": "实时",
+                "secure": "安全"
+            },
+            "cta": "立即验证"
+        },
+        "guestbook": {
+            "title": "留言板",
+            "subtitle": "用户的声音",
+            "viewAll": "查看全部留言"
+        }
     },
     "index": {
         "title": "我们的店铺 - 资源导航",

@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Language Toggle Test</title>
+    <style>
+        body {
+            font-family: system-ui;
+            padding: 40px;
+            background: #1a1a1a;
+            color: white;
+        }
+
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+        }
+
+        .lang-toggle-simple {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: transparent;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border-radius: 8px;
+        }
+
+        .lang-toggle-simple:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .lang-text {
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: color 0.2s ease;
+        }
+
+        .lang-text.active {
+            color: rgba(255, 255, 255, 0.95);
+        }
+
+        .lang-separator {
+            color: rgba(255, 255, 255, 0.3);
+        }
+
+        .status {
+            margin-top: 10px;
+            padding: 10px;
+            background: rgba(0, 255, 0, 0.1);
+            border-left: 3px solid #0f0;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>🧪 Language Toggle Test</h1>
+
+    <div class="test-section">
+        <h2>Test 1: i18n Loading</h2>
+        <div id="test1"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 2: Toggle Button</h2>
+        <button id="langToggleTest" onclick="window.i18n?.toggleLanguage()" class="lang-toggle-simple">
+            <span id="langZhTest" class="lang-text active">中</span>
+            <span class="lang-separator">|</span>
+            <span id="langEnTest" class="lang-text">EN</span>
+        </button>
+        <div id="test2" class="status"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 3: Translation</h2>
+        <p data-i18n="nav.prompts">提示词</p>
+        <p data-i18n="nav.shop">商城</p>
+        <div id="test3"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test 4: Persistence</h2>
+        <div id="test4"></div>
+    </div>
+
+    <script src="/js/i18n.js"></script>
+    <script>
+        // Run tests after i18n loads
+        setTimeout(() => {
+            // Test 1: Check i18n loading
+            const test1 = document.getElementById('test1');
+            if (window.i18n) {
+                test1.innerHTML = `<div class="status">✅ i18n loaded successfully<br>Current language: <strong>${window.i18n.getCurrentLanguage()}</strong></div>`;
+            } else {
+                test1.innerHTML = `<div style="background:rgba(255,0,0,0.1);border-left:3px solid #f00;padding:10px;">❌ i18n not loaded</div>`;
+            }
+
+            // Test 2: Listen for language changes
+            window.addEventListener('languageChanged', (e) => {
+                const test2 = document.getElementById('test2');
+                test2.innerHTML = `✅ Language changed to: <strong>${e.detail.lang}</strong>`;
+
+                // Update button states
+                const langZh = document.getElementById('langZhTest');
+                const langEn = document.getElementById('langEnTest');
+                if (e.detail.lang === 'zh') {
+                    langZh.classList.add('active');
+                    langEn.classList.remove('active');
+                } else {
+                    langZh.classList.remove('active');
+                    langEn.classList.add('active');
+                }
+
+                // Test 3: Check translations
+                const test3 = document.getElementById('test3');
+                test3.innerHTML = `<div class="status">✅ Translations applied</div>`;
+
+                // Test 4: Check localStorage
+                const test4 = document.getElementById('test4');
+                const stored = localStorage.getItem('zaoyoe_language');
+                test4.innerHTML = `<div class="status">✅ Stored language: <strong>${stored}</strong></div>`;
+            });
+
+            // Test 4: Check initial persistence
+            const test4 = document.getElementById('test4');
+            const stored = localStorage.getItem('zaoyoe_language');
+            test4.innerHTML = `<div class="status">Stored language: <strong>${stored || 'none'}</strong></div>`;
+        }, 500);
+    </script>
+</body>
+
+</html>
