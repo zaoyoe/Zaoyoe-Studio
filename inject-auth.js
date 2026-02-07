@@ -31,7 +31,6 @@
             </button>
         </div>
 
-
         <button id="authBtn" class="login-trigger-btn${isLoggedIn ? ' logged-in' : ''}" onclick="handleAuthClick(event)">
             <i id="defaultAuthIcon" class="fas fa-user-circle" style="display: ${defaultIconDisplay};"></i>
             <img id="navUserAvatar" class="nav-user-avatar show" src="${avatarUrl}" alt="Avatar" style="display: ${avatarDisplay}; opacity: ${avatarOpacity};">
@@ -717,6 +716,7 @@
                 box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4) !important;
                 transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
             }
+
         `;
         document.head.appendChild(forceStyle);
     }

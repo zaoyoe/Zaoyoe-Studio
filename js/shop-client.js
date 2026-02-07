@@ -8,6 +8,14 @@ const ShopClient = {
     init: async function () {
         console.log('🛍️ Shop Client Initialized');
 
+        // Read URL parameters to set initial category
+        const urlParams = new URLSearchParams(window.location.search);
+        const categoryParam = urlParams.get('category');
+        if (categoryParam) {
+            this.currentCategory = categoryParam;
+            console.log(`🛍️ URL category parameter found: ${categoryParam}`);
+        }
+
         // Check if we are on the shop page (by checking for the grid container)
         const container = document.getElementById('userShopGrid');
         const filtersContainer = document.getElementById('shopCategoryFilters');
@@ -97,7 +105,7 @@ const ShopClient = {
             container.innerHTML = '';
 
             const allBtn = document.createElement('button');
-            allBtn.className = 'filter-tab active';
+            allBtn.className = this.currentCategory === 'all' ? 'filter-tab active' : 'filter-tab';
             allBtn.textContent = window.i18n?.t('shop.allCategories') || '全部';
             allBtn.setAttribute('data-i18n', 'shop.allCategories');
             allBtn.onclick = () => this.filterCategory('all', allBtn);
@@ -106,7 +114,7 @@ const ShopClient = {
             // Add dynamic category buttons
             categories.forEach(cat => {
                 const btn = document.createElement('button');
-                btn.className = 'filter-tab';
+                btn.className = this.currentCategory === cat.name ? 'filter-tab active' : 'filter-tab';
                 btn.textContent = cat.name;
                 btn.onclick = () => this.filterCategory(cat.name, btn);
                 container.appendChild(btn);

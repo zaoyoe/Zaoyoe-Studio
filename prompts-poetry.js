@@ -2281,7 +2281,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Load gallery config (items per page, default sort) before rendering
     await loadGalleryConfig();
 
-    renderGallery('all');
+    // Read URL parameters to set initial tag filter
+    const urlParams = new URLSearchParams(window.location.search);
+    const tagParam = urlParams.get('tag');
+    const initialFilter = tagParam || 'all';
+
+    if (tagParam) {
+        console.log(`🏷️ URL tag parameter found: ${tagParam}`);
+        // Pre-select the corresponding nav item if it exists
+        const navItems = document.querySelectorAll('.nav-item');
+        navItems.forEach(item => {
+            const filterType = item.getAttribute('data-filter');
+            if (filterType && filterType.toLowerCase() === tagParam.toLowerCase()) {
+                item.classList.add('active');
+            } else {
+                item.classList.remove('active');
+            }
+        });
+    }
+
+    renderGallery(initialFilter);
     setupFilters();
     setupInfiniteScroll();
     setupSearch(); // Pinterest-style search

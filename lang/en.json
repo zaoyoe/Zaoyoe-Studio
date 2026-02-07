@@ -425,5 +425,34 @@
         "inputMessagePlaceholder": "Type a message...",
         "uploadFailedRetry": "Image upload failed, please retry",
         "supportLabel": "💬 Support"
+    },
+    "footer": {
+        "brand": {
+            "name": "Zaoyoe Studio",
+            "tagline": "AI-Powered Creative Resource Platform"
+        },
+        "products": {
+            "title": "Products",
+            "prompts": "Prompt Gallery",
+            "shop": "Resource Store",
+            "verify": "API Verification",
+            "guestbook": "Guestbook"
+        },
+        "resources": {
+            "title": "Resources",
+            "sponsor": "Sponsor Us",
+            "privacy": "Privacy Policy",
+            "community": "Community Group"
+        },
+        "about": {
+            "title": "About",
+            "contact": "Contact Us",
+            "opensource": "Open Source"
+        },
+        "bottom": {
+            "copyright": "© Zaoyoe Studio 2026. All rights reserved.",
+            "privacy": "Privacy Policy",
+            "support": "Support Us"
+        }
     }
 }

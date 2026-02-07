@@ -425,5 +425,34 @@
         "inputMessagePlaceholder": "输入消息...",
         "uploadFailedRetry": "图片上传失败，请重试",
         "supportLabel": "💬 客服"
+    },
+    "footer": {
+        "brand": {
+            "name": "早鸟工作室",
+            "tagline": "AI 驱动的创意资源平台"
+        },
+        "products": {
+            "title": "产品",
+            "prompts": "提示词图库",
+            "shop": "资源商城",
+            "verify": "API 验证",
+            "guestbook": "留言板"
+        },
+        "resources": {
+            "title": "资源",
+            "sponsor": "赞助支持",
+            "privacy": "隐私政策",
+            "community": "交流群组"
+        },
+        "about": {
+            "title": "关于",
+            "contact": "联系我们",
+            "opensource": "开源项目"
+        },
+        "bottom": {
+            "copyright": "© 早鸟工作室 2026. All rights reserved.",
+            "privacy": "隐私政策",
+            "support": "支持我们"
+        }
     }
 }

@@ -41,9 +41,43 @@ const FramerHome = {
 
       // Re-build all data with new language
       this.cachedData.hero = this.buildHeroData(this.config.hero || {});
+      this.cachedData.verify = this.buildVerifyData(this.config.verify || {});
 
       // CRITICAL: Rebuild ticker data with new language-specific tags
       this.cachedData.ticker = await this.buildTickerData(this.config.ticker);
+
+      // Update Prompts dropdown with new language tags
+      const promptsDropdown = document.getElementById('dropdown-prompts');
+      if (promptsDropdown) {
+        // Extract top tags for current language
+        const currentLang = e.detail.lang;
+        const tagCounts = {};
+
+        (this.cachedData.prompts || []).forEach(p => {
+          if (p.aiTags && typeof p.aiTags === 'object') {
+            ['styles', 'objects', 'scenes', 'mood'].forEach(cat => {
+              const tags = p.aiTags[cat]?.[currentLang] || p.aiTags[cat]?.zh || [];
+              tags.forEach(tag => tagCounts[tag] = (tagCounts[tag] || 0) + 1);
+            });
+          }
+        });
+
+        let topTags = Object.entries(tagCounts)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 6)
+          .map(([tag]) => tag);
+
+        const fallbackTags = currentLang === 'en'
+          ? ['Cartoon', '3D Art', 'Rendering', 'Cute', 'Digital Art', 'Miniature']
+          : ['卡通风格', '3D艺术', '渲染', '可爱', '数字艺术', '微缩'];
+
+        topTags = topTags.length > 0 ? topTags : fallbackTags;
+
+        promptsDropdown.innerHTML = topTags.map(tag =>
+          `<a href="/prompts.html?tag=${encodeURIComponent(tag)}">${tag}</a>`
+        ).join('');
+        console.log(`✅ Prompts dropdown updated with ${currentLang} tags:`, topTags);
+      }
 
       // Re-render everything (but DON'T re-init dropdowns)
       this.renderAll();
@@ -80,15 +114,17 @@ const FramerHome = {
       // Fetch homepage config from Supabase
       this.config = await this.fetchHomepageConfig();
 
-      // Aggregate all section data
+      // Aggregate all section data EXCEPT ticker (which depends on shop data)
       this.cachedData = {
         hero: this.buildHeroData(this.config.hero),
         prompts: await this.aggregatePrompts(this.config.prompts),
         shop: await this.aggregateShop(this.config.shop),
         verify: this.buildVerifyData(this.config.verify),
-        guestbook: await this.aggregateGuestbook(this.config.guestbook),
-        ticker: await this.buildTickerData(this.config.ticker)
+        guestbook: await this.aggregateGuestbook(this.config.guestbook)
       };
+
+      // Build ticker data AFTER cachedData is assigned so it can access shop data
+      this.cachedData.ticker = await this.buildTickerData(this.config.ticker);
 
       console.log('📦 Data aggregated:', this.cachedData);
     } catch (error) {
@@ -124,8 +160,9 @@ const FramerHome = {
    */
   buildHeroData(config) {
     return {
-      title: config.title || window.i18n?.t('home.hero.title') || '早鸟工作室',
-      subtitle: config.subtitle || window.i18n?.t('home.hero.subtitle') || '创意 · 效率 · 无限可能',
+      // Prioritize i18n translations for multilingual support
+      title: window.i18n?.t('home.hero.title') || config.title || '早鸟工作室',
+      subtitle: window.i18n?.t('home.hero.subtitle') || config.subtitle || '创意 · 效率 · 无限可能',
       cta: config.cta || {
         primary: { text: '开始探索', link: '#prompts' },
         secondary: { text: '了解更多', link: '#about' }
@@ -190,7 +227,7 @@ const FramerHome = {
     try {
       let query = window.supabaseClient
         .from('shop_products')
-        .select('id, name, description, icon_url, price_points, stock_count, category')
+        .select('id, name, name_en, description, description_en, icon_url, price_points, stock_count, category')
         .eq('is_active', true);
 
       if (config.category && config.category !== 'all') {
@@ -217,10 +254,14 @@ const FramerHome = {
    */
   buildVerifyData(config) {
     return {
-      title: 'Gemini 验证', // Hardcoded to override DB config
-      subtitle: config.section_subtitle || '快速验证您的 API 密钥，实时返回结果',
+      title: window.i18n?.t('home.verify.title') || config.section_title || 'Gemini 验证',
+      subtitle: window.i18n?.t('home.verify.subtitle') || config.section_subtitle || '快速验证您的 API 密钥，实时返回结果',
       screenshot: config.screenshot_path || '/assets/verify-preview.png',
-      features: config.features || ['免费', '实时', '安全'],
+      features: [
+        window.i18n?.t('home.verify.features.free') || '免费',
+        window.i18n?.t('home.verify.features.realtime') || '实时',
+        window.i18n?.t('home.verify.features.secure') || '安全'
+      ],
       link: '/verify.html'
     };
   },
@@ -353,6 +394,9 @@ const FramerHome = {
 
     // Get top 6 tags from prompts data
     const getTopTags = () => {
+      // Get current language
+      const currentLang = window.i18n?.getCurrentLanguage() || 'zh';
+
       const tagCounts = {};
       (this.cachedData.prompts || []).forEach(p => {
         // Handle multiple tag formats
@@ -361,7 +405,9 @@ const FramerHome = {
         }
         if (p.aiTags && typeof p.aiTags === 'object') {
           ['styles', 'objects', 'scenes', 'mood'].forEach(cat => {
-            if (p.aiTags[cat]?.zh) p.aiTags[cat].zh.forEach(tag => tagCounts[tag] = (tagCounts[tag] || 0) + 1);
+            // Use current language tags (en or zh)
+            const tags = p.aiTags[cat]?.[currentLang] || p.aiTags[cat]?.zh || [];
+            tags.forEach(tag => tagCounts[tag] = (tagCounts[tag] || 0) + 1);
           });
         }
         if (p.tags && Array.isArray(p.tags)) {
@@ -374,7 +420,12 @@ const FramerHome = {
         .slice(0, 6)
         .map(([tag]) => tag);
 
-      return topTags.length > 0 ? topTags : ['卡通风格', '3D艺术', '渲染', '可爱', '数字艺术', '微缩'];
+      // Fallback tags based on language
+      const fallbackTags = currentLang === 'en'
+        ? ['Cartoon', '3D Art', 'Rendering', 'Cute', 'Digital Art', 'Miniature']
+        : ['卡通风格', '3D艺术', '渲染', '可爱', '数字艺术', '微缩'];
+
+      return topTags.length > 0 ? topTags : fallbackTags;
     };
 
     // Get shop categories
@@ -604,14 +655,23 @@ const FramerHome = {
         </div>
         
         ${(() => {
-        // Collect all unique tags for the mask
+        // Collect all unique tags for the mask with language support
+        const lang = window.i18n?.getCurrentLanguage() || 'zh';
+        const langKey = lang === 'en' ? 'en' : 'zh';
+
         const allTags = new Set();
         prompts.forEach(p => {
           if (p.aiTags) {
+            // Extract from aiTags with language-specific keys
             ['styles', 'objects', 'scenes', 'mood'].forEach(c => {
-              if (p.aiTags[c] && p.aiTags[c].zh) p.aiTags[c].zh.forEach(t => allTags.add(t));
+              const langTags = p.aiTags[c]?.[langKey];
+              if (langTags) langTags.forEach(t => allTags.add(t));
             });
-          } else if (p.tags) p.tags.forEach(t => allTags.add(t));
+          } else if (p.tags) {
+            // Fallback to simple tags field with language support
+            const tagsField = lang === 'en' ? 'tags_en' : 'tags';
+            (p[tagsField] || p.tags || []).forEach(t => allTags.add(t));
+          }
         });
         const tagList = Array.from(allTags).slice(0, 8); // Top 8 tags
 
