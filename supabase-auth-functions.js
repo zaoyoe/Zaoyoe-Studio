@@ -1002,13 +1002,6 @@ async function openProfileModal(event) {
     if (dropdown) dropdown.classList.remove('active');
     if (overlay) overlay.classList.remove('active');
 
-    // 获取当前用户
-    const { data: { user } } = await window.supabaseClient.auth.getUser();
-    if (!user) {
-        alert('请先登录');
-        return;
-    }
-
     // 检查是否在主页
     const modal = document.getElementById('profileModal');
     if (!modal) {
@@ -1018,49 +1011,7 @@ async function openProfileModal(event) {
         return;
     }
 
-    // 获取 profile
-    const { data: profile } = await window.supabaseClient
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single();
-
-    // 更新模态框内容
-    const avatarImg = document.getElementById('profileModalAvatar');
-    const emailDiv = document.getElementById('profileModalEmail');
-    const nicknameSpan = document.getElementById('profileModalNickname');
-    const memberSinceSpan = document.getElementById('profileMemberSince');
-
-    if (avatarImg) {
-        avatarImg.src = profile?.avatar_url || user.user_metadata?.avatar_url ||
-            `https://ui-avatars.com/api/?name=${encodeURIComponent(user.email)}&background=random`;
-    }
-
-    if (emailDiv) {
-        emailDiv.textContent = user.email;
-    }
-
-    if (nicknameSpan) {
-        nicknameSpan.textContent = profile?.username || user.user_metadata?.full_name || user.email.split('@')[0];
-    }
-
-    if (memberSinceSpan) {
-        const createdAt = new Date(user.created_at);
-        const year = createdAt.getFullYear();
-        const month = createdAt.getMonth() + 1;
-        const day = createdAt.getDate();
-
-        // Use i18n for member since text
-        const isEnglish = window.i18n?.isEnglish?.();
-        if (isEnglish) {
-            const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-            memberSinceSpan.textContent = `Member since ${monthNames[month - 1]} ${day}, ${year}`;
-        } else {
-            memberSinceSpan.textContent = `注册于 ${year}年${month}月${day}日`;
-        }
-    }
-
-    // 打开模态框
+    // 立即打开模态框（显示加载中状态）
     modal.classList.add('active');
     modal.style.visibility = 'visible';
     modal.style.opacity = '1';
@@ -1087,7 +1038,7 @@ async function openProfileModal(event) {
         profileModalElement.classList.remove('wide');
     }
 
-    // 触发资料页面的错落上升动画
+    // 触发资料页面的错落上升动画（在modal打开时立即触发）
     const profileFront = document.querySelector('.profile-front');
     if (profileFront) {
         setTimeout(() => {
@@ -1096,6 +1047,72 @@ async function openProfileModal(event) {
             profileFront.classList.add('animate-in');
         }, 50);
     }
+
+    // 设置加载状态
+    const nicknameSpan = document.getElementById('profileModalNickname');
+    const emailDiv = document.getElementById('profileModalEmail');
+    const memberSinceSpan = document.getElementById('profileMemberSince');
+
+    if (nicknameSpan) nicknameSpan.textContent = '加载中...';
+    if (emailDiv) emailDiv.textContent = '加载中...';
+    if (memberSinceSpan) memberSinceSpan.textContent = '加载中...';
+
+    // 异步加载数据（不阻塞UI）
+    (async () => {
+        try {
+            // 获取当前用户
+            const { data: { user } } = await window.supabaseClient.auth.getUser();
+            if (!user) {
+                alert('请先登录');
+                modal.classList.remove('active');
+                return;
+            }
+
+            // 获取 profile
+            const { data: profile } = await window.supabaseClient
+                .from('profiles')
+                .select('*')
+                .eq('id', user.id)
+                .single();
+
+            // 更新模态框内容
+            const avatarImg = document.getElementById('profileModalAvatar');
+
+            if (avatarImg) {
+                avatarImg.src = profile?.avatar_url || user.user_metadata?.avatar_url ||
+                    `https://ui-avatars.com/api/?name=${encodeURIComponent(user.email)}&background=random`;
+            }
+
+            if (emailDiv) {
+                emailDiv.textContent = user.email;
+            }
+
+            if (nicknameSpan) {
+                nicknameSpan.textContent = profile?.username || user.user_metadata?.full_name || user.email.split('@')[0];
+            }
+
+            if (memberSinceSpan) {
+                const createdAt = new Date(user.created_at);
+                const year = createdAt.getFullYear();
+                const month = createdAt.getMonth() + 1;
+                const day = createdAt.getDate();
+
+                // Use i18n for member since text
+                const isEnglish = window.i18n?.isEnglish?.();
+                if (isEnglish) {
+                    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                    memberSinceSpan.textContent = `Member since ${monthNames[month - 1]} ${day}, ${year}`;
+                } else {
+                    memberSinceSpan.textContent = `注册于 ${year}年${month}月${day}日`;
+                }
+            }
+        } catch (error) {
+            console.error('Error loading profile:', error);
+            if (nicknameSpan) nicknameSpan.textContent = '加载失败';
+            if (emailDiv) emailDiv.textContent = '加载失败';
+            if (memberSinceSpan) memberSinceSpan.textContent = '加载失败';
+        }
+    })();
 }
 
 window.openProfileModal = openProfileModal;

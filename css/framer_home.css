@@ -118,7 +118,7 @@ h3 {
 
 /* ========== Navigation Bar =========== */
 .framer-nav {
-    position: sticky;
+    position: fixed;
     top: 0;
     width: 100%;
     background-color: var(--bg-nav);
@@ -327,6 +327,12 @@ h3 {
     z-index: calc(var(--z-mobile-menu) + 1);
 }
 
+.nav-actions:has(.nav-hamburger.active) #authBtn {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--transition-fast);
+}
+
 .nav-hamburger span {
     display: block;
     width: 24px;
@@ -370,12 +376,14 @@ h3 {
     padding: 100px var(--spacing-lg) var(--spacing-xl);
     overflow-y: auto;
     opacity: 0;
+    visibility: hidden;
     pointer-events: none;
-    transition: opacity 0.3s ease;
+    transition: opacity 0.3s ease, visibility 0.3s ease;
 }
 
 .mobile-menu.active {
     opacity: 1;
+    visibility: visible;
     pointer-events: auto;
 }
 
@@ -427,7 +435,7 @@ h3 {
 /* Mobile Menu Links (no dropdown) */
 .mobile-menu-link {
     display: block;
-    color: var(--text-primary);
+    color: rgba(255, 255, 255, 0.5);
     font-size: 16px;
     font-weight: 600;
     text-decoration: none;
@@ -437,7 +445,7 @@ h3 {
 }
 
 .mobile-menu-link:hover {
-    opacity: 0.6;
+    color: var(--text-primary);
 }
 
 /* Mobile Menu Triggers (with dropdown) */
@@ -448,21 +456,21 @@ h3 {
     align-items: center;
     background: none;
     border: none;
-    color: var(--text-primary);
+    color: rgba(255, 255, 255, 0.5);
     font-size: 16px;
     font-weight: 600;
     letter-spacing: -0.02em;
     padding: var(--spacing-md) 0;
     cursor: pointer;
-    transition: opacity var(--transition-fast);
+    transition: color var(--transition-fast);
 }
 
 .mobile-menu-trigger:hover {
-    opacity: 0.6;
+    color: var(--text-primary);
 }
 
 .mobile-menu-trigger.active {
-    color: rgba(255, 255, 255, 0.5);
+    color: var(--text-primary);
 }
 
 .mobile-menu-trigger i {
@@ -1559,6 +1567,26 @@ h3 {
 }
 
 /* ========== Avatar Dropdown (Match Nav Glass Effect) =========== */
+.avatar-dropd.mobile-menu {
+    position: fixed;
+    top: 0;
+    right: -100%;
+    width: 280px;
+    height: 100vh;
+    background: rgba(15, 23, 42, 0.98);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    padding: 80px 20px 20px;
+    z-index: 1100;
+    overflow-y: auto;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: right 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+        opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+        visibility 0.4s;
+}
+
 .avatar-dropdown {
     position: fixed;
     top: 64px;

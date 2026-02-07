@@ -41,10 +41,10 @@ button.login-trigger-btn.logged-in {
 
 .login-trigger-btn.logged-in .nav-user-avatar,
 #navUserAvatar {
-    width: 40px !important;
-    height: 40px !important;
-    min-width: 40px !important;
-    min-height: 40px !important;
+    width: 32px !important;
+    height: 32px !important;
+    min-width: 32px !important;
+    min-height: 32px !important;
     object-fit: cover !important;
     border-radius: 50% !important;
     border: none !important;
@@ -89,10 +89,10 @@ button.login-trigger-btn.logged-in {
 
 /* 2. Force the image to cover exactly - match main page avatar size */
 .user-avatar-btn img {
-    width: 40px !important;
-    height: 40px !important;
-    min-width: 40px !important;
-    min-height: 40px !important;
+    width: 32px !important;
+    height: 32px !important;
+    min-width: 32px !important;
+    min-height: 32px !important;
     object-fit: cover !important;
     border-radius: 50% !important;
     display: block !important;
