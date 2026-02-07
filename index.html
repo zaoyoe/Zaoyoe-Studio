@@ -44,6 +44,35 @@
         }
         window.scrollTo(0, 0);
     </script>
+
+    <!-- CRITICAL: Avatar hover fix - MUST be last in head for highest priority -->
+    <style id="avatar-hover-override">
+        /* Force disable ALL other transforms on hover */
+        .login-trigger-btn:hover,
+        button.login-trigger-btn:hover,
+        .login-trigger-btn.logged-in:hover {
+            transform: none !important;
+        }
+
+        /* Avatar default state */
+        .nav-user-avatar,
+        #navUserAvatar {
+            transform: scale(1) !important;
+            transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        }
+
+        /* Avatar hover - shrink only, no grow */
+        .nav-user-avatar:hover,
+        #navUserAvatar:hover,
+        .login-trigger-btn:hover .nav-user-avatar,
+        .login-trigger-btn:hover #navUserAvatar,
+        button.login-trigger-btn:hover .nav-user-avatar,
+        button.login-trigger-btn:hover #navUserAvatar,
+        .login-trigger-btn.logged-in:hover .nav-user-avatar,
+        .login-trigger-btn.logged-in:hover #navUserAvatar {
+            transform: scale(0.85) !important;
+        }
+    </style>
 </head>
 
 <body>
@@ -68,23 +97,57 @@
                 <button class="nav-hamburger">
                     <span></span>
                     <span></span>
-                    <span></span>
                 </button>
             </div>
         </div>
     </nav>
 
+
     <!-- Mobile Menu Overlay -->
     <div class="mobile-menu">
         <div class="mobile-menu-items">
-            <a href="#prompts">提示词</a>
-            <a href="#shop">商城</a>
-            <a href="#verify">验证</a>
-            <a href="#guestbook">留言板</a>
-            <a href="/prompts.html">图库</a>
-            <a href="/shop.html">完整商城</a>
-            <a href="/verify.html">API 验证</a>
-            <a href="/guestbook.html">全部留言</a>
+            <!-- Menu items with dropdowns -->
+            <div class="mobile-menu-item">
+                <button class="mobile-menu-trigger" data-submenu="prompts-mobile">
+                    <span>提示词</span>
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+                <div class="mobile-submenu" id="prompts-mobile">
+                    <!-- Will be populated dynamically from desktop dropdown -->
+                </div>
+            </div>
+
+            <div class="mobile-menu-item">
+                <button class="mobile-menu-trigger" data-submenu="shop-mobile">
+                    <span>商城</span>
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+                <div class="mobile-submenu" id="shop-mobile">
+                    <!-- Will be populated dynamically from desktop dropdown -->
+                </div>
+            </div>
+
+            <div class="mobile-menu-item">
+                <a href="#verify" class="mobile-menu-link">验证</a>
+            </div>
+
+            <div class="mobile-menu-item">
+                <a href="#guestbook" class="mobile-menu-link">留言板</a>
+            </div>
+
+            <div class="mobile-menu-item">
+                <a href="/prompts.html" class="mobile-menu-link">图库</a>
+            </div>
+
+            <div class="mobile-menu-item">
+                <button class="mobile-menu-trigger" data-submenu="settings-mobile">
+                    <span>设置</span>
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+                <div class="mobile-submenu" id="settings-mobile">
+                    <!-- Will be populated dynamically from desktop dropdown -->
+                </div>
+            </div>
         </div>
     </div>
 

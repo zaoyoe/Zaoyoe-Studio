@@ -910,16 +910,60 @@ const FramerHome = {
     const mobileMenu = document.querySelector('.mobile-menu');
 
     if (hamburger && mobileMenu) {
+      // Toggle mobile menu on hamburger click
       hamburger.addEventListener('click', () => {
         hamburger.classList.toggle('active');
         mobileMenu.classList.toggle('active');
       });
 
-      // Close on link click
+      // Sync desktop dropdown content to mobile submenus
+      const syncDropdownToMobile = (desktopDropdownId, mobileSubmenuId) => {
+        const desktopDropdown = document.getElementById(desktopDropdownId);
+        const mobileSubmenu = document.getElementById(mobileSubmenuId);
+
+        if (desktopDropdown && mobileSubmenu) {
+          // Clone the content from desktop dropdown
+          const content = desktopDropdown.cloneNode(true);
+          // Remove any IDs to avoid duplicates
+          content.removeAttribute('id');
+          mobileSubmenu.innerHTML = content.innerHTML;
+        }
+      };
+
+      // Sync all dropdowns (wait a bit to ensure dropdowns are rendered)
+      setTimeout(() => {
+        syncDropdownToMobile('dropdown-prompts', 'prompts-mobile');
+        syncDropdownToMobile('dropdown-shop', 'shop-mobile');
+        syncDropdownToMobile('dropdown-settings', 'settings-mobile');
+      }, 100);
+
+      // Mobile submenu toggle
+      const mobileTriggers = mobileMenu.querySelectorAll('.mobile-menu-trigger');
+      mobileTriggers.forEach(trigger => {
+        trigger.addEventListener('click', () => {
+          const submenuId = trigger.getAttribute('data-submenu');
+          const submenu = document.getElementById(submenuId);
+
+          if (submenu) {
+            trigger.classList.toggle('active');
+            submenu.classList.toggle('active');
+          }
+        });
+      });
+
+      // Close mobile menu on link click
       mobileMenu.querySelectorAll('a').forEach(link => {
         link.addEventListener('click', () => {
           hamburger.classList.remove('active');
           mobileMenu.classList.remove('active');
+
+          // Also close all open submenus
+          mobileMenu.querySelectorAll('.mobile-submenu.active').forEach(submenu => {
+            submenu.classList.remove('active');
+          });
+          mobileMenu.querySelectorAll('.mobile-menu-trigger.active').forEach(trigger => {
+            trigger.classList.remove('active');
+          });
         });
       });
     }

@@ -690,10 +690,19 @@
                ULTIMATE PRIORITY: Avatar Shrink on Hover
                Overrides ALL other CSS files
                ======================================== */
+            
+            /* Disable button container transform to prevent conflicts */
+            .login-trigger-btn:hover,  
+            button.login-trigger-btn:hover,
+            .login-trigger-btn.logged-in:hover {
+                transform: none !important;
+            }
+            
             .nav-user-avatar,
             #navUserAvatar {
-                transform: none !important;
-                transition: transform 0.3s ease !important;
+                transform: scale(1) !important;
+                transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+                will-change: transform !important;
             }
             
             .nav-user-avatar:hover,
@@ -704,9 +713,9 @@
             button.login-trigger-btn:hover #navUserAvatar,
             .login-trigger-btn.logged-in:hover .nav-user-avatar,
             .login-trigger-btn.logged-in:hover #navUserAvatar {
-                transform: scale(0.9) !important;
+                transform: scale(0.85) !important;
                 box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4) !important;
-                transition: all 0.3s ease !important;
+                transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
             }
         `;
         document.head.appendChild(forceStyle);
