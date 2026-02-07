@@ -1,7 +1,7 @@
 /* Default Avatar Icon Shadow - Enhanced 3D Effect */
 #defaultAuthIcon {
     filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.4)) drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
-    font-size: 1.8rem !important;
+    font-size: 2rem !important;
 }
 
 /* 确保未登录时按钮也是透明背景，无正方形色块 */
