@@ -1182,36 +1182,30 @@ h3 {
         font-size: 14px;
     }
 
-    /* Mobile Entry Cards - Fixed horizontal layout (no scrolling) */
+    /* Mobile Entry Cards - Scrollable carousel */
     .hero-carousel {
-        width: 100%;
-        margin-inline: 0;
-        overflow: hidden;
-        /* Disable scrolling */
+        scroll-snap-type: x mandatory;
+        scroll-padding-inline: calc(50vw - 70px);
+        -webkit-overflow-scrolling: touch;
     }
 
     .hero-carousel-track {
-        display: flex;
-        justify-content: center;
-        flex-wrap: wrap;
-        gap: 8px;
-        padding: 0 var(--spacing-sm);
-        width: 100%;
+        gap: 16px;
+        padding: 0 calc(50vw - 70px);
     }
 
     .entry-card {
-        width: 80px;
-        height: 90px;
-        flex-shrink: 0;
-        padding: var(--spacing-sm);
+        width: 140px;
+        height: 120px;
+        scroll-snap-align: center;
     }
 
     .entry-card i {
-        font-size: 24px;
+        font-size: 28px;
     }
 
     .entry-card span {
-        font-size: 11px;
+        font-size: 13px;
     }
 
     /* Footer stacking */
