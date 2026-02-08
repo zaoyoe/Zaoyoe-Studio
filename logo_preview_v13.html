@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Z Logo Concepts - Pleated Variations</title>
+    <style>
+        body {
+            background-color: #000;
+            color: #fff;
+            font-family: 'Playfair Display', serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            gap: 50px;
+        }
+
+        h1 {
+            margin-bottom: 10px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 60px;
+            text-align: center;
+        }
+
+        .logo-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            transition: 0.3s ease;
+        }
+
+        .logo-item:hover {
+            border-color: rgba(255, 255, 255, 0.4);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .label {
+            font-family: 'Inter', sans-serif;
+            color: #888;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+
+        svg {
+            width: 80px;
+            height: 80px;
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400&display=swap"
+        rel="stylesheet">
+</head>
+
+<body>
+    <h1>Pleated Stack Variants (Set 13)</h1>
+    <div class="grid">
+        <!-- Variant 45: Original Pleated (Reference) -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M20 20 H80 L60 40 H40 V20 Z" fill="white" fill-opacity="0.9" />
+                <path d="M60 40 L40 40 L20 70 L40 70 Z" fill="#ccc" fill-opacity="0.9" />
+                <path d="M20 70 H80 L60 90 H40 L20 70 Z" fill="white" fill-opacity="0.9" />
+            </svg>
+            <div class="label">Variant 45: Original<br>(原版 - 层叠)</div>
+        </div>
+
+        <!-- Variant 46: Multi-Layer (Dense) -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <!-- 5 layers instead of 3 -->
+                <path d="M20 20 H80 L70 30 H30 L20 20" fill="white" />
+                <path d="M70 30 L30 30 L25 45 L65 45 L70 30" fill="#bbb" />
+                <path d="M65 45 L25 45 L20 60 H70 L65 45" fill="#888" />
+                <path d="M70 60 L20 60 L15 75 H65 L70 60" fill="#bbb" />
+                <path d="M65 75 H15 L10 85 H60 L65 75" fill="white" />
+            </svg>
+            <div class="label">Variant 46: Dense Deck<br>(密集堆叠)</div>
+        </div>
+
+        <!-- Variant 47: Sliding Offset (Motion) -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <!-- Top Block -->
+                <path d="M20 20 H70 V35 H20 Z" fill="white" />
+                <!-- Middle Block (Shifted Right) -->
+                <path d="M30 35 H80 V50 H30 Z" fill="#aaa" />
+                <!-- Bottom Block (Shifted Left) -->
+                <path d="M20 50 H70 V65 H20 Z" fill="white" />
+                <!-- Footer Block -->
+                <path d="M30 65 H80 V80 H30 Z" fill="#aaa" />
+
+                <!-- Connecting visuals to form Z -->
+                <line x1="70" y1="20" x2="80" y2="80" stroke="white" stroke-width="0" />
+            </svg>
+            <div class="label">Variant 47: Sliding Blocks<br>(滑动积木)</div>
+        </div>
+
+        <!-- Variant 48: Isometric Stack (3D Box) -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M30 20 L70 20 L80 30 L40 30 L30 20 Z" fill="white" /> <!-- Top Face -->
+                <path d="M40 30 L80 30 L60 70 L20 70 L40 30 Z" fill="#aaa" /> <!-- Front Slant -->
+                <path d="M20 70 L60 70 L70 80 L30 80 L20 70 Z" fill="white" /> <!-- Bottom Face -->
+
+                <!-- Side Faces for Thickness -->
+                <path d="M80 30 L80 35 L60 75 L60 70 Z" fill="#555" />
+            </svg>
+            <div class="label">Variant 48: Iso-Slab<br>(等轴厚板)</div>
+        </div>
+    </div>
+</body>
+
+</html>

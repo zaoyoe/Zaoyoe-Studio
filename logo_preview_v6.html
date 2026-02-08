@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Z Logo Concepts - Solid & Structural</title>
+    <style>
+        body {
+            background-color: #000;
+            color: #fff;
+            font-family: 'Playfair Display', serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            gap: 50px;
+        }
+
+        h1 {
+            margin-bottom: 10px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 60px;
+            text-align: center;
+        }
+
+        .logo-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            transition: 0.3s ease;
+        }
+
+        .logo-item:hover {
+            border-color: rgba(255, 255, 255, 0.4);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .label {
+            font-family: 'Inter', sans-serif;
+            color: #888;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+
+        svg {
+            width: 80px;
+            height: 80px;
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400&display=swap"
+        rel="stylesheet">
+</head>
+
+<body>
+    <h1>Solid & Structural Concepts</h1>
+    <div class="grid">
+        <!-- Variant 17: Negative Space Block -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="10" y="10" width="80" height="80" rx="20" fill="white" />
+                <path d="M35 35 H65 L35 65 H65" stroke="black" stroke-width="12" stroke-linecap="round"
+                    stroke-linejoin="round" />
+            </svg>
+            <div class="label">Variant 17: Negative Space<br>(负空间 - 块面感)</div>
+        </div>
+
+        <!-- Variant 18: Impossible Object (Penrose Z) -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="white" xmlns="http://www.w3.org/2000/svg">
+                <path d="M20 20 H80 L50 50 H80 V80 H20 L50 50 H20 V20 Z" opacity="0.9" />
+                <!-- Adding shadow for depth -->
+                <path d="M50 50 L80 50 L50 80 H20 L50 50" fill="black" opacity="0.3" />
+            </svg>
+            <div class="label">Variant 18: Origami Fold<br>(折纸艺术)</div>
+        </div>
+
+        <!-- Variant 19: Bold Slab -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="white" xmlns="http://www.w3.org/2000/svg">
+                <path d="M15 20 H85 V35 H45 L85 75 V90 H15 V75 H55 L15 35 V20 Z" />
+            </svg>
+            <div class="label">Variant 19: Heavy Slab<br>(极重衬线 - 力量感)</div>
+        </div>
+
+        <!-- Variant 20: Modern Ribbon -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                    <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" style="stop-color:#fff;stop-opacity:1" />
+                        <stop offset="100%" style="stop-color:#888;stop-opacity:1" />
+                    </linearGradient>
+                </defs>
+                <path d="M25 25 H75 L25 75 H75" stroke="url(#grad1)" stroke-width="12" stroke-linecap="butt"
+                    stroke-linejoin="miter" />
+            </svg>
+            <div class="label">Variant 20: Gradient Ribbon<br>(渐变丝带)</div>
+        </div>
+    </div>
+</body>
+
+</html>

@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Z Logo Concepts - Strict Origami</title>
+    <style>
+        body {
+            background-color: #000;
+            color: #fff;
+            font-family: 'Playfair Display', serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            gap: 50px;
+        }
+
+        h1 {
+            margin-bottom: 10px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 60px;
+            text-align: center;
+        }
+
+        .logo-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            transition: 0.3s ease;
+        }
+
+        .logo-item:hover {
+            border-color: rgba(255, 255, 255, 0.4);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .label {
+            font-family: 'Inter', sans-serif;
+            color: #888;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+
+        svg {
+            width: 80px;
+            height: 80px;
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400&display=swap"
+        rel="stylesheet">
+</head>
+
+<body>
+    <h1>Strict Origami (Set 4)</h1>
+    <div class="grid">
+        <!-- Variant 41: Pleated Z (Accordion) -- A Z made of folded segments -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <!-- Top Bar -->
+                <path d="M20 20 H80 L60 40 H40 V20 Z" fill="white" fill-opacity="0.9" />
+                <!-- Diagonal -->
+                <path d="M60 40 L40 40 L20 70 L40 70 Z" fill="#ccc" fill-opacity="0.9" />
+                <!-- Bottom Bar -->
+                <path d="M20 70 H80 L60 90 H40 L20 70 Z" fill="white" fill-opacity="0.9" />
+            </svg>
+            <div class="label">Variant 41: Pleated Stack<br>(层叠折痕)</div>
+        </div>
+
+        <!-- Variant 42: Ribbon Stack (Simple Overlay) -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <!-- Using transparency to show overrides -->
+                <path d="M20 25 H80 L40 75 H70" stroke="white" stroke-width="15" stroke-linecap="butt"
+                    stroke-linejoin="miter" stroke-opacity="0.5" />
+                <!-- Hard Edge Z -->
+                <path d="M20 25 H80 L30 75 H80" stroke="white" stroke-width="0" fill="white" />
+                <path d="M20 20 H80 L30 80 H80 V65 H45 L85 20 V20 H20 Z" fill="white" />
+            </svg>
+            <div class="label">Variant 42: Sharp Cut<br>(硬朗剪裁)</div>
+        </div>
+
+        <!-- Variant 43: Sharp Fold (Classic Z with 1 fold) -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <!-- Main Body -->
+                <path d="M20 20 H80 L20 80 H80" stroke="white" stroke-width="15" stroke-linecap="square"
+                    stroke-linejoin="round" />
+                <!-- The "Fold" Highlight -->
+                <path d="M80 20 L20 80" stroke="black" stroke-width="2" opacity="0.5" />
+            </svg>
+            <div class="label">Variant 43: Single Fold<br>(单次折叠)</div>
+        </div>
+
+        <!-- Variant 44: Corner Fold (Dog Ear) -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <!-- Base Z -->
+                <path d="M20 20 H80 V35 H50 L80 70 V85 H20 V70 H50 L20 35 V20 Z" fill="white" />
+                <!-- Folded Corners -->
+                <path d="M80 20 L65 20 L80 35 Z" fill="#888" />
+                <path d="M20 85 L35 85 L20 70 Z" fill="#888" />
+            </svg>
+            <div class="label">Variant 44: Corner Fold<br>(折角细节)</div>
+        </div>
+    </div>
+</body>
+
+</html>

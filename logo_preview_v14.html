@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Z Logo Concepts - Sliding Blocks Variants</title>
+    <style>
+        body {
+            background-color: #000;
+            color: #fff;
+            font-family: 'Playfair Display', serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            gap: 50px;
+        }
+
+        h1 {
+            margin-bottom: 10px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 60px;
+            text-align: center;
+        }
+
+        .logo-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            transition: 0.3s ease;
+        }
+
+        .logo-item:hover {
+            border-color: rgba(255, 255, 255, 0.4);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .label {
+            font-family: 'Inter', sans-serif;
+            color: #888;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+
+        svg {
+            width: 80px;
+            height: 80px;
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400&display=swap"
+        rel="stylesheet">
+</head>
+
+<body>
+    <h1>Sliding Blocks Variants (Set 14)</h1>
+    <div class="grid">
+        <!-- Variant 49: Original Sliding Blocks -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M20 20 H70 V35 H20 Z" fill="white" />
+                <path d="M30 35 H80 V50 H30 Z" fill="#aaa" />
+                <path d="M20 50 H70 V65 H20 Z" fill="white" />
+                <path d="M30 65 H80 V80 H30 Z" fill="#aaa" />
+            </svg>
+            <div class="label">Variant 49: Original<br>(原版 - 交错)</div>
+        </div>
+
+        <!-- Variant 50: Glitch Impact (Broken) -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <!-- Top -->
+                <path d="M20 20 H75 L70 35 H20 Z" fill="white" />
+                <!-- Middle (Shifted) -->
+                <path d="M35 38 H85 L80 52 H30 Z" fill="white" opacity="0.8" />
+                <!-- Bottom (Shifted Back) -->
+                <path d="M20 55 H75 L70 70 H20 Z" fill="white" opacity="0.6" />
+                <!-- Footer -->
+                <path d="M30 80 H80 L80 85 H30 Z" fill="white" opacity="0.4" />
+            </svg>
+            <div class="label">Variant 50: Glitch Slide<br>(故障滑块)</div>
+        </div>
+
+        <!-- Variant 51: Perfect Stairs (Ascending) -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M20 20 H60 V40 H20 Z" fill="white" />
+                <path d="M40 40 H80 V60 H40 Z" fill="white" />
+                <path d="M20 60 H60 V80 H20 Z" fill="white" />
+                <!-- Connecting shading to imply Z connection -->
+                <path d="M60 20 L40 60" stroke="#888" stroke-width="2" opacity="0.5" />
+            </svg>
+            <div class="label">Variant 51: Staircase<br>(阶梯结构)</div>
+        </div>
+
+        <!-- Variant 52: Dynamic Motion (Speed) -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <!-- Skewed blocks for speed -->
+                <path d="M30 20 H80 L70 35 H20 Z" fill="white" />
+                <path d="M40 40 H90 L80 55 H30 Z" fill="white" opacity="0.8" />
+                <path d="M20 60 H70 L60 75 H10 Z" fill="white" />
+            </svg>
+            <div class="label">Variant 52: Speed Force<br>(极速滑块)</div>
+        </div>
+    </div>
+</body>
+
+</html>

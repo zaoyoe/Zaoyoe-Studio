@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Z Logo Concepts - Circuit Parallel Hybrids</title>
+    <style>
+        body {
+            background-color: #000;
+            color: #fff;
+            font-family: 'Playfair Display', serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            gap: 50px;
+        }
+
+        h1 {
+            margin-bottom: 10px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 60px;
+            text-align: center;
+        }
+
+        .logo-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            transition: 0.3s ease;
+        }
+
+        .logo-item:hover {
+            border-color: rgba(255, 255, 255, 0.4);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .label {
+            font-family: 'Inter', sans-serif;
+            color: #888;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+
+        svg {
+            width: 80px;
+            height: 80px;
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400&display=swap"
+        rel="stylesheet">
+</head>
+
+<body>
+    <h1>Circuit & Parallel Hybrids</h1>
+    <div class="grid">
+        <!-- Hybrid 1: The Data Bus (Strict PCB Parallel) -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <!-- Two strictly parallel paths with rounded terminals (PCB style) -->
+                <path d="M20 25 H75 L25 75 H80" stroke="white" stroke-width="2.5" stroke-linecap="round"
+                    stroke-linejoin="round" />
+                <path d="M20 35 H65 L15 85 H70" stroke="white" stroke-width="2.5" stroke-linecap="round"
+                    stroke-linejoin="round" opacity="0.5" />
+                <!-- Correction: Make them actually parallel Z's -->
+                <path d="M20 25 H75 L25 75 H80" stroke="white" stroke-width="3" stroke-linecap="round"
+                    stroke-linejoin="round" />
+                <path d="M20 33 H83 L33 83 H90" stroke="white" stroke-width="1" stroke-linecap="round"
+                    stroke-linejoin="round" />
+                <circle cx="20" cy="25" r="3" fill="white" />
+                <circle cx="90" cy="83" r="3" fill="white" />
+            </svg>
+            <div class="label">Hybrid 1: Data Bus<br>(数据总线)</div>
+        </div>
+
+        <!-- Hybrid 2: Node Connection (Parallel + Dots) -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M25 25 H75 L25 75 H75" stroke="white" stroke-width="2" />
+                <path d="M30 30 H80 L30 80 H80" stroke="white" stroke-width="2" />
+                <!-- Terminals -->
+                <circle cx="25" cy="25" r="3" fill="white" />
+                <circle cx="80" cy="80" r="3" fill="white" />
+                <!-- Corner nodes -->
+                <circle cx="75" cy="25" r="2.5" fill="black" stroke="white" stroke-width="1.5" />
+                <circle cx="30" cy="80" r="2.5" fill="black" stroke="white" stroke-width="1.5" />
+            </svg>
+            <div class="label">Hybrid 2: Node Logic<br>(逻辑节点)</div>
+        </div>
+
+        <!-- Hybrid 3: Printed Circuit (Tech Angles) -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <!-- Outer trace -->
+                <path d="M15 20 H85 L85 30 L35 80 H85" stroke="white" stroke-width="2" stroke-linecap="square"
+                    fill="none" />
+                <!-- Inner trace -->
+                <path d="M15 30 H70 L25 75 H15 V50" stroke="white" stroke-width="2" stroke-linecap="square"
+                    fill="none" />
+                <!-- Connectors -->
+                <rect x="12" y="17" width="6" height="6" fill="white" />
+                <rect x="82" y="77" width="6" height="6" fill="white" />
+            </svg>
+            <div class="label">Hybrid 3: PCB Layout<br>(PCB 布局)</div>
+        </div>
+
+        <!-- Hybrid 4: Quantum Chip (Parallel in Box) -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <!-- The Parallel Z -->
+                <path d="M30 30 H70 L30 70 H70" stroke="white" stroke-width="4" stroke-linecap="round"
+                    stroke-linejoin="round" />
+                <path d="M30 30 H70 L30 70 H70" stroke="black" stroke-width="1.5" stroke-linecap="round"
+                    stroke-linejoin="round" />
+
+                <!-- Circuit accents -->
+                <line x1="10" y1="30" x2="25" y2="30" stroke="white" stroke-width="2" />
+                <line x1="75" y1="70" x2="90" y2="70" stroke="white" stroke-width="2" />
+                <circle cx="25" cy="30" r="3" fill="white" />
+                <circle cx="75" cy="70" r="3" fill="white" />
+            </svg>
+            <div class="label">Hybrid 4: Chip Core<br>(芯片核心)</div>
+        </div>
+    </div>
+</body>
+
+</html>

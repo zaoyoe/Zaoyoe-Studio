@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Z Logo Concepts - Origami Variations</title>
+    <style>
+        body {
+            background-color: #000;
+            color: #fff;
+            font-family: 'Playfair Display', serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            gap: 50px;
+        }
+
+        h1 {
+            margin-bottom: 10px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 60px;
+            text-align: center;
+        }
+
+        .logo-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            transition: 0.3s ease;
+        }
+
+        .logo-item:hover {
+            border-color: rgba(255, 255, 255, 0.4);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .label {
+            font-family: 'Inter', sans-serif;
+            color: #888;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+
+        svg {
+            width: 80px;
+            height: 80px;
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400&display=swap"
+        rel="stylesheet">
+</head>
+
+<body>
+    <h1>Origami Variations</h1>
+    <div class="grid">
+        <!-- Variant 21: Classic Fold (The selected one) -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="white" xmlns="http://www.w3.org/2000/svg">
+                <path d="M20 20 H80 L50 50 H80 V80 H20 L50 50 H20 V20 Z" opacity="0.9" />
+                <path d="M50 50 L80 50 L50 80 H20 L50 50" fill="black" opacity="0.3" />
+            </svg>
+            <div class="label">Variant 21: Classic Fold<br>(经典折叠 - 原版)</div>
+        </div>
+
+        <!-- Variant 22: Dimensional Ribbon (Thick Fold) -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <!-- Top segment -->
+                <path d="M20 25 H70 L50 50 H20 V25 Z" fill="#fff" opacity="0.9" />
+                <!-- Bottom segment -->
+                <path d="M80 75 H30 L50 50 H80 V75 Z" fill="#fff" opacity="0.9" />
+                <!-- Connecting Diagonal (Darker for depth) -->
+                <path d="M70 25 L30 75 L50 50 L70 25 Z" fill="#aaa" />
+            </svg>
+            <div class="label">Variant 22: Tri-Fold<br>(三段折叠 - 立体感)</div>
+        </div>
+
+        <!-- Variant 23: Sharp Paper (Crisp Edges) -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M20 20 L80 20 L40 80 L60 50 L20 80 L60 50 L80 20 L40 20" fill="white" fill-rule="evenodd" />
+                <!-- Correction for a sharper Z -->
+                <path d="M20 20 H80 L35 70 H80 V85 H20 L65 35 H20 V20 Z" fill="white" />
+                <path d="M65 35 L20 85 L35 70 L80 20" fill="black" opacity="0.2" />
+            </svg>
+            <div class="label">Variant 23: Shadow Crease<br>(阴影折痕)</div>
+        </div>
+
+        <!-- Variant 24: Gradient Fold (Soft Light) -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                    <linearGradient id="foldGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                        <stop offset="0%" style="stop-color:#fff;stop-opacity:1" />
+                        <stop offset="50%" style="stop-color:#ddd;stop-opacity:1" />
+                        <stop offset="51%" style="stop-color:#bbb;stop-opacity:1" />
+                        <stop offset="100%" style="stop-color:#fff;stop-opacity:1" />
+                    </linearGradient>
+                </defs>
+                <path d="M20 25 H80 L30 75 H80" stroke="url(#foldGrad)" stroke-width="12" stroke-linecap="butt"
+                    stroke-linejoin="round" />
+            </svg>
+            <div class="label">Variant 24: Soft Fold<br>(柔和折光)</div>
+        </div>
+    </div>
+</body>
+
+</html>

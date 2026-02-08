@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Z Logo Concepts - Origami Redesign</title>
+    <style>
+        body {
+            background-color: #000;
+            color: #fff;
+            font-family: 'Playfair Display', serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            gap: 50px;
+        }
+
+        h1 {
+            margin-bottom: 10px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 60px;
+            text-align: center;
+        }
+
+        .logo-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            transition: 0.3s ease;
+        }
+
+        .logo-item:hover {
+            border-color: rgba(255, 255, 255, 0.4);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .label {
+            font-family: 'Inter', sans-serif;
+            color: #888;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+
+        svg {
+            width: 80px;
+            height: 80px;
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400&display=swap"
+        rel="stylesheet">
+</head>
+
+<body>
+    <h1>Origami Redesign (Set 3)</h1>
+    <div class="grid">
+        <!-- Variant 37: Escher Fold (Impossible Shape) -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M20 20 H70 L50 40 H30 V20 Z" fill="#fff" fill-opacity="0.9" /> <!-- Top-Top -->
+                <path d="M70 20 V70 L60 60 V30 L70 20 Z" fill="#ddd" fill-opacity="0.9" /> <!-- Right-Down -->
+                <path d="M30 20 V60 L40 50 V40 L30 20 Z" fill="#999" fill-opacity="0.9" />
+                <!-- Left-Down (Hiddenish) -->
+
+                <path d="M30 60 H80 L60 80 H20 L30 60 Z" fill="#fff" fill-opacity="0.9" /> <!-- Cross Bar -->
+
+                <path d="M20 80 H70 L50 60 H20 V80 Z" fill="#bbb" fill-opacity="0.9" /> <!-- Bottom cap -->
+
+                <!-- Simplifying visual to a Penrose Triangle style composed Z -->
+                <path d="M25 25 H85 L65 45 H35 L25 25 Z" fill="white" />
+                <path d="M35 45 L65 45 L65 75 L35 75 Z" fill="#888" /> <!-- Vertical connector -->
+                <path d="M15 75 H75 L55 55 H25 L15 75 Z" fill="white" />
+            </svg>
+            <div class="label">Variant 37: Dimensional Z<br>(维度折叠)</div>
+        </div>
+
+        <!-- Variant 38: Continuous Ribbon (Elegant) -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M20 25 C40 25, 60 25, 80 25 L40 75 C60 75, 80 75, 80 75" stroke="white" stroke-width="0"
+                    fill="none" />
+                <!-- Ribbon Body -->
+                <path d="M20 20 H80 L30 80 H70" stroke="white" stroke-width="15" stroke-linecap="butt"
+                    stroke-linejoin="round" />
+                <!-- Inner detail to show fold -->
+                <path d="M80 20 L30 80" stroke="black" stroke-width="1" opacity="0.5" />
+                <!-- Gradient overlay idea (simulated with split paths) -->
+                <path d="M20 20 H80 L55 50" stroke="white" stroke-width="15" stroke-linecap="butt" />
+                <path d="M55 50 L30 80 H70" stroke="#bbb" stroke-width="15" stroke-linecap="butt" />
+            </svg>
+            <div class="label">Variant 38: Satin Ribbon<br>(缎带折叠)</div>
+        </div>
+
+        <!-- Variant 39: Origami Crane Wing (Abstract) -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="white" xmlns="http://www.w3.org/2000/svg">
+                <!-- Top Wing -->
+                <path d="M20 30 L80 30 L50 50 Z" opacity="0.9" />
+                <!-- Bottom Wing -->
+                <path d="M80 70 L20 70 L50 50 Z" opacity="0.9" />
+                <!-- Center Body Connection -->
+                <path d="M50 50 L20 30 L20 70 Z" opacity="0.5" />
+                <path d="M50 50 L80 30 L80 70 Z" opacity="0.5" />
+            </svg>
+            <div class="label">Variant 39: Wing Span<br>(鹤翼展开)</div>
+        </div>
+
+        <!-- Variant 40: Architectural Tessellation -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M20 20 L50 20 L35 50 Z" fill="white" opacity="0.8" />
+                <path d="M50 20 L80 20 L65 50 Z" fill="white" opacity="0.6" />
+                <path d="M35 50 L65 50 L50 80 Z" fill="white" opacity="0.9" />
+                <path d="M35 50 L20 80 L50 80 Z" fill="white" opacity="0.4" />
+                <path d="M65 50 L80 80 L50 80 Z" fill="white" opacity="0.7" />
+            </svg>
+            <div class="label">Variant 40: Crystal Mesh<br>(晶格结构)</div>
+        </div>
+    </div>
+</body>
+
+</html>

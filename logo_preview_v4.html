@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Z Logo Concepts - Parallel Future Variants</title>
+    <style>
+        body {
+            background-color: #000;
+            color: #fff;
+            font-family: 'Playfair Display', serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            gap: 50px;
+        }
+
+        h1 {
+            margin-bottom: 10px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 60px;
+            text-align: center;
+        }
+
+        .logo-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            transition: 0.3s ease;
+        }
+
+        .logo-item:hover {
+            border-color: rgba(255, 255, 255, 0.4);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .label {
+            font-family: 'Inter', sans-serif;
+            color: #888;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+
+        svg {
+            width: 80px;
+            height: 80px;
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400&display=swap"
+        rel="stylesheet">
+</head>
+
+<body>
+    <h1>Parallel Future Variants</h1>
+    <div class="grid">
+        <!-- Variant A: Classic Parallel (The Original) -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M25 25 H75 L25 75 H75" stroke="white" stroke-width="2" />
+                <path d="M30 30 H80 L30 80 H80" stroke="white" stroke-width="2" />
+            </svg>
+            <div class="label">Variant A: Classic<br>(经典平行 - 原版)</div>
+        </div>
+
+        <!-- Variant B: Interwoven/Braided -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <!-- Top bar -->
+                <path d="M25 25 H75" stroke="white" stroke-width="3" stroke-linecap="round" />
+                <path d="M25 32 H75" stroke="white" stroke-width="3" stroke-linecap="round" />
+                <!-- Diagonal -->
+                <path d="M70 25 L30 75" stroke="white" stroke-width="3" stroke-linecap="round" />
+                <path d="M78 32 L38 82" stroke="white" stroke-width="3" stroke-linecap="round" />
+                <!-- Bottom bar -->
+                <path d="M25 75 H75" stroke="white" stroke-width="3" stroke-linecap="round" />
+                <path d="M25 82 H75" stroke="white" stroke-width="3" stroke-linecap="round" />
+            </svg>
+            <div class="label">Variant B: Circuit Lines<br>(电路排线)</div>
+        </div>
+
+        <!-- Variant C: Offset Depth (3D Shift) -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <!-- Background Z (Dimmer) -->
+                <path d="M28 28 H78 L28 78 H78" stroke="rgba(255,255,255,0.3)" stroke-width="6"
+                    stroke-linecap="square" />
+                <!-- Foreground Z (Solid) -->
+                <path d="M22 22 H72 L22 72 H72" stroke="white" stroke-width="6" stroke-linecap="square" />
+            </svg>
+            <div class="label">Variant C: Shifted 3D<br>(错位维度)</div>
+        </div>
+
+        <!-- Variant D: Neon Glow (Double Outline) -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                    <filter id="glow">
+                        <feGaussianBlur stdDeviation="2" result="coloredBlur" />
+                        <feMerge>
+                            <feMergeNode in="coloredBlur" />
+                            <feMergeNode in="SourceGraphic" />
+                        </feMerge>
+                    </filter>
+                </defs>
+                <path d="M25 25 H75 L25 75 H75" stroke="white" stroke-width="1.5" filter="url(#glow)" />
+                <path d="M25 25 H75 L25 75 H75" stroke="white" stroke-width="6" stroke-opacity="0.2" />
+            </svg>
+            <div class="label">Variant D: Neon Hollow<br>(霓虹镂空)</div>
+        </div>
+    </div>
+</body>
+
+</html>

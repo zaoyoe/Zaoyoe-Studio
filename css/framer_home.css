@@ -46,7 +46,7 @@ Inspired by Framer.com design aesthetics
     --radius-xl: 24px;
 
     /* Typography */
-    --font-display: 'Outfit', -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+    --font-display: 'Playfair Display', Georgia, 'Times New Roman', serif;
     --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
     /* Transitions */
@@ -87,8 +87,9 @@ body {
     /* -5% negative letter spacing */
     line-height: 1.1;
     margin: 0;
-    margin-top: -40px;
-    transition: font-size 0.3s ease, margin-top 0.3s ease;
+    /* Use padding-top on parent instead, margin-top here for fine-tuning */
+    padding-top: max(0px, calc(60px - 5vw));
+    transition: font-size 0.3s ease, padding-top 0.3s ease;
     /* Smooth resize and spacing */
 }
 
@@ -147,12 +148,18 @@ h3 {
 }
 
 .nav-logo {
-    font-family: var(--font-display);
-    font-size: 24px;
-    font-weight: 700;
+    display: flex;
+    align-items: center;
     color: var(--text-primary);
     text-decoration: none;
     transition: opacity var(--transition-fast);
+    /* Ensure SVG inherits color */
+}
+
+.nav-logo svg {
+    width: 40px;
+    height: 40px;
+    display: block;
 }
 
 .nav-logo:hover {
@@ -690,7 +697,7 @@ h3 {
 }
 
 .hero-progress-thumb.active {
-    border-color: rgba(255, 255, 255, 0.5);
+    border-color: rgba(255, 255, 255, 0.75);
     box-shadow: 0 0 8px rgba(255, 255, 255, 0.15);
 }
 
@@ -706,9 +713,15 @@ h3 {
     scrollbar-width: none;
     -ms-overflow-style: none;
     padding: 0;
-    scroll-snap-type: x mandatory;
+    scroll-snap-type: none;
+    /* Disabled by default for initial centering */
     scroll-padding-inline: calc(50vw - 90px);
     -webkit-overflow-scrolling: touch;
+}
+
+/* Enable scroll-snap only after user interaction */
+.hero-carousel.is-snapping {
+    scroll-snap-type: x mandatory;
 }
 
 .hero-carousel::-webkit-scrollbar {
@@ -717,7 +730,7 @@ h3 {
 
 .hero-carousel-track {
     display: flex;
-    gap: 48px;
+    gap: 96px;
     /* Padding = 50vw - half of card width (180/2 = 90) for centering */
     padding: 0 calc(50vw - 90px);
     width: fit-content;
@@ -1013,7 +1026,7 @@ h3 {
     justify-content: center;
     padding: var(--spacing-sm) var(--spacing-md);
     background: var(--bg-card);
-    border: 1px solid var(--border-subtle);
+    border: none;
     border-radius: var(--radius-md);
     font-size: 14px;
     color: var(--text-secondary);
@@ -1568,7 +1581,7 @@ h3 {
     width: 200px;
     padding: 16px;
     background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: none;
     border-radius: 16px;
     text-decoration: none;
     transition: all 0.3s ease;

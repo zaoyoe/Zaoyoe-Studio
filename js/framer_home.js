@@ -987,26 +987,36 @@ const FramerHome = {
 
     let currentIndex = 0;
     const cardCount = cards.length;
+    let hasUserInteracted = false; // Track if user has scrolled/clicked
 
-    // Center first card on initialization
+    // Center a specific card
     const centerCard = (index) => {
       const card = cards[index];
       if (!card) return;
 
-      const cardRect = card.getBoundingClientRect();
-      const trackRect = track.getBoundingClientRect();
       const cardCenterInTrack = card.offsetLeft + card.offsetWidth / 2;
       const viewportCenter = carousel.clientWidth / 2;
       const scrollTarget = cardCenterInTrack - viewportCenter;
 
       carousel.scrollTo({
         left: Math.max(0, scrollTarget),
-        behavior: 'instant'
+        behavior: 'smooth'
       });
     };
 
-    // Center first card immediately
-    setTimeout(() => centerCard(0), 100);
+    // Center all cards initially by scrolling to middle of carousel
+    let isInitializing = true; // Flag to prevent initial scroll from triggering interaction
+    setTimeout(() => {
+      const scrollWidth = carousel.scrollWidth - carousel.clientWidth;
+      carousel.scrollTo({
+        left: scrollWidth / 2,
+        behavior: 'instant'
+      });
+      // Mark initialization complete after scroll settles
+      setTimeout(() => {
+        isInitializing = false;
+      }, 50);
+    }, 100);
 
     // Update card scales and progress indicator
     const updateCarousel = () => {
@@ -1024,6 +1034,16 @@ const FramerHome = {
           const maxOffset = trackWidth - thumbWidth;
           thumb.style.left = `${progress * maxOffset}px`;
         }
+      }
+
+      // Only apply scaling effect after user has interacted
+      if (!hasUserInteracted) {
+        // Initial state: all cards same size and dimmer opacity
+        cards.forEach((card) => {
+          card.style.transform = 'scale(1)';
+          card.style.opacity = '0.7';
+        });
+        return;
       }
 
       // Calculate which card is centered and apply scaling
@@ -1061,7 +1081,16 @@ const FramerHome = {
     let touchStartX = 0;
     let touchStartScrollLeft = 0;
 
+    // Enable snapping and highlight on first user interaction
+    const enableSnapping = () => {
+      if (!hasUserInteracted) {
+        hasUserInteracted = true;
+        carousel.classList.add('is-snapping');
+      }
+    };
+
     carousel.addEventListener('touchstart', (e) => {
+      enableSnapping();
       touchStartX = e.touches[0].clientX;
       touchStartScrollLeft = carousel.scrollLeft;
     }, { passive: true });
@@ -1072,8 +1101,13 @@ const FramerHome = {
       updateCarousel();
     }, { passive: true });
 
-    // Scroll event for smooth updates
-    carousel.addEventListener('scroll', updateCarousel);
+    // Scroll event for smooth updates (don't trigger interaction during initialization)
+    carousel.addEventListener('scroll', () => {
+      if (!isInitializing) {
+        enableSnapping();
+      }
+      updateCarousel();
+    });
 
     // Click behavior: center card first, then navigate
     const centerThreshold = 50; // pixels - how close to center to be considered "centered"

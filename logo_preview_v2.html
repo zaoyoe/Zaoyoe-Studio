@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Z Logo Concepts - Set 2</title>
+    <style>
+        body {
+            background-color: #000;
+            color: #fff;
+            font-family: 'Playfair Display', serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            gap: 50px;
+        }
+
+        h1 {
+            margin-bottom: 10px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 60px;
+            text-align: center;
+        }
+
+        .logo-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            transition: 0.3s ease;
+        }
+
+        .logo-item:hover {
+            border-color: rgba(255, 255, 255, 0.4);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .label {
+            font-family: 'Inter', sans-serif;
+            color: #888;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+
+        svg {
+            width: 80px;
+            height: 80px;
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400&display=swap"
+        rel="stylesheet">
+</head>
+
+<body>
+    <h1>Logo Concepts (Set 2)</h1>
+    <div class="grid">
+        <!-- Option 5: Stencil Luxury -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="white" xmlns="http://www.w3.org/2000/svg">
+                <!-- A high contrast serif Z with a stencil gap -->
+                <path d="M20 25 H80 V40 H45 L70 75 H80 V85 H20 V70 H55 L30 35 H20 V25 Z" />
+                <rect x="40" y="45" width="20" height="10" fill="black" transform="rotate(45 50 50)" />
+            </svg>
+            <div class="label">Option 5: Stencil Luxury<br>(切割衬线)</div>
+        </div>
+
+        <!-- Option 6: Lightning/Energy -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M30 20 L80 20 L40 50 L70 50 L20 80 L60 50 L30 50 L80 20" stroke="white" stroke-width="4"
+                    stroke-linejoin="round" />
+            </svg>
+            <div class="label">Option 6: Energy Spark<br>(能量闪电)</div>
+        </div>
+
+        <!-- Option 7: Tech Connection -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M25 25 H75 L25 75 H75" stroke="white" stroke-width="3" stroke-linecap="round" />
+                <circle cx="25" cy="25" r="5" fill="white" />
+                <circle cx="75" cy="25" r="5" fill="white" />
+                <circle cx="25" cy="75" r="5" fill="white" />
+                <circle cx="75" cy="75" r="5" fill="white" />
+            </svg>
+            <div class="label">Option 7: Tech Nodes<br>(科技节点)</div>
+        </div>
+
+        <!-- Option 8: Abstract Infinity -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M25 30 C 50 30, 50 70, 75 70" stroke="white" stroke-width="6" stroke-linecap="round" />
+                <path d="M25 70 C 50 70, 50 30, 75 30" stroke="white" stroke-width="6" stroke-linecap="round" />
+            </svg>
+            <div class="label">Option 8: Fluid Infinity<br>(流动无限)</div>
+        </div>
+
+        <!-- Re-showing Option 1 for comparison -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M25 25H75L35 75H80" stroke="white" stroke-width="8" stroke-linecap="square"
+                    stroke-linejoin="miter" />
+                <circle cx="78" cy="22" r="5" fill="#fff" />
+            </svg>
+            <div class="label">Option 1: Minimalist<br>(极简主义 - 原方案)</div>
+        </div>
+    </div>
+</body>
+
+</html>

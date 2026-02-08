@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Z Logo Concepts - Set 3</title>
+    <style>
+        body {
+            background-color: #000;
+            color: #fff;
+            font-family: 'Playfair Display', serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            gap: 50px;
+        }
+
+        h1 {
+            margin-bottom: 10px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 60px;
+            text-align: center;
+        }
+
+        .logo-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            transition: 0.3s ease;
+        }
+
+        .logo-item:hover {
+            border-color: rgba(255, 255, 255, 0.4);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .label {
+            font-family: 'Inter', sans-serif;
+            color: #888;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+
+        svg {
+            width: 80px;
+            height: 80px;
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400&display=swap"
+        rel="stylesheet">
+</head>
+
+<body>
+    <h1>Logo Concepts (Set 3)</h1>
+    <div class="grid">
+        <!-- Option 9: Minimalist Slash -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <!-- Two disconnected horizontal bars and a separate slash -->
+                <path d="M25 25 H80" stroke="white" stroke-width="8" stroke-linecap="square" />
+                <path d="M20 75 H75" stroke="white" stroke-width="8" stroke-linecap="square" />
+                <path d="M70 25 L30 75" stroke="white" stroke-width="4" stroke-linecap="round" />
+            </svg>
+            <div class="label">Option 9: Deconstructed<br>(解构主义)</div>
+        </div>
+
+        <!-- Option 10: Double Line Modern -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M25 25 H75 L25 75 H75" stroke="white" stroke-width="2.5" />
+                <path d="M30 30 H80 L30 80 H80" stroke="white" stroke-width="2.5" />
+            </svg>
+            <div class="label">Option 10: Parallel Future<br>(平行未来)</div>
+        </div>
+
+        <!-- Option 11: Dynamic Arrow -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="white" xmlns="http://www.w3.org/2000/svg">
+                <path d="M20 20 H80 L50 60 H80 V80 H20 L50 40 H20 V20 Z" />
+            </svg>
+            <div class="label">Option 11: Arrow Dynamics<br>(箭头动感)</div>
+        </div>
+
+        <!-- Option 12: Pixel Art / Glitch -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="white" xmlns="http://www.w3.org/2000/svg">
+                <rect x="20" y="20" width="20" height="20" />
+                <rect x="40" y="20" width="20" height="20" />
+                <rect x="60" y="20" width="20" height="20" />
+                <rect x="60" y="40" width="20" height="20" />
+                <rect x="40" y="60" width="20" height="20" />
+                <rect x="20" y="80" width="20" height="20" />
+                <rect x="40" y="80" width="20" height="20" />
+                <rect x="60" y="80" width="20" height="20" />
+            </svg>
+            <div class="label">Option 12: Digital Pixel<br>(数字像素)</div>
+        </div>
+    </div>
+</body>
+
+</html>

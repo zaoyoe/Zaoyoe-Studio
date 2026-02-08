@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Z Logo Concepts - Classic Fold Variants</title>
+    <style>
+        body {
+            background-color: #000;
+            color: #fff;
+            font-family: 'Playfair Display', serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            gap: 50px;
+        }
+
+        h1 {
+            margin-bottom: 10px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 60px;
+            text-align: center;
+        }
+
+        .logo-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            transition: 0.3s ease;
+        }
+
+        .logo-item:hover {
+            border-color: rgba(255, 255, 255, 0.4);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .label {
+            font-family: 'Inter', sans-serif;
+            color: #888;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+
+        svg {
+            width: 80px;
+            height: 80px;
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400&display=swap"
+        rel="stylesheet">
+</head>
+
+<body>
+    <h1>Classic Fold Variants</h1>
+    <div class="grid">
+        <!-- Variant 25: The Original Classic Fold -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="white" xmlns="http://www.w3.org/2000/svg">
+                <path d="M20 20 H80 L50 50 H80 V80 H20 L50 50 H20 V20 Z" opacity="0.9" />
+                <path d="M50 50 L80 50 L50 80 H20 L50 50" fill="black" opacity="0.3" />
+            </svg>
+            <div class="label">Variant 25: Original<br>(原版 - 经典)</div>
+        </div>
+
+        <!-- Variant 26: High Contrast (Sharp Shadow) -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M20 20 H80 L50 50 H80 V80 H20 L50 50 H20 V20 Z" fill="white" />
+                <!-- Darker, sharper shadow -->
+                <path d="M50 50 L80 50 L50 80 H20 L50 50" fill="black" opacity="0.6" />
+            </svg>
+            <div class="label">Variant 26: Deep Shadow<br>(深邃阴影)</div>
+        </div>
+
+        <!-- Variant 27: Translucent Glass (Frosted Fold) -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <!-- Top part -->
+                <path d="M20 20 H80 L50 50 H20 V20 Z" fill="white" fill-opacity="0.8" />
+                <!-- Bottom part -->
+                <path d="M80 80 H20 L50 50 H80 V80 Z" fill="white" fill-opacity="0.8" />
+                <!-- Overlap with blend -->
+                <path d="M50 50 L80 50 L50 80 H20 L50 50" fill="white" fill-opacity="0.4" />
+            </svg>
+            <div class="label">Variant 27: Frosted Glass<br>(磨砂玻璃)</div>
+        </div>
+
+        <!-- Variant 28: Minimal Outline Fold -->
+        <div class="logo-item">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M20 20 H80 L50 50 H80 V80 H20 L50 50 H20 V20 Z" stroke="white" stroke-width="2" />
+                <path d="M20 50 H80" stroke="white" stroke-width="1" stroke-dasharray="4 4" opacity="0.5" />
+                <path d="M50 20 V80" stroke="white" stroke-width="1" stroke-dasharray="4 4" opacity="0.5" />
+            </svg>
+            <div class="label">Variant 28: Blueprint<br>(折叠蓝图)</div>
+        </div>
+    </div>
+</body>
+
+</html>
