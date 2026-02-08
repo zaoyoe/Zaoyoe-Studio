@@ -63,7 +63,7 @@ async function handleRegister(event) {
             username: email,
             email: email,
             nickname: username || email.split('@')[0],
-            avatarUrl: data.user.user_metadata?.avatar_url
+            avatarUrl: initialAvatarUrl
         });
 
     } catch (error) {
@@ -176,12 +176,30 @@ async function handleLogin(event) {
         toggleLoginModal();
 
         // 更新UI
+        let avatarUrl = profile?.avatar_url || data.user.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.user.email)}&background=random`;
+
+        // 🆕 Auto-upload Google OAuth avatar to R2 (if Google avatar and not yet uploaded)
+        if (data.user.user_metadata?.avatar_url &&
+            data.user.user_metadata.avatar_url.includes('googleusercontent.com') &&
+            (!profile?.avatar_url || profile.avatar_url.includes('googleusercontent.com'))) {
+            console.log('📸 Uploading Google OAuth avatar to R2...');
+            try {
+                avatarUrl = await uploadAvatarToR2({
+                    userId: data.user.id,
+                    imageUrl: data.user.user_metadata.avatar_url
+                });
+                console.log('✅ Google avatar uploaded to R2:', avatarUrl);
+            } catch (err) {
+                console.warn('⚠️ Failed to upload Google avatar, using original:', err);
+            }
+        }
+
         updateUserUI({
             objectId: data.user.id,
             username: data.user.email,
             email: data.user.email,
             nickname: profile?.username || data.user.user_metadata?.full_name || data.user.email.split('@')[0],
-            avatarUrl: profile?.avatar_url || data.user.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.user.email)}&background=random`
+            avatarUrl: avatarUrl
         });
 
         // 记录登录 IP（用于多账号检测）
@@ -738,13 +756,121 @@ async function handleGoogleLogin() {
 
 window.handleGoogleLogin = handleGoogleLogin;
 
-// ==================== 头像上传 (Supabase 版本) ====================
+// ==================== 图片压缩助手 ====================
+function resizeImage(file, maxSize = 200) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+
+        reader.onload = (e) => {
+            const img = new Image();
+
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+
+                let width = img.width;
+                let height = img.height;
+
+                // Calculate new dimensions
+                if (width > height) {
+                    if (width > maxSize) {
+                        height *= maxSize / width;
+                        width = maxSize;
+                    }
+                } else {
+                    if (height > maxSize) {
+                        width *= maxSize / height;
+                        height = maxSize;
+                    }
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+                ctx.drawImage(img, 0, 0, width, height);
+
+                // Convert to JPEG with 80% quality
+                const base64 = canvas.toDataURL('image/jpeg', 0.8);
+                resolve(base64);
+            };
+
+            img.onerror = reject;
+            img.src = e.target.result;
+        };
+
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
+// ==================== R2 头像上传助手 ====================
+async function uploadAvatarToR2({ userId, imageUrl, imageData }) {
+    try {
+        console.log(`📸 Uploading avatar for user: ${userId}`);
+
+        // Get current user token
+        const { data: { session } } = await window.supabaseClient.auth.getSession();
+        if (!session) {
+            throw new Error('User not authenticated');
+        }
+
+        const SUPABASE_URL = 'https://mmkugdibsaeoevliebzk.supabase.co';
+
+        // Call Edge Function
+        const response = await fetch(
+            `${SUPABASE_URL}/functions/v1/upload-avatar`,
+            {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${session.access_token}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    userId,
+                    imageUrl,
+                    imageData
+                })
+            }
+        );
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Upload failed');
+        }
+
+        const { avatarUrl } = await response.json();
+        console.log(`✅ Avatar uploaded: ${avatarUrl}`);
+
+        // Update profile in database
+        const { error: dbError } = await window.supabaseClient
+            .from('profiles')
+            .update({ avatar_url: avatarUrl })
+            .eq('id', userId);
+
+        if (dbError) {
+            console.error('❌ Failed to update profile:', dbError);
+            // Avatar uploaded but DB update failed - not critical
+        }
+
+        return avatarUrl;
+
+    } catch (error) {
+        console.error('❌ Error uploading avatar:', error);
+
+        // Fallback to DiceBear default avatar
+        const fallbackUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${userId}`;
+        console.log(`⚠️ Using fallback avatar: ${fallbackUrl}`);
+
+        return fallbackUrl;
+    }
+}
+
+// ==================== 头像上传 (R2版本 - via Edge Function) ====================
 async function handleAvatarUpload(event) {
     const file = event.target.files[0];
     if (!file) return;
 
-    if (file.size > 2 * 1024 * 1024) {
-        alert("图片大小不能超过 2MB");
+    if (file.size > 5 * 1024 * 1024) {
+        alert("图片大小不能超过 5MB");
         return;
     }
 
@@ -754,73 +880,61 @@ async function handleAvatarUpload(event) {
         return;
     }
 
-    // Convert to Base64 and Resize
-    const reader = new FileReader();
-    reader.onload = function (e) {
-        const img = new Image();
-        img.onload = async function () {
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
+    try {
+        console.log('📸 Starting avatar upload to R2...');
 
-            const maxSize = 200;
-            let width = img.width;
-            let height = img.height;
+        // Show loading indicator
+        const submitBtn = event.target.closest('form')?.querySelector('button');
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.textContent = '上传中...';
+        }
 
-            if (width > height) {
-                if (width > maxSize) {
-                    height *= maxSize / width;
-                    width = maxSize;
-                }
-            } else {
-                if (height > maxSize) {
-                    width *= maxSize / height;
-                    height = maxSize;
-                }
-            }
+        // Resize image on client side
+        const base64Data = await resizeImage(file, 200);
 
-            canvas.width = width;
-            canvas.height = height;
-            ctx.drawImage(img, 0, 0, width, height);
+        // Upload to R2 via Edge Function
+        const avatarUrl = await uploadAvatarToR2({
+            userId: user.id,
+            imageData: base64Data
+        });
 
-            const base64String = canvas.toDataURL('image/jpeg', 0.8);
+        console.log('✅ Avatar uploaded successfully:', avatarUrl);
 
-            try {
-                // Update profile in Supabase
-                const { error } = await window.supabaseClient
-                    .from('profiles')
-                    .update({ avatar_url: base64String })
-                    .eq('id', user.id);
+        // Update UI immediately
+        const { data: profile } = await window.supabaseClient
+            .from('profiles')
+            .select('*')
+            .eq('id', user.id)
+            .single();
 
-                if (error) throw error;
+        updateUserUI({
+            objectId: user.id,
+            username: user.email,
+            email: user.email,
+            nickname: profile?.username || user.user_metadata?.full_name,
+            avatarUrl: avatarUrl
+        });
 
-                console.log('✅ Avatar updated in Supabase');
+        alert("头像更新成功！");
 
-                // Update UI
-                const { data: profile } = await window.supabaseClient
-                    .from('profiles')
-                    .select('*')
-                    .eq('id', user.id)
-                    .single();
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = '上传头像';
+        }
 
-                updateUserUI({
-                    objectId: user.id,
-                    username: user.email,
-                    email: user.email,
-                    nickname: profile?.username || user.user_metadata?.full_name,
-                    avatarUrl: base64String
-                });
+    } catch (error) {
+        console.error("❌ Error uploading avatar:", error);
+        alert(`上传失败: ${error.message}`);
 
-                alert("头像更新成功！");
-
-            } catch (error) {
-                console.error("❌ Error updating avatar:", error);
-                alert(`更新失败: ${error.message}`);
-            }
-        };
-        img.src = e.target.result;
-    };
-    reader.readAsDataURL(file);
+        const submitBtn = event.target.closest('form')?.querySelector('button');
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = '上传头像';
+        }
+    }
 }
+
 
 window.handleAvatarUpload = handleAvatarUpload;
 

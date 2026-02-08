@@ -828,19 +828,48 @@ function setCustomDropdownValue(dropdownId, value) {
 // WEBP CONVERSION
 // ========================================
 
-// Convert image to WebP format for smaller file sizes
-async function convertToWebP(dataUrl, quality = 0.85) {
+/**
+ * Convert image to WebP format and optionally resize for optimal file size
+ * @param {string} dataUrl - Original image data URL
+ * @param {number} quality - WebP quality (0-1, default 0.85)
+ * @param {number} maxWidth - Maximum width in pixels (default 1200, set to null to skip resize)
+ * @returns {Promise<{dataUrl: string, base64: string}>}
+ */
+async function convertToWebP(dataUrl, quality = 0.85, maxWidth = 1200) {
     return new Promise((resolve, reject) => {
         const img = new Image();
         img.onload = () => {
             const canvas = document.createElement('canvas');
-            canvas.width = img.width;
-            canvas.height = img.height;
+
+            // Calculate optimal dimensions
+            let width = img.width;
+            let height = img.height;
+
+            // Resize if maxWidth is specified and image is larger
+            if (maxWidth && width > maxWidth) {
+                const aspectRatio = height / width;
+                width = maxWidth;
+                height = Math.round(maxWidth * aspectRatio);
+                console.log(`📐 Resizing image from ${img.width}x${img.height} to ${width}x${height}`);
+            }
+
+            canvas.width = width;
+            canvas.height = height;
             const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0);
+
+            // Draw resized image
+            ctx.drawImage(img, 0, 0, width, height);
 
             // Convert to WebP
             const webpDataUrl = canvas.toDataURL('image/webp', quality);
+
+            // Calculate file size reduction
+            const originalSize = (dataUrl.length * 0.75 / 1024).toFixed(1); // Rough KB estimate
+            const webpSize = (webpDataUrl.length * 0.75 / 1024).toFixed(1);
+            const savings = ((1 - webpSize / originalSize) * 100).toFixed(0);
+
+            console.log(`✅ WebP conversion: ${originalSize}KB → ${webpSize}KB (${savings}% smaller)`);
+
             resolve({
                 dataUrl: webpDataUrl,
                 base64: webpDataUrl.split(',')[1]
@@ -1554,6 +1583,7 @@ function completeDotProgress() {
 
 async function uploadImages() {
     const urls = [];
+    const imagesToUpload = [];
 
     for (let i = 0; i < uploadedFiles.length; i++) {
         const item = uploadedFiles[i];
@@ -1565,23 +1595,6 @@ async function uploadImages() {
             continue;
         }
 
-        // Determine mime type from dataUrl (handles PNG from crop, WebP, JPEG, etc.)
-        let mimeType = 'image/jpeg';
-        let extension = '.jpg';
-
-        if (item.dataUrl) {
-            if (item.dataUrl.startsWith('data:image/png')) {
-                mimeType = 'image/png';
-                extension = '.png';
-            } else if (item.dataUrl.startsWith('data:image/webp')) {
-                mimeType = 'image/webp';
-                extension = '.webp';
-            } else if (item.dataUrl.startsWith('data:image/gif')) {
-                mimeType = 'image/gif';
-                extension = '.gif';
-            }
-        }
-
         // Get base64 data
         const base64 = item.base64;
         if (!base64) {
@@ -1589,30 +1602,95 @@ async function uploadImages() {
             continue;
         }
 
-        // Convert base64 to blob with correct mime type
-        const blob = await fetch(`data:${mimeType};base64,${base64}`).then(r => r.blob());
-
-        // Generate filename
+        // Generate filename (WebP format)
         const baseName = item.file?.name?.replace(/\.[^.]+$/, '') || 'image';
-        const fileName = `${Date.now()}_${i}_${baseName.replace(/[^a-zA-Z0-9]/g, '_')}${extension}`;
+        const fileName = `${Date.now()}_${i}_${baseName.replace(/[^a-zA-Z0-9]/g, '_')}.webp`;
 
-        const { data, error } = await supabaseClient.storage
-            .from('prompt-images')
-            .upload(fileName, blob, { contentType: mimeType });
+        imagesToUpload.push({
+            base64: base64,
+            filename: fileName
+        });
+    }
 
-        if (error) throw error;
+    // Upload to R2 via Edge Function
+    if (imagesToUpload.length > 0) {
+        try {
+            // Get current session
+            const { data: { session } } = await supabaseClient.auth.getSession();
 
-        // Get public URL
-        const { data: urlData } = supabaseClient.storage
-            .from('prompt-images')
-            .getPublicUrl(fileName);
+            if (!session) {
+                throw new Error('Not authenticated');
+            }
 
-        urls.push(urlData.publicUrl);
-        console.log(`📤 Uploaded ${fileName} (${mimeType})`);
+            console.log(`📤 Uploading ${imagesToUpload.length} images to R2 CDN...`);
+
+            // Call Edge Function
+            const response = await fetch(
+                'https://mmkugdibsaeoevliebzk.supabase.co/functions/v1/upload-to-r2',
+                {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${session.access_token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ images: imagesToUpload })
+                }
+            );
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'R2 upload failed');
+            }
+
+            const result = await response.json();
+            urls.push(...result.urls);
+
+            console.log(`✅ Successfully uploaded ${result.urls.length} images to R2 CDN`);
+            result.urls.forEach((url, idx) => {
+                console.log(`   ${idx + 1}. ${url}`);
+            });
+
+        } catch (r2Error) {
+            console.error('❌ R2 upload failed:', r2Error);
+
+            // Fallback to Supabase Storage if R2 fails
+            console.warn('⚠️ Falling back to Supabase Storage...');
+
+            for (let i = 0; i < imagesToUpload.length; i++) {
+                const { base64, filename } = imagesToUpload[i];
+
+                try {
+                    // Convert base64 to blob
+                    const blob = await fetch(`data:image/webp;base64,${base64}`).then(r => r.blob());
+
+                    const { data, error } = await supabaseClient.storage
+                        .from('prompt-images')
+                        .upload(filename, blob, { contentType: 'image/webp' });
+
+                    if (error) throw error;
+
+                    // Get public URL
+                    const { data: urlData } = supabaseClient.storage
+                        .from('prompt-images')
+                        .getPublicUrl(filename);
+
+                    urls.push(urlData.publicUrl);
+                    console.log(`📤 Fallback upload: ${filename} (Supabase Storage)`);
+                } catch (storageError) {
+                    console.error(`❌ Failed to upload ${filename} to Supabase:`, storageError);
+                    // Continue with other images
+                }
+            }
+
+            if (urls.length === 0) {
+                throw new Error('All image uploads failed (R2 and Supabase)');
+            }
+        }
     }
 
     return urls;
 }
+
 
 function generateCodeSnippet(promptData) {
     const snippet = `

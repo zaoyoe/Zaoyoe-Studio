@@ -1,6 +1,16 @@
 {
+  "name": "zaoyoe-studio",
+  "version": "1.0.0",
+  "description": "AI Prompt Gallery",
+  "scripts": {
+    "optimize-images": "node scripts/optimize-images.js",
+    "upload-to-r2": "node scripts/upload-to-r2.js"
+  },
   "dependencies": {
-    "@supabase/supabase-js": "^2.88.0"
+    "@supabase/supabase-js": "^2.39.0",
+    "sharp": "^0.33.2",
+    "@aws-sdk/client-s3": "^3.478.0",
+    "dotenv": "^16.3.1"
   },
   "devDependencies": {
     "@google/generative-ai": "^0.24.1",

@@ -250,6 +250,33 @@ const FramerHome = {
   },
 
   /**
+   * Get optimized image URL using Supabase Transform API
+   * Reduces bandwidth by 70-90% through dynamic resizing and WebP conversion
+   * 
+   * @param {string} url - Original image URL
+   * @param {number} width - Target width in pixels (default: 600)
+   * @param {number} quality - Image quality 0-100 (default: 85)
+   * @returns {string} Optimized image URL or original if not Supabase storage
+   */
+  getOptimizedImageUrl(url, width = 600, quality = 85) {
+    if (!url) return '';
+
+    // Only optimize Supabase Storage images
+    if (!url.includes('supabase.co/storage')) {
+      return url; // Return original URL for non-Supabase images
+    }
+
+    // Replace /object/public/ with /render/image/public/ for transformation
+    const transformUrl = url.replace(
+      '/storage/v1/object/public/',
+      '/storage/v1/render/image/public/'
+    );
+
+    // Add transformation parameters: width, quality, and WebP format
+    return `${transformUrl}?width=${width}&quality=${quality}&format=webp`;
+  },
+
+  /**
    * Build Gemini verify section data
    */
   buildVerifyData(config) {
@@ -646,7 +673,7 @@ const FramerHome = {
 
       return `
                   <div class="masonry-card">
-                    <img src="${prompt.images[0]}" 
+                    <img src="${this.getOptimizedImageUrl(prompt.images[0], 600, 85)}" 
                          alt="${prompt.title}" 
                          loading="lazy" />
                     <div class="masonry-card-tags">

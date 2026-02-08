@@ -749,7 +749,7 @@ async function deleteMessage(messageId) {
     }
 }
 
-// ==================== 实时订阅 (Supabase Realtime) ====================
+// ==================== 实时订阅 (使用 NotificationManager 的降级方案) ====================
 let realtimeChannel = null;
 
 function enableRealTimeUpdates() {
@@ -758,8 +758,60 @@ function enableRealTimeUpdates() {
         return;
     }
 
-    console.log('🔌 Enabling Supabase Realtime...');
+    console.log('🔌 Enabling notifications with auto-fallback...');
 
+    // Check if NotificationManager is available
+    if (typeof window.NotificationManager === 'undefined') {
+        console.error('❌ NotificationManager not loaded! Falling back to direct Realtime');
+        enableDirectRealtime();
+        return;
+    }
+
+    // Subscribe to guestbook_messages with auto-fallback
+    window.NotificationManager.subscribe({
+        channel: 'guestbook-messages',
+        table: 'guestbook_messages',
+        event: '*',
+        onMessage: (payload) => {
+            console.log('📬 Message change:', payload.eventType || payload.new?.id);
+            handleRealtimeEvent('message', payload);
+        }
+    });
+
+    // Subscribe to guestbook_comments with auto-fallback
+    window.NotificationManager.subscribe({
+        channel: 'guestbook-comments',
+        table: 'guestbook_comments',
+        event: '*',
+        onMessage: (payload) => {
+            console.log('💬 Comment change:', payload.eventType || payload.new?.id);
+            handleRealtimeEvent('comment', payload);
+        }
+    });
+
+    // Subscribe to guestbook_likes with auto-fallback
+    window.NotificationManager.subscribe({
+        channel: 'guestbook-likes',
+        table: 'guestbook_likes',
+        event: '*',
+        onMessage: (payload) => {
+            console.log('❤️ Like change:', payload.eventType || payload.new?.id);
+            handleRealtimeEvent('like', payload);
+        }
+    });
+
+    // Enable automatic Realtime recovery (tries to reconnect every 60s)
+    window.NotificationManager.enableRealtimeRecovery();
+
+    // Mark as subscribed
+    realtimeChannel = true;
+
+    console.log('✅ Notifications enabled with automatic fallback');
+    console.log('📊 Current mode:', window.NotificationManager.getMode());
+}
+
+// Fallback: Direct Realtime without NotificationManager (for compatibility)
+function enableDirectRealtime() {
     realtimeChannel = window.supabaseClient
         .channel('guestbook-changes')
         .on('postgres_changes',
