@@ -58,8 +58,8 @@ async function process() {
         try {
             const buffer = await downloadImage(url);
             const thumb = await sharp(buffer)
-                .resize(400, null, { withoutEnlargement: true, fit: 'inside' })
-                .webp({ quality: 80 })
+                .resize(800, null, { withoutEnlargement: true, fit: 'inside' })
+                .webp({ quality: 85 })
                 .toBuffer();
 
             await s3Client.send(new PutObjectCommand({

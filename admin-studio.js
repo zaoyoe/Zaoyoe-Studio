@@ -1588,7 +1588,7 @@ function completeDotProgress() {
  * @param {number} quality - WebP quality 0-1 (default: 0.8)
  * @returns {Promise<string>} - Thumbnail base64 (without data: prefix)
  */
-async function generateThumbnail(base64, maxWidth = 400, quality = 0.8) {
+async function generateThumbnail(base64, maxWidth = 800, quality = 0.85) {
     return new Promise((resolve, reject) => {
         const img = new Image();
         img.onload = () => {
@@ -1652,7 +1652,7 @@ async function uploadImages() {
 
         // Generate and add thumbnail
         try {
-            const thumbBase64 = await generateThumbnail(base64, 400, 0.8);
+            const thumbBase64 = await generateThumbnail(base64, 800, 0.85);
             imagesToUpload.push({
                 base64: thumbBase64,
                 filename: fileName, // Same filename, Edge Function will add thumb/ prefix

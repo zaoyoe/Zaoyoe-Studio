@@ -28,8 +28,8 @@ const R2_SECRET_KEY = process.env.R2_SECRET_ACCESS_KEY;
 const R2_BUCKET = process.env.R2_BUCKET_NAME || 'zaoyoeimages';
 const R2_PUBLIC_URL = 'https://cdn.zaoyoe.com';
 
-const THUMB_WIDTH = 400;
-const THUMB_QUALITY = 80;
+const THUMB_WIDTH = 800;
+const THUMB_QUALITY = 85;
 const BATCH_SIZE = 10;
 const DELAY_BETWEEN_BATCHES = 1000;
 
