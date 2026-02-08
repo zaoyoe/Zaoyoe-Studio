@@ -1182,32 +1182,31 @@ h3 {
         font-size: 14px;
     }
 
-    /* Mobile Entry Cards Optimization */
+    /* Mobile Entry Cards - Fixed Grid Layout (no scrolling) */
     .hero-carousel {
-        scroll-snap-type: x mandatory;
-        scroll-padding-inline: calc(50vw - 70px);
-        -webkit-overflow-scrolling: touch;
-        /* iOS smooth scroll */
+        width: 100%;
+        margin-inline: 0;
+        overflow: visible;
+        scroll-snap-type: none;
     }
 
     .hero-carousel-track {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
         gap: 16px;
-        /* Reduced from 48px */
-        padding: 0 calc(50vw - 70px);
-        /* Center cards: 50vw - half of card width (140/2 = 70) */
+        padding: 0 var(--spacing-lg);
+        width: 100%;
     }
 
     .entry-card {
-        width: 140px;
-        /* Reduced from 180px */
-        height: 120px;
-        /* Reduced from 140px */
-        scroll-snap-align: center;
+        width: 100%;
+        height: auto;
+        min-height: 100px;
+        padding: var(--spacing-md);
     }
 
     .entry-card i {
         font-size: 28px;
-        /* Slightly smaller icon */
     }
 
     .entry-card span {
