@@ -1581,6 +1581,43 @@ function completeDotProgress() {
     });
 }
 
+/**
+ * Generate a thumbnail from base64 image using Canvas API
+ * @param {string} base64 - Original image base64 (without data: prefix)
+ * @param {number} maxWidth - Maximum width for thumbnail (default: 400)
+ * @param {number} quality - WebP quality 0-1 (default: 0.8)
+ * @returns {Promise<string>} - Thumbnail base64 (without data: prefix)
+ */
+async function generateThumbnail(base64, maxWidth = 400, quality = 0.8) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+            // Only resize if image is wider than maxWidth
+            if (img.width <= maxWidth) {
+                resolve(base64); // Return original if already small
+                return;
+            }
+
+            const canvas = document.createElement('canvas');
+            const ratio = maxWidth / img.width;
+            canvas.width = maxWidth;
+            canvas.height = Math.round(img.height * ratio);
+
+            const ctx = canvas.getContext('2d');
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+            // Convert to WebP base64
+            const thumbnailDataUrl = canvas.toDataURL('image/webp', quality);
+            const thumbnailBase64 = thumbnailDataUrl.split(',')[1];
+            resolve(thumbnailBase64);
+        };
+        img.onerror = () => reject(new Error('Failed to load image for thumbnail generation'));
+        img.src = `data:image/webp;base64,${base64}`;
+    });
+}
+
 async function uploadImages() {
     const urls = [];
     const imagesToUpload = [];
@@ -1606,10 +1643,26 @@ async function uploadImages() {
         const baseName = item.file?.name?.replace(/\.[^.]+$/, '') || 'image';
         const fileName = `${Date.now()}_${i}_${baseName.replace(/[^a-zA-Z0-9]/g, '_')}.webp`;
 
+        // Add original image
         imagesToUpload.push({
             base64: base64,
-            filename: fileName
+            filename: fileName,
+            isThumb: false
         });
+
+        // Generate and add thumbnail
+        try {
+            const thumbBase64 = await generateThumbnail(base64, 400, 0.8);
+            imagesToUpload.push({
+                base64: thumbBase64,
+                filename: fileName, // Same filename, Edge Function will add thumb/ prefix
+                isThumb: true
+            });
+            console.log(`🖼️ Generated thumbnail for: ${fileName}`);
+        } catch (thumbError) {
+            console.warn(`⚠️ Failed to generate thumbnail for ${fileName}:`, thumbError);
+            // Continue without thumbnail
+        }
     }
 
     // Upload to R2 via Edge Function

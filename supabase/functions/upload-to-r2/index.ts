@@ -83,7 +83,7 @@ serve(async (req) => {
         const uploadedUrls: string[] = [];
 
         for (const image of images) {
-            const { base64, filename } = image;
+            const { base64, filename, isThumb } = image;
 
             if (!base64 || !filename) {
                 console.warn('Skipping invalid image:', image);
@@ -98,8 +98,11 @@ serve(async (req) => {
                     bytes[i] = binaryString.charCodeAt(i);
                 }
 
-                // Upload to R2
-                const key = `prompts/${filename}`;
+                // Determine upload path based on isThumb flag
+                const key = isThumb
+                    ? `prompts/thumb/${filename}`
+                    : `prompts/${filename}`;
+
                 await s3Client.send(
                     new PutObjectCommand({
                         Bucket: 'zaoyoeimages',
@@ -110,9 +113,13 @@ serve(async (req) => {
                 );
 
                 const publicUrl = `${R2_PUBLIC_URL}/${key}`;
-                uploadedUrls.push(publicUrl);
 
-                console.log(`✅ Uploaded: ${filename} → ${publicUrl}`);
+                // Only add original images to uploadedUrls (not thumbnails)
+                if (!isThumb) {
+                    uploadedUrls.push(publicUrl);
+                }
+
+                console.log(`✅ Uploaded ${isThumb ? '(thumb)' : ''}: ${filename} → ${publicUrl}`);
             } catch (uploadError) {
                 console.error(`Failed to upload ${filename}:`, uploadError);
                 // Continue with other images even if one fails

@@ -250,25 +250,19 @@ const FramerHome = {
   },
 
   /**
-   * Get optimized image URL using Cloudflare Image Resizing or Supabase Transform API
-   * Reduces bandwidth by 70-90% through dynamic resizing and WebP conversion
+   * Get optimized image URL by using pre-generated thumbnails
+   * Thumbnails are stored at: /prompts/thumb/xxx.webp
+   * Original images are at:   /prompts/xxx.webp
    * 
    * @param {string} url - Original image URL
-   * @param {number} width - Target width in pixels (default: 600)
-   * @param {number} quality - Image quality 0-100 (default: 85)
-   * @returns {string} Optimized image URL or original if not supported
+   * @returns {string} Thumbnail URL for R2 CDN images, original for others
    */
-  getOptimizedImageUrl(url, width = 600, quality = 85) {
+  getOptimizedImageUrl(url) {
     if (!url) return '';
 
-    // Cloudflare R2 CDN images - use Cloudflare Image Resizing
-    if (url.includes('cdn.zaoyoe.com')) {
-      // Extract the path after the domain
-      // Original: https://cdn.zaoyoe.com/prompts/xxx.webp
-      // Optimized: https://cdn.zaoyoe.com/cdn-cgi/image/width=600,quality=85,format=auto/prompts/xxx.webp
-      const urlObj = new URL(url);
-      const path = urlObj.pathname; // /prompts/xxx.webp
-      return `https://cdn.zaoyoe.com/cdn-cgi/image/width=${width},quality=${quality},format=auto${path}`;
+    // R2 CDN images - use pre-generated thumbnails
+    if (url.includes('cdn.zaoyoe.com/prompts/') && !url.includes('/thumb/')) {
+      return url.replace('/prompts/', '/prompts/thumb/');
     }
 
     // Supabase Storage images - use Supabase Transform API
@@ -277,7 +271,7 @@ const FramerHome = {
         '/storage/v1/object/public/',
         '/storage/v1/render/image/public/'
       );
-      return `${transformUrl}?width=${width}&quality=${quality}&format=webp`;
+      return `${transformUrl}?width=600&quality=85&format=webp`;
     }
 
     // Return original URL for other images

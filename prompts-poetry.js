@@ -1,32 +1,24 @@
 // ========================================
-// IMAGE OPTIMIZATION (Cloudflare Image Resizing)
+// IMAGE OPTIMIZATION (Thumbnail URL Rule)
 // ========================================
 /**
- * Get optimized image URL using Cloudflare Image Resizing
- * Reduces bandwidth by 70-90% through dynamic resizing and WebP conversion
+ * Get optimized image URL by using pre-generated thumbnails
+ * Thumbnails are stored at: /prompts/thumb/xxx.webp
+ * Original images are at:   /prompts/xxx.webp
  * 
  * @param {string} url - Original image URL
- * @param {number} width - Target width in pixels (default: 400)
- * @param {number} quality - Image quality 0-100 (default: 80)
- * @returns {string} Optimized image URL or original if not supported
+ * @returns {string} Thumbnail URL for R2 CDN images, original for others
  */
-function getOptimizedImageUrl(url, width = 400, quality = 80) {
+function getOptimizedImageUrl(url) {
     if (!url) return '';
 
-    // Cloudflare R2 CDN images - use Cloudflare Image Resizing
-    if (url.includes('cdn.zaoyoe.com')) {
-        // Original: https://cdn.zaoyoe.com/prompts/xxx.webp
-        // Optimized: https://cdn.zaoyoe.com/cdn-cgi/image/width=400,quality=80,format=auto/prompts/xxx.webp
-        try {
-            const urlObj = new URL(url);
-            const path = urlObj.pathname;
-            return `https://cdn.zaoyoe.com/cdn-cgi/image/width=${width},quality=${quality},format=auto${path}`;
-        } catch (e) {
-            return url; // Return original if URL parsing fails
-        }
+    // R2 CDN images - use pre-generated thumbnails
+    if (url.includes('cdn.zaoyoe.com/prompts/') && !url.includes('/thumb/')) {
+        // Convert: /prompts/xxx.webp → /prompts/thumb/xxx.webp
+        return url.replace('/prompts/', '/prompts/thumb/');
     }
 
-    // Return original URL for other images
+    // Return original URL for other images or already-thumbnail URLs
     return url;
 }
 
