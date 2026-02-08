@@ -1,3 +1,35 @@
+// ========================================
+// IMAGE OPTIMIZATION (Cloudflare Image Resizing)
+// ========================================
+/**
+ * Get optimized image URL using Cloudflare Image Resizing
+ * Reduces bandwidth by 70-90% through dynamic resizing and WebP conversion
+ * 
+ * @param {string} url - Original image URL
+ * @param {number} width - Target width in pixels (default: 400)
+ * @param {number} quality - Image quality 0-100 (default: 80)
+ * @returns {string} Optimized image URL or original if not supported
+ */
+function getOptimizedImageUrl(url, width = 400, quality = 80) {
+    if (!url) return '';
+
+    // Cloudflare R2 CDN images - use Cloudflare Image Resizing
+    if (url.includes('cdn.zaoyoe.com')) {
+        // Original: https://cdn.zaoyoe.com/prompts/xxx.webp
+        // Optimized: https://cdn.zaoyoe.com/cdn-cgi/image/width=400,quality=80,format=auto/prompts/xxx.webp
+        try {
+            const urlObj = new URL(url);
+            const path = urlObj.pathname;
+            return `https://cdn.zaoyoe.com/cdn-cgi/image/width=${width},quality=${quality},format=auto${path}`;
+        } catch (e) {
+            return url; // Return original if URL parsing fails
+        }
+    }
+
+    // Return original URL for other images
+    return url;
+}
+
 // --- Theme Toggle ---
 function initTheme() {
     const savedTheme = localStorage.getItem('theme');
@@ -3352,7 +3384,7 @@ function renderCurrentPage() {
             <button class="card-fav-btn ${isSaved ? 'saved' : ''}" onclick="toggleFavorite(${item.id}, this, event)">
                 <i class="fas fa-heart"></i>
             </button>
-            <img src="${item.images[0]}" class="card-image" loading="lazy" alt="${getLocalizedField(item, 'title')}" onload="this.classList.add('loaded')">
+            <img src="${getOptimizedImageUrl(item.images[0], 400, 80)}" class="card-image" loading="lazy" alt="${getLocalizedField(item, 'title')}" onload="this.classList.add('loaded')">
             <div class="card-overlay">
                 <div class="card-title">${getLocalizedField(item, 'title')}</div>
                 ${indicators}
@@ -3371,7 +3403,7 @@ function renderCurrentPage() {
 
                 hoverInterval = setInterval(() => {
                     currentIndex = (currentIndex + 1) % images.length;
-                    img.src = images[currentIndex];
+                    img.src = getOptimizedImageUrl(images[currentIndex], 400, 80);
                     dots.forEach((dot, i) => dot.classList.toggle('active', i === currentIndex));
                 }, 1500);
             });
@@ -3382,7 +3414,7 @@ function renderCurrentPage() {
                 const img = card.querySelector('.card-image');
                 const dots = card.querySelectorAll('.indicator-dot');
                 const images = JSON.parse(card.dataset.images);
-                img.src = images[0];
+                img.src = getOptimizedImageUrl(images[0], 400, 80);
                 dots.forEach((dot, i) => dot.classList.toggle('active', i === 0));
             });
         }

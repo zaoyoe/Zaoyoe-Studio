@@ -250,30 +250,38 @@ const FramerHome = {
   },
 
   /**
-   * Get optimized image URL using Supabase Transform API
+   * Get optimized image URL using Cloudflare Image Resizing or Supabase Transform API
    * Reduces bandwidth by 70-90% through dynamic resizing and WebP conversion
    * 
    * @param {string} url - Original image URL
    * @param {number} width - Target width in pixels (default: 600)
    * @param {number} quality - Image quality 0-100 (default: 85)
-   * @returns {string} Optimized image URL or original if not Supabase storage
+   * @returns {string} Optimized image URL or original if not supported
    */
   getOptimizedImageUrl(url, width = 600, quality = 85) {
     if (!url) return '';
 
-    // Only optimize Supabase Storage images
-    if (!url.includes('supabase.co/storage')) {
-      return url; // Return original URL for non-Supabase images
+    // Cloudflare R2 CDN images - use Cloudflare Image Resizing
+    if (url.includes('cdn.zaoyoe.com')) {
+      // Extract the path after the domain
+      // Original: https://cdn.zaoyoe.com/prompts/xxx.webp
+      // Optimized: https://cdn.zaoyoe.com/cdn-cgi/image/width=600,quality=85,format=auto/prompts/xxx.webp
+      const urlObj = new URL(url);
+      const path = urlObj.pathname; // /prompts/xxx.webp
+      return `https://cdn.zaoyoe.com/cdn-cgi/image/width=${width},quality=${quality},format=auto${path}`;
     }
 
-    // Replace /object/public/ with /render/image/public/ for transformation
-    const transformUrl = url.replace(
-      '/storage/v1/object/public/',
-      '/storage/v1/render/image/public/'
-    );
+    // Supabase Storage images - use Supabase Transform API
+    if (url.includes('supabase.co/storage')) {
+      const transformUrl = url.replace(
+        '/storage/v1/object/public/',
+        '/storage/v1/render/image/public/'
+      );
+      return `${transformUrl}?width=${width}&quality=${quality}&format=webp`;
+    }
 
-    // Add transformation parameters: width, quality, and WebP format
-    return `${transformUrl}?width=${width}&quality=${quality}&format=webp`;
+    // Return original URL for other images
+    return url;
   },
 
   /**
@@ -793,7 +801,7 @@ const FramerHome = {
           
           <div style="margin-top: 32px; display: flex; gap: 12px; flex-wrap: wrap;">
             ${data.features.map(feature => `
-              <span style="padding: 8px 16px; background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple)); border-radius: 999px; font-size: 14px; font-weight: 600;">
+              <span style="font-size: 14px; font-weight: 500; color: var(--text-secondary);">
                 ${feature}
               </span>
             `).join('')}
