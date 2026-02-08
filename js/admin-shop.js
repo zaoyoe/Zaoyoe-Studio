@@ -658,33 +658,51 @@ Example output format:
             // 1. Compress Image
             const compressedBlob = await this.compressImage(file);
 
-            // 2. Generate Filename (ensure .webp extension)
-            const fileName = `icon_${Date.now()}.webp`;
+            // 2. Convert to Base64
+            const base64Data = await new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.readAsDataURL(compressedBlob);
+            });
 
-            // 3. Upload
-            let bucket = 'shop-images';
-            let { data, error } = await supabaseClient.storage
-                .from(bucket)
-                .upload(fileName, compressedBlob, {
-                    contentType: 'image/webp'
-                });
-
-            if (error) {
-                console.warn('Primary bucket failed, trying fallback...');
-                bucket = 'prompt-images';
-                const res = await supabaseClient.storage.from(bucket).upload(fileName, compressedBlob, {
-                    contentType: 'image/webp'
-                });
-                if (res.error) throw res.error;
+            // 3. Get current user session
+            const { data: { session } } = await window.supabaseClient.auth.getSession();
+            if (!session) {
+                throw new Error('请先登录');
             }
 
-            const { data: urlData } = supabaseClient.storage.from(bucket).getPublicUrl(fileName);
-            const publicUrl = urlData.publicUrl;
+            // 4. Upload to R2 via Edge Function
+            uploadText.textContent = '⏳ 上传到 R2...';
+            const productId = document.getElementById('editProductId').value || `product_${Date.now()}`;
 
-            // Set value
-            document.getElementById('prodIcon').value = publicUrl;
+            const response = await fetch(
+                'https://mmkugdibsaeoevliebzk.supabase.co/functions/v1/upload-avatar',
+                {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${session.access_token}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        userId: session.user.id,
+                        type: 'product',
+                        productId: productId,
+                        imageData: base64Data
+                    })
+                }
+            );
 
-            // Update Preview
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Upload failed');
+            }
+
+            const { imageUrl } = await response.json();
+
+            // 5. Set value
+            document.getElementById('prodIcon').value = imageUrl;
+
+            // 6. Update Preview
             this.updatePreview();
 
             uploadText.textContent = '✅ 上传成功';
@@ -692,6 +710,8 @@ Example output format:
                 uploadText.textContent = '点击更换图片 (支持 JPG, PNG, WebP)';
                 iconBox.style.opacity = '1';
             }, 2000);
+
+            console.log('✅ Product image uploaded to R2:', imageUrl);
 
         } catch (err) {
             console.error('Upload failed:', err);

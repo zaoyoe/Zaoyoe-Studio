@@ -10,7 +10,7 @@ const { createClient } = require('@supabase/supabase-js');
 const supabaseUrl = 'https://mmkugdibsaeoevliebzk.supabase.co';
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ta3VnZGlic2Flb2V2bGllYnprIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NTkzOTM2NiwiZXhwIjoyMDgxNTE1MzY2fQ.FdwbzapB8-TgaZKiocHgsQuuMy250qAilACZkO5CqhY';
 
-const R2_CDN_BASE = 'https://pub-8c83901b01d7446b834ec8296623bf73.r2.dev/prompts/';
+const R2_CDN_BASE = 'https://cdn.zaoyoe.com/prompts/';
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 

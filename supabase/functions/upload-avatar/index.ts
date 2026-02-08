@@ -8,8 +8,10 @@ const corsHeaders = {
 
 interface UploadRequest {
     userId: string
+    type?: 'avatar' | 'product'  // Upload type
     imageUrl?: string      // External URL (e.g., Google OAuth)
     imageData?: string     // Base64 data (manual upload)
+    productId?: string     // Product ID for naming (optional)
 }
 
 serve(async (req) => {
@@ -26,7 +28,7 @@ serve(async (req) => {
         }
 
         // Parse request
-        const { userId, imageUrl, imageData }: UploadRequest = await req.json()
+        const { userId, type = 'avatar', imageUrl, imageData, productId }: UploadRequest = await req.json()
 
         if (!userId) {
             throw new Error('userId is required')
@@ -36,7 +38,7 @@ serve(async (req) => {
             throw new Error('Either imageUrl or imageData is required')
         }
 
-        console.log(`📸 Processing avatar for user: ${userId}`)
+        console.log(`📸 Processing ${type} image for user: ${userId}`)
 
         // Get image buffer
         let imageBuffer: Uint8Array
@@ -76,8 +78,11 @@ serve(async (req) => {
             },
         })
 
-        // Generate filename
-        const filename = `avatars/${userId}.jpg`
+        // Generate filename based on type
+        const filename = type === 'product'
+            ? `products/${productId || Date.now()}.jpg`
+            : `avatars/${userId}.jpg`
+
         const bucketName = Deno.env.get('R2_BUCKET_NAME') || 'zaoyoe-images'
 
         console.log(`⬆️ Uploading to R2: ${bucketName}/${filename}`)
@@ -94,15 +99,15 @@ serve(async (req) => {
         )
 
         // Generate public URL
-        const publicUrl = Deno.env.get('R2_PUBLIC_URL') || 'https://pub-8c83901b01d7446b834ec829b623bf7b.r2.dev'
-        const avatarUrl = `${publicUrl}/${filename}`
+        const publicUrl = Deno.env.get('R2_PUBLIC_URL') || 'https://cdn.zaoyoe.com'
+        const uploadedImageUrl = `${publicUrl}/${filename}`
 
-        console.log(`✅ Avatar uploaded successfully: ${avatarUrl}`)
+        console.log(`✅ ${type} image uploaded successfully: ${uploadedImageUrl}`)
 
         return new Response(
             JSON.stringify({
                 success: true,
-                avatarUrl
+                imageUrl: uploadedImageUrl
             }),
             {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },

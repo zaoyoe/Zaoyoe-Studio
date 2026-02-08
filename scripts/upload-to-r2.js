@@ -135,7 +135,7 @@ async function uploadAllImages() {
 
         if (successCount > 0) {
             console.log('\n🌐 访问您的图片:');
-            console.log(`   https://pub-8c83901b01d7446b834ec8296623bf73.r2.dev/prompts/[文件名]`);
+            console.log(`   https://cdn.zaoyoe.com/prompts/[文件名]`);
             console.log('\n💡 提示: 图片已成功上传并可通过公共URL访问');
             console.log('💡 下一步: 配置自定义域名以获得更好的性能和稳定性');
         }
