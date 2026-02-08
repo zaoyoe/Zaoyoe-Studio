@@ -699,6 +699,8 @@ h3 {
     width: 100vw;
     /* Symmetrical negative margins to ensure carousel spans full viewport width */
     margin-inline: calc(-50vw + 50%);
+    margin-top: 120px;
+    /* Add spacing above carousel */
     overflow-x: scroll;
     overflow-y: hidden;
     scrollbar-width: none;
@@ -744,7 +746,7 @@ h3 {
 }
 
 .entry-card i {
-    font-size: 32px;
+    font-size: 40px;
     margin-bottom: var(--spacing-sm);
 }
 
@@ -1201,7 +1203,7 @@ h3 {
     }
 
     .entry-card i {
-        font-size: 28px;
+        font-size: 40px;
     }
 
     .entry-card span {
