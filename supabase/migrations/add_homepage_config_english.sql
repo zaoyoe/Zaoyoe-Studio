@@ -21,7 +21,7 @@ SET content = jsonb_set(
   jsonb_set(
     content,
     '{section_title_en}',
-    '"AI Prompt Studio"'::jsonb
+    '"AI Prompt"'::jsonb
   ),
   '{section_subtitle_en}',
   '"Boost creativity, unleash inspiration"'::jsonb

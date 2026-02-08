@@ -301,12 +301,20 @@ const FramerHome = {
    */
   async buildTickerData(config) {
     const lang = window.i18n?.getCurrentLanguage() || 'zh';
-    const tagsField = lang === 'en' ? 'tags_en' : 'tags';
 
-    // Extract unique tags from prompts using language-specific field
-    const tags = [...new Set(
-      window.PROMPTS.flatMap(p => p[tagsField] || p.tags || [])
-    )].slice(0, 20);
+    // Extract tags from aiTags (bilingual support)
+    const tagSet = new Set();
+    window.PROMPTS.forEach(p => {
+      if (p.aiTags && typeof p.aiTags === 'object') {
+        // Extract from all categories with current language
+        ['styles', 'objects', 'scenes', 'mood'].forEach(cat => {
+          const tags = p.aiTags[cat]?.[lang] || p.aiTags[cat]?.zh || [];
+          tags.forEach(t => tagSet.add(t));
+        });
+      }
+    });
+
+    const tags = Array.from(tagSet).slice(0, 20);
 
     // Get product names using localized fields
     const productNames = this.cachedData?.shop?.map(p =>
@@ -399,10 +407,7 @@ const FramerHome = {
 
       const tagCounts = {};
       (this.cachedData.prompts || []).forEach(p => {
-        // Handle multiple tag formats
-        if (p.ai_tags && Array.isArray(p.ai_tags)) {
-          p.ai_tags.forEach(tag => tagCounts[tag] = (tagCounts[tag] || 0) + 1);
-        }
+        // Prioritize aiTags with bilingual support
         if (p.aiTags && typeof p.aiTags === 'object') {
           ['styles', 'objects', 'scenes', 'mood'].forEach(cat => {
             // Use current language tags (en or zh)
@@ -410,8 +415,9 @@ const FramerHome = {
             tags.forEach(tag => tagCounts[tag] = (tagCounts[tag] || 0) + 1);
           });
         }
-        if (p.tags && Array.isArray(p.tags)) {
-          p.tags.forEach(tag => tagCounts[tag] = (tagCounts[tag] || 0) + 1);
+        // Only use ai_tags or tags if aiTags is not available
+        else if (p.ai_tags && Array.isArray(p.ai_tags)) {
+          p.ai_tags.forEach(tag => tagCounts[tag] = (tagCounts[tag] || 0) + 1);
         }
       });
 
@@ -447,12 +453,13 @@ const FramerHome = {
       settings: {
         type: 'custom',
         render: () => {
+          const currentLang = window.i18n?.getCurrentLanguage() || 'zh';
           return `
             <div class="settings-dropdown-content">
               <button id="langToggleDropdown" class="lang-toggle-simple">
-                <span id="langZhDropdown" class="lang-text active">中</span>
+                <span id="langZhDropdown" class="lang-text ${currentLang === 'zh' ? 'active' : ''}">中</span>
                 <span class="lang-separator">|</span>
-                <span id="langEnDropdown" class="lang-text">EN</span>
+                <span id="langEnDropdown" class="lang-text ${currentLang === 'en' ? 'active' : ''}">EN</span>
               </button>
             </div>
           `;
@@ -484,43 +491,41 @@ const FramerHome = {
 
       document.body.appendChild(dropdown);
 
-      // Bind language toggle event (for settings dropdown only)
+      // Bind language toggle event using EVENT DELEGATION (for settings dropdown)
       if (dropdownType === 'settings') {
-        const langToggleBtn = document.getElementById('langToggleDropdown');
-        if (langToggleBtn) {
-          langToggleBtn.addEventListener('click', (e) => {
-            e.stopPropagation(); // Prevent dropdown from closing
-            if (window.i18n && typeof window.i18n.toggleLanguage === 'function') {
-              window.i18n.toggleLanguage();
-              console.log('🌐 Language toggle clicked');
-            } else {
-              console.error('❌ i18n.toggleLanguage not available');
-            }
-          });
+        // Use event delegation on the dropdown container to avoid listener loss on re-render
+        dropdown.addEventListener('click', (e) => {
+          e.stopPropagation();
 
-          // Listen for language changes to update button states
-          window.addEventListener('languageChanged', (e) => {
-            const langZh = document.getElementById('langZhDropdown');
-            const langEn = document.getElementById('langEnDropdown');
+          // Check if clicked on language toggle button or any of its children
+          const button = e.target.closest('#langToggleDropdown');
+          if (button && window.i18n) {
+            // Toggle language
+            window.i18n.toggleLanguage();
+            console.log('🌐 Language toggled from dropdown');
+          }
+        });
 
-            if (langZh && langEn) {
-              if (e.detail.lang === 'zh') {
-                langZh.classList.add('active');
-                langEn.classList.remove('active');
-              } else {
-                langZh.classList.remove('active');
-                langEn.classList.add('active');
-              }
-              console.log(`✅ Dropdown button state updated: ${e.detail.lang}`);
-            }
-          });
-        }
+        // Listen for language changes to trigger re-render
+        window.addEventListener('languageChanged', (e) => {
+          // Always re-render Settings dropdown to keep highlight in sync
+          // (even when not visible, so mobile menu can clone updated HTML)
+          if (data.render) {
+            dropdown.innerHTML = data.render();
+          }
+        });
       }
 
       let hideTimeout = null;
 
       const showDropdown = () => {
         clearTimeout(hideTimeout);
+
+        // Re-render settings dropdown to reflect current language
+        if (dropdownType === 'settings' && data.type === 'custom' && data.render) {
+          dropdown.innerHTML = data.render();
+        }
+
         // Position dropdown below nav bar (not trigger)
         const nav = document.querySelector('.framer-nav');
         const navRect = nav.getBoundingClientRect();
@@ -1075,12 +1080,52 @@ const FramerHome = {
         }
       };
 
+      // Bind language toggle event for mobile settings submenu
+      const bindMobileLanguageToggle = () => {
+        const mobileSettings = document.getElementById('settings-mobile');
+        if (mobileSettings) {
+          // Remove old listener if exists
+          const oldListener = mobileSettings._langToggleListener;
+          if (oldListener) {
+            mobileSettings.removeEventListener('click', oldListener);
+          }
+
+          // Add new listener with event delegation
+          const listener = (e) => {
+            e.stopPropagation();
+            const button = e.target.closest('#langToggleDropdown');
+            if (button && window.i18n) {
+              window.i18n.toggleLanguage();
+              console.log('🌐 Language toggled from mobile menu');
+            }
+          };
+
+          mobileSettings.addEventListener('click', listener);
+          mobileSettings._langToggleListener = listener; // Store for cleanup
+        }
+      };
+
       // Sync all dropdowns (wait a bit to ensure dropdowns are rendered)
       setTimeout(() => {
         syncDropdownToMobile('dropdown-prompts', 'prompts-mobile');
         syncDropdownToMobile('dropdown-shop', 'shop-mobile');
         syncDropdownToMobile('dropdown-settings', 'settings-mobile');
+
+        // Bind language toggle after syncing settings
+        bindMobileLanguageToggle();
       }, 100);
+
+      // Re-sync mobile submenus on language change
+      window.addEventListener('languageChanged', () => {
+        syncDropdownToMobile('dropdown-prompts', 'prompts-mobile');
+        syncDropdownToMobile('dropdown-shop', 'shop-mobile');
+        syncDropdownToMobile('dropdown-settings', 'settings-mobile');
+
+        // Re-bind language toggle after re-sync
+        bindMobileLanguageToggle();
+
+        console.log('✅ Mobile submenus re-synced for language:', window.i18n.getCurrentLanguage());
+      });
 
       // Mobile submenu toggle
       const mobileTriggers = mobileMenu.querySelectorAll('.mobile-menu-trigger');
