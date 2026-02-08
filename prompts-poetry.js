@@ -3376,7 +3376,7 @@ function renderCurrentPage() {
             <button class="card-fav-btn ${isSaved ? 'saved' : ''}" onclick="toggleFavorite(${item.id}, this, event)">
                 <i class="fas fa-heart"></i>
             </button>
-            <img src="${getOptimizedImageUrl(item.images[0], 400, 80)}" class="card-image" loading="lazy" alt="${getLocalizedField(item, 'title')}" onload="this.classList.add('loaded')">
+            <img src="${getOptimizedImageUrl(item.images[0])}" class="card-image" loading="lazy" alt="${getLocalizedField(item, 'title')}" onload="this.classList.add('loaded')" onerror="if(!this.dataset.fallback){this.dataset.fallback='1';this.src='${item.images[0]}';this.classList.add('loaded');}">
             <div class="card-overlay">
                 <div class="card-title">${getLocalizedField(item, 'title')}</div>
                 ${indicators}
@@ -3395,7 +3395,7 @@ function renderCurrentPage() {
 
                 hoverInterval = setInterval(() => {
                     currentIndex = (currentIndex + 1) % images.length;
-                    img.src = getOptimizedImageUrl(images[currentIndex], 400, 80);
+                    img.src = getOptimizedImageUrl(images[currentIndex]);
                     dots.forEach((dot, i) => dot.classList.toggle('active', i === currentIndex));
                 }, 1500);
             });
@@ -3406,7 +3406,7 @@ function renderCurrentPage() {
                 const img = card.querySelector('.card-image');
                 const dots = card.querySelectorAll('.indicator-dot');
                 const images = JSON.parse(card.dataset.images);
-                img.src = getOptimizedImageUrl(images[0], 400, 80);
+                img.src = getOptimizedImageUrl(images[0]);
                 dots.forEach((dot, i) => dot.classList.toggle('active', i === 0));
             });
         }

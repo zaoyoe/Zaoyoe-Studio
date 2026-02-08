@@ -675,9 +675,10 @@ const FramerHome = {
 
       return `
                   <div class="masonry-card">
-                    <img src="${this.getOptimizedImageUrl(prompt.images[0], 600, 85)}" 
+                    <img src="${this.getOptimizedImageUrl(prompt.images[0])}" 
                          alt="${prompt.title}" 
-                         loading="lazy" />
+                         loading="lazy"
+                         onerror="if(!this.dataset.fallback){this.dataset.fallback='1';this.src='${prompt.images[0]}';}" />
                     <div class="masonry-card-tags">
                       ${displayTags.map(tag => `<span class="masonry-tag">${tag}</span>`).join('')}
                     </div>
