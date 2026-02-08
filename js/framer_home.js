@@ -988,6 +988,26 @@ const FramerHome = {
     let currentIndex = 0;
     const cardCount = cards.length;
 
+    // Center first card on initialization
+    const centerCard = (index) => {
+      const card = cards[index];
+      if (!card) return;
+
+      const cardRect = card.getBoundingClientRect();
+      const trackRect = track.getBoundingClientRect();
+      const cardCenterInTrack = card.offsetLeft + card.offsetWidth / 2;
+      const viewportCenter = carousel.clientWidth / 2;
+      const scrollTarget = cardCenterInTrack - viewportCenter;
+
+      carousel.scrollTo({
+        left: Math.max(0, scrollTarget),
+        behavior: 'instant'
+      });
+    };
+
+    // Center first card immediately
+    setTimeout(() => centerCard(0), 100);
+
     // Update card scales and progress indicator
     const updateCarousel = () => {
       const scrollLeft = carousel.scrollLeft;

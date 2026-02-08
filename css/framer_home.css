@@ -697,12 +697,16 @@ h3 {
 /* ========== Hero Carousel =========== */
 .hero-carousel {
     width: 100vw;
-    margin-left: calc(-50vw + 50%);
+    /* Symmetrical negative margins to ensure carousel spans full viewport width */
+    margin-inline: calc(-50vw + 50%);
     overflow-x: scroll;
     overflow-y: hidden;
     scrollbar-width: none;
     -ms-overflow-style: none;
     padding: 0;
+    scroll-snap-type: x mandatory;
+    scroll-padding-inline: calc(50vw - 90px);
+    -webkit-overflow-scrolling: touch;
 }
 
 .hero-carousel::-webkit-scrollbar {
@@ -712,7 +716,7 @@ h3 {
 .hero-carousel-track {
     display: flex;
     gap: 48px;
-    /* Padding allows first card at left edge, last card at right edge */
+    /* Padding = 50vw - half of card width (180/2 = 90) for centering */
     padding: 0 calc(50vw - 90px);
     width: fit-content;
 }
@@ -1181,6 +1185,7 @@ h3 {
     /* Mobile Entry Cards Optimization */
     .hero-carousel {
         scroll-snap-type: x mandatory;
+        scroll-padding-inline: calc(50vw - 70px);
         -webkit-overflow-scrolling: touch;
         /* iOS smooth scroll */
     }
@@ -1188,8 +1193,8 @@ h3 {
     .hero-carousel-track {
         gap: 16px;
         /* Reduced from 48px */
-        padding: 0 calc(50vw - 80px);
-        /* Tighter padding to show more cards */
+        padding: 0 calc(50vw - 70px);
+        /* Center cards: 50vw - half of card width (140/2 = 70) */
     }
 
     .entry-card {
