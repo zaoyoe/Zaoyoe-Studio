@@ -20,6 +20,11 @@ const FramerHome = {
     // Check performance and apply degradation if needed
     this.checkPerformance();
 
+    // Wait for i18n to be ready before loading data
+    if (window.i18n?.ready) {
+      await window.i18n.ready();
+    }
+
     // Load configuration and data
     await this.loadAll();
 
@@ -135,24 +140,27 @@ const FramerHome = {
   },
 
   /**
-   * Fetch homepage configuration from Supabase
+   * Fetch homepage configuration from Supabase (with cache)
    */
   async fetchHomepageConfig() {
-    const { data, error } = await window.supabaseClient
-      .from('homepage_config')
-      .select('*')
-      .eq('is_visible', true)
-      .order('display_order', { ascending: true });
+    // Use cache with 30 minute TTL
+    return await Cache.loadWithCache('homepage_config', async () => {
+      const { data, error } = await window.supabaseClient
+        .from('homepage_config')
+        .select('*')
+        .eq('is_visible', true)
+        .order('display_order', { ascending: true });
 
-    if (error) throw error;
+      if (error) throw error;
 
-    // Convert array to object keyed by section
-    const config = {};
-    data.forEach(item => {
-      config[item.section] = item.content;
-    });
+      // Convert array to object keyed by section
+      const config = {};
+      data.forEach(item => {
+        config[item.section] = item.content;
+      });
 
-    return config;
+      return config;
+    }, 30);
   },
 
   /**
@@ -217,7 +225,7 @@ const FramerHome = {
   },
 
   /**
-   * Aggregate shop products from Supabase
+   * Aggregate shop products from Supabase (with cache)
    */
   async aggregateShop(config) {
     if (!config.enable_auto && config.custom_items?.length > 0) {
@@ -225,23 +233,27 @@ const FramerHome = {
     }
 
     try {
-      let query = window.supabaseClient
-        .from('shop_products')
-        .select('id, name, name_en, description, description_en, icon_url, price_points, stock_count, category')
-        .eq('is_active', true);
+      // Use cache with 15 minute TTL for shop products
+      const allProducts = await Cache.loadWithCache('shop_products', async () => {
+        const { data, error } = await window.supabaseClient
+          .from('shop_products')
+          .select('id, name, name_en, description, description_en, icon_url, price_points, stock_count, category')
+          .eq('is_active', true)
+          .order('display_order', { ascending: false })
+          .limit(50);
 
+        if (error) throw error;
+        return data || [];
+      }, 15);
+
+      // Filter by category if needed
+      let filtered = allProducts;
       if (config.category && config.category !== 'all') {
-        query = query.eq('category', config.category);
+        filtered = allProducts.filter(p => p.category === config.category);
       }
 
-      const { data, error } = await query
-        .order('display_order', { ascending: false })
-        .limit(50); // Fetch more for random selection
-
-      if (error) throw error;
-
       // Randomly select 6 products
-      const shuffled = (data || []).sort(() => Math.random() - 0.5);
+      const shuffled = filtered.sort(() => Math.random() - 0.5);
       return shuffled.slice(0, 6);
     } catch (error) {
       console.error('Failed to fetch shop products:', error);
@@ -296,29 +308,34 @@ const FramerHome = {
   },
 
   /**
-   * Aggregate guestbook messages
+   * Aggregate guestbook messages (with cache)
    */
   async aggregateGuestbook(config) {
     if (!config.enable_auto) return [];
 
     try {
-      const { data, error } = await window.supabaseClient
-        .from('guestbook_messages')
-        .select(`
-          id, 
-          content, 
-          image_url,
-          like_count,
-          created_at,
-          user_id,
-          profiles:user_id (username, avatar_url)
-        `)
-        .order('created_at', { ascending: false })
-        .limit(config.max_items || 5);
+      // Use cache with 10 minute TTL for guestbook
+      const messages = await Cache.loadWithCache('guestbook_messages', async () => {
+        const { data, error } = await window.supabaseClient
+          .from('guestbook_messages')
+          .select(`
+            id, 
+            content, 
+            image_url,
+            like_count,
+            created_at,
+            user_id,
+            profiles:user_id (username, avatar_url)
+          `)
+          .order('created_at', { ascending: false })
+          .limit(10);
 
-      if (error) throw error;
+        if (error) throw error;
+        return data || [];
+      }, 10);
 
-      return data || [];
+      // Apply limit from config
+      return messages.slice(0, config.max_items || 5);
     } catch (error) {
       console.error('Failed to fetch guestbook:', error);
       return [];

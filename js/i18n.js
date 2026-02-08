@@ -12,6 +12,8 @@
 
     let translations = {};
     let currentLang = DEFAULT_LANG;
+    let readyResolver = null;
+    const readyPromise = new Promise(resolve => { readyResolver = resolve; });
 
     /**
      * Initialize i18n system
@@ -33,6 +35,9 @@
         document.documentElement.lang = currentLang;
 
         console.log(`🌐 i18n initialized: ${currentLang}`);
+
+        // Signal that i18n is ready
+        if (readyResolver) readyResolver();
     }
 
     /**
@@ -197,7 +202,8 @@
         toggleLanguage,
         getCurrentLanguage,
         isEnglish,
-        applyTranslations
+        applyTranslations,
+        ready: () => readyPromise // Returns a promise that resolves when i18n is initialized
     };
 
 })();

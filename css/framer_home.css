@@ -1178,6 +1178,37 @@ h3 {
         font-size: 14px;
     }
 
+    /* Mobile Entry Cards Optimization */
+    .hero-carousel {
+        scroll-snap-type: x mandatory;
+        -webkit-overflow-scrolling: touch;
+        /* iOS smooth scroll */
+    }
+
+    .hero-carousel-track {
+        gap: 16px;
+        /* Reduced from 48px */
+        padding: 0 calc(50vw - 80px);
+        /* Tighter padding to show more cards */
+    }
+
+    .entry-card {
+        width: 140px;
+        /* Reduced from 180px */
+        height: 120px;
+        /* Reduced from 140px */
+        scroll-snap-align: center;
+    }
+
+    .entry-card i {
+        font-size: 28px;
+        /* Slightly smaller icon */
+    }
+
+    .entry-card span {
+        font-size: 13px;
+    }
+
     /* Footer stacking */
     .footer-grid {
         grid-template-columns: 1fr 1fr;
@@ -1774,20 +1805,21 @@ h3 {
 .lang-toggle-simple .lang-separator {
     color: rgba(255, 255, 255, 0.3);
 }
+
 /* Improved language toggle click areas */
 .lang-toggle-simple .lang-text {
-  padding: 6px 10px;
-  border-radius: 6px;
-  transition: all 0.2s ease;
-  cursor: pointer !important;
-  user-select: none;
+    padding: 6px 10px;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+    cursor: pointer !important;
+    user-select: none;
 }
 
 .lang-toggle-simple .lang-text:hover:not(.active) {
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.75);
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.75);
 }
 
 .lang-toggle-simple .lang-text:active {
-  transform: scale(0.95);
+    transform: scale(0.95);
 }
