@@ -179,6 +179,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         console.log('🔍 [Guestbook Debug] Total messages:', allMessages.length);
 
+        // Hide skeleton loading
+        const skeletonContainer = document.getElementById('skeletonContainer');
+        if (skeletonContainer) {
+            skeletonContainer.classList.add('hidden');
+        }
+
         // Fade in container
         messageContainer.style.opacity = '1';
 
@@ -262,8 +268,9 @@ document.addEventListener('DOMContentLoaded', () => {
         // Trigger scroll highlight (Mobile)
         observeNewItems();
 
-        // ✅ 同步用户最新头像
-        syncUserAvatars();
+        // ⚠️ DEPRECATED: syncUserAvatars uses LeanCloud (AV.User) which is no longer used
+        // Supabase already provides correct avatars via profiles.avatar_url on initial load
+        // syncUserAvatars();
     }
 
     // Handle Resize
@@ -530,7 +537,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="message-header">
                         <div class="author-info">
                             ${msg.avatarUrl
-                ? `<img src="${msg.avatarUrl}" alt="${escapeHtml(msg.name)}" class="author-avatar" loading="lazy" decoding="async">`
+                ? `<img src="${msg.avatarUrl}" alt="${escapeHtml(msg.name)}" class="author-avatar" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='https://ui-avatars.com/api/?name=${encodeURIComponent(msg.name)}&background=random'">`
                 : '<i class="fas fa-user-circle author-avatar-placeholder"></i>'}
                             <span class="author-name">${escapeHtml(msg.name)}</span>
                         </div>

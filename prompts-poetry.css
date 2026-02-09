@@ -266,6 +266,12 @@ body.has-banner .home-btn {
     font-size: 1.1rem;
 }
 
+/* Nav Logo SVG inside home button */
+.home-btn.nav-logo svg {
+    width: 24px;
+    height: 24px;
+}
+
 .home-btn:hover {
     color: var(--accent-purple);
     transform: translateY(-2px);
@@ -607,8 +613,8 @@ body {
     position: relative;
     z-index: 10;
     /* Ensure search dropdown can appear above featured-banner */
-    padding: 8vh 5vw 4vh;
-    /* Reduced bottom padding */
+    padding: calc(70px + 4vh) 5vw 4vh;
+    /* Top padding accounts for fixed nav bar */
     text-align: center;
     cursor: default;
     /* Note: mask-image removed - it was clipping the search dropdown */

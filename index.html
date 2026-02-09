@@ -107,10 +107,8 @@
             <div class="nav-menu">
                 <a href="/prompts.html" class="nav-trigger" data-dropdown="prompts" data-i18n="nav.prompts">提示词</a>
                 <a href="/shop.html" class="nav-trigger" data-dropdown="shop" data-i18n="nav.shop">商城</a>
-                <a href="#verify" data-i18n="nav.verify">验证</a>
-                <a href="#guestbook" data-i18n="nav.guestbook">留言板</a>
-                <a href="/prompts.html" data-i18n="nav.gallery">图库</a>
-                <a href="#settings" class="nav-trigger" data-dropdown="settings" data-i18n="nav.settings">设置</a>
+                <a href="/verify.html" data-i18n="nav.verify">验证</a>
+                <a href="/guestbook.html" data-i18n="nav.guestbook">留言板</a>
             </div>
 
             <!-- Actions -->
@@ -155,17 +153,6 @@
 
             <div class="mobile-menu-item">
                 <a href="#guestbook" class="mobile-menu-link" data-i18n="nav.guestbook">留言板</a>
-            </div>
-
-
-            <div class="mobile-menu-item">
-                <button class="mobile-menu-trigger" data-submenu="settings-mobile">
-                    <span data-i18n="nav.settings">设置</span>
-                    <i class="fas fa-chevron-down"></i>
-                </button>
-                <div class="mobile-submenu" id="settings-mobile">
-                    <!-- Will be populated dynamically from desktop dropdown -->
-                </div>
             </div>
         </div>
     </div>
@@ -245,6 +232,7 @@
     <!-- Auth System (integrated from inject-auth.js) -->
     <script src="./supabase-auth-functions.js?v=GUESTBOOK_MIGRATION" defer></script>
     <script src="./inject-auth.js?v=20260205_LANG_FIX" defer></script>
+    <script src="./notification-client.js?v=20260209" defer></script>
 
     <!--  Framer Home Engine -->
     <script src="./js/framer_home.js?v=20260205"></script>

@@ -25,7 +25,8 @@
         "chatGroup": "交流组",
         "comingSoon": "敬请期待",
         "comingSoonDesc": "该功能正在紧锣密鼓地开发中...",
-        "contactUs": "联系我们"
+        "contactUs": "联系我们",
+        "notifications": "通知"
     },
     "nav": {
         "prompts": "提示词",

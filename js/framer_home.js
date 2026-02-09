@@ -1374,3 +1374,53 @@ window.FramerHome = FramerHome;
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = FramerHome;
 }
+
+/**
+ * ==========================================
+ * Standalone Navigation Bar Initialization
+ * For pages that use framer-nav but aren't homepage
+ * ==========================================
+ */
+(function initNavBar() {
+  const nav = document.querySelector('.framer-nav');
+  if (!nav) return; // No nav bar on this page
+
+  const hamburger = document.querySelector('.nav-hamburger');
+  const mobileMenu = document.querySelector('.mobile-menu');
+
+  // Already initialized by FramerHome? Skip
+  if (hamburger && hamburger._navInitialized) return;
+
+  console.log('🍔 Initializing standalone nav bar...');
+
+  // Nav scroll effect
+  window.addEventListener('scroll', () => {
+    if (window.scrollY > 50) {
+      nav.classList.add('scrolled');
+    } else {
+      nav.classList.remove('scrolled');
+    }
+  });
+
+  // Mobile hamburger menu toggle
+  if (hamburger && mobileMenu) {
+    hamburger.addEventListener('click', () => {
+      console.log('🍔 Hamburger clicked');
+      hamburger.classList.toggle('active');
+      mobileMenu.classList.toggle('active');
+    });
+    hamburger._navInitialized = true;
+  }
+
+  // Close mobile menu when clicking a link
+  if (mobileMenu) {
+    mobileMenu.querySelectorAll('a').forEach(link => {
+      link.addEventListener('click', () => {
+        hamburger?.classList.remove('active');
+        mobileMenu.classList.remove('active');
+      });
+    });
+  }
+
+  console.log('✅ Standalone nav bar initialized');
+})();

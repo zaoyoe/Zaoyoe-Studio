@@ -25,7 +25,8 @@
         "chatGroup": "Community",
         "comingSoon": "Coming Soon",
         "comingSoonDesc": "This feature is under development...",
-        "contactUs": "Contact Us"
+        "contactUs": "Contact Us",
+        "notifications": "Notifications"
     },
     "nav": {
         "prompts": "Prompts",

@@ -14,33 +14,31 @@
     const avatarDisplay = isLoggedIn ? 'inline-block' : 'none';
     const avatarOpacity = isLoggedIn ? '1' : '0';
 
-    // 1. Define HTML Structure
-    const authHTML = `
-    <!-- Auth Button (Top Right) -->
-    <div class="top-right-nav" style="position: fixed; top: 28px; right: 30px; z-index: 2100; display: flex; align-items: center; gap: 16px;">
-        <!-- Notification Bell -->
-        <div class="notif-wrapper" style="position: relative; display: none;" id="navNotifWrapper">
-            <button id="notifBtn" onclick="toggleNotifMenu(event)"
-                style="width: 36px; height: 36px; padding: 0; display: flex; align-items: center; justify-content: center; 
-                       background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255,255,255,0.1); border-radius: 50%; 
-                       cursor: pointer; transition: all 0.2s;
-                       backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
-                       box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
-                <i class="far fa-bell" style="font-size: 1rem; color: rgba(255,255,255,0.9);"></i>
-                <div class="notif-badge" id="notifBadge" style="display: none;"></div>
-            </button>
-        </div>
-
+    // 1. Define HTML Structure - SEPARATED for flexible injection
+    // Auth Button ONLY (will be injected into #auth-container if available)
+    const authButtonOnlyHTML = `
         <button id="authBtn" class="login-trigger-btn${isLoggedIn ? ' logged-in' : ''}" onclick="handleAuthClick(event)">
             <i id="defaultAuthIcon" class="fas fa-user-circle" style="display: ${defaultIconDisplay};"></i>
             <img id="navUserAvatar" class="nav-user-avatar show" src="${avatarUrl}" alt="Avatar" style="display: ${avatarDisplay}; opacity: ${avatarOpacity};">
             <span id="authBtnText" style="display: none;">Sign In</span>
+            <!-- Unread notification badge on avatar -->
+            <span id="avatarUnreadBadge" class="avatar-unread-badge" style="display: none;"></span>
         </button>
+    `;
 
-        <!-- New Avatar Dropdown -->
+    // Avatar Dropdown (ALWAYS appended to body for proper backdrop-filter)
+    const dropdownHTML = `
+        <!-- Avatar Dropdown -->
         <div id="userDropdown" class="avatar-dropdown" style="z-index: 2100;">
             <div class="dropdown-header">
-                <span class="identity-name" id="dropdownUsername">Guest</span>
+                <button class="dropdown-notif-btn" id="dropdownNotifBtn" onclick="window.handleDropdownNotifClick(event)">
+                    <i class="far fa-bell"></i>
+                    <span id="dropdownNotifBadge" class="dropdown-notif-badge" style="display: none;"></span>
+                </button>
+                <button class="dropdown-lang-btn" id="dropdownLangBtn" onclick="window.toggleLanguage(event)">
+                    <span class="lang-icon lang-zh">文</span>
+                    <span class="lang-icon lang-en">A</span>
+                </button>
                 <button class="theme-toggle-btn" onclick="window.toggleTheme(event)">
                     <span class="theme-icon sun-icon">☀️</span>
                     <span class="theme-icon moon-icon">🌙</span>
@@ -70,8 +68,18 @@
                 </button>
             </div>
         </div>
-    </div>
+    `;
 
+    // Legacy wrapper for pages without #auth-container (button + dropdown together)
+    const authWrapperHTML = `
+    <!-- Auth Button (Top Right) - Legacy Fixed Position -->
+    <div class="top-right-nav" style="position: fixed; top: 28px; right: 30px; z-index: 2100; display: flex; align-items: center; gap: 16px;">
+        ${authButtonOnlyHTML}
+    </div>
+    `;
+
+    // Login Modal (always appended to body)
+    const loginModalHTML = `
     <!-- Login Modal -->
     <div class="login-overlay" id="loginModal" style="display: none; opacity: 0; visibility: hidden;" onmousedown="handleLoginOverlayClick(event)" onmouseup="handleLoginOverlayClick(event)">
         <div class="login-card" onclick="event.stopPropagation()">
@@ -188,11 +196,34 @@
     </div>
     `;
 
-    // 2. Inject HTML
+    // 2. Inject HTML - Smart detection of #auth-container
     if (!document.getElementById('authBtn')) {
-        const div = document.createElement('div');
-        div.innerHTML = authHTML;
-        document.body.appendChild(div);
+        const authContainer = document.getElementById('auth-container');
+
+        if (authContainer) {
+            // 🆕 Nav bar mode: inject button into #auth-container, dropdown to body
+            console.log('🔧 Auth: Injecting button into #auth-container, dropdown to body (nav bar mode)');
+            authContainer.innerHTML = authButtonOnlyHTML;
+            // Dropdown MUST go to body for backdrop-filter to work (nav has its own backdrop-filter)
+            const dropdownDiv = document.createElement('div');
+            dropdownDiv.innerHTML = dropdownHTML;
+            document.body.appendChild(dropdownDiv);
+        } else {
+            // Legacy mode: inject fixed-position wrapper + dropdown to body
+            console.log('🔧 Auth: Injecting fixed-position wrapper to body (legacy mode)');
+            const div = document.createElement('div');
+            div.innerHTML = authWrapperHTML;
+            document.body.appendChild(div);
+            // Also append dropdown to body
+            const dropdownDiv = document.createElement('div');
+            dropdownDiv.innerHTML = dropdownHTML;
+            document.body.appendChild(dropdownDiv);
+        }
+
+        // Login modal always goes to body
+        const modalDiv = document.createElement('div');
+        modalDiv.innerHTML = loginModalHTML;
+        document.body.appendChild(modalDiv);
 
         // 🆕 Force inject critical CSS to override any conflicts
         const forceStyle = document.createElement('style');
@@ -717,6 +748,133 @@
                 transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
             }
 
+            /* ========================================
+               NOTIFICATION IN DROPDOWN (B+D Hybrid)
+               ======================================== */
+            
+            /* Dropdown notification button - matches theme-toggle-btn */
+            .dropdown-notif-btn {
+                width: 36px;
+                height: 36px;
+                border-radius: 50%;
+                border: 1px solid rgba(255,255,255,0.1);
+                background: rgba(255,255,255,0.05);
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                position: relative;
+                overflow: visible;
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            }
+            .dropdown-notif-btn:hover {
+                transform: scale(1.1);
+                box-shadow: 0 4px 12px rgba(93, 159, 216, 0.25);
+                border-color: rgba(93, 159, 216, 0.5);
+            }
+            .dropdown-notif-btn i {
+                font-size: 1.1rem;
+                color: rgba(255, 255, 255, 0.85);
+            }
+            
+            /* Dropdown notification badge (red dot) - positioned at top-right */
+            .dropdown-notif-badge {
+                position: absolute;
+                top: -2px;
+                right: -2px;
+                width: 8px;
+                height: 8px;
+                background: #ef4444;
+                border-radius: 50%;
+                border: 1.5px solid rgba(30, 30, 40, 0.9);
+            }
+            
+            /* Language toggle button - circular with elegant text */
+            .dropdown-lang-btn {
+                width: 36px;
+                height: 36px;
+                border-radius: 50%;
+                border: 1px solid rgba(255,255,255,0.1);
+                background: rgba(255,255,255,0.05);
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                position: relative;
+                overflow: hidden;
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            }
+            .dropdown-lang-btn:hover {
+                transform: scale(1.1);
+                box-shadow: 0 4px 12px rgba(93, 159, 216, 0.25);
+                border-color: rgba(93, 159, 216, 0.5);
+            }
+            
+            /* Language text icon */
+            .dropdown-lang-btn .lang-icon {
+                position: absolute;
+                font-size: 1rem;
+                font-weight: 700;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+                color: rgba(255, 255, 255, 0.85);
+                transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            }
+            
+            /* Default: show 文 (Chinese mode) */
+            .dropdown-lang-btn .lang-zh {
+                opacity: 1;
+                transform: scale(1) translateY(0);
+            }
+            .dropdown-lang-btn .lang-en {
+                opacity: 0;
+                transform: scale(0.5) translateY(10px);
+            }
+            
+            /* When in English mode: show A */
+            html[lang="en"] .dropdown-lang-btn .lang-zh {
+                opacity: 0;
+                transform: scale(0.5) translateY(-10px);
+            }
+            html[lang="en"] .dropdown-lang-btn .lang-en {
+                opacity: 1;
+                transform: scale(1) translateY(0);
+            }
+            
+            /* Dropdown header - evenly distribute buttons */
+            .dropdown-header {
+                display: flex;
+                justify-content: space-evenly;
+                align-items: center;
+                padding: 12px 8px;
+                border-bottom: 1px solid rgba(255,255,255,0.08);
+            }
+            
+            /* Avatar unread badge (red dot on avatar) */
+            .avatar-unread-badge {
+                position: absolute;
+                top: -2px;
+                right: -2px;
+                width: 10px;
+                height: 10px;
+                background: #ef4444;
+                border-radius: 50%;
+                border: 2px solid rgba(0, 0, 0, 0.8);
+                box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.3);
+            }
+            
+            /* Light mode adjustments for notification UI */
+            [data-theme="light"] .dropdown-notif-btn {
+                background: rgba(0, 0, 0, 0.03);
+                border-color: rgba(0, 0, 0, 0.08);
+                color: rgba(255, 255, 255, 0.9);
+            }
+            [data-theme="light"] .dropdown-notif-btn:hover {
+                background: rgba(255, 255, 255, 0.1);
+            }
+            [data-theme="light"] .avatar-unread-badge {
+                border-color: rgba(255, 255, 255, 0.9);
+            }
+
         `;
         document.head.appendChild(forceStyle);
     }
@@ -880,6 +1038,27 @@
         }
     };
 
+    // ==================== Language Toggle ====================
+    window.toggleLanguage = function (e) {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
+        if (window.i18n && typeof window.i18n.toggleLanguage === 'function') {
+            window.i18n.toggleLanguage();
+            // Update button text after toggle
+            updateLangButtonText();
+        } else {
+            console.warn('i18n.toggleLanguage not available');
+        }
+    };
+
+    // Update language button text to show current language
+    function updateLangButtonText() {
+        const langBtn = document.getElementById('langTextDisplay');
+        if (langBtn && window.i18n) {
+            const currentLang = window.i18n.getCurrentLanguage() || 'zh';
+            langBtn.textContent = currentLang.toUpperCase();
+        }
+    }
+
     // Init Theme
     try {
         const savedTheme = localStorage.getItem('theme');
@@ -887,6 +1066,9 @@
             document.documentElement.setAttribute('data-theme', 'light');
         }
     } catch (e) { }
+
+    // Sync language button on load
+    setTimeout(updateLangButtonText, 500);
 
     // Run initialization
     if (document.readyState === 'loading') {
@@ -915,6 +1097,50 @@
         const lang = window.i18n?.getCurrentLanguage() || 'zh';
         updateLangToggle(lang);
     }, 100);
+
+    // ==================== Notification Click Handler (B+D Hybrid) ====================
+    window.handleDropdownNotifClick = function (e) {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
+
+        // Close the dropdown menu
+        const dropdown = document.getElementById('userDropdown');
+        if (dropdown) {
+            dropdown.classList.remove('active');
+        }
+
+        // Open the notification panel (using existing toggleNotifMenu function)
+        if (typeof window.toggleNotifMenu === 'function') {
+            window.toggleNotifMenu(e);
+        } else {
+            console.warn('toggleNotifMenu not available');
+        }
+    };
+
+    // ==================== Update Unread Badges ====================
+    window.updateNotificationBadges = function (hasUnread) {
+        // Update avatar badge
+        const avatarBadge = document.getElementById('avatarUnreadBadge');
+        if (avatarBadge) {
+            avatarBadge.style.display = hasUnread ? 'block' : 'none';
+        }
+
+        // Update dropdown notification badge
+        const dropdownBadge = document.getElementById('dropdownNotifBadge');
+        if (dropdownBadge) {
+            dropdownBadge.style.display = hasUnread ? 'inline-block' : 'none';
+        }
+    };
+
+    // Hook into NotificationManager if available
+    function initNotificationBadges() {
+        if (window.NotificationManager && typeof window.NotificationManager.getUnreadCount === 'function') {
+            const count = window.NotificationManager.getUnreadCount();
+            window.updateNotificationBadges(count > 0);
+        }
+    }
+
+    // Check for unread notifications after page load
+    setTimeout(initNotificationBadges, 2000);
 
 
 })();

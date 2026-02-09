@@ -563,8 +563,14 @@
 
     function updateBadge() {
         const badge = document.getElementById('notifBadge');
-        if (!badge) return;
-        badge.style.display = unreadCount > 0 ? 'block' : 'none';
+        if (badge) {
+            badge.style.display = unreadCount > 0 ? 'block' : 'none';
+        }
+
+        // Also update avatar and dropdown badges (B+D Hybrid)
+        if (typeof window.updateNotificationBadges === 'function') {
+            window.updateNotificationBadges(unreadCount > 0);
+        }
     }
 
     function renderNotifications(animateExpansion = false) {

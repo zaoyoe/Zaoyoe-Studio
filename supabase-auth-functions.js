@@ -837,7 +837,7 @@ async function uploadAvatarToR2({ userId, imageUrl, imageData }) {
             throw new Error(error.error || 'Upload failed');
         }
 
-        const { avatarUrl } = await response.json();
+        const { imageUrl: avatarUrl } = await response.json();
         console.log(`✅ Avatar uploaded: ${avatarUrl}`);
 
         // Update profile in database

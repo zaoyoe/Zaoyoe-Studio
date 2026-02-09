@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Icons Set 7: Prompts - Internal Motion</title>
+    <style>
+        body {
+            background-color: #0b0b0b;
+            color: #fff;
+            font-family: 'Inter', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 50px;
+            gap: 80px;
+        }
+
+        h1 {
+            margin-bottom: 10px;
+            font-weight: 300;
+            letter-spacing: 1px;
+        }
+
+        p.subtitle {
+            color: #888;
+            margin-bottom: 40px;
+            font-size: 14px;
+        }
+
+        .set-container {
+            width: 100%;
+            max-width: 1000px;
+        }
+
+        h2 {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 40px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            border-bottom: 1px solid #333;
+            padding-bottom: 10px;
+            text-align: left;
+            width: 100%;
+        }
+
+        .icons-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 40px;
+            width: 100%;
+        }
+
+        .icon-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 25px;
+            cursor: pointer;
+            position: relative;
+            padding: 20px;
+            border-radius: 20px;
+            transition: 0.3s;
+        }
+
+        .icon-wrapper:hover {
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .icon-label {
+            font-size: 14px;
+            color: #666;
+            transition: 0.3s;
+            font-weight: 500;
+        }
+
+        .icon-wrapper:hover .icon-label {
+            color: #fff;
+        }
+
+        svg {
+            overflow: visible;
+        }
+
+        /* --- Concept A: Galactic Sparkle (Orbiting) --- */
+        .icon-wrapper:hover .c-galactic .star-main {
+            transform: scale(1.1) rotate(180deg);
+        }
+
+        .c-galactic .orbit-group {
+            animation: spinOrbit 10s linear infinite;
+            transform-origin: center;
+        }
+
+        .c-galactic .star-small {
+            animation: pulseStar 2s ease-in-out infinite alternate;
+        }
+
+        @keyframes spinOrbit {
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        @keyframes pulseStar {
+            from {
+                transform: scale(1);
+                opacity: 0.6;
+            }
+
+            to {
+                transform: scale(1.5);
+                opacity: 1;
+            }
+        }
+
+
+        /* --- Concept B: Neural Pulse (Connecting) --- */
+        .c-neural .node {
+            transition: 0.3s;
+        }
+
+        .c-neural .connection {
+            stroke-dasharray: 20;
+            animation: dashFlow 1s linear infinite;
+            /* Fast data flow */
+            opacity: 0.6;
+        }
+
+        .icon-wrapper:hover .c-neural .node-center {
+            fill: #fff;
+            filter: drop-shadow(0 0 10px #F472B6);
+        }
+
+        @keyframes dashFlow {
+            from {
+                stroke-dashoffset: 20;
+            }
+
+            to {
+                stroke-dashoffset: 0;
+            }
+        }
+
+        @keyframes nodePulse {
+
+            0%,
+            100% {
+                r: 4;
+            }
+
+            50% {
+                r: 6;
+            }
+        }
+
+        .c-neural .node-sat {
+            animation: nodePulse 2s infinite ease-in-out;
+        }
+
+
+        /* --- Concept C: Magic Flow (Particle Trail) --- */
+        .c-magic .wand {
+            transform-origin: 20px 60px;
+            animation: wandFloat 3s ease-in-out infinite;
+        }
+
+        .c-magic .particle {
+            opacity: 0;
+        }
+
+        .icon-wrapper:hover .c-magic .particle {
+            animation: particleRise 1.5s ease-out infinite;
+        }
+
+        .p1 {
+            animation-delay: 0s;
+        }
+
+        .p2 {
+            animation-delay: 0.3s;
+        }
+
+        .p3 {
+            animation-delay: 0.6s;
+        }
+
+        @keyframes wandFloat {
+
+            0%,
+            100% {
+                transform: rotate(0deg);
+            }
+
+            50% {
+                transform: rotate(-5deg);
+            }
+        }
+
+        @keyframes particleRise {
+            0% {
+                transform: translate(0, 0) scale(0.5);
+                opacity: 1;
+            }
+
+            100% {
+                transform: translate(10px, -30px) scale(0);
+                opacity: 0;
+            }
+        }
+
+        /* --- Concept D: Prism Core (Geometric Shifting) --- */
+        .c-prism .face {
+            transition: 0.5s;
+            transform-origin: center;
+        }
+
+        .c-prism .core {
+            animation: coreBreathe 3s ease-in-out infinite;
+        }
+
+        .icon-wrapper:hover .c-prism .face-1 {
+            transform: translate(-5px, -5px);
+        }
+
+        .icon-wrapper:hover .c-prism .face-2 {
+            transform: translate(5px, 5px);
+        }
+
+        .icon-wrapper:hover .c-prism .face-3 {
+            transform: translate(-5px, 5px);
+        }
+
+        @keyframes coreBreathe {
+
+            0%,
+            100% {
+                transform: scale(1);
+                filter: hue-rotate(0deg);
+            }
+
+            50% {
+                transform: scale(1.2);
+                filter: hue-rotate(30deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1 onclick="triggerAll()">Prompts Icon - Internal Dynamics (Set 7)</h1>
+    <p class="subtitle">Focusing on separate moving parts within the icon itself</p>
+
+    <div class="set-container">
+        <h2>Variations for "Prompts" (AI 提示词)</h2>
+        <div class="icons-grid">
+
+            <!-- A: Galactic Sparkle -->
+            <div class="icon-wrapper">
+                <svg width="100" height="100" viewBox="0 0 100 100" fill="none" class="c-galactic">
+                    <defs>
+                        <radialGradient id="gal_glow" cx="50" cy="50" r="40">
+                            <stop offset="0" stop-color="#F472B6" stop-opacity="0.2" />
+                            <stop offset="1" stop-color="#F472B6" stop-opacity="0" />
+                        </radialGradient>
+                    </defs>
+                    <!-- Background Glow -->
+                    <circle cx="50" cy="50" r="40" fill="url(#gal_glow)" />
+
+                    <!-- Center Star -->
+                    <path d="M50 20 L55 45 L80 50 L55 55 L50 80 L45 55 L20 50 L45 45 Z" fill="#F472B6" class="star-main"
+                        style="transition:0.4s" />
+
+                    <!-- Orbiting Stars Group -->
+                    <g class="orbit-group">
+                        <circle cx="50" cy="15" r="3" fill="#FBCFE8" class="star-small" style="animation-delay:0s" />
+                        <circle cx="85" cy="50" r="2" fill="#FBCFE8" class="star-small" style="animation-delay:0.5s" />
+                        <circle cx="50" cy="85" r="4" fill="#DB2777" class="star-small" style="animation-delay:1s" />
+                        <circle cx="15" cy="50" r="2" fill="#FBCFE8" class="star-small" style="animation-delay:1.5s" />
+
+                        <!-- Connecting Orbit Line (Optional) -->
+                        <circle cx="50" cy="50" r="35" stroke="#F472B6" stroke-width="1" stroke-opacity="0.3"
+                            stroke-dasharray="4 4" fill="none" />
+                    </g>
+                </svg>
+                <div class="icon-label">Galactic Sparkle (星系)</div>
+            </div>
+
+            <!-- B: Neural Pulse -->
+            <div class="icon-wrapper">
+                <svg width="100" height="100" viewBox="0 0 100 100" fill="none" class="c-neural">
+                    <!-- Connections -->
+                    <line x1="50" y1="50" x2="50" y2="20" stroke="#EC4899" stroke-width="2" class="connection" />
+                    <line x1="50" y1="50" x2="80" y2="65" stroke="#EC4899" stroke-width="2" class="connection"
+                        style="animation-delay: 0.2s" />
+                    <line x1="50" y1="50" x2="20" y2="65" stroke="#EC4899" stroke-width="2" class="connection"
+                        style="animation-delay: 0.4s" />
+
+                    <!-- Satellite Nodes -->
+                    <circle cx="50" cy="20" r="6" fill="#FBCFE8" class="node node-sat" style="animation-delay:0s" />
+                    <circle cx="80" cy="65" r="6" fill="#FBCFE8" class="node node-sat" style="animation-delay:0.6s" />
+                    <circle cx="20" cy="65" r="6" fill="#FBCFE8" class="node node-sat" style="animation-delay:1.2s" />
+
+                    <!-- Center Node -->
+                    <circle cx="50" cy="50" r="12" fill="#DB2777" class="node node-center" />
+                    <circle cx="50" cy="50" r="6" fill="#FFF" />
+                </svg>
+                <div class="icon-label">Neural Pulse (神经网络)</div>
+            </div>
+
+            <!-- C: Magic Flow -->
+            <div class="icon-wrapper">
+                <svg width="100" height="100" viewBox="0 0 100 100" fill="none" class="c-magic">
+                    <defs>
+                        <linearGradient id="wand_grad" x1="20" y1="80" x2="80" y2="20">
+                            <stop offset="0" stop-color="#831843" />
+                            <stop offset="1" stop-color="#F472B6" />
+                        </linearGradient>
+                    </defs>
+
+                    <!-- Particles (Initially hidden, rise on hover) -->
+                    <circle cx="75" cy="25" r="3" fill="#FFF" class="particle p1" />
+                    <path d="M85 35 L88 40 L82 40 Z" fill="#FBCFE8" class="particle p2" />
+                    <circle cx="65" cy="35" r="2" fill="#FFF" class="particle p3" />
+
+                    <!-- Wand -->
+                    <g class="wand">
+                        <rect x="25" y="65" width="40" height="8" rx="4" transform="rotate(-45 45 69)"
+                            fill="url(#wand_grad)" />
+                        <!-- Wand Tip -->
+                        <circle cx="68" cy="32" r="8" fill="#F472B6" filter="drop-shadow(0 0 5px #F472B6)" />
+                        <path d="M68 32 L75 25 M68 32 L78 32 M68 32 L75 39" stroke="#FFF" stroke-width="2"
+                            stroke-linecap="round" />
+                    </g>
+                </svg>
+                <div class="icon-label">Magic Flow (魔法流动)</div>
+            </div>
+
+            <!-- D: Prism Core -->
+            <div class="icon-wrapper">
+                <svg width="100" height="100" viewBox="0 0 100 100" fill="none" class="c-prism">
+                    <!-- Core Glow -->
+                    <circle cx="50" cy="50" r="15" fill="#F472B6" filter="blur(10px)" class="core" />
+
+                    <!-- Floating Faces -->
+                    <path d="M50 20 L75 40 L50 60 L25 40 Z" fill="#FBCFE8" opacity="0.8" class="face face-1" />
+                    <!-- Top -->
+                    <path d="M25 40 L50 60 V90 L25 70 Z" fill="#BE185D" opacity="0.8" class="face face-2" />
+                    <!-- Left -->
+                    <path d="M75 40 L50 60 V90 L75 70 Z" fill="#DB2777" opacity="0.8" class="face face-3" />
+                    <!-- Right -->
+
+                    <!-- Highlight lines -->
+                    <path d="M50 20 V60 M25 40 L50 60 L75 40 M50 60 V90" stroke="#FFF" stroke-width="1"
+                        stroke-opacity="0.5" style="pointer-events:none" />
+                </svg>
+                <div class="icon-label">Prism Core (棱镜核心)</div>
+            </div>
+
+        </div>
+    </div>
+
+</body>
+
+</html>

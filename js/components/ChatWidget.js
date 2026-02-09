@@ -1391,8 +1391,50 @@ class ChatWidget {
                     message_type: 'text',
                     is_admin: true
                 });
+
+            // 🔔 Create system notification for the user's bell
+            await this.createNotificationForUser(this.currentSessionId, text);
         } catch (err) {
             console.error('Failed to send:', err);
+        }
+    }
+
+    // 🔔 Create a system notification for user when admin replies
+    async createNotificationForUser(sessionId, messageContent) {
+        try {
+            // sessionId can be email (logged-in user) or guest_xxx (guest)
+            // Skip notification for guest users
+            if (sessionId.startsWith('guest_')) {
+                console.log('⏭️ Skipping notification for guest user');
+                return;
+            }
+
+            // Lookup user_id by email from auth.users or profiles
+            const { data: profile, error: profileError } = await this.supabase
+                .from('profiles')
+                .select('id')
+                .eq('email', sessionId)
+                .single();
+
+            if (profileError || !profile) {
+                console.warn('Could not find user for notification:', sessionId);
+                return;
+            }
+
+            // Create system notification
+            await this.supabase
+                .from('system_notifications')
+                .insert({
+                    user_id: profile.id,
+                    title: '客服回复',
+                    content: messageContent.substring(0, 100) + (messageContent.length > 100 ? '...' : ''),
+                    type: 'info',
+                    is_read: false
+                });
+
+            console.log('🔔 Notification created for user:', profile.id);
+        } catch (err) {
+            console.error('Failed to create notification:', err);
         }
     }
 

@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Icons Set 4: High-Fidelity 3D Thickness</title>
+    <style>
+        body {
+            background-color: #1a1a1a;
+            color: #fff;
+            font-family: 'Inter', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 50px;
+            gap: 100px;
+        }
+
+        h1 {
+            margin-bottom: 10px;
+            font-weight: 300;
+            letter-spacing: 1px;
+        }
+
+        p.subtitle {
+            color: #888;
+            margin-bottom: 40px;
+            font-size: 14px;
+        }
+
+        .set-container {
+            width: 100%;
+            max-width: 1000px;
+        }
+
+        h2 {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 40px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            border-bottom: 1px solid #333;
+            padding-bottom: 10px;
+        }
+
+        .icons-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 40px;
+        }
+
+        .icon-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 25px;
+            cursor: pointer;
+            position: relative;
+            transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .icon-label {
+            font-size: 14px;
+            color: #888;
+            transition: 0.3s;
+            font-weight: 500;
+            letter-spacing: 0.5px;
+        }
+
+        .icon-wrapper:hover .icon-label {
+            color: #fff;
+            transform: translateY(2px);
+        }
+
+        /* General Interaction: Levitate on Hover, Press on Click */
+        .icon-wrapper:hover {
+            transform: translateY(-10px);
+        }
+
+        .icon-wrapper:hover svg {
+            filter: brightness(1.1);
+        }
+
+        .icon-wrapper.active {
+            transform: translateY(2px) scale(0.95);
+        }
+
+        svg {
+            overflow: visible;
+        }
+
+        /* --- Set 4A: Frosted Glass Block (Thick) --- */
+        /* Simulates a thick block of acrylic/glass */
+        .set-glass-block svg .block-body {
+            backdrop-filter: blur(10px);
+            /* Webkit support varies in SVG */
+            transition: 0.3s;
+        }
+
+        .set-glass-block svg .inner-glow {
+            mix-blend-mode: overlay;
+        }
+
+        .set-glass-block .icon-wrapper:hover svg .block-body {
+            fill-opacity: 0.8;
+        }
+
+        /* --- Set 4B: Isometric Solid (Matte) --- */
+        /* Classical opaque 3D with distinct directional lighting */
+        .set-iso-solid svg path {
+            vector-effect: non-scaling-stroke;
+            transition: fill 0.3s;
+        }
+
+
+        /* --- Set 4C: Stacked Layers (Paper/Card) --- */
+        /* Creating depth through spacing and shadows */
+        .set-stacked svg .layer {
+            transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .set-stacked .icon-wrapper:hover svg .layer-3 {
+            transform: translateY(-12px);
+        }
+
+        .set-stacked .icon-wrapper:hover svg .layer-2 {
+            transform: translateY(-6px);
+        }
+
+        .set-stacked .icon-wrapper:hover svg .layer-1 {
+            transform: translateY(0px);
+        }
+
+        .set-stacked .icon-wrapper.active svg .layer {
+            transition: 0.1s;
+            transform: translateY(0) !important;
+        }
+
+        /* --- Set 4D: Neon Container (Caged) --- */
+        /* Thick glowing container */
+        .set-container-3d svg .fluid {
+            animation: liquidMove 3s infinite alternate ease-in-out;
+            transform-origin: center;
+        }
+
+        @keyframes liquidMove {
+            0% {
+                transform: translateY(0) rotate(0deg);
+            }
+
+            100% {
+                transform: translateY(-2px) rotate(2deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1 onclick="triggerAll()">High-Fidelity 3D (Set 4)</h1>
+    <p class="subtitle">Emphasizing volume, thickness, and tactile physical presence</p>
+
+    <!-- Set 4A: Frosted Glass Block -->
+    <div class="set-container set-glass-block">
+        <h2>Set A: Frosted Glass Block (厚磨砂晶体)</h2>
+        <div class="icons-row">
+            <!-- Prompts -->
+            <div class="icon-wrapper" onclick="animateIcon(this)">
+                <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
+                    <defs>
+                        <linearGradient id="gb_p_f" x1="0" y1="0" x2="0" y2="80">
+                            <stop offset="0" stop-color="#fff" stop-opacity="0.2" />
+                            <stop offset="1" stop-color="#fff" stop-opacity="0.05" />
+                        </linearGradient>
+                        <linearGradient id="gb_p_s" x1="0" y1="0" x2="1" y2="1">
+                            <stop offset="0" stop-color="#F472B6" stop-opacity="0.8" />
+                            <stop offset="1" stop-color="#DB2777" stop-opacity="0.4" />
+                        </linearGradient>
+                        <filter id="blurShadow" x="-50%" y="-50%" width="200%" height="200%">
+                            <feGaussianBlur in="SourceGraphic" stdDeviation="8" />
+                        </filter>
+                    </defs>
+                    <!-- Shadow -->
+                    <ellipse cx="40" cy="75" rx="30" ry="10" fill="#F472B6" fill-opacity="0.4"
+                        filter="url(#blurShadow)" />
+
+                    <!-- Back Thickness -->
+                    <path d="M15 35 L40 50 L65 35 V60 L40 75 L15 60 Z" fill="url(#gb_p_s)" />
+                    <!-- Top Face -->
+                    <path d="M40 10 L65 25 L40 40 L15 25 Z" fill="rgba(255,255,255,0.4)" stroke="rgba(255,255,255,0.5)"
+                        stroke-width="1" />
+                    <!-- Front Left Face -->
+                    <path d="M15 25 L40 40 V65 L15 50 Z" fill="url(#gb_p_f)" stroke="rgba(255,255,255,0.2)"
+                        stroke-width="1" />
+                    <!-- Front Right Face -->
+                    <path d="M40 40 L65 25 V50 L40 65 Z" fill="url(#gb_p_f)" stroke="rgba(255,255,255,0.2)"
+                        stroke-width="1" />
+
+                    <!-- Icon Inside (Floating Star) -->
+                    <path d="M40 25 L43 32 L50 33 L45 38 L46 45 L40 42 L34 45 L35 38 L30 33 L37 32 Z" fill="#fff"
+                        filter="drop-shadow(0 0 5px #F472B6)" transform="translate(0, -5)" />
+                </svg>
+                <div class="icon-label">Prompts</div>
+            </div>
+
+            <!-- Shop -->
+            <div class="icon-wrapper" onclick="animateIcon(this)">
+                <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
+                    <defs>
+                        <linearGradient id="gb_s_f" x1="0" y1="0" x2="0" y2="80">
+                            <stop offset="0" stop-color="#fff" stop-opacity="0.2" />
+                            <stop offset="1" stop-color="#fff" stop-opacity="0.05" />
+                        </linearGradient>
+                        <linearGradient id="gb_s_s" x1="0" y1="0" x2="1" y2="1">
+                            <stop offset="0" stop-color="#4ADE80" stop-opacity="0.8" />
+                            <stop offset="1" stop-color="#16A34A" stop-opacity="0.4" />
+                        </linearGradient>
+                    </defs>
+                    <ellipse cx="40" cy="75" rx="30" ry="10" fill="#4ADE80" fill-opacity="0.4"
+                        filter="url(#blurShadow)" />
+
+                    <!-- Cube Shape -->
+                    <path d="M20 30 L40 42 L60 30 V60 L40 72 L20 60 Z" fill="url(#gb_s_s)" />
+                    <path d="M40 18 L60 30 L40 42 L20 30 Z" fill="rgba(255,255,255,0.4)"
+                        stroke="rgba(255,255,255,0.5)" />
+                    <path d="M20 30 L40 42 V72 L20 60 Z" fill="url(#gb_s_f)" stroke="rgba(255,255,255,0.2)" />
+                    <path d="M40 42 L60 30 V60 L40 72 Z" fill="url(#gb_s_f)" stroke="rgba(255,255,255,0.2)" />
+
+                    <!-- Bag Handle -->
+                    <path d="M30 18 C30 10 50 10 50 18" stroke="white" stroke-width="3" stroke-linecap="round"
+                        fill="none" />
+                </svg>
+                <div class="icon-label">Shop</div>
+            </div>
+
+            <!-- Verify -->
+            <div class="icon-wrapper" onclick="animateIcon(this)">
+                <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
+                    <defs>
+                        <linearGradient id="gb_v_s" x1="0" y1="0" x2="1" y2="1">
+                            <stop offset="0" stop-color="#667EEA" stop-opacity="0.8" />
+                            <stop offset="1" stop-color="#4338CA" stop-opacity="0.4" />
+                        </linearGradient>
+                    </defs>
+                    <ellipse cx="40" cy="75" rx="30" ry="10" fill="#667EEA" fill-opacity="0.4"
+                        filter="url(#blurShadow)" />
+
+                    <!-- Shield Prism -->
+                    <!-- Back/Side Thickness -->
+                    <path d="M15 25 L40 15 L65 25 V45 C65 65 40 75 40 75 C40 75 15 65 15 45 Z" fill="url(#gb_v_s)"
+                        transform="translate(0, 5)" />
+
+                    <!-- Front Face -->
+                    <path d="M15 25 L40 15 L65 25 V45 C65 65 40 75 40 75 C40 75 15 65 15 45 Z" fill="url(#gb_s_f)"
+                        stroke="rgba(255,255,255,0.5)" stroke-width="1" />
+
+                    <!-- Checkmark -->
+                    <path d="M30 42 L38 50 L52 35" stroke="white" stroke-width="4" stroke-linecap="round"
+                        stroke-linejoin="round" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.5))" />
+                </svg>
+                <div class="icon-label">Verify</div>
+            </div>
+
+            <!-- Guestbook -->
+            <div class="icon-wrapper" onclick="animateIcon(this)">
+                <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
+                    <defs>
+                        <linearGradient id="gb_g_s" x1="0" y1="0" x2="1" y2="1">
+                            <stop offset="0" stop-color="#F59E0B" stop-opacity="0.8" />
+                            <stop offset="1" stop-color="#D97706" stop-opacity="0.4" />
+                        </linearGradient>
+                    </defs>
+                    <ellipse cx="40" cy="75" rx="30" ry="10" fill="#F59E0B" fill-opacity="0.4"
+                        filter="url(#blurShadow)" />
+
+                    <!-- Speech Bubble Block -->
+                    <path d="M15 20 H65 V50 H45 L35 60 L35 50 H15 Z" fill="url(#gb_g_s)" transform="translate(0, 8)" />
+                    <!-- Depth -->
+                    <path d="M15 20 H65 V50 H45 L35 60 L35 50 H15 Z" fill="url(#gb_s_f)"
+                        stroke="rgba(255,255,255,0.5)" /> <!-- Front -->
+                    <!-- Dots -->
+                    <circle cx="30" cy="35" r="3" fill="white" />
+                    <circle cx="40" cy="35" r="3" fill="white" />
+                    <circle cx="50" cy="35" r="3" fill="white" />
+                </svg>
+                <div class="icon-label">Guestbook</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Set 4B: Isometric Solid -->
+    <div class="set-container set-iso-solid">
+        <h2>Set B: Isometric Solid (实体积木 - 硬朗厚重)</h2>
+        <div class="icons-row">
+            <!-- Prompts -->
+            <div class="icon-wrapper" onclick="animateIcon(this)">
+                <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
+                    <!-- Base Block -->
+                    <path d="M40 70 L15 57 V30 L40 43 V70 Z" fill="#BE185D" /> <!-- Left Dark -->
+                    <path d="M40 70 L65 57 V30 L40 43 V70 Z" fill="#9D174D" /> <!-- Right Darker -->
+                    <path d="M40 43 L65 30 L40 17 L15 30 Z" fill="#F472B6" /> <!-- Top Light -->
+
+                    <!-- Floating Plus Detail -->
+                    <path d="M40 25 L45 28 L40 31 L35 28 Z" fill="white" opacity="0.8" />
+                    <path d="M40 31 V45" stroke="#FCE7F3" stroke-width="2" opacity="0.5" />
+                </svg>
+                <div class="icon-label">Prompts</div>
+            </div>
+
+            <!-- Shop -->
+            <div class="icon-wrapper" onclick="animateIcon(this)">
+                <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
+                    <!-- Floor/Platform -->
+                    <path d="M40 70 L10 55 L40 40 L70 55 Z" fill="#15803D" />
+                    <path d="M10 55 V60 L40 75 L70 60 V55 L40 70 Z" fill="#14532D" />
+
+                    <!-- Building Block -->
+                    <path d="M40 55 L25 47 V25 L40 33 V55 Z" fill="#22C55E" />
+                    <path d="M40 55 L55 47 V25 L40 33 V55 Z" fill="#166534" />
+                    <path d="M40 33 L55 25 L40 17 L25 25 Z" fill="#86EFAC" />
+                </svg>
+                <div class="icon-label">Shop</div>
+            </div>
+
+            <!-- Verify -->
+            <div class="icon-wrapper" onclick="animateIcon(this)">
+                <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
+                    <!-- Thick Shield -->
+                    <path d="M40 70 L20 60 V25 L40 35 V70 Z" fill="#4338CA" /> <!-- Left -->
+                    <path d="M40 70 L60 60 V25 L40 35 V70 Z" fill="#312E81" /> <!-- Right -->
+                    <path d="M40 35 L60 25 L40 15 L20 25 Z" fill="#818CF8" /> <!-- Top -->
+                    <!-- Symbol -->
+                    <path d="M40 35 V25" stroke="white" stroke-width="2" />
+                    <circle cx="40" cy="25" r="2" fill="white" />
+                </svg>
+                <div class="icon-label">Verify</div>
+            </div>
+
+            <!-- Guestbook -->
+            <div class="icon-wrapper" onclick="animateIcon(this)">
+                <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
+                    <!-- Book Thickness -->
+                    <path d="M20 30 L50 45 V65 L20 50 Z" fill="#B45309" /> <!-- Spine -->
+                    <path d="M50 65 L70 55 V35 L50 45 Z" fill="#FFFBEB" /> <!-- Pages Side -->
+                    <path d="M50 45 L70 35 L40 20 L20 30 Z" fill="#F59E0B" /> <!-- Cover -->
+                </svg>
+                <div class="icon-label">Guestbook</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Set 4C: Stacked Layers -->
+    <div class="set-container set-stacked">
+        <h2>Set C: Stacked Layers (层叠悬浮 - 纸张艺术)</h2>
+        <div class="icons-row">
+            <!-- Prompts -->
+            <div class="icon-wrapper" onclick="animateIcon(this)">
+                <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
+                    <!-- Bottom Card -->
+                    <rect x="25" y="25" width="40" height="40" rx="8" fill="#831843" class="layer layer-3" />
+                    <!-- Middle Card -->
+                    <rect x="20" y="20" width="40" height="40" rx="8" fill="#BE185D" class="layer layer-2" />
+                    <!-- Top Card -->
+                    <rect x="15" y="15" width="40" height="40" rx="8" fill="#F472B6" class="layer layer-1" />
+                    <circle cx="35" cy="35" r="8" fill="white" fill-opacity="0.8" class="layer layer-1" />
+                </svg>
+                <div class="icon-label">Prompts</div>
+            </div>
+            <!-- Shop -->
+            <div class="icon-wrapper" onclick="animateIcon(this)">
+                <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
+                    <rect x="25" y="25" width="40" height="40" rx="4" fill="#14532D" class="layer layer-3" />
+                    <rect x="20" y="20" width="40" height="40" rx="4" fill="#15803D" class="layer layer-2" />
+                    <rect x="15" y="15" width="40" height="40" rx="4" fill="#4ADE80" class="layer layer-1" />
+                    <rect x="25" y="25" width="20" height="20" rx="2" fill="white" fill-opacity="0.5"
+                        class="layer layer-1" />
+                </svg>
+                <div class="icon-label">Shop</div>
+            </div>
+            <!-- Verify -->
+            <div class="icon-wrapper" onclick="animateIcon(this)">
+                <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
+                    <path d="M35 25 h30 v30 h-30 z" fill="#312E81" class="layer layer-3" />
+                    <path d="M30 20 h30 v30 h-30 z" fill="#4338CA" class="layer layer-2" />
+                    <path d="M25 15 h30 v30 h-30 z" fill="#667EEA" class="layer layer-1" />
+                    <path d="M35 25 L45 35 L55 20" stroke="white" stroke-width="3" fill="none" class="layer layer-1" />
+                </svg>
+                <div class="icon-label">Verify</div>
+            </div>
+            <!-- Guestbook -->
+            <div class="icon-wrapper" onclick="animateIcon(this)">
+                <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
+                    <circle cx="50" cy="50" r="20" fill="#78350F" class="layer layer-3" />
+                    <circle cx="45" cy="45" r="20" fill="#B45309" class="layer layer-2" />
+                    <circle cx="40" cy="40" r="20" fill="#F59E0B" class="layer layer-1" />
+                    <path d="M35 38 h10 M35 43 h6" stroke="white" stroke-width="2" class="layer layer-1" />
+                </svg>
+                <div class="icon-label">Guestbook</div>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        function animateIcon(element) {
+            element.classList.remove('active');
+            void element.offsetWidth;
+            element.classList.add('active');
+            setTimeout(() => {
+                element.classList.remove('active');
+            }, 600);
+        }
+
+        function triggerAll() {
+            const icons = document.querySelectorAll('.icon-wrapper');
+            icons.forEach((icon, index) => {
+                setTimeout(() => animateIcon(icon), index * 100);
+            });
+        }
+    </script>
+</body>
+
+</html>

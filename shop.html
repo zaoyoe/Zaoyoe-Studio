@@ -22,6 +22,8 @@
     <!-- Custom CSS -->
     <link rel="stylesheet" href="capsule-styles.css?v=GLOW_V3">
     <link rel="stylesheet" href="style.css?v=RADIUS_GRADIENT_V1">
+    <!-- Unified Navigation CSS -->
+    <link rel="stylesheet" href="css/framer_home.css?v=NAV_UNIFIED">
     <!-- Prevent flash of wrong theme -->
     <script>
         (function () {
@@ -551,6 +553,12 @@
             font-size: 1.1rem;
         }
 
+        /* Nav Logo SVG inside home button */
+        .home-btn.nav-logo svg {
+            width: 24px;
+            height: 24px;
+        }
+
         .home-btn:hover {
             background: rgba(15, 23, 42, 0.8);
             color: #fff;
@@ -724,9 +732,58 @@
 
     <!-- Overlay Elements -->
     <div class="dropdown-overlay" id="dropdownOverlay"></div>
-    <a href="index.html" class="home-btn" title="返回首页">
-        <i class="fas fa-house"></i>
-    </a>
+
+    <!-- Unified Navigation Bar -->
+    <nav class="framer-nav">
+        <div class="nav-container">
+            <!-- Logo -->
+            <a href="/index.html" class="nav-logo">
+                <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M30 20 H80 L70 35 H20 Z" fill="white" />
+                    <path d="M40 40 H90 L80 55 H30 Z" fill="#ccc" />
+                    <path d="M20 60 H70 L60 75 H10 Z" fill="white" />
+                    <path d="M80 20 L90 15 L80 30" fill="#333" />
+                    <path d="M90 40 L100 35 L90 50" fill="#333" />
+                    <path d="M70 60 L80 55 L70 70" fill="#333" />
+                </svg>
+            </a>
+
+            <!-- Desktop Menu -->
+            <div class="nav-menu">
+                <a href="/prompts.html" data-i18n="nav.prompts">提示词</a>
+                <a href="/shop.html" class="active" data-i18n="nav.shop">商城</a>
+                <a href="/verify.html" data-i18n="nav.verify">验证</a>
+                <a href="/guestbook.html" data-i18n="nav.guestbook">留言板</a>
+            </div>
+
+            <!-- Actions -->
+            <div class="nav-actions">
+                <div id="auth-container"></div>
+                <button class="nav-hamburger">
+                    <span></span>
+                    <span></span>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Mobile Menu Overlay -->
+    <div class="mobile-menu">
+        <div class="mobile-menu-items">
+            <div class="mobile-menu-item">
+                <a href="/prompts.html" class="mobile-menu-link" data-i18n="nav.prompts">提示词</a>
+            </div>
+            <div class="mobile-menu-item">
+                <a href="/shop.html" class="mobile-menu-link active" data-i18n="nav.shop">商城</a>
+            </div>
+            <div class="mobile-menu-item">
+                <a href="/verify.html" class="mobile-menu-link" data-i18n="nav.verify">验证</a>
+            </div>
+            <div class="mobile-menu-item">
+                <a href="/guestbook.html" class="mobile-menu-link" data-i18n="nav.guestbook">留言板</a>
+            </div>
+        </div>
+    </div>
 
     <!-- Main Content -->
     <div class="shop-main">
@@ -964,6 +1021,7 @@
     <script src="./supabase-auth-functions.js?v=SHOP_PAGE" defer></script>
     <script src="js/i18n.js?v=1" defer></script>
     <script src="inject-auth.js?v=SHOP_PAGE" defer></script>
+    <script src="js/framer_home.js?v=NAV_UNIFIED" defer></script>
     <script src="notification-client.js" defer></script>
 
     <!-- Wallet Modal Component -->

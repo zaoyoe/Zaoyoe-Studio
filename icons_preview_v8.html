@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Icons Set 8: Refined Multi-Element Dynamics</title>
+    <style>
+        body {
+            background-color: #050505;
+            color: #fff;
+            font-family: 'Inter', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 50px;
+            gap: 80px;
+        }
+
+        h1 {
+            margin-bottom: 5px;
+            font-weight: 300;
+            letter-spacing: 1px;
+        }
+
+        p.subtitle {
+            color: #888;
+            margin-bottom: 40px;
+            font-size: 14px;
+        }
+
+        .set-container {
+            width: 100%;
+            max-width: 1000px;
+        }
+
+        .icons-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 40px;
+            width: 100%;
+        }
+
+        .icon-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 30px;
+            cursor: pointer;
+            position: relative;
+            padding: 30px;
+            border-radius: 24px;
+            transition: 0.4s;
+            background: linear-gradient(145deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.0));
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .icon-wrapper:hover {
+            background: linear-gradient(145deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.01));
+            border-color: rgba(255, 255, 255, 0.1);
+            transform: translateY(-5px);
+        }
+
+        .icon-label {
+            font-size: 14px;
+            color: #666;
+            transition: 0.3s;
+            font-weight: 500;
+            letter-spacing: 0.5px;
+        }
+
+        .icon-wrapper:hover .icon-label {
+            color: #fff;
+        }
+
+        svg {
+            overflow: visible;
+        }
+
+        /* --- Concept A: Nebula Core (Orbiting Rings) --- */
+        .c-nebula .center-star {
+            animation: starPulse 3s ease-in-out infinite;
+            transform-origin: center;
+        }
+
+        .c-nebula .ring {
+            fill: none;
+            stroke-width: 1;
+            transform-origin: center;
+            transition: 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .c-nebula .planet {
+            transform-origin: center;
+            transition: 0.5s;
+        }
+
+        .icon-wrapper:hover .c-nebula .ring-1 {
+            transform: rotate(180deg) scale(1.1);
+            stroke: #F472B6;
+            stroke-width: 2;
+        }
+
+        .icon-wrapper:hover .c-nebula .ring-2 {
+            transform: rotate(-90deg) scale(0.9);
+            stroke: #FBCFE8;
+        }
+
+        .icon-wrapper:hover .c-nebula .center-star {
+            animation: starSpinFast 1s linear infinite;
+        }
+
+        @keyframes starPulse {
+
+            0%,
+            100% {
+                transform: scale(1);
+                opacity: 0.8;
+            }
+
+            50% {
+                transform: scale(1.2);
+                opacity: 1;
+            }
+        }
+
+        @keyframes starSpinFast {
+            to {
+                transform: rotate(360deg) scale(1.2);
+            }
+        }
+
+
+        /* --- Concept B: Cyber Construct (Building Blocks) --- */
+        .c-construct .block {
+            transition: 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        /* Default state: assembled */
+        .icon-wrapper:hover .c-construct .block-top {
+            transform: translateY(-8px) translateX(4px);
+            fill: #F472B6;
+        }
+
+        .icon-wrapper:hover .c-construct .block-left {
+            transform: translateX(-6px);
+            fill: #DB2777;
+        }
+
+        .icon-wrapper:hover .c-construct .block-right {
+            transform: translateX(6px);
+            fill: #BE185D;
+        }
+
+        .icon-wrapper:hover .c-construct .core {
+            transform: scale(1.2);
+            fill: #FFF;
+        }
+
+        /* --- Concept C: Magic Rune (Drawing Path) --- */
+        .c-rune path {
+            stroke-dasharray: 100;
+            stroke-dashoffset: 0;
+            transition: 0.5s;
+        }
+
+        .c-rune .sparkle {
+            opacity: 0;
+            transform: scale(0);
+            transition: 0.3s;
+            transform-origin: center;
+        }
+
+        .icon-wrapper:hover .c-rune path {
+            animation: drawRune 1.5s ease-in-out forwards;
+            filter: drop-shadow(0 0 5px #F472B6);
+            stroke: #F472B6;
+        }
+
+        .icon-wrapper:hover .c-rune .sparkle {
+            opacity: 1;
+            transform: scale(1);
+            animation: sparklePop 0.5s ease-out infinite alternate;
+        }
+
+        @keyframes drawRune {
+            0% {
+                stroke-dashoffset: 100;
+            }
+
+            50% {
+                stroke-dashoffset: 0;
+            }
+
+            100% {
+                stroke-dashoffset: 0;
+            }
+        }
+
+        @keyframes sparklePop {
+            from {
+                transform: scale(0.8);
+            }
+
+            to {
+                transform: scale(1.2);
+            }
+        }
+
+        /* --- Concept D: Data Stream (Digital Flow) --- */
+        .c-data .stream-line {
+            stroke-dasharray: 10 10;
+            stroke-dashoffset: 0;
+            opacity: 0.3;
+        }
+
+        .c-data .icon-main {
+            fill: #333;
+            stroke: #555;
+            transition: 0.3s;
+        }
+
+        .icon-wrapper:hover .c-data .icon-main {
+            fill: #111;
+            stroke: #F472B6;
+            stroke-width: 2;
+            transform: scale(1.05);
+        }
+
+        .icon-wrapper:hover .c-data .stream-line {
+            opacity: 1;
+            animation: streamFlow 0.5s linear infinite;
+            stroke: #F472B6;
+        }
+
+        @keyframes streamFlow {
+            to {
+                stroke-dashoffset: -20;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1 onclick="triggerAll()">Refined Prompts Animation (Set 8)</h1>
+    <p class="subtitle">Interact to see multi-element decomposition and recomposition</p>
+
+    <div class="set-container">
+        <div class="icons-grid">
+
+            <!-- A: Nebula Core -->
+            <div class="icon-wrapper">
+                <svg width="100" height="100" viewBox="0 0 100 100" fill="none" class="c-nebula">
+                    <circle cx="50" cy="50" r="35" stroke="#333" class="ring ring-1"
+                        style="transform: rotate(30deg) scaleY(0.4)" />
+                    <circle cx="50" cy="50" r="35" stroke="#333" class="ring ring-2"
+                        style="transform: rotate(-30deg) scaleY(0.4)" />
+
+                    <path d="M50 35 L54 46 L65 50 L54 54 L50 65 L46 54 L35 50 L46 46 Z" fill="#F472B6"
+                        class="center-star" />
+
+                    <circle cx="75" cy="50" r="3" fill="#FFF" class="planet" style="opacity:0.6" />
+                    <circle cx="25" cy="60" r="2" fill="#FFF" class="planet" style="opacity:0.4" />
+                </svg>
+                <div class="icon-label">Nebula (星云轨迹)</div>
+            </div>
+
+            <!-- B: Cyber Construct -->
+            <div class="icon-wrapper">
+                <svg width="100" height="100" viewBox="0 0 100 100" fill="none" class="c-construct">
+                    <!-- Core -->
+                    <rect x="42" y="42" width="16" height="16" rx="2" fill="#333" class="core" />
+
+                    <!-- Blocks -->
+                    <path d="M40 38 L50 32 L60 38 L50 44 Z" fill="#444" class="block block-top" />
+                    <path d="M38 42 L32 50 L38 58 L44 50 Z" fill="#444" class="block block-left" />
+                    <path d="M62 42 L68 50 L62 58 L56 50 Z" fill="#444" class="block block-right" />
+                    <path d="M50 62 L42 68 L50 74 L58 68 Z" fill="#444" class="block block-bottom" />
+                </svg>
+                <div class="icon-label">Construct (赛博重构)</div>
+            </div>
+
+            <!-- C: Magic Rune -->
+            <div class="icon-wrapper">
+                <svg width="100" height="100" viewBox="0 0 100 100" fill="none" class="c-rune">
+                    <!-- The Rune Path -->
+                    <path d="M30 70 L50 20 L70 70 L25 35 H75 L30 70" stroke="#444" stroke-width="2"
+                        stroke-linejoin="round" stroke-linecap="round" fill="none" />
+
+                    <!-- Sparkles -->
+                    <path d="M50 10 L52 15 L50 20 L48 15 Z" fill="#FFF" class="sparkle" />
+                    <path d="M80 70 L83 75 L80 80 L77 75 Z" fill="#FFF" class="sparkle" style="animation-delay: 0.2s" />
+                    <path d="M20 70 L23 75 L20 80 L17 75 Z" fill="#FFF" class="sparkle" style="animation-delay: 0.4s" />
+                </svg>
+                <div class="icon-label">Rune (秘术符文)</div>
+            </div>
+
+            <!-- D: Data Stream -->
+            <div class="icon-wrapper">
+                <svg width="100" height="100" viewBox="0 0 100 100" fill="none" class="c-data">
+                    <rect x="35" y="35" width="30" height="30" rx="4" class="icon-main" />
+                    <path d="M45 50 H55 M50 45 V55" stroke="#555" stroke-width="2" />
+
+                    <!-- Streams -->
+                    <path d="M50 10 V30" stroke="#333" stroke-width="2" class="stream-line" />
+                    <path d="M50 70 V90" stroke="#333" stroke-width="2" class="stream-line"
+                        style="animation-delay: 0.1s; animation-direction: reverse;" />
+                    <path d="M10 50 H30" stroke="#333" stroke-width="2" class="stream-line"
+                        style="animation-delay: 0.2s" />
+                    <path d="M70 50 H90" stroke="#333" stroke-width="2" class="stream-line"
+                        style="animation-delay: 0.3s; animation-direction: reverse;" />
+                </svg>
+                <div class="icon-label">Stream (数据流)</div>
+            </div>
+
+        </div>
+    </div>
+
+</body>
+
+</html>
