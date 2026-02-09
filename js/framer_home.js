@@ -440,6 +440,59 @@ const FramerHome = {
   },
 
   /**
+   * Load minimal data needed for navigation dropdowns (for subpages)
+   * This is a lightweight alternative to loadAll() that only fetches
+   * data needed for the nav dropdown menus.
+   */
+  async loadNavData() {
+    try {
+      // Initialize cachedData if null
+      if (!this.cachedData) {
+        this.cachedData = {};
+      }
+
+      // Load prompts from global PROMPTS (if available)
+      if (window.PROMPTS && Array.isArray(window.PROMPTS)) {
+        this.cachedData.prompts = window.PROMPTS;
+      } else {
+        // Fallback: empty array (will use fallback tags)
+        this.cachedData.prompts = [];
+      }
+
+      // Load shop products from supabase (lightweight query)
+      if (window.supabaseClient) {
+        try {
+          const { data, error } = await window.supabaseClient
+            .from('shop_products')
+            .select('category')
+            .eq('is_active', true)
+            .limit(50);
+
+          if (!error && data) {
+            this.cachedData.shop = data;
+          } else {
+            this.cachedData.shop = [];
+          }
+        } catch (e) {
+          console.warn('Failed to load shop categories for nav:', e);
+          this.cachedData.shop = [];
+        }
+      } else {
+        this.cachedData.shop = [];
+      }
+
+      console.log('📂 Nav data loaded:', {
+        promptsCount: this.cachedData.prompts.length,
+        shopCount: this.cachedData.shop.length
+      });
+    } catch (error) {
+      console.error('Failed to load nav data:', error);
+      // Ensure cachedData exists with empty arrays
+      this.cachedData = { prompts: [], shop: [] };
+    }
+  },
+
+  /**
    * Initialize navigation dropdown menus
    * Dropdowns are appended to body (outside nav) to enable backdrop-filter
    */
@@ -452,7 +505,7 @@ const FramerHome = {
       const currentLang = window.i18n?.getCurrentLanguage() || 'zh';
 
       const tagCounts = {};
-      (this.cachedData.prompts || []).forEach(p => {
+      (this.cachedData?.prompts || []).forEach(p => {
         // Prioritize aiTags with bilingual support
         if (p.aiTags && typeof p.aiTags === 'object') {
           ['styles', 'objects', 'scenes', 'mood'].forEach(cat => {
@@ -482,7 +535,7 @@ const FramerHome = {
 
     // Get shop categories
     const getShopCategories = () => {
-      const categories = [...new Set((this.cachedData.shop || []).map(p => p.category).filter(Boolean))];
+      const categories = [...new Set((this.cachedData?.shop || []).map(p => p.category).filter(Boolean))];
       return categories.length > 0 ? categories : ['全部商品', 'API密钥', '会员服务', '资源包'];
     };
 
@@ -1381,7 +1434,7 @@ if (typeof module !== 'undefined' && module.exports) {
  * For pages that use framer-nav but aren't homepage
  * ==========================================
  */
-(function initNavBar() {
+document.addEventListener('DOMContentLoaded', function initNavBar() {
   const nav = document.querySelector('.framer-nav');
   if (!nav) return; // No nav bar on this page
 
@@ -1422,5 +1475,23 @@ if (typeof module !== 'undefined' && module.exports) {
     });
   }
 
+  // Initialize navigation dropdowns for subpages too
+  // Need to load data first, then init dropdowns
+  if (typeof FramerHome !== 'undefined' && FramerHome.loadNavData && FramerHome.initNavDropdowns) {
+    console.log('📂 Loading nav data for subpage...');
+    FramerHome.loadNavData().then(() => {
+      console.log('📂 Initializing nav dropdowns on subpage...');
+      FramerHome.initNavDropdowns();
+
+      // 🆕 Listen for language changes and re-initialize dropdowns
+      window.addEventListener('languageChanged', () => {
+        console.log('🌐 Language changed on subpage, re-initializing nav dropdowns...');
+        FramerHome.initNavDropdowns();
+      });
+    }).catch(err => {
+      console.error('Failed to load nav data:', err);
+    });
+  }
+
   console.log('✅ Standalone nav bar initialized');
-})();
+});

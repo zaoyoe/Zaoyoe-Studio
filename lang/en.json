@@ -162,7 +162,9 @@
         "getCode": "Get Code",
         "loginNow": "Sign in",
         "resetSubtitle": "Enter your email to reset your password",
-        "recover": "Recover"
+        "recover": "Recover",
+        "agreeToTerms": "I have read and agree to the",
+        "privacyPolicy": "Privacy Policy"
     },
     "shop": {
         "title": "Resource Store",

@@ -161,6 +161,15 @@
                         <input type="password" id="reg-password" class="glass-input" placeholder="设置密码" data-i18n-placeholder="auth.setPassword" autocomplete="new-password" data-form-type="other" required>
                     </div>
 
+                    <!-- Privacy Policy Consent Checkbox -->
+                    <div class="checkbox-wrapper" style="margin-bottom: 24px; display: flex; align-items: flex-start; gap: 8px; color: rgba(255,255,255,0.7); font-size: 13px;">
+                        <input type="checkbox" id="privacyConsent" class="custom-checkbox" style="width: 16px; height: 16px; accent-color: #9b5de5; cursor: pointer; margin-top: 2px; flex-shrink: 0;">
+                        <label for="privacyConsent" style="cursor: pointer; line-height: 1.4;">
+                            <span data-i18n="auth.agreeToTerms">我已阅读并同意</span>
+                            <a href="/privacy.html" target="_blank" style="color: #9b5de5; text-decoration: underline;" data-i18n="auth.privacyPolicy">隐私政策</a>
+                        </label>
+                    </div>
+
                     <button type="submit" class="login-submit-btn" data-i18n="auth.createAccount">创建账号</button>
                 </form>
 
@@ -1102,10 +1111,14 @@
     window.handleDropdownNotifClick = function (e) {
         if (e) { e.preventDefault(); e.stopPropagation(); }
 
-        // Close the dropdown menu
+        // Close the dropdown menu AND its overlay
         const dropdown = document.getElementById('userDropdown');
+        const overlay = document.getElementById('dropdownOverlay');
         if (dropdown) {
             dropdown.classList.remove('active');
+        }
+        if (overlay) {
+            overlay.classList.remove('active');
         }
 
         // Open the notification panel (using existing toggleNotifMenu function)

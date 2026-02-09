@@ -9,6 +9,7 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>资源商城 - Zaoyoe</title>
+    <link rel="icon" type="image/png" href="assets/favicon.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -51,8 +52,8 @@
 
         [data-theme="dark"] {
             /* Dark Mode Overrides */
-            --bg-color: #0f172a;
-            /* Starry Blue Background (matches Admin Studio) */
+            --bg-color: #000000;
+            /* Pure Black Background */
             --text-main: #f1f5f9;
             --text-dim: #94a3b8;
             --text-bold: #ffffff;
@@ -62,6 +63,8 @@
             --accent-purple: #a78bfa;
             --accent-color: #60a5fa;
             --starry-blue: #5d9fd8;
+            /* Navigation bar background */
+            --bg-nav: #000000;
         }
 
         /* Force background color to override style.css #000000 !important */
@@ -750,8 +753,8 @@
 
             <!-- Desktop Menu -->
             <div class="nav-menu">
-                <a href="/prompts.html" data-i18n="nav.prompts">提示词</a>
-                <a href="/shop.html" class="active" data-i18n="nav.shop">商城</a>
+                <a href="/prompts.html" class="nav-trigger" data-dropdown="prompts" data-i18n="nav.prompts">提示词</a>
+                <a href="/shop.html" class="nav-trigger active" data-dropdown="shop" data-i18n="nav.shop">商城</a>
                 <a href="/verify.html" data-i18n="nav.verify">验证</a>
                 <a href="/guestbook.html" data-i18n="nav.guestbook">留言板</a>
             </div>

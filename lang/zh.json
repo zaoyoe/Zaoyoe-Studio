@@ -162,7 +162,9 @@
         "getCode": "获取验证码",
         "loginNow": "直接登录",
         "resetSubtitle": "请输入您的注册邮箱以重置密码",
-        "recover": "找回"
+        "recover": "找回",
+        "agreeToTerms": "我已阅读并同意",
+        "privacyPolicy": "隐私政策"
     },
     "shop": {
         "title": "资源商城",

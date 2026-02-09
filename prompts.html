@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Banana Pro Gallery | Light Poetry</title>
+    <link rel="icon" type="image/png" href="assets/favicon.png">
 
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -43,7 +44,7 @@
         }
 
         html[data-theme="dark"] {
-            background-color: #0f172a;
+            background-color: #000000;
         }
 
         body {
@@ -107,8 +108,9 @@
 
             <!-- Desktop Menu -->
             <div class="nav-menu">
-                <a href="/prompts.html" class="active" data-i18n="nav.prompts">提示词</a>
-                <a href="/shop.html" data-i18n="nav.shop">商城</a>
+                <a href="/prompts.html" class="nav-trigger active" data-dropdown="prompts"
+                    data-i18n="nav.prompts">提示词</a>
+                <a href="/shop.html" class="nav-trigger" data-dropdown="shop" data-i18n="nav.shop">商城</a>
                 <a href="/verify.html" data-i18n="nav.verify">验证</a>
                 <a href="/guestbook.html" data-i18n="nav.guestbook">留言板</a>
             </div>

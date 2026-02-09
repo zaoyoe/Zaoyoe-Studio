@@ -60,6 +60,19 @@ async function uploadAvatarToR2({ userId, imageUrl, imageData }) {
             // Avatar uploaded but DB update failed - not critical
         }
 
+        // 🆕 Update localStorage cache so avatar shows immediately on refresh
+        try {
+            const cached = localStorage.getItem('cached_user_profile');
+            if (cached) {
+                const cachedProfile = JSON.parse(cached);
+                cachedProfile.avatarUrl = avatarUrl;
+                localStorage.setItem('cached_user_profile', JSON.stringify(cachedProfile));
+                console.log('💾 Updated cached_user_profile with new avatar URL');
+            }
+        } catch (e) {
+            console.warn('⚠️ Failed to update cached profile:', e);
+        }
+
         return avatarUrl;
 
     } catch (error) {

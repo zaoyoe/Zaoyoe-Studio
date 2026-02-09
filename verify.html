@@ -7,6 +7,7 @@
         content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title data-i18n="verify.pageTitle">Gemini 验证服务 - Zaoyoe</title>
+    <link rel="icon" type="image/png" href="assets/favicon.png">
 
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -44,7 +45,7 @@
         /* Page specific styles */
         body {
             min-height: 100vh;
-            background-color: #0f172a;
+            background-color: #000000;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -304,8 +305,8 @@
 
             <!-- Desktop Menu -->
             <div class="nav-menu">
-                <a href="/prompts.html" data-i18n="nav.prompts">提示词</a>
-                <a href="/shop.html" data-i18n="nav.shop">商城</a>
+                <a href="/prompts.html" class="nav-trigger" data-dropdown="prompts" data-i18n="nav.prompts">提示词</a>
+                <a href="/shop.html" class="nav-trigger" data-dropdown="shop" data-i18n="nav.shop">商城</a>
                 <a href="/verify.html" class="active" data-i18n="nav.verify">验证</a>
                 <a href="/guestbook.html" data-i18n="nav.guestbook">留言板</a>
             </div>
