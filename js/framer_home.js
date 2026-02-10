@@ -1213,12 +1213,13 @@ const FramerHome = {
     const hamburger = document.querySelector('.nav-hamburger');
     const mobileMenu = document.querySelector('.mobile-menu');
 
-    if (hamburger && mobileMenu) {
+    if (hamburger && mobileMenu && !hamburger._navInitialized) {
       // Toggle mobile menu on hamburger click
       hamburger.addEventListener('click', () => {
         hamburger.classList.toggle('active');
         mobileMenu.classList.toggle('active');
       });
+      hamburger._navInitialized = true;
 
       // Sync desktop dropdown content to mobile submenus
       const syncDropdownToMobile = (desktopDropdownId, mobileSubmenuId) => {
