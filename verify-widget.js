@@ -219,19 +219,13 @@
 
     function applyMaintenanceState() {
         const submitBtn = document.getElementById('verifySubmitBtn');
-        const quotaWarning = document.getElementById('verifyQuotaWarning');
 
         if (submitBtn) {
-            submitBtn.disabled = true;
+            submitBtn.disabled = false; // keep clickable so user sees the popup
             submitBtn.style.background = 'rgba(239, 68, 68, 0.3)';
             submitBtn.style.borderColor = 'rgba(239, 68, 68, 0.5)';
-            submitBtn.style.cursor = 'not-allowed';
+            submitBtn.style.cursor = 'pointer';
             submitBtn.innerHTML = `<i class="fas fa-tools"></i> 验证服务维护中`;
-        }
-
-        if (quotaWarning) {
-            quotaWarning.style.display = 'flex';
-            quotaWarning.innerHTML = `<i class="fas fa-tools"></i> 验证服务暂停维护中，请稍后再试。如有疑问请联系管理员。`;
         }
     }
 
