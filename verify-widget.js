@@ -1,7 +1,6 @@
 /**
- * Batch Verifier Widget
- * Modular component for Gemini verification service
- * Supports batch mode for multiple SheerID links
+ * Batch Verifier Widget v2
+ * Per-item polling with bilingual status + safe cancel
  */
 
 (function () {
@@ -11,32 +10,149 @@
     // Configuration
     // =============================================
     const CONFIG = {
-        // Will be loaded from system_config
-        pricePerVerify: 3,
-        // Node.js Puppeteer server endpoint
+        pricePerVerify: 10,
         nodeServerUrl: window.VERIFY_SERVER_URL || 'https://zaoyoe-verify-server-production.up.railway.app',
-        // Container element ID
-        containerId: 'verify-widget-container'
+        containerId: 'verify-widget-container',
+        pollInterval: 3000,
+        pollTimeout: 600000  // 10 minutes (review can take a while)
     };
-
-    // Auto-detect Supabase Edge Function URL
-    function getEdgeFunctionUrl() {
-        // Try to get from Supabase URL (e.g., https://xxx.supabase.co -> https://xxx.supabase.co/functions/v1/verify)
-        const supabaseUrl = window.SUPABASE_URL ||
-            (typeof supabase !== 'undefined' && supabase.supabaseUrl) ||
-            'https://mmkugdibsaeoevliebzk.supabase.co';
-        return `${supabaseUrl}/functions/v1/verify`;
-    }
 
     // State
     let currentUser = null;
     let userBalance = 0;
     let isLoading = false;
-    let batchResults = []; // Store results for batch mode
     let batchStats = { success: 0, failed: 0, total: 0 };
-    let activeEventSource = null; // Track active SSE connection for cancellation
+    let activeTasks = new Map(); // taskId -> { index, verificationId, timer, aborted }
 
-    // i18n helper with fallback
+    // =============================================
+    // Bilingual Status Messages (hardcoded)
+    // =============================================
+    const STATUS_MAP = {
+        // API status → { zh, en, icon, cssClass }
+        'Verification completed successfully': {
+            zh: '验证成功', en: 'Verified successfully', icon: '✅', css: 'success'
+        },
+        'Verification completed successfully!': {
+            zh: '验证成功', en: 'Verified successfully', icon: '✅', css: 'success'
+        },
+        'Waiting for review': {
+            zh: '等待人工审核中...', en: 'Under manual review...', icon: '⏳', css: 'processing'
+        },
+        'Waiting for review...': {
+            zh: '等待人工审核中...', en: 'Under manual review...', icon: '⏳', css: 'processing'
+        },
+        'Failed to submit personal information': {
+            zh: '提交个人信息失败', en: 'Failed to submit personal info', icon: '❌', css: 'error'
+        },
+        'Failed to check verification status': {
+            zh: '查询验证状态失败', en: 'Status check failed', icon: '❌', css: 'error'
+        },
+        'Failed to select program': {
+            zh: '选择项目失败', en: 'Failed to select program', icon: '❌', css: 'error'
+        },
+        'Verification failed': {
+            zh: '验证失败', en: 'Verification failed', icon: '❌', css: 'error'
+        },
+        'Verification rejected': {
+            zh: '验证被拒绝', en: 'Verification rejected', icon: '❌', css: 'error'
+        },
+        'Already verified': {
+            zh: '已验证过', en: 'Already verified', icon: 'ℹ️', css: 'info'
+        },
+        'Invalid verification link': {
+            zh: '无效的验证链接', en: 'Invalid verification link', icon: '❌', css: 'error'
+        },
+        'Verification expired': {
+            zh: '验证已过期', en: 'Verification expired', icon: '❌', css: 'error'
+        },
+        'Cancelled': {
+            zh: '已取消', en: 'Cancelled', icon: '⚪', css: 'cancelled'
+        }
+    };
+
+    // Status by task status field
+    const TASK_STATUS_MAP = {
+        'pending': { zh: '排队等待中...', en: 'Queuing...', icon: '⏳' },
+        'queued': { zh: '排队等待中...', en: 'Queuing...', icon: '⏳' },
+        'processing': { zh: '正在验证...', en: 'Verifying...', icon: '🔄' },
+        'running': { zh: '正在验证...', en: 'Verifying...', icon: '🔄' },
+        'completed': { zh: '已完成', en: 'Completed', icon: '✅' },
+        'failed': { zh: '失败', en: 'Failed', icon: '❌' },
+        'error': { zh: '出错', en: 'Error', icon: '❌' },
+        'cancelled': { zh: '已取消', en: 'Cancelled', icon: '⚪' }
+    };
+
+    /**
+     * Translate API message to bilingual string
+     */
+    function translateStatus(message, status) {
+        // Try exact message match first
+        if (message) {
+            for (const [key, val] of Object.entries(STATUS_MAP)) {
+                if (message.toLowerCase().includes(key.toLowerCase())) {
+                    return `${val.icon} ${val.zh} / ${val.en}`;
+                }
+            }
+        }
+        // Try status field match
+        if (status && TASK_STATUS_MAP[status]) {
+            const s = TASK_STATUS_MAP[status];
+            return `${s.icon} ${s.zh} / ${s.en}`;
+        }
+        // Fallback: show original message
+        return message || status || '未知状态 / Unknown';
+    }
+
+    /**
+     * Get CSS class from message/status
+     */
+    function getStatusCss(message, status) {
+        if (message) {
+            for (const [key, val] of Object.entries(STATUS_MAP)) {
+                if (message.toLowerCase().includes(key.toLowerCase())) {
+                    return val.css;
+                }
+            }
+        }
+        if (status === 'completed' || status === 'success') return 'success';
+        if (status === 'failed' || status === 'error') return 'error';
+        if (status === 'cancelled') return 'cancelled';
+        return 'processing';
+    }
+
+    /**
+     * Check if status is terminal (no more polling needed)
+     */
+    function isTerminalStatus(message, status) {
+        const terminalMessages = [
+            'completed successfully', 'failed to submit', 'failed to check',
+            'failed to select', 'verification failed', 'verification rejected',
+            'already verified', 'invalid verification', 'verification expired'
+        ];
+        const terminalStatuses = ['completed', 'failed', 'error', 'success', 'cancelled'];
+
+        if (message) {
+            const lower = message.toLowerCase();
+            if (terminalMessages.some(t => lower.includes(t))) return true;
+        }
+        if (status && terminalStatuses.includes(status)) return true;
+        return false;
+    }
+
+    /**
+     * Check if the result is a success
+     */
+    function isSuccessResult(message, status, successFlag) {
+        if (successFlag === true) return true;
+        if (status === 'success') return true;
+        if (message) {
+            const lower = message.toLowerCase();
+            if (lower.includes('completed successfully') || lower.includes('already verified')) return true;
+        }
+        return false;
+    }
+
+    // i18n helper
     function t(key, fallback) {
         if (window.i18n && typeof window.i18n.t === 'function') {
             return window.i18n.t(key);
@@ -45,110 +161,69 @@
     }
 
     // =============================================
-    // Initialize Widget
+    // Initialize
     // =============================================
     async function init() {
         const container = document.getElementById(CONFIG.containerId);
-        if (!container) {
-            console.warn('[VerifyWidget] Container not found:', CONFIG.containerId);
-            return;
-        }
+        if (!container) return;
 
-        // Load config from system_config
         await loadConfig();
 
-        // OPTIMIZATION: Check for cached user profile BEFORE rendering to prevent flash
         let isLoggedIn = false;
         try {
             const cachedProfile = localStorage.getItem('cached_user_profile');
             if (cachedProfile) {
                 const user = JSON.parse(cachedProfile);
                 if (user && (user.id || user.user_id)) {
-                    console.log('[VerifyWidget] Found cached profile, rendering as logged in');
-                    // Correct ID mapping if needed for consistency
                     if (!user.id && user.user_id) user.id = user.user_id;
                     currentUser = user;
                     isLoggedIn = true;
                 }
             }
-        } catch (e) {
-            console.warn('[VerifyWidget] Error reading cached profile:', e);
-        }
+        } catch (e) { /* ignored */ }
 
-        // Wait for i18n to be ready (with timeout fallback)
         if (!window.i18n || typeof window.i18n.t !== 'function') {
-            console.log('[VerifyWidget] Waiting for i18n to load...');
             await new Promise(resolve => {
-                let checkCount = 0;
-                const checkI18n = setInterval(() => {
-                    checkCount++;
-                    if (window.i18n && typeof window.i18n.t === 'function') {
-                        clearInterval(checkI18n);
-                        resolve();
-                    } else if (checkCount > 20) { // 2 second timeout
-                        clearInterval(checkI18n);
-                        console.warn('[VerifyWidget] i18n not loaded, using fallback');
+                let count = 0;
+                const check = setInterval(() => {
+                    count++;
+                    if ((window.i18n && typeof window.i18n.t === 'function') || count > 20) {
+                        clearInterval(check);
                         resolve();
                     }
                 }, 100);
             });
         }
 
-        // Render widget with initial auth state
         render(container, isLoggedIn);
-
-        // Setup auth listener (will verify token and update final state)
         setupAuthListener();
-
-        // Listen for language changes to re-render with new translations
-        setupLanguageChangeListener(container);
-    }
-
-    // =============================================
-    // Language Change Listener
-    // =============================================
-    function setupLanguageChangeListener(container) {
-        // Listen for language change event from i18n system (dispatched on window)
         window.addEventListener('languageChanged', () => {
-            console.log('[VerifyWidget] Language changed, re-rendering...');
-            const isLoggedIn = !!currentUser;
-            render(container, isLoggedIn);
-            // Re-attach event listeners after re-render
-            setupTextareaListeners();
+            render(container, !!currentUser);
         });
     }
 
     // =============================================
-    // Load Configuration
+    // Load Config
     // =============================================
     async function loadConfig() {
         try {
             if (!window.supabaseClient) return;
-
             const { data, error } = await window.supabaseClient
                 .from('system_config')
                 .select('config_value')
-                .eq('config_key', 'verify')
+                .eq('config_key', 'verify_settings')
                 .single();
-
             if (!error && data?.config_value) {
-                CONFIG.pricePerVerify = data.config_value.price_per_verify || 3;
-                CONFIG.batchApiKey = data.config_value.batch_api_key || null;
-                CONFIG.apiEndpoint = data.config_value.api_endpoint || null;
+                CONFIG.pricePerVerify = data.config_value.price_per_verify || 10;
             }
-
-            console.log('[VerifyWidget] Config loaded:', CONFIG);
-        } catch (e) {
-            console.warn('[VerifyWidget] Failed to load config:', e);
-        }
+        } catch (e) { /* ignored */ }
     }
 
     // =============================================
-    // Render Widget
+    // Render
     // =============================================
     function render(container, isLoggedIn = false) {
-        // Pre-calculate display styles based on initial auth state
-        const loginPromptDisplay = isLoggedIn ? 'none' : 'block';
+        const loginDisplay = isLoggedIn ? 'none' : 'block';
         const formDisplay = isLoggedIn ? 'block' : 'none';
         const balanceDisplay = isLoggedIn ? 'flex' : 'none';
 
@@ -156,7 +231,6 @@
             <div class="verify-widget">
                 <div class="verify-widget-header">
                     <div class="verify-widget-icon">
-                        <!-- Custom Key Icon Design -->
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));">
                             <path fill-rule="evenodd" clip-rule="evenodd" d="M15.5 4C12.4624 4 10 6.46243 10 9.5C10 10.751 10.4173 11.9039 11.129 12.835L4.56066 19.4033C4.24647 19.7175 4.24647 20.227 4.56066 20.5412L5.45879 21.4393C5.77298 21.7535 6.28248 21.7535 6.59667 21.4393L8.5 19.536L10.4033 21.4393C10.7175 21.7535 11.227 21.7535 11.5412 21.4393L12.4393 20.5412C12.7535 20.227 12.7535 19.7175 12.4393 19.4033L11.536 17.5L12.835 16.129C13.7547 16.708 14.739 17 15.5 17C18.5376 17 21 14.5376 21 11.5C21 8.46243 18.5376 4 15.5 4ZM17 9C17.5523 9 18 8.55228 18 8C18 7.44772 17.5523 7 17 7C16.4477 7 16 7.44772 16 8C16 8.55228 16.4477 9 17 9Z" fill="white"/>
                         </svg>
@@ -165,10 +239,6 @@
                         <h3>${t('verify.title', 'Gemini 验证服务')}</h3>
                         <p>${t('verify.subtitle', '支持批量验证')}</p>
                     </div>
-                    <div class="verify-quota" id="verifyQuota" style="display: none;">
-                        <i class="fas fa-ticket"></i>
-                        ${t('verify.remaining', '剩余')}: <span id="verifyQuotaValue">--</span>
-                    </div>
                     <div class="verify-balance" id="verifyBalance" style="display: ${balanceDisplay};">
                         <i class="fas fa-coins"></i>
                         <span id="verifyBalanceValue">0</span>
@@ -176,8 +246,7 @@
                 </div>
 
                 <div id="verifyContent">
-                    <!-- Content will be dynamically loaded based on auth state -->
-                    <div class="verify-login-prompt" id="verifyLoginPrompt" style="display: ${loginPromptDisplay};">
+                    <div class="verify-login-prompt" id="verifyLoginPrompt" style="display: ${loginDisplay};">
                         <p>${t('verify.loginPrompt', '登录后即可使用验证服务')}</p>
                         <button class="verify-login-btn" onclick="window.toggleLoginModal && window.toggleLoginModal()">
                             <i class="fas fa-sign-in-alt"></i>
@@ -216,7 +285,6 @@
                     </div>
                 </div>
 
-                <!-- Batch Results Panel -->
                 <div class="verify-batch-results" id="verifyBatchResults">
                     <div class="verify-batch-results-header">
                         <div class="verify-batch-results-title">
@@ -244,164 +312,120 @@
                     </div>
                 </div>
 
-                <!-- Single result (hidden in batch mode) -->
                 <div class="verify-result" id="verifyResult">
                     <div class="verify-result-header">
-                        <div class="verify-result-icon">
-                            <i class="fas fa-check"></i>
-                        </div>
-                        <div class="verify-result-title" id="verifyResultTitle">${t('verify.verifySuccess', '验证成功')}</div>
+                        <div class="verify-result-icon"><i class="fas fa-check"></i></div>
+                        <div class="verify-result-title" id="verifyResultTitle"></div>
                     </div>
                     <div class="verify-result-message" id="verifyResultMessage"></div>
                 </div>
             </div>
         `;
 
-        updatePriceDisplay();
         setupInputListener();
+        updatePriceDisplay();
     }
 
     // =============================================
-    // Setup Input Listener for Link Count
-    // =============================================
-    function setupInputListener() {
-        const input = document.getElementById('verifyIdInput');
-        if (input) {
-            input.addEventListener('input', updateLinkCount);
-        }
-    }
-
-    function updateLinkCount() {
-        const input = document.getElementById('verifyIdInput');
-        const countEl = document.getElementById('verifyLinkCount');
-        const totalCostEl = document.getElementById('verifyTotalCost');
-        if (!input || !countEl) return;
-
-        const links = parseLinks(input.value);
-        const count = links.length;
-        const totalCost = count * CONFIG.pricePerVerify;
-
-        countEl.textContent = count;
-        if (totalCostEl) {
-            totalCostEl.textContent = totalCost;
-        }
-    }
-
-    // =============================================
-    // Parse Links from Input
-    // =============================================
-    function parseLinks(text) {
-        if (!text.trim()) return [];
-
-        // Split by newlines and filter valid links
-        return text
-            .split('\n')
-            .map(line => line.trim())
-            .filter(line => {
-                // Must contain sheerid or verification-related patterns
-                return line.includes('sheerid.com') ||
-                    line.includes('verificationId') ||
-                    (line.length > 20 && !line.includes(' '));
-            });
-    }
-
-    // =============================================
-    // Auth Listener
+    // Auth
     // =============================================
     function setupAuthListener() {
         if (!window.supabaseClient) return;
-
-        // Check initial auth state
-        window.supabaseClient.auth.getUser().then(({ data: { user } }) => {
-            updateAuthState(user);
-        });
-
-        // Listen for auth changes
-        window.supabaseClient.auth.onAuthStateChange((event, session) => {
-            updateAuthState(session?.user || null);
-        });
+        window.supabaseClient.auth.getUser().then(({ data: { user } }) => updateAuthState(user));
+        window.supabaseClient.auth.onAuthStateChange((_, session) => updateAuthState(session?.user || null));
     }
 
     async function updateAuthState(user) {
         currentUser = user;
-
         const loginPrompt = document.getElementById('verifyLoginPrompt');
         const form = document.getElementById('verifyForm');
         const balanceEl = document.getElementById('verifyBalance');
 
         if (user) {
-            // User is logged in
             if (loginPrompt) loginPrompt.style.display = 'none';
             if (form) form.style.display = 'block';
             if (balanceEl) balanceEl.style.display = 'flex';
-
-            // Sync cache (Robustness fix)
             try {
-                // Ensure we have a profile-like object to cache (user object from Supabase is enough for ID check)
-                const cacheData = {
-                    id: user.id,
-                    email: user.email,
-                    // If we have metadata, use it
-                    user_metadata: user.user_metadata
-                };
-                localStorage.setItem('cached_user_profile', JSON.stringify(cacheData));
-            } catch (e) {
-                console.warn('[VerifyWidget] Failed to update cache:', e);
-            }
-
-            // Load user balance
+                localStorage.setItem('cached_user_profile', JSON.stringify({
+                    id: user.id, email: user.email, user_metadata: user.user_metadata
+                }));
+            } catch (e) { /* ignored */ }
             await loadUserBalance();
         } else {
-            // User is logged out
             if (loginPrompt) loginPrompt.style.display = 'block';
             if (form) form.style.display = 'none';
             if (balanceEl) balanceEl.style.display = 'none';
-
-            // Clear cache
             localStorage.removeItem('cached_user_profile');
         }
     }
 
-    // =============================================
-    // Load User Balance
-    // =============================================
     async function loadUserBalance() {
         if (!currentUser || !window.supabaseClient) return;
-
         try {
             let balance = 0;
-
-            // Use PointsService if available (more reliable)
             if (window.PointsService && typeof window.PointsService.getBalance === 'function') {
                 const result = await window.PointsService.getBalance();
                 balance = result.total_balance || 0;
-                console.log('[VerifyWidget] Got balance from PointsService:', balance);
             } else {
-                // Fallback: direct query to points_balance
                 const { data, error } = await window.supabaseClient
-                    .from('points_balance')
-                    .select('total_balance')
-                    .eq('user_id', currentUser.id)
-                    .maybeSingle();
-
-                if (!error && data) {
-                    balance = data.total_balance || 0;
-                }
-                console.log('[VerifyWidget] Got balance from direct query:', balance);
+                    .from('points_balance').select('total_balance')
+                    .eq('user_id', currentUser.id).maybeSingle();
+                if (!error && data) balance = data.total_balance || 0;
             }
-
             userBalance = balance;
-            const balanceValueEl = document.getElementById('verifyBalanceValue');
-            if (balanceValueEl) {
-                balanceValueEl.textContent = userBalance;
-            }
-        } catch (e) {
-            console.warn('[VerifyWidget] Failed to load balance:', e);
-        }
+            const el = document.getElementById('verifyBalanceValue');
+            if (el) el.textContent = userBalance;
+        } catch (e) { /* ignored */ }
     }
 
     // =============================================
-    // Submit Verification (Batch Mode)
+    // Input Helpers
+    // =============================================
+    function setupInputListener() {
+        const input = document.getElementById('verifyIdInput');
+        if (input) input.addEventListener('input', updateLinkCount);
+    }
+
+    function updateLinkCount() {
+        const input = document.getElementById('verifyIdInput');
+        const countEl = document.getElementById('verifyLinkCount');
+        const costEl = document.getElementById('verifyTotalCost');
+        if (!input || !countEl) return;
+        const links = parseLinks(input.value);
+        countEl.textContent = links.length;
+        if (costEl) costEl.textContent = links.length * CONFIG.pricePerVerify;
+    }
+
+    function parseLinks(text) {
+        if (!text.trim()) return [];
+        return text.split('\n').map(l => l.trim()).filter(l =>
+            l.includes('sheerid.com') || l.includes('verificationId') || (l.length > 20 && !l.includes(' '))
+        );
+    }
+
+    function extractVerificationId(input) {
+        input = input.trim();
+        if (input.includes('sheerid.com') || input.includes('services.sheerid')) return input;
+        if (!input.includes('/') && !input.includes('?')) return input;
+        try {
+            if (input.match(/\/verify\/([a-zA-Z0-9]+)/i)) return input;
+            const m = input.match(/verificationId[=\/]([a-zA-Z0-9_-]+)/i);
+            if (m) return m[1];
+            const vm = input.match(/vid_([a-zA-Z0-9]+)/i);
+            if (vm) return 'vid_' + vm[1];
+            return null;
+        } catch (e) { return null; }
+    }
+
+    function updatePriceDisplay() {
+        document.querySelectorAll('.per-price').forEach(el => {
+            el.textContent = `（${CONFIG.pricePerVerify}${t('verify.perPrice', '积分/次')}）`;
+        });
+        updateLinkCount();
+    }
+
+    // =============================================
+    // Submit: Per-item POST /verify + Parallel Polling
     // =============================================
     async function submit() {
         if (isLoading) return;
@@ -409,483 +433,334 @@
         const input = document.getElementById('verifyIdInput');
         const submitBtn = document.getElementById('verifySubmitBtn');
         const cancelBtn = document.getElementById('verifyCancelBtn');
+        const batchPanel = document.getElementById('verifyBatchResults');
         const singleResult = document.getElementById('verifyResult');
-        const batchResultsPanel = document.getElementById('verifyBatchResults');
 
         if (!input || !submitBtn) return;
 
         const inputValue = input.value.trim();
         if (!inputValue) {
-            showSingleResult('error', t('verify.enterContent', '请输入内容'), t('verify.enterSheerIdLink', '请输入 SheerID 验证链接'));
+            showSingleResult('error', '请输入内容 / Please enter content',
+                '请输入 SheerID 验证链接 / Please enter SheerID verification links');
             return;
         }
 
-        // Parse all links
         const links = parseLinks(inputValue);
         if (links.length === 0) {
-            showSingleResult('error', t('verify.formatError', '格式错误'), t('verify.invalidLink', '无法识别有效的验证链接'));
+            showSingleResult('error', '格式错误 / Invalid format',
+                '无法识别有效的验证链接 / No valid verification links found');
             return;
         }
 
-        // Calculate total cost
         const totalCost = links.length * CONFIG.pricePerVerify;
         if (userBalance < totalCost) {
-            const msg = t('verify.needPoints', '验证 {count} 个链接需要 {cost} 积分，当前余额: {balance}')
-                .replace('{count}', links.length)
-                .replace('{cost}', totalCost)
-                .replace('{balance}', userBalance);
-            showSingleResult('error', t('verify.insufficientPoints', '积分不足'), msg);
+            showSingleResult('error', '积分不足 / Insufficient points',
+                `需要 ${totalCost} 积分，当前余额: ${userBalance} / Need ${totalCost} pts, balance: ${userBalance}`);
             return;
         }
 
-        // Hide single result, show batch results panel
+        // Hide single result, show batch panel
         if (singleResult) singleResult.classList.remove('show');
-        if (batchResultsPanel) batchResultsPanel.classList.add('show');
+        if (batchPanel) batchPanel.classList.add('show');
 
-        // Reset batch state
-        batchResults = [];
+        // Reset state
         batchStats = { success: 0, failed: 0, total: links.length };
+        activeTasks.clear();
         clearResultsList();
         updateBatchProgress(0, links.length);
         hideBatchSummary();
 
-        // Extract and validate all verification IDs first
+        // Validate links
         const validLinks = [];
-        const invalidIndices = [];
-
-        console.log('[VerifyWidget] === EXTRACTION DEBUG ===');
         for (let i = 0; i < links.length; i++) {
-            const link = links[i];
-            console.log(`[VerifyWidget] Link[${i}]: "${link.substring(0, 80)}${link.length > 80 ? '...' : ''}"`);
-            const verificationId = extractVerificationId(link);
-            console.log(`[VerifyWidget] Extracted ID[${i}]: "${verificationId ? verificationId.substring(0, 80) : 'NULL'}${verificationId && verificationId.length > 80 ? '...' : ''}"`);
-
-            if (!verificationId) {
-                addResultItem(i, link, 'error', t('verify.invalidFormat', '无效的链接格式'));
+            const vId = extractVerificationId(links[i]);
+            if (!vId) {
+                addResultItem(i, links[i], 'error', '❌ 无效链接格式 / Invalid link format');
                 batchStats.failed++;
-                invalidIndices.push(i);
             } else {
-                validLinks.push({ index: i, link, verificationId });
-                addResultItem(i, link, 'processing', t('verify.waiting', '等待验证...'));
+                validLinks.push({ index: i, link: links[i], verificationId: vId });
+                addResultItem(i, links[i], 'processing', '⏳ 排队等待中... / Queuing...');
             }
         }
-        console.log('[VerifyWidget] === END EXTRACTION DEBUG ===');
 
-        // If all links are invalid, show summary and return
         if (validLinks.length === 0) {
             showBatchSummary();
             return;
         }
 
-        // Start loading
+        // Start loading UI
         isLoading = true;
         submitBtn.style.display = 'none';
+        if (cancelBtn) cancelBtn.style.display = 'flex';
 
-        // Show cancel button
-        if (cancelBtn) {
-            cancelBtn.style.display = 'flex';
+        // Get user ID
+        let userId;
+        try {
+            const { data } = await window.supabaseClient.auth.getUser();
+            userId = data?.user?.id;
+            if (!userId) throw new Error('请先登录 / Please login first');
+        } catch (e) {
+            validLinks.forEach(({ index }) =>
+                updateResultItem(index, 'error', '❌ ' + (e.message || '请先登录'))
+            );
+            batchStats.failed += validLinks.length;
+            finishVerification();
+            return;
         }
 
-        submitBtn.disabled = true;
-        submitBtn.innerHTML = `<div class="spinner"></div> ${t('verify.verifying', '批量验证中...')}`;
+        // Submit each item and start polling
+        let completedCount = 0;
 
+        for (const item of validLinks) {
+            // Check if cancelled
+            if (!isLoading) break;
+
+            try {
+                updateResultItem(item.index, 'processing', '🚀 提交中... / Submitting...');
+
+                const res = await fetch(`${CONFIG.nodeServerUrl}/api/verify`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ verificationId: item.verificationId, userId })
+                });
+
+                const data = await res.json();
+
+                if (!res.ok || !data.success) {
+                    updateResultItem(item.index, 'error',
+                        translateStatus(data.message, 'failed'));
+                    batchStats.failed++;
+                    completedCount++;
+                    updateBatchProgress(completedCount, validLinks.length);
+                    continue;
+                }
+
+                const taskId = data.task_id;
+                updateResultItem(item.index, 'processing', '🔄 正在验证... / Verifying...');
+
+                // Store task info and start polling
+                activeTasks.set(taskId, {
+                    index: item.index,
+                    verificationId: item.verificationId,
+                    aborted: false
+                });
+
+                // Start async polling for this task
+                pollTask(taskId, userId, item.index).then(result => {
+                    completedCount++;
+
+                    if (result.success) {
+                        batchStats.success++;
+                        if (result.pointsDeducted) {
+                            userBalance -= result.pointsDeducted;
+                            const balEl = document.getElementById('verifyBalanceValue');
+                            if (balEl) balEl.textContent = userBalance;
+                        }
+                    } else if (result.cancelled) {
+                        // Don't count cancelled as failed
+                    } else {
+                        batchStats.failed++;
+                    }
+
+                    updateBatchProgress(completedCount, validLinks.length);
+
+                    // Check if all done
+                    if (completedCount >= validLinks.length) {
+                        finishVerification();
+                    }
+                });
+
+                // Small delay between submissions to avoid overloading
+                if (validLinks.indexOf(item) < validLinks.length - 1) {
+                    await new Promise(r => setTimeout(r, 500));
+                }
+
+            } catch (err) {
+                updateResultItem(item.index, 'error',
+                    `❌ 提交失败 / Submit failed: ${err.message}`);
+                batchStats.failed++;
+                completedCount++;
+                updateBatchProgress(completedCount, validLinks.length);
+            }
+        }
+    }
+
+    // =============================================
+    // Poll Single Task
+    // =============================================
+    function pollTask(taskId, userId, itemIndex) {
+        return new Promise((resolve) => {
+            let deducted = false;
+            const startTime = Date.now();
+
+            const timer = setInterval(async () => {
+                const taskInfo = activeTasks.get(taskId);
+
+                // Check if aborted (cancelled)
+                if (!taskInfo || taskInfo.aborted) {
+                    clearInterval(timer);
+                    resolve({ success: false, cancelled: true });
+                    return;
+                }
+
+                // Check timeout
+                if (Date.now() - startTime > CONFIG.pollTimeout) {
+                    clearInterval(timer);
+                    activeTasks.delete(taskId);
+                    updateResultItem(itemIndex, 'error', '❌ 超时 / Timeout');
+                    resolve({ success: false });
+                    return;
+                }
+
+                try {
+                    const url = `${CONFIG.nodeServerUrl}/api/verify/status/${taskId}?userId=${userId}&deducted=${deducted}`;
+                    const res = await fetch(url);
+                    const data = await res.json();
+
+                    if (!res.ok) {
+                        clearInterval(timer);
+                        activeTasks.delete(taskId);
+                        updateResultItem(itemIndex, 'error',
+                            translateStatus(data.message, 'error'));
+                        resolve({ success: false });
+                        return;
+                    }
+
+                    // Update UI with translated status
+                    const translated = translateStatus(data.message, data.status);
+                    const cssClass = getStatusCss(data.message, data.status);
+                    updateResultItem(itemIndex, cssClass, translated);
+
+                    // Check if terminal
+                    if (isTerminalStatus(data.message, data.status)) {
+                        clearInterval(timer);
+                        activeTasks.delete(taskId);
+
+                        const success = isSuccessResult(data.message, data.status, data.success);
+
+                        if (data.pointsDeducted) deducted = true;
+
+                        if (success) {
+                            triggerAnimation('success');
+                        } else {
+                            triggerAnimation('error');
+                        }
+
+                        resolve({
+                            success,
+                            pointsDeducted: data.pointsDeducted || 0
+                        });
+                        return;
+                    }
+
+                    // "Waiting for review" — continue polling (not terminal)
+
+                } catch (err) {
+                    // Network error, continue polling
+                    console.warn('[VerifyWidget] Poll error (retrying):', err.message);
+                }
+            }, CONFIG.pollInterval);
+
+            // Store timer for cleanup
+            const taskInfo = activeTasks.get(taskId);
+            if (taskInfo) taskInfo.timer = timer;
+        });
+    }
+
+    // =============================================
+    // Cancel: Safe cancel with final status check
+    // =============================================
+    async function cancel() {
+        if (!isLoading) return;
+
+        const submitBtn = document.getElementById('verifySubmitBtn');
+        const cancelBtn = document.getElementById('verifyCancelBtn');
+
+        // Disable cancel button during cancel process
+        if (cancelBtn) {
+            cancelBtn.disabled = true;
+            cancelBtn.innerHTML = '<div class="spinner"></div> 取消中... / Cancelling...';
+        }
+
+        let userId;
         try {
-            // Send all valid verification IDs in a single batch request
-            const verificationIds = validLinks.map(v => v.verificationId);
-            console.log('[VerifyWidget] Starting batch with IDs:');
-            verificationIds.forEach((id, i) => {
-                console.log(`[VerifyWidget] verificationIds[${i}]: "${id.substring(0, 80)}${id.length > 80 ? '...' : ''}"`);
+            const { data } = await window.supabaseClient.auth.getUser();
+            userId = data?.user?.id;
+        } catch (e) { /* ignored */ }
+
+        // Cancel each active task with safe final check
+        const cancelPromises = [];
+
+        for (const [taskId, taskInfo] of activeTasks.entries()) {
+            // Stop polling first
+            if (taskInfo.timer) clearInterval(taskInfo.timer);
+            taskInfo.aborted = true;
+
+            // Call cancel endpoint with final status check
+            const promise = fetch(`${CONFIG.nodeServerUrl}/api/cancel`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    verificationId: taskInfo.verificationId,
+                    taskId: taskId,
+                    userId: userId
+                })
+            }).then(r => r.json()).then(data => {
+                if (data.alreadyCompleted && data.verificationSuccess) {
+                    // Task already succeeded — show success, deduct happened on server
+                    updateResultItem(taskInfo.index, 'success',
+                        '✅ 验证成功（取消前已完成）/ Verified (completed before cancel)');
+                    batchStats.success++;
+                    if (data.pointsDeducted) {
+                        userBalance -= data.pointsDeducted;
+                        const balEl = document.getElementById('verifyBalanceValue');
+                        if (balEl) balEl.textContent = userBalance;
+                    }
+                } else {
+                    // Actually cancelled
+                    updateResultItem(taskInfo.index, 'cancelled',
+                        '⚪ 已取消 / Cancelled');
+                }
+            }).catch(() => {
+                updateResultItem(taskInfo.index, 'cancelled',
+                    '⚪ 已取消 / Cancelled');
             });
 
-            // Call batch verification API with all IDs
-            const result = await callBatchVerifyAPI(verificationIds, validLinks);
-            console.log('[VerifyWidget] callBatchVerifyAPI returned:', JSON.stringify(result));
+            cancelPromises.push(promise);
+        }
 
-            // Update batch stats from server response
-            if (result && result.stats) {
-                console.log('[VerifyWidget] Updating batchStats with:', result.stats);
-                batchStats.success = result.stats.success || 0;
-                batchStats.failed = (result.stats.failed || 0) + invalidIndices.length;
-                console.log('[VerifyWidget] batchStats after update:', batchStats);
-            } else {
-                console.warn('[VerifyWidget] No stats in result!');
-            }
+        // Wait for all cancel checks to complete
+        await Promise.allSettled(cancelPromises);
 
-            // Update balance
-            if (result && result.pointsDeducted) {
-                userBalance -= result.pointsDeducted;
-            }
+        activeTasks.clear();
+        finishVerification();
+    }
 
-            // Show summary
-            console.log('[VerifyWidget] Calling showBatchSummary with batchStats:', batchStats);
-            showBatchSummary();
+    // =============================================
+    // Finish Verification
+    // =============================================
+    function finishVerification() {
+        isLoading = false;
+        const submitBtn = document.getElementById('verifySubmitBtn');
+        const cancelBtn = document.getElementById('verifyCancelBtn');
 
-            // Refresh balance
-            await loadUserBalance();
-
-        } catch (e) {
-            console.error('[VerifyWidget] Batch verification error:', e);
-            // Mark all processing items as failed
-            validLinks.forEach(({ index }) => {
-                updateResultItem(index, 'error', e.message || t('verify.failed', '验证失败'));
-            });
-            batchStats.failed += validLinks.length;
-            showBatchSummary();
-        } finally {
-            isLoading = false;
+        if (submitBtn) {
             submitBtn.style.display = 'flex';
-            if (cancelBtn) cancelBtn.style.display = 'none';
             submitBtn.disabled = false;
             submitBtn.innerHTML = `<i class="fas fa-check-circle"></i> ${t('verify.startVerify', '开始验证')}`;
         }
+        if (cancelBtn) {
+            cancelBtn.style.display = 'none';
+            cancelBtn.disabled = false;
+            cancelBtn.innerHTML = `<i class="fas fa-times-circle"></i> ${t('verify.cancelVerify', '取消验证')}`;
+        }
+
+        showBatchSummary();
+        loadUserBalance(); // Refresh balance
     }
 
     // =============================================
-    // Extract Verification ID
-    // =============================================
-    function extractVerificationId(input) {
-        input = input.trim();
-
-        // If it's a SheerID URL, return the full URL (batch.1key.me needs full URL)
-        if (input.includes('sheerid.com') || input.includes('services.sheerid')) {
-            return input; // Return full URL for SheerID links
-        }
-
-        // If it's a direct ID (no URL)
-        if (!input.includes('/') && !input.includes('?')) {
-            return input;
-        }
-
-        // Try to extract from URL
-        try {
-            // Pattern: /verify/xxx/ (SheerID format)
-            const sheerIdMatch = input.match(/\/verify\/([a-zA-Z0-9]+)/i);
-            if (sheerIdMatch) return input; // Return full URL
-
-            // Pattern: ?verificationId=xxx or /verify/xxx/?verificationId=xxx
-            const match = input.match(/verificationId[=\/]([a-zA-Z0-9_-]+)/i);
-            if (match) return match[1];
-
-            // Pattern: /vid_xxx
-            const vidMatch = input.match(/vid_([a-zA-Z0-9]+)/i);
-            if (vidMatch) return 'vid_' + vidMatch[1];
-
-            return null;
-        } catch (e) {
-            return null;
-        }
-    }
-
-
-    // =============================================
-    // Call Verification API via SSE (Server-Sent Events)
-    // =============================================
-    async function callVerifyAPI(verificationId, itemIndex) {
-        // Get current user ID
-        const { data: userData } = await window.supabaseClient.auth.getUser();
-        const userId = userData?.user?.id;
-
-        if (!userId) {
-            throw new Error(t('verify.pleaseLogin', '请先登录'));
-        }
-
-        return new Promise((resolve, reject) => {
-            const params = new URLSearchParams({
-                verificationId: verificationId,
-                userId: userId
-            });
-
-            const endpoint = `${CONFIG.nodeServerUrl}/api/verify-stream?${params}`;
-            const eventSource = new EventSource(endpoint);
-            let isCompleted = false; // Track completion to ignore post-close errors
-
-            // Update status message in UI
-            const updateStatus = (message) => {
-                updateResultItem(itemIndex, 'processing', message);
-            };
-
-            eventSource.addEventListener('status', (event) => {
-                if (isCompleted) return;
-                try {
-                    const data = JSON.parse(event.data);
-                    console.log('[VerifyWidget] Status:', data);
-
-                    // Skip debug_content messages - they are for debugging only
-                    if (data.status === 'debug_content' || data.status === 'debug') {
-                        return;
-                    }
-
-                    updateStatus(data.message);
-                } catch (e) {
-                    console.warn('[VerifyWidget] Failed to parse status:', e);
-                }
-            });
-
-            eventSource.addEventListener('debug', (event) => {
-                if (isCompleted) return;
-                try {
-                    const data = JSON.parse(event.data);
-                    console.log('[VerifyWidget] Debug (page content):', data.content);
-                } catch (e) {
-                    console.warn('[VerifyWidget] Failed to parse debug:', e);
-                }
-            });
-
-            // Handle quota updates from 1key
-            eventSource.addEventListener('quota', (event) => {
-                if (isCompleted) return;
-                try {
-                    const data = JSON.parse(event.data);
-                    console.log('[VerifyWidget] Quota:', data);
-                    updateQuotaDisplay(data.remaining);
-                } catch (e) {
-                    console.warn('[VerifyWidget] Failed to parse quota:', e);
-                }
-            });
-
-            eventSource.addEventListener('result', (event) => {
-                isCompleted = true;
-                try {
-                    const data = JSON.parse(event.data);
-                    console.log('[VerifyWidget] Result:', data);
-                    eventSource.close();
-                    resolve(data);
-                } catch (e) {
-                    console.warn('[VerifyWidget] Failed to parse result:', e);
-                    eventSource.close();
-                    reject(new Error(t('verify.parseFailed', '解析响应失败')));
-                }
-            });
-
-            eventSource.addEventListener('error', (event) => {
-                // Ignore error after completion (SSE fires error on normal close)
-                if (isCompleted) {
-                    console.log('[VerifyWidget] Ignoring error after completion');
-                    eventSource.close();
-                    return;
-                }
-
-                try {
-                    const data = JSON.parse(event.data);
-                    console.log('[VerifyWidget] Error:', data);
-                    isCompleted = true;
-                    eventSource.close();
-                    reject(new Error(data.message || t('verify.failed', '验证失败')));
-                } catch (e) {
-                    // Generic error
-                    console.error('[VerifyWidget] SSE error:', event);
-                    isCompleted = true;
-                    eventSource.close();
-                    reject(new Error(t('verify.connectionLost', '连接中断，请重试')));
-                }
-            });
-
-            // Timeout fallback (6 minutes)
-            setTimeout(() => {
-                if (!isCompleted) {
-                    isCompleted = true;
-                    eventSource.close();
-                    reject(new Error(t('verify.timeout', '验证超时，请稍后重试')));
-                }
-            }, 360000);
-        });
-    }
-
-    // =============================================
-    // Call Batch Verification API (all IDs at once)
-    // =============================================
-    async function callBatchVerifyAPI(verificationIds, validLinks) {
-        // Get current user ID
-        const { data: userData } = await window.supabaseClient.auth.getUser();
-        const userId = userData?.user?.id;
-
-        if (!userId) {
-            throw new Error('请先登录');
-        }
-
-        return new Promise((resolve, reject) => {
-            // Send all IDs with a safe separator (URLs may contain commas or other special chars)
-            // Use triple pipe as separator since it's not valid in URLs
-            const params = new URLSearchParams({
-                verificationId: verificationIds.join('|||'),
-                userId: userId
-            });
-            console.log('[VerifyWidget] Sending batch IDs:', verificationIds);
-
-            const endpoint = `${CONFIG.nodeServerUrl}/api/verify-stream?${params}`;
-            const eventSource = new EventSource(endpoint);
-            activeEventSource = eventSource; // Store active connection
-
-            const batchSize = validLinks.length;
-            let isCompleted = false; // Track if we've received a result
-
-            // Update all items with a single status
-            const updateAllItems = (status, message) => {
-                validLinks.forEach(({ index }) => {
-                    updateResultItem(index, status, message);
-                });
-            };
-
-            eventSource.addEventListener('status', (event) => {
-                if (isCompleted) return;
-                try {
-                    const data = JSON.parse(event.data);
-                    console.log('[VerifyWidget] Batch Status:', data);
-
-                    // Skip debug messages
-                    if (data.status === 'debug_content' || data.status === 'debug') {
-                        return;
-                    }
-
-                    // Update progress for all items
-                    if (data.status === 'progress') {
-                        // Parse progress from metadata
-                        updateBatchProgress(data.processed || 0, batchSize);
-                    }
-
-                    // Update all processing items with the current status
-                    validLinks.forEach(({ index }) => {
-                        updateResultItem(index, 'processing', data.message);
-                    });
-                } catch (e) {
-                    console.warn('[VerifyWidget] Failed to parse batch status:', e);
-                }
-            });
-
-            eventSource.addEventListener('debug', (event) => {
-                if (isCompleted) return;
-                try {
-                    const data = JSON.parse(event.data);
-                    console.log('[VerifyWidget] Debug (page content):', data.content);
-                } catch (e) {
-                    console.warn('[VerifyWidget] Failed to parse debug:', e);
-                }
-            });
-
-            // Handle quota updates from 1key
-            eventSource.addEventListener('quota', (event) => {
-                if (isCompleted) return;
-                try {
-                    const data = JSON.parse(event.data);
-                    console.log('[VerifyWidget] Quota:', data);
-                    updateQuotaDisplay(data.remaining);
-                } catch (e) {
-                    console.warn('[VerifyWidget] Failed to parse quota:', e);
-                }
-            });
-
-            eventSource.addEventListener('result', (event) => {
-                isCompleted = true; // Mark as completed BEFORE closing
-                try {
-                    const data = JSON.parse(event.data);
-                    eventSource.close();
-                    if (activeEventSource === eventSource) activeEventSource = null;
-
-                    if (data.stats) {
-                        // Update global batch stats tracking
-                        batchStats.success = data.stats.success || 0;
-                        batchStats.failed = data.stats.failed || 0;
-                        // Total is sum of known outcomes (or use server total if provided/larger)
-                        batchStats.total = Math.max(data.stats.total || 0, batchStats.success + batchStats.failed);
-
-                        console.log('[VerifyWidget] Received stats:', batchStats);
-
-                        // Update UI with final stats
-                        showBatchSummary(batchStats);
-
-                        // Update individual item statuses based on stats
-                        // Strategy: Mark first N items as success, rest as failed (approximation since API doesn't return per-ID status)
-                        const items = document.querySelectorAll('.verify-result-item');
-                        let successCount = batchStats.success;
-
-                        items.forEach((item, i) => {
-                            const index = parseInt(item.id.replace('result-item-', '')); // Extract original index
-                            if (i < successCount) {
-                                updateResultItem(index, 'success', t('verify.verifySuccess', '验证成功！'));
-                            } else {
-                                updateResultItem(index, 'error', data.message || t('verify.failed', '验证失败'));
-                            }
-                        });
-                    } else {
-                        // Fallback if stats are not provided, mark all as failed
-                        validLinks.forEach(({ index }) => {
-                            updateResultItem(index, 'error', data.message || t('verify.failed', '验证失败'));
-                        });
-                    }
-
-                    if (batchStats.success > 0) {
-                        const widget = document.querySelector('.verify-widget');
-                        if (widget) {
-                            widget.classList.remove('success-pulse'); // Reset
-                            widget.classList.remove('error-pulse');
-                            void widget.offsetWidth; // Trigger reflow
-                            widget.classList.add('success-pulse');
-                            setTimeout(() => {
-                                widget.classList.remove('success-pulse');
-                            }, 4500); // 1.5s * 3 iterations
-                        }
-                    } else if (batchStats.failed > 0) {
-                        // All failed or no success
-                        const widget = document.querySelector('.verify-widget');
-                        if (widget) {
-                            widget.classList.remove('success-pulse');
-                            widget.classList.remove('error-pulse'); // Reset
-                            void widget.offsetWidth;
-                            widget.classList.add('error-pulse');
-                            setTimeout(() => {
-                                widget.classList.remove('error-pulse');
-                            }, 4500);
-                        }
-                    }
-
-                    updateBatchProgress(batchSize, batchSize);
-                    resolve(data);
-                } catch (e) {
-                    console.warn('[VerifyWidget] Failed to parse batch result:', e);
-                    eventSource.close();
-                    if (activeEventSource === eventSource) activeEventSource = null;
-                    reject(new Error(t('verify.parseFailed', '解析响应失败')));
-                }
-            });
-
-            eventSource.addEventListener('error', (event) => {
-                // Ignore error events if we've already received a result
-                // (SSE triggers error when connection closes normally)
-                if (isCompleted) {
-                    console.log('[VerifyWidget] Ignoring error event after completion');
-                    eventSource.close();
-                    return;
-                }
-
-                try {
-                    const data = JSON.parse(event.data);
-                    console.log('[VerifyWidget] Batch Error:', data);
-                    isCompleted = true;
-                    eventSource.close();
-                    if (activeEventSource === eventSource) activeEventSource = null;
-                    reject(new Error(data.message || t('verify.failed', '验证失败')));
-                } catch (e) {
-                    // Generic error (connection lost, server error, etc.)
-                    console.error('[VerifyWidget] Batch SSE error:', event);
-                    isCompleted = true;
-                    eventSource.close();
-                    if (activeEventSource === eventSource) activeEventSource = null;
-                    reject(new Error(t('verify.connectionLost', '连接中断，请重试')));
-                }
-            });
-
-            // Timeout fallback (8 minutes for batch operations)
-            setTimeout(() => {
-                if (!isCompleted) {
-                    isCompleted = true;
-                    eventSource.close();
-                    if (activeEventSource === eventSource) activeEventSource = null;
-                    reject(new Error(t('verify.timeout', '批量验证超时，请稍后重试')));
-                }
-            }, 480000);
-        });
-    }
-
+    // UI Helpers
     // =============================================
     function clearResultsList() {
         const list = document.getElementById('verifyResultsList');
@@ -896,13 +771,10 @@
         const list = document.getElementById('verifyResultsList');
         if (!list) return;
 
-        const shortLink = link.length > 60 ? link.substring(0, 60) + '...' : link;
+        const shortLink = link.length > 55 ? link.substring(0, 55) + '...' : link;
         const icons = {
-            success: 'fa-check',
-            error: 'fa-times',
-            pending: 'fa-hourglass-half',
-            processing: 'fa-spinner fa-spin',
-            info: 'fa-info-circle'
+            success: 'fa-check', error: 'fa-times', cancelled: 'fa-ban',
+            processing: 'fa-spinner fa-spin', info: 'fa-info-circle'
         };
 
         const item = document.createElement('div');
@@ -910,251 +782,91 @@
         item.id = `result-item-${index}`;
         item.innerHTML = `
             <div class="verify-result-item-icon">
-                <i class="fas ${icons[status] || icons.pending}"></i>
+                <i class="fas ${icons[status] || 'fa-spinner fa-spin'}"></i>
             </div>
             <div class="verify-result-item-content">
                 <div class="verify-result-item-id">#${index + 1}: ${shortLink}</div>
                 <div class="verify-result-item-message">${message}</div>
             </div>
         `;
-
         list.appendChild(item);
-
-        // Auto-scroll to bottom
-        const resultsPanel = document.getElementById('verifyBatchResults');
-        if (resultsPanel) {
-            resultsPanel.scrollTop = resultsPanel.scrollHeight;
-        }
     }
 
     function updateResultItem(index, status, message) {
         const item = document.getElementById(`result-item-${index}`);
-        if (!item) {
-            console.warn('[VerifyWidget] Item not found:', `result-item-${index}`);
-            return;
-        }
+        if (!item) return;
 
         const icons = {
-            success: 'fa-check',
-            error: 'fa-times',
-            pending: 'fa-hourglass-half',
-            processing: 'fa-spinner fa-spin',
-            info: 'fa-info-circle'
+            success: 'fa-check', error: 'fa-times', cancelled: 'fa-ban',
+            processing: 'fa-spinner fa-spin', info: 'fa-info-circle'
         };
 
         item.className = `verify-result-item ${status}`;
-        // Force reflow to ensure class update takes effect
-        item.offsetHeight;
-
         const iconEl = item.querySelector('.verify-result-item-icon i');
         if (iconEl) {
-            // Remove all existing icon classes
             iconEl.className = '';
-            // Force reflow
             void iconEl.offsetWidth;
-            // Add new icon classes
-            iconEl.className = `fas ${icons[status] || icons.pending}`;
-        } else {
-            console.warn('[VerifyWidget] Icon element not found in item:', item.id);
+            iconEl.className = `fas ${icons[status] || 'fa-spinner fa-spin'}`;
         }
-
-        const messageEl = item.querySelector('.verify-result-item-message');
-        if (messageEl) {
-            messageEl.textContent = message;
-        }
+        const msgEl = item.querySelector('.verify-result-item-message');
+        if (msgEl) msgEl.textContent = message;
     }
 
     function updateBatchProgress(current, total) {
-        const progressEl = document.getElementById('verifyBatchProgress');
-        if (progressEl) {
-            progressEl.innerHTML = `${t('verify.progress', '进度')}: <span class="current">${current}</span>/<span class="total">${total}</span>`;
-        }
+        const el = document.getElementById('verifyBatchProgress');
+        if (el) el.innerHTML = `${t('verify.progress', '进度')}: <span class="current">${current}</span>/<span class="total">${total}</span>`;
     }
 
     function showBatchSummary() {
-        const summary = document.getElementById('verifyBatchSummary');
-        const successCount = document.getElementById('successCount');
-        const failedCount = document.getElementById('failedCount');
-        const totalCount = document.getElementById('totalCount');
-
-        if (summary) summary.style.display = 'flex';
-        if (successCount) successCount.textContent = batchStats.success;
-        if (failedCount) failedCount.textContent = batchStats.failed;
-        if (totalCount) totalCount.textContent = batchStats.total;
+        const el = document.getElementById('verifyBatchSummary');
+        if (el) el.style.display = 'flex';
+        const s = document.getElementById('successCount');
+        const f = document.getElementById('failedCount');
+        const tt = document.getElementById('totalCount');
+        if (s) s.textContent = batchStats.success;
+        if (f) f.textContent = batchStats.failed;
+        if (tt) tt.textContent = batchStats.total;
     }
 
     function hideBatchSummary() {
-        const summary = document.getElementById('verifyBatchSummary');
-        if (summary) summary.style.display = 'none';
+        const el = document.getElementById('verifyBatchSummary');
+        if (el) el.style.display = 'none';
     }
 
-    // =============================================
-    // Show Single Result (for errors before batch starts)
-    // =============================================
     function showSingleResult(type, title, message) {
         const result = document.getElementById('verifyResult');
-        const batchResults = document.getElementById('verifyBatchResults');
-        const resultIcon = result?.querySelector('.verify-result-icon i');
-        const resultTitle = document.getElementById('verifyResultTitle');
-        const resultMessage = document.getElementById('verifyResultMessage');
-
+        const batch = document.getElementById('verifyBatchResults');
         if (!result) return;
+        if (batch) batch.classList.remove('show');
 
-        // Hide batch results, show single result
-        if (batchResults) batchResults.classList.remove('show');
-
-        // Set type
         result.className = 'verify-result show ' + type;
-
-        // Set icon
-        if (resultIcon) {
-            const icons = {
-                success: 'fa-check',
-                error: 'fa-times',
-                pending: 'fa-hourglass-half'
-            };
-            resultIcon.className = 'fas ' + (icons[type] || icons.pending);
-        }
-
-        // Set content
-        if (resultTitle) resultTitle.textContent = title;
-        if (resultMessage) resultMessage.textContent = message;
+        const titleEl = document.getElementById('verifyResultTitle');
+        const msgEl = document.getElementById('verifyResultMessage');
+        if (titleEl) titleEl.textContent = title;
+        if (msgEl) msgEl.textContent = message;
     }
 
-    // =============================================
-    // Update Price Display
-    // =============================================
-    function updatePriceDisplay() {
-        // Update the per-price text
-        const perPriceElements = document.querySelectorAll('.per-price');
-        perPriceElements.forEach(el => {
-            el.textContent = `（${CONFIG.pricePerVerify}${t('verify.perPrice', '积分/次')}）`;
-        });
-        // Update total cost display
-        updateLinkCount();
-    }
-
-    // =============================================
-    // Update Quota Display (1key remaining count)
-    // =============================================
-    function updateQuotaDisplay(remaining) {
-        const quotaEl = document.getElementById('verifyQuota');
-        const quotaValueEl = document.getElementById('verifyQuotaValue');
-
-        if (!quotaEl || !quotaValueEl) return;
-
-        // Show the quota display
-        quotaEl.style.display = 'flex';
-        quotaValueEl.textContent = remaining;
-
-        // Update styling based on remaining count
-        quotaEl.classList.remove('warning', 'danger');
-
-        if (remaining === 0) {
-            quotaEl.classList.add('danger');
-            // Show warning message
-            showSingleResult('error', t('verify.serviceUnavailable', '服务暂不可用'), t('verify.quotaExhausted', 'API验证次数已用完，请联系管理员补货'));
-        } else if (remaining <= 5) {
-            quotaEl.classList.add('warning');
-        }
-    }
-
-    // =============================================
-    // Cancel Verification
-    // =============================================
-    function cancel() {
-        if (!isLoading) return;
-
-        console.log('[VerifyWidget] User cancelled verification');
-
-        // Close SSE connection if active
-        if (activeEventSource) {
-            console.log('[VerifyWidget] Closing active EventSource');
-            activeEventSource.close();
-            activeEventSource = null;
-        }
-
-        // Reset UI state
-        isLoading = false;
-
-        const submitBtn = document.getElementById('verifySubmitBtn');
-        const cancelBtn = document.getElementById('verifyCancelBtn');
-
-        if (submitBtn) {
-            submitBtn.style.display = 'flex';
-            submitBtn.disabled = false;
-            submitBtn.innerHTML = `<i class="fas fa-check-circle"></i> ${t('verify.startVerify', '开始验证')}`;
-        }
-
-        if (cancelBtn) {
-            cancelBtn.style.display = 'none';
-        }
-
-        // Mark processing items as cancelled
-        const processingItems = document.querySelectorAll('.verify-result-item.processing');
-        processingItems.forEach((item) => {
-            const index = parseInt(item.id.replace('result-item-', ''));
-            updateResultItem(index, 'error', t('verify.cancelled', '已取消验证'));
-        });
-
-        // Update batch stats
-        const remaining = document.querySelectorAll('.verify-result-item.processing').length;
-        if (remaining > 0) {
-            batchStats.failed += remaining;
-        }
-        showBatchSummary();
-
-        // Show toast or message
-        // showSingleResult('error', '已取消', '验证已手动取消');
-    }
-
-    // =============================================
-    // Debug: Trigger Success Animation
-    // =============================================
-    function debugSuccessAnimation() {
+    function triggerAnimation(type) {
         const widget = document.querySelector('.verify-widget');
-        if (widget) {
-            console.log('[VerifyWidget] Triggering debug success animation');
-            widget.classList.remove('success-pulse');
-            void widget.offsetWidth;
-            widget.classList.add('success-pulse');
-            setTimeout(() => {
-                widget.classList.remove('success-pulse');
-            }, 4500);
-        }
-    }
-
-    function debugErrorAnimation() {
-        const widget = document.querySelector('.verify-widget');
-        if (widget) {
-            console.log('[VerifyWidget] Triggering debug error animation');
-            widget.classList.remove('success-pulse');
-            widget.classList.remove('error-pulse');
-            void widget.offsetWidth;
-            widget.classList.add('error-pulse');
-            setTimeout(() => {
-                widget.classList.remove('error-pulse');
-            }, 4500);
-        }
+        if (!widget) return;
+        widget.classList.remove('success-pulse', 'error-pulse');
+        void widget.offsetWidth;
+        widget.classList.add(type === 'success' ? 'success-pulse' : 'error-pulse');
+        setTimeout(() => widget.classList.remove('success-pulse', 'error-pulse'), 4500);
     }
 
     // =============================================
     // Public API
     // =============================================
     window.VerifyWidget = {
-        init,
-        submit,
-        cancel,
-        debugSuccessAnimation, // Converience for testing
-        debugErrorAnimation,
-        reload: loadConfig
+        init, submit, cancel, reload: loadConfig,
+        debugSuccessAnimation: () => triggerAnimation('success'),
+        debugErrorAnimation: () => triggerAnimation('error')
     };
 
-    // Auto-initialize when DOM is ready
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);
     } else {
         init();
     }
-
 })();

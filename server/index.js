@@ -243,140 +243,13 @@ app.get('/api/verify/status/:taskId', async (req, res) => {
 });
 
 // =============================================
-// POST /api/verify/batch — Batch verification
-// Blocking: waits for all results
-// =============================================
-app.post('/api/verify/batch', async (req, res) => {
-    const { verificationIds, userId } = req.body;
-
-    if (!verificationIds || !Array.isArray(verificationIds) || verificationIds.length === 0) {
-        return res.status(400).json({ success: false, message: '请提供验证ID列表' });
-    }
-
-    const batchSize = verificationIds.length;
-
-    try {
-        const config = await getVerifyConfig();
-
-        if (!config.apiKey) {
-            return res.status(500).json({ success: false, message: '验证服务未配置 API Key' });
-        }
-
-        // Pre-check balance (full amount)
-        const totalNeeded = batchSize * config.pricePerVerify;
-        const balanceCheck = await validateUserBalance(userId, totalNeeded);
-        if (!balanceCheck.valid) {
-            return res.status(balanceCheck.status).json({ success: false, message: balanceCheck.error });
-        }
-
-        console.log(`[Verify] Starting batch verification: ${batchSize} IDs, balance: ${balanceCheck.balance}`);
-
-        // Forward to Verification API batch endpoint
-        const apiRes = await fetch(`${VERIFY_API_BASE}/verify/batch`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-API-Key': config.apiKey
-            },
-            body: JSON.stringify({ verification_ids: verificationIds })
-        });
-
-        const apiData = await apiRes.json();
-
-        if (!apiRes.ok) {
-            console.error('[Verify] Batch API error:', apiData);
-            return res.status(apiRes.status).json({
-                success: false,
-                message: apiData.detail || apiData.message || '批量验证请求失败'
-            });
-        }
-
-        console.log(`[Verify] Batch result:`, JSON.stringify(apiData).substring(0, 500));
-
-        // Count successes from batch results
-        let successCount = 0;
-        let failedCount = 0;
-        const results = apiData.results || apiData;
-
-        if (Array.isArray(results)) {
-            results.forEach(r => {
-                if (r.success === true || r.status === 'success') {
-                    successCount++;
-                } else {
-                    failedCount++;
-                }
-            });
-        } else if (typeof apiData.success_count === 'number') {
-            successCount = apiData.success_count;
-            failedCount = batchSize - successCount;
-        } else {
-            // Fallback: treat the whole response as a single result
-            successCount = apiData.success ? batchSize : 0;
-            failedCount = batchSize - successCount;
-        }
-
-        const pointsToDeduct = successCount * config.pricePerVerify;
-
-        // Deduct points for successful verifications only
-        if (pointsToDeduct > 0) {
-            const { error: deductError } = await supabase.rpc('fn_deduct_points', {
-                p_target_user_id: userId,
-                p_amount: pointsToDeduct,
-                p_reason: `Gemini验证服务 (${successCount}/${batchSize} 成功)`
-            });
-
-            if (deductError) {
-                console.error('[Verify] Failed to deduct points:', deductError);
-            } else {
-                console.log(`[Verify] Deducted ${pointsToDeduct} points (${successCount} successes)`);
-            }
-        }
-
-        // Log verification
-        try {
-            await supabase.from('verification_logs').insert({
-                user_id: userId,
-                verification_id: verificationIds.join(',').substring(0, 500),
-                status: successCount > 0 ? 'success' : 'failed',
-                message: `批量验证 ${successCount}/${batchSize} 成功`,
-                points_deducted: pointsToDeduct,
-                batch_count: batchSize,
-                batch_success: successCount,
-                batch_failed: failedCount
-            });
-        } catch (logError) {
-            console.warn('Failed to log verification:', logError);
-        }
-
-        return res.json({
-            success: successCount > 0,
-            message: `批量验证完成: ${successCount}/${batchSize} 成功`,
-            pointsDeducted: pointsToDeduct,
-            stats: {
-                total: batchSize,
-                success: successCount,
-                failed: failedCount
-            },
-            results: results
-        });
-
-    } catch (error) {
-        console.error('[Verify] Batch error:', error);
-        return res.status(500).json({
-            success: false,
-            message: error.message || '批量验证服务暂时不可用'
-        });
-    }
-});
-
-// =============================================
-// POST /api/cancel — Cancel a verification task
+// POST /api/cancel — Cancel verification with safe final check
 // =============================================
 app.post('/api/cancel', async (req, res) => {
-    const { verificationId } = req.body;
+    const { verificationId, taskId, userId } = req.body;
 
-    if (!verificationId) {
-        return res.status(400).json({ success: false, message: '请提供验证ID' });
+    if (!verificationId && !taskId) {
+        return res.status(400).json({ success: false, message: '请提供验证ID或任务ID' });
     }
 
     try {
@@ -386,29 +259,76 @@ app.post('/api/cancel', async (req, res) => {
             return res.status(500).json({ success: false, message: '验证服务未配置' });
         }
 
-        const apiRes = await fetch(`${VERIFY_API_BASE}/cancel`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-API-Key': config.apiKey
-            },
-            body: JSON.stringify({ verification_id: verificationId })
-        });
-
-        const apiData = await apiRes.json();
-
-        if (!apiRes.ok) {
-            return res.status(apiRes.status).json({
-                success: false,
-                message: apiData.detail || '取消失败'
+        // Step 1: Try to cancel
+        let cancelSuccess = false;
+        try {
+            const cancelRes = await fetch(`${VERIFY_API_BASE}/cancel`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-API-Key': config.apiKey
+                },
+                body: JSON.stringify({ verification_id: verificationId || taskId })
             });
+            const cancelData = await cancelRes.json();
+            cancelSuccess = cancelRes.ok;
+            console.log(`[Verify] Cancel attempt for ${verificationId || taskId}: ${cancelSuccess}`, cancelData);
+        } catch (cancelErr) {
+            console.warn('[Verify] Cancel request failed:', cancelErr.message);
         }
 
-        console.log(`[Verify] Cancelled: ${verificationId}`);
+        // Step 2: Final status check (safe cancel — don't lose money)
+        if (taskId) {
+            try {
+                const statusRes = await fetch(`${VERIFY_API_BASE}/verify/status/${taskId}`, {
+                    method: 'GET',
+                    headers: { 'X-API-Key': config.apiKey }
+                });
+                const statusData = await statusRes.json();
+
+                // If task already completed successfully, deduct points
+                if (statusData.status === 'completed' && statusData.success === true && userId) {
+                    const pointsToDeduct = config.pricePerVerify;
+
+                    const { error: deductError } = await supabase.rpc('fn_deduct_points', {
+                        p_target_user_id: userId,
+                        p_amount: pointsToDeduct,
+                        p_reason: 'Gemini验证服务(取消时已完成)'
+                    });
+
+                    if (!deductError) {
+                        console.log(`[Verify] Cancel-time deduction: ${pointsToDeduct} pts for ${userId}`);
+                    }
+
+                    return res.json({
+                        success: true,
+                        alreadyCompleted: true,
+                        verificationSuccess: true,
+                        pointsDeducted: pointsToDeduct,
+                        message: statusData.message || '验证已完成',
+                        status: statusData.status
+                    });
+                }
+
+                // Task was cancelled or failed
+                return res.json({
+                    success: true,
+                    alreadyCompleted: false,
+                    verificationSuccess: false,
+                    message: cancelSuccess ? '验证已取消' : (statusData.message || '任务状态: ' + statusData.status),
+                    status: statusData.status
+                });
+
+            } catch (statusErr) {
+                console.warn('[Verify] Final status check failed:', statusErr.message);
+            }
+        }
 
         return res.json({
-            success: true,
-            message: apiData.message || '验证已取消'
+            success: cancelSuccess,
+            alreadyCompleted: false,
+            verificationSuccess: false,
+            message: cancelSuccess ? '验证已取消' : '取消请求已发送'
         });
 
     } catch (error) {
