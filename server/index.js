@@ -1,17 +1,19 @@
 /**
- * Puppeteer Verification Server
- * Automates batch.1key.me for Gemini student verification
- * Supports Server-Sent Events (SSE) for real-time status updates
+ * Verification API Proxy Server
+ * Proxies requests to lacedore.org:6789 Verification API
+ * Handles Supabase auth + points deduction
  */
 
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const { verifyWithPuppeteer } = require('./puppeteer-verify');
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// Verification API base URL
+const VERIFY_API_BASE = 'http://lacedore.org:6789';
 
 // Initialize Supabase
 const supabase = createClient(
@@ -31,155 +33,289 @@ app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// SSE Verify endpoint - streams real-time status updates
-app.get('/api/verify-stream', async (req, res) => {
-    const { verificationId, userId } = req.query;
+// =============================================
+// Helper: Get verify config from Supabase
+// =============================================
+async function getVerifyConfig() {
+    const { data: configData } = await supabase
+        .from('system_config')
+        .select('config_value')
+        .eq('config_key', 'verify_settings')
+        .single();
 
-    // Get allowed origins
-    const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:8000', 'https://zaoyoe.com'];
-    const origin = req.headers.origin;
-
-    // Set CORS headers for SSE (must be set before SSE headers)
-    if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
-        res.setHeader('Access-Control-Allow-Origin', origin || '*');
-    } else {
-        res.setHeader('Access-Control-Allow-Origin', 'https://zaoyoe.com');
-    }
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-
-    // Set SSE headers
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
-
-    // Helper to send SSE event
-    const sendEvent = (type, data) => {
-        res.write(`event: ${type}\n`);
-        res.write(`data: ${JSON.stringify(data)}\n\n`);
+    const config = configData?.config_value || {};
+    return {
+        pricePerVerify: config.price_per_verify || 10,
+        apiKey: config.verify_api_key || process.env.VERIFY_API_KEY || ''
     };
+}
 
-    // Support batch: triple-pipe separated IDs (||| is safe separator since it's not valid in URLs)
-    let verificationIds = [];
-    if (verificationId) {
-        if (verificationId.includes('|||')) {
-            verificationIds = verificationId.split('|||').map(id => id.trim()).filter(id => id);
-        } else {
-            // Fallback: single ID (for backwards compat)
-            verificationIds = [verificationId.trim()].filter(id => id);
-        }
-    }
-    const batchSize = verificationIds.length;
-
-    if (batchSize === 0) {
-        sendEvent('error', { message: '请提供验证ID' });
-        return res.end();
-    }
-
+// =============================================
+// Helper: Validate user and check balance
+// =============================================
+async function validateUserBalance(userId, requiredPoints) {
     if (!userId) {
-        sendEvent('error', { message: '请先登录' });
-        return res.end();
+        return { valid: false, error: '请先登录', status: 400 };
     }
 
-    // Heartbeat interval - declared outside try block for proper scoping
-    let heartbeatInterval = null;
+    const { data: balanceData, error: balanceError } = await supabase
+        .rpc('fn_get_user_balance', { p_user_id: userId })
+        .single();
+
+    if (balanceError) {
+        console.error('[Verify] Balance check error:', balanceError);
+        return { valid: false, error: '查询积分失败', status: 500 };
+    }
+
+    const currentBalance = balanceData?.total_balance || 0;
+
+    if (currentBalance < requiredPoints) {
+        return {
+            valid: false,
+            error: `积分不足，需要 ${requiredPoints} 积分，当前余额 ${currentBalance}`,
+            status: 400,
+            balance: currentBalance
+        };
+    }
+
+    return { valid: true, balance: currentBalance };
+}
+
+// =============================================
+// POST /api/verify — Submit single verification
+// Returns task_id for polling
+// =============================================
+app.post('/api/verify', async (req, res) => {
+    const { verificationId, userId } = req.body;
+
+    if (!verificationId) {
+        return res.status(400).json({ success: false, message: '请提供验证ID' });
+    }
 
     try {
-        sendEvent('status', { status: 'init', message: `⚡ 正在初始化验证服务 (${batchSize} 个链接)...` });
+        const config = await getVerifyConfig();
 
-        // Get verify config
-        const { data: configData } = await supabase
-            .from('system_config')
-            .select('config_value')
-            .eq('config_key', 'verify_settings')
-            .single();
-
-        const config = configData?.config_value || {};
-        const pricePerVerify = config.price_per_verify || 2;
-        const totalPriceNeeded = pricePerVerify * batchSize;
-        const batchApiKey = config.batch_api_key || process.env.BATCH_API_KEY || 'cdk_=_vgb6#kJqYeu-mzD5%@6dQ8vVc4OB@-';
-
-        // Debug: Log API key info (masked for security)
-        console.log(`[Verify] API Key info: length=${batchApiKey?.length}, first5=${batchApiKey?.substring(0, 5)}, last5=${batchApiKey?.substring(batchApiKey.length - 5)}`);
-        console.log(`[Verify] Batch size: ${batchSize}, Price per verify: ${pricePerVerify}, Total needed: ${totalPriceNeeded}`);
-
-        if (!batchApiKey) {
-            sendEvent('error', { message: '验证服务未配置' });
-            return res.end();
+        if (!config.apiKey) {
+            return res.status(500).json({ success: false, message: '验证服务未配置 API Key' });
         }
 
+        // Check balance (need at least pricePerVerify)
+        const balanceCheck = await validateUserBalance(userId, config.pricePerVerify);
+        if (!balanceCheck.valid) {
+            return res.status(balanceCheck.status).json({ success: false, message: balanceCheck.error });
+        }
 
-        // Check balance
-        const { data: balanceData, error: balanceError } = await supabase
-            .rpc('fn_get_user_balance', { p_user_id: userId })
-            .single();
+        console.log(`[Verify] Submitting single verification: ${verificationId}`);
 
-        console.log(`[Verify] Balance check for ${userId}:`, { balanceData, balanceError });
+        // Forward to Verification API
+        const apiRes = await fetch(`${VERIFY_API_BASE}/verify`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-API-Key': config.apiKey
+            },
+            body: JSON.stringify({ verification_id: verificationId })
+        });
 
-        const currentBalance = balanceData?.total_balance || 0;
+        const apiData = await apiRes.json();
 
-        if (currentBalance < totalPriceNeeded) {
-            sendEvent('error', {
-                message: `积分不足，需要 ${totalPriceNeeded} 积分 (${batchSize}个×${pricePerVerify})，当前余额 ${currentBalance}`
+        if (!apiRes.ok) {
+            console.error('[Verify] API error:', apiData);
+            return res.status(apiRes.status).json({
+                success: false,
+                message: apiData.detail || apiData.message || '验证请求失败'
             });
-            return res.end();
         }
 
-        sendEvent('status', { status: 'balance_ok', message: `💰 余额充足 (${currentBalance} 积分，需要 ${totalPriceNeeded})` });
+        console.log(`[Verify] Task created:`, apiData);
 
-        // Debug: Log exact IDs being processed
-        console.log(`[Verify] Verification IDs received (${batchSize}):`);
-        verificationIds.forEach((id, i) => {
-            console.log(`  [${i}]: ${id.substring(0, 80)}${id.length > 80 ? '...' : ''}`);
+        return res.json({
+            success: true,
+            task_id: apiData.task_id,
+            message: apiData.message || '验证任务已提交',
+            pricePerVerify: config.pricePerVerify
         });
 
-        console.log(`[Verify] Starting batch verification for ${batchSize} IDs`);
+    } catch (error) {
+        console.error('[Verify] Error:', error);
+        return res.status(500).json({
+            success: false,
+            message: error.message || '验证服务暂时不可用'
+        });
+    }
+});
 
-        // Start heartbeat to keep SSE connection alive (Railway has ~100s timeout)
-        let heartbeatCount = 0;
-        heartbeatInterval = setInterval(() => {
-            heartbeatCount++;
-            // Send comment as heartbeat (SSE allows : comments that are ignored by client)
-            res.write(`: heartbeat ${heartbeatCount}\n\n`);
-        }, 20000); // Every 20 seconds
+// =============================================
+// GET /api/verify/status/:taskId — Poll task status
+// =============================================
+app.get('/api/verify/status/:taskId', async (req, res) => {
+    const { taskId } = req.params;
+    const { userId } = req.query;
 
-        // Progress callback for real-time updates
-        const onProgress = (status, message, pageContent = null, metadata = null) => {
-            sendEvent('status', { status, message });
-            if (pageContent) {
-                // Only send first 500 chars of page content for debugging
-                sendEvent('debug', { content: pageContent.substring(0, 500) });
+    try {
+        const config = await getVerifyConfig();
+
+        if (!config.apiKey) {
+            return res.status(500).json({ success: false, message: '验证服务未配置' });
+        }
+
+        const apiRes = await fetch(`${VERIFY_API_BASE}/verify/status/${taskId}`, {
+            method: 'GET',
+            headers: {
+                'X-API-Key': config.apiKey
             }
-            // Send quota information if present
-            if (metadata && metadata.quota !== undefined) {
-                sendEvent('quota', { remaining: metadata.quota });
-            }
-        };
-
-        // Create AbortController for cancellation
-        const controller = new AbortController();
-        req.on('close', () => {
-            console.log('[Verify] Client connection closed, aborting verification...');
-            controller.abort();
         });
 
-        // Run Puppeteer automation with progress callback (pass array of IDs)
-        const result = await verifyWithPuppeteer(batchApiKey, verificationIds, onProgress, controller.signal);
+        const apiData = await apiRes.json();
 
-        // Log result summary
-        console.log(`[Verify] Batch result: ${result.success ? 'Success' : 'Failed'}, Message: ${result.message}`);
-        console.log(`[Verify] Stats: Success=${result.stats?.success}, Failed=${result.stats?.failed}, Total=${result.stats?.total}`);
+        if (!apiRes.ok) {
+            return res.status(apiRes.status).json({
+                success: false,
+                message: apiData.detail || '查询状态失败'
+            });
+        }
 
-        // Get batch stats - deduct only for successful verifications
-        // More robust extraction with explicit type checking
-        const stats = {
-            success: typeof result.stats?.success === 'number' ? result.stats.success : (result.success ? batchSize : 0),
-            failed: typeof result.stats?.failed === 'number' ? result.stats.failed : (result.success ? 0 : batchSize),
-            total: batchSize
-        };
-        console.log(`[Verify] Final stats (constructed):`, JSON.stringify(stats));
-        const successCount = stats.success || 0;
-        const pointsToDeduct = successCount * pricePerVerify;
+        // If task completed successfully, deduct points
+        if (apiData.status === 'completed' && apiData.success === true && userId) {
+            const alreadyDeducted = req.query.deducted === 'true';
+
+            if (!alreadyDeducted) {
+                const pointsToDeduct = config.pricePerVerify;
+
+                const { error: deductError } = await supabase.rpc('fn_deduct_points', {
+                    p_target_user_id: userId,
+                    p_amount: pointsToDeduct,
+                    p_reason: 'Gemini验证服务'
+                });
+
+                if (deductError) {
+                    console.error('[Verify] Failed to deduct points:', deductError);
+                } else {
+                    console.log(`[Verify] Deducted ${pointsToDeduct} points for user ${userId}`);
+                    apiData.pointsDeducted = pointsToDeduct;
+                }
+
+                // Log verification
+                try {
+                    await supabase.from('verification_logs').insert({
+                        user_id: userId,
+                        verification_id: taskId,
+                        status: 'success',
+                        message: apiData.message || 'Verification completed',
+                        points_deducted: pointsToDeduct,
+                        batch_count: 1,
+                        batch_success: 1,
+                        batch_failed: 0
+                    });
+                } catch (logError) {
+                    console.warn('Failed to log verification:', logError);
+                }
+            }
+        }
+
+        // If task failed, log it
+        if (apiData.status === 'completed' && apiData.success === false && userId) {
+            try {
+                await supabase.from('verification_logs').insert({
+                    user_id: userId,
+                    verification_id: taskId,
+                    status: 'failed',
+                    message: apiData.message || 'Verification failed',
+                    points_deducted: 0,
+                    batch_count: 1,
+                    batch_success: 0,
+                    batch_failed: 1
+                });
+            } catch (logError) {
+                console.warn('Failed to log verification:', logError);
+            }
+        }
+
+        return res.json(apiData);
+
+    } catch (error) {
+        console.error('[Verify] Status check error:', error);
+        return res.status(500).json({
+            success: false,
+            message: error.message || '查询状态失败'
+        });
+    }
+});
+
+// =============================================
+// POST /api/verify/batch — Batch verification
+// Blocking: waits for all results
+// =============================================
+app.post('/api/verify/batch', async (req, res) => {
+    const { verificationIds, userId } = req.body;
+
+    if (!verificationIds || !Array.isArray(verificationIds) || verificationIds.length === 0) {
+        return res.status(400).json({ success: false, message: '请提供验证ID列表' });
+    }
+
+    const batchSize = verificationIds.length;
+
+    try {
+        const config = await getVerifyConfig();
+
+        if (!config.apiKey) {
+            return res.status(500).json({ success: false, message: '验证服务未配置 API Key' });
+        }
+
+        // Pre-check balance (full amount)
+        const totalNeeded = batchSize * config.pricePerVerify;
+        const balanceCheck = await validateUserBalance(userId, totalNeeded);
+        if (!balanceCheck.valid) {
+            return res.status(balanceCheck.status).json({ success: false, message: balanceCheck.error });
+        }
+
+        console.log(`[Verify] Starting batch verification: ${batchSize} IDs, balance: ${balanceCheck.balance}`);
+
+        // Forward to Verification API batch endpoint
+        const apiRes = await fetch(`${VERIFY_API_BASE}/verify/batch`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-API-Key': config.apiKey
+            },
+            body: JSON.stringify({ verification_ids: verificationIds })
+        });
+
+        const apiData = await apiRes.json();
+
+        if (!apiRes.ok) {
+            console.error('[Verify] Batch API error:', apiData);
+            return res.status(apiRes.status).json({
+                success: false,
+                message: apiData.detail || apiData.message || '批量验证请求失败'
+            });
+        }
+
+        console.log(`[Verify] Batch result:`, JSON.stringify(apiData).substring(0, 500));
+
+        // Count successes from batch results
+        let successCount = 0;
+        let failedCount = 0;
+        const results = apiData.results || apiData;
+
+        if (Array.isArray(results)) {
+            results.forEach(r => {
+                if (r.success === true || r.status === 'success') {
+                    successCount++;
+                } else {
+                    failedCount++;
+                }
+            });
+        } else if (typeof apiData.success_count === 'number') {
+            successCount = apiData.success_count;
+            failedCount = batchSize - successCount;
+        } else {
+            // Fallback: treat the whole response as a single result
+            successCount = apiData.success ? batchSize : 0;
+            failedCount = batchSize - successCount;
+        }
+
+        const pointsToDeduct = successCount * config.pricePerVerify;
 
         // Deduct points for successful verifications only
         if (pointsToDeduct > 0) {
@@ -192,128 +328,94 @@ app.get('/api/verify-stream', async (req, res) => {
             if (deductError) {
                 console.error('[Verify] Failed to deduct points:', deductError);
             } else {
-                sendEvent('status', { status: 'deducted', message: `💳 已扣除 ${pointsToDeduct} 积分 (${successCount} 个成功验证)` });
+                console.log(`[Verify] Deducted ${pointsToDeduct} points (${successCount} successes)`);
             }
         }
 
-        // Log verification attempt (batch summary)
+        // Log verification
         try {
             await supabase.from('verification_logs').insert({
                 user_id: userId,
-                verification_id: verificationIds.join(',').substring(0, 500), // Truncate if too long
+                verification_id: verificationIds.join(',').substring(0, 500),
                 status: successCount > 0 ? 'success' : 'failed',
-                message: result.message,
+                message: `批量验证 ${successCount}/${batchSize} 成功`,
                 points_deducted: pointsToDeduct,
                 batch_count: batchSize,
                 batch_success: successCount,
-                batch_failed: stats.failed || 0
-            });
-        } catch (logError) {
-            console.warn('Failed to log verification:', logError);
-        }
-
-        // Send final result with batch stats
-        sendEvent('result', {
-            success: successCount > 0,
-            message: result.message,
-            pointsDeducted: pointsToDeduct,
-            stats: stats
-        });
-
-    } catch (error) {
-        console.error('[Verify] Error:', error);
-        sendEvent('error', { message: error.message || '验证服务暂时不可用' });
-    } finally {
-        if (heartbeatInterval) {
-            clearInterval(heartbeatInterval);
-        }
-        res.end();
-    }
-});
-
-// Original POST endpoint (kept for compatibility)
-app.post('/api/verify', async (req, res) => {
-    const { verificationId, userId } = req.body;
-
-    if (!verificationId) {
-        return res.status(400).json({ success: false, message: '请提供验证ID' });
-    }
-
-    if (!userId) {
-        return res.status(400).json({ success: false, message: '请先登录' });
-    }
-
-    try {
-        const { data: configData } = await supabase
-            .from('system_config')
-            .select('config_value')
-            .eq('config_key', 'verify')
-            .single();
-
-        const config = configData?.config_value || {};
-        const pricePerVerify = config.price_per_verify || 2;
-        const batchApiKey = config.batch_api_key || process.env.BATCH_API_KEY || 'cdk_=_vgb6#kJqYeu-mzD5%@6dQ8vVc4OB@-';
-
-        if (!batchApiKey) {
-            return res.status(500).json({ success: false, message: '验证服务未配置' });
-        }
-
-        const { data: balanceData, error: balanceError } = await supabase
-            .rpc('fn_get_user_balance', { p_user_id: userId })
-            .single();
-
-        console.log(`[Verify] Balance check for ${userId}:`, { balanceData, balanceError });
-
-        const currentBalance = balanceData?.total_balance || 0;
-
-        if (currentBalance < pricePerVerify) {
-            return res.status(400).json({
-                success: false,
-                message: `积分不足，需要 ${pricePerVerify} 积分，当前余额 ${currentBalance}`
-            });
-        }
-
-        console.log(`[Verify] Starting verification for ${verificationId}`);
-
-        const result = await verifyWithPuppeteer(batchApiKey, verificationId);
-
-        console.log(`[Verify] Result:`, result);
-
-        if (result.success) {
-            const { error: deductError } = await supabase.rpc('fn_deduct_points', {
-                p_target_user_id: userId,
-                p_amount: pricePerVerify,
-                p_reason: 'Gemini验证服务'
-            });
-
-            if (deductError) {
-                console.error('[Verify] Failed to deduct points:', deductError);
-            }
-        }
-
-        try {
-            await supabase.from('verification_logs').insert({
-                user_id: userId,
-                verification_id: verificationId,
-                status: result.success ? 'success' : 'failed',
-                message: result.message,
-                points_deducted: result.success ? pricePerVerify : 0
+                batch_failed: failedCount
             });
         } catch (logError) {
             console.warn('Failed to log verification:', logError);
         }
 
         return res.json({
-            success: result.success,
-            message: result.message,
-            pointsDeducted: result.success ? pricePerVerify : 0
+            success: successCount > 0,
+            message: `批量验证完成: ${successCount}/${batchSize} 成功`,
+            pointsDeducted: pointsToDeduct,
+            stats: {
+                total: batchSize,
+                success: successCount,
+                failed: failedCount
+            },
+            results: results
         });
 
     } catch (error) {
-        console.error('[Verify] Error:', error);
+        console.error('[Verify] Batch error:', error);
         return res.status(500).json({
             success: false,
-            message: error.message || '验证服务暂时不可用'
+            message: error.message || '批量验证服务暂时不可用'
+        });
+    }
+});
+
+// =============================================
+// POST /api/cancel — Cancel a verification task
+// =============================================
+app.post('/api/cancel', async (req, res) => {
+    const { verificationId } = req.body;
+
+    if (!verificationId) {
+        return res.status(400).json({ success: false, message: '请提供验证ID' });
+    }
+
+    try {
+        const config = await getVerifyConfig();
+
+        if (!config.apiKey) {
+            return res.status(500).json({ success: false, message: '验证服务未配置' });
+        }
+
+        const apiRes = await fetch(`${VERIFY_API_BASE}/cancel`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-API-Key': config.apiKey
+            },
+            body: JSON.stringify({ verification_id: verificationId })
+        });
+
+        const apiData = await apiRes.json();
+
+        if (!apiRes.ok) {
+            return res.status(apiRes.status).json({
+                success: false,
+                message: apiData.detail || '取消失败'
+            });
+        }
+
+        console.log(`[Verify] Cancelled: ${verificationId}`);
+
+        return res.json({
+            success: true,
+            message: apiData.message || '验证已取消'
+        });
+
+    } catch (error) {
+        console.error('[Verify] Cancel error:', error);
+        return res.status(500).json({
+            success: false,
+            message: error.message || '取消失败'
         });
     }
 });
@@ -456,5 +558,5 @@ app.get('/api/afdian/query', async (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`🚀 Verify server running on port ${PORT}`);
+    console.log(`🚀 Verify proxy server running on port ${PORT}`);
 });
