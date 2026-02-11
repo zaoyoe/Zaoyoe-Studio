@@ -48,7 +48,15 @@
             <!-- Brand -->
             <a href="index.html" class="sidebar-brand" title="返回主页">
                 <div class="sidebar-brand-icon">
-                    <i class="fas fa-bolt"></i>
+                    <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg"
+                        style="width: 24px; height: 24px;">
+                        <path d="M30 20 H80 L70 35 H20 Z" fill="white" />
+                        <path d="M40 40 H90 L80 55 H30 Z" fill="#ccc" />
+                        <path d="M20 60 H70 L60 75 H10 Z" fill="white" />
+                        <path d="M80 20 L90 15 L80 30" fill="#333" />
+                        <path d="M90 40 L100 35 L90 50" fill="#333" />
+                        <path d="M70 60 L80 55 L70 70" fill="#333" />
+                    </svg>
                 </div>
                 <span class="sidebar-brand-text">Admin Studio</span>
             </a>
@@ -1265,7 +1273,7 @@
                                 </div>
                                 <div class="config-value">
                                     <div class="input-with-addon">
-                                        <input type="number" id="cfgVerifyPrice" class="config-input" value="3" min="1"
+                                        <input type="number" id="cfgVerifyPrice" class="config-input" value="10" min="1"
                                             max="100" step="1"
                                             onchange="window.saveVerifyConfig && window.saveVerifyConfig()">
                                         <span class="input-addon">积分/次</span>
@@ -1274,12 +1282,12 @@
                             </div>
                             <div class="config-item-row">
                                 <div class="config-label">
-                                    <span>Batch API Key</span>
-                                    <span class="config-hint">batch.1key.me 的 API 密钥</span>
+                                    <span>验证 API Key</span>
+                                    <span class="config-hint">lacedore.org 验证服务的 sk- 密钥</span>
                                 </div>
                                 <div class="config-value">
-                                    <input type="password" id="cfgBatchApiKey" class="config-input config-input-wide"
-                                        placeholder="cdk_xxxxx..."
+                                    <input type="password" id="cfgVerifyApiKey" class="config-input config-input-wide"
+                                        placeholder="sk-XXXX-XXXX-XXXX-XXXX"
                                         onchange="window.saveVerifyConfig && window.saveVerifyConfig()">
                                 </div>
                             </div>
@@ -1294,6 +1302,38 @@
                                             onchange="window.saveVerifyConfig && window.saveVerifyConfig()">
                                         <span class="toggle-slider"></span>
                                     </label>
+                                </div>
+                            </div>
+                            <div class="config-item-row">
+                                <div class="config-label">
+                                    <span>API 额度</span>
+                                    <span class="config-hint">查询 lacedore.org 剩余验证次数</span>
+                                </div>
+                                <div class="config-value" style="display: flex; align-items: center; gap: 12px;">
+                                    <button class="btn btn-sm btn-outline"
+                                        onclick="window.checkVerifyQuota && window.checkVerifyQuota()"
+                                        style="white-space: nowrap;">
+                                        <i class="fas fa-sync-alt"></i> 查询额度
+                                    </button>
+                                    <span id="cfgVerifyQuota"
+                                        style="font-size: 1.1em; font-weight: 600; color: var(--accent-starry, #6c5ce7);">
+                                        <i class="fas fa-question-circle" style="opacity: 0.4;"></i> 未查询
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="config-item-row">
+                                <div class="config-label">
+                                    <span>兑换卡密</span>
+                                    <span class="config-hint">输入 XXXX-XXXX-XXXX 格式的卡密充值额度</span>
+                                </div>
+                                <div class="config-value" style="display: flex; align-items: center; gap: 8px;">
+                                    <input type="text" id="cfgRedeemCode" class="config-input"
+                                        placeholder="XXXX-XXXX-XXXX" style="flex: 1; font-family: monospace;">
+                                    <button class="btn btn-sm btn-primary"
+                                        onclick="window.redeemVerifyCard && window.redeemVerifyCard()"
+                                        style="white-space: nowrap;">
+                                        <i class="fas fa-gift"></i> 兑换
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -4067,6 +4107,543 @@
 
 
 
+            <!-- ========== HOMEPAGE CONTENT MODULE ========== -->
+            <div id="module-homepage" class="module-container" style="padding: 0 30px;">
+
+                <style>
+                    /* ===== Homepage Module — Compact Grid Layout ===== */
+                    #module-homepage .hp-section-view .module-content {
+                        display: flex;
+                        flex-direction: column;
+                        gap: 16px;
+                        max-width: 900px;
+                        margin: 0 auto;
+                    }
+
+                    /* Section Control — Compact inline bar */
+                    #module-homepage .hp-control-bar {
+                        display: flex;
+                        align-items: center;
+                        gap: 24px;
+                        padding: 12px 20px;
+                        background: var(--card-bg);
+                        border: 1px solid var(--card-border);
+                        border-radius: 12px;
+                        flex-wrap: wrap;
+                    }
+
+                    #module-homepage .hp-control-bar .hp-ctrl-item {
+                        display: flex;
+                        align-items: center;
+                        gap: 10px;
+                        font-size: 0.9rem;
+                        color: var(--text-main);
+                    }
+
+                    #module-homepage .hp-control-bar .hp-ctrl-item label {
+                        color: rgba(255, 255, 255, 0.5);
+                        font-size: 0.8rem;
+                        white-space: nowrap;
+                    }
+
+                    #module-homepage .hp-control-bar .config-input {
+                        width: 60px;
+                    }
+
+                    /* Content cards — 2-column grid for form fields */
+                    #module-homepage .config-card-body {
+                        padding: 20px;
+                    }
+
+                    #module-homepage .hp-form-grid {
+                        display: grid;
+                        grid-template-columns: 1fr 1fr;
+                        gap: 16px 24px;
+                    }
+
+                    #module-homepage .hp-form-grid .hp-field {
+                        display: flex;
+                        flex-direction: column;
+                        gap: 6px;
+                    }
+
+                    #module-homepage .hp-form-grid .hp-field.full-width {
+                        grid-column: 1 / -1;
+                    }
+
+                    #module-homepage .hp-form-grid .hp-field label {
+                        color: rgba(255, 255, 255, 0.5);
+                        font-size: 0.8rem;
+                        font-weight: 500;
+                    }
+
+                    #module-homepage .hp-form-grid .hp-field .config-input,
+                    #module-homepage .hp-form-grid .hp-field select.config-input {
+                        width: 100%;
+                        text-align: left;
+                        padding: 10px 14px;
+                        box-sizing: border-box;
+                    }
+
+                    /* Auto-aggregation — compact inline */
+                    #module-homepage .hp-auto-bar {
+                        display: flex;
+                        align-items: center;
+                        justify-content: space-between;
+                        gap: 12px;
+                        padding: 10px 20px;
+                        background: rgba(107, 158, 206, 0.05);
+                        border: 1px solid rgba(107, 158, 206, 0.15);
+                        border-radius: 10px;
+                    }
+
+                    #module-homepage .hp-auto-bar .hp-auto-left {
+                        display: flex;
+                        align-items: center;
+                        gap: 10px;
+                        color: var(--text-main);
+                        font-size: 0.9rem;
+                    }
+
+                    #module-homepage .hp-auto-bar .hp-auto-left i {
+                        color: var(--accent-starry);
+                    }
+
+                    #module-homepage .hp-auto-bar .hp-auto-hint {
+                        color: rgba(255, 255, 255, 0.35);
+                        font-size: 0.8rem;
+                    }
+
+                    /* Save area */
+                    #module-homepage .hp-save-bar {
+                        display: flex;
+                        align-items: center;
+                        justify-content: space-between;
+                        padding-top: 8px;
+                    }
+
+                    /* Ticker speed slider styling */
+                    #module-homepage .hp-slider-row {
+                        display: flex;
+                        align-items: center;
+                        gap: 12px;
+                    }
+
+                    #module-homepage .hp-slider-row input[type="range"] {
+                        flex: 1;
+                        accent-color: #6b9ece;
+                        height: 4px;
+                    }
+
+                    #module-homepage .hp-slider-row span {
+                        min-width: 28px;
+                        text-align: center;
+                        color: rgba(255, 255, 255, 0.6);
+                        font-weight: 600;
+                    }
+
+                    /* Toggle inline pairs for ticker */
+                    #module-homepage .hp-toggle-group {
+                        display: flex;
+                        gap: 24px;
+                        flex-wrap: wrap;
+                    }
+
+                    #module-homepage .hp-toggle-item {
+                        display: flex;
+                        align-items: center;
+                        gap: 10px;
+                        font-size: 0.9rem;
+                        color: var(--text-main);
+                    }
+
+                    @media (max-width: 640px) {
+                        #module-homepage .hp-form-grid {
+                            grid-template-columns: 1fr;
+                        }
+
+                        #module-homepage .hp-control-bar {
+                            flex-direction: column;
+                            align-items: flex-start;
+                            gap: 12px;
+                        }
+                    }
+                </style>
+
+                <!-- Homepage Tabs -->
+                <nav class="admin-tabs" id="homepageTabsNav">
+                    <button class="admin-tab active" data-hp-section="hero"
+                        onclick="HomepageAdmin.switchSection('hero')">
+                        Hero
+                    </button>
+                    <button class="admin-tab" data-hp-section="prompts"
+                        onclick="HomepageAdmin.switchSection('prompts')">
+                        提示词
+                    </button>
+                    <button class="admin-tab" data-hp-section="shop" onclick="HomepageAdmin.switchSection('shop')">
+                        商城
+                    </button>
+                    <button class="admin-tab" data-hp-section="verify" onclick="HomepageAdmin.switchSection('verify')">
+                        验证
+                    </button>
+                    <button class="admin-tab" data-hp-section="guestbook"
+                        onclick="HomepageAdmin.switchSection('guestbook')">
+                        留言板
+                    </button>
+                    <button class="admin-tab" data-hp-section="ticker" onclick="HomepageAdmin.switchSection('ticker')">
+                        跑马灯
+                    </button>
+                    <div class="admin-tab-indicator"></div>
+                </nav>
+
+                <!-- Loading State -->
+                <div id="hp-loading" style="text-align: center; padding: 60px 0; color: rgba(255,255,255,0.5);">
+                    <i class="fas fa-spinner fa-spin" style="font-size: 24px; margin-bottom: 12px;"></i>
+                    <div>加载主页配置中...</div>
+                </div>
+
+                <!-- Section Content (dynamically rendered by admin-homepage.js) -->
+                <div id="hp-section-content" style="display: none;">
+
+                    <!-- ===== HERO Section ===== -->
+                    <div class="hp-section-view active" data-hp-view="hero">
+                        <div class="module-content">
+                            <div class="hp-control-bar">
+                                <div class="hp-ctrl-item">
+                                    <label>显示区块</label>
+                                    <div class="status-toggle" id="hp-hero-visible"
+                                        onclick="HomepageAdmin.toggleVisible('hero')"></div>
+                                </div>
+                                <div class="hp-ctrl-item">
+                                    <label>排序</label>
+                                    <input type="number" class="config-input" id="hp-hero-order" min="0" max="99">
+                                </div>
+                            </div>
+
+                            <div class="config-card">
+                                <div class="config-card-header" onclick="toggleConfigCard(this)">
+                                    <div class="config-card-title"><i class="fas fa-edit"></i><span>内容配置</span></div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="hp-form-grid">
+                                        <div class="hp-field"><label>主标题</label><input type="text" class="config-input"
+                                                id="hp-hero-title" placeholder="早鸟工作室"></div>
+                                        <div class="hp-field"><label>副标题</label><input type="text" class="config-input"
+                                                id="hp-hero-subtitle" placeholder="创意 · 效率 · 无限可能"></div>
+
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="hp-auto-bar">
+                                <div class="hp-auto-left"><i class="fas fa-magic"></i><span>自动聚合</span></div>
+                                <div class="status-toggle" id="hp-hero-auto"
+                                    onclick="HomepageAdmin.toggleField('hero', 'enable_auto')"></div>
+                            </div>
+
+                            <div class="hp-save-bar">
+                                <span id="hp-hero-updated"
+                                    style="color: rgba(255,255,255,0.4); font-size: 12px;"></span>
+                                <div style="display: flex; align-items: center; gap: 12px;">
+                                    <button class="btn-sm btn-primary" onclick="HomepageAdmin.saveSection('hero')"><i
+                                            class="fas fa-save"></i> 保存修改</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ===== PROMPTS Section ===== -->
+                    <div class="hp-section-view" data-hp-view="prompts">
+                        <div class="module-content">
+                            <div class="hp-control-bar">
+                                <div class="hp-ctrl-item"><label>显示区块</label>
+                                    <div class="status-toggle" id="hp-prompts-visible"
+                                        onclick="HomepageAdmin.toggleVisible('prompts')"></div>
+                                </div>
+                                <div class="hp-ctrl-item"><label>排序</label><input type="number" class="config-input"
+                                        id="hp-prompts-order" min="0" max="99"></div>
+                            </div>
+
+                            <div class="config-card">
+                                <div class="config-card-header" onclick="toggleConfigCard(this)">
+                                    <div class="config-card-title"><i class="fas fa-edit"></i><span>内容配置</span></div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="hp-form-grid">
+                                        <div class="hp-field"><label>板块标题</label><input type="text" class="config-input"
+                                                id="hp-prompts-title" placeholder="AI 提示词工作室"></div>
+                                        <div class="hp-field"><label>板块副标题</label><input type="text"
+                                                class="config-input" id="hp-prompts-subtitle"
+                                                placeholder="让创作更高效，让灵感更自由"></div>
+                                        <div class="hp-field"><label>最大展示数量</label><input type="number"
+                                                class="config-input" id="hp-prompts-max" min="1" max="50"
+                                                placeholder="6"></div>
+                                        <div class="hp-field"><label>排序方式</label><select class="config-input"
+                                                id="hp-prompts-sort">
+                                                <option value="popular">🔥 热门优先</option>
+                                                <option value="latest">🕐 最新优先</option>
+                                                <option value="random">🎲 随机展示</option>
+                                            </select></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="hp-auto-bar">
+                                <div class="hp-auto-left"><i class="fas fa-magic"></i><span>自动聚合</span><span
+                                        class="hp-auto-hint">— 自动从数据库拉取最热门的提示词</span></div>
+                                <div class="status-toggle" id="hp-prompts-auto"
+                                    onclick="HomepageAdmin.toggleField('prompts', 'enable_auto')"></div>
+                            </div>
+
+                            <div class="hp-save-bar">
+                                <span id="hp-prompts-updated"
+                                    style="color: rgba(255,255,255,0.4); font-size: 12px;"></span>
+                                <div style="display: flex; align-items: center; gap: 12px;">
+
+                                    <button class="btn-sm btn-primary" onclick="HomepageAdmin.saveSection('prompts')"><i
+                                            class="fas fa-save"></i> 保存修改</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ===== SHOP Section ===== -->
+                    <div class="hp-section-view" data-hp-view="shop">
+                        <div class="module-content">
+                            <div class="hp-control-bar">
+                                <div class="hp-ctrl-item"><label>显示区块</label>
+                                    <div class="status-toggle" id="hp-shop-visible"
+                                        onclick="HomepageAdmin.toggleVisible('shop')"></div>
+                                </div>
+                                <div class="hp-ctrl-item"><label>排序</label><input type="number" class="config-input"
+                                        id="hp-shop-order" min="0" max="99"></div>
+                            </div>
+
+                            <div class="config-card">
+                                <div class="config-card-header" onclick="toggleConfigCard(this)">
+                                    <div class="config-card-title"><i class="fas fa-edit"></i><span>内容配置</span></div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="hp-form-grid">
+                                        <div class="hp-field"><label>板块标题</label><input type="text" class="config-input"
+                                                id="hp-shop-title" placeholder="精选资源商城"></div>
+                                        <div class="hp-field"><label>板块副标题</label><input type="text"
+                                                class="config-input" id="hp-shop-subtitle" placeholder="优质资源，助力成长">
+                                        </div>
+                                        <div class="hp-field"><label>最大展示数量</label><input type="number"
+                                                class="config-input" id="hp-shop-max" min="1" max="50" placeholder="8">
+                                        </div>
+                                        <div class="hp-field"><label>分类筛选</label><select class="config-input"
+                                                id="hp-shop-category">
+                                                <option value="all">全部分类</option>
+                                                <option value="prompt">提示词</option>
+                                                <option value="tool">工具</option>
+                                                <option value="resource">资源</option>
+                                            </select></div>
+                                        <div class="hp-field"><label>排序方式</label><select class="config-input"
+                                                id="hp-shop-sort">
+                                                <option value="popular">🔥 热门优先</option>
+                                                <option value="latest">🕐 最新优先</option>
+                                                <option value="random">🎲 随机展示</option>
+                                            </select></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="hp-auto-bar">
+                                <div class="hp-auto-left"><i class="fas fa-magic"></i><span>自动聚合</span><span
+                                        class="hp-auto-hint">— 自动从商城拉取热门商品</span></div>
+                                <div class="status-toggle" id="hp-shop-auto"
+                                    onclick="HomepageAdmin.toggleField('shop', 'enable_auto')"></div>
+                            </div>
+
+                            <div class="hp-save-bar">
+                                <span id="hp-shop-updated"
+                                    style="color: rgba(255,255,255,0.4); font-size: 12px;"></span>
+                                <div style="display: flex; align-items: center; gap: 12px;">
+
+                                    <button class="btn-sm btn-primary" onclick="HomepageAdmin.saveSection('shop')"><i
+                                            class="fas fa-save"></i> 保存修改</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ===== VERIFY Section ===== -->
+                    <div class="hp-section-view" data-hp-view="verify">
+                        <div class="module-content">
+                            <div class="hp-control-bar">
+                                <div class="hp-ctrl-item"><label>显示区块</label>
+                                    <div class="status-toggle" id="hp-verify-visible"
+                                        onclick="HomepageAdmin.toggleVisible('verify')"></div>
+                                </div>
+                                <div class="hp-ctrl-item"><label>排序</label><input type="number" class="config-input"
+                                        id="hp-verify-order" min="0" max="99"></div>
+                            </div>
+
+                            <div class="config-card">
+                                <div class="config-card-header" onclick="toggleConfigCard(this)">
+                                    <div class="config-card-title"><i class="fas fa-edit"></i><span>内容配置</span></div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="hp-form-grid">
+                                        <div class="hp-field"><label>板块标题</label><input type="text" class="config-input"
+                                                id="hp-verify-title" placeholder="Gemini API 验证"></div>
+                                        <div class="hp-field"><label>板块副标题</label><input type="text"
+                                                class="config-input" id="hp-verify-subtitle"
+                                                placeholder="快速验证您的 API 密钥"></div>
+                                        <div class="hp-field"><label>预览截图路径</label><input type="text"
+                                                class="config-input" id="hp-verify-screenshot"
+                                                placeholder="/assets/verify-preview.png"></div>
+                                        <div class="hp-field"><label>特色标签 <span
+                                                    style="font-size:0.75rem;color:rgba(255,255,255,0.3)">逗号分隔</span></label><input
+                                                type="text" class="config-input" id="hp-verify-features"
+                                                placeholder="免费, 实时, 安全"></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="hp-auto-bar">
+                                <div class="hp-auto-left"><i class="fas fa-magic"></i><span>自动聚合</span></div>
+                                <div class="status-toggle" id="hp-verify-auto"
+                                    onclick="HomepageAdmin.toggleField('verify', 'enable_auto')"></div>
+                            </div>
+
+                            <div class="hp-save-bar">
+                                <span id="hp-verify-updated"
+                                    style="color: rgba(255,255,255,0.4); font-size: 12px;"></span>
+                                <div style="display: flex; align-items: center; gap: 12px;">
+
+                                    <button class="btn-sm btn-primary" onclick="HomepageAdmin.saveSection('verify')"><i
+                                            class="fas fa-save"></i> 保存修改</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ===== GUESTBOOK Section ===== -->
+                    <div class="hp-section-view" data-hp-view="guestbook">
+                        <div class="module-content">
+                            <div class="hp-control-bar">
+                                <div class="hp-ctrl-item"><label>显示区块</label>
+                                    <div class="status-toggle" id="hp-guestbook-visible"
+                                        onclick="HomepageAdmin.toggleVisible('guestbook')"></div>
+                                </div>
+                                <div class="hp-ctrl-item"><label>排序</label><input type="number" class="config-input"
+                                        id="hp-guestbook-order" min="0" max="99"></div>
+                            </div>
+
+                            <div class="config-card">
+                                <div class="config-card-header" onclick="toggleConfigCard(this)">
+                                    <div class="config-card-title"><i class="fas fa-edit"></i><span>内容配置</span></div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="hp-form-grid">
+                                        <div class="hp-field"><label>板块标题</label><input type="text" class="config-input"
+                                                id="hp-guestbook-title" placeholder="留言板"></div>
+                                        <div class="hp-field"><label>板块副标题</label><input type="text"
+                                                class="config-input" id="hp-guestbook-subtitle" placeholder="用户的声音">
+                                        </div>
+                                        <div class="hp-field"><label>最大展示数量</label><input type="number"
+                                                class="config-input" id="hp-guestbook-max" min="1" max="50"
+                                                placeholder="5"></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="hp-auto-bar">
+                                <div class="hp-auto-left"><i class="fas fa-magic"></i><span>自动聚合</span><span
+                                        class="hp-auto-hint">— 自动从留言板拉取最新留言</span></div>
+                                <div class="status-toggle" id="hp-guestbook-auto"
+                                    onclick="HomepageAdmin.toggleField('guestbook', 'enable_auto')"></div>
+                            </div>
+
+                            <div class="hp-save-bar">
+                                <span id="hp-guestbook-updated"
+                                    style="color: rgba(255,255,255,0.4); font-size: 12px;"></span>
+                                <div style="display: flex; align-items: center; gap: 12px;">
+
+                                    <button class="btn-sm btn-primary"
+                                        onclick="HomepageAdmin.saveSection('guestbook')"><i class="fas fa-save"></i>
+                                        保存修改</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ===== TICKER Section ===== -->
+                    <div class="hp-section-view" data-hp-view="ticker">
+                        <div class="module-content">
+                            <div class="hp-control-bar">
+                                <div class="hp-ctrl-item"><label>显示区块</label>
+                                    <div class="status-toggle" id="hp-ticker-visible"
+                                        onclick="HomepageAdmin.toggleVisible('ticker')"></div>
+                                </div>
+                                <div class="hp-ctrl-item"><label>排序</label><input type="number" class="config-input"
+                                        id="hp-ticker-order" min="0" max="99"></div>
+                            </div>
+
+                            <div class="config-card">
+                                <div class="config-card-header" onclick="toggleConfigCard(this)">
+                                    <div class="config-card-title"><i class="fas fa-sliders-h"></i><span>跑马灯配置</span>
+                                    </div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="hp-form-grid">
+                                        <div class="hp-field full-width">
+                                            <label>标签滚动速度</label>
+                                            <div class="hp-slider-row">
+                                                <input type="range" id="hp-ticker-speed" min="1" max="100" value="30">
+                                                <span id="hp-ticker-speed-label">30</span>
+                                            </div>
+                                        </div>
+                                        <div class="hp-field full-width">
+                                            <label>商城滚动速度</label>
+                                            <div class="hp-slider-row">
+                                                <input type="range" id="hp-ticker-shop-speed" min="1" max="100"
+                                                    value="30">
+                                                <span id="hp-ticker-shop-speed-label">30</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="hp-toggle-group" style="margin-top: 16px;">
+                                        <div class="hp-toggle-item">
+                                            <div class="status-toggle" id="hp-ticker-prompts"
+                                                onclick="HomepageAdmin.toggleField('ticker', 'enable_prompts')"></div>
+                                            <span>包含提示词</span>
+                                        </div>
+                                        <div class="hp-toggle-item">
+                                            <div class="status-toggle" id="hp-ticker-products"
+                                                onclick="HomepageAdmin.toggleField('ticker', 'enable_products')"></div>
+                                            <span>包含商品</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="hp-auto-bar">
+                                <div class="hp-auto-left"><i class="fas fa-magic"></i><span>自动聚合</span></div>
+                                <div class="status-toggle" id="hp-ticker-auto"
+                                    onclick="HomepageAdmin.toggleField('ticker', 'enable_auto')"></div>
+                            </div>
+
+                            <div class="hp-save-bar">
+                                <span id="hp-ticker-updated"
+                                    style="color: rgba(255,255,255,0.4); font-size: 12px;"></span>
+                                <div style="display: flex; align-items: center; gap: 12px;">
+
+                                    <button class="btn-sm btn-primary" onclick="HomepageAdmin.saveSection('ticker')"><i
+                                            class="fas fa-save"></i> 保存修改</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+                <!-- END hp-section-content -->
+            </div>
+            <!-- END module-homepage -->
+
             <!-- ========== ANALYTICS MODULE ========== -->
             <div id="module-analytics" class="module-container">
                 <div class="analytics-dashboard">
@@ -5240,6 +5817,7 @@
     <script src="admin-comments.js"></script>
     <script src="admin-analytics.js"></script>
     <script src="admin-config.js"></script>
+    <script src="admin-homepage.js"></script>
     <script src="js/admin-studio-translate.js"></script>
     <script src="admin-studio.js"></script>
     <script src="js/admin-shop.js?v=CLICK_DYNAMIC_V13"></script>
@@ -5271,6 +5849,13 @@
         if (moduleName === 'chat') {
             if (!window.adminChatInstance) {
                 window.adminChatInstance = new AdminChat();
+            }
+        }
+
+        // Lazy init Homepage
+        if (moduleName === 'homepage') {
+            if (typeof HomepageAdmin !== 'undefined' && typeof HomepageAdmin.init === 'function') {
+                HomepageAdmin.init();
             }
         }
 

@@ -1095,25 +1095,25 @@ function renderCommentRulesConfig() {
 // ============================================
 
 function renderVerifyConfig() {
-    const config = systemConfigCache['verify'] || {
-        price_per_verify: 3,
+    const config = systemConfigCache['verify_settings'] || {
+        price_per_verify: 10,
         enabled: true,
-        batch_api_key: ''
+        verify_api_key: ''
     };
 
     // Price input
     const priceInput = document.getElementById('cfgVerifyPrice');
-    if (priceInput) priceInput.value = config.price_per_verify || 3;
+    if (priceInput) priceInput.value = config.price_per_verify || 10;
 
     // Enabled toggle
     const enabledToggle = document.getElementById('cfgVerifyEnabled');
     if (enabledToggle) enabledToggle.checked = config.enabled !== false;
 
     // API Key (show masked for security)
-    const apiKeyInput = document.getElementById('cfgBatchApiKey');
-    if (apiKeyInput && config.batch_api_key) {
+    const apiKeyInput = document.getElementById('cfgVerifyApiKey');
+    if (apiKeyInput && config.verify_api_key) {
         // Show first 8 chars + masked rest
-        const key = config.batch_api_key;
+        const key = config.verify_api_key;
         apiKeyInput.value = key.length > 8 ? key.slice(0, 8) + '...' : key;
         apiKeyInput.dataset.hasKey = 'true';
     }
@@ -1122,13 +1122,13 @@ function renderVerifyConfig() {
 async function saveVerifyConfig() {
     const priceInput = document.getElementById('cfgVerifyPrice');
     const enabledToggle = document.getElementById('cfgVerifyEnabled');
-    const apiKeyInput = document.getElementById('cfgBatchApiKey');
+    const apiKeyInput = document.getElementById('cfgVerifyApiKey');
 
-    const config = systemConfigCache['verify'] || {};
+    const config = systemConfigCache['verify_settings'] || {};
 
     // Update price
     if (priceInput) {
-        config.price_per_verify = parseInt(priceInput.value) || 3;
+        config.price_per_verify = parseInt(priceInput.value) || 10;
     }
 
     // Update enabled
@@ -1140,22 +1140,87 @@ async function saveVerifyConfig() {
     if (apiKeyInput && !apiKeyInput.value.includes('...')) {
         const newKey = apiKeyInput.value.trim();
         if (newKey) {
-            config.batch_api_key = newKey;
+            config.verify_api_key = newKey;
         }
     }
 
-    const success = await saveConfig('verify', config);
+    const success = await saveConfig('verify_settings', config);
 
     if (success && typeof showToast === 'function') {
         showToast('验证服务配置已保存', 'success');
     }
 
     // Update cache
-    systemConfigCache['verify'] = config;
+    systemConfigCache['verify_settings'] = config;
 }
 
 // Expose globally for HTML onclick handlers
 window.saveVerifyConfig = saveVerifyConfig;
+
+const VERIFY_SERVER_URL = window.VERIFY_SERVER_URL || 'https://zaoyoe-verify-server-production.up.railway.app';
+
+async function checkVerifyQuota() {
+    const quotaEl = document.getElementById('cfgVerifyQuota');
+    if (!quotaEl) return;
+
+    quotaEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 查询中...';
+
+    try {
+        const res = await fetch(`${VERIFY_SERVER_URL}/api/quota`);
+        const data = await res.json();
+
+        if (data.success) {
+            const credits = data.credits;
+            const color = credits > 5 ? '#27ae60' : credits > 0 ? '#f39c12' : '#e74c3c';
+            quotaEl.innerHTML = `<i class="fas fa-gem" style="color: ${color};"></i> <strong style="color: ${color};">${credits}</strong> 次`;
+        } else {
+            quotaEl.innerHTML = `<i class="fas fa-exclamation-triangle" style="color: #e74c3c;"></i> ${data.message || '查询失败'}`;
+        }
+    } catch (e) {
+        quotaEl.innerHTML = '<i class="fas fa-exclamation-triangle" style="color: #e74c3c;"></i> 网络错误';
+    }
+}
+
+async function redeemVerifyCard() {
+    const codeInput = document.getElementById('cfgRedeemCode');
+    if (!codeInput) return;
+
+    const code = codeInput.value.trim();
+    if (!code) {
+        if (typeof showToast === 'function') showToast('请输入卡密代码', 'error');
+        return;
+    }
+
+    // Validate format XXXX-XXXX-XXXX
+    if (!/^[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}$/.test(code)) {
+        if (typeof showToast === 'function') showToast('卡密格式错误，应为 XXXX-XXXX-XXXX', 'error');
+        return;
+    }
+
+    try {
+        const res = await fetch(`${VERIFY_SERVER_URL}/api/redeem`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code })
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+            if (typeof showToast === 'function') showToast(`兑换成功！当前额度: ${data.credits_total}`, 'success');
+            codeInput.value = '';
+            // Refresh quota display
+            checkVerifyQuota();
+        } else {
+            if (typeof showToast === 'function') showToast(data.message || '兑换失败', 'error');
+        }
+    } catch (e) {
+        if (typeof showToast === 'function') showToast('网络错误，兑换失败', 'error');
+    }
+}
+
+window.checkVerifyQuota = checkVerifyQuota;
+window.redeemVerifyCard = redeemVerifyCard;
 
 async function saveSensitiveWords() {
     const textarea = document.getElementById('cfgSensitiveWords');

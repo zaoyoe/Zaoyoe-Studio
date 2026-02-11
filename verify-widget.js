@@ -20,6 +20,7 @@
     // State
     let currentUser = null;
     let userBalance = 0;
+    let apiCredits = -1; // -1 = not loaded, 0+ = loaded
     let isLoading = false;
     let batchStats = { success: 0, failed: 0, total: 0 };
     let activeTasks = new Map(); // taskId -> { index, verificationId, timer, aborted }
@@ -202,6 +203,7 @@
 
         render(container, isLoggedIn);
         setupAuthListener();
+        loadApiQuota();
         window.addEventListener('languageChanged', () => {
             render(container, !!currentUser);
         });
@@ -225,6 +227,49 @@
     }
 
     // =============================================
+    // Load API Quota
+    // =============================================
+    async function loadApiQuota() {
+        try {
+            const res = await fetch(`${CONFIG.nodeServerUrl}/api/quota`);
+            const data = await res.json();
+            if (data.success) {
+                apiCredits = data.credits || 0;
+            } else {
+                apiCredits = -1;
+            }
+        } catch (e) {
+            apiCredits = -1;
+        }
+        updateQuotaDisplay();
+    }
+
+    function updateQuotaDisplay() {
+        const quotaEl = document.getElementById('verifyApiQuota');
+        const quotaBar = document.getElementById('verifyQuotaWarning');
+        const submitBtn = document.getElementById('verifySubmitBtn');
+
+        if (quotaEl) {
+            if (apiCredits < 0) {
+                quotaEl.innerHTML = '<i class="fas fa-question-circle"></i> --';
+            } else {
+                const color = apiCredits > 5 ? '#27ae60' : apiCredits > 0 ? '#f39c12' : '#e74c3c';
+                quotaEl.innerHTML = `<i class="fas fa-gem" style="color: ${color}"></i> <span style="color: ${color}">${apiCredits}</span>`;
+            }
+        }
+
+        if (quotaBar) {
+            if (apiCredits === 0) {
+                quotaBar.style.display = 'flex';
+                if (submitBtn && !isLoading) submitBtn.disabled = true;
+            } else {
+                quotaBar.style.display = 'none';
+                if (submitBtn && !isLoading) submitBtn.disabled = false;
+            }
+        }
+    }
+
+    // =============================================
     // Render
     // =============================================
     function render(container, isLoggedIn = false) {
@@ -244,10 +289,20 @@
                         <h3>${t('verify.title', 'Gemini 验证服务')}</h3>
                         <p>${t('verify.subtitle', '支持批量验证')}</p>
                     </div>
-                    <div class="verify-balance" id="verifyBalance" style="display: ${balanceDisplay};">
-                        <i class="fas fa-coins"></i>
-                        <span id="verifyBalanceValue">0</span>
+                    <div class="verify-header-right">
+                        <div class="verify-api-quota" id="verifyApiQuota" title="API 额度">
+                            <i class="fas fa-gem"></i> --
+                        </div>
+                        <div class="verify-balance" id="verifyBalance" style="display: ${balanceDisplay};">
+                            <i class="fas fa-coins"></i>
+                            <span id="verifyBalanceValue">0</span>
+                        </div>
                     </div>
+                </div>
+
+                <div class="verify-quota-warning" id="verifyQuotaWarning" style="display: none;">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    API 额度不足，无法提交验证。请联系管理员充值。
                 </div>
 
                 <div id="verifyContent">
@@ -324,11 +379,30 @@
                     </div>
                     <div class="verify-result-message" id="verifyResultMessage"></div>
                 </div>
+
+                <div class="verify-history-card" id="verifyHistoryCard">
+                    <div class="verify-history-header">
+                        <div class="verify-history-title">
+                            <i class="fas fa-clock-rotate-left"></i>
+                            ${t('verify.history', '验证历史')}
+                        </div>
+                        <button class="verify-history-refresh" onclick="VerifyWidget.loadHistory()" title="刷新">
+                            <i class="fas fa-sync-alt"></i>
+                        </button>
+                    </div>
+                    <div class="verify-history-list" id="verifyHistoryList">
+                        <div class="verify-history-loading">
+                            <i class="fas fa-spinner fa-spin"></i> 加载中...
+                        </div>
+                    </div>
+                </div>
             </div>
         `;
 
         setupInputListener();
         updatePriceDisplay();
+        updateQuotaDisplay();
+        loadHistory();
     }
 
     // =============================================
@@ -461,6 +535,13 @@
         if (userBalance < totalCost) {
             showSingleResult('error', '积分不足 / Insufficient points',
                 `需要 ${totalCost} 积分，当前余额: ${userBalance} / Need ${totalCost} pts, balance: ${userBalance}`);
+            return;
+        }
+
+        // Check API quota
+        if (apiCredits === 0) {
+            showSingleResult('error', 'API 额度不足 / Insufficient API quota',
+                '服务商额度已耗尽，请联系管理员充值 / API credits exhausted, contact admin to top up');
             return;
         }
 
@@ -762,6 +843,8 @@
 
         showBatchSummary();
         loadUserBalance(); // Refresh balance
+        loadApiQuota();    // Refresh API quota
+        loadHistory();     // Refresh history
     }
 
     // =============================================
@@ -861,10 +944,88 @@
     }
 
     // =============================================
+    // Verification History
+    // =============================================
+    async function loadHistory() {
+        const listEl = document.getElementById('verifyHistoryList');
+        if (!listEl) return;
+
+        if (!currentUser || !window.supabaseClient) {
+            listEl.innerHTML = '<div class="verify-history-empty">登录后查看历史记录</div>';
+            return;
+        }
+
+        listEl.innerHTML = '<div class="verify-history-loading"><i class="fas fa-spinner fa-spin"></i> 加载中...</div>';
+
+        try {
+            const { data, error } = await window.supabaseClient
+                .from('verification_logs')
+                .select('*')
+                .eq('user_id', currentUser.id)
+                .order('created_at', { ascending: false })
+                .limit(20);
+
+            if (error) throw error;
+
+            if (!data || data.length === 0) {
+                listEl.innerHTML = '<div class="verify-history-empty"><i class="fas fa-inbox"></i> 暂无历史记录</div>';
+                return;
+            }
+
+            listEl.innerHTML = data.map(item => {
+                const time = new Date(item.created_at).toLocaleString('zh-CN', {
+                    month: '2-digit', day: '2-digit',
+                    hour: '2-digit', minute: '2-digit'
+                });
+                const vId = item.verification_id || '--';
+                const shortId = vId.length > 20 ? vId.substring(0, 20) + '...' : vId;
+                const statusCss = getHistoryStatusCss(item.status);
+                const statusText = getHistoryStatusText(item.status);
+                const cost = item.points_deducted || 0;
+
+                return `
+                    <div class="verify-history-item ${statusCss}">
+                        <div class="verify-history-item-time">${time}</div>
+                        <div class="verify-history-item-id" title="${vId}">${shortId}</div>
+                        <div class="verify-history-item-status">${statusText}</div>
+                        <div class="verify-history-item-cost">${cost > 0 ? '-' + cost : '--'}</div>
+                    </div>
+                `;
+            }).join('');
+
+        } catch (e) {
+            listEl.innerHTML = '<div class="verify-history-empty">加载失败</div>';
+        }
+    }
+
+    function getHistoryStatusCss(status) {
+        if (!status) return '';
+        const s = status.toLowerCase();
+        if (s.includes('success') || s.includes('completed')) return 'success';
+        if (s.includes('fail') || s.includes('error') || s.includes('reject')) return 'error';
+        if (s.includes('cancel')) return 'cancelled';
+        if (s.includes('pending') || s.includes('processing') || s.includes('review')) return 'processing';
+        return '';
+    }
+
+    function getHistoryStatusText(status) {
+        if (!status) return '--';
+        const s = status.toLowerCase();
+        if (s.includes('success') || s.includes('completed')) return '✅ 成功';
+        if (s.includes('fail') || s.includes('error')) return '❌ 失败';
+        if (s.includes('reject')) return '❌ 被拒';
+        if (s.includes('cancel')) return '⚪ 取消';
+        if (s.includes('review')) return '⏳ 审核中';
+        if (s.includes('pending') || s.includes('processing')) return '🔄 处理中';
+        return status;
+    }
+
+    // =============================================
     // Public API
     // =============================================
     window.VerifyWidget = {
         init, submit, cancel, reload: loadConfig,
+        loadHistory, refreshQuota: loadApiQuota,
         debugSuccessAnimation: () => triggerAnimation('success'),
         debugErrorAnimation: () => triggerAnimation('error')
     };

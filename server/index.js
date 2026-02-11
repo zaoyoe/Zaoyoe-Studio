@@ -243,6 +243,99 @@ app.get('/api/verify/status/:taskId', async (req, res) => {
 });
 
 // =============================================
+// GET /api/quota — Check API credits remaining
+// =============================================
+app.get('/api/quota', async (req, res) => {
+    try {
+        const config = await getVerifyConfig();
+
+        if (!config.apiKey) {
+            return res.status(500).json({ success: false, message: '验证服务未配置 API Key' });
+        }
+
+        const apiRes = await fetch(`${VERIFY_API_BASE}/quota`, {
+            method: 'GET',
+            headers: { 'X-API-Key': config.apiKey }
+        });
+
+        const apiData = await apiRes.json();
+
+        if (!apiRes.ok) {
+            return res.status(apiRes.status).json({
+                success: false,
+                message: apiData.detail || '查询额度失败'
+            });
+        }
+
+        return res.json({
+            success: true,
+            credits: apiData.credits || 0
+        });
+
+    } catch (error) {
+        console.error('[Verify] Quota check error:', error);
+        return res.status(500).json({
+            success: false,
+            message: error.message || '查询额度失败'
+        });
+    }
+});
+
+// =============================================
+// POST /api/redeem — Redeem card code for API credits
+// =============================================
+app.post('/api/redeem', async (req, res) => {
+    const { code } = req.body;
+
+    if (!code) {
+        return res.status(400).json({ success: false, message: '请提供卡密代码' });
+    }
+
+    try {
+        const config = await getVerifyConfig();
+
+        if (!config.apiKey) {
+            return res.status(500).json({ success: false, message: '验证服务未配置 API Key' });
+        }
+
+        console.log(`[Verify] Redeeming code: ${code.substring(0, 4)}****`);
+
+        const apiRes = await fetch(`${VERIFY_API_BASE}/redeem`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-API-Key': config.apiKey
+            },
+            body: JSON.stringify({ code })
+        });
+
+        const apiData = await apiRes.json();
+
+        if (!apiRes.ok) {
+            return res.status(apiRes.status).json({
+                success: false,
+                message: apiData.detail || '兑换失败'
+            });
+        }
+
+        console.log(`[Verify] Redeemed successfully:`, apiData);
+
+        return res.json({
+            success: true,
+            credits_total: apiData.credits_total || apiData.credits || 0,
+            message: apiData.message || '兑换成功'
+        });
+
+    } catch (error) {
+        console.error('[Verify] Redeem error:', error);
+        return res.status(500).json({
+            success: false,
+            message: error.message || '兑换失败'
+        });
+    }
+});
+
+// =============================================
 // POST /api/cancel — Cancel verification with safe final check
 // =============================================
 app.post('/api/cancel', async (req, res) => {
