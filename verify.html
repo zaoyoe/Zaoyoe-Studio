@@ -29,9 +29,6 @@
         window.VERIFY_SERVER_URL = 'https://zaoyoe-verify-server-production.up.railway.app';
     </script>
 
-    <!-- Auth Functions -->
-    <script src="./supabase-auth-functions.js?v=GUESTBOOK_MIGRATION" defer></script>
-
     <!-- Styles -->
     <link rel="stylesheet" href="style.css?v=CONTACT_POPUP_FIX_V8">
     <link rel="stylesheet" href="login_styles.css?v=DARK_BG_INPUTS_V1">
@@ -409,7 +406,7 @@
     <script src="./starry-sky.js?v=1"></script>
 
     <!-- Verify Widget Script -->
-    <script src="./verify-widget.js?v=4-railway-fix"></script>
+    <script src="./verify-widget.js?v=5-queuing-fix"></script>
 
     <!-- Load price from config -->
     <script>
@@ -418,14 +415,15 @@
                 const { data } = await window.supabaseClient
                     .from('system_config')
                     .select('config_value')
-                    .eq('config_key', 'verify')
+                    .eq('config_key', 'verify_settings')
                     .single();
 
                 if (data?.config_value?.price_per_verify) {
-                    document.getElementById('displayPrice').textContent = data.config_value.price_per_verify;
+                    const el = document.getElementById('displayPrice');
+                    if (el) el.textContent = data.config_value.price_per_verify;
                 }
             } catch (e) {
-                console.warn('Failed to load verify config:', e);
+                // Config load is optional, widget handles its own config
             }
         });
     </script>

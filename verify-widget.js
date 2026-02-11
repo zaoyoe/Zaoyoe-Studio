@@ -59,7 +59,10 @@
             zh: '验证被拒绝', en: 'Verification rejected', icon: '❌', css: 'error'
         },
         'Already verified': {
-            zh: '已验证过', en: 'Already verified', icon: 'ℹ️', css: 'info'
+            zh: '已验证过', en: 'Already verified', icon: 'ℹ️', css: 'success'
+        },
+        'already completed': {
+            zh: '验证已完成', en: 'Already completed', icon: '✅', css: 'success'
         },
         'Invalid verification link': {
             zh: '无效的验证链接', en: 'Invalid verification link', icon: '❌', css: 'error'
@@ -134,7 +137,7 @@
         const terminalMessages = [
             'completed successfully', 'failed to submit', 'failed to check',
             'failed to select', 'verification failed', 'verification rejected',
-            'already verified', 'invalid verification', 'verification expired'
+            'already verified', 'already completed', 'invalid verification', 'verification expired'
         ];
         const terminalStatuses = ['completed', 'failed', 'error', 'success', 'cancelled'];
 
@@ -154,7 +157,7 @@
         if (status === 'success') return true;
         if (message) {
             const lower = message.toLowerCase();
-            if (lower.includes('completed successfully') || lower.includes('already verified')) return true;
+            if (lower.includes('completed successfully') || lower.includes('already verified') || lower.includes('already completed')) return true;
         }
         return false;
     }
