@@ -199,7 +199,7 @@ app.get('/api/verify/status/:taskId', async (req, res) => {
                 try {
                     await supabase.from('verification_logs').insert({
                         user_id: userId,
-                        verification_id: taskId,
+                        verification_id: apiData.verification_id || taskId,
                         status: 'success',
                         message: apiData.message || 'Verification completed',
                         points_deducted: pointsToDeduct,
@@ -213,21 +213,25 @@ app.get('/api/verify/status/:taskId', async (req, res) => {
             }
         }
 
-        // If task failed, log it
+        // If task failed or already completed, log it (only once)
         if (apiData.status === 'completed' && apiData.success === false && userId) {
-            try {
-                await supabase.from('verification_logs').insert({
-                    user_id: userId,
-                    verification_id: taskId,
-                    status: 'failed',
-                    message: apiData.message || 'Verification failed',
-                    points_deducted: 0,
-                    batch_count: 1,
-                    batch_success: 0,
-                    batch_failed: 1
-                });
-            } catch (logError) {
-                console.warn('Failed to log verification:', logError);
+            const alreadyDeducted = req.query.deducted === 'true';
+            if (!alreadyDeducted) {
+                const isAlreadyCompleted = apiData.message && apiData.message.toLowerCase().includes('already completed');
+                try {
+                    await supabase.from('verification_logs').insert({
+                        user_id: userId,
+                        verification_id: apiData.verification_id || taskId,
+                        status: isAlreadyCompleted ? 'already_completed' : 'failed',
+                        message: apiData.message || 'Verification failed',
+                        points_deducted: 0,
+                        batch_count: 1,
+                        batch_success: isAlreadyCompleted ? 1 : 0,
+                        batch_failed: isAlreadyCompleted ? 0 : 1
+                    });
+                } catch (logError) {
+                    console.warn('Failed to log verification:', logError);
+                }
             }
         }
 
