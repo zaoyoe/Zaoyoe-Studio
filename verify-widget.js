@@ -94,13 +94,18 @@
                 }
             }
         }
-        // Try status field match
+        // Try status field match — but keep original message visible
         if (status && TASK_STATUS_MAP[status]) {
             const s = TASK_STATUS_MAP[status];
+            // If there's an original message not in our map, show it too
+            if (message && message !== status) {
+                return `${s.icon} ${message}`;
+            }
             return `${s.icon} ${s.zh} / ${s.en}`;
         }
-        // Fallback: show original message
-        return message || status || '未知状态 / Unknown';
+        // Fallback: show original message with icon
+        if (message) return `⚠️ ${message}`;
+        return '❓ 未知状态 / Unknown status';
     }
 
     /**
