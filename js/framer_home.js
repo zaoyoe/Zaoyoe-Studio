@@ -169,8 +169,8 @@ const FramerHome = {
   buildHeroData(config) {
     return {
       // Prioritize i18n translations for multilingual support
-      title: window.i18n?.t('home.hero.title') || config.title || '早鸟工作室',
-      subtitle: window.i18n?.t('home.hero.subtitle') || config.subtitle || '创意 · 效率 · 无限可能',
+      title: this.getLocalizedField(config, 'title') || window.i18n?.t('home.hero.title') || '早鸟工作室',
+      subtitle: this.getLocalizedField(config, 'subtitle') || window.i18n?.t('home.hero.subtitle') || '创意 · 效率 · 无限可能',
       cta: config.cta || {
         primary: { text: '开始探索', link: '#prompts' },
         secondary: { text: '了解更多', link: '#about' }
@@ -295,8 +295,8 @@ const FramerHome = {
    */
   buildVerifyData(config) {
     return {
-      title: window.i18n?.t('home.verify.title') || config.section_title || 'Gemini 验证',
-      subtitle: window.i18n?.t('home.verify.subtitle') || config.section_subtitle || '快速验证您的 API 密钥，实时返回结果',
+      title: this.getLocalizedField(config, 'section_title') || window.i18n?.t('home.verify.title') || 'Gemini 验证',
+      subtitle: this.getLocalizedField(config, 'section_subtitle') || window.i18n?.t('home.verify.subtitle') || '快速验证您的 API 密钥，实时返回结果',
       screenshot: config.screenshot_path || '/assets/verify-preview.png',
       features: [
         window.i18n?.t('home.verify.features.free') || '免费',
@@ -825,6 +825,10 @@ const FramerHome = {
     // Duplicate products for seamless infinite scroll
     const duplicatedProducts = [...products, ...products];
 
+    // Read shop_scroll_speed from ticker config, convert to animation duration
+    const shopSpeed = this.config.ticker?.shop_scroll_speed || 30;
+    const shopDuration = Math.max(5, 65 - (shopSpeed * 0.6));
+
     section.innerHTML = `
       <div class="section-header fade-in-up">
         <h2 class="section-title">${this.getLocalizedField(config, 'section_title') || window.i18n?.t('home.shop.title') || '精选资源商城'}</h2>
@@ -832,7 +836,7 @@ const FramerHome = {
       </div>
       
       <div class="shop-carousel-wrapper">
-        <div class="shop-carousel-track">
+        <div class="shop-carousel-track" style="animation-duration: ${shopDuration}s">
           ${duplicatedProducts.map(product => `
             <a href="/shop.html" class="shop-carousel-card">
               <div class="shop-card-image">
@@ -996,10 +1000,15 @@ const FramerHome = {
     const topItems = [...data.top, ...data.top];
     const bottomItems = [...data.bottom, ...data.bottom];
 
+    // Convert speed (1-100) to animation duration: higher speed = shorter duration
+    // speed=1 → 60s (slowest), speed=50 → 30s (default), speed=100 → 5s (fastest)
+    const speed = data.speed || 30;
+    const duration = Math.max(5, 65 - (speed * 0.6));
+
     section.innerHTML = `
       <div class="ticker-row">
         <div class="ticker ticker-left">
-          <div class="ticker-track">
+          <div class="ticker-track" style="animation-duration: ${duration}s">
             ${topItems.map(tag => `<div class="ticker-item">${tag}</div>`).join('')}
           </div>
         </div>
@@ -1007,7 +1016,7 @@ const FramerHome = {
       
       <div class="ticker-row">
         <div class="ticker ticker-right">
-          <div class="ticker-track">
+          <div class="ticker-track" style="animation-duration: ${duration}s">
             ${bottomItems.map(name => `<div class="ticker-item">${name}</div>`).join('')}
           </div>
         </div>

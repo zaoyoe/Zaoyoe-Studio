@@ -11,6 +11,7 @@
     // =============================================
     const CONFIG = {
         pricePerVerify: 10,
+        enabled: true,
         nodeServerUrl: window.VERIFY_SERVER_URL || 'https://zaoyoe-verify-server-production.up.railway.app',
         containerId: 'verify-widget-container',
         pollInterval: 3000,
@@ -204,9 +205,34 @@
         render(container, isLoggedIn);
         setupAuthListener();
         loadApiQuota();
+
+        // If verify service is disabled, apply maintenance state
+        if (CONFIG.enabled === false) {
+            applyMaintenanceState();
+        }
+
         window.addEventListener('languageChanged', () => {
             render(container, !!currentUser);
+            if (CONFIG.enabled === false) applyMaintenanceState();
         });
+    }
+
+    function applyMaintenanceState() {
+        const submitBtn = document.getElementById('verifySubmitBtn');
+        const quotaWarning = document.getElementById('verifyQuotaWarning');
+
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.style.background = 'rgba(239, 68, 68, 0.3)';
+            submitBtn.style.borderColor = 'rgba(239, 68, 68, 0.5)';
+            submitBtn.style.cursor = 'not-allowed';
+            submitBtn.innerHTML = `<i class="fas fa-tools"></i> 验证服务维护中`;
+        }
+
+        if (quotaWarning) {
+            quotaWarning.style.display = 'flex';
+            quotaWarning.innerHTML = `<i class="fas fa-tools"></i> 验证服务暂停维护中，请稍后再试。如有疑问请联系管理员。`;
+        }
     }
 
     // =============================================
@@ -222,6 +248,12 @@
                 .single();
             if (!error && data?.config_value) {
                 CONFIG.pricePerVerify = data.config_value.price_per_verify || 10;
+                // Check if verify service is enabled (default true)
+                if (data.config_value.enabled === false) {
+                    CONFIG.enabled = false;
+                } else {
+                    CONFIG.enabled = true;
+                }
             }
         } catch (e) { /* ignored */ }
     }
@@ -508,6 +540,13 @@
     // =============================================
     async function submit() {
         if (isLoading) return;
+
+        // Block if service is under maintenance
+        if (CONFIG.enabled === false) {
+            showSingleResult('error', '🔧 验证服务维护中',
+                '验证服务暂时关闭维护中，请稍后再试。如有疑问请联系管理员。');
+            return;
+        }
 
         const input = document.getElementById('verifyIdInput');
         const submitBtn = document.getElementById('verifySubmitBtn');
@@ -965,7 +1004,12 @@
                 .order('created_at', { ascending: false })
                 .limit(20);
 
-            if (error) throw error;
+            if (error) {
+                // Table might not exist yet — show empty instead of error
+                console.warn('[VerifyHistory]', error.message);
+                listEl.innerHTML = '<div class="verify-history-empty"><i class="fas fa-inbox"></i> 暂无历史记录</div>';
+                return;
+            }
 
             if (!data || data.length === 0) {
                 listEl.innerHTML = '<div class="verify-history-empty"><i class="fas fa-inbox"></i> 暂无历史记录</div>';
