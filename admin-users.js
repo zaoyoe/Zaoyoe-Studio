@@ -302,9 +302,11 @@ async function loadUsers() {
             window.supabaseClient
                 .from('blocked_users')
                 .select('user_id, scope, expires_at'),
-            window.supabaseClient
-                .from('points_balance')
-                .select('user_id, total_balance'),
+            (function () {
+                let q = window.supabaseClient.from('points_balance').select('user_id, total_balance');
+                if (window.AdminSiteFilter) q = AdminSiteFilter.applySiteFilter(q);
+                return q;
+            })(),
             window.supabaseClient
                 .from('user_tags')
                 .select('user_id, tag'),

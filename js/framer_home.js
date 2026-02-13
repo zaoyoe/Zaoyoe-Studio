@@ -294,15 +294,18 @@ const FramerHome = {
    * Build Gemini verify section data
    */
   buildVerifyData(config) {
+    // Use features from config (saved via Admin Studio), fallback to defaults
+    const defaultFeatures = [
+      window.i18n?.t('home.verify.features.free') || '免费',
+      window.i18n?.t('home.verify.features.realtime') || '实时',
+      window.i18n?.t('home.verify.features.secure') || '安全'
+    ];
+
     return {
       title: this.getLocalizedField(config, 'section_title') || window.i18n?.t('home.verify.title') || 'Gemini 验证',
       subtitle: this.getLocalizedField(config, 'section_subtitle') || window.i18n?.t('home.verify.subtitle') || '快速验证您的 API 密钥，实时返回结果',
       screenshot: config.screenshot_path || '/assets/verify-preview.png',
-      features: [
-        window.i18n?.t('home.verify.features.free') || '免费',
-        window.i18n?.t('home.verify.features.realtime') || '实时',
-        window.i18n?.t('home.verify.features.secure') || '安全'
-      ],
+      features: (config.features && config.features.length > 0) ? config.features : defaultFeatures,
       link: '/verify.html'
     };
   },
@@ -840,9 +843,9 @@ const FramerHome = {
           ${duplicatedProducts.map(product => `
             <a href="/shop.html" class="shop-carousel-card">
               <div class="shop-card-image">
-                ${product.icon_url.startsWith('http')
-        ? `<img src="${product.icon_url}" alt="${this.getLocalizedField(product, 'name')}">`
-        : (product.icon_url.startsWith('fa-') ? `<i class="fas ${product.icon_url}" style="font-size: 48px; color: var(--accent-blue);"></i>` : `<img src="${product.icon_url}" alt="${this.getLocalizedField(product, 'name')}">`)}
+                ${product.icon_url && (product.icon_url.startsWith('http') || product.icon_url.startsWith('/') || product.icon_url.startsWith('data:'))
+        ? `<img src="${product.icon_url}" alt="${this.getLocalizedField(product, 'name')}" loading="lazy" onerror="this.onerror=null;this.parentElement.innerHTML='<i class=\\'fas fa-box-open\\' style=\\'font-size:48px;color:var(--text-secondary,#888)\\'></i>'">`
+        : (product.icon_url && product.icon_url.startsWith('fa-') ? `<i class="fas ${product.icon_url}" style="font-size: 48px; color: var(--accent-blue);"></i>` : `<i class="fas fa-box-open" style="font-size: 48px; color: var(--text-secondary, #888);"></i>`)}
               </div>
               <div class="shop-card-info">
                 <h3>${this.getLocalizedField(product, 'name')}</h3>
@@ -883,7 +886,7 @@ const FramerHome = {
         
         <div class="verify-3d-container">
           <div class="verify-card-3d">
-            <img src="/assets/verify-card-3d.png" alt="Gemini Verify" style="width: 100%; border-radius: 12px;">
+            <img src="${data.screenshot}" alt="Gemini Verify" style="width: 100%; border-radius: 12px;">
             <div class="verify-card-shine"></div>
           </div>
         </div>

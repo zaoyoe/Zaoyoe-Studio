@@ -52,6 +52,9 @@ document.addEventListener('DOMContentLoaded', () => {
     initStarrySky(); // New: Starry background
     loadUserPermissions(); // Load permissions on start
 
+    // Initialize admin site filter selector
+    if (window.AdminSiteFilter) AdminSiteFilter.renderSiteSelector();
+
     // Initialize system config if available
     if (typeof initSystemConfig === 'function') {
         initSystemConfig();

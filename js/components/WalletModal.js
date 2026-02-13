@@ -429,7 +429,8 @@
 
                 // Call RPC function
                 const { data, error } = await supabase.rpc('fn_redeem_code', {
-                    p_code: code
+                    p_code: code,
+                    p_site: window.SiteConfig?.site || 'cn'
                 });
 
                 if (error) throw error;
@@ -1190,7 +1191,8 @@
                 const { error: shopError } = await supabase
                     .from('shop_orders')
                     .delete()
-                    .eq('user_id', userId);
+                    .eq('user_id', userId)
+                    .eq('site', window.SiteConfig?.site || 'cn');
 
                 if (shopError) console.warn('Clear shop orders failed:', shopError);
 
@@ -1262,6 +1264,7 @@
                             )
                         `)
                         .eq('user_id', session.user.id)
+                        .eq('site', window.SiteConfig?.site || 'cn')
                         .order('created_at', { ascending: false })
                         .limit(100),
 
@@ -1270,6 +1273,7 @@
                         .from('points_ledger')
                         .select('id, amount, reason, reference_id, created_at')
                         .eq('user_id', session.user.id)
+                        .eq('site', window.SiteConfig?.site || 'cn')
                         .order('created_at', { ascending: false })
                         .limit(100)
                 ]);

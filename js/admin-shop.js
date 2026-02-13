@@ -1258,6 +1258,9 @@ Example output format:
                 .select('*', { count: 'exact' })
                 .order('created_at', { ascending: false });
 
+            // Apply admin site filter
+            if (window.AdminSiteFilter) queryBuilder = AdminSiteFilter.applySiteFilter(queryBuilder);
+
             let searchedById = false;
             if (query && query.includes('-')) {
                 // Clean the query (remove SHOP_ORDER_ prefix if present)

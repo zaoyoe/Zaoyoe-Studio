@@ -1117,6 +1117,9 @@ function renderVerifyConfig() {
         apiKeyInput.value = key.length > 8 ? key.slice(0, 8) + '...' : key;
         apiKeyInput.dataset.hasKey = 'true';
     }
+
+    // Auto-load API quota
+    checkVerifyQuota();
 }
 
 async function saveVerifyConfig() {

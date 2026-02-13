@@ -43,7 +43,8 @@
                         referrer: document.referrer || null
                     },
                     p_page_url: window.location.href,
-                    p_session_id: getSessionId()
+                    p_session_id: getSessionId(),
+                    p_site: window.SiteConfig?.site || 'cn'
                 });
             } catch (rpcError) {
                 // Fallback: direct insert to user_events
@@ -54,6 +55,7 @@
                     event_name: 'page_view',
                     event_data: { page: window.location.pathname },
                     page_url: window.location.href,
+                    site: window.SiteConfig?.site || 'cn',
                     created_at: new Date().toISOString()
                 });
             }

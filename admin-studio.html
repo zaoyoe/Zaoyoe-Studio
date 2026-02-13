@@ -133,12 +133,81 @@
                     Admin Studio
                 </h1>
                 <div class="header-right">
+                    <div id="adminSiteFilter"></div>
                     <div class="studio-status" id="studioStatus">
                         <span class="status-dot"></span>
                         <span class="status-text">Ready</span>
                     </div>
                 </div>
             </header>
+
+            <!-- Admin Site Filter Styles -->
+            <style>
+                .admin-site-selector {
+                    position: relative;
+                    display: inline-block;
+                }
+
+                .site-selector-btn {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    padding: 6px 14px;
+                    border-radius: 8px;
+                    background: var(--glass-bg, rgba(255, 255, 255, 0.05));
+                    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+                    color: var(--text-color, #d1d5db);
+                    cursor: pointer;
+                    font-size: 13px;
+                    transition: all 0.2s;
+                }
+
+                .site-selector-btn:hover {
+                    background: var(--hover-bg, rgba(255, 255, 255, 0.1));
+                }
+
+                .site-selector-btn i {
+                    font-size: 10px;
+                    opacity: 0.6;
+                }
+
+                .site-selector-menu {
+                    display: none;
+                    position: absolute;
+                    top: calc(100% + 6px);
+                    right: 0;
+                    background: var(--card-bg, #1a1a2e);
+                    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+                    border-radius: 10px;
+                    padding: 4px;
+                    min-width: 220px;
+                    z-index: 999;
+                    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+                }
+
+                .site-selector-menu.show {
+                    display: block;
+                }
+
+                .site-selector-option {
+                    padding: 8px 14px;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    font-size: 13px;
+                    color: var(--text-color, #d1d5db);
+                    transition: all 0.15s;
+                }
+
+                .site-selector-option:hover {
+                    background: var(--hover-bg, rgba(255, 255, 255, 0.08));
+                }
+
+                .site-selector-option.active {
+                    background: var(--primary-color, #6b9ece);
+                    color: white;
+                    font-weight: 500;
+                }
+            </style>
 
             <!-- ========== CHAT MODULE ========== -->
             <div id="module-chat" class="module-container">
@@ -1264,7 +1333,7 @@
                         </div>
 
                         <!-- Verification Service -->
-                        <div class="settings-section">
+                        <div class="settings-section verify-service-section">
                             <h3><i class="fas fa-shield-check"></i> 验证服务</h3>
                             <div class="config-item-row">
                                 <div class="config-label">
@@ -1280,16 +1349,16 @@
                                     </div>
                                 </div>
                             </div>
-                            <div class="config-item-row">
+                            <div class="config-item-row"
+                                style="flex-direction: column; align-items: stretch; gap: 8px;">
                                 <div class="config-label">
                                     <span>验证 API Key</span>
                                     <span class="config-hint">lacedore.org 验证服务的 sk- 密钥</span>
                                 </div>
-                                <div class="config-value">
-                                    <input type="password" id="cfgVerifyApiKey" class="config-input config-input-wide"
-                                        placeholder="sk-XXXX-XXXX-XXXX-XXXX"
-                                        onchange="window.saveVerifyConfig && window.saveVerifyConfig()">
-                                </div>
+                                <input type="password" id="cfgVerifyApiKey" class="config-input"
+                                    placeholder="sk-XXXX-XXXX-XXXX-XXXX"
+                                    style="width: 100%; text-align: left; box-sizing: border-box;"
+                                    onchange="window.saveVerifyConfig && window.saveVerifyConfig()">
                             </div>
                             <div class="config-item-row">
                                 <div class="config-label">
@@ -1307,31 +1376,34 @@
                             <div class="config-item-row">
                                 <div class="config-label">
                                     <span>API 额度</span>
-                                    <span class="config-hint">查询 lacedore.org 剩余验证次数</span>
-                                </div>
-                                <div class="config-value" style="display: flex; align-items: center; gap: 12px;">
-                                    <button class="btn btn-sm btn-outline"
-                                        onclick="window.checkVerifyQuota && window.checkVerifyQuota()"
-                                        style="white-space: nowrap;">
-                                        <i class="fas fa-sync-alt"></i> 查询额度
-                                    </button>
-                                    <span id="cfgVerifyQuota"
-                                        style="font-size: 1.1em; font-weight: 600; color: var(--accent-starry, #6c5ce7);">
-                                        <i class="fas fa-question-circle" style="opacity: 0.4;"></i> 未查询
-                                    </span>
-                                </div>
-                            </div>
-                            <div class="config-item-row">
-                                <div class="config-label">
-                                    <span>兑换卡密</span>
-                                    <span class="config-hint">输入 XXXX-XXXX-XXXX 格式的卡密充值额度</span>
+                                    <span class="config-hint">进入页面自动刷新</span>
                                 </div>
                                 <div class="config-value" style="display: flex; align-items: center; gap: 8px;">
+                                    <span id="cfgVerifyQuota"
+                                        style="font-size: 1.1em; font-weight: 600; color: var(--accent-starry, #6c5ce7); white-space: nowrap;">
+                                        <i class="fas fa-spinner fa-spin" style="opacity: 0.4;"></i> 加载中...
+                                    </span>
+                                    <button onclick="window.checkVerifyQuota && window.checkVerifyQuota()" title="刷新额度"
+                                        style="background: none; border: none; cursor: pointer; color: var(--text-secondary); padding: 4px 6px; border-radius: 4px; transition: all 0.2s; font-size: 0.85rem;"
+                                        onmouseover="this.style.color='var(--accent-starry)'"
+                                        onmouseout="this.style.color='var(--text-secondary)'">
+                                        <i class="fas fa-sync-alt"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="config-item-row" style="flex-wrap: wrap; gap: 8px;">
+                                <div class="config-label" style="flex: 1; min-width: 140px;">
+                                    <span>兑换卡密</span>
+                                    <span class="config-hint">XXXX-XXXX-XXXX 格式卡密充值</span>
+                                </div>
+                                <div class="config-value"
+                                    style="display: flex; align-items: center; gap: 8px; flex: 1; min-width: 200px;">
                                     <input type="text" id="cfgRedeemCode" class="config-input"
-                                        placeholder="XXXX-XXXX-XXXX" style="flex: 1; font-family: monospace;">
+                                        placeholder="XXXX-XXXX-XXXX"
+                                        style="flex: 1; font-family: monospace; text-align: left; min-width: 0;">
                                     <button class="btn btn-sm btn-primary"
                                         onclick="window.redeemVerifyCard && window.redeemVerifyCard()"
-                                        style="white-space: nowrap;">
+                                        style="white-space: nowrap; flex-shrink: 0;">
                                         <i class="fas fa-gift"></i> 兑换
                                     </button>
                                 </div>
@@ -5819,6 +5891,7 @@
     <script src="admin-config.js"></script>
     <script src="admin-homepage.js"></script>
     <script src="js/admin-studio-translate.js"></script>
+    <script src="js/admin-site-filter.js"></script>
     <script src="admin-studio.js"></script>
     <script src="js/admin-shop.js?v=CLICK_DYNAMIC_V13"></script>
 </body>

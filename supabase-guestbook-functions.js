@@ -102,9 +102,11 @@ async function loadGuestbookMessages(forceRefresh = false, scrollTargetId = null
 
     try {
         // Fetch messages (without join - will fetch profiles separately)
+        const currentSite = window.SiteConfig?.site || 'cn';
         const { data: messages, error } = await window.supabaseClient
             .from('guestbook_messages')
             .select('*')
+            .eq('site', currentSite)
             .order('created_at', { ascending: false })
             .limit(50);
 
@@ -427,7 +429,8 @@ async function addMessage(content, imageUrl = '') {
             .insert({
                 user_id: user.id,
                 content: content || '',
-                image_url: imageUrl || null
+                image_url: imageUrl || null,
+                site: window.SiteConfig?.site || 'cn'
             })
             .select()
             .single();
@@ -480,7 +483,8 @@ async function addCommentToMessage(messageId, content) {
                 message_id: messageId,
                 user_id: user.id,
                 content: content,
-                parent_id: null
+                parent_id: null,
+                site: window.SiteConfig?.site || 'cn'
             })
             .select()
             .single();
@@ -557,7 +561,8 @@ async function addReplyToComment(parentCommentId, messageId, content) {
                 message_id: messageId,
                 user_id: user.id,
                 content: content,
-                parent_id: parentCommentId
+                parent_id: parentCommentId,
+                site: window.SiteConfig?.site || 'cn'
             })
             .select()
             .single();

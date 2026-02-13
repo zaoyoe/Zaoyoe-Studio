@@ -4592,7 +4592,8 @@ async function checkUnlockStatus(promptId) {
             .from('prompt_unlocks')
             .select('*')
             .eq('user_id', user.id)
-            .eq('prompt_id', promptId) // Assuming promptId matches bigInt logic
+            .eq('prompt_id', promptId)
+            .eq('site', window.SiteConfig?.site || 'cn')
             .maybeSingle();
 
         if (data) {
@@ -4666,7 +4667,8 @@ async function handleUnlockPrompt() {
         const { data, error } = await window.supabaseClient
             .rpc('unlock_prompt_v2', {
                 p_prompt_id: String(currentPromptId),
-                p_cost: _unlockPrice
+                p_cost: _unlockPrice,
+                p_site: window.SiteConfig?.site || 'cn'
             });
 
         console.log('[Unlock] RPC result:', data, error);

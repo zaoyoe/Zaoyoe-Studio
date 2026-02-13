@@ -483,7 +483,9 @@
             } else {
                 const { data, error } = await window.supabaseClient
                     .from('points_balance').select('total_balance')
-                    .eq('user_id', currentUser.id).maybeSingle();
+                    .eq('user_id', currentUser.id)
+                    .eq('site', window.SiteConfig?.site || 'cn')
+                    .maybeSingle();
                 if (!error && data) balance = data.total_balance || 0;
             }
             userBalance = balance;
@@ -556,7 +558,8 @@
                 points_deducted: pointsDeducted,
                 batch_count: 1,
                 batch_success: status === 'success' ? 1 : 0,
-                batch_failed: status === 'success' ? 0 : 1
+                batch_failed: status === 'success' ? 0 : 1,
+                site: window.SiteConfig?.site || 'cn'
             });
             if (error) {
                 console.error('[VerifyHistory] INSERT failed:', error.message, error.code, error.details, error.hint);
@@ -679,7 +682,7 @@
                 const res = await fetch(`${CONFIG.nodeServerUrl}/api/verify`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ verificationId: item.verificationId, userId })
+                    body: JSON.stringify({ verificationId: item.verificationId, userId, site: window.SiteConfig?.site || 'cn' })
                 });
 
                 const data = await res.json();
@@ -1047,6 +1050,7 @@
                 .from('verification_logs')
                 .select('*')
                 .eq('user_id', currentUser.id)
+                .eq('site', window.SiteConfig?.site || 'cn')
                 .order('created_at', { ascending: false })
                 .limit(20);
 

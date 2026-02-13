@@ -23,7 +23,7 @@ const supabase = createClient(
 
 // Middleware
 app.use(cors({
-    origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:8000', 'https://zaoyoe.com'],
+    origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:8000', 'https://zaoyoe.com', 'https://zaoyoe.xyz'],
     credentials: true
 }));
 app.use(express.json());
@@ -53,13 +53,13 @@ async function getVerifyConfig() {
 // =============================================
 // Helper: Validate user and check balance
 // =============================================
-async function validateUserBalance(userId, requiredPoints) {
+async function validateUserBalance(userId, requiredPoints, site = 'cn') {
     if (!userId) {
         return { valid: false, error: '请先登录', status: 400 };
     }
 
     const { data: balanceData, error: balanceError } = await supabase
-        .rpc('fn_get_user_balance', { p_user_id: userId })
+        .rpc('fn_get_user_balance', { p_user_id: userId, p_site: site })
         .single();
 
     if (balanceError) {
@@ -86,11 +86,14 @@ async function validateUserBalance(userId, requiredPoints) {
 // Returns task_id for polling
 // =============================================
 app.post('/api/verify', async (req, res) => {
-    const { verificationId, userId } = req.body;
+    const { verificationId, userId, site } = req.body;
 
     if (!verificationId) {
         return res.status(400).json({ success: false, message: '请提供验证ID' });
     }
+
+    // Determine site from body or Origin header
+    const currentSite = site || (req.headers.origin?.includes('zaoyoe.xyz') ? 'intl' : 'cn');
 
     try {
         const config = await getVerifyConfig();
@@ -100,7 +103,7 @@ app.post('/api/verify', async (req, res) => {
         }
 
         // Check balance (need at least pricePerVerify)
-        const balanceCheck = await validateUserBalance(userId, config.pricePerVerify);
+        const balanceCheck = await validateUserBalance(userId, config.pricePerVerify, currentSite);
         if (!balanceCheck.valid) {
             return res.status(balanceCheck.status).json({ success: false, message: balanceCheck.error });
         }

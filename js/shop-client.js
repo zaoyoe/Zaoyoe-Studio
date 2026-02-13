@@ -204,8 +204,8 @@ const ShopClient = {
                         <p class="shop-card-desc">${displayDesc}</p>
                         
                         <div style="margin-top:auto; padding-top:20px; display:flex; justify-content:space-between; align-items:center;">
-                            <div class="shop-card-price">${p.price_points} <span data-i18n="shop.points">${window.i18n?.t('shop.points') || '积分'}</span></div>
-                            <button onclick="ShopClient.buyProduct('${p.id}', '${p.name}', '${p.name_en || ''}', ${p.price_points})"
+                            <div class="shop-card-price">${window.SiteConfig?.formatPrice(p[window.SiteConfig?.getPriceField() || 'price_points'] || p.price_points) || p.price_points} <span data-i18n="shop.points">${window.SiteConfig?.getPointsLabel() || window.i18n?.t('shop.points') || '积分'}</span></div>
+                            <button onclick="ShopClient.buyProduct('${p.id}', '${p.name}', '${p.name_en || ''}', ${p[window.SiteConfig?.getPriceField() || 'price_points'] || p.price_points})"
                                 ${noStock ? 'disabled' : ''}
                                 class="shop-buy-btn ${buyBtnClass}">
                                 ${buyBtnText}
@@ -316,7 +316,8 @@ const ShopClient = {
             const { data, error } = await supabaseClient.rpc('fn_purchase_shop_item', {
                 p_product_id: productId,
                 p_user_id: user.id,
-                p_quantity: quantity
+                p_quantity: quantity,
+                p_site: window.SiteConfig?.site || 'cn'
             });
 
             if (error) {
@@ -536,6 +537,7 @@ const ShopClient = {
     shop_products(name, icon_url)
         `)
                 .eq('user_id', user.id)
+                .eq('site', window.SiteConfig?.site || 'cn')
                 .order('created_at', { ascending: false });
 
             if (error) throw error;
@@ -566,7 +568,7 @@ const ShopClient = {
                             <span style="font-weight:600; font-size:14px; color:#fff;">${order.shop_products?.name || (window.i18n?.t('shop.unknownProduct') || '未知商品')}</span>
                         </div>
                         <div style="font-size:12px; color:rgba(255,255,255,0.4);">
-                            ${date} · <span style="color:#fbbf24;">-${order.price_points} ${window.i18n?.t('shop.points') || '积分'}</span>
+                            ${date} · <span style="color:#fbbf24;">-${order.price_paid} ${window.SiteConfig?.getPointsLabel() || window.i18n?.t('shop.points') || '积分'}</span>
                         </div>
                     </div>
                     <button onclick="event.stopPropagation(); ShopClient.viewOrderContent('${order.id}', '${encodeURIComponent(order.content_delivered || '')}')"

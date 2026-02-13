@@ -31,6 +31,7 @@
                     .from('points_balance')
                     .select('paid_balance, bonus_balance, total_balance')
                     .eq('user_id', session.user.id)
+                    .eq('site', window.SiteConfig?.site || 'cn')
                     .maybeSingle();
 
                 if (error) {
@@ -54,6 +55,7 @@
                 const { data, error } = await supabase
                     .from('points_ledger')
                     .select('*')
+                    .eq('site', window.SiteConfig?.site || 'cn')
                     .eq('is_visible', true) // Only show visible records
                     .order('created_at', { ascending: false })
                     .limit(limit);
@@ -119,7 +121,8 @@
                 p_paid: pkg.points_amount,
                 p_bonus: pkg.bonus_points || 0,
                 p_reason: `模拟充值: ${pkg.name}`,
-                p_reference_id: `mock_${pkg.id}_${Date.now()}`
+                p_reference_id: `mock_${pkg.id}_${Date.now()}`,
+                p_site: window.SiteConfig?.site || 'cn'
             });
 
             if (rpcError) throw rpcError;

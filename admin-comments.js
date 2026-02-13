@@ -350,10 +350,11 @@ function applyFilters(comments) {
  */
 async function loadCommentStats() {
     try {
-        // Get total comments count
-        const { count: guestbookCount } = await getSupabase()
-            .from('guestbook_messages')
-            .select('*', { count: 'exact', head: true });
+        const { count: guestbookCount } = await (function () {
+            let q = getSupabase().from('guestbook_messages').select('*', { count: 'exact', head: true });
+            if (window.AdminSiteFilter) q = AdminSiteFilter.applySiteFilter(q);
+            return q;
+        })();
 
         const { count: galleryCount } = await getSupabase()
             .from('prompt_comments')
@@ -366,10 +367,11 @@ async function loadCommentStats() {
         today.setHours(0, 0, 0, 0);
         const todayISO = today.toISOString();
 
-        const { count: todayGuestbook } = await getSupabase()
-            .from('guestbook_messages')
-            .select('*', { count: 'exact', head: true })
-            .gte('created_at', todayISO);
+        const { count: todayGuestbook } = await (function () {
+            let q = getSupabase().from('guestbook_messages').select('*', { count: 'exact', head: true }).gte('created_at', todayISO);
+            if (window.AdminSiteFilter) q = AdminSiteFilter.applySiteFilter(q);
+            return q;
+        })();
 
         const { count: todayGallery } = await getSupabase()
             .from('prompt_comments')
@@ -605,6 +607,9 @@ async function loadComments(view) {
                 .select('*')
                 .order('created_at', { ascending: false })
                 .limit(50);
+
+            // Apply admin site filter
+            if (window.AdminSiteFilter) query = AdminSiteFilter.applySiteFilter(query);
 
             // Time filtering
             if (dateFrom) {
