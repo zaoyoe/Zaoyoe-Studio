@@ -320,10 +320,10 @@
                         <p>${t('verify.subtitle', '支持批量')}</p>
                     </div>
                     <div class="verify-header-right">
-                        <div class="verify-api-quota" id="verifyApiQuota" title="API 额度">
+                        <div class="verify-api-quota" id="verifyApiQuota" title="可验证次数">
                             <i class="fas fa-gem"></i> --
                         </div>
-                        <div class="verify-balance" id="verifyBalance" style="display: ${balanceDisplay};">
+                        <div class="verify-balance" id="verifyBalance" style="display: ${balanceDisplay}; cursor: pointer;" onclick="WalletModal.open()" title="我的钱包">
                             <i class="fas fa-coins"></i>
                             <span id="verifyBalanceValue">0</span>
                         </div>

@@ -6237,11 +6237,20 @@ function closePromptModal() {
 
     // Hide modal
     if (modal) {
-        modal.style.display = 'none';
         modal.classList.remove('active');
     }
 
     // Re-enable body scroll
     document.body.style.overflow = '';
-    document.body.classList.remove('modal-open');
+    document.body.classList.remove('prompt-modal-open');
 }
+
+// Click outside modal to close
+document.addEventListener('click', function (e) {
+    const modal = document.getElementById('promptModal');
+    if (!modal || !modal.classList.contains('active')) return;
+    // Only close if clicking the backdrop itself, not the inner content
+    if (e.target === modal) {
+        closePromptModal();
+    }
+});
