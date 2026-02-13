@@ -319,6 +319,7 @@ const FramerHome = {
     try {
       // Use cache with 10 minute TTL for guestbook
       const messages = await Cache.loadWithCache('guestbook_messages', async () => {
+        const currentSite = window.SiteConfig?.site || 'cn';
         const { data, error } = await window.supabaseClient
           .from('guestbook_messages')
           .select(`
@@ -330,6 +331,7 @@ const FramerHome = {
             user_id,
             profiles:user_id (username, avatar_url)
           `)
+          .eq('site', currentSite)
           .order('created_at', { ascending: false })
           .limit(10);
 
