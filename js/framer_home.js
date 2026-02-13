@@ -1320,6 +1320,22 @@ const FramerHome = {
           });
         });
       });
+
+      // Close mobile menu when clicking on blank area (outside menu items)
+      mobileMenu.addEventListener('click', (e) => {
+        if (e.target === mobileMenu) {
+          hamburger.classList.remove('active');
+          mobileMenu.classList.remove('active');
+
+          // Also close all open submenus
+          mobileMenu.querySelectorAll('.mobile-submenu.active').forEach(submenu => {
+            submenu.classList.remove('active');
+          });
+          mobileMenu.querySelectorAll('.mobile-menu-trigger.active').forEach(trigger => {
+            trigger.classList.remove('active');
+          });
+        }
+      });
     }
   },
 
@@ -1482,6 +1498,14 @@ document.addEventListener('DOMContentLoaded', function initNavBar() {
         hamburger?.classList.remove('active');
         mobileMenu.classList.remove('active');
       });
+    });
+
+    // Close mobile menu when clicking on blank area (outside menu items)
+    mobileMenu.addEventListener('click', (e) => {
+      if (e.target === mobileMenu) {
+        hamburger?.classList.remove('active');
+        mobileMenu.classList.remove('active');
+      }
     });
   }
 

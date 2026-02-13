@@ -885,15 +885,23 @@
 }
 
 /* =============================================
-   Verification History Card
+   Verification History Card (Standalone)
    ============================================= */
 .verify-history-card {
-    margin-top: 20px;
-    background: rgba(0, 0, 0, 0.15);
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    border-radius: 14px;
-    padding: 16px;
+    margin-top: 16px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 20px;
+    padding: 24px;
     overflow: hidden;
+    position: relative;
+    transition: all 0.3s ease;
+    animation: fadeInUp 0.5s ease 0.1s both;
+}
+
+.verify-history-card:hover {
+    border-color: rgba(255, 255, 255, 0.15);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
 }
 
 .verify-history-header {
@@ -930,6 +938,29 @@
 }
 
 .verify-history-refresh:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: #fff;
+}
+
+/* History Actions Group */
+.verify-history-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.verify-history-export {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 6px 10px;
+    color: rgba(255, 255, 255, 0.6);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 0.8rem;
+}
+
+.verify-history-export:hover {
     background: rgba(255, 255, 255, 0.15);
     color: #fff;
 }
@@ -1000,6 +1031,12 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    cursor: pointer;
+    transition: color 0.2s ease;
+}
+
+.verify-history-item-id:hover {
+    color: rgba(255, 255, 255, 0.9);
 }
 
 .verify-history-item-status {

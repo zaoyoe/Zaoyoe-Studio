@@ -25,6 +25,7 @@
     let isLoading = false;
     let batchStats = { success: 0, failed: 0, total: 0 };
     let activeTasks = new Map(); // taskId -> { index, verificationId, timer, aborted }
+    let historyData = []; // Cached history for export
 
     // =============================================
     // Bilingual Status Messages (hardcoded)
@@ -315,8 +316,8 @@
                         </svg>
                     </div>
                     <div class="verify-widget-title">
-                        <h3>${t('verify.title', 'Gemini 验证服务')}</h3>
-                        <p>${t('verify.subtitle', '支持批量验证')}</p>
+                        <h3>${t('verify.title', 'Gemini 验证')}</h3>
+                        <p>${t('verify.subtitle', '支持批量')}</p>
                     </div>
                     <div class="verify-header-right">
                         <div class="verify-api-quota" id="verifyApiQuota" title="API 额度">
@@ -408,21 +409,26 @@
                     </div>
                     <div class="verify-result-message" id="verifyResultMessage"></div>
                 </div>
+            </div>
 
-                <div class="verify-history-card" id="verifyHistoryCard">
-                    <div class="verify-history-header">
-                        <div class="verify-history-title">
-                            <i class="fas fa-clock-rotate-left"></i>
-                            ${t('verify.history', '验证历史')}
-                        </div>
+            <div class="verify-history-card" id="verifyHistoryCard">
+                <div class="verify-history-header">
+                    <div class="verify-history-title">
+                        <i class="fas fa-clock-rotate-left"></i>
+                        ${t('verify.history', '验证历史')}
+                    </div>
+                    <div class="verify-history-actions">
+                        <button class="verify-history-export" onclick="VerifyWidget.exportHistory()" title="导出 Excel">
+                            <i class="fas fa-file-export"></i>
+                        </button>
                         <button class="verify-history-refresh" onclick="VerifyWidget.loadHistory()" title="刷新">
                             <i class="fas fa-sync-alt"></i>
                         </button>
                     </div>
-                    <div class="verify-history-list" id="verifyHistoryList">
-                        <div class="verify-history-loading">
-                            <i class="fas fa-spinner fa-spin"></i> 加载中...
-                        </div>
+                </div>
+                <div class="verify-history-list" id="verifyHistoryList">
+                    <div class="verify-history-loading">
+                        <i class="fas fa-spinner fa-spin"></i> 加载中...
                     </div>
                 </div>
             </div>
@@ -530,6 +536,36 @@
             el.textContent = `（${CONFIG.pricePerVerify}${t('verify.perPrice', '积分/次')}）`;
         });
         updateLinkCount();
+    }
+
+    // =============================================
+    // Log to History (client-side fallback)
+    // =============================================
+    async function logToHistory(verificationId, status, message, pointsDeducted = 0) {
+        if (!currentUser || !window.supabaseClient) {
+            console.warn('[VerifyHistory] Cannot log: no user or supabaseClient', { currentUser: !!currentUser, supabase: !!window.supabaseClient });
+            return;
+        }
+        try {
+            console.log('[VerifyHistory] Inserting log:', { user_id: currentUser.id, verificationId, status });
+            const { data, error } = await window.supabaseClient.from('verification_logs').insert({
+                user_id: currentUser.id,
+                verification_id: verificationId || '--',
+                status: status,
+                message: message,
+                points_deducted: pointsDeducted,
+                batch_count: 1,
+                batch_success: status === 'success' ? 1 : 0,
+                batch_failed: status === 'success' ? 0 : 1
+            });
+            if (error) {
+                console.error('[VerifyHistory] INSERT failed:', error.message, error.code, error.details, error.hint);
+            } else {
+                console.log('[VerifyHistory] INSERT success');
+            }
+        } catch (e) {
+            console.error('[VerifyHistory] INSERT exception:', e.message);
+        }
     }
 
     // =============================================
@@ -654,6 +690,8 @@
                     batchStats.failed++;
                     completedCount++;
                     updateBatchProgress(completedCount, validLinks.length);
+                    // Log submit-stage failure to history
+                    logToHistory(item.verificationId, 'failed', data.message || 'Submit failed');
                     continue;
                 }
 
@@ -703,6 +741,8 @@
                 batchStats.failed++;
                 completedCount++;
                 updateBatchProgress(completedCount, validLinks.length);
+                // Log network error to history
+                logToHistory(item.verificationId, 'error', err.message || 'Network error');
             }
         }
     }
@@ -730,6 +770,7 @@
                     clearInterval(timer);
                     activeTasks.delete(taskId);
                     updateResultItem(itemIndex, 'error', '❌ 超时 / Timeout');
+                    logToHistory(taskInfo.verificationId, 'timeout', 'Verification timeout');
                     resolve({ success: false });
                     return;
                 }
@@ -744,6 +785,7 @@
                         activeTasks.delete(taskId);
                         updateResultItem(itemIndex, 'error',
                             translateStatus(data.message, 'error'));
+                        logToHistory(taskInfo.verificationId, 'failed', data.message || 'Status check failed');
                         resolve({ success: false });
                         return;
                     }
@@ -766,6 +808,8 @@
                             triggerAnimation('success');
                         } else {
                             triggerAnimation('error');
+                            // Log failures client-side (server may not have logged)
+                            logToHistory(taskInfo.verificationId, 'failed', data.message || 'Verification failed');
                         }
 
                         resolve({
@@ -810,50 +854,55 @@
             userId = data?.user?.id;
         } catch (e) { /* ignored */ }
 
-        // Cancel each active task with safe final check
-        const cancelPromises = [];
-
+        // Cancel each active task — immediately mark as cancelled, then try API cancel in background
         for (const [taskId, taskInfo] of activeTasks.entries()) {
             // Stop polling first
             if (taskInfo.timer) clearInterval(taskInfo.timer);
             taskInfo.aborted = true;
 
-            // Call cancel endpoint with final status check
-            const promise = fetch(`${CONFIG.nodeServerUrl}/api/cancel`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    verificationId: taskInfo.verificationId,
-                    taskId: taskId,
-                    userId: userId
-                })
-            }).then(r => r.json()).then(data => {
-                if (data.alreadyCompleted && data.verificationSuccess) {
-                    // Task already succeeded — show success, deduct happened on server
-                    updateResultItem(taskInfo.index, 'success',
-                        '✅ 验证成功（取消前已完成）/ Verified (completed before cancel)');
-                    batchStats.success++;
-                    if (data.pointsDeducted) {
-                        userBalance -= data.pointsDeducted;
-                        const balEl = document.getElementById('verifyBalanceValue');
-                        if (balEl) balEl.textContent = userBalance;
-                    }
-                } else {
-                    // Actually cancelled
-                    updateResultItem(taskInfo.index, 'cancelled',
-                        '⚪ 已取消 / Cancelled');
-                }
-            }).catch(() => {
-                updateResultItem(taskInfo.index, 'cancelled',
-                    '⚪ 已取消 / Cancelled');
-            });
+            // Immediately update UI
+            updateResultItem(taskInfo.index, 'cancelled', '⚪ 已取消 / Cancelled');
 
-            cancelPromises.push(promise);
+            // Log cancellation to history
+            logToHistory(taskInfo.verificationId, 'cancelled', 'User cancelled');
+
+            // Try to cancel on server (fire-and-forget with 5s timeout)
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+                fetch(`${CONFIG.nodeServerUrl}/api/cancel`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        verificationId: taskInfo.verificationId,
+                        taskId: taskId,
+                        userId: userId
+                    }),
+                    signal: controller.signal
+                }).then(r => r.json()).then(data => {
+                    clearTimeout(timeoutId);
+                    if (data.alreadyCompleted && data.verificationSuccess) {
+                        // Task already succeeded before cancel — update to success
+                        updateResultItem(taskInfo.index, 'success',
+                            '✅ 验证成功（取消前已完成）/ Verified (completed before cancel)');
+                        batchStats.success++;
+                        if (data.pointsDeducted) {
+                            userBalance -= data.pointsDeducted;
+                            const balEl = document.getElementById('verifyBalanceValue');
+                            if (balEl) balEl.textContent = userBalance;
+                        }
+                    }
+                }).catch(() => {
+                    clearTimeout(timeoutId);
+                    // Already marked as cancelled, nothing to do
+                });
+            } catch (e) {
+                // Ignore cancel API errors
+            }
         }
 
-        // Wait for all cancel checks to complete
-        await Promise.allSettled(cancelPromises);
-
+        // Clear all tasks and immediately reset UI
         activeTasks.clear();
         finishVerification();
     }
@@ -1002,16 +1051,20 @@
                 .limit(20);
 
             if (error) {
-                // Table might not exist yet — show empty instead of error
-                console.warn('[VerifyHistory]', error.message);
+                console.error('[VerifyHistory] Supabase error:', error.message, error.code, error.details);
                 listEl.innerHTML = '<div class="verify-history-empty"><i class="fas fa-inbox"></i> 暂无历史记录</div>';
                 return;
             }
+
+            console.log('[VerifyHistory] Loaded', data?.length || 0, 'records for user', currentUser.id);
 
             if (!data || data.length === 0) {
                 listEl.innerHTML = '<div class="verify-history-empty"><i class="fas fa-inbox"></i> 暂无历史记录</div>';
                 return;
             }
+
+            // Store data for export
+            historyData = data;
 
             listEl.innerHTML = data.map(item => {
                 const time = new Date(item.created_at).toLocaleString('zh-CN', {
@@ -1027,7 +1080,7 @@
                 return `
                     <div class="verify-history-item ${statusCss}">
                         <div class="verify-history-item-time">${time}</div>
-                        <div class="verify-history-item-id" title="${vId}">${shortId}</div>
+                        <div class="verify-history-item-id" title="点击复制: ${vId}" data-vid="${vId}" onclick="VerifyWidget.copyId(this)">${shortId}</div>
                         <div class="verify-history-item-status">${statusText}</div>
                         <div class="verify-history-item-cost">${cost > 0 ? '-' + cost : '--'}</div>
                     </div>
@@ -1062,11 +1115,98 @@
     }
 
     // =============================================
+    // Copy Verification ID
+    // =============================================
+    function copyId(el) {
+        const vid = el.getAttribute('data-vid');
+        if (!vid || vid === '--') return;
+        navigator.clipboard.writeText(vid).then(() => {
+            const original = el.textContent;
+            el.textContent = '✅ 已复制';
+            el.style.color = '#22c55e';
+            setTimeout(() => {
+                el.textContent = original;
+                el.style.color = '';
+            }, 1200);
+        }).catch(() => {
+            // Fallback for older browsers
+            const ta = document.createElement('textarea');
+            ta.value = vid;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            const original = el.textContent;
+            el.textContent = '✅ 已复制';
+            el.style.color = '#22c55e';
+            setTimeout(() => {
+                el.textContent = original;
+                el.style.color = '';
+            }, 1200);
+        });
+    }
+
+    // =============================================
+    // Export History to Excel (CSV)
+    // =============================================
+    async function exportHistory() {
+        let data = historyData;
+
+        // If no cached data, fetch from DB
+        if (!data || data.length === 0) {
+            if (!currentUser || !window.supabaseClient) {
+                alert('请先登录');
+                return;
+            }
+            try {
+                const result = await window.supabaseClient
+                    .from('verification_logs')
+                    .select('*')
+                    .eq('user_id', currentUser.id)
+                    .order('created_at', { ascending: false });
+                if (result.error || !result.data || result.data.length === 0) {
+                    alert('暂无记录可导出');
+                    return;
+                }
+                data = result.data;
+            } catch (e) {
+                alert('导出失败');
+                return;
+            }
+        }
+
+        // Build CSV with BOM for Excel
+        const headers = ['时间', '验证ID', '状态', '积分消耗'];
+        const rows = data.map(item => {
+            const time = new Date(item.created_at).toLocaleString('zh-CN');
+            const vId = item.verification_id || '--';
+            const statusText = getHistoryStatusText(item.status).replace(/[✅❌⚪⏳🔄] /g, '');
+            const cost = item.points_deducted || 0;
+            // Escape fields containing commas or quotes
+            return [time, vId, statusText, cost > 0 ? '-' + cost : '0'].map(f => `"${String(f).replace(/"/g, '""')}"`).join(',');
+        });
+
+        const csv = '\uFEFF' + headers.join(',') + '\n' + rows.join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `验证记录_${new Date().toISOString().slice(0, 10)}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
+    // =============================================
     // Public API
     // =============================================
     window.VerifyWidget = {
         init, submit, cancel, reload: loadConfig,
-        loadHistory, refreshQuota: loadApiQuota,
+        loadHistory, exportHistory, copyId,
+        refreshQuota: loadApiQuota,
         debugSuccessAnimation: () => triggerAnimation('success'),
         debugErrorAnimation: () => triggerAnimation('error')
     };

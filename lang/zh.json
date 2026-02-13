@@ -345,9 +345,9 @@
         "lastUpdate": "最后更新"
     },
     "verify": {
-        "pageTitle": "Gemini 验证服务 - Zaoyoe",
-        "title": "Gemini 验证服务",
-        "subtitle": "支持批量验证",
+        "pageTitle": "Gemini 验证 - Zaoyoe",
+        "title": "Gemini 验证",
+        "subtitle": "支持批量",
         "backHome": "返回首页",
         "remaining": "剩余",
         "loginPrompt": "登录后即可使用验证服务",

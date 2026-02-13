@@ -6216,5 +6216,32 @@ function closePromptModal() {
         const promptArea = document.getElementById('promptArea');
         const contentCol = document.querySelector('.modal-content-col');
         const commentSection = document.getElementById('commentSection');
-        if (promptArea.parentNode !== contentCol) {
-            promptArea.classList.
+        if (promptArea && contentCol && promptArea.parentNode !== contentCol) {
+            promptArea.classList.remove('docked');
+            contentCol.insertBefore(promptArea, commentSection);
+        }
+
+        // Reset comment mode state
+        isCommentMode = false;
+        const modalInner = modal.querySelector('.modal-inner');
+        if (modalInner) modalInner.classList.remove('comment-mode');
+
+        // Reset comment button
+        const triggerBtn = document.getElementById('commentTriggerBtn');
+        if (triggerBtn) {
+            triggerBtn.classList.remove('active');
+            const icon = triggerBtn.querySelector('i');
+            if (icon) icon.className = 'fas fa-comment-dots';
+        }
+    }
+
+    // Hide modal
+    if (modal) {
+        modal.style.display = 'none';
+        modal.classList.remove('active');
+    }
+
+    // Re-enable body scroll
+    document.body.style.overflow = '';
+    document.body.classList.remove('modal-open');
+}
