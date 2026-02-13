@@ -3152,6 +3152,7 @@ input.login-submit-btn {
     flex-direction: column;
     align-items: center;
     justify-content: center;
+    text-align: center;
     min-height: 400px;
     color: rgba(255, 255, 255, 0.4);
 }

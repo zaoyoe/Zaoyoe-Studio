@@ -263,8 +263,11 @@ function displayMessages(messages) {
     if (!container) return;
 
     if (!messages || messages.length === 0) {
+        // Hide skeleton loading
+        const skeletonContainer = document.getElementById('skeletonContainer');
+        if (skeletonContainer) skeletonContainer.classList.add('hidden');
         const emptyState = document.getElementById('emptyState');
-        if (emptyState) emptyState.style.display = 'block';
+        if (emptyState) emptyState.style.display = 'flex';
         container.innerHTML = '';
         container.style.opacity = '1';
         return;
