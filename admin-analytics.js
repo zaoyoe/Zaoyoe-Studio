@@ -3099,10 +3099,12 @@ async function updateOnlineUsers() {
 
         // 1. Query comments for recent activity
         try {
-            const { data: comments } = await supabaseClient
+            let commentsQuery = supabaseClient
                 .from('prompt_comments')
                 .select('user_id')
                 .gte('created_at', fiveMinutesAgo);
+            commentsQuery = window.AdminSiteFilter?.applySiteFilter(commentsQuery) || commentsQuery;
+            const { data: comments } = await commentsQuery;
 
             if (comments) {
                 comments.forEach(c => c.user_id && uniqueUsers.add(c.user_id));
@@ -3113,10 +3115,12 @@ async function updateOnlineUsers() {
 
         // 2. Query comment_likes for recent activity
         try {
-            const { data: likes } = await supabaseClient
+            let likesQuery = supabaseClient
                 .from('comment_likes')
                 .select('user_id')
                 .gte('created_at', fiveMinutesAgo);
+            likesQuery = window.AdminSiteFilter?.applySiteFilter(likesQuery) || likesQuery;
+            const { data: likes } = await likesQuery;
 
             if (likes) {
                 likes.forEach(l => l.user_id && uniqueUsers.add(l.user_id));
@@ -3127,10 +3131,12 @@ async function updateOnlineUsers() {
 
         // 3. Query user_events for page views (if table exists)
         try {
-            const { data: events } = await supabaseClient
+            let eventsQuery = supabaseClient
                 .from('user_events')
                 .select('user_id')
                 .gte('created_at', fiveMinutesAgo);
+            eventsQuery = window.AdminSiteFilter?.applySiteFilter(eventsQuery) || eventsQuery;
+            const { data: events } = await eventsQuery;
 
             if (events) {
                 events.forEach(ev => ev.user_id && uniqueUsers.add(ev.user_id));
