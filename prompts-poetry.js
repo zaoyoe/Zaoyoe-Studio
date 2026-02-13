@@ -6158,6 +6158,55 @@ function navigateModalImage(direction) {
     updateModalImage(currentModalImageIndex);
 }
 
+// --- Mobile Touch Swipe for Modal Images ---
+(function initModalImageSwipe() {
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let isSwiping = false;
+
+    document.addEventListener('touchstart', function (e) {
+        const imgCol = e.target.closest('.modal-image-col');
+        if (!imgCol || currentModalImages.length <= 1) return;
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+        isSwiping = true;
+    }, { passive: true });
+
+    document.addEventListener('touchmove', function (e) {
+        if (!isSwiping) return;
+        const imgCol = e.target.closest('.modal-image-col');
+        if (!imgCol) return;
+
+        const dx = Math.abs(e.touches[0].clientX - touchStartX);
+        const dy = Math.abs(e.touches[0].clientY - touchStartY);
+
+        // If horizontal movement dominates, prevent vertical scroll
+        if (dx > dy && dx > 10) {
+            e.preventDefault();
+        }
+    }, { passive: false });
+
+    document.addEventListener('touchend', function (e) {
+        if (!isSwiping) return;
+        isSwiping = false;
+
+        const imgCol = e.target.closest('.modal-image-col');
+        if (!imgCol || currentModalImages.length <= 1) return;
+
+        const touchEndX = e.changedTouches[0].clientX;
+        const deltaX = touchEndX - touchStartX;
+        const SWIPE_THRESHOLD = 50;
+
+        if (Math.abs(deltaX) >= SWIPE_THRESHOLD) {
+            if (deltaX < 0) {
+                navigateModalImage('next');  // 左滑 → 下一张
+            } else {
+                navigateModalImage('prev');  // 右滑 → 上一张
+            }
+        }
+    }, { passive: true });
+})();
+
 function closePromptModal() {
     const modal = document.getElementById('promptModal');
 
@@ -6168,54 +6217,4 @@ function closePromptModal() {
         const contentCol = document.querySelector('.modal-content-col');
         const commentSection = document.getElementById('commentSection');
         if (promptArea.parentNode !== contentCol) {
-            promptArea.classList.remove('docked');
-            contentCol.insertBefore(promptArea, commentSection);
-        }
-    }
-
-    // Reset image state to prevent issues when reopening
-    isModalImageAnimating = false;
-
-    // Clean up any leftover images in the modal
-    const imgContainer = document.querySelector('.modal-image-col');
-    if (imgContainer) {
-        const allImages = imgContainer.querySelectorAll('img');
-        allImages.forEach(img => img.remove());
-    }
-
-    modal.classList.remove('active');
-    document.body.style.overflow = '';
-    document.body.classList.remove('prompt-modal-open'); // Restore header z-index
-}
-
-// Close modal on outside click
-window.onclick = function (event) {
-    const modal = document.getElementById('promptModal');
-    if (event.target === modal) {
-        closePromptModal();
-    }
-}
-
-// Initialize realtime on page load
-if (window.supabaseClient) {
-    initCommentRealtime();
-}
-
-// ===================================
-// LANGUAGE CHANGE HANDLER
-// ===================================
-// Listen for language changes from i18n.js and re-render cards
-window.addEventListener('languageChanged', () => {
-    console.log('🌐 Language changed, re-rendering cards...');
-    // Re-render current page to update all card titles with new language
-    renderCurrentPage();
-});
-
-
-// ===================================
-// EXPORTS to allow external usage (e.g. admin-config.js)
-// ===================================
-window.generateDecorationParticles = generateDecorationParticles;
-window.startContinuousParticles = startContinuousParticles;
-window.startHeartFloat = startHeartFloat;
-window.closeAnnouncement = closeAnnouncement;
+            promptArea.classList.

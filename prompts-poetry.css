@@ -1295,7 +1295,7 @@ body {
 /* Dark mode: use starry blue instead of purple for search focus */
 [data-theme="dark"] .nav-search {
     --mood-color: rgba(93, 159, 216, 0.5);
-    background: rgba(20, 30, 50, 0.6);
+    background: #000000;
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
     border-color: rgba(255, 255, 255, 0.12);
@@ -2125,6 +2125,13 @@ html[lang="en"] .nav-item .en {
 /* When prompt modal is open, push header behind the modal backdrop */
 body.prompt-modal-open .top-right-nav {
     z-index: 500 !important;
+}
+
+/* 移动端：弹窗打开时隐藏顶部导航栏，避免遮挡弹窗内容 */
+@media (max-width: 768px) {
+    body.prompt-modal-open .framer-nav {
+        display: none;
+    }
 }
 
 .poetry-modal {
@@ -3725,14 +3732,4 @@ body.prompt-modal-open .top-right-nav {
 
 @keyframes particle-pulse {
 
-    0%,
-    100% {
-        opacity: 0.4;
-        transform: scale(0.9) rotate(0deg);
-    }
-
-    50% {
-        opacity: 1;
-        transform: scale(1.2) rotate(180deg);
-    }
-}
+    0%
