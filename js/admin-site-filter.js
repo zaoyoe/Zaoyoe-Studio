@@ -126,6 +126,14 @@
                     const view = window.currentCommentView || 'guestbook';
                     window.loadComments(view);
                 }
+                if (typeof window.loadCommentStats === 'function') window.loadCommentStats();
+                break;
+            case 'chat':
+                // Re-initialize chat to reload sessions with new filter
+                if (window.AdminChat) {
+                    const chatContainer = document.getElementById('chat-admin-container');
+                    if (chatContainer) new AdminChat(chatContainer);
+                }
                 break;
         }
     }

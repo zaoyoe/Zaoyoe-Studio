@@ -356,9 +356,11 @@ async function loadCommentStats() {
             return q;
         })();
 
-        const { count: galleryCount } = await getSupabase()
-            .from('prompt_comments')
-            .select('*', { count: 'exact', head: true });
+        const { count: galleryCount } = await (function () {
+            let q = getSupabase().from('prompt_comments').select('*', { count: 'exact', head: true });
+            if (window.AdminSiteFilter) q = AdminSiteFilter.applySiteFilter(q);
+            return q;
+        })();
 
         const totalCount = (guestbookCount || 0) + (galleryCount || 0);
 
@@ -373,18 +375,20 @@ async function loadCommentStats() {
             return q;
         })();
 
-        const { count: todayGallery } = await getSupabase()
-            .from('prompt_comments')
-            .select('*', { count: 'exact', head: true })
-            .gte('created_at', todayISO);
+        const { count: todayGallery } = await (function () {
+            let q = getSupabase().from('prompt_comments').select('*', { count: 'exact', head: true }).gte('created_at', todayISO);
+            if (window.AdminSiteFilter) q = AdminSiteFilter.applySiteFilter(q);
+            return q;
+        })();
 
         const todayCount = (todayGuestbook || 0) + (todayGallery || 0);
 
         // Get unique users (simplified - based on gallery comments with user_id)
-        const { data: uniqueUsers } = await getSupabase()
-            .from('prompt_comments')
-            .select('user_id')
-            .not('user_id', 'is', null);
+        const { data: uniqueUsers } = await (function () {
+            let q = getSupabase().from('prompt_comments').select('user_id').not('user_id', 'is', null);
+            if (window.AdminSiteFilter) q = AdminSiteFilter.applySiteFilter(q);
+            return q;
+        })();
 
         const uniqueUserIds = new Set(uniqueUsers?.map(u => u.user_id) || []);
         const activeUsersCount = uniqueUserIds.size;
@@ -398,16 +402,17 @@ async function loadCommentStats() {
         twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
         const twoWeeksAgoISO = twoWeeksAgo.toISOString();
 
-        const { count: thisWeekCount } = await getSupabase()
-            .from('prompt_comments')
-            .select('*', { count: 'exact', head: true })
-            .gte('created_at', lastWeekISO);
+        const { count: thisWeekCount } = await (function () {
+            let q = getSupabase().from('prompt_comments').select('*', { count: 'exact', head: true }).gte('created_at', lastWeekISO);
+            if (window.AdminSiteFilter) q = AdminSiteFilter.applySiteFilter(q);
+            return q;
+        })();
 
-        const { count: prevWeekCount } = await getSupabase()
-            .from('prompt_comments')
-            .select('*', { count: 'exact', head: true })
-            .gte('created_at', twoWeeksAgoISO)
-            .lt('created_at', lastWeekISO);
+        const { count: prevWeekCount } = await (function () {
+            let q = getSupabase().from('prompt_comments').select('*', { count: 'exact', head: true }).gte('created_at', twoWeeksAgoISO).lt('created_at', lastWeekISO);
+            if (window.AdminSiteFilter) q = AdminSiteFilter.applySiteFilter(q);
+            return q;
+        })();
 
         let weekGrowth = 0;
         if (prevWeekCount && prevWeekCount > 0) {
@@ -660,6 +665,9 @@ async function loadComments(view) {
                 `)
                 .order('created_at', { ascending: false })
                 .limit(50);
+
+            // Apply admin site filter
+            if (window.AdminSiteFilter) query = AdminSiteFilter.applySiteFilter(query);
 
 
             // Note: Search filtering is done client-side via applyFilters

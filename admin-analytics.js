@@ -3,6 +3,15 @@
  * Data visualization dashboard for Admin Studio
  */
 
+// Helper: Get site param for analytics RPC calls
+function getAnalyticsSiteParam() {
+    if (window.AdminSiteFilter) {
+        const site = AdminSiteFilter.getSiteParam();
+        return site; // null for 'all', 'cn' or 'intl'
+    }
+    return null;
+}
+
 // Chart instances
 let userTrendChart = null;
 let channelChart = null;
@@ -165,11 +174,12 @@ async function loadOverviewStats() {
     try {
         // Try new trend function first, fallback to basic
         let data, error;
-        ({ data, error } = await supabaseClient.rpc('get_overview_stats_with_trend'));
+        const siteParam = getAnalyticsSiteParam();
+        ({ data, error } = await supabaseClient.rpc('get_overview_stats_with_trend', { p_site: siteParam }));
 
         if (error) {
             // Fallback to basic stats
-            ({ data, error } = await supabaseClient.rpc('get_overview_stats'));
+            ({ data, error } = await supabaseClient.rpc('get_overview_stats', { p_site: siteParam }));
             if (error) throw error;
         }
 
@@ -213,7 +223,7 @@ function updateTrendArrow(elementId, growthRate) {
 // Load User Trend Chart
 async function loadUserTrendChart(days = 30) {
     try {
-        const { data, error } = await supabaseClient.rpc('get_user_trend', { p_days: days });
+        const { data, error } = await supabaseClient.rpc('get_user_trend', { p_days: days, p_site: getAnalyticsSiteParam() });
 
         if (error) throw error;
 
@@ -294,7 +304,7 @@ async function loadUserTrendChart(days = 30) {
 // Load Channel Distribution Chart
 async function loadChannelChart() {
     try {
-        const { data, error } = await supabaseClient.rpc('get_channel_breakdown');
+        const { data, error } = await supabaseClient.rpc('get_channel_breakdown', { p_site: getAnalyticsSiteParam() });
 
         if (error) throw error;
 
@@ -361,7 +371,7 @@ async function loadChannelChart() {
 // Load Content Trend Chart
 async function loadContentTrendChart(days = 30) {
     try {
-        const { data, error } = await supabaseClient.rpc('get_content_trend', { p_days: days });
+        const { data, error } = await supabaseClient.rpc('get_content_trend', { p_days: days, p_site: getAnalyticsSiteParam() });
 
         if (error) throw error;
 
@@ -433,7 +443,7 @@ async function loadContentTrendChart(days = 30) {
 // Load Top Content
 async function loadTopContent() {
     try {
-        const { data, error } = await supabaseClient.rpc('get_content_top', { p_limit: 10 });
+        const { data, error } = await supabaseClient.rpc('get_content_top', { p_limit: 10, p_site: getAnalyticsSiteParam() });
 
         if (error) throw error;
 
@@ -529,7 +539,7 @@ async function generateAIInsight() {
 
     try {
         // Get summary data
-        const { data, error } = await supabaseClient.rpc('get_ai_summary_data', { p_days: 7 });
+        const { data, error } = await supabaseClient.rpc('get_ai_summary_data', { p_days: 7, p_site: getAnalyticsSiteParam() });
 
         if (error) throw error;
         if (!data || !data.overview) throw new Error('数据获取失败');
@@ -640,7 +650,7 @@ function truncate(str, len) {
 // Load Points Health Stats
 async function loadPointsStats() {
     try {
-        const { data, error } = await supabaseClient.rpc('get_points_health');
+        const { data, error } = await supabaseClient.rpc('get_points_health', { p_site: getAnalyticsSiteParam() });
 
         if (error) throw error;
 
@@ -670,7 +680,7 @@ async function loadPointsStats() {
 // Load Points Distribution Chart
 async function loadPointsDistribution() {
     try {
-        const { data, error } = await supabaseClient.rpc('get_points_distribution');
+        const { data, error } = await supabaseClient.rpc('get_points_distribution', { p_site: getAnalyticsSiteParam() });
         if (error) throw error;
 
         const ctx = document.getElementById('pointsDistChart');
@@ -722,7 +732,7 @@ async function loadPointsDistribution() {
 // Load Points Leaderboard
 async function loadPointsLeaderboard() {
     try {
-        const { data, error } = await supabaseClient.rpc('get_points_leaderboard', { p_limit: 10 });
+        const { data, error } = await supabaseClient.rpc('get_points_leaderboard', { p_limit: 10, p_site: getAnalyticsSiteParam() });
         if (error) throw error;
 
         const container = document.getElementById('pointsLeaderboard');
@@ -757,7 +767,7 @@ async function loadPointsLeaderboard() {
 // Load Redemption Funnel
 async function loadRedemptionFunnel() {
     try {
-        const { data, error } = await supabaseClient.rpc('get_redemption_funnel');
+        const { data, error } = await supabaseClient.rpc('get_redemption_funnel', { p_site: getAnalyticsSiteParam() });
         if (error) throw error;
 
         const ctx = document.getElementById('redemptionFunnelChart');
@@ -893,7 +903,7 @@ window.initAnalyticsModule = initAnalyticsModule;
 // Load Activity Heatmap
 async function loadActivityHeatmap() {
     try {
-        const { data, error } = await supabaseClient.rpc('get_activity_heatmap', { p_days: 30 });
+        const { data, error } = await supabaseClient.rpc('get_activity_heatmap', { p_days: 30, p_site: getAnalyticsSiteParam() });
 
         if (error) throw error;
 
@@ -985,7 +995,7 @@ async function loadActivityHeatmap() {
 // Load Top Contributors
 async function loadTopContributors() {
     try {
-        const { data, error } = await supabaseClient.rpc('get_top_contributors', { p_limit: 10 });
+        const { data, error } = await supabaseClient.rpc('get_top_contributors', { p_limit: 10, p_site: getAnalyticsSiteParam() });
 
         if (error) throw error;
 
@@ -1023,7 +1033,7 @@ async function loadTopContributors() {
 // Load Community Chart
 async function loadCommunityChart(days = 30) {
     try {
-        const { data, error } = await supabaseClient.rpc('get_community_stats', { p_days: days });
+        const { data, error } = await supabaseClient.rpc('get_community_stats', { p_days: days, p_site: getAnalyticsSiteParam() });
 
         if (error) throw error;
 
@@ -1103,7 +1113,7 @@ let funnelChart = null;
 // Load Conversion Funnel
 async function loadConversionFunnel() {
     try {
-        const { data, error } = await supabaseClient.rpc('get_conversion_funnel', { p_days: 30 });
+        const { data, error } = await supabaseClient.rpc('get_conversion_funnel', { p_days: 30, p_site: getAnalyticsSiteParam() });
 
         if (error) throw error;
 
@@ -1178,7 +1188,7 @@ async function loadConversionFunnel() {
 // Load Retention Cohort Heatmap
 async function loadRetentionCohort() {
     try {
-        const { data, error } = await supabaseClient.rpc('get_retention_cohort', { p_weeks: 8 });
+        const { data, error } = await supabaseClient.rpc('get_retention_cohort', { p_weeks: 8, p_site: getAnalyticsSiteParam() });
 
         if (error) throw error;
 
@@ -1231,7 +1241,7 @@ async function loadRetentionCohort() {
 // Load Points Flow (Sankey-style list)
 async function loadPointsFlow() {
     try {
-        const { data, error } = await supabaseClient.rpc('get_points_flow', { p_days: 30 });
+        const { data, error } = await supabaseClient.rpc('get_points_flow', { p_days: 30, p_site: getAnalyticsSiteParam() });
 
         if (error) throw error;
 
@@ -1297,7 +1307,7 @@ async function loadAIPrediction() {
 
     try {
         // Get trend data
-        const { data, error } = await supabaseClient.rpc('get_user_trend', { p_days: 30 });
+        const { data, error } = await supabaseClient.rpc('get_user_trend', { p_days: 30, p_site: getAnalyticsSiteParam() });
         if (error) throw error;
 
         const prompt = `基于以下30天的用户数据趋势，预测未来7天的走势（每天一个数字）。
@@ -2510,18 +2520,19 @@ async function exportAnalyticsData(format) {
         const days = globalDateRange?.days || 7;
 
         // Fetch Phase 1 data
-        const { data: overviewData } = await supabaseClient.rpc('get_overview_stats');
-        const { data: userTrendData } = await supabaseClient.rpc('get_user_trend', { p_days: days });
-        const { data: contentTrendData } = await supabaseClient.rpc('get_content_trend', { p_days: days });
-        const { data: revenueTrendData } = await supabaseClient.rpc('get_revenue_trend', { p_days: days });
-        const { data: channelData } = await supabaseClient.rpc('get_channel_breakdown');
-        const { data: communityData } = await supabaseClient.rpc('get_community_stats', { p_days: days });
-        const { data: topContentData } = await supabaseClient.rpc('get_content_top', { p_limit: 100 }); // More rows for export
+        const sp = getAnalyticsSiteParam();
+        const { data: overviewData } = await supabaseClient.rpc('get_overview_stats', { p_site: sp });
+        const { data: userTrendData } = await supabaseClient.rpc('get_user_trend', { p_days: days, p_site: sp });
+        const { data: contentTrendData } = await supabaseClient.rpc('get_content_trend', { p_days: days, p_site: sp });
+        const { data: revenueTrendData } = await supabaseClient.rpc('get_revenue_trend', { p_days: days, p_site: sp });
+        const { data: channelData } = await supabaseClient.rpc('get_channel_breakdown', { p_site: sp });
+        const { data: communityData } = await supabaseClient.rpc('get_community_stats', { p_days: days, p_site: sp });
+        const { data: topContentData } = await supabaseClient.rpc('get_content_top', { p_limit: 100, p_site: sp }); // More rows for export
 
         // Fetch Phase 2 (Points) data
-        const { data: pointsDist } = await supabaseClient.rpc('get_points_distribution');
-        const { data: pointsLead } = await supabaseClient.rpc('get_points_leaderboard', { p_limit: 100 });
-        const { data: funnelData } = await supabaseClient.rpc('get_redemption_funnel');
+        const { data: pointsDist } = await supabaseClient.rpc('get_points_distribution', { p_site: sp });
+        const { data: pointsLead } = await supabaseClient.rpc('get_points_leaderboard', { p_limit: 100, p_site: sp });
+        const { data: funnelData } = await supabaseClient.rpc('get_redemption_funnel', { p_site: sp });
 
         // Prepare export data
         const exportData = {

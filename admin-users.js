@@ -341,6 +341,40 @@ async function loadUsers() {
             }
         });
 
+        // Site-based user filtering: only show users with activity on selected site
+        const siteFilter = window.AdminSiteFilter ? AdminSiteFilter.getSiteParam() : null;
+        if (siteFilter) {
+            // Fetch user IDs with activity on this site (login, points, comments, messages)
+            const [loginResult, commentsResult, messagesResult] = await Promise.all([
+                window.supabaseClient
+                    .from('user_login_history')
+                    .select('user_id')
+                    .eq('site', siteFilter),
+                window.supabaseClient
+                    .from('prompt_comments')
+                    .select('user_id')
+                    .eq('site', siteFilter)
+                    .not('user_id', 'is', null),
+                window.supabaseClient
+                    .from('guestbook_messages')
+                    .select('user_id')
+                    .eq('site', siteFilter)
+                    .not('user_id', 'is', null)
+            ]);
+
+            const activeUserIds = new Set();
+            (loginResult.data || []).forEach(r => activeUserIds.add(r.user_id));
+            (commentsResult.data || []).forEach(r => activeUserIds.add(r.user_id));
+            (messagesResult.data || []).forEach(r => activeUserIds.add(r.user_id));
+            // Also include users with points on this site
+            points.forEach(p => activeUserIds.add(p.user_id));
+
+            profiles = profiles.filter(p => {
+                const uid = p.out_id || p.id;
+                return activeUserIds.has(uid);
+            });
+        }
+
         // Transform to View Model with real data
         userState.users = profiles.map(p => {
             // Support both new out_ prefixed columns and legacy column names

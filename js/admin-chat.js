@@ -137,11 +137,16 @@ class AdminChat {
 
     async fetchSessions() {
         try {
-            const { data, error } = await this.supabase
+            let query = this.supabase
                 .from('chat_messages')
                 .select('*')
                 .order('created_at', { ascending: false })
                 .limit(500);
+
+            // Apply admin site filter
+            if (window.AdminSiteFilter) query = AdminSiteFilter.applySiteFilter(query);
+
+            const { data, error } = await query;
 
             if (data) {
                 await this.processSessionsData(data);
