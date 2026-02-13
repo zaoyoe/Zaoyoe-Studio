@@ -11,8 +11,8 @@
 
     const SITE_LABELS = {
         all: '🌐 全部站点',
-        cn: '🇨🇳 国内站 (zaoyoe.com)',
-        intl: '🌍 国际站 (zaoyoe.xyz)'
+        cn: 'CN',
+        intl: 'EN'
     };
 
     /**

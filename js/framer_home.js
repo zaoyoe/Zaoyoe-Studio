@@ -237,7 +237,7 @@ const FramerHome = {
       const allProducts = await Cache.loadWithCache('shop_products', async () => {
         const { data, error } = await window.supabaseClient
           .from('shop_products')
-          .select('id, name, name_en, description, description_en, icon_url, price_points, stock_count, category')
+          .select('id, name, name_en, description, description_en, icon_url, price_points, price_points_intl, stock_count, category')
           .eq('is_active', true)
           .order('display_order', { ascending: false })
           .limit(50);

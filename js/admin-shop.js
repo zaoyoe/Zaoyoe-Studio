@@ -15,6 +15,59 @@ const ShopAdmin = {
     deletedProductsForImport: [], // Cache for deleted products (recycle bin)
     isProductSelectionMode: false, // State for product multi-select mode
 
+    // ==================== Site-Context Editing ====================
+    SITE_FIELD_MAP: {
+        cn: { price: 'price_points', name: 'name', desc: 'description' },
+        intl: { price: 'price_points_intl', name: 'name_en', desc: 'description_en' }
+    },
+
+    /** Get the active editing site based on admin site filter */
+    getEditSite() {
+        const filter = window.AdminSiteFilter?.getSiteFilter?.() || 'all';
+        return filter === 'intl' ? 'intl' : 'cn'; // 'all' defaults to 'cn'
+    },
+
+    /** Get field mapping for current editing site */
+    getFieldMap() {
+        return this.SITE_FIELD_MAP[this.getEditSite()];
+    },
+
+    /** Update modal labels and hint based on current site */
+    updateModalLabels() {
+        const site = this.getEditSite();
+        const isCN = site === 'cn';
+        const filter = window.AdminSiteFilter?.getSiteFilter?.() || 'all';
+
+        // Update labels
+        const nameLabel = document.getElementById('prodNameLabel');
+        const priceLabel = document.getElementById('prodPriceLabel');
+        const descLabel = document.getElementById('prodDescLabel');
+        const hint = document.getElementById('productSiteHint');
+
+        if (nameLabel) nameLabel.textContent = isCN ? '商品名称' : 'Product Name (EN)';
+        if (priceLabel) priceLabel.textContent = isCN ? '价格 (积分)' : 'Price (Credits)';
+        if (descLabel) descLabel.textContent = isCN ? '商品描述' : 'Description (EN)';
+
+        // Update placeholder
+        const nameInput = document.getElementById('prodName');
+        const descInput = document.getElementById('prodDesc');
+        if (nameInput) nameInput.placeholder = isCN ? '输入商品名称' : 'Enter product name in English';
+        if (descInput) descInput.placeholder = isCN ? '商品简介...' : 'Product description in English...';
+
+        // Show site hint
+        if (hint) {
+            if (filter === 'all') {
+                hint.style.display = 'block';
+                hint.innerHTML = '⚠️ 当前为“全部”模式，默认编辑 <strong>CN</strong> 商品信息。切换站点可编辑对应站点的名称/价格/描述。';
+            } else {
+                hint.style.display = 'block';
+                hint.innerHTML = isCN
+                    ? '🇨🇳 正在编辑 <strong>CN</strong> 商品信息'
+                    : '🌍 Editing <strong>EN</strong> product info';
+            }
+        }
+    },
+
     // Translate Chinese text to English using Gemini API
     translateToEnglish: async function (name, description) {
         const apiKey = window.GEMINI_API_KEY;
@@ -372,7 +425,17 @@ Example output format:
                     
                     <div style="margin-top:0; padding:15px 24px 20px; border-top:1px solid rgba(255,255,255,0.08); display:flex; justify-content:space-between; align-items:center;">
                         <div>
-                            <div style="font-weight:700; color:#fbbf24; font-size:16px;">${p.price_points} <span style="font-size:12px; font-weight:normal; opacity:0.8;">积分</span></div>
+                            ${(() => {
+                        const editSite = ShopAdmin.getEditSite();
+                        if (editSite === 'intl') {
+                            const intlPrice = p.price_points_intl;
+                            return intlPrice != null
+                                ? `<div style="font-weight:700; color:#60a5fa; font-size:16px;">${intlPrice} <span style="font-size:12px; font-weight:normal; opacity:0.8;">Credits</span></div>`
+                                : `<div style="font-weight:700; color:rgba(255,255,255,0.3); font-size:14px;">未设置国际价格</div>`;
+                        } else {
+                            return `<div style="font-weight:700; color:#fbbf24; font-size:16px;">${p.price_points} <span style="font-size:12px; font-weight:normal; opacity:0.8;">积分</span></div>`;
+                        }
+                    })()}
                             <div style="font-size:12px; color:${stockColor}; margin-top:2px; font-weight:500;">库存: ${stock}</div>
                         </div>
                         
@@ -595,15 +658,18 @@ Example output format:
             }
 
             // Convert to CSV
-            const headers = ['ID', '名称', '分类', '价格(积分)', '状态', '库存', '描述'];
+            const headers = ['ID', '名称', '名称(EN)', '分类', '价格(积分)', '价格(Credits)', '状态', '库存', '描述', '描述(EN)'];
             const rows = products.map(p => [
                 p.id,
                 p.name,
+                p.name_en || '',
                 p.category,
                 p.price_points,
+                p.price_points_intl != null ? p.price_points_intl : '',
                 p.is_active ? '上架' : '下架',
                 p.stock_count || 0,
-                (p.description || '').replace(/,/g, '，')
+                (p.description || '').replace(/,/g, '，'),
+                (p.description_en || '').replace(/,/g, '，')
             ]);
 
             const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
@@ -934,7 +1000,8 @@ Example output format:
         await this.populateCategoryDropdown();
 
         const title = document.getElementById('productModalTitle');
-        title.textContent = isEdit ? '编辑商品' : '新建商品';
+        const siteEmoji = this.getEditSite() === 'intl' ? ' 🌍' : ' 🇨🇳';
+        title.textContent = (isEdit ? '编辑商品' : '新建商品') + siteEmoji;
         modal.style.display = 'flex'; // Ensure Flex is set to center it
 
         // Force visibility properties
@@ -975,6 +1042,9 @@ Example output format:
             document.getElementById('prodSort').value = '0';
         }
 
+        // Update labels for current site context
+        this.updateModalLabels();
+
         // Trigger initial preview update
         this.updatePreview();
     },
@@ -982,11 +1052,13 @@ Example output format:
     editProduct: async function (id) {
         const { data } = await supabaseClient.from('shop_products').select('*').eq('id', id).single();
         if (data) {
+            const fields = this.getFieldMap();
+
             document.getElementById('editProductId').value = data.id;
-            document.getElementById('prodName').value = data.name;
-            document.getElementById('prodPrice').value = data.price_points;
+            document.getElementById('prodName').value = data[fields.name] || '';
+            document.getElementById('prodPrice').value = data[fields.price] != null ? data[fields.price] : '';
             document.getElementById('prodIcon').value = data.icon_url;
-            document.getElementById('prodDesc').value = data.description || '';
+            document.getElementById('prodDesc').value = data[fields.desc] || '';
             document.getElementById('prodSort').value = data.display_order;
 
             this.openProductModal(true);
@@ -1029,16 +1101,23 @@ Example output format:
             console.warn('[ShopAdmin] Translation step failed, continuing without:', e);
         }
 
+        const fields = this.getFieldMap();
+        const editSite = this.getEditSite();
+
         const payload = {
-            name,
-            price_points: parseInt(price),
+            [fields.name]: name,
+            [fields.price]: parseInt(price),
+            [fields.desc]: description,
             icon_url: document.getElementById('prodIcon').value,
             category: document.getElementById('prodCategory').value,
-            description,
             display_order: parseInt(document.getElementById('prodSort').value),
-            name_en,
-            description_en
         };
+
+        // For CN site, also save auto-translated English fields
+        if (editSite === 'cn' && name_en) {
+            payload.name_en = name_en;
+            payload.description_en = description_en;
+        }
 
         try {
             // If there's a pending new category, save it first
