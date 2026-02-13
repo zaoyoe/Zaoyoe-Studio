@@ -1306,10 +1306,22 @@ document.addEventListener('DOMContentLoaded', function () {
                 const modal = document.getElementById('guestbookModal');
                 if (modal) {
                     modal.classList.remove('active');
+                    document.body.classList.remove('no-scroll');
                 }
 
-                // 自动跳转到留言板页面
-                window.location.href = 'guestbook.html';
+                // 如果在首页，不跳转，显示成功提示
+                const isHomepage = window.location.pathname === '/' || window.location.pathname === '/index.html';
+                if (isHomepage) {
+                    // 显示成功提示
+                    const toast = document.createElement('div');
+                    toast.textContent = window.i18n?.t('guestbook.postSuccess') || '留言成功！';
+                    toast.style.cssText = 'position:fixed;top:80px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;padding:12px 24px;border-radius:12px;z-index:10000;font-size:14px;font-weight:500;box-shadow:0 8px 32px rgba(0,0,0,0.3);animation:fadeInUp 0.3s ease';
+                    document.body.appendChild(toast);
+                    setTimeout(() => toast.remove(), 3000);
+                } else {
+                    // 其他页面，跳转到留言板
+                    window.location.href = 'guestbook.html';
+                }
             }
         });
 

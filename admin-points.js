@@ -427,6 +427,9 @@ async function generateCodes(event) {
         // Use different RPC call based on whether custom points or package
         let data, error;
 
+        // Get current site from AdminSiteFilter (default to 'cn')
+        const currentSite = (window.AdminSiteFilter && AdminSiteFilter.getSiteParam()) || 'cn';
+
         if (isCustomPoints) {
             // Custom points - use fn_generate_custom_codes
             ({ data, error } = await getSupabase().rpc('fn_generate_custom_codes', {
@@ -434,7 +437,8 @@ async function generateCodes(event) {
                 p_points_amount: customPointsAmount,
                 p_count: count,
                 p_channel: channel,
-                p_expires_at: expiresAt
+                p_expires_at: expiresAt,
+                p_site: currentSite
             }));
         } else {
             // Standard package - use existing fn_generate_codes
@@ -443,7 +447,8 @@ async function generateCodes(event) {
                 p_package_id: packageIdValue,
                 p_count: count,
                 p_channel: channel,
-                p_expires_at: expiresAt
+                p_expires_at: expiresAt,
+                p_site: currentSite
             }));
         }
 

@@ -3974,14 +3974,14 @@ input.login-submit-btn {
 /* Content Slide Up Animation - Transition Based */
 
 /* Initial State: Hidden and Offset (only when overlay is NOT active) */
-.modal-overlay:not(.active) .modal-content>*:not(.window-controls):not(.modal-close),
+.modal-overlay:not(.active) .modal-content:not(.guestbook-content)>*:not(.window-controls):not(.modal-close),
 .login-overlay:not(.active) .login-card .form-view>* {
     opacity: 0;
     transform: translateY(20px);
 }
 
 /* Add transition to all content elements */
-.modal-content>*:not(.window-controls):not(.modal-close),
+.modal-content:not(.guestbook-content)>*:not(.window-controls):not(.modal-close),
 .login-card .form-view>* {
     transition: all 0.5s ease-out;
 }
@@ -4009,7 +4009,7 @@ button *,
 }
 
 /* Active State: Visible and Reset */
-.modal-overlay.active .modal-content>*:not(.window-controls):not(.modal-close),
+.modal-overlay.active .modal-content:not(.guestbook-content)>*:not(.window-controls):not(.modal-close),
 .login-overlay.active .login-card .form-view>* {
     opacity: 1 !important;
     transform: translateY(0) !important;
@@ -6427,10 +6427,7 @@ input[type="submit"],
     font-weight: 600 !important;
     text-decoration: none !important;
     cursor: pointer !important;
-    transition-duration: 0.5s !important;
-    transition-timing-function: ease-out !important;
-    /* Match modal content animation (0.5s ease-out) */
-    transform: translateZ(0);
+    transition: color 0.2s ease, transform 0.2s ease, text-shadow 0.2s ease;
     backface-visibility: hidden;
     -webkit-font-smoothing: antialiased;
     position: relative !important;
@@ -6440,13 +6437,11 @@ input[type="submit"],
 .guestbook-view-more:hover {
     color: #ff85c0 !important;
     /* Lighter Pink (Pink-300) */
-    transform: translateY(-2px) translateZ(0) !important;
+    transform: translateY(-2px) !important;
     /* Match submit-btn lift */
     text-shadow: 0 4px 12px rgba(244, 114, 182, 0.4) !important;
     background: transparent !important;
     box-shadow: none !important;
-    transition-delay: 0s !important;
-    /* Instant hover response */
 }
 
 .guestbook-view-more:active {

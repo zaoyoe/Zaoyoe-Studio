@@ -917,6 +917,22 @@
     box-sizing: border-box;
 }
 
+/* Center loading/empty text in comment list */
+.comment-list-admin>.loading-text,
+.comment-list-admin>.empty-text,
+.comment-list-admin>.error-text {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 300px;
+    width: 100%;
+    text-align: center;
+    color: var(--text-dim, rgba(255, 255, 255, 0.4));
+    font-size: 0.95rem;
+    margin: 0;
+}
+
 /* 1. GRID VIEW (DEFAULT) */
 .comment-list-admin:not(.list-view) {
     display: grid;

@@ -368,17 +368,17 @@ body {
     background: #22c55e;
 }
 
-/* Ensure header status dot stays green (not overridden by user-status styles) */
+/* Ensure header status dot stays green by default */
 .studio-status .status-dot {
-    background: #22c55e !important;
+    background: #22c55e;
 }
 
-.status-dot.processing {
+.studio-status .status-dot.processing {
     background: #eab308;
     animation: pulse 1.5s infinite;
 }
 
-.status-dot.error {
+.studio-status .status-dot.error {
     background: #ef4444;
 }
 
@@ -2547,6 +2547,23 @@ body {
     padding: 0;
     overflow: hidden;
     border-radius: 12px;
+    position: relative;
+}
+
+/* Centered overlay for empty/loading states */
+.users-empty-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-dim, rgba(255, 255, 255, 0.4));
+    font-size: 0.9rem;
+    pointer-events: none;
+    z-index: 1;
 }
 
 #usersTable {
@@ -2571,6 +2588,13 @@ body {
     border-bottom: 1px solid rgba(0, 0, 0, 0.05);
     background: transparent;
     /* Default transparent */
+}
+
+/* Force center for empty/loading state cells */
+#usersTable td.empty-state,
+#usersTable td.loading-cell,
+#usersTable td[style*="text-align"] {
+    text-align: center !important;
 }
 
 /* Row Styles - Clean, no green border */
@@ -7348,6 +7372,15 @@ input:checked+.toggle-slider:before {
 .empty-state {
     padding: 24px !important;
     font-size: 0.8rem !important;
+}
+
+/* Center empty/loading states in users table */
+.users-table .empty-state,
+.users-table .loading-cell {
+    text-align: center !important;
+    vertical-align: middle !important;
+    height: 300px !important;
+    color: var(--text-dim) !important;
 }
 
 /* =========================================

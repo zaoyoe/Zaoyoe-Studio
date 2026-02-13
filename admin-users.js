@@ -502,10 +502,23 @@ function renderUsersTable() {
     }
 
     if (paginatedUsers.length === 0) {
-        const colspan = userState.selectMode ? 6 : 5;
-        tableBody.innerHTML = `<tr><td colspan="${colspan}" class="empty-state">No users found</td></tr>`;
+        tableBody.innerHTML = '';
+        // Show centered empty message as div sibling (not in table)
+        let emptyDiv = document.getElementById('usersEmptyState');
+        if (!emptyDiv) {
+            emptyDiv = document.createElement('div');
+            emptyDiv.id = 'usersEmptyState';
+            emptyDiv.style.cssText = 'display:flex;align-items:center;justify-content:center;height:300px;width:100%;color:var(--text-dim);font-size:0.9rem;';
+            const table = document.getElementById('usersTable');
+            if (table) table.parentNode.insertBefore(emptyDiv, table.nextSibling);
+        }
+        emptyDiv.textContent = 'No users found';
+        emptyDiv.style.display = 'flex';
         return;
     }
+    // Hide empty state if visible
+    const emptyDiv = document.getElementById('usersEmptyState');
+    if (emptyDiv) emptyDiv.style.display = 'none';
 
     // 4. Render Rows
     tableBody.innerHTML = paginatedUsers.map(u => {
@@ -591,16 +604,18 @@ function renderUsersTable() {
 
 // Loading State
 function renderUserLoading() {
-    document.getElementById('usersTableBody').innerHTML = `
-        <tr>
-            <td colspan="6" class="loading-cell">
-                <div class="neural-loader small">
-                    <div class="neural-dot"></div><div class="neural-dot"></div><div class="neural-dot"></div>
-                </div>
-
-            </td>
-        </tr>
-    `;
+    document.getElementById('usersTableBody').innerHTML = '';
+    // Show centered loading as div sibling (not in table)
+    let emptyDiv = document.getElementById('usersEmptyState');
+    if (!emptyDiv) {
+        emptyDiv = document.createElement('div');
+        emptyDiv.id = 'usersEmptyState';
+        emptyDiv.style.cssText = 'display:flex;align-items:center;justify-content:center;height:300px;width:100%;color:var(--text-dim);font-size:0.9rem;';
+        const table = document.getElementById('usersTable');
+        if (table) table.parentNode.insertBefore(emptyDiv, table.nextSibling);
+    }
+    emptyDiv.innerHTML = '<div class="neural-loader small"><div class="neural-dot"></div><div class="neural-dot"></div><div class="neural-dot"></div></div>';
+    emptyDiv.style.display = 'flex';
 }
 
 // ========================================

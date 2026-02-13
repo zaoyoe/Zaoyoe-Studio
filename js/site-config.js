@@ -9,7 +9,7 @@
  *   SiteConfig.currency      → '¥' | '$'
  *   SiteConfig.currencyCode  → 'CNY' | 'USD'
  *   SiteConfig.getPriceField() → 'price_points' | 'price_points_intl'
- *   SiteConfig.getPointsLabel() → '积分' | 'Credits'
+ *   SiteConfig.getPointsLabel() → '积分' | 'Points'
  *   SiteConfig.isCN()        → true | false
  *   SiteConfig.isIntl()      → true | false
  */
@@ -53,20 +53,20 @@
         /** 当前站点标识: 'cn' | 'intl' */
         site: site,
 
-        /** 货币符号 */
-        currency: site === 'intl' ? '$' : '¥',
+        /** 货币符号 (统一为积分，充值时按汇率折算) */
+        currency: '',
 
         /** 货币代码 */
-        currencyCode: site === 'intl' ? 'USD' : 'CNY',
+        currencyCode: 'POINTS',
 
         /** 获取商品价格字段名 */
         getPriceField: function () {
             return this.site === 'intl' ? 'price_points_intl' : 'price_points';
         },
 
-        /** 获取积分显示名称 */
+        /** 获取积分显示名称 (统一为积分) */
         getPointsLabel: function () {
-            return this.site === 'intl' ? 'Credits' : '积分';
+            return this.site === 'intl' ? 'Points' : '积分';
         },
 
         /** 是否为国内站 */
@@ -79,10 +79,10 @@
             return this.site === 'intl';
         },
 
-        /** 格式化价格显示 */
+        /** 格式化价格显示 (统一显示积分数) */
         formatPrice: function (amount) {
             if (amount === null || amount === undefined) return '--';
-            return `${this.currency}${amount}`;
+            return `${amount}`;
         },
 
         /** 获取 localStorage 前缀（避免两站缓存冲突）*/

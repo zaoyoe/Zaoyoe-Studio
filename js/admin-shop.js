@@ -45,7 +45,7 @@ const ShopAdmin = {
         const hint = document.getElementById('productSiteHint');
 
         if (nameLabel) nameLabel.textContent = isCN ? '商品名称' : 'Product Name (EN)';
-        if (priceLabel) priceLabel.textContent = isCN ? '价格 (积分)' : 'Price (Credits)';
+        if (priceLabel) priceLabel.textContent = isCN ? '价格 (积分)' : 'Price (Points)';
         if (descLabel) descLabel.textContent = isCN ? '商品描述' : 'Description (EN)';
 
         // Update placeholder
@@ -430,7 +430,7 @@ Example output format:
                         if (editSite === 'intl') {
                             const intlPrice = p.price_points_intl;
                             return intlPrice != null
-                                ? `<div style="font-weight:700; color:#60a5fa; font-size:16px;">${intlPrice} <span style="font-size:12px; font-weight:normal; opacity:0.8;">Credits</span></div>`
+                                ? `<div style="font-weight:700; color:#60a5fa; font-size:16px;">${intlPrice} <span style="font-size:12px; font-weight:normal; opacity:0.8;">Points</span></div>`
                                 : `<div style="font-weight:700; color:rgba(255,255,255,0.3); font-size:14px;">未设置国际价格</div>`;
                         } else {
                             return `<div style="font-weight:700; color:#fbbf24; font-size:16px;">${p.price_points} <span style="font-size:12px; font-weight:normal; opacity:0.8;">积分</span></div>`;
@@ -658,7 +658,7 @@ Example output format:
             }
 
             // Convert to CSV
-            const headers = ['ID', '名称', '名称(EN)', '分类', '价格(积分)', '价格(Credits)', '状态', '库存', '描述', '描述(EN)'];
+            const headers = ['ID', '名称', '名称(EN)', '分类', '价格(积分)', '价格(Points)', '状态', '库存', '描述', '描述(EN)'];
             const rows = products.map(p => [
                 p.id,
                 p.name,

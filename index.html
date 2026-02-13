@@ -112,7 +112,8 @@
                 <a href="/prompts.html" class="nav-trigger" data-dropdown="prompts" data-i18n="nav.prompts">提示词</a>
                 <a href="/shop.html" class="nav-trigger" data-dropdown="shop" data-i18n="nav.shop">商城</a>
                 <a href="/verify.html" data-i18n="nav.verify">验证</a>
-                <a href="/guestbook.html" data-i18n="nav.guestbook">留言板</a>
+                <a href="/guestbook.html" data-i18n="nav.guestbook"
+                    onclick="if(typeof window.openGuestbookModal==='function'){event.preventDefault();window.openGuestbookModal();}">留言板</a>
             </div>
 
             <!-- Actions -->
@@ -156,7 +157,8 @@
             </div>
 
             <div class="mobile-menu-item">
-                <a href="#guestbook" class="mobile-menu-link" data-i18n="nav.guestbook">留言板</a>
+                <a href="#guestbook" class="mobile-menu-link" data-i18n="nav.guestbook"
+                    onclick="if(typeof window.openGuestbookModal==='function'){event.preventDefault();window.openGuestbookModal();document.querySelector('.mobile-menu')?.classList.remove('active');document.querySelector('.nav-hamburger')?.classList.remove('active');}">留言板</a>
             </div>
         </div>
     </div>
@@ -236,8 +238,11 @@
     <script src="./inject-auth.js?v=20260205_LANG_FIX" defer></script>
     <script src="./notification-client.js?v=20260209" defer></script>
 
+    <!-- Supabase Guestbook Functions (for modal form) -->
+    <script src="./supabase-guestbook-functions.js?v=HOMEPAGE_MODAL" defer></script>
+
     <!--  Framer Home Engine -->
-    <script src="./js/framer_home.js?v=20260205"></script>
+    <script src="./js/framer_home.js?v=20260213_MODAL"></script>
 
     <!-- Points Service (required by WalletModal) -->
     <script src="./js/services/PointsService.js"></script>
@@ -258,6 +263,138 @@
                     }
                 }
             }, 100);
+        });
+    </script>
+
+    <!-- Guestbook Modal -->
+    <div class="modal-overlay" id="guestbookModal">
+        <div class="modal-content guestbook-content premium-modal" style="position: relative; max-width: 520px;"
+            onclick="event.stopPropagation()">
+            <!-- Mac Window Controls -->
+            <div class="mac-controls">
+                <div class="mac-dot red"
+                    onclick="document.getElementById('guestbookModal').classList.remove('active'); document.body.classList.remove('no-scroll');">
+                    <i class="fas fa-times"></i>
+                </div>
+                <div class="mac-dot yellow"></div>
+                <div class="mac-dot green"></div>
+            </div>
+            <div class="modal-title" data-i18n="guestbook.title">留言板</div>
+
+            <form class="guestbook-form" id="guestbookForm">
+                <div class="input-group relative-container">
+                    <textarea id="guestMessage" placeholder="畅所欲言..." data-i18n-placeholder="guestbook.placeholder"
+                        style="width: 100%; min-height: 100px; resize: vertical; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 14px; color: var(--text-primary, #fff); font-size: 14px; font-family: inherit;"></textarea>
+
+                    <!-- Integrated Upload Icon -->
+                    <div style="position: absolute; bottom: 12px; right: 12px;">
+                        <input type="file" id="imageUpload" accept="image/*" style="display: none;">
+                        <button type="button"
+                            style="background: none; border: none; color: rgba(255,255,255,0.4); cursor: pointer; font-size: 16px; padding: 4px;"
+                            onclick="document.getElementById('imageUpload').click()" title="上传图片">
+                            <i class="fas fa-camera"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div id="imagePreview" class="image-preview-container"
+                    style="display: none; margin: 8px 0; position: relative;">
+                    <img id="previewImg" src="" alt="Preview"
+                        style="max-width: 100%; max-height: 200px; border-radius: 8px;">
+                    <button type="button" id="removeImageBtn"
+                        style="position: absolute; top: 4px; right: 4px; background: rgba(0,0,0,0.6); border: none; color: white; border-radius: 50%; width: 24px; height: 24px; cursor: pointer; display: flex; align-items: center; justify-content: center;">
+                        <i class="fas fa-times" style="font-size: 12px;"></i>
+                    </button>
+                </div>
+
+                <button type="submit" class="guestbook-submit-btn"
+                    style="width: 100%; padding: 14px; background: linear-gradient(135deg, #9b5de5 0%, #f15bb5 100%); border: none; border-radius: 14px; color: white; font-size: 15px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; transition: all 0.3s cubic-bezier(0.4,0,0.2,1); position: relative; overflow: hidden; letter-spacing: 0.5px; box-shadow: 0 6px 20px rgba(155,93,229,0.3);"
+                    onmouseenter="this.style.transform='translateY(-2px)';this.style.boxShadow='0 10px 30px rgba(155,93,229,0.5)';"
+                    onmouseleave="this.style.transform='translateY(0)';this.style.boxShadow='0 6px 20px rgba(155,93,229,0.3)';">
+                    <i class="fas fa-paper-plane"></i>
+                    <span data-i18n="guestbook.submit">留言</span>
+                </button>
+            </form>
+
+            <!-- View More Button -->
+            <div id="guestbookViewMoreWrap" style="text-align: center; margin-top: 16px;">
+                <a href="guestbook.html"
+                    style="display: inline-flex; align-items: center; gap: 8px; padding: 12px 20px; color: #f15bb5; text-decoration: none; font-size: 14px; font-weight: 600; cursor: pointer;"
+                    onmouseenter="this.style.color='#ff85c0';" onmouseleave="this.style.color='#f15bb5';">
+                    <i class="fas fa-comment-dots"></i>
+                    <span data-i18n="guestbook.viewMore">查看更多留言</span>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Guestbook Modal Script -->
+    <script>
+        // Open guestbook modal function
+        window.openGuestbookModal = function () {
+            const modal = document.getElementById('guestbookModal');
+            if (!modal) return;
+
+            // Collect ALL elements to animate
+            const content = modal.querySelector('.guestbook-content');
+            const form = modal.querySelector('.guestbook-form');
+            const allItems = [];
+
+            // Direct children of content card (mac-controls, title, form, viewMoreWrap)
+            if (content) {
+                const children = Array.from(content.children);
+                children.forEach((el, i) => {
+                    // Last child (viewMoreWrap) gets the latest delay — after all form children
+                    const delay = (i === children.length - 1) ? 420 : (50 + i * 70);
+                    allItems.push({ el, delay });
+                });
+            }
+            // Form inner children (textarea group, image preview, submit btn)
+            if (form) {
+                Array.from(form.children).forEach((el, i) => {
+                    allItems.push({ el, delay: 200 + i * 70 });
+                });
+            }
+
+            // Step 1: Hide everything BEFORE making modal visible
+            allItems.forEach(({ el }) => {
+                el.style.opacity = '0';
+                el.style.transform = 'translateY(20px)';
+                el.style.transition = 'none';
+            });
+
+            // Step 2: Show modal
+            modal.classList.remove('active');
+            void modal.offsetWidth;
+            modal.classList.add('active');
+            document.body.classList.add('no-scroll');
+
+            // Step 3: After one frame (modal is now display:flex), start staggered reveal
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    allItems.forEach(({ el, delay }) => {
+                        setTimeout(() => {
+                            el.style.transition = 'opacity 0.4s ease-out, transform 0.4s ease-out';
+                            el.style.opacity = '1';
+                            el.style.transform = 'translateY(0)';
+                        }, delay);
+                    });
+                });
+            });
+        };
+
+        // Close on overlay click
+        document.getElementById('guestbookModal')?.addEventListener('mousedown', function (e) {
+            if (e.target === this) {
+                this._overlayDown = true;
+            }
+        });
+        document.getElementById('guestbookModal')?.addEventListener('mouseup', function (e) {
+            if (e.target === this && this._overlayDown) {
+                this.classList.remove('active');
+                document.body.classList.remove('no-scroll');
+            }
+            this._overlayDown = false;
         });
     </script>
 </body>

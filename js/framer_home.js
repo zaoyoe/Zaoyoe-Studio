@@ -131,6 +131,17 @@ const FramerHome = {
       // Build ticker data AFTER cachedData is assigned so it can access shop data
       this.cachedData.ticker = await this.buildTickerData(this.config.ticker);
 
+      // Fetch shop categories from dedicated table (for nav dropdown)
+      try {
+        const { data } = await window.supabaseClient
+          .from('shop_categories')
+          .select('name')
+          .order('sort_order');
+        this.cachedData.shopCategories = (data || []).map(c => c.name);
+      } catch (e) {
+        this.cachedData.shopCategories = [];
+      }
+
       console.log('📦 Data aggregated:', this.cachedData);
     } catch (error) {
       console.error('❌ Failed to load data:', error);
@@ -180,7 +191,7 @@ const FramerHome = {
         { icon: 'fa-wand-magic-sparkles', text: window.i18n?.t('home.entries.prompts') || '提示词', link: '/prompts.html', color: '#f472b6' },
         { icon: 'fa-store', text: window.i18n?.t('home.entries.shop') || '商城', link: '/shop.html', color: '#4ade80' },
         { icon: 'fa-robot', text: window.i18n?.t('home.entries.verify') || '验证', link: '/verify.html', color: '#667eea' },
-        { icon: 'fa-comment-dots', text: window.i18n?.t('home.entries.guestbook') || '留言板', link: '/guestbook.html', color: '#f59e0b' }
+        { icon: 'fa-comment-dots', text: window.i18n?.t('home.entries.guestbook') || '留言板', link: '#', color: '#f59e0b', action: 'openGuestbookModal' }
       ]
     };
   },
@@ -464,26 +475,25 @@ const FramerHome = {
         this.cachedData.prompts = [];
       }
 
-      // Load shop products from supabase (lightweight query)
+      // Load shop categories from the dedicated shop_categories table
       if (window.supabaseClient) {
         try {
           const { data, error } = await window.supabaseClient
-            .from('shop_products')
-            .select('category')
-            .eq('is_active', true)
-            .limit(50);
+            .from('shop_categories')
+            .select('name')
+            .order('sort_order');
 
-          if (!error && data) {
-            this.cachedData.shop = data;
+          if (!error && data && data.length > 0) {
+            this.cachedData.shopCategories = data.map(c => c.name);
           } else {
-            this.cachedData.shop = [];
+            this.cachedData.shopCategories = [];
           }
         } catch (e) {
           console.warn('Failed to load shop categories for nav:', e);
-          this.cachedData.shop = [];
+          this.cachedData.shopCategories = [];
         }
       } else {
-        this.cachedData.shop = [];
+        this.cachedData.shopCategories = [];
       }
 
       console.log('📂 Nav data loaded:', {
@@ -538,9 +548,10 @@ const FramerHome = {
       return topTags.length > 0 ? topTags : fallbackTags;
     };
 
-    // Get shop categories
+    // Get shop categories from dedicated shop_categories table
     const getShopCategories = () => {
-      const categories = [...new Set((this.cachedData?.shop || []).map(p => p.category).filter(Boolean))];
+      // Use categories fetched from shop_categories table
+      const categories = this.cachedData?.shopCategories || [];
       return categories.length > 0 ? categories : ['全部商品', 'API密钥', '会员服务', '资源包'];
     };
 
@@ -681,7 +692,7 @@ const FramerHome = {
       <div class="hero-carousel fade-in-up">
         <div class="hero-carousel-track">
           ${data.entries.map((entry, index) => `
-            <a href="${entry.link}" class="entry-card" data-index="${index}">
+            <a href="${entry.link}" class="entry-card" data-index="${index}" ${entry.action ? `data-action="${entry.action}"` : ''}>
               <i class="fas ${entry.icon}" style="color: ${entry.color}"></i>
               <span>${entry.text}</span>
             </a>
@@ -988,8 +999,21 @@ const FramerHome = {
         `).join('')}
       </div>
       
-      <div style="text-align: center; margin-top: 48px;">
-        <a href="/guestbook.html" class="btn btn-secondary">${window.i18n?.t('home.guestbook.viewAll') || '查看全部留言'}</a>
+      <div style="text-align: center; margin-top: 48px; display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;">
+        <button onclick="if(typeof window.openGuestbookModal==='function') window.openGuestbookModal();" 
+          class="btn-guestbook-write"
+          style="display: inline-flex; align-items: center; gap: 10px; padding: 14px 32px; background: linear-gradient(135deg, rgba(245,158,11,0.15), rgba(245,158,11,0.05)); border: 1px solid rgba(245,158,11,0.3); border-radius: 14px; color: #f59e0b; font-size: 15px; font-weight: 600; cursor: pointer; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); transition: all 0.3s cubic-bezier(0.4,0,0.2,1); letter-spacing: 0.5px;"
+          onmouseenter="this.style.background='linear-gradient(135deg, rgba(245,158,11,0.25), rgba(245,158,11,0.1))';this.style.borderColor='rgba(245,158,11,0.5)';this.style.transform='translateY(-2px)';this.style.boxShadow='0 8px 32px rgba(245,158,11,0.2)';"
+          onmouseleave="this.style.background='linear-gradient(135deg, rgba(245,158,11,0.15), rgba(245,158,11,0.05))';this.style.borderColor='rgba(245,158,11,0.3)';this.style.transform='translateY(0)';this.style.boxShadow='none';">
+          <i class="fas fa-pen-fancy"></i>
+          ${window.i18n?.t('home.guestbook.writeMessage') || '写留言'}
+        </button>
+        <a href="/guestbook.html" class="btn btn-secondary"
+          style="transition: all 0.3s cubic-bezier(0.4,0,0.2,1);"
+          onmouseenter="this.style.transform='translateY(-2px)';this.style.boxShadow='0 8px 32px rgba(255,255,255,0.08)';"
+          onmouseleave="this.style.transform='translateY(0)';this.style.boxShadow='none';">
+          ${window.i18n?.t('home.guestbook.viewAll') || '查看全部留言'}
+        </a>
       </div>
     `;
   },
@@ -1200,8 +1224,15 @@ const FramerHome = {
           });
 
           activateThumb();
+        } else {
+          // Card is centered — check for custom action (e.g. guestbook modal)
+          const action = card.getAttribute('data-action');
+          if (action && typeof window[action] === 'function') {
+            e.preventDefault();
+            window[action]();
+          }
+          // Otherwise let the click through to navigate normally
         }
-        // If already centered, let the click through to navigate
       });
     });
 

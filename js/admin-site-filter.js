@@ -10,7 +10,7 @@
     let currentFilter = localStorage.getItem('admin_site_filter') || 'all';
 
     const SITE_LABELS = {
-        all: '🌐 全部站点',
+        all: '🌐 全部',
         cn: 'CN',
         intl: 'EN'
     };
