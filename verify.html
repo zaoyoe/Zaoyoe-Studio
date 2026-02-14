@@ -324,10 +324,22 @@
     <div class="mobile-menu">
         <div class="mobile-menu-items">
             <div class="mobile-menu-item">
-                <a href="/prompts.html" class="mobile-menu-link" data-i18n="nav.prompts">提示词</a>
+                <button class="mobile-menu-trigger" data-submenu="prompts-mobile">
+                    <span data-i18n="nav.prompts">提示词</span>
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+                <div class="mobile-submenu" id="prompts-mobile">
+                    <!-- Will be populated dynamically from desktop dropdown -->
+                </div>
             </div>
             <div class="mobile-menu-item">
-                <a href="/shop.html" class="mobile-menu-link" data-i18n="nav.shop">商城</a>
+                <button class="mobile-menu-trigger" data-submenu="shop-mobile">
+                    <span data-i18n="nav.shop">商城</span>
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+                <div class="mobile-submenu" id="shop-mobile">
+                    <!-- Will be populated dynamically from desktop dropdown -->
+                </div>
             </div>
             <div class="mobile-menu-item">
                 <a href="/verify.html" class="mobile-menu-link active" data-i18n="nav.verify">验证</a>

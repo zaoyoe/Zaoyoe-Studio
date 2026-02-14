@@ -1540,6 +1540,28 @@ document.addEventListener('DOMContentLoaded', function initNavBar() {
       link.addEventListener('click', () => {
         hamburger?.classList.remove('active');
         mobileMenu.classList.remove('active');
+
+        // Also close all open submenus
+        mobileMenu.querySelectorAll('.mobile-submenu.active').forEach(submenu => {
+          submenu.classList.remove('active');
+        });
+        mobileMenu.querySelectorAll('.mobile-menu-trigger.active').forEach(trigger => {
+          trigger.classList.remove('active');
+        });
+      });
+    });
+
+    // Mobile submenu toggle
+    const mobileTriggers = mobileMenu.querySelectorAll('.mobile-menu-trigger');
+    mobileTriggers.forEach(trigger => {
+      trigger.addEventListener('click', () => {
+        const submenuId = trigger.getAttribute('data-submenu');
+        const submenu = document.getElementById(submenuId);
+
+        if (submenu) {
+          trigger.classList.toggle('active');
+          submenu.classList.toggle('active');
+        }
       });
     });
 
@@ -1548,9 +1570,29 @@ document.addEventListener('DOMContentLoaded', function initNavBar() {
       if (e.target === mobileMenu) {
         hamburger?.classList.remove('active');
         mobileMenu.classList.remove('active');
+
+        // Also close all open submenus
+        mobileMenu.querySelectorAll('.mobile-submenu.active').forEach(submenu => {
+          submenu.classList.remove('active');
+        });
+        mobileMenu.querySelectorAll('.mobile-menu-trigger.active').forEach(trigger => {
+          trigger.classList.remove('active');
+        });
       }
     });
   }
+
+  // Sync desktop dropdown content to mobile submenus
+  const syncDropdownToMobile = (desktopDropdownId, mobileSubmenuId) => {
+    const desktopDropdown = document.getElementById(desktopDropdownId);
+    const mobileSubmenu = document.getElementById(mobileSubmenuId);
+
+    if (desktopDropdown && mobileSubmenu) {
+      const content = desktopDropdown.cloneNode(true);
+      content.removeAttribute('id');
+      mobileSubmenu.innerHTML = content.innerHTML;
+    }
+  };
 
   // Initialize navigation dropdowns for subpages too
   // Need to load data first, then init dropdowns
@@ -1560,10 +1602,25 @@ document.addEventListener('DOMContentLoaded', function initNavBar() {
       console.log('📂 Initializing nav dropdowns on subpage...');
       FramerHome.initNavDropdowns();
 
+      // Sync dropdown content to mobile submenus after dropdowns are created
+      setTimeout(() => {
+        syncDropdownToMobile('dropdown-prompts', 'prompts-mobile');
+        syncDropdownToMobile('dropdown-shop', 'shop-mobile');
+        syncDropdownToMobile('dropdown-settings', 'settings-mobile');
+        console.log('✅ Mobile submenus synced on subpage');
+      }, 100);
+
       // 🆕 Listen for language changes and re-initialize dropdowns
       window.addEventListener('languageChanged', () => {
         console.log('🌐 Language changed on subpage, re-initializing nav dropdowns...');
         FramerHome.initNavDropdowns();
+
+        // Re-sync mobile submenus after dropdown re-init
+        setTimeout(() => {
+          syncDropdownToMobile('dropdown-prompts', 'prompts-mobile');
+          syncDropdownToMobile('dropdown-shop', 'shop-mobile');
+          syncDropdownToMobile('dropdown-settings', 'settings-mobile');
+        }, 100);
       });
     }).catch(err => {
       console.error('Failed to load nav data:', err);
