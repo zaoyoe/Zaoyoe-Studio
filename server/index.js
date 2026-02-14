@@ -23,7 +23,13 @@ const supabase = createClient(
 
 // Middleware
 app.use(cors({
-    origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:8000', 'https://zaoyoe.com', 'https://zaoyoe.xyz'],
+    origin: process.env.ALLOWED_ORIGINS?.split(',') || [
+        'http://localhost:8000',
+        'https://zaoyoe.com',
+        'https://www.zaoyoe.com',
+        'https://zaoyoe.xyz',
+        'https://www.zaoyoe.xyz'
+    ],
     credentials: true
 }));
 app.use(express.json());
