@@ -76,6 +76,9 @@
         },
         'copy sheerid link with right click': {
             zh: '请用右键复制链接，不要在浏览器打开', en: 'Please copy link with right click, do not open in browser', icon: '❌', css: 'error'
+        },
+        'Unexpected verification step': {
+            zh: '验证步骤异常（链接已被使用，请重新获取）', en: 'Unexpected step (link already used, get a new one)', icon: '❌', css: 'error'
         }
     };
 
@@ -166,7 +169,7 @@
             const lower = message.toLowerCase();
             // Known error patterns take priority over successFlag/status
             const errorPatterns = [
-                'failed', 'rejected', 'expired', 'invalid',
+                'failed', 'rejected', 'expired', 'invalid', 'unexpected',
                 'copy sheerid link', 'do not open in browser'
             ];
             if (errorPatterns.some(p => lower.includes(p))) return false;
@@ -669,13 +672,20 @@
         submitBtn.style.display = 'none';
         if (cancelBtn) cancelBtn.style.display = 'flex';
 
-        // Get user ID
+        // Get user ID (with timeout to prevent hanging)
         let userId;
         try {
-            const { data } = await window.supabaseClient.auth.getUser();
+            console.log('[VerifyWidget] Getting user ID...');
+            const userPromise = window.supabaseClient.auth.getUser();
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('获取用户信息超时 / User auth timeout')), 5000)
+            );
+            const { data } = await Promise.race([userPromise, timeoutPromise]);
             userId = data?.user?.id;
             if (!userId) throw new Error('请先登录 / Please login first');
+            console.log('[VerifyWidget] User ID obtained:', userId.substring(0, 8) + '...');
         } catch (e) {
+            console.error('[VerifyWidget] getUser failed:', e);
             validLinks.forEach(({ index }) =>
                 updateResultItem(index, 'error', '❌ ' + (e.message || '请先登录'))
             );
@@ -693,12 +703,17 @@
 
             try {
                 updateResultItem(item.index, 'processing', '🚀 提交中... / Submitting...');
+                console.log(`[VerifyWidget] Submitting #${item.index + 1}:`, item.verificationId.substring(0, 12) + '...');
 
+                const controller = new AbortController();
+                const fetchTimeout = setTimeout(() => controller.abort(), 15000);
                 const res = await fetch(`${CONFIG.nodeServerUrl}/api/verify`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ verificationId: item.verificationId, userId, site: window.SiteConfig?.site || 'cn' })
+                    body: JSON.stringify({ verificationId: item.verificationId, userId, site: window.SiteConfig?.site || 'cn' }),
+                    signal: controller.signal
                 });
+                clearTimeout(fetchTimeout);
 
                 const data = await res.json();
 
