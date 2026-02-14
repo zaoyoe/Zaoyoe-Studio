@@ -98,14 +98,12 @@ BEGIN
     END;
 
     -- 记账 (Ledger) - 带 site 字段
-    INSERT INTO points_ledger (user_id, event_type, amount, balance_snapshot, description, metadata, site)
+    INSERT INTO points_ledger (user_id, amount, reason, reference_id, site)
     VALUES (
         p_user_id, 
-        'shop_purchase', 
         -v_product_price, 
-        (v_user_balance - v_product_price), 
-        '购买商品: ' || v_product_name,
-        jsonb_build_object('product_id', p_product_id, 'site', p_site),
+        'shop_purchase: ' || v_product_name,
+        p_product_id::TEXT,
         p_site
     );
 

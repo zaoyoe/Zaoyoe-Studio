@@ -991,6 +991,21 @@ Example output format:
         dropdown.classList.remove('open');
     },
 
+    // Toggle usage instructions textarea visibility with animation
+    toggleUsageInstructions: function (show) {
+        const wrapper = document.getElementById('usageInstructionsWrapper');
+        if (!wrapper) return;
+        if (show) {
+            wrapper.style.maxHeight = '200px';
+            wrapper.style.opacity = '1';
+            wrapper.style.marginTop = '8px';
+        } else {
+            wrapper.style.maxHeight = '0';
+            wrapper.style.opacity = '0';
+            wrapper.style.marginTop = '0';
+        }
+    },
+
     openProductModal: async function (isEdit = false) {
         console.log('Opening Modal', isEdit); // Debug
         const modal = document.getElementById('productModal');
@@ -1040,6 +1055,11 @@ Example output format:
 
             document.getElementById('prodDesc').value = '';
             document.getElementById('prodSort').value = '0';
+
+            // Reset usage instructions
+            document.getElementById('prodShowUsageInstructions').checked = false;
+            document.getElementById('prodUsageInstructions').value = '';
+            this.toggleUsageInstructions(false);
         }
 
         // Update labels for current site context
@@ -1060,6 +1080,12 @@ Example output format:
             document.getElementById('prodIcon').value = data.icon_url;
             document.getElementById('prodDesc').value = data[fields.desc] || '';
             document.getElementById('prodSort').value = data.display_order;
+
+            // Populate usage instructions
+            const showUI = !!data.show_usage_instructions;
+            document.getElementById('prodShowUsageInstructions').checked = showUI;
+            document.getElementById('prodUsageInstructions').value = data.usage_instructions || '';
+            this.toggleUsageInstructions(showUI);
 
             this.openProductModal(true);
 
@@ -1111,6 +1137,8 @@ Example output format:
             icon_url: document.getElementById('prodIcon').value,
             category: document.getElementById('prodCategory').value,
             display_order: parseInt(document.getElementById('prodSort').value),
+            show_usage_instructions: document.getElementById('prodShowUsageInstructions').checked,
+            usage_instructions: document.getElementById('prodUsageInstructions').value || null,
         };
 
         // For CN site, also save auto-translated English fields

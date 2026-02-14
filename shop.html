@@ -995,6 +995,36 @@
                 </div>
             </div>
 
+            <!-- Usage Instructions Box (Conditionally shown) -->
+            <div id="usageInstructionsBox" style="display: none; margin-bottom: 20px;">
+                <div
+                    style="font-size: 12px; color: rgba(255,255,255,0.5); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                    <i class="fas fa-info-circle" style="color: #60a5fa;"></i>
+                    <span data-i18n="shop.usageInstructions">使用说明</span>
+                </div>
+                <div class="glass-box" style="padding: 15px; text-align: left; line-height: 1.7;">
+                    <div id="usageInstructionsContent"
+                        style="font-size: 13px; color: rgba(255,255,255,0.85); white-space: pre-wrap; word-break: break-word;">
+                    </div>
+                </div>
+            </div>
+
+            <style>
+                /* Usage instructions link styles */
+                #usageInstructionsContent a {
+                    color: #60a5fa;
+                    text-decoration: none;
+                    font-weight: 500;
+                    transition: color 0.2s ease, opacity 0.2s ease;
+                    border-bottom: 1px solid transparent;
+                }
+
+                #usageInstructionsContent a:hover {
+                    color: #93c5fd;
+                    opacity: 0.9;
+                }
+            </style>
+
             <!-- Warning Box (Initially Hidden) -->
             <div id="purchasedWarning" class="glass-box"
                 style="margin-bottom: 20px; padding: 12px; background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.3); text-align: left; display: none;">

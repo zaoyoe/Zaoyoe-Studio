@@ -310,40 +310,58 @@ const ShopClient = {
             const { data: { user } } = await supabaseClient.auth.getUser();
             if (!user) throw new Error(window.i18n?.t('shop.loginRequired') || "未登录");
 
-            // Previous logic used a loop (client-side batch). 
-            // New logic uses atomic server-side batch via p_quantity.
+            // DB function signature: fn_purchase_shop_item(p_product_id, p_user_id, p_site)
+            // No p_quantity param - loop client-side for multiple items
+            const allContents = [];
+            let lastOrderId = null;
+            let remainingPoints = null;
+            let usageInstructions = null;
 
-            const { data, error } = await supabaseClient.rpc('fn_purchase_shop_item', {
-                p_product_id: productId,
-                p_user_id: user.id,
-                p_quantity: quantity,
-                p_site: window.SiteConfig?.site || 'cn'
-            });
+            for (let i = 0; i < quantity; i++) {
+                const { data, error } = await supabaseClient.rpc('fn_purchase_shop_item', {
+                    p_product_id: productId,
+                    p_user_id: user.id,
+                    p_site: window.SiteConfig?.site || 'cn'
+                });
 
-            if (error) {
-                throw error;
-            }
+                if (error) {
+                    throw error;
+                }
 
-            if (!data.success) {
-                throw new Error(data.message || (window.i18n?.t('shop.redeemFailed') || '兑换失败'));
+                if (!data.success) {
+                    if (i > 0) {
+                        // Some items were purchased before this failure
+                        break;
+                    }
+                    throw new Error(data.message || (window.i18n?.t('shop.redeemFailed') || '兑换失败'));
+                }
+
+                const purchaseData = data.data;
+                if (purchaseData.content) {
+                    allContents.push(purchaseData.content);
+                }
+                lastOrderId = purchaseData.order_id;
+                remainingPoints = purchaseData.remaining_points;
+
+                // Capture usage instructions from first response
+                if (i === 0 && purchaseData.show_usage_instructions && purchaseData.usage_instructions) {
+                    usageInstructions = purchaseData.usage_instructions;
+                }
             }
 
             // Success
-            const purchaseData = data.data;
-            const finalContent = (purchaseData.contents && purchaseData.contents.length > 0)
-                ? purchaseData.contents.join('\n----\n')
-                : (purchaseData.content || (window.i18n?.t('shop.noContent') || '（无内容）'));
-
-            const remainingPoints = purchaseData.remaining_points;
+            const finalContent = allContents.length > 0
+                ? allContents.join('\n----\n')
+                : (window.i18n?.t('shop.noContent') || '（无内容）');
 
             // Store order ID for export
-            this.currentPurchase.orderId = purchaseData.order_id;
+            this.currentPurchase.orderId = lastOrderId;
 
             // Handle Results
             this.closePurchaseModal();
             await this.loadProducts(); // Always refresh stock first
 
-            this.showSuccessModal(finalContent);
+            this.showSuccessModal(finalContent, null, usageInstructions);
 
             // Update Points UI
             if (window.updateUserPointsUI && remainingPoints != null) {
@@ -411,7 +429,7 @@ const ShopClient = {
         document.head.appendChild(style);
     },
 
-    showSuccessModal: function (content, warning) {
+    showSuccessModal: function (content, warning, usageInstructions) {
         this.injectPremiumStyles();
         const modal = document.getElementById('shopSuccessModal');
         const contentBox = document.getElementById('purchasedContent');
@@ -496,6 +514,25 @@ const ShopClient = {
                 modal.classList.add('active');
             }, 50);
         }
+
+        // Handle Usage Instructions
+        const uiBox = document.getElementById('usageInstructionsBox');
+        const uiContent = document.getElementById('usageInstructionsContent');
+        if (uiBox && uiContent) {
+            if (usageInstructions) {
+                uiContent.innerHTML = this.linkifyText(this.escapeHtml(usageInstructions));
+                uiBox.style.display = 'block';
+            } else {
+                uiBox.style.display = 'none';
+                uiContent.innerHTML = '';
+            }
+        }
+    },
+
+    // Convert URLs in text to clickable links
+    linkifyText: function (text) {
+        const urlRegex = /(https?:\/\/[^\s<]+)/g;
+        return text.replace(urlRegex, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
     },
 
     escapeHtml: function (text) {

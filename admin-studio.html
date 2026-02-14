@@ -5794,6 +5794,61 @@
                             oninput="ShopAdmin.updatePreview()"></textarea>
                     </div>
 
+                    <!-- Usage Instructions Toggle + Textarea -->
+                    <div class="modern-form-group">
+                        <div
+                            style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                            <label class="modern-label" style="margin-bottom: 0;">
+                                <i class="fas fa-info-circle" style="color: #60a5fa; margin-right: 6px;"></i>使用说明
+                            </label>
+                            <label class="toggle-switch"
+                                style="position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0;">
+                                <input type="checkbox" id="prodShowUsageInstructions"
+                                    onchange="ShopAdmin.toggleUsageInstructions(this.checked)"
+                                    style="opacity:0;width:0;height:0;">
+                                <span class="toggle-slider" style="
+                                    position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+                                    background: rgba(255,255,255,0.1); border-radius: 24px; transition: all 0.3s;
+                                "></span>
+                            </label>
+                        </div>
+                        <div id="usageInstructionsWrapper" style="
+                            max-height: 0; overflow: hidden; opacity: 0;
+                            transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease, margin 0.3s ease;
+                            margin-top: 0;
+                        ">
+                            <textarea id="prodUsageInstructions" class="modern-input"
+                                placeholder="输入使用说明 / 注意事项（支持链接，如 https://example.com）"
+                                style="min-height: 100px;"></textarea>
+                            <small
+                                style="color: rgba(255,255,255,0.35); font-size: 11px; margin-top: 4px; display: block;">
+                                兑换成功后将展示给用户，支持输入链接
+                            </small>
+                        </div>
+                    </div>
+
+                    <style>
+                        .toggle-switch input:checked+.toggle-slider {
+                            background: #4ade80 !important;
+                        }
+
+                        .toggle-switch .toggle-slider::before {
+                            content: '';
+                            position: absolute;
+                            height: 18px;
+                            width: 18px;
+                            left: 3px;
+                            bottom: 3px;
+                            background: #fff;
+                            border-radius: 50%;
+                            transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+                        }
+
+                        .toggle-switch input:checked+.toggle-slider::before {
+                            transform: translateX(20px);
+                        }
+                    </style>
+
                     <input type="hidden" id="editProductId">
 
                     <div class="action-bar">
