@@ -21,15 +21,19 @@ const supabase = createClient(
     process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// Middleware
+// Middleware — merge env var origins WITH code defaults (env var alone used to override defaults)
+const defaultOrigins = [
+    'http://localhost:8000',
+    'http://127.0.0.1:8000',
+    'https://zaoyoe.com',
+    'https://www.zaoyoe.com',
+    'https://zaoyoe.xyz',
+    'https://www.zaoyoe.xyz'
+];
+const envOrigins = process.env.ALLOWED_ORIGINS?.split(',').map(s => s.trim()) || [];
+const allOrigins = [...new Set([...defaultOrigins, ...envOrigins])];
 app.use(cors({
-    origin: process.env.ALLOWED_ORIGINS?.split(',') || [
-        'http://localhost:8000',
-        'https://zaoyoe.com',
-        'https://www.zaoyoe.com',
-        'https://zaoyoe.xyz',
-        'https://www.zaoyoe.xyz'
-    ],
+    origin: allOrigins,
     credentials: true
 }));
 app.use(express.json());
