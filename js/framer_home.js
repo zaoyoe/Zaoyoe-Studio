@@ -188,10 +188,10 @@ const FramerHome = {
       },
       customImage: config.custom_image || null,
       entries: [
-        { icon: 'fa-wand-magic-sparkles', text: window.i18n?.t('home.entries.prompts') || '提示词', link: '/prompts.html', color: '#f472b6' },
-        { icon: 'fa-store', text: window.i18n?.t('home.entries.shop') || '商城', link: '/shop.html', color: '#4ade80' },
-        { icon: 'fa-robot', text: window.i18n?.t('home.entries.verify') || '验证', link: '/verify.html', color: '#667eea' },
-        { icon: 'fa-comment-dots', text: window.i18n?.t('home.entries.guestbook') || '留言板', link: '#', color: '#f59e0b', action: 'openGuestbookModal' }
+        { icon: 'fa-wand-magic-sparkles', text: window.i18n?.t('home.entries.prompts') || '提示词', link: '/prompts.html', color: '#f472b6', section: 'gallery' },
+        { icon: 'fa-store', text: window.i18n?.t('home.entries.shop') || '商城', link: '/shop.html', color: '#4ade80', section: 'shop' },
+        { icon: 'fa-robot', text: window.i18n?.t('home.entries.verify') || '验证', link: '/verify.html', color: '#667eea', section: 'verify' },
+        { icon: 'fa-comment-dots', text: window.i18n?.t('home.entries.guestbook') || '留言板', link: '#', color: '#f59e0b', action: 'openGuestbookModal', section: 'guestbook' }
       ]
     };
   },
@@ -445,12 +445,54 @@ const FramerHome = {
    * Render all sections
    */
   renderAll() {
-    this.renderHero();
-    this.renderPrompts();
-    this.renderShop();
-    this.renderVerify();
-    this.renderGuestbook();
+    const sv = window.SectionVisibility;
+
+    // Hero
+    if (!sv || sv.isVisible('hero')) {
+      this.renderHero();
+    } else {
+      const el = document.getElementById('hero-section');
+      if (el) el.style.display = 'none';
+    }
+
+    // Prompts / Gallery
+    if (!sv || sv.isVisible('gallery')) {
+      this.renderPrompts();
+    } else {
+      const el = document.getElementById('prompts-section');
+      if (el) el.style.display = 'none';
+    }
+
+    // Shop
+    if (!sv || sv.isVisible('shop')) {
+      this.renderShop();
+    } else {
+      const el = document.getElementById('shop-section');
+      if (el) el.style.display = 'none';
+    }
+
+    // Verify
+    if (!sv || sv.isVisible('verify')) {
+      this.renderVerify();
+    } else {
+      const el = document.getElementById('verify-section');
+      if (el) el.style.display = 'none';
+    }
+
+    // Guestbook
+    if (!sv || sv.isVisible('guestbook')) {
+      this.renderGuestbook();
+    } else {
+      const el = document.getElementById('guestbook-section');
+      if (el) el.style.display = 'none';
+    }
+
+    // Ticker always renders
     this.renderTicker();
+
+    // Apply nav/footer visibility rules
+    if (sv) sv.applySectionVisibility();
+
     // Don't re-initialize dropdowns - they are already initialized once on page load
     // Re-initializing causes duplicate event listeners and breaks language toggle
   },
@@ -677,8 +719,20 @@ const FramerHome = {
     const data = this.cachedData.hero;
     const section = document.getElementById('hero-section');
 
+    // Filter out entries for disabled sections
+    const sv = window.SectionVisibility;
+    const visibleEntries = sv
+      ? data.entries.filter(e => !e.section || sv.isVisible(e.section))
+      : data.entries;
+
     section.innerHTML = `
-      <div class="hero-glow" ${data.customImage ? `style="background-image: url(${data.customImage})"` : ''}></div>
+      <div class="raycast-beams">
+        <div class="ray-beam ray-1"></div>
+        <div class="ray-beam ray-2"></div>
+        <div class="ray-beam ray-3"></div>
+        <div class="ray-beam ray-4"></div>
+      </div>
+      <div class="hero-noise-overlay"></div>
       <h1 class="hero-title fade-in-up">${data.title}</h1>
       <p class="hero-subtitle fade-in-up">${data.subtitle}</p>
       
@@ -693,7 +747,7 @@ const FramerHome = {
       <!-- Horizontal Scroll Carousel -->
       <div class="hero-carousel fade-in-up">
         <div class="hero-carousel-track">
-          ${data.entries.map((entry, index) => `
+          ${visibleEntries.map((entry, index) => `
             <a href="${entry.link}" class="entry-card" data-index="${index}" ${entry.action ? `data-action="${entry.action}"` : ''}>
               <i class="fas ${entry.icon}" style="color: ${entry.color}"></i>
               <span>${entry.text}</span>
@@ -988,8 +1042,9 @@ const FramerHome = {
       <div style="display: flex; flex-direction: column; gap: 24px; max-width: 800px; margin: 0 auto;">
         ${messages.map(msg => `
           <div class="glass-card fade-in-up" style="display: flex; gap: 16px;">
-            <img src="${msg.profiles?.avatar_url || '/assets/default-avatar.png'}" 
-                 style="width: 48px; height: 48px; border-radius: 50%; border: 2px solid var(--border-subtle);">
+            <img src="${msg.profiles?.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(msg.profiles?.username || 'U')}&backgroundColor=6b9ece`}" 
+                 onerror="this.onerror=null;this.src='https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(msg.profiles?.username || 'U')}&backgroundColor=6b9ece'"
+                 style="width: 48px; height: 48px; border-radius: 50%; border: 2px solid var(--border-subtle); object-fit: cover;">
             <div style="flex: 1;">
               <div style="font-weight: 600; margin-bottom: 4px;">${msg.profiles?.username || '匿名用户'}</div>
               <p style="color: var(--text-secondary); font-size: 14px; line-height: 1.6;">${msg.content}</p>
@@ -1027,6 +1082,16 @@ const FramerHome = {
     const data = this.cachedData.ticker;
     const section = document.getElementById('ticker-section');
 
+    const sv = window.SectionVisibility;
+    const showTopRow = !sv || sv.isVisible('gallery');   // top row = prompt tags
+    const showBottomRow = !sv || sv.isVisible('shop');   // bottom row = product names
+
+    // If both rows hidden, hide entire ticker
+    if (!showTopRow && !showBottomRow) {
+      section.style.display = 'none';
+      return;
+    }
+
     // Duplicate data for seamless loop
     const topItems = [...data.top, ...data.top];
     const bottomItems = [...data.bottom, ...data.bottom];
@@ -1037,6 +1102,7 @@ const FramerHome = {
     const duration = Math.max(5, 65 - (speed * 0.6));
 
     section.innerHTML = `
+      ${showTopRow ? `
       <div class="ticker-row">
         <div class="ticker ticker-left">
           <div class="ticker-track" style="animation-duration: ${duration}s">
@@ -1044,7 +1110,9 @@ const FramerHome = {
           </div>
         </div>
       </div>
+      ` : ''}
       
+      ${showBottomRow ? `
       <div class="ticker-row">
         <div class="ticker ticker-right">
           <div class="ticker-track" style="animation-duration: ${duration}s">
@@ -1052,6 +1120,7 @@ const FramerHome = {
           </div>
         </div>
       </div>
+      ` : ''}
     `;
   },
 
@@ -1108,6 +1177,7 @@ const FramerHome = {
       // Mark initialization complete after scroll settles
       setTimeout(() => {
         isInitializing = false;
+        updateCarousel(); // Sync tick visibility on init
       }, 50);
     }, 100);
 
@@ -1125,7 +1195,21 @@ const FramerHome = {
           const thumbWidth = thumb.offsetWidth;
           // Move thumb from 0 to (trackWidth - thumbWidth)
           const maxOffset = trackWidth - thumbWidth;
-          thumb.style.left = `${progress * maxOffset}px`;
+          const thumbLeft = progress * maxOffset;
+          thumb.style.left = `${thumbLeft}px`;
+
+          // Hide ticks overlapping with thumb
+          const ticks = track.querySelectorAll('.progress-tick');
+          const thumbRight = thumbLeft + thumbWidth;
+          ticks.forEach(tick => {
+            const tickLeft = tick.offsetLeft;
+            const tickRight = tickLeft + tick.offsetWidth;
+            if (tickLeft >= thumbLeft - 4 && tickRight <= thumbRight + 4) {
+              tick.style.opacity = '0';
+            } else {
+              tick.style.opacity = '1';
+            }
+          });
         }
       }
 

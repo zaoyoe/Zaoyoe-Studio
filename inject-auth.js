@@ -891,7 +891,10 @@
     // 3. Load Scripts if missing
     function loadScript(src) {
         return new Promise((resolve, reject) => {
-            if (document.querySelector(`script[src="${src}"]`)) {
+            // Check by base path (without query string) to avoid duplicate loading
+            const basePath = src.split('?')[0];
+            const existing = document.querySelector(`script[src^="${basePath}"]`);
+            if (existing) {
                 resolve();
                 return;
             }

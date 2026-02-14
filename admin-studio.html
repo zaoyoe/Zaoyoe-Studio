@@ -4340,6 +4340,132 @@
                             gap: 12px;
                         }
                     }
+
+                    /* Section Visibility Toggle Bar */
+                    .sv-toggle-bar {
+                        display: flex;
+                        align-items: center;
+                        justify-content: space-between;
+                        padding: 12px 20px;
+                        margin-bottom: 16px;
+                        background: rgba(107, 158, 206, 0.08);
+                        border: 1px solid rgba(107, 158, 206, 0.2);
+                        border-radius: 12px;
+                        transition: all 0.3s;
+                    }
+
+                    .sv-toggle-bar.sv-off {
+                        background: rgba(239, 68, 68, 0.06);
+                        border-color: rgba(239, 68, 68, 0.25);
+                    }
+
+                    .sv-toggle-left {
+                        display: flex;
+                        align-items: center;
+                        gap: 10px;
+                    }
+
+                    .sv-toggle-left i {
+                        font-size: 1rem;
+                        color: #6b9ece;
+                        width: 20px;
+                        text-align: center;
+                    }
+
+                    .sv-toggle-bar.sv-off .sv-toggle-left i {
+                        color: #ef4444;
+                    }
+
+                    .sv-toggle-label {
+                        font-size: 0.9rem;
+                        font-weight: 600;
+                        color: var(--text-main);
+                    }
+
+                    .sv-toggle-site {
+                        font-size: 0.75rem;
+                        color: rgba(255, 255, 255, 0.4);
+                        margin-left: 4px;
+                    }
+
+                    .sv-toggle-right {
+                        display: flex;
+                        align-items: center;
+                        gap: 12px;
+                    }
+
+                    .sv-toggle-switch {
+                        position: relative;
+                        width: 44px;
+                        height: 24px;
+                        cursor: pointer;
+                    }
+
+                    .sv-toggle-switch input {
+                        opacity: 0;
+                        width: 0;
+                        height: 0;
+                    }
+
+                    .sv-toggle-slider {
+                        position: absolute;
+                        inset: 0;
+                        background: rgba(255, 255, 255, 0.15);
+                        border-radius: 24px;
+                        transition: all 0.3s;
+                    }
+
+                    .sv-toggle-slider::before {
+                        content: '';
+                        position: absolute;
+                        width: 18px;
+                        height: 18px;
+                        left: 3px;
+                        top: 3px;
+                        background: white;
+                        border-radius: 50%;
+                        transition: transform 0.3s;
+                    }
+
+                    .sv-toggle-switch input:checked+.sv-toggle-slider {
+                        background: #6b9ece;
+                    }
+
+                    .sv-toggle-switch input:checked+.sv-toggle-slider::before {
+                        transform: translateX(20px);
+                    }
+
+                    .sv-warning {
+                        display: none;
+                        padding: 8px 16px;
+                        margin-top: 8px;
+                        background: rgba(239, 68, 68, 0.08);
+                        border: 1px solid rgba(239, 68, 68, 0.2);
+                        border-radius: 8px;
+                        color: #ef4444;
+                        font-size: 0.8rem;
+                        line-height: 1.5;
+                    }
+
+                    .sv-toggle-bar.sv-off+.sv-warning {
+                        display: block;
+                    }
+
+                    /* Footer section toggle - standalone card at bottom */
+                    .sv-footer-card {
+                        margin-top: 24px;
+                        padding: 16px 20px;
+                        background: rgba(107, 158, 206, 0.05);
+                        border: 1px solid rgba(107, 158, 206, 0.15);
+                        border-radius: 12px;
+                    }
+
+                    .sv-footer-card .sv-toggle-bar {
+                        margin-bottom: 0;
+                        padding: 0;
+                        background: none;
+                        border: none;
+                    }
                 </style>
 
                 <!-- Homepage Tabs -->
@@ -5194,7 +5320,7 @@
 
 
     <!-- Product Edit Modal (Redesigned) -->
-    <div id="productModal" class="modal-overlay"
+    <div id="productModal" class="modal-overlay" onclick="if(event.target===this) this.style.display='none'"
         style="display: none; z-index: 9999; justify-content:center; align-items:center; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(8px); transition: all 0.3s;">
 
         <style>
@@ -5829,7 +5955,7 @@
 
                     <style>
                         .toggle-switch input:checked+.toggle-slider {
-                            background: #4ade80 !important;
+                            background: #6b9ece !important;
                         }
 
                         .toggle-switch .toggle-slider::before {

@@ -11,6 +11,20 @@ const HomepageAdmin = (() => {
     let currentSection = 'hero';
     let initialized = false;
 
+    // Section visibility per site: { cn: { hero: true, ... }, intl: { ... } }
+    let sectionVisibility = null;
+    const SV_SECTIONS = ['hero', 'gallery', 'shop', 'verify', 'guestbook', 'footer'];
+    const SV_LABELS = {
+        hero: { icon: 'fas fa-image', label: 'Hero 横幅' },
+        gallery: { icon: 'fas fa-palette', label: '提示词图库' },
+        shop: { icon: 'fas fa-store', label: '资源商城' },
+        verify: { icon: 'fas fa-shield-alt', label: 'API 验证' },
+        guestbook: { icon: 'fas fa-comment-dots', label: '留言板' },
+        footer: { icon: 'fas fa-columns', label: '页脚链接' }
+    };
+    // Map homepage_config section names to visibility section names
+    const SECTION_TO_VIS = { prompts: 'gallery' };
+
     // ============================================
     // INIT
     // ============================================
@@ -26,6 +40,7 @@ const HomepageAdmin = (() => {
 
         try {
             await loadAllConfig();
+            await loadSectionVisibility();
             setupEventListeners();
             initialized = true;
 
@@ -88,6 +103,8 @@ const HomepageAdmin = (() => {
         ['hero', 'prompts', 'shop', 'verify', 'guestbook', 'ticker'].forEach(section => {
             renderSection(section);
         });
+        // Render visibility toggles for all sections
+        renderAllVisibilityToggles();
     }
 
     function renderCurrentSection() {
@@ -433,6 +450,188 @@ const HomepageAdmin = (() => {
     }
 
     // ============================================
+    // SECTION VISIBILITY
+    // ============================================
+
+    function getAdminSite() {
+        // Get selected site from AdminSiteFilter, defaulting to 'cn'
+        const filter = window.AdminSiteFilter?.getSiteFilter?.() || 'all';
+        return filter === 'all' ? 'cn' : filter;
+    }
+
+    function getDefaultVisibility() {
+        const defaults = {};
+        SV_SECTIONS.forEach(s => defaults[s] = true);
+        return defaults;
+    }
+
+    async function loadSectionVisibility() {
+        try {
+            const { data, error } = await supabaseClient.rpc('get_all_system_config');
+            if (error) throw error;
+
+            const item = (data || []).find(d => d.config_key === 'section_visibility');
+            sectionVisibility = item?.config_value || { cn: getDefaultVisibility(), intl: getDefaultVisibility() };
+
+            // Ensure both sites have defaults
+            if (!sectionVisibility.cn) sectionVisibility.cn = getDefaultVisibility();
+            if (!sectionVisibility.intl) sectionVisibility.intl = getDefaultVisibility();
+
+            console.log('[Homepage] Section visibility loaded:', sectionVisibility);
+        } catch (err) {
+            console.warn('[Homepage] Failed to load section visibility:', err.message);
+            sectionVisibility = { cn: getDefaultVisibility(), intl: getDefaultVisibility() };
+        }
+
+        renderAllVisibilityToggles();
+    }
+
+    async function saveSectionVisibility() {
+        if (!sectionVisibility) return;
+
+        try {
+            const { error } = await supabaseClient.rpc('update_system_config', {
+                p_key: 'section_visibility',
+                p_value: sectionVisibility
+            });
+
+            if (error) throw error;
+
+            // Invalidate frontend caches
+            try {
+                localStorage.removeItem('zaoyoe_section_vis_cn');
+                localStorage.removeItem('zaoyoe_section_vis_intl');
+            } catch (e) { /* ignore */ }
+
+            if (typeof showToast === 'function') {
+                showToast('分栏显示设置已保存', 'success');
+            }
+
+            console.log('[Homepage] Section visibility saved:', sectionVisibility);
+        } catch (err) {
+            console.error('[Homepage] Failed to save section visibility:', err);
+            if (typeof showToast === 'function') {
+                showToast('保存失败: ' + err.message, 'error');
+            }
+        }
+    }
+
+    function renderAllVisibilityToggles() {
+        if (!sectionVisibility) return;
+
+        const site = getAdminSite();
+        const siteConfig = sectionVisibility[site] || getDefaultVisibility();
+        const siteLabel = site === 'cn' ? 'CN 站' : 'INTL 站';
+
+        // Map: homepage section → visibility section
+        const sectionMap = {
+            hero: 'hero',
+            prompts: 'gallery',
+            shop: 'shop',
+            verify: 'verify',
+            guestbook: 'guestbook'
+        };
+
+        // Render toggle in each section view (except ticker)
+        Object.entries(sectionMap).forEach(([hpSection, visSection]) => {
+            const view = document.querySelector(`.hp-section-view[data-hp-view="${hpSection}"]`);
+            if (!view) return;
+
+            const moduleContent = view.querySelector('.module-content');
+            if (!moduleContent) return;
+
+            // Remove existing toggle bar if any
+            const existing = moduleContent.querySelector('.sv-toggle-container');
+            if (existing) existing.remove();
+
+            const isVisible = siteConfig[visSection] !== false;
+            const info = SV_LABELS[visSection];
+
+            const container = document.createElement('div');
+            container.className = 'sv-toggle-container';
+            container.innerHTML = `
+                <div class="sv-toggle-bar ${isVisible ? '' : 'sv-off'}" id="sv-bar-${visSection}">
+                    <div class="sv-toggle-left">
+                        <i class="${info.icon}"></i>
+                        <span class="sv-toggle-label">分栏显示</span>
+                        <span class="sv-toggle-site">${siteLabel}</span>
+                    </div>
+                    <div class="sv-toggle-right">
+                        <label class="sv-toggle-switch">
+                            <input type="checkbox" ${isVisible ? 'checked' : ''}
+                                   onchange="HomepageAdmin.toggleSectionVisibility('${visSection}', this.checked)">
+                            <span class="sv-toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+                <div class="sv-warning" id="sv-warn-${visSection}">
+                    ⚠️ 该分栏在 ${siteLabel} 已关闭 — 用户将无法在首页、导航栏和独立页面中看到此部分。
+                </div>
+            `;
+
+            // Insert at very top of module-content
+            moduleContent.insertBefore(container, moduleContent.firstChild);
+        });
+
+        // Also render footer toggle inside the last section (guestbook) save bar area
+        renderFooterVisibilityToggle(siteConfig, siteLabel);
+    }
+
+    function renderFooterVisibilityToggle(siteConfig, siteLabel) {
+        const guestbookView = document.querySelector('.hp-section-view[data-hp-view="guestbook"]');
+        if (!guestbookView) return;
+
+        const moduleContent = guestbookView.querySelector('.module-content');
+        if (!moduleContent) return;
+
+        // Remove existing footer toggle
+        const existing = moduleContent.querySelector('.sv-footer-card');
+        if (existing) existing.remove();
+
+        const isVisible = siteConfig.footer !== false;
+        const info = SV_LABELS.footer;
+
+        const card = document.createElement('div');
+        card.className = 'sv-footer-card';
+        card.innerHTML = `
+            <div class="sv-toggle-bar ${isVisible ? '' : 'sv-off'}" id="sv-bar-footer">
+                <div class="sv-toggle-left">
+                    <i class="${info.icon}"></i>
+                    <span class="sv-toggle-label">${info.label}</span>
+                    <span class="sv-toggle-site">${siteLabel}</span>
+                </div>
+                <div class="sv-toggle-right">
+                    <label class="sv-toggle-switch">
+                        <input type="checkbox" ${isVisible ? 'checked' : ''}
+                               onchange="HomepageAdmin.toggleSectionVisibility('footer', this.checked)">
+                        <span class="sv-toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+            <div class="sv-warning" id="sv-warn-footer">
+                ⚠️ 页脚在 ${siteLabel} 已关闭 — 页面底部将不显示页脚链接区域。
+            </div>
+        `;
+
+        moduleContent.appendChild(card);
+    }
+
+    function toggleSectionVisibility(section, checked) {
+        if (!sectionVisibility) return;
+
+        const site = getAdminSite();
+        if (!sectionVisibility[site]) sectionVisibility[site] = getDefaultVisibility();
+        sectionVisibility[site][section] = checked;
+
+        // Update bar visual state
+        const bar = document.getElementById(`sv-bar-${section}`);
+        if (bar) bar.classList.toggle('sv-off', !checked);
+
+        // Auto-save immediately
+        saveSectionVisibility();
+    }
+
+    // ============================================
     // EVENT LISTENERS
     // ============================================
 
@@ -460,6 +659,11 @@ const HomepageAdmin = (() => {
             const isActive = view.classList.contains('active');
             view.style.display = isActive ? 'block' : 'none';
         });
+
+        // Listen for admin site filter change to reload visibility toggles
+        window.addEventListener('admin-site-changed', () => {
+            renderAllVisibilityToggles();
+        });
     }
 
     // ============================================
@@ -471,7 +675,8 @@ const HomepageAdmin = (() => {
         switchSection,
         saveSection,
         toggleVisible,
-        toggleField
+        toggleField,
+        toggleSectionVisibility
     };
 })();
 

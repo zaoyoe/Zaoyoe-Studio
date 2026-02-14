@@ -201,7 +201,8 @@
         "csvProductName": "商品名称",
         "csvAccountInfo": "账号信息",
         "csvRedeemTime": "兑换时间",
-        "orderPrefix": "订单"
+        "orderPrefix": "订单",
+        "usageInstructions": "使用说明"
     },
     "guestbook": {
         "title": "留言板",

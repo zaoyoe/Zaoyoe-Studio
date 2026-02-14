@@ -558,12 +558,35 @@ async function checkAuthState() {
             }
         }
 
+        let avatarUrl = validCustomAvatar || user.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.email)}&background=6b9ece&color=fff`;
+
+        // 🆕 Auto-upload Google OAuth avatar to R2 (if Google avatar and not yet on R2)
+        if (user.user_metadata?.avatar_url &&
+            user.user_metadata.avatar_url.includes('googleusercontent.com') &&
+            (!profile?.avatar_url || profile.avatar_url.includes('googleusercontent.com'))) {
+            console.log('📸 [checkAuthState] Google avatar detected, uploading to R2...');
+            try {
+                if (typeof uploadAvatarToR2 === 'function') {
+                    const r2Url = await uploadAvatarToR2({
+                        userId: user.id,
+                        imageUrl: user.user_metadata.avatar_url
+                    });
+                    if (r2Url && !r2Url.includes('dicebear.com')) {
+                        avatarUrl = r2Url;
+                        console.log('✅ Google avatar uploaded to R2:', r2Url);
+                    }
+                }
+            } catch (err) {
+                console.warn('⚠️ Failed to upload Google avatar to R2:', err.message);
+            }
+        }
+
         updateUserUI({
             objectId: user.id,
             username: user.email,
             email: user.email,
             nickname: profile?.username || user.user_metadata?.full_name || user.email.split('@')[0],
-            avatarUrl: validCustomAvatar || user.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.email)}&background=6b9ece&color=fff`
+            avatarUrl: avatarUrl
         });
 
         // 🔒 启动会话超时监控

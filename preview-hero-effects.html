@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hero 背景效果预览</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #0a0e17;
+            color: #e2e8f0;
+        }
+
+        /* Nav for switching */
+        .preview-nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            display: flex;
+            gap: 8px;
+            padding: 16px 24px;
+            background: rgba(10, 14, 23, 0.85);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            flex-wrap: wrap;
+        }
+
+        .preview-nav button {
+            padding: 8px 20px;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            background: transparent;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-family: inherit;
+        }
+
+        .preview-nav button:hover {
+            border-color: rgba(93, 159, 216, 0.5);
+            color: #fff;
+        }
+
+        .preview-nav button.active {
+            background: rgba(93, 159, 216, 0.2);
+            border-color: rgba(93, 159, 216, 0.6);
+            color: #fff;
+        }
+
+        /* Hero Demo Container */
+        .hero-demo {
+            min-height: 100vh;
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+            padding: 80px 24px;
+        }
+
+        .hero-demo.active {
+            display: flex;
+        }
+
+        .hero-demo h1 {
+            font-size: clamp(48px, 8vw, 80px);
+            font-weight: 700;
+            letter-spacing: -0.04em;
+            line-height: 1.1;
+            position: relative;
+            z-index: 2;
+        }
+
+        .hero-demo p {
+            font-size: clamp(16px, 2vw, 20px);
+            color: rgba(255, 255, 255, 0.5);
+            margin-top: 16px;
+            position: relative;
+            z-index: 2;
+        }
+
+        .hero-demo .label {
+            position: absolute;
+            bottom: 32px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.3);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            z-index: 2;
+        }
+
+        /* =============================================
+   方案 1: 渐变光晕网格 (Grid + Glow)
+   ============================================= */
+        .hero-grid {
+            background:
+                linear-gradient(rgba(93, 159, 216, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(93, 159, 216, 0.03) 1px, transparent 1px);
+            background-size: 60px 60px;
+            background-position: center center;
+        }
+
+        .hero-grid::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 900px;
+            height: 900px;
+            background: radial-gradient(circle, rgba(93, 159, 216, 0.15) 0%, rgba(139, 92, 246, 0.05) 40%, transparent 70%);
+            animation: grid-glow 8s ease-in-out infinite;
+            pointer-events: none;
+        }
+
+        @keyframes grid-glow {
+
+            0%,
+            100% {
+                opacity: 1;
+                transform: translate(-50%, -50%) scale(1);
+            }
+
+            50% {
+                opacity: 0.6;
+                transform: translate(-50%, -50%) scale(1.15);
+            }
+        }
+
+        /* 网格渐隐边缘 */
+        .hero-grid::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(ellipse 80% 60% at 50% 50%, transparent 30%, #0a0e17 75%);
+            pointer-events: none;
+        }
+
+        /* =============================================
+   方案 2: 流动渐变斑点 (Flowing Blobs)
+   ============================================= */
+        .blob {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(100px);
+            opacity: 0.4;
+            pointer-events: none;
+        }
+
+        .blob-1 {
+            width: 500px;
+            height: 500px;
+            background: rgba(93, 159, 216, 0.5);
+            top: 10%;
+            left: 20%;
+            animation: blob-drift-1 20s ease-in-out infinite;
+        }
+
+        .blob-2 {
+            width: 400px;
+            height: 400px;
+            background: rgba(139, 92, 246, 0.4);
+            top: 40%;
+            right: 15%;
+            animation: blob-drift-2 25s ease-in-out infinite;
+        }
+
+        .blob-3 {
+            width: 350px;
+            height: 350px;
+            background: rgba(96, 165, 250, 0.3);
+            bottom: 10%;
+            left: 40%;
+            animation: blob-drift-3 18s ease-in-out infinite;
+        }
+
+        @keyframes blob-drift-1 {
+
+            0%,
+            100% {
+                transform: translate(0, 0) scale(1);
+            }
+
+            33% {
+                transform: translate(80px, -60px) scale(1.1);
+            }
+
+            66% {
+                transform: translate(-40px, 40px) scale(0.95);
+            }
+        }
+
+        @keyframes blob-drift-2 {
+
+            0%,
+            100% {
+                transform: translate(0, 0) scale(1);
+            }
+
+            33% {
+                transform: translate(-70px, 50px) scale(1.15);
+            }
+
+            66% {
+                transform: translate(50px, -30px) scale(0.9);
+            }
+        }
+
+        @keyframes blob-drift-3 {
+
+            0%,
+            100% {
+                transform: translate(0, 0) scale(1);
+            }
+
+            33% {
+                transform: translate(60px, 30px) scale(1.05);
+            }
+
+            66% {
+                transform: translate(-50px, -50px) scale(1.1);
+            }
+        }
+
+        /* =============================================
+   方案 3: 星空粒子 (Starfield)
+   ============================================= */
+        #starfieldCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        /* =============================================
+   方案 4: 网格 + 流动光晕 (组合方案)
+   ============================================= */
+        .hero-combo {
+            background:
+                linear-gradient(rgba(93, 159, 216, 0.025) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(93, 159, 216, 0.025) 1px, transparent 1px);
+            background-size: 60px 60px;
+            background-position: center center;
+        }
+
+        .hero-combo::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(ellipse 80% 60% at 50% 50%, transparent 30%, #0a0e17 75%);
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .combo-blob {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(120px);
+            opacity: 0.3;
+            pointer-events: none;
+        }
+
+        .combo-blob-1 {
+            width: 600px;
+            height: 600px;
+            background: rgba(93, 159, 216, 0.5);
+            top: 20%;
+            left: 25%;
+            animation: blob-drift-1 22s ease-in-out infinite;
+        }
+
+        .combo-blob-2 {
+            width: 450px;
+            height: 450px;
+            background: rgba(139, 92, 246, 0.4);
+            top: 35%;
+            right: 20%;
+            animation: blob-drift-2 28s ease-in-out infinite;
+        }
+
+        /* =============================================
+   方案 5: 极光波浪 (Aurora)
+   ============================================= */
+        .aurora-container {
+            position: absolute;
+            bottom: 0;
+            left: -10%;
+            right: -10%;
+            height: 60%;
+            overflow: hidden;
+            pointer-events: none;
+            opacity: 0.6;
+        }
+
+        .aurora-wave {
+            position: absolute;
+            bottom: -50%;
+            width: 120%;
+            height: 100%;
+            border-radius: 50%;
+            filter: blur(80px);
+        }
+
+        .aurora-wave-1 {
+            background: linear-gradient(90deg, transparent 0%, rgba(93, 159, 216, 0.3) 30%, rgba(139, 92, 246, 0.2) 70%, transparent 100%);
+            left: -10%;
+            animation: aurora-1 12s ease-in-out infinite;
+        }
+
+        .aurora-wave-2 {
+            background: linear-gradient(90deg, transparent 0%, rgba(96, 165, 250, 0.2) 40%, rgba(168, 85, 247, 0.15) 60%, transparent 100%);
+            left: 10%;
+            animation: aurora-2 16s ease-in-out infinite;
+        }
+
+        .aurora-wave-3 {
+            background: linear-gradient(90deg, transparent 0%, rgba(59, 130, 246, 0.15) 50%, transparent 100%);
+            left: -5%;
+            animation: aurora-3 10s ease-in-out infinite;
+        }
+
+        @keyframes aurora-1 {
+
+            0%,
+            100% {
+                transform: translateX(0) translateY(0) scaleY(1);
+            }
+
+            50% {
+                transform: translateX(60px) translateY(-30px) scaleY(1.2);
+            }
+        }
+
+        @keyframes aurora-2 {
+
+            0%,
+            100% {
+                transform: translateX(0) translateY(0) scaleY(1);
+            }
+
+            50% {
+                transform: translateX(-80px) translateY(-20px) scaleY(0.8);
+            }
+        }
+
+        @keyframes aurora-3 {
+
+            0%,
+            100% {
+                transform: translateX(0) translateY(0) scaleY(1);
+            }
+
+            50% {
+                transform: translateX(40px) translateY(-40px) scaleY(1.3);
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- 切换导航 -->
+    <nav class="preview-nav">
+        <button class="active" onclick="showDemo('grid')">方案1: 光晕网格</button>
+        <button onclick="showDemo('blobs')">方案2: 流动渐变</button>
+        <button onclick="showDemo('stars')">方案3: 星空粒子</button>
+        <button onclick="showDemo('combo')">方案4: 网格+光晕</button>
+        <button onclick="showDemo('aurora')">方案5: 极光波浪</button>
+        <button onclick="showDemo('raycast')">方案6: Raycast 光束(红)</button>
+        <button onclick="showDemo('raycast-blue')">方案7: Raycast 光束(蓝紫)</button>
+        <button onclick="showDemo('raycast-enhanced')">方案8: Raycast 极致版(推荐)</button>
+    </nav>
+
+    <!-- 方案1: 渐变光晕网格 -->
+    <section id="demo-grid" class="hero-demo hero-grid active">
+        <h1>早鸟</h1>
+        <p>创意 · 效率 · 无限可能</p>
+        <span class="label">方案1 — 渐变光晕网格 (纯CSS，零性能开销)</span>
+    </section>
+
+    <!-- 方案2: 流动渐变斑点 -->
+    <section id="demo-blobs" class="hero-demo">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+        <h1>早鸟</h1>
+        <p>创意 · 效率 · 无限可能</p>
+        <span class="label">方案2 — 流动渐变斑点 (纯CSS动画)</span>
+    </section>
+
+    <!-- 方案3: 星空粒子 -->
+    <section id="demo-stars" class="hero-demo">
+        <canvas id="starfieldCanvas"></canvas>
+        <h1>早鸟</h1>
+        <p>创意 · 效率 · 无限可能</p>
+        <span class="label">方案3 — 星空粒子 (Canvas，带闪烁)</span>
+    </section>
+
+    <!-- 方案4: 网格 + 流动光晕 -->
+    <section id="demo-combo" class="hero-demo hero-combo">
+        <div class="combo-blob combo-blob-1"></div>
+        <div class="combo-blob combo-blob-2"></div>
+        <h1>早鸟</h1>
+        <p>创意 · 效率 · 无限可能</p>
+        <span class="label">方案4 — 网格 + 流动光晕 (组合方案)</span>
+    </section>
+
+    <!-- 方案5: 极光波浪 -->
+    <section id="demo-aurora" class="hero-demo">
+        <div class="aurora-container">
+            <div class="aurora-wave aurora-wave-1"></div>
+            <div class="aurora-wave aurora-wave-2"></div>
+            <div class="aurora-wave aurora-wave-3"></div>
+        </div>
+        <h1>早鸟</h1>
+        <p>创意 · 效率 · 无限可能</p>
+        <span class="label">方案5 — 极光波浪 (纯CSS动画)</span>
+    </section>
+
+    <!-- 方案6: Raycast 光束 -->
+    <style>
+        .hero-raycast {
+            background: #000;
+            overflow: hidden;
+        }
+
+        .raycast-beams {
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            transform: rotate(-45deg);
+            pointer-events: none;
+        }
+
+        .ray-beam {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            background: linear-gradient(90deg, transparent, rgba(225, 29, 72, 0.4), transparent);
+            filter: blur(40px);
+            mix-blend-mode: screen;
+            opacity: 0;
+            animation: ray-move 10s infinite ease-in-out;
+        }
+
+        /* Beams configuration */
+        .ray-1 {
+            left: 30%;
+            width: 100px;
+            animation-duration: 8s;
+            animation-delay: 0s;
+            background: linear-gradient(90deg, transparent, rgba(220, 38, 38, 0.5), transparent);
+        }
+
+        .ray-2 {
+            left: 45%;
+            width: 150px;
+            animation-duration: 12s;
+            animation-delay: -2s;
+            background: linear-gradient(90deg, transparent, rgba(157, 23, 77, 0.5), transparent);
+        }
+
+        .ray-3 {
+            left: 60%;
+            width: 80px;
+            animation-duration: 15s;
+            animation-delay: -5s;
+            background: linear-gradient(90deg, transparent, rgba(190, 24, 93, 0.4), transparent);
+        }
+
+        .ray-4 {
+            left: 75%;
+            width: 200px;
+            animation-duration: 20s;
+            animation-delay: -8s;
+            background: linear-gradient(90deg, transparent, rgba(127, 29, 29, 0.3), transparent);
+        }
+
+        @keyframes ray-move {
+            0% {
+                transform: translateX(-100px);
+                opacity: 0;
+            }
+
+            20% {
+                opacity: 0.8;
+            }
+
+            80% {
+                opacity: 0.8;
+            }
+
+            100% {
+                transform: translateX(100px);
+                opacity: 0;
+            }
+        }
+
+        /* Noise overlay for texture */
+        .hero-raycast::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.05'/%3E%3C/svg%3E");
+            opacity: 0.15;
+            pointer-events: none;
+            z-index: 2;
+        }
+    </style>
+    <section id="demo-raycast" class="hero-demo hero-raycast">
+        <div class="raycast-beams">
+            <div class="ray-beam ray-1"></div>
+            <div class="ray-beam ray-2"></div>
+            <div class="ray-beam ray-3"></div>
+            <div class="ray-beam ray-4"></div>
+        </div>
+        <h1>早鸟</h1>
+        <p>创意 · 效率 · 无限可能</p>
+        <span class="label">方案6 — Raycast 光束 (CSS 渐变 + 混合模式 + 噪点)</span>
+    </section>
+
+    <!-- 方案7: Raycast 光束 (蓝紫) -->
+    <style>
+        .hero-raycast-blue {
+            background: #050a14;
+            overflow: hidden;
+        }
+
+        /* Reusing raycast-beams class for positioning, specific colors defined below */
+        .ray-beam-blue {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            background: linear-gradient(90deg, transparent, rgba(56, 189, 248, 0.4), transparent);
+            filter: blur(50px);
+            mix-blend-mode: screen;
+            opacity: 0;
+            animation: ray-move 10s infinite ease-in-out;
+        }
+
+        /* Beams configuration for Blue */
+        .ray-blue-1 {
+            left: 20%;
+            width: 120px;
+            animation-duration: 9s;
+            animation-delay: 0s;
+            background: linear-gradient(90deg, transparent, rgba(59, 130, 246, 0.5), transparent);
+        }
+
+        .ray-blue-2 {
+            left: 40%;
+            width: 160px;
+            animation-duration: 13s;
+            animation-delay: -3s;
+            background: linear-gradient(90deg, transparent, rgba(139, 92, 246, 0.5), transparent);
+        }
+
+        .ray-blue-3 {
+            left: 60%;
+            width: 100px;
+            animation-duration: 16s;
+            animation-delay: -6s;
+            background: linear-gradient(90deg, transparent, rgba(14, 165, 233, 0.4), transparent);
+        }
+
+        .ray-blue-4 {
+            left: 80%;
+            width: 180px;
+            animation-duration: 11s;
+            animation-delay: -1s;
+            background: linear-gradient(90deg, transparent, rgba(124, 58, 237, 0.4), transparent);
+        }
+
+        /* Noise overlay reused from Scheme 6 global style or added here if scoped */
+        .hero-raycast-blue::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.05'/%3E%3C/svg%3E");
+            opacity: 0.15;
+            pointer-events: none;
+            z-index: 2;
+        }
+    </style>
+    <section id="demo-raycast-blue" class="hero-demo hero-raycast-blue">
+        <div class="raycast-beams">
+            <div class="ray-beam-blue ray-blue-1"></div>
+            <div class="ray-beam-blue ray-blue-2"></div>
+            <div class="ray-beam-blue ray-blue-3"></div>
+            <div class="ray-beam-blue ray-blue-4"></div>
+        </div>
+        <h1>早鸟</h1>
+        <p>创意 · 效率 · 无限可能</p>
+        <span class="label">方案7 — Raycast 光束 (蓝紫配色 - 推荐)</span>
+    </section>
+
+    <!-- 方案8: Raycast 极致增强版 -->
+    <style>
+        .hero-raycast-enhanced {
+            background: #000;
+            overflow: hidden;
+            perspective: 1000px;
+        }
+
+        .raycast-beams-enhanced {
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            transform: rotate(-45deg);
+            transform-style: preserve-3d;
+            pointer-events: none;
+        }
+
+        /* Base beam style */
+        .ray-beam-enhanced {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            filter: blur(60px);
+            mix-blend-mode: screen;
+            opacity: 0;
+            animation: ray-move-enhanced 12s infinite ease-in-out;
+            will-change: transform, opacity;
+        }
+
+        /* Layer 1: Deep Blue Foundation */
+        .ray-e-1 {
+            left: 10%;
+            width: 200px;
+            background: linear-gradient(90deg, transparent, rgba(30, 64, 175, 0.4), transparent);
+            animation-duration: 14s;
+            animation-delay: -2s;
+            filter: blur(80px);
+        }
+
+        /* Layer 2: Bright Cyan Highlights */
+        .ray-e-2 {
+            left: 35%;
+            width: 140px;
+            background: linear-gradient(90deg, transparent, rgba(56, 189, 248, 0.6), transparent);
+            animation-duration: 10s;
+            animation-delay: 0s;
+            filter: blur(40px);
+        }
+
+        /* Layer 3: Vibrant Violet Accents */
+        .ray-e-3 {
+            left: 55%;
+            width: 160px;
+            background: linear-gradient(90deg, transparent, rgba(139, 92, 246, 0.5), transparent);
+            animation-duration: 13s;
+            animation-delay: -5s;
+            filter: blur(50px);
+        }
+
+        /* Layer 4: Intense Indigo Depth */
+        .ray-e-4 {
+            left: 75%;
+            width: 180px;
+            background: linear-gradient(90deg, transparent, rgba(79, 70, 229, 0.5), transparent);
+            animation-duration: 16s;
+            animation-delay: -8s;
+            filter: blur(60px);
+        }
+
+        /* Secondary Layer: Finer beams for texture */
+        .ray-e-5 {
+            left: 25%;
+            width: 50px;
+            background: linear-gradient(90deg, transparent, rgba(192, 132, 252, 0.4), transparent);
+            animation-duration: 9s;
+            animation-delay: -3s;
+            filter: blur(20px);
+            opacity: 0.5;
+        }
+
+        .ray-e-6 {
+            left: 65%;
+            width: 70px;
+            background: linear-gradient(90deg, transparent, rgba(147, 197, 253, 0.4), transparent);
+            animation-duration: 11s;
+            animation-delay: -6s;
+            filter: blur(25px);
+            opacity: 0.5;
+        }
+
+        @keyframes ray-move-enhanced {
+            0% {
+                transform: translateX(-150px) scaleX(0.8);
+                opacity: 0;
+            }
+
+            30% {
+                opacity: 0.7;
+                transform: translateX(-50px) scaleX(1);
+            }
+
+            70% {
+                opacity: 0.7;
+                transform: translateX(50px) scaleX(1);
+            }
+
+            100% {
+                transform: translateX(150px) scaleX(0.8);
+                opacity: 0;
+            }
+        }
+
+        /* Enhanced Noise with slight movement */
+        .hero-raycast-enhanced::after {
+            content: '';
+            position: absolute;
+            inset: -50%;
+            width: 200%;
+            height: 200%;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.08'/%3E%3C/svg%3E");
+            opacity: 0.2;
+            pointer-events: none;
+            z-index: 2;
+            animation: noise-shift 30s linear infinite;
+            mix-blend-mode: overlay;
+        }
+
+        @keyframes noise-shift {
+            0% {
+                transform: translate(0, 0);
+            }
+
+            10% {
+                transform: translate(-1%, -1%);
+            }
+
+            20% {
+                transform: translate(1%, 1%);
+            }
+
+            30% {
+                transform: translate(-1%, 2%);
+            }
+
+            40% {
+                transform: translate(1%, -1%);
+            }
+
+            50% {
+                transform: translate(-1%, 1%);
+            }
+
+            60% {
+                transform: translate(1%, 2%);
+            }
+
+            70% {
+                transform: translate(-2%, 1%);
+            }
+
+            80% {
+                transform: translate(1%, -2%);
+            }
+
+            90% {
+                transform: translate(-1%, -1%);
+            }
+
+            100% {
+                transform: translate(0, 0);
+            }
+        }
+
+        /* Subtle vignette */
+        .hero-raycast-enhanced::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at center, transparent 30%, #000 90%);
+            z-index: 1;
+            pointer-events: none;
+        }
+    </style>
+    <section id="demo-raycast-enhanced" class="hero-demo hero-raycast-enhanced">
+        <div class="raycast-beams-enhanced">
+            <div class="ray-beam-enhanced ray-e-1"></div>
+            <div class="ray-beam-enhanced ray-e-2"></div>
+            <div class="ray-beam-enhanced ray-e-3"></div>
+            <div class="ray-beam-enhanced ray-e-4"></div>
+            <div class="ray-beam-enhanced ray-e-5"></div>
+            <div class="ray-beam-enhanced ray-e-6"></div>
+        </div>
+        <h1>早鸟</h1>
+        <p>创意 · 效率 · 无限可能</p>
+        <span class="label">方案8 — Raycast 极致增强版 (多层混合 + 动态噪点 + 景深)</span>
+    </section>
+
+    <script>
+        // 方案切换
+        function showDemo(id) {
+            document.querySelectorAll('.hero-demo').forEach(d => d.classList.remove('active'));
+            document.querySelectorAll('.preview-nav button').forEach(b => b.classList.remove('active'));
+            document.getElementById('demo-' + id).classList.add('active');
+            event.target.classList.add('active');
+
+            // 星空方案需要启动 canvas
+            if (id === 'stars') initStarfield();
+        }
+
+        // 方案3: 星空粒子实现
+        let starAnimId = null;
+        function initStarfield() {
+            const canvas = document.getElementById('starfieldCanvas');
+            const section = document.getElementById('demo-stars');
+            if (!canvas || starAnimId) return;
+
+            const ctx = canvas.getContext('2d');
+            const dpr = Math.min(window.devicePixelRatio, 2);
+            const rect = section.getBoundingClientRect();
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+            const w = rect.width, h = rect.height;
+            const stars = Array(120).fill(0).map(() => ({
+                x: Math.random() * w,
+                y: Math.random() * h,
+                r: 0.5 + Math.random() * 1.5,
+                opacity: 0.1 + Math.random() * 0.6,
+                twinkleSpeed: 0.002 + Math.random() * 0.008,
+                twinklePhase: Math.random() * Math.PI * 2,
+                color: Math.random() > 0.3
+                    ? `rgba(${150 + Math.random() * 105}, ${180 + Math.random() * 75}, 255`
+                    : `rgba(200, ${160 + Math.random() * 60}, 255`,
+            }));
+
+            // 添加几颗较大的"亮星"
+            for (let i = 0; i < 8; i++) {
+                stars.push({
+                    x: Math.random() * w,
+                    y: Math.random() * h,
+                    r: 1.5 + Math.random() * 2,
+                    opacity: 0.4 + Math.random() * 0.4,
+                    twinkleSpeed: 0.01 + Math.random() * 0.015,
+                    twinklePhase: Math.random() * Math.PI * 2,
+                    color: `rgba(255, 255, ${220 + Math.random() * 35}`,
+                    isBright: true,
+                });
+            }
+
+            function draw() {
+                ctx.clearRect(0, 0, w, h);
+
+                for (const s of stars) {
+                    s.twinklePhase += s.twinkleSpeed;
+                    const twinkle = 0.5 + 0.5 * Math.sin(s.twinklePhase);
+                    const alpha = s.opacity * twinkle;
+
+                    ctx.beginPath();
+                    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+                    ctx.fillStyle = s.color + `, ${alpha})`;
+                    ctx.fill();
+
+                    // 亮星添加光晕
+                    if (s.isBright && alpha > 0.3) {
+                        ctx.beginPath();
+                        ctx.arc(s.x, s.y, s.r * 3, 0, Math.PI * 2);
+                        const glow = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.r * 3);
+                        glow.addColorStop(0, s.color + `, ${alpha * 0.3})`);
+                        glow.addColorStop(1, s.color + `, 0)`);
+                        ctx.fillStyle = glow;
+                        ctx.fill();
+                    }
+                }
+
+                starAnimId = requestAnimationFrame(draw);
+            }
+            draw();
+        }
+    </script>
+</body>
+
+</html>

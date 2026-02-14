@@ -201,7 +201,8 @@
         "csvProductName": "Product Name",
         "csvAccountInfo": "Account Info",
         "csvRedeemTime": "Redeem Time",
-        "orderPrefix": "Order"
+        "orderPrefix": "Order",
+        "usageInstructions": "Usage Instructions"
     },
     "guestbook": {
         "title": "Guestbook",
