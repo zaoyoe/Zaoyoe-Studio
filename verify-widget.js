@@ -23,7 +23,7 @@
     let userBalance = 0;
     let apiCredits = -1; // -1 = not loaded, 0+ = loaded
     let isLoading = false;
-    let batchStats = { success: 0, failed: 0, total: 0 };
+    let batchStats = { success: 0, failed: 0, cancelled: 0, total: 0 };
     let activeTasks = new Map(); // taskId -> { index, verificationId, timer, aborted }
     let historyData = []; // Cached history for export
 
@@ -106,12 +106,15 @@
                 }
             }
         }
-        // Try status field match — but keep original message visible
+        // Try status field match — but check for error keywords in message first
         if (status && TASK_STATUS_MAP[status]) {
             const s = TASK_STATUS_MAP[status];
-            // If there's an original message not in our map, show it too
             if (message && message !== status) {
-                return `${s.icon} ${message}`;
+                // Don't use success icons for messages that contain error keywords
+                const lower = message.toLowerCase();
+                const errorKeywords = ['failed', 'error', 'rejected', 'expired', 'invalid', 'unexpected', 'upload'];
+                const isError = errorKeywords.some(k => lower.includes(k));
+                return `${isError ? '❌' : s.icon} ${message}`;
             }
             return `${s.icon} ${s.zh} / ${s.en}`;
         }
@@ -413,6 +416,10 @@
                             <i class="fas fa-times-circle"></i>
                             ${t('verify.failed', '失败')}: <span id="failedCount">0</span>
                         </div>
+                        <div class="verify-batch-stat cancelled">
+                            <i class="fas fa-ban"></i>
+                            ${t('verify.cancelled', '取消')}: <span id="cancelledCount">0</span>
+                        </div>
                         <div class="verify-batch-stat total">
                             <i class="fas fa-list"></i>
                             ${t('verify.total', '总计')}: <span id="totalCount">0</span>
@@ -456,6 +463,17 @@
         updatePriceDisplay();
         updateQuotaDisplay();
         loadHistory();
+
+        // Listen for wallet balance changes (e.g. after recharge)
+        window.addEventListener('walletBalanceUpdated', (e) => {
+            const newBalance = e.detail?.totalBalance;
+            if (typeof newBalance === 'number') {
+                userBalance = newBalance;
+                const el = document.getElementById('verifyBalanceValue');
+                if (el) el.textContent = newBalance;
+                console.log('[VerifyWidget] Balance updated from wallet:', newBalance);
+            }
+        });
     }
 
     // =============================================
@@ -643,7 +661,7 @@
         if (batchPanel) batchPanel.classList.add('show');
 
         // Reset state
-        batchStats = { success: 0, failed: 0, total: links.length };
+        batchStats = { success: 0, failed: 0, cancelled: 0, total: links.length };
         activeTasks.clear();
         clearResultsList();
         updateBatchProgress(0, links.length);
@@ -750,7 +768,7 @@
                             if (balEl) balEl.textContent = userBalance;
                         }
                     } else if (result.cancelled) {
-                        // Don't count cancelled as failed
+                        batchStats.cancelled++;
                     } else {
                         batchStats.failed++;
                     }
@@ -1031,6 +1049,8 @@
         const tt = document.getElementById('totalCount');
         if (s) s.textContent = batchStats.success;
         if (f) f.textContent = batchStats.failed;
+        const c = document.getElementById('cancelledCount');
+        if (c) c.textContent = batchStats.cancelled;
         if (tt) tt.textContent = batchStats.total;
     }
 

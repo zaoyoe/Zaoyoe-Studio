@@ -307,6 +307,11 @@
                 const bonusEl = document.getElementById('wallet-bonus');
                 if (bonusEl) bonusEl.textContent = balance.bonus_balance.toLocaleString();
 
+                // Notify other widgets (e.g. verify-widget) that balance changed
+                window.dispatchEvent(new CustomEvent('walletBalanceUpdated', {
+                    detail: { totalBalance: balance.total_balance }
+                }));
+
                 // Update packages
                 const pkgContainer = document.getElementById('wallet-packages');
                 if (pkgContainer) {

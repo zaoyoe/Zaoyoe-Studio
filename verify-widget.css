@@ -787,6 +787,10 @@
     color: #ef4444;
 }
 
+.verify-batch-stat.cancelled {
+    color: rgba(255, 255, 255, 0.5);
+}
+
 .verify-batch-stat.total {
     color: rgba(255, 255, 255, 0.7);
 }
