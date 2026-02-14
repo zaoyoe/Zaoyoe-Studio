@@ -498,12 +498,14 @@ const FramerHome = {
 
       console.log('📂 Nav data loaded:', {
         promptsCount: this.cachedData.prompts.length,
-        shopCount: this.cachedData.shop.length
+        shopCategoriesCount: (this.cachedData.shopCategories || []).length
       });
     } catch (error) {
       console.error('Failed to load nav data:', error);
-      // Ensure cachedData exists with empty arrays
-      this.cachedData = { prompts: [], shop: [] };
+      // Ensure cachedData exists with empty arrays (preserve any previously loaded data)
+      if (!this.cachedData) this.cachedData = {};
+      if (!this.cachedData.prompts) this.cachedData.prompts = [];
+      if (!this.cachedData.shopCategories) this.cachedData.shopCategories = [];
     }
   },
 
