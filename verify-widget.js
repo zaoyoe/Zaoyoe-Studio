@@ -51,7 +51,10 @@
             zh: '查询验证状态失败', en: 'Status check failed', icon: '❌', css: 'error'
         },
         'Failed to select program': {
-            zh: '选择项目失败', en: 'Failed to select program', icon: '❌', css: 'error'
+            zh: '选择验证项目失败', en: 'Failed to select program', icon: '❌', css: 'error'
+        },
+        'Failed to upload document': {
+            zh: '上传文档失败', en: 'Failed to upload document', icon: '❌', css: 'error'
         },
         'Verification failed': {
             zh: '验证失败', en: 'Verification failed', icon: '❌', css: 'error'
@@ -79,6 +82,33 @@
         },
         'Unexpected verification step': {
             zh: '验证步骤异常（链接已被使用，请重新获取）', en: 'Unexpected step (link already used, get a new one)', icon: '❌', css: 'error'
+        },
+        'job may have expired or failed': {
+            zh: '验证任务已过期或失败，请获取新链接', en: 'Job expired or failed, please get a new link', icon: '❌', css: 'error'
+        },
+        'expired or failed': {
+            zh: '已过期或失败，请获取新链接', en: 'Expired or failed, get a new link', icon: '❌', css: 'error'
+        },
+        '查询积分失败': {
+            zh: '查询积分失败，请稍后重试', en: 'Failed to query points', icon: '❌', css: 'error'
+        },
+        '积分不足': {
+            zh: '积分不足，请先充值', en: 'Insufficient points, please recharge', icon: '❌', css: 'error'
+        },
+        '验证服务未配置': {
+            zh: '验证服务未配置，请联系管理员', en: 'Verification service not configured', icon: '❌', css: 'error'
+        },
+        '验证服务暂时不可用': {
+            zh: '验证服务暂时不可用，请稍后重试', en: 'Service temporarily unavailable', icon: '❌', css: 'error'
+        },
+        '验证请求失败': {
+            zh: '验证请求失败', en: 'Verification request failed', icon: '❌', css: 'error'
+        },
+        '查询状态失败': {
+            zh: '查询状态失败', en: 'Status query failed', icon: '❌', css: 'error'
+        },
+        'get a new': {
+            zh: '请获取新的验证链接', en: 'Please get a new verification link', icon: '❌', css: 'error'
         }
     };
 
@@ -94,15 +124,21 @@
         'cancelled': { zh: '已取消', en: 'Cancelled', icon: '⚪' }
     };
 
+    // Get current language helper
+    function getLang() {
+        return window.i18n?.getCurrentLanguage?.() || 'zh';
+    }
+
     /**
-     * Translate API message to bilingual string
+     * Translate API message to localized string
      */
     function translateStatus(message, status) {
+        const lang = getLang();
         // Try exact message match first
         if (message) {
             for (const [key, val] of Object.entries(STATUS_MAP)) {
                 if (message.toLowerCase().includes(key.toLowerCase())) {
-                    return `${val.icon} ${val.zh} / ${val.en}`;
+                    return `${val.icon} ${val[lang] || val.zh}`;
                 }
             }
         }
@@ -114,13 +150,17 @@
                 const lower = message.toLowerCase();
                 const errorKeywords = ['failed', 'error', 'rejected', 'expired', 'invalid', 'unexpected', 'upload'];
                 const isError = errorKeywords.some(k => lower.includes(k));
+                // For Chinese, show a generic error message; for English, show original
+                if (isError && lang === 'zh') {
+                    return `❌ 验证失败: ${message}`;
+                }
                 return `${isError ? '❌' : s.icon} ${message}`;
             }
-            return `${s.icon} ${s.zh} / ${s.en}`;
+            return `${s.icon} ${s[lang] || s.zh}`;
         }
         // Fallback: show original message with icon
         if (message) return `⚠️ ${message}`;
-        return '❓ 未知状态 / Unknown status';
+        return lang === 'zh' ? '❓ 未知状态' : '❓ Unknown status';
     }
 
     /**
