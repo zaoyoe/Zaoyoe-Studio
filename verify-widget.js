@@ -73,6 +73,9 @@
         },
         'Cancelled': {
             zh: '已取消', en: 'Cancelled', icon: '⚪', css: 'cancelled'
+        },
+        'copy sheerid link with right click': {
+            zh: '请用右键复制链接，不要在浏览器打开', en: 'Please copy link with right click, do not open in browser', icon: '❌', css: 'error'
         }
     };
 
@@ -124,6 +127,9 @@
                     return val.css;
                 }
             }
+            // Unrecognized message with a "completed" status — treat as error
+            // (prevents unknown server messages from showing green)
+            if (status === 'completed' || status === 'success') return 'error';
         }
         if (status === 'completed' || status === 'success') return 'success';
         if (status === 'failed' || status === 'error') return 'error';
@@ -138,7 +144,8 @@
         const terminalMessages = [
             'completed successfully', 'failed to submit', 'failed to check',
             'failed to select', 'verification failed', 'verification rejected',
-            'already verified', 'already completed', 'invalid verification', 'verification expired'
+            'already verified', 'already completed', 'invalid verification', 'verification expired',
+            'copy sheerid link with right click', 'do not open in browser'
         ];
         const terminalStatuses = ['completed', 'failed', 'error', 'success', 'cancelled'];
 
@@ -154,12 +161,20 @@
      * Check if the result is a success
      */
     function isSuccessResult(message, status, successFlag) {
-        if (successFlag === true) return true;
-        if (status === 'success') return true;
+        // Check message first — if it matches a known error, never treat as success
         if (message) {
             const lower = message.toLowerCase();
+            // Known error patterns take priority over successFlag/status
+            const errorPatterns = [
+                'failed', 'rejected', 'expired', 'invalid',
+                'copy sheerid link', 'do not open in browser'
+            ];
+            if (errorPatterns.some(p => lower.includes(p))) return false;
+            // Known success patterns
             if (lower.includes('completed successfully') || lower.includes('already verified') || lower.includes('already completed')) return true;
         }
+        if (successFlag === true) return true;
+        if (status === 'success') return true;
         return false;
     }
 

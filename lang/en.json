@@ -73,7 +73,8 @@
         "guestbook": {
             "title": "Guestbook",
             "subtitle": "Community Voice",
-            "viewAll": "View all messages"
+            "viewAll": "View all messages",
+            "writeMessage": "Write a Message"
         }
     },
     "index": {

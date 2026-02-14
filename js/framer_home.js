@@ -1003,10 +1003,10 @@ const FramerHome = {
       
       <div style="text-align: center; margin-top: 48px; display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;">
         <button onclick="if(typeof window.openGuestbookModal==='function') window.openGuestbookModal();" 
-          class="btn-guestbook-write"
-          style="display: inline-flex; align-items: center; gap: 10px; padding: 14px 32px; background: linear-gradient(135deg, rgba(245,158,11,0.15), rgba(245,158,11,0.05)); border: 1px solid rgba(245,158,11,0.3); border-radius: 14px; color: #f59e0b; font-size: 15px; font-weight: 600; cursor: pointer; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); transition: all 0.3s cubic-bezier(0.4,0,0.2,1); letter-spacing: 0.5px;"
-          onmouseenter="this.style.background='linear-gradient(135deg, rgba(245,158,11,0.25), rgba(245,158,11,0.1))';this.style.borderColor='rgba(245,158,11,0.5)';this.style.transform='translateY(-2px)';this.style.boxShadow='0 8px 32px rgba(245,158,11,0.2)';"
-          onmouseleave="this.style.background='linear-gradient(135deg, rgba(245,158,11,0.15), rgba(245,158,11,0.05))';this.style.borderColor='rgba(245,158,11,0.3)';this.style.transform='translateY(0)';this.style.boxShadow='none';">
+          class="btn btn-secondary"
+          style="transition: all 0.3s cubic-bezier(0.4,0,0.2,1);"
+          onmouseenter="this.style.transform='translateY(-2px)';this.style.boxShadow='0 8px 32px rgba(255,255,255,0.08)';"
+          onmouseleave="this.style.transform='translateY(0)';this.style.boxShadow='none';">
           <i class="fas fa-pen-fancy"></i>
           ${window.i18n?.t('home.guestbook.writeMessage') || '写留言'}
         </button>

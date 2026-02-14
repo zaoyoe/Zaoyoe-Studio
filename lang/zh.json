@@ -73,7 +73,8 @@
         "guestbook": {
             "title": "留言板",
             "subtitle": "用户的声音",
-            "viewAll": "查看全部留言"
+            "viewAll": "查看全部留言",
+            "writeMessage": "写留言"
         }
     },
     "index": {
