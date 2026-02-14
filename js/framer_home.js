@@ -1258,6 +1258,7 @@ const FramerHome = {
     const hamburger = document.querySelector('.nav-hamburger');
     const mobileMenu = document.querySelector('.mobile-menu');
 
+    // Guard only the hamburger click binding to prevent double-binding
     if (hamburger && mobileMenu && !hamburger._navInitialized) {
       // Toggle mobile menu on hamburger click
       hamburger.addEventListener('click', () => {
@@ -1265,7 +1266,11 @@ const FramerHome = {
         mobileMenu.classList.toggle('active');
       });
       hamburger._navInitialized = true;
+    }
 
+    // Always bind mobile submenu triggers, dropdown sync, and close handlers
+    // (these may not have been bound by the standalone initNavBar)
+    if (hamburger && mobileMenu && !mobileMenu._submenuInitialized) {
       // Sync desktop dropdown content to mobile submenus
       const syncDropdownToMobile = (desktopDropdownId, mobileSubmenuId) => {
         const desktopDropdown = document.getElementById(desktopDropdownId);
@@ -1372,6 +1377,8 @@ const FramerHome = {
           });
         }
       });
+
+      mobileMenu._submenuInitialized = true;
     }
   },
 
