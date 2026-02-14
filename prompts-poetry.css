@@ -2127,10 +2127,11 @@ body.prompt-modal-open .top-right-nav {
     z-index: 500 !important;
 }
 
-/* 移动端：弹窗打开时隐藏顶部导航栏，避免遮挡弹窗内容 */
+/* 移动端：弹窗打开时将导航栏压到弹窗下层，避免闪烁 */
 @media (max-width: 768px) {
     body.prompt-modal-open .framer-nav {
-        display: none;
+        z-index: 999 !important;
+        /* Modal is z-index 1000, so navbar goes behind it instantly — no flash */
     }
 }
 
