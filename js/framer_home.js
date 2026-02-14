@@ -935,7 +935,7 @@ const FramerHome = {
     const section = document.getElementById('verify-section');
 
     section.innerHTML = `
-      <div class="grid-2 fade-in-up" style="align-items: center; gap: 80px; grid-template-columns: 0.8fr 1.2fr;">
+      <div class="verify-grid fade-in-up">
         <div>
           <h2 class="section-title">${data.title || window.i18n?.t('home.verify.title') || 'Gemini 验证'}</h2>
           <p class="section-subtitle">${data.subtitle || window.i18n?.t('home.verify.subtitle') || '快速验证您的 API 密钥，实时返回结果'}</p>

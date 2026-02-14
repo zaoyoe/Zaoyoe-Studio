@@ -4257,6 +4257,35 @@
                         box-sizing: border-box;
                     }
 
+                    #module-homepage .hp-form-grid .hp-field-full {
+                        grid-column: 1 / -1;
+                    }
+
+                    .hp-upload-zone {
+                        border: 2px dashed rgba(255, 255, 255, 0.12);
+                        border-radius: 10px;
+                        padding: 20px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        cursor: pointer;
+                        transition: all 0.3s ease;
+                        min-height: 120px;
+                        background: rgba(255, 255, 255, 0.02);
+                    }
+
+                    .hp-upload-zone:hover {
+                        border-color: rgba(93, 159, 216, 0.4);
+                        background: rgba(93, 159, 216, 0.05);
+                    }
+
+                    .hp-upload-placeholder {
+                        display: flex;
+                        flex-direction: column;
+                        align-items: center;
+                        gap: 2px;
+                    }
+
                     /* Auto-aggregation — compact inline */
                     #module-homepage .hp-auto-bar {
                         display: flex;
@@ -4690,9 +4719,28 @@
                                         <div class="hp-field"><label>板块副标题</label><input type="text"
                                                 class="config-input" id="hp-verify-subtitle"
                                                 placeholder="快速验证您的 API 密钥"></div>
-                                        <div class="hp-field"><label>预览截图路径</label><input type="text"
-                                                class="config-input" id="hp-verify-screenshot"
-                                                placeholder="/assets/verify-preview.png"></div>
+                                        <div class="hp-field hp-field-full">
+                                            <label>预览截图</label>
+                                            <input type="hidden" id="hp-verify-screenshot" value="">
+                                            <div class="hp-upload-zone" id="hp-verify-upload-zone"
+                                                onclick="document.getElementById('hp-verify-file-input').click()"
+                                                title="点击上传图片">
+                                                <img id="hp-verify-preview-img" src="" alt="预览截图"
+                                                    style="display:none; max-width:100%; max-height:200px; border-radius:8px; object-fit:contain;">
+                                                <div id="hp-verify-upload-placeholder" class="hp-upload-placeholder">
+                                                    <i class="fas fa-cloud-upload-alt"
+                                                        style="font-size:28px; margin-bottom:8px; color:rgba(93,159,216,0.6)"></i>
+                                                    <span
+                                                        style="font-size:13px; color:rgba(255,255,255,0.4)">点击上传预览截图</span>
+                                                    <span
+                                                        style="font-size:11px; color:rgba(255,255,255,0.2); margin-top:4px">支持
+                                                        PNG / JPG / WebP</span>
+                                                </div>
+                                            </div>
+                                            <input type="file" id="hp-verify-file-input" accept="image/*"
+                                                style="display:none"
+                                                onchange="HomepageAdmin._handleScreenshotUpload(this)">
+                                        </div>
                                         <div class="hp-field"><label>特色标签 <span
                                                     style="font-size:0.75rem;color:rgba(255,255,255,0.3)">逗号分隔</span></label><input
                                                 type="text" class="config-input" id="hp-verify-features"

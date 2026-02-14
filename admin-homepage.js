@@ -158,6 +158,8 @@ const HomepageAdmin = (() => {
                 setInputValue('hp-verify-subtitle', content.section_subtitle);
                 setInputValue('hp-verify-screenshot', content.screenshot_path);
                 setInputValue('hp-verify-features', (content.features || []).join(', '));
+                // Show image preview if path exists
+                _updateScreenshotPreview(content.screenshot_path);
                 break;
 
             case 'guestbook':
@@ -292,11 +294,15 @@ const HomepageAdmin = (() => {
             }
 
             // Invalidate homepage_config cache so homepage reflects changes immediately
-            // Note: cache.js is NOT loaded in admin-studio, so we directly remove the localStorage key
-            // using the same key format as cache.js: zaoyoe_cache_{version}_{key}
+            // cache.js key format: zaoyoe_{siteId}_cache_{version}_{key}
             try {
+                // Remove for all possible site IDs
+                ['cn', 'global'].forEach(site => {
+                    localStorage.removeItem(`zaoyoe_${site}_cache_v1_homepage_config`);
+                });
+                // Also remove legacy key format (without site ID)
                 localStorage.removeItem('zaoyoe_cache_v1_homepage_config');
-                console.log('[Homepage] Invalidated homepage_config cache (direct localStorage)');
+                console.log('[Homepage] Invalidated homepage_config cache');
             } catch (e) {
                 console.warn('[Homepage] Failed to invalidate cache:', e);
             }
@@ -667,6 +673,77 @@ const HomepageAdmin = (() => {
     }
 
     // ============================================
+    // SCREENSHOT UPLOAD
+    // ============================================
+
+    function _handleScreenshotUpload(input) {
+        const file = input.files && input.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+                // Compress & convert to WebP via Canvas
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+
+                let w = img.width, h = img.height;
+                const MAX = 1200; // max dimension
+                if (w > MAX || h > MAX) {
+                    if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+                    else { w = Math.round(w * MAX / h); h = MAX; }
+                }
+                canvas.width = w;
+                canvas.height = h;
+                ctx.drawImage(img, 0, 0, w, h);
+
+                // Convert to WebP (80% quality)
+                const webpData = canvas.toDataURL('image/webp', 0.8);
+
+                // Update preview
+                const previewImg = document.getElementById('hp-verify-preview-img');
+                const placeholder = document.getElementById('hp-verify-upload-placeholder');
+                if (previewImg) {
+                    previewImg.src = webpData;
+                    previewImg.style.display = 'block';
+                }
+                if (placeholder) placeholder.style.display = 'none';
+
+                // Store WebP base64 data directly (will be saved to DB)
+                setInputValue('hp-verify-screenshot', webpData);
+
+                // Log compression info
+                const originalKB = (file.size / 1024).toFixed(1);
+                const compressedKB = (webpData.length * 0.75 / 1024).toFixed(1); // approx base64 → bytes
+                console.log(`📸 Screenshot: ${img.width}x${img.height} → ${w}x${h}, ${originalKB}KB → ~${compressedKB}KB WebP`);
+            };
+            img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function _updateScreenshotPreview(path) {
+        const img = document.getElementById('hp-verify-preview-img');
+        const placeholder = document.getElementById('hp-verify-upload-placeholder');
+        if (!img || !placeholder) return;
+
+        if (path) {
+            img.src = path;
+            img.style.display = 'block';
+            placeholder.style.display = 'none';
+            // Handle load error — show placeholder again
+            img.onerror = () => {
+                img.style.display = 'none';
+                placeholder.style.display = 'flex';
+            };
+        } else {
+            img.style.display = 'none';
+            placeholder.style.display = 'flex';
+        }
+    }
+
+    // ============================================
     // PUBLIC API
     // ============================================
 
@@ -676,7 +753,8 @@ const HomepageAdmin = (() => {
         saveSection,
         toggleVisible,
         toggleField,
-        toggleSectionVisibility
+        toggleSectionVisibility,
+        _handleScreenshotUpload
     };
 })();
 

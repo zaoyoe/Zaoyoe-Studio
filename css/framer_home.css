@@ -1426,6 +1426,30 @@ h3 {
     position: relative;
 }
 
+/* Verify Section Grid */
+.verify-grid {
+    display: grid;
+    grid-template-columns: 0.8fr 1.2fr;
+    align-items: center;
+    gap: 80px;
+}
+
+@media (max-width: 900px) {
+    .verify-grid {
+        grid-template-columns: 1fr;
+        gap: 40px;
+    }
+
+    .verify-grid .verify-3d-container {
+        order: -1;
+    }
+
+    .verify-card-3d {
+        max-width: 500px !important;
+        transform: rotateY(-6deg) rotateX(3deg) scale(0.95) !important;
+    }
+}
+
 /* Verify 3D Card Animation */
 .verify-3d-container {
     perspective: 1000px;
