@@ -371,7 +371,15 @@ const ShopClient = {
 
         } catch (err) {
             console.error(err);
-            alert((window.i18n?.t('shop.redeemFailed') || '兑换失败') + ': ' + (err.message || (window.i18n?.t('shop.unknownError') || '未知错误')));
+            const errMsg = (err.message || (window.i18n?.t('shop.unknownError') || '未知错误'));
+            alert((window.i18n?.t('shop.redeemFailed') || '兑换失败') + ': ' + errMsg);
+
+            // If insufficient points, open wallet modal for recharging
+            if (errMsg.includes('积分') || errMsg.includes('余额') || errMsg.includes('nsufficient') || errMsg.includes('balance')) {
+                if (window.WalletModal && window.WalletModal.open) {
+                    window.WalletModal.open();
+                }
+            }
 
             // Re-enable button on error
             btn.innerHTML = originalText;
