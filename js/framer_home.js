@@ -1620,8 +1620,8 @@ document.addEventListener('DOMContentLoaded', function initNavBar() {
     hamburger._navInitialized = true;
   }
 
-  // Close mobile menu when clicking a link
-  if (mobileMenu) {
+  // Close mobile menu when clicking a link (standalone fallback)
+  if (mobileMenu && !mobileMenu._submenuInitialized) {
     mobileMenu.querySelectorAll('a').forEach(link => {
       link.addEventListener('click', () => {
         hamburger?.classList.remove('active');
@@ -1666,6 +1666,8 @@ document.addEventListener('DOMContentLoaded', function initNavBar() {
         });
       }
     });
+
+    mobileMenu._submenuInitialized = true;
   }
 
   // Sync desktop dropdown content to mobile submenus
