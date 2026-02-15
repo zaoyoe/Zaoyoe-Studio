@@ -36,7 +36,7 @@
 /* Modal Container - Frosted Glass Effect (Matches Profile Modal) */
 /* Modal Container - Frosted Glass Effect (Matches Profile Modal) */
 .wallet-modal {
-    /* Lighter Glassmorphism - Same as profile modal */
+    /* Glassmorphism - Matches profile modal exactly */
     background: rgba(255, 255, 255, 0.03);
     backdrop-filter: blur(40px);
     -webkit-backdrop-filter: blur(40px);
@@ -613,6 +613,46 @@
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
+}
+
+/* Dark-themed scrollbar for wallet modal */
+.wallet-modal,
+.wallet-content,
+.history-container {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+
+.wallet-modal::-webkit-scrollbar,
+.wallet-content::-webkit-scrollbar,
+.history-container::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+.wallet-modal::-webkit-scrollbar-track,
+.wallet-content::-webkit-scrollbar-track,
+.history-container::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.wallet-modal::-webkit-scrollbar-thumb,
+.wallet-content::-webkit-scrollbar-thumb,
+.history-container::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+}
+
+.wallet-modal::-webkit-scrollbar-thumb:hover,
+.wallet-content::-webkit-scrollbar-thumb:hover,
+.history-container::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.25);
+}
+
+.wallet-modal::-webkit-scrollbar-corner,
+.wallet-content::-webkit-scrollbar-corner,
+.history-container::-webkit-scrollbar-corner {
+    background: transparent;
 }
 
 .history-item {

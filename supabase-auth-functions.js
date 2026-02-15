@@ -63,7 +63,7 @@ async function handleRegister(event) {
             username: email,
             email: email,
             nickname: username || email.split('@')[0],
-            avatarUrl: initialAvatarUrl
+            avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(username || email.split('@')[0])}&background=random`
         });
 
     } catch (error) {
@@ -219,12 +219,29 @@ async function handleLogin(event) {
 
         let errorMessage = '登录失败';
         if (error.message.includes('Invalid login credentials')) {
-            errorMessage = '用户名或密码错误';
+            // Check if email exists to distinguish between unregistered and wrong password
+            try {
+                const { data: emailExists } = await window.supabaseClient
+                    .rpc('fn_check_email_exists', { check_email: email });
+
+                if (!emailExists) {
+                    errorMessage = '该邮箱未注册，请先注册账号';
+                } else {
+                    errorMessage = '密码错误，请检查后重试';
+                }
+            } catch (e) {
+                errorMessage = '用户名或密码错误';
+            }
         } else {
             errorMessage = error.message || '未知错误';
         }
 
         alert(`登录失败: ${errorMessage}`);
+
+        // If email is not registered, switch to register view after alert
+        if (errorMessage.includes('未注册') && typeof switchAuthView === 'function') {
+            switchAuthView('register');
+        }
     }
 }
 

@@ -113,6 +113,13 @@
         "enterVerifyCode": "输入6位验证码",
         "deleteWarning": "⚠️ 此操作不可恢复，您的所有数据将被永久删除。",
         "confirmDelete": "确认注销",
+        "deleteConfirmPrompt": "⚠️ 您确定要注销账号吗？此操作不可恢复，您的所有数据将被永久删除。",
+        "deleteTypeConfirm": "请输入 DELETE 以确认注销账号：",
+        "deleteCancelled": "注销已取消。",
+        "deleteSuccess": "账号已成功注销，所有数据已被永久删除。",
+        "deleteFailed": "注销失败：",
+        "systemError": "系统错误，请刷新页面重试",
+        "loginRequired": "请先登录",
         "selectFromLeft": "请从左侧选择项目进行安全设置"
     },
     "auth": {

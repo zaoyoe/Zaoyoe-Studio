@@ -113,6 +113,13 @@
         "enterVerifyCode": "Enter 6-digit code",
         "deleteWarning": "⚠️ This cannot be undone. All your data will be permanently deleted.",
         "confirmDelete": "Confirm Delete",
+        "deleteConfirmPrompt": "⚠️ Are you sure you want to delete your account? This cannot be undone and all your data will be permanently deleted.",
+        "deleteTypeConfirm": "Type DELETE to confirm account deletion:",
+        "deleteCancelled": "Account deletion cancelled.",
+        "deleteSuccess": "Your account has been successfully deleted. All data has been permanently removed.",
+        "deleteFailed": "Account deletion failed: ",
+        "systemError": "System error, please refresh and try again",
+        "loginRequired": "Please log in first",
         "selectFromLeft": "Select an item from the left to configure security settings"
     },
     "auth": {

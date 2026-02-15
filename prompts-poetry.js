@@ -4684,7 +4684,16 @@ async function handleUnlockPrompt() {
             setPromptUnlocked();
             console.log('[Unlock] Success! New Balance:', data.new_balance);
         } else {
-            alert(data?.error || '解锁失败');
+            const errMsg = data?.error || '解锁失败';
+            alert(errMsg);
+            // If insufficient points, open wallet modal for recharging
+            if (errMsg.includes('积分不足') || errMsg.includes('Insufficient')) {
+                if (typeof WalletModal !== 'undefined' && WalletModal.open) {
+                    WalletModal.open();
+                } else if (window.WalletModal && window.WalletModal.open) {
+                    window.WalletModal.open();
+                }
+            }
             if (btn) {
                 btn.innerHTML = originalHTML;
                 btn.disabled = false;

@@ -266,12 +266,73 @@ async function changePassword(source = 'desktop') {
     }
 }
 
+// Delete Account Function
+async function deleteAccount() {
+    // Helper for i18n
+    const t = (key, fallback) => {
+        if (window.i18n && typeof window.i18n.t === 'function') {
+            const result = window.i18n.t(key);
+            // If i18n returns the key itself, it means translation was not found
+            if (result && result !== key) return result;
+        }
+        return fallback;
+    };
+
+    // First confirmation
+    const confirmed = confirm(t('security.deleteConfirmPrompt', '⚠️ 您确定要注销账号吗？此操作不可恢复，您的所有数据将被永久删除。'));
+    if (!confirmed) return;
+
+    // Second confirmation - type DELETE
+    const input = prompt(t('security.deleteTypeConfirm', '请输入 DELETE 以确认注销账号：'));
+    if (!input || input.trim().toUpperCase() !== 'DELETE') {
+        alert(t('security.deleteCancelled', '注销已取消。'));
+        return;
+    }
+
+    try {
+        const supabase = window.supabaseClient;
+        if (!supabase) {
+            alert(t('security.systemError', '系统错误，请刷新页面重试'));
+            return;
+        }
+
+        // Get current user
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        if (userError || !user) {
+            alert(t('security.loginRequired', '请先登录'));
+            return;
+        }
+
+        // Call the database function to delete user and all related data
+        const { error: deleteError } = await supabase.rpc('fn_delete_own_account');
+        if (deleteError) {
+            console.error('❌ Account deletion RPC failed:', deleteError);
+            alert(t('security.deleteFailed', '注销失败：') + deleteError.message);
+            return;
+        }
+
+        // Sign out locally (session cleanup)
+        try {
+            await supabase.auth.signOut();
+        } catch (e) {
+            // User already deleted from DB, signOut may fail - that's ok
+            console.warn('SignOut after delete (expected):', e);
+        }
+
+        alert(t('security.deleteSuccess', '账号已成功注销，所有数据已被永久删除。'));
+
+        // Redirect to homepage
+        window.location.href = '/';
+    } catch (error) {
+        console.error('❌ Account deletion failed:', error);
+        alert(t('security.deleteFailed', '注销失败：') + (error.message || '未知错误'));
+    }
+}
+
 // Expose to window
 window.expandSecurityCard = expandSecurityCard;
 window.resetSecurityCards = resetSecurityCards;
 window.sendPhoneVerificationCode = sendPhoneVerificationCode;
 window.bindPhone = bindPhone;
 window.changePassword = changePassword;
-
-
-
+window.deleteAccount = deleteAccount;
