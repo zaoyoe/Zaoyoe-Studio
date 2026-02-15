@@ -772,8 +772,8 @@ h3 {
 
 
 .hero-progress-thumb.active {
-    border-color: rgba(255, 255, 255, 0.75);
-    box-shadow: 0 0 8px rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 1);
+    box-shadow: 0 0 12px rgba(255, 255, 255, 0.35);
 }
 
 /* ========== Hero Carousel =========== */
