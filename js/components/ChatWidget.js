@@ -405,11 +405,9 @@ class ChatWidget {
                 background: rgba(20, 20, 30, 0.7) !important;
                 backdrop-filter: blur(20px) saturate(150%) !important;
                 -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
-                border: 1px solid rgba(255, 255, 255, 0.2) !important;
+                border: 1px solid rgba(255, 255, 255, 0.08) !important;
                 box-shadow: 
-                    0 25px 50px -12px rgba(0, 0, 0, 0.6),
-                    0 0 0 1px rgba(255, 255, 255, 0.08),
-                    inset 0 1px 0 rgba(255, 255, 255, 0.15) !important;
+                    0 25px 50px -12px rgba(0, 0, 0, 0.6) !important;
             }
             
             /* Left Sidebar */

@@ -1440,10 +1440,6 @@ h3 {
         gap: 40px;
     }
 
-    .verify-grid .verify-3d-container {
-        order: -1;
-    }
-
     .verify-card-3d {
         max-width: 500px !important;
         transform: rotateY(-6deg) rotateX(3deg) scale(0.95) !important;

@@ -196,6 +196,26 @@
             </div>
         </div>
     </div>
+
+    <!-- Supabase Client -->
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <script>
+        const SUPABASE_URL = 'https://mmkugdibsaeoevliebzk.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_lwkiF-sQ80z8e9oMcejFPQ_j7oezjcF';
+        window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    </script>
+
+    <!-- Chat Widget -->
+    <link rel="stylesheet" href="css/chat-widget.css">
+    <script src="js/components/ChatWidget.js?v=14"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            if (typeof ChatWidget !== 'undefined') {
+                window.chatWidget = new ChatWidget(window.supabaseClient);
+            }
+        });
+    </script>
+
 </body>
 
 </html>
