@@ -183,6 +183,63 @@ h3 {
     color: var(--text-primary);
 }
 
+/* Support Dropdown */
+.nav-support-wrapper {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+
+.nav-support-wrapper>a {
+    cursor: pointer;
+}
+
+.nav-support-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    margin-top: 8px;
+    min-width: 140px;
+    background: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 8px 0;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease, visibility 0.2s ease;
+    z-index: 9999;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+}
+
+.nav-support-wrapper:hover .nav-support-dropdown {
+    opacity: 1;
+    visibility: visible;
+}
+
+.nav-support-dropdown a {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    color: var(--text-secondary) !important;
+    font-size: 14px !important;
+    white-space: nowrap;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.nav-support-dropdown a:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-primary) !important;
+}
+
+.nav-support-dropdown a i {
+    font-size: 16px;
+    color: #2AABEE;
+}
+
 /* Nav Dropdown Wrapper */
 .nav-item-dropdown {
     position: relative;
@@ -220,11 +277,10 @@ h3 {
     transform: translateX(-50%);
     min-width: 140px;
     padding: 8px 0;
-    background: rgba(0, 0, 0, 0.65);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
+    background: rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(20px) saturate(150%);
+    -webkit-backdrop-filter: blur(20px) saturate(150%);
     border: 1px solid rgba(255, 255, 255, 0.1);
-    border-top: none;
     border-radius: 12px;
     box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
     opacity: 0;
@@ -1194,11 +1250,14 @@ h3 {
     background: var(--bg-card);
     border: 1px solid var(--border-subtle);
     transition: all var(--transition-fast);
+    font-size: 20px;
+    color: rgba(255, 255, 255, 0.7);
 }
 
 .footer-social a:hover {
     transform: scale(1.1);
     border-color: var(--border-focus);
+    color: #fff;
 }
 
 .footer-bottom {

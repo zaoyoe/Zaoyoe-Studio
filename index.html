@@ -117,6 +117,7 @@
                 <a href="/verify.html" data-i18n="nav.verify">验证</a>
                 <a href="/guestbook.html" data-i18n="nav.guestbook"
                     onclick="if(typeof window.openGuestbookModal==='function'){event.preventDefault();window.openGuestbookModal();}">留言板</a>
+                <a href="javascript:void(0)" class="nav-trigger" data-dropdown="support" data-i18n="nav.support">支持</a>
             </div>
 
             <!-- Actions -->
@@ -163,6 +164,19 @@
                 <a href="#guestbook" class="mobile-menu-link" data-i18n="nav.guestbook"
                     onclick="if(typeof window.openGuestbookModal==='function'){event.preventDefault();window.openGuestbookModal();document.querySelector('.mobile-menu')?.classList.remove('active');document.querySelector('.nav-hamburger')?.classList.remove('active');}">留言板</a>
             </div>
+
+            <div class="mobile-menu-item">
+                <button class="mobile-menu-trigger" data-submenu="support-mobile">
+                    <span data-i18n="nav.support">支持</span>
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+                <div class="mobile-submenu" id="support-mobile">
+                    <a href="https://t.me/zaoyoe" target="_blank" class="mobile-menu-link"><i
+                            class="fab fa-telegram"></i> TG</a>
+                    <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank" class="mobile-menu-link"><i
+                            class="fab fa-telegram"></i> <span data-i18n="nav.tgGroup">TG群组</span></a>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -195,7 +209,7 @@
                     AI 驱动的创意资源平台
                 </p>
                 <div class="footer-social">
-                    <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank" title="Telegram">
+                    <a href="https://t.me/zaoyoe" target="_blank" title="Telegram">
                         <i class="fab fa-telegram"></i>
                     </a>
 
@@ -216,13 +230,13 @@
                 <h4 data-i18n="footer.resources.title">资源</h4>
                 <a href="https://afdian.com/a/zaoyoe" target="_blank" data-i18n="footer.resources.sponsor">赞助支持</a>
                 <a href="/privacy.html" data-i18n="footer.resources.privacy">隐私政策</a>
-                <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank" data-i18n="footer.resources.community">交流群组</a>
             </div>
 
             <!-- Company -->
             <div class="footer-col">
                 <h4 data-i18n="footer.about.title">关于</h4>
-                <a href="mailto:zaoyoe@gmail.com" data-i18n="footer.about.contact">联系我们</a>
+                <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank" data-i18n="footer.about.tgGroup">TG群组</a>
+                <span style="color: rgba(255,255,255,0.6); font-size: 14px;">zaoyoe@gmail.com</span>
 
             </div>
         </div>

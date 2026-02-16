@@ -623,6 +623,13 @@ const FramerHome = {
             </div>
           `;
         }
+      },
+      support: {
+        type: 'custom',
+        render: () => `
+          <a href="https://t.me/zaoyoe" target="_blank"><i class="fab fa-telegram" style="color:#2AABEE;margin-right:6px"></i>TG</a>
+          <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank"><i class="fab fa-telegram" style="color:#2AABEE;margin-right:6px"></i><span data-i18n="nav.tgGroup">TG群组</span></a>
+        `
       }
     };
 
@@ -690,7 +697,7 @@ const FramerHome = {
         const navRect = nav.getBoundingClientRect();
         const triggerRect = trigger.getBoundingClientRect();
         dropdown.style.left = `${triggerRect.left + triggerRect.width / 2}px`;
-        dropdown.style.top = `${navRect.bottom}px`;
+        dropdown.style.top = `${navRect.bottom + 4}px`;
         dropdown.classList.add('visible');
       };
 

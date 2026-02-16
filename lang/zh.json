@@ -38,7 +38,9 @@
         "notification": "通知中心",
         "noNotifications": "暂无通知",
         "clearAll": "全部清除",
-        "switchLang": "切换语言"
+        "switchLang": "切换语言",
+        "support": "支持",
+        "tgGroup": "TG群组"
     },
     "home": {
         "hero": {
@@ -458,7 +460,7 @@
         },
         "about": {
             "title": "关于",
-            "contact": "联系我们",
+            "tgGroup": "TG群组",
             "opensource": "开源项目"
         },
         "bottom": {
