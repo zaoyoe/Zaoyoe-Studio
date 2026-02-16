@@ -302,14 +302,14 @@ h3 {
     color: rgba(255, 255, 255, 0.8);
     text-decoration: none;
     font-size: 14px;
-    transition: all 0.15s ease;
+    transition: color 0.15s ease, background-color 0.15s ease;
     white-space: nowrap;
     cursor: pointer !important;
 }
 
 .nav-dropdown-portal a:hover {
     color: #fff;
-    background: rgba(255, 255, 255, 0.08);
+    background-color: rgba(255, 255, 255, 0.05);
 }
 
 .nav-item-dropdown:hover .nav-dropdown {
