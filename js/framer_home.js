@@ -627,11 +627,14 @@ const FramerHome = {
       support: {
         type: 'custom',
         render: () => `
-          <a href="https://t.me/zaoyoe" target="_blank"><i class="fab fa-telegram" style="color:#2AABEE;margin-right:6px"></i>TG</a>
-          <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank"><i class="fab fa-telegram" style="color:#2AABEE;margin-right:6px"></i><span data-i18n="nav.tgGroup">TG群组</span></a>
+          <a href="https://t.me/zaoyoe" target="_blank">TG</a>
+          <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank"><span data-i18n="nav.tgGroup">TG群组</span></a>
         `
       }
     };
+
+    // FIRST: Remove any existing portals to prevent duplicates from multiple inits
+    document.querySelectorAll('.nav-dropdown-portal').forEach(el => el.remove());
 
     // Create dropdown elements and attach to body
     const triggers = document.querySelectorAll('.nav-trigger[data-dropdown]');
@@ -641,12 +644,11 @@ const FramerHome = {
       const data = dropdownData[dropdownType];
       if (!data) return;
 
-      // Create dropdown element
-      const dropdown = document.createElement('div');
+      // Create dropdown element (it's guaranteed to be new now)
+      let dropdown = document.createElement('div');
       dropdown.className = 'nav-dropdown-portal';
       dropdown.id = `dropdown-${dropdownType}`;
-
-      // Handle custom rendering or standard list
+      // Handle custom rendering or standard list (always update content)
       if (data.type === 'custom' && data.render) {
         dropdown.innerHTML = data.render();
       } else {
@@ -655,6 +657,7 @@ const FramerHome = {
         ).join('');
       }
 
+      // Append to body (safe because old ones were cleared)
       document.body.appendChild(dropdown);
 
       // Bind language toggle event using EVENT DELEGATION (for settings dropdown)
@@ -682,38 +685,52 @@ const FramerHome = {
         });
       }
 
-      let hideTimeout = null;
-
       const showDropdown = () => {
-        clearTimeout(hideTimeout);
+        clearTimeout(trigger._hideTimeout);
 
         // Re-render settings dropdown to reflect current language
         if (dropdownType === 'settings' && data.type === 'custom' && data.render) {
           dropdown.innerHTML = data.render();
         }
 
-        // Position dropdown below nav bar (not trigger)
+        // Position dropdown perfectly flush with visual bottom of the nav bar
         const nav = document.querySelector('.framer-nav');
         const navRect = nav.getBoundingClientRect();
         const triggerRect = trigger.getBoundingClientRect();
         dropdown.style.left = `${triggerRect.left + triggerRect.width / 2}px`;
-        dropdown.style.top = `${navRect.bottom + 4}px`;
+
+        // Align the top of the dropdown exactly with the bottom bounding box of the nav bar.
+        // User screenshot confirmed that navRect.bottom represents the true visual edge.
+        dropdown.style.top = `${navRect.bottom}px`;
+
+        // Highlight only this trigger
+        trigger.classList.add('active');
         dropdown.classList.add('visible');
       };
 
       const hideDropdown = () => {
-        hideTimeout = setTimeout(() => {
+        // Snappy timeout
+        trigger._hideTimeout = setTimeout(() => {
+          // Double check hover state just in case
+          if (trigger.matches(':hover') || dropdown.matches(':hover')) return;
+
           dropdown.classList.remove('visible');
-        }, 300);
+          trigger.classList.remove('active');
+        }, 100);
       };
 
       const keepDropdownOpen = () => {
-        clearTimeout(hideTimeout);
+        clearTimeout(trigger._hideTimeout);
+        // FORCE trigger to stay highlighted
+        trigger.classList.add('active');
+        dropdown.classList.add('visible');
       };
 
-      // Events
+      // Events - attach to the trigger
       trigger.addEventListener('mouseenter', showDropdown);
       trigger.addEventListener('mouseleave', hideDropdown);
+
+      // Events - attach to the precise dropdown element
       dropdown.addEventListener('mouseenter', keepDropdownOpen);
       dropdown.addEventListener('mouseleave', hideDropdown);
     });

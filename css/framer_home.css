@@ -129,7 +129,8 @@ h3 {
     -webkit-backdrop-filter: var(--glass-blur);
     border-bottom: 1px solid var(--border-subtle);
     z-index: var(--z-nav);
-    transition: background-color var(--transition-medium), backdrop-filter var(--transition-medium);
+    transition: background-color var(--transition-medium);
+    isolation: isolate;
 }
 
 .framer-nav.scrolled {
@@ -271,27 +272,45 @@ h3 {
     z-index: 9999;
 }
 
-/* Dropdown Portal - Appended to body for proper backdrop-filter */
+/* =============================================
+   Dropdown Portal — No opacity transition
+   
+   backdrop-filter + opacity transition = Chromium dark-flash bug.
+   The browser flattens the entire subtree into a cached texture
+   during opacity animation, causing backdrop-filter to render
+   incorrectly. Solution: no opacity transition, instant toggle.
+   ============================================= */
 .nav-dropdown-portal {
     position: fixed;
-    transform: translateX(-50%);
     min-width: 140px;
     padding: 8px 0;
-    background: rgba(0, 0, 0, 0.45);
-    backdrop-filter: blur(20px) saturate(150%);
-    -webkit-backdrop-filter: blur(20px) saturate(150%);
+    /* Glass effect — directly on this element, no pseudo-element */
+    background-color: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 12px;
     box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
-    opacity: 0;
+    /* Centering: JS sets left to trigger center, CSS shifts back 50% */
+    transform: translateX(-50%) translateZ(0);
+    /* No opacity transition — instant show/hide to avoid dark-flash bug */
     visibility: hidden;
     pointer-events: none;
-    transition: opacity 0.2s ease, visibility 0.2s ease;
     z-index: 9999;
 }
 
+/* Invisible bridge so the mouse doesn't "fall off" between the nav and the dropdown */
+.nav-dropdown-portal::after {
+    content: '';
+    position: absolute;
+    top: -30px;
+    left: 0;
+    width: 100%;
+    height: 30px;
+    background: transparent;
+}
+
 .nav-dropdown-portal.visible {
-    opacity: 1;
     visibility: visible;
     pointer-events: auto;
 }
@@ -299,7 +318,7 @@ h3 {
 .nav-dropdown-portal a {
     display: block;
     padding: 10px 20px;
-    color: rgba(255, 255, 255, 0.8);
+    color: var(--text-secondary);
     text-decoration: none;
     font-size: 14px;
     transition: color 0.15s ease, background-color 0.15s ease;
@@ -308,8 +327,16 @@ h3 {
 }
 
 .nav-dropdown-portal a:hover {
-    color: #fff;
-    background-color: rgba(255, 255, 255, 0.05);
+    color: var(--text-primary);
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
+/* Ensure the ACTIVE trigger stays highlighted when dropdown is open */
+.framer-nav .nav-menu a.active,
+.framer-nav .nav-menu a.active:hover,
+a.nav-trigger.active {
+    color: var(--text-primary) !important;
+    opacity: 1 !important;
 }
 
 .nav-item-dropdown:hover .nav-dropdown {
