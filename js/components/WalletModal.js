@@ -29,10 +29,10 @@
         /**
          * Open the wallet modal
          */
-        async open() {
+        async open(initialView) {
             if (this.isOpen) return;
 
-            console.log('[WalletModal] Opening...');
+            console.log('[WalletModal] Opening...', initialView ? `view: ${initialView}` : '');
 
             // Close user dropdown menu first (prevent double overlay)
             const dropdown = document.getElementById('userDropdown');
@@ -43,7 +43,7 @@
             // Use getSession() - INSTANT (cached locally) instead of getUser() (network call)
             const { data: { session } } = await supabase.auth.getSession();
             if (!session) {
-                alert('请先登录');
+                alert(window.i18n?.t('security.loginRequired') || '请先登录');
                 return;
             }
 
@@ -55,8 +55,11 @@
             // Load data immediately after render
             await this.loadData();
 
-            // Initialize indicator position
-            setTimeout(() => this.updateIndicatorPosition(), 50);
+            // Initialize indicator position and switch to requested view
+            setTimeout(() => {
+                this.updateIndicatorPosition();
+                if (initialView) this.switchView(initialView);
+            }, 50);
         },
 
         /**
@@ -104,6 +107,11 @@
                             <div class="wallet-menu-item" data-view="orders" onclick="WalletModal.switchView('orders')">
                                 <span class="menu-icon">📋</span>
                                 <span class="menu-text">${window.i18n?.t('wallet.records') || '记录'}</span>
+                            </div>
+
+                            <div class="wallet-menu-item" data-view="affiliate" onclick="WalletModal.switchView('affiliate')">
+                                <span class="menu-icon">🌟</span>
+                                <span class="menu-text" data-i18n="wallet.affiliate">推广返回</span>
                             </div>
                         </div>
                         
@@ -208,6 +216,35 @@
                                     <div class="loading-text">${window.i18n?.t('common.loading') || '加载中...'}</div>
                                 </div>
                             </div>
+
+                            <div class="wallet-view" id="view-affiliate">
+                                <div class="balance-card compact-premium-card" style="margin-bottom: 20px;">
+                                    <div class="card-left">
+                                        <label data-i18n="wallet.totalCommission">${window.i18n?.t('wallet.totalCommission') || '累计获得佣金'}</label>
+                                        <div class="balance-amount" id="affiliate-commission">0</div>
+                                    </div>
+                                    <div class="card-right">
+                                        <div class="balance-detail-row">
+                                            <span class="detail-label" data-i18n="wallet.invitedCount">${window.i18n?.t('wallet.invitedCount') || '成功邀请人数'}</span>
+                                            <strong id="affiliate-count" class="detail-val">0</strong>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="redeem-section premium-panel">
+                                    <h3 style="margin-top:0; color:#fff; font-size:16px;" data-i18n="wallet.getInviteLink">${window.i18n?.t('wallet.getInviteLink') || '获取专属推广链接'}</h3>
+                                    <p style="color:var(--text-dim); font-size:13px; margin-bottom:15px; line-height: 1.5;" data-i18n="wallet.inviteLinkDesc">
+                                        ${window.i18n?.t('wallet.inviteLinkDesc') || '分享此链接给好友，好友注册且在商城消费时，您将自动获得 10% 的消费积分佣金返还。'}
+                                    </p>
+                                    <div class="input-group">
+                                        <input type="text" id="affiliate-link" readonly class="code-input" style="background: rgba(0,0,0,0.3); color:#fff; cursor:pointer;" onclick="this.select()" />
+                                        <button class="redeem-btn" onclick="WalletModal.copyAffiliateLink()" data-i18n="wallet.copyLink">${window.i18n?.t('wallet.copyLink') || '复制链接'}</button>
+                                    </div>
+                                    <div class="input-group" style="margin-top: 15px;">
+                                        <button class="redeem-btn" style="width: 100%; background: linear-gradient(135deg, #10b981 0%, #059669 100%);" onclick="WalletModal.generateAffiliatePoster()" data-i18n="wallet.generatePoster">${window.i18n?.t('wallet.generatePoster') || '生成精美推广海报'}</button>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -246,6 +283,11 @@
             if (viewId === 'orders' && !this.ordersLoaded) {
                 this.loadOrders();
             }
+
+            // Load affiliate when switching to affiliate view
+            if (viewId === 'affiliate' && !this.affiliateLoaded) {
+                this.loadAffiliateData();
+            }
         },
 
         /**
@@ -268,6 +310,145 @@
                 indicator.style.top = `${top}px`;
                 indicator.style.height = `${height}px`;
                 indicator.style.opacity = '1';
+            }
+        },
+
+        /**
+         * Affiliate Logic
+         */
+        async loadAffiliateData() {
+            try {
+                const { data: { user } } = await window.supabaseClient.auth.getUser();
+                if (!user) return;
+
+                const { data, error } = await window.supabaseClient.rpc('fn_get_affiliate_stats', {
+                    p_user_id: user.id
+                });
+
+                if (error) throw error;
+
+                if (data) {
+                    const commissionEl = document.getElementById('affiliate-commission');
+                    const countEl = document.getElementById('affiliate-count');
+                    const linkEl = document.getElementById('affiliate-link');
+
+                    if (commissionEl) commissionEl.textContent = data.total_commission;
+                    if (countEl) countEl.textContent = data.invited_count + ' ' + (window.i18n?.t('wallet.people') || '人');
+
+                    if (linkEl && data.invite_code) {
+                        const baseUrl = window.location.origin + window.location.pathname;
+                        linkEl.value = `${baseUrl}?ref=${data.invite_code}`;
+                    }
+
+                    this.currentInviteCode = data.invite_code;
+                }
+                this.affiliateLoaded = true;
+            } catch (err) {
+                console.error('[WalletModal] Load Affiliate Error:', err);
+            }
+        },
+
+        copyAffiliateLink() {
+            const linkEl = document.getElementById('affiliate-link');
+            if (!linkEl || !linkEl.value) return;
+
+            navigator.clipboard.writeText(linkEl.value).then(() => {
+                this.showToast(window.i18n?.t('wallet.copiedLink') || '链接已复制到剪贴板，快去分享吧！', 'success');
+            }).catch(err => {
+                console.error('Copy failed', err);
+                linkEl.select();
+                document.execCommand('copy');
+                this.showToast(window.i18n?.t('wallet.copiedLinkShort') || '链接已复制！', 'success');
+            });
+        },
+
+        async generateAffiliatePoster() {
+            const linkEl = document.getElementById('affiliate-link');
+            if (!linkEl || !linkEl.value) {
+                this.showToast(window.i18n?.t('wallet.linkNotReady') || '系统未准备好推广链接。', 'error');
+                return;
+            }
+
+            const btn = event?.currentTarget || document.querySelector('.redeem-btn');
+            const origText = btn.innerHTML;
+            if (btn) btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${window.i18n?.t('wallet.generating') || '生成中...'}`;
+
+            try {
+                // 1. Create a canvas
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.width = 800;
+                canvas.height = 1200;
+
+                // 2. Draw background (gradient)
+                const gradient = ctx.createLinearGradient(0, 0, 0, 1200);
+                gradient.addColorStop(0, '#111827'); // dark gray
+                gradient.addColorStop(1, '#0f172a'); // slate
+                ctx.fillStyle = gradient;
+                ctx.fillRect(0, 0, 800, 1200);
+
+                // Draw some decorative accents
+                ctx.fillStyle = 'rgba(107, 158, 206, 0.15)'; // #6b9ece with opacity
+                ctx.beginPath();
+                ctx.arc(400, -200, 600, 0, Math.PI * 2);
+                ctx.fill();
+
+                // 3. Draw Title & Text
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 64px "Helvetica Neue", Arial, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(window.i18n?.t('wallet.posterTitle') || '专属邀请函', 400, 200);
+
+                ctx.font = '32px Arial';
+                ctx.fillStyle = '#9ca3af';
+                ctx.fillText(window.i18n?.t('wallet.posterSubtitle') || '扫码注册·即享特权', 400, 280);
+
+                // 4. Fetch QR Code image
+                const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(linkEl.value)}&margin=1`;
+                const qrImg = new Image();
+                qrImg.crossOrigin = 'Anonymous';
+
+                await new Promise((resolve, reject) => {
+                    qrImg.onload = resolve;
+                    qrImg.onerror = reject;
+                    qrImg.src = qrUrl;
+                });
+
+                // Draw white background for QR
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(230, 480, 340, 340);
+
+                // Draw QR Code
+                ctx.drawImage(qrImg, 250, 500, 300, 300);
+
+                // Draw code text
+                ctx.fillStyle = '#10b981';
+                ctx.font = 'bold 42px monospace';
+                ctx.fillText(`${window.i18n?.t('wallet.inviteCode') || '邀请码'}: ${this.currentInviteCode}`, 400, 920);
+
+                // Add QR code text indicator
+                ctx.fillStyle = '#0f172a';
+                ctx.font = '24px Arial';
+                ctx.fillText(window.i18n?.t('wallet.posterScan') || '在此扫码注册', 400, 750);
+
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '28px Arial';
+                ctx.fillText(window.i18n?.t('wallet.posterJoin') || '加入我们获取新人专属福利', 400, 1000);
+
+                // 5. Download Image
+                const dataUrl = canvas.toDataURL('image/png');
+                const a = document.createElement('a');
+                a.href = dataUrl;
+                a.download = `Affiliate_Poster_${this.currentInviteCode}.png`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+
+            } catch (err) {
+                console.error('[WalletModal] Generate Poster Error:', err);
+                this.showToast(window.i18n?.t('wallet.posterFailed') || '海报生成失败，请重试', 'error');
+            } finally {
+                if (btn) btn.innerHTML = origText;
             }
         },
 
@@ -375,10 +556,6 @@
          * Handle package purchase
          */
         async buyPackage(packageId, packageName) {
-            if (!confirm(`确定要购买「${packageName}」吗？\n\n（这是模拟支付，用于测试）`)) {
-                return;
-            }
-
             const overlay = document.getElementById('wallet-modal-overlay');
 
             try {
@@ -1185,12 +1362,12 @@
             }
 
             try {
-                const session = await supabase.auth.getSession();
-                if (!session?.data?.session?.user?.id) {
-                    this.showToast('请先登录', 'error');
+                const { data: { user } } = await window.supabaseClient.auth.getUser();
+                if (!user) {
+                    this.showToast(window.i18n?.t('security.loginRequired') || '请先登录', 'error');
                     return;
                 }
-                const userId = session.data.session.user.id;
+                const userId = user.id;
 
                 // Delete shop orders
                 const { error: shopError } = await supabase
@@ -1245,9 +1422,9 @@
                 const container = document.getElementById('wallet-orders');
                 if (!container) return;
 
-                const { data: { session } } = await supabase.auth.getSession();
-                if (!session) {
-                    container.innerHTML = '<div class="empty-text">请先登录</div>';
+                const { data: { user } } = await window.supabaseClient.auth.getUser();
+                if (!user) {
+                    container.innerHTML = `<div class="empty-text">${window.i18n?.t('security.loginRequired') || '请先登录'}</div>`;
                     return;
                 }
 
@@ -1268,7 +1445,7 @@
                                 snapshot_product_name
                             )
                         `)
-                        .eq('user_id', session.user.id)
+                        .eq('user_id', user.id)
                         .eq('site', window.SiteConfig?.site || 'cn')
                         .order('created_at', { ascending: false })
                         .limit(100),
@@ -1277,7 +1454,7 @@
                     supabase
                         .from('points_ledger')
                         .select('id, amount, reason, reference_id, created_at')
-                        .eq('user_id', session.user.id)
+                        .eq('user_id', user.id)
                         .eq('site', window.SiteConfig?.site || 'cn')
                         .order('created_at', { ascending: false })
                         .limit(100)
@@ -1629,45 +1806,10 @@
             // Skeleton HTML - shows immediately with loading animation
             const t = (key, fallback) => window.i18n?.t(key) || fallback;
             detailOverlay.innerHTML = `
-                <div class="wallet-order-modal">
-                    <div class="wallet-order-modal-header">
-                        <div class="wallet-order-modal-title">
-                            <i class="fas fa-box-open" style="color: #6b9ece;"></i> ${t('wallet.orderDetails', '订单详情')}
-                        </div>
-                        <button class="wallet-order-close-btn" onclick="this.closest('.wallet-order-modal-overlay').remove()">
-                            <i class="fas fa-times"></i>
-                        </button>
-                    </div>
-                    <div class="wallet-order-modal-body">
-                        <div class="meta-section">
-                            <div class="detail-row">
-                                <span class="detail-label">${t('wallet.orderNumber', '订单编号')}</span>
-                                <span class="skeleton-text" style="width: 120px;"></span>
-                            </div>
-                            <div class="detail-row">
-                                <span class="detail-label">${t('wallet.orderTime', '下单时间')}</span>
-                                <span class="skeleton-text" style="width: 140px;"></span>
-                            </div>
-                            <div class="detail-row">
-                                <span class="detail-label">${t('wallet.pointsPaid', '支付积分')}</span>
-                                <span class="skeleton-text" style="width: 80px;"></span>
-                            </div>
-                        </div>
-                        <div class="modal-actions">
-                            <button class="action-btn primary skeleton-btn" disabled>
-                                <i class="fas fa-copy"></i> ${t('wallet.loading', '加载中...')}
-                            </button>
-                            <button class="action-btn secondary skeleton-btn" disabled>
-                                <i class="fas fa-download"></i> ${t('wallet.loading', '加载中...')}
-                            </button>
-                        </div>
-                        <div class="content-section">
-                            <div class="content-section-title">${t('wallet.purchaseContent', '购买内容')} <span class="skeleton-text" style="width: 30px; display: inline-block;"></span></div>
-                            <div class="content-card skeleton-card">
-                                <div class="skeleton-text" style="width: 60%; height: 16px; margin-bottom: 12px;"></div>
-                                <div class="skeleton-text" style="width: 100%; height: 40px;"></div>
-                            </div>
-                        </div>
+                <div class="wallet-order-modal" style="display: flex; align-items: center; justify-content: center; min-height: 200px; background: rgba(30, 41, 59, 0.95);">
+                    <div style="text-align: center; color: #6b9ece;">
+                        <i class="fas fa-circle-notch fa-spin" style="font-size: 32px; margin-bottom: 12px;"></i>
+                        <div style="font-size: 13px; opacity: 0.8;">${t('wallet.loading', '加载详情...')}</div>
                     </div>
                 </div>
             `;
@@ -1720,13 +1862,22 @@
                 const dateStr = `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
                 const totalPrice = order.total_price != null ? order.total_price : order.price_paid;
 
-                const contentHtml = items.map((item) => `
-                    <div class="content-card">
-                        <div class="item-content-box">
-                            <div class="item-text">${this.escapeHtml(item.content)}</div>
+                // Determine if items are short enough to display side-by-side
+                const isShortKeys = items.every(item => item.content.length <= 40 && !item.content.includes('\n'));
+                const gridStyle = items.length > 1 && isShortKeys
+                    ? 'display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%;'
+                    : 'display: flex; flex-direction: column; gap: 8px; width: 100%;';
+
+                const contentHtml = `<div style="${gridStyle}">` + items.map((item) => {
+                    const safeContentEscaped = this.escapeHtml(item.content).replace(/`/g, '\\`');
+                    return `
+                    <div class="content-card" style="margin-bottom: 0 !important; cursor: pointer; transition: all 0.2s; padding: 10px 6px !important; display: flex; align-items: center; justify-content: center;" onclick="WalletModal.copyToClipboard(\`${safeContentEscaped}\`, event)" title="${window.i18n?.t('wallet.clickToCopy') || '点击复制'}" onmouseover="this.style.borderColor='rgba(107, 158, 206, 0.5)'; this.style.background='rgba(255, 255, 255, 0.08)';" onmouseout="this.style.borderColor='rgba(255, 255, 255, 0.1)'; this.style.background='rgba(255, 255, 255, 0.05)';">
+                        <div class="item-content-box" style="padding: 0 !important; width: 100%; background: transparent !important; border-radius: 0 !important;">
+                            <div class="item-text" style="text-align: center; font-size: 13px; letter-spacing: 0.5px; line-height: 1.3;">${this.escapeHtml(item.content)}</div>
                         </div>
                     </div>
-                `).join('');
+                `;
+                }).join('') + `</div>`;
 
                 // Format: product name once at top, then all content items
                 const productName = items.length > 0 ? items[0].name : '';
@@ -1752,6 +1903,12 @@
                 // 🚀 STEP 4: Replace skeleton with real content (smooth transition)
                 const modal = detailOverlay.querySelector('.wallet-order-modal');
                 if (modal) {
+                    // Reset loading styles
+                    modal.style.alignItems = 'stretch';
+                    modal.style.justifyContent = 'flex-start';
+                    modal.style.minHeight = 'auto';
+                    modal.style.background = ''; // Revert to CSS class styling
+
                     modal.innerHTML = `
                         <div class="wallet-order-modal-header">
                             <div class="wallet-order-modal-title">
@@ -1776,12 +1933,15 @@
                                     <span class="detail-val highlight">-${totalPrice} ${window.i18n?.t('wallet.pointsUnit') || '积分'}</span>
                                 </div>
                             </div>
-                            <div class="modal-actions">
-                                <button class="action-btn primary" onclick="WalletModal_copyAll()">
-                                    <i class="fas fa-copy"></i> ${window.i18n?.t('wallet.copyAll') || '全部复制'}
+                            <div class="modal-actions" style="display: flex; gap: 8px; justify-content: flex-end; padding: 4px 0; margin-top: -8px;">
+                                <button class="action-btn-minimal" style="background: transparent; border: none; color: #6b9ece; font-size: 18px; width: 32px; height: 32px; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; display: inline-flex; align-items: center; justify-content: center;" onmouseover="this.style.background='rgba(107, 158, 206, 0.15)';" onmouseout="this.style.background='transparent';" onclick="WalletModal_copyAll()" title="${window.i18n?.t('wallet.copyAll') || '全部复制'}">
+                                    <i class="fas fa-copy"></i>
                                 </button>
-                                <button class="action-btn secondary" onclick="WalletModal_export()">
-                                    <i class="fas fa-download"></i> ${window.i18n?.t('wallet.export') || '导出'}
+                                <button class="action-btn-minimal" style="background: transparent; border: none; color: #9ca3af; font-size: 18px; width: 32px; height: 32px; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; display: inline-flex; align-items: center; justify-content: center;" onmouseover="this.style.background='rgba(255, 255, 255, 0.1)';" onmouseout="this.style.background='transparent';" onclick="WalletModal_export()" title="${window.i18n?.t('wallet.export') || '导出'}">
+                                    <i class="fas fa-download"></i>
+                                </button>
+                                <button class="action-btn-minimal" style="background: transparent; border: none; color: #ef4444; font-size: 18px; width: 32px; height: 32px; border-radius: 6px; cursor: pointer; transition: all 0.2s ease; display: inline-flex; align-items: center; justify-content: center;" onmouseover="this.style.background='rgba(239, 68, 68, 0.15)';" onmouseout="this.style.background='transparent';" onclick="WalletModal.openTicketModal('${order.id}')" title="${window.i18n?.t('wallet.reportIssue') || '报告问题'}">
+                                    <i class="fas fa-exclamation-circle"></i>
                                 </button>
                             </div>
                             <div class="content-section">
@@ -1798,6 +1958,33 @@
                     detailOverlay.remove();
                 }
                 this.showToast(window.i18n?.t('wallet.orderDetailFailed') || '加载订单详情失败', 'error');
+            }
+        },
+
+        openTicketModal(orderId) {
+            const reason = prompt(window.i18n?.t('wallet.ticketPrompt') || "请输入您遇到的问题描述 (如：卡密无效、未到账等)：");
+            if (!reason || reason.trim() === '') return;
+
+            this.submitTicket(orderId, reason.trim());
+        },
+
+        async submitTicket(orderId, description) {
+            try {
+                const { data: { user } } = await window.supabaseClient.auth.getUser();
+                if (!user) throw new Error("未登录");
+
+                const { error } = await window.supabaseClient.from('shop_tickets').insert({
+                    user_id: user.id,
+                    order_id: orderId,
+                    issue_type: 'OTHER',
+                    description: description
+                });
+
+                if (error) throw error;
+                this.showToast(window.i18n?.t('wallet.ticketSuccess') || "工单提交成功，客服将尽快核实处理。", "success");
+            } catch (err) {
+                console.error("[WalletModal] Submit ticket failed:", err);
+                this.showToast((window.i18n?.t('wallet.ticketFailed') || "工单提交失败") + ": " + err.message, "error");
             }
         },
 
@@ -1842,7 +2029,7 @@
                     animation: fadeIn 0.3s ease-out;
                 }
                 .wallet-order-modal {
-                    width: 90% !important; max-width: 380px !important;
+                    width: 92% !important; max-width: 360px !important;
                     background: rgba(20, 20, 22, 0.75) !important;
                     backdrop-filter: blur(40px) !important; -webkit-backdrop-filter: blur(40px) !important;
                     border: 1px solid rgba(255, 255, 255, 0.12) !important;
@@ -1857,17 +2044,17 @@
                     opacity: 1;
                 }
                 .wallet-order-modal-header {
-                    padding: 24px 24px 16px;
+                    padding: 16px 20px 12px;
                     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
                     display: flex; justify-content: space-between; align-items: center;
                 }
                 .wallet-order-modal-title {
-                    font-size: 18px; font-weight: 700; color: #fff;
+                    font-size: 16px; font-weight: 700; color: #fff;
                     display: flex; align-items: center; gap: 8px;
                     letter-spacing: -0.5px;
                 }
                 .wallet-order-close-btn {
-                    width: 30px; height: 30px;
+                    width: 28px; height: 28px;
                     border-radius: 50%;
                     border: none;
                     background: rgba(255, 255, 255, 0.05);
@@ -1881,10 +2068,27 @@
                     color: #fff;
                 }
                 .wallet-order-modal-body {
-                    padding: 0 24px 24px;
+                    padding: 0 16px 12px;
                     overflow-y: auto;
+                    scrollbar-width: thin;
+                    scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
                 }
-                .meta-section { margin-bottom: 20px; padding-top: 10px; }
+                /* Webkit scrollbar for modal body */
+                .wallet-order-modal-body::-webkit-scrollbar {
+                    width: 4px;
+                }
+                .wallet-order-modal-body::-webkit-scrollbar-track {
+                    background: transparent;
+                    border-radius: 10px;
+                }
+                .wallet-order-modal-body::-webkit-scrollbar-thumb {
+                    background-color: rgba(255, 255, 255, 0.1);
+                    border-radius: 10px;
+                }
+                .wallet-order-modal-body::-webkit-scrollbar-thumb:hover {
+                    background-color: rgba(255, 255, 255, 0.2);
+                }
+                .meta-section { margin-bottom: 12px; padding-top: 10px; }
                 .detail-row {
                     display: flex; justify-content: space-between; align-items: center;
                     margin-bottom: 10px; font-size: 13px;
@@ -1923,17 +2127,22 @@
                     background: rgba(255, 255, 255, 0.1);
                     color: #fff;
                 }
-                .content-section { margin-top: 0; }
+                .content-section {
+                    margin-top: 0 !important;
+                    margin-bottom: 4px !important;
+                    padding: 0 !important;
+                    max-width: none !important;
+                }
                 .content-section-title {
                     font-size: 12px; font-weight: 600; color: rgba(255, 255, 255, 0.3);
-                    margin-bottom: 10px; text-align: center;
+                    margin-bottom: 8px; text-align: center;
                 }
                 .content-card {
                     background: rgba(255, 255, 255, 0.05) !important;
                     backdrop-filter: blur(12px) !important;
                     -webkit-backdrop-filter: blur(12px) !important;
-                    border-radius: 16px !important; padding: 16px !important;
-                    margin-bottom: 12px !important;
+                    border-radius: 10px !important; padding: 12px !important;
+                    margin-bottom: 8px !important;
                     border: 1px solid rgba(255, 255, 255, 0.1) !important;
                     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2) !important;
                 }
@@ -1941,7 +2150,11 @@
                     font-size: 13px; font-weight: 600; color: #e2e8f0;
                     margin-bottom: 8px; display: flex; align-items: center; gap: 6px;
                 }
-                .item-content-box { background: transparent; border-radius: 0; padding: 0; }
+                .item-content-box {
+                    background: transparent !important;
+                    border-radius: 0 !important;
+                    padding: 0 !important;
+                }
                 .item-text {
                     font-family: 'Monaco', monospace;
                     font-size: 12px; color: #10b981;

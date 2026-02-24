@@ -699,9 +699,9 @@ const FramerHome = {
         const triggerRect = trigger.getBoundingClientRect();
         dropdown.style.left = `${triggerRect.left + triggerRect.width / 2}px`;
 
-        // Align the top of the dropdown exactly with the bottom bounding box of the nav bar.
-        // User screenshot confirmed that navRect.bottom represents the true visual edge.
-        dropdown.style.top = `${navRect.bottom}px`;
+        // Shift up by 1 pixel to override the navigation bar's bottom border
+        // This ensures the glass panels fuse completely seamlessly without any horizontal line
+        dropdown.style.top = `${navRect.bottom - 1}px`;
 
         // Highlight only this trigger
         trigger.classList.add('active');

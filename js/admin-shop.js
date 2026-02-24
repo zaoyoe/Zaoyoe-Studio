@@ -1006,6 +1006,14 @@ Example output format:
         }
     },
 
+    // Toggle Webhook field visibility
+    toggleWebhookField: function (deliveryType) {
+        const group = document.getElementById('webhookTargetGroup');
+        if (group) {
+            group.style.display = (deliveryType === 'API') ? 'block' : 'none';
+        }
+    },
+
     openProductModal: async function (isEdit = false) {
         console.log('Opening Modal', isEdit); // Debug
         const modal = document.getElementById('productModal');
@@ -1056,6 +1064,16 @@ Example output format:
             document.getElementById('prodDesc').value = '';
             document.getElementById('prodSort').value = '0';
 
+            // Reset marketing fields
+            document.getElementById('prodQuantityRules').value = '';
+            document.getElementById('prodFlashSalePrice').value = '';
+            document.getElementById('prodFlashSaleEnd').value = '';
+
+            // Reset delivery fields
+            document.getElementById('prodDeliveryType').value = 'KEY';
+            document.getElementById('prodWebhookTarget').value = '';
+            this.toggleWebhookField('KEY');
+
             // Reset usage instructions
             document.getElementById('prodShowUsageInstructions').checked = false;
             document.getElementById('prodUsageInstructions').value = '';
@@ -1080,6 +1098,23 @@ Example output format:
             document.getElementById('prodIcon').value = data.icon_url;
             document.getElementById('prodDesc').value = data[fields.desc] || '';
             document.getElementById('prodSort').value = data.display_order;
+
+            // Populate marketing fields (Phase 2)
+            document.getElementById('prodQuantityRules').value = data.quantity_rules ? JSON.stringify(data.quantity_rules) : '';
+            document.getElementById('prodFlashSalePrice').value = data.flash_sale_price != null ? data.flash_sale_price : '';
+            if (data.flash_sale_end) {
+                const date = new Date(data.flash_sale_end);
+                const localIso = new Date(date.getTime() - (date.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
+                document.getElementById('prodFlashSaleEnd').value = localIso;
+            } else {
+                document.getElementById('prodFlashSaleEnd').value = '';
+            }
+
+            // Populate delivery fields
+            const deliveryType = data.delivery_type || 'KEY';
+            document.getElementById('prodDeliveryType').value = deliveryType;
+            document.getElementById('prodWebhookTarget').value = data.webhook_target || '';
+            this.toggleWebhookField(deliveryType);
 
             // Populate usage instructions
             const showUI = !!data.show_usage_instructions;
@@ -1139,7 +1174,36 @@ Example output format:
             display_order: parseInt(document.getElementById('prodSort').value),
             show_usage_instructions: document.getElementById('prodShowUsageInstructions').checked,
             usage_instructions: document.getElementById('prodUsageInstructions').value || null,
+            delivery_type: document.getElementById('prodDeliveryType').value,
+            webhook_target: document.getElementById('prodWebhookTarget').value || null,
+
+            // Marketing fields
+            quantity_rules: null,
+            flash_sale_price: null,
+            flash_sale_end: null
         };
+
+        // Parse marketing fields
+        const quantityRulesRaw = document.getElementById('prodQuantityRules').value.trim();
+        if (quantityRulesRaw) {
+            try {
+                payload.quantity_rules = JSON.parse(quantityRulesRaw);
+                if (!Array.isArray(payload.quantity_rules)) throw new Error('必须是数组形式');
+            } catch (e) {
+                alert('阶梯定价规则 JSON 格式错误: ' + e.message);
+                return;
+            }
+        }
+
+        const flashPriceRaw = document.getElementById('prodFlashSalePrice').value.trim();
+        if (flashPriceRaw !== '') {
+            payload.flash_sale_price = parseInt(flashPriceRaw);
+        }
+
+        const flashEndRaw = document.getElementById('prodFlashSaleEnd').value;
+        if (flashEndRaw) {
+            payload.flash_sale_end = new Date(flashEndRaw).toISOString();
+        }
 
         // For CN site, also save auto-translated English fields
         if (editSite === 'cn' && name_en) {

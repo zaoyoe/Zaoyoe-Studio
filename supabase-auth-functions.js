@@ -3,6 +3,15 @@
  * 替换 leancloud-auth-functions.js
  */
 
+// Handle affiliate referrals
+document.addEventListener('DOMContentLoaded', () => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const ref = urlParams.get('ref');
+    if (ref) {
+        localStorage.setItem('invite_code', ref);
+    }
+});
+
 // ==================== 注册功能 (Supabase 版本) ====================
 async function handleRegister(event) {
     event.preventDefault();
@@ -38,6 +47,8 @@ async function handleRegister(event) {
             return;
         }
 
+        const inviteCode = localStorage.getItem('invite_code') || '';
+
         // 注册用户
         const { data, error } = await window.supabaseClient.auth.signUp({
             email: email,
@@ -45,7 +56,8 @@ async function handleRegister(event) {
             options: {
                 data: {
                     full_name: username || email.split('@')[0],
-                    avatar_url: `https://ui-avatars.com/api/?name=${encodeURIComponent(username || email.split('@')[0])}&background=random`
+                    avatar_url: `https://ui-avatars.com/api/?name=${encodeURIComponent(username || email.split('@')[0])}&background=random`,
+                    invite_code: inviteCode
                 }
             }
         });

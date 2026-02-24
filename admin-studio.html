@@ -17,7 +17,7 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
-    <link rel="stylesheet" href="admin-studio.css?v=14">
+    <link rel="stylesheet" href="admin-studio.css?v=17">
     <link rel="stylesheet" href="admin-sidebar.css?v=10">
     <link rel="stylesheet" href="css/admin-chat.css">
 
@@ -81,6 +81,11 @@
                     <i class="fas fa-store"></i>
                     <span>商城系统</span>
                 </div>
+                <!-- Marketing (Phase 2) -->
+                <div class="sidebar-item" data-module="discounts" onclick="switchModule('discounts')">
+                    <i class="fas fa-ticket-alt"></i>
+                    <span>优惠券码</span>
+                </div>
                 <div class="sidebar-item" data-module="homepage" onclick="switchModule('homepage')">
                     <i class="fas fa-home"></i>
                     <span>主页内容</span>
@@ -93,6 +98,11 @@
                 <div class="sidebar-item" data-module="points" onclick="switchModule('points')">
                     <i class="fas fa-coins"></i>
                     <span>积分管理</span>
+                </div>
+                <!-- Phase 4 Tickets -->
+                <div class="sidebar-item" data-module="tickets" onclick="switchModule('tickets')">
+                    <i class="fas fa-headset"></i>
+                    <span>售后工单</span>
                 </div>
                 <div class="sidebar-item" data-module="analytics" onclick="switchModule('analytics')">
                     <i class="fas fa-chart-line"></i>
@@ -5305,6 +5315,291 @@
             </div>
             <!-- END ANALYTICS MODULE -->
 
+            <!-- ========== DISCOUNTS MODULE ========== -->
+            <div id="module-discounts" class="module-container" style="display: none;">
+                <!-- Toolbar -->
+                <div class="admin-toolbar" style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                    <div class="toolbar-left"
+                        style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex: 1;">
+                        <div class="search-bar">
+                            <i class="fas fa-search"></i>
+                            <input type="text" id="discountSearchInput" placeholder="搜索优惠码或创建者..."
+                                oninput="AdminDiscounts.search()">
+                        </div>
+                        <div class="filter-dropdowns" style="display:flex; gap:8px;">
+                            <button class="filter-btn active" data-status="all"
+                                onclick="AdminDiscounts.filter('all', this)">全部</button>
+                            <button class="filter-btn" data-status="active"
+                                onclick="AdminDiscounts.filter('active', this)">生效中</button>
+                            <button class="filter-btn" data-status="used"
+                                onclick="AdminDiscounts.filter('used', this)">已核销/失效</button>
+                        </div>
+                    </div>
+                    <button class="btn-primary" onclick="AdminDiscounts.openGenerateModal()"
+                        style="background: linear-gradient(135deg, #4a8ec7, #5b9bd5); border: none; color: white; border-radius: 10px; padding: 10px 20px; font-size: 0.9rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; white-space: nowrap; box-shadow: 0 4px 15px rgba(91, 155, 213, 0.3); transition: all 0.3s ease; flex-shrink: 0;">
+                        <i class="fas fa-plus"></i> 生成优惠券
+                    </button>
+                </div>
+
+                <!-- Table Container -->
+                <div class="glass-panel table-view users-table-panel">
+                    <style>
+                        .discounts-table th,
+                        .discounts-table td {
+                            padding-top: 6px !important;
+                            padding-bottom: 6px !important;
+                        }
+
+                        .discounts-table th:nth-child(4),
+                        .discounts-table td:nth-child(4),
+                        .discounts-table th:nth-child(5),
+                        .discounts-table td:nth-child(5) {
+                            text-align: center !important;
+                        }
+                    </style>
+                    <table class="admin-table users-table discounts-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 20%;">优惠码</th>
+                                <th style="width: 25%;">类型与面额</th>
+                                <th style="width: 20%;">使用限制</th>
+                                <th style="width: 20%;">状态/有效期</th>
+                                <th style="width: 15%;">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="discountsTableBody">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+
+
+
+                <!-- Pagination -->
+                <div class="pagination" id="discountsPagination"></div>
+
+                <!-- Generate Discount Modal -->
+                <div id="discountGenerateModal" class="modal-overlay"
+                    onclick="if(event.target===this){this.style.opacity='0';this.style.visibility='hidden';setTimeout(()=>{this.style.display='none'},200)}"
+                    style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.55); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); z-index:9999; align-items:center; justify-content:center;">
+                    <div
+                        style="background: rgba(18, 22, 36, 0.97); border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; padding: 36px; width: 90%; max-width: 520px; box-shadow: 0 24px 80px rgba(0,0,0,0.6); animation: modalSlideIn 0.3s ease;">
+                        <!-- Modal Header -->
+                        <div style="display:flex; align-items:center; gap:14px; margin-bottom:28px;">
+                            <div
+                                style="width:44px; height:44px; border-radius:14px; background:linear-gradient(135deg, #4a8ec7, #5b9bd5); display:flex; align-items:center; justify-content:center; box-shadow: 0 4px 15px rgba(91,155,213,0.25);">
+                                <i class="fas fa-ticket-alt" style="color:white; font-size:1.1rem;"></i>
+                            </div>
+                            <div>
+                                <h2 style="margin:0; font-size:1.25rem; font-weight:600; color:#e8edf4;">生成新优惠券</h2>
+                                <p style="margin:2px 0 0; font-size:0.8rem; color:rgba(255,255,255,0.35);">创建折扣码供客户使用
+                                </p>
+                            </div>
+                        </div>
+
+                        <form id="discountGenerateForm" onsubmit="return false;">
+                            <!-- Code Input -->
+                            <div style="margin-bottom:20px;">
+                                <label
+                                    style="display:block; font-size:0.8rem; font-weight:500; color:rgba(255,255,255,0.5); margin-bottom:8px; letter-spacing:0.3px;">优惠码
+                                    <span style="color:rgba(255,255,255,0.2);">(留空自动生成)</span></label>
+                                <input type="text" id="discountCodeInput" placeholder="输入自定义码或留空随机"
+                                    style="width:100%; padding:12px 16px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:12px; color:#e8edf4; font-size:0.95rem; text-transform:uppercase; outline:none; transition:border-color 0.2s; box-sizing:border-box; font-family:'SF Mono',Consolas,monospace; letter-spacing:2px;">
+                            </div>
+
+                            <!-- Type & Value Row -->
+                            <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:20px;">
+                                <!-- Custom Dropdown for Type -->
+                                <div style="position:relative;" id="discountTypeWrapper">
+                                    <label
+                                        style="display:block; font-size:0.8rem; font-weight:500; color:rgba(255,255,255,0.5); margin-bottom:8px;">优惠类型</label>
+                                    <input type="hidden" id="discountValueType" value="percent">
+                                    <div id="discountTypeTrigger"
+                                        onclick="(function(e){e.stopPropagation();var dd=document.getElementById('discountTypeDropdown');dd.style.display=dd.style.display==='block'?'none':'block'})(event)"
+                                        style="width:100%; padding:12px 16px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:12px; color:#e8edf4; font-size:0.9rem; cursor:pointer; box-sizing:border-box; display:flex; align-items:center; justify-content:space-between; user-select:none; transition:border-color 0.2s;">
+                                        <span id="discountTypeLabel" style="display:flex; align-items:center; gap:8px;">
+                                            <span style="font-size:1rem;">📊</span> 按比例打折
+                                        </span>
+                                        <i class="fas fa-chevron-down"
+                                            style="font-size:0.7rem; color:rgba(255,255,255,0.3); transition:transform 0.2s;"></i>
+                                    </div>
+                                    <div id="discountTypeDropdown"
+                                        style="display:none; position:absolute; top:calc(100% + 6px); left:0; right:0; background:rgba(22,28,44,0.98); border:1px solid rgba(255,255,255,0.1); border-radius:12px; overflow:hidden; z-index:100; box-shadow:0 12px 40px rgba(0,0,0,0.5);">
+                                        <div onclick="document.getElementById('discountValueType').value='percent';document.getElementById('discountTypeLabel').innerHTML='<span style=\'font-size:1rem\'>📊</span> 按比例打折';document.getElementById('discountTypeDropdown').style.display='none';document.getElementById('discountValueSuffix').innerText='折';document.getElementById('discountValue').placeholder='如: 80';"
+                                            style="padding:12px 16px; color:#e8edf4; font-size:0.9rem; cursor:pointer; display:flex; align-items:center; gap:10px; transition:background 0.15s;"
+                                            onmouseenter="this.style.background='rgba(91,155,213,0.15)'"
+                                            onmouseleave="this.style.background='transparent'">
+                                            <span style="font-size:1.1rem;">📊</span>
+                                            <div>
+                                                <div style="font-weight:500;">按比例打折</div>
+                                                <div
+                                                    style="font-size:0.75rem; color:rgba(255,255,255,0.35); margin-top:2px;">
+                                                    输入折扣比例，如 80 表示 8 折</div>
+                                            </div>
+                                        </div>
+                                        <div style="height:1px; background:rgba(255,255,255,0.06); margin:0 12px;">
+                                        </div>
+                                        <div onclick="document.getElementById('discountValueType').value='fixed';document.getElementById('discountTypeLabel').innerHTML='<span style=\'font-size:1rem\'>💰</span> 固定金额立减';document.getElementById('discountTypeDropdown').style.display='none';document.getElementById('discountValueSuffix').innerText='积分';document.getElementById('discountValue').placeholder='如: 100';"
+                                            style="padding:12px 16px; color:#e8edf4; font-size:0.9rem; cursor:pointer; display:flex; align-items:center; gap:10px; transition:background 0.15s;"
+                                            onmouseenter="this.style.background='rgba(91,155,213,0.15)'"
+                                            onmouseleave="this.style.background='transparent'">
+                                            <span style="font-size:1.1rem;">💰</span>
+                                            <div>
+                                                <div style="font-weight:500;">固定金额立减</div>
+                                                <div
+                                                    style="font-size:0.75rem; color:rgba(255,255,255,0.35); margin-top:2px;">
+                                                    直接减去固定金额，如 100 元</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label
+                                        style="display:block; font-size:0.8rem; font-weight:500; color:rgba(255,255,255,0.5); margin-bottom:8px;">优惠面额</label>
+                                    <div style="position:relative; display:flex; align-items:center;">
+                                        <input type="number" id="discountValue" placeholder="如: 80" min="0"
+                                            style="width:100%; padding:12px 40px 12px 16px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:12px; color:#e8edf4; font-size:0.95rem; outline:none; box-sizing:border-box;">
+                                        <span id="discountValueSuffix"
+                                            style="position:absolute; right:16px; color:rgba(255,255,255,0.5); font-size:0.9rem; pointer-events:none;">折</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Max Uses & Expiry Row -->
+                            <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:28px;">
+                                <div>
+                                    <label
+                                        style="display:block; font-size:0.8rem; font-weight:500; color:rgba(255,255,255,0.5); margin-bottom:8px;">最大核销次数</label>
+                                    <input type="number" id="discountMaxUses" placeholder="默认1次" value="1"
+                                        style="width:100%; padding:12px 16px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:12px; color:#e8edf4; font-size:0.95rem; outline:none; box-sizing:border-box;">
+                                </div>
+                                <div>
+                                    <label
+                                        style="display:block; font-size:0.8rem; font-weight:500; color:rgba(255,255,255,0.5); margin-bottom:8px;">过期时间
+                                        <span style="color:rgba(255,255,255,0.2);">(可选)</span></label>
+                                    <div style="display:flex; gap:8px;">
+                                        <div style="flex:1; position:relative;">
+                                            <input type="text" id="discountExpiryDate" placeholder="2026-12-31"
+                                                maxlength="10"
+                                                oninput="(function(t){let v=t.value.replace(/[^0-9]/g,'');if(v.length>4)v=v.slice(0,4)+'-'+v.slice(4);if(v.length>7)v=v.slice(0,7)+'-'+v.slice(7);t.value=v.slice(0,10);})(this)"
+                                                style="width:100%; padding:12px 12px 12px 36px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:12px; color:#e8edf4; font-size:0.85rem; outline:none; box-sizing:border-box; font-family:'SF Mono',Consolas,monospace;">
+                                            <i class="fas fa-calendar-alt"
+                                                style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:rgba(255,255,255,0.25); font-size:0.8rem;"></i>
+                                        </div>
+                                        <div style="width:90px; position:relative;">
+                                            <input type="text" id="discountExpiryTime" placeholder="23:59" maxlength="5"
+                                                oninput="(function(t){let v=t.value.replace(/[^0-9]/g,'');if(v.length>2)v=v.slice(0,2)+':'+v.slice(2);t.value=v.slice(0,5);})(this)"
+                                                style="width:100%; padding:12px 12px 12px 34px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:12px; color:#e8edf4; font-size:0.85rem; outline:none; box-sizing:border-box; font-family:'SF Mono',Consolas,monospace;">
+                                            <i class="fas fa-clock"
+                                                style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:rgba(255,255,255,0.25); font-size:0.8rem;"></i>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Action Buttons -->
+                            <div style="display:flex; justify-content:flex-end; gap:12px;">
+                                <button type="button"
+                                    onclick="var m=document.getElementById('discountGenerateModal');m.style.opacity='0';m.style.visibility='hidden';setTimeout(function(){m.style.display='none'},200)"
+                                    style="padding:11px 24px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:12px; color:rgba(255,255,255,0.5); font-size:0.9rem; font-weight:500; cursor:pointer; transition:all 0.2s;">取消</button>
+                                <button type="button" onclick="AdminDiscounts.submitGenerate()"
+                                    style="padding:11px 28px; background:linear-gradient(135deg, #4a8ec7, #5b9bd5); border:none; border-radius:12px; color:white; font-size:0.9rem; font-weight:600; cursor:pointer; box-shadow:0 4px 15px rgba(91,155,213,0.25); transition:all 0.3s; display:flex; align-items:center; gap:8px;">
+                                    <i class="fas fa-magic"></i> 立即生成
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                <script>
+                    // Close custom dropdown when clicking outside
+                    document.addEventListener('click', function (e) {
+                        var dd = document.getElementById('discountTypeDropdown');
+                        if (dd && !document.getElementById('discountTypeWrapper').contains(e.target)) {
+                            dd.style.display = 'none';
+                        }
+                    });
+                </script>
+            </div>
+
+            <!-- ========== TICKETS MODULE ========== -->
+            <div id="module-tickets" class="module-container" style="display: none;">
+                <!-- Filters -->
+                <div class="admin-toolbar">
+                    <div class="toolbar-left">
+                        <div class="search-bar">
+                            <i class="fas fa-search"></i>
+                            <input type="text" id="ticketSearchInput" placeholder="搜索订单号或描述..."
+                                oninput="AdminTickets.search()">
+                        </div>
+                        <div class="filter-dropdowns" style="display:flex; gap:8px;">
+                            <button class="filter-btn active" data-status="all"
+                                onclick="AdminTickets.filter('all', this)">全部</button>
+                            <button class="filter-btn" data-status="pending"
+                                onclick="AdminTickets.filter('pending', this)">待处理</button>
+                            <button class="filter-btn" data-status="resolved"
+                                onclick="AdminTickets.filter('resolved', this)">已解决</button>
+                            <button class="filter-btn" data-status="rejected"
+                                onclick="AdminTickets.filter('rejected', this)">已拒绝</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Table Container -->
+                <div class="glass-panel table-view users-table-panel">
+                    <table class="admin-table users-table">
+                        <thead>
+                            <tr>
+                                <th>工单号/时间</th>
+                                <th>关联订单号</th>
+                                <th>用户UUID</th>
+                                <th>问题描述</th>
+                                <th>分类/状态</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ticketsTableBody">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination -->
+                <div class="pagination" id="ticketsPagination"></div>
+
+                <!-- Ticket Reply Modal -->
+                <div id="ticketReplyModal" class="modal-overlay"
+                    onclick="if(event.target===this) this.style.display='none'"
+                    style="display: none; z-index: 10000; justify-content:center; align-items:center; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);">
+                    <div class="modal-content" style="max-width: 500px;">
+                        <h2 class="modal-title">处理售化工单</h2>
+                        <form id="ticketReplyForm" onsubmit="return false;">
+                            <div class="modern-form-group">
+                                <label class="modern-label">管理员回复 (反馈给用户)</label>
+                                <textarea id="ticketAdminReply" class="modern-input"
+                                    placeholder="请输入处理结果或回复"></textarea>
+                            </div>
+                            <div class="modern-form-group">
+                                <label class="modern-label" style="display:flex; align-items:center; gap:8px;">
+                                    <input type="checkbox" id="ticketRefundCheckbox" style="width: 16px; height: 16px;">
+                                    退还订单积分
+                                </label>
+                                <small
+                                    style="color: rgba(255,255,255,0.4);">如果勾选，将自动将该订单对应的积分退还给用户（需要确保在订单记录中能找到支付金额）</small>
+                            </div>
+                            <input type="hidden" id="replyTicketId">
+                            <input type="hidden" id="replyNewStatus">
+
+                            <div class="modal-actions" style="margin-top:20px; text-align:right;">
+                                <button type="button" class="btn-secondary"
+                                    onclick="document.getElementById('ticketReplyModal').style.display='none'">取消</button>
+                                <button type="button" class="btn-primary"
+                                    onclick="AdminTickets.submitReply()">确认处理</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
             <!-- Toast Notifications -->
             <div class="toast-container" id="toastContainer"></div>
         </div>
@@ -5968,6 +6263,49 @@
                             oninput="ShopAdmin.updatePreview()"></textarea>
                     </div>
 
+                    <!-- Marketing Config (Phase 2) -->
+                    <div class="input-group-row">
+                        <div class="modern-form-group" style="flex:1;">
+                            <label class="modern-label"><i class="fas fa-layer-group"
+                                    style="color:#f29c38; margin-right:6px;"></i>阶梯定价规则 (JSON)</label>
+                            <input type="text" id="prodQuantityRules" class="modern-input"
+                                placeholder='[{"qty":10, "price":8}]'>
+                            <small
+                                style="color:rgba(255,255,255,0.4); font-size:11px; margin-top:4px; display:block;">示例:
+                                满10件单价降至8积分。留空则不开启。</small>
+                        </div>
+                    </div>
+                    <div class="input-group-row">
+                        <div class="modern-form-group">
+                            <label class="modern-label"><i class="fas fa-bolt"
+                                    style="color:#ef4444; margin-right:6px;"></i>秒杀特价 (积分)</label>
+                            <input type="number" id="prodFlashSalePrice" class="modern-input" placeholder="0 (选填)">
+                        </div>
+                        <div class="modern-form-group">
+                            <label class="modern-label">秒杀结束时间</label>
+                            <input type="datetime-local" id="prodFlashSaleEnd" class="modern-input"
+                                style="color-scheme: dark;">
+                        </div>
+                    </div>
+
+                    <!-- Phase 4 Delivery Config -->
+                    <div class="input-group-row">
+                        <div class="modern-form-group">
+                            <label class="modern-label"><i class="fas fa-truck"
+                                    style="color:#10b981; margin-right:6px;"></i>发货模式</label>
+                            <select id="prodDeliveryType" class="modern-input"
+                                onchange="ShopAdmin.toggleWebhookField(this.value)">
+                                <option value="KEY">卡密池发放 (KEY)</option>
+                                <option value="API">外部接口履约 (API Webhook)</option>
+                            </select>
+                        </div>
+                        <div class="modern-form-group" id="webhookTargetGroup" style="display: none;">
+                            <label class="modern-label">Webhook URL</label>
+                            <input type="text" id="prodWebhookTarget" class="modern-input"
+                                placeholder="https://api.example.com/webhook">
+                        </div>
+                    </div>
+
                     <!-- Usage Instructions Toggle + Textarea -->
                     <div class="modern-form-group">
                         <div
@@ -6096,6 +6434,7 @@
                 if (moduleId === 'users') initUserModule();
                 if (moduleId === 'analytics' && typeof initAnalyticsModule === 'function') initAnalyticsModule();
                 if (moduleId === 'shop') ShopAdmin.init();
+                if (moduleId === 'discounts' && typeof AdminDiscounts !== 'undefined') AdminDiscounts.init();
                 if (moduleId === 'comments' && typeof initCommentsModule === 'function') {
                     initCommentsModule();
                 } else if (moduleId === 'settings' && typeof initSettingsModule === 'function') {
@@ -6115,6 +6454,7 @@
     </script>
     <script src="admin-users.js"></script>
     <script src="admin-points.js?v=4"></script>
+    <script src="admin-discounts.js"></script>
     <script src="starry-sky.js"></script>
     <!-- Flatpickr JS -->
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
@@ -6125,6 +6465,7 @@
     <script src="admin-homepage.js"></script>
     <script src="js/admin-studio-translate.js"></script>
     <script src="js/admin-site-filter.js"></script>
+    <script src="js/admin-tickets.js"></script>
     <script src="admin-studio.js"></script>
     <script src="js/admin-shop.js?v=CLICK_DYNAMIC_V13"></script>
 </body>
@@ -6162,6 +6503,13 @@
         if (moduleName === 'homepage') {
             if (typeof HomepageAdmin !== 'undefined' && typeof HomepageAdmin.init === 'function') {
                 HomepageAdmin.init();
+            }
+        }
+
+        // Lazy init Tickets
+        if (moduleName === 'tickets') {
+            if (typeof AdminTickets !== 'undefined' && typeof AdminTickets.init === 'function') {
+                AdminTickets.init();
             }
         }
 

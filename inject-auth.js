@@ -54,6 +54,10 @@
                     <i class="fas fa-wallet"></i>
                     <span data-i18n="wallet.title">我的钱包</span>
                 </button>
+                <button class="dropdown-action" onclick="WalletModal.open(); setTimeout(() => WalletModal.switchView('orders'), 50);">
+                    <i class="fas fa-box-open"></i>
+                    <span data-i18n="wallet.myOrders">我的订单</span>
+                </button>
                 <button class="dropdown-action" onclick="window.handleSwitchAccount(event)">
                     <i class="fas fa-exchange-alt"></i>
                     <span data-i18n="auth.switchAccount">切换账户</span>

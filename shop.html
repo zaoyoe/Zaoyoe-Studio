@@ -647,6 +647,24 @@
             will-change: transform;
         }
 
+        /* Flash Sale Breathing Effect */
+        @keyframes flashSaleBreathe {
+
+            0%,
+            100% {
+                box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.1);
+            }
+
+            50% {
+                box-shadow: 0 10px 40px -10px rgba(239, 68, 68, 0.4), 0 0 0 1px rgba(239, 68, 68, 0.3);
+            }
+        }
+
+        .shop-card.flash-sale-card {
+            animation: breathe 4s ease-in-out infinite, flashSaleBreathe 2s ease-in-out infinite;
+            border-color: rgba(239, 68, 68, 0.3);
+        }
+
         /* Pause animation on hover (prioritize hover lift effect) */
         .shop-card.breathing:hover {
             animation-play-state: paused;
@@ -952,6 +970,21 @@
                         oninput="ShopClient.onQuantityInput(this)">
                     <button class="shop-qty-btn" onclick="ShopClient.adjustQuantity(1)">+</button>
                 </div>
+            </div>
+
+            <!-- Add Discount Code Input Here -->
+            <div style="margin: 15px 10px; text-align: left;">
+                <div style="font-size: 12px; color: rgba(255,255,255,0.4); margin-bottom: 5px;"
+                    data-i18n="shop.discountCode">优惠码 (选填)</div>
+                <div style="display: flex; gap: 8px;">
+                    <input type="text" id="purchaseDiscountCode" placeholder="输入优惠码"
+                        data-i18n-placeholder="shop.enterDiscountCode"
+                        style="flex: 1; padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.2); color: #fff; outline: none; transition: border-color 0.2s;"
+                        oninput="this.value = this.value.toUpperCase()">
+                    <button id="applyDiscountBtn" onclick="ShopClient.applyDiscount()" data-i18n="shop.verify"
+                        style="padding: 0 16px; border-radius: 8px; background: rgba(107, 158, 206, 0.2); color: #6b9ece; border: 1px solid rgba(107, 158, 206, 0.3); cursor: pointer; font-weight: 500; transition: all 0.2s; white-space: nowrap;">验证</button>
+                </div>
+                <div id="discountMessage" style="font-size: 12px; margin-top: 6px; display: none;"></div>
             </div>
 
             <!-- Price Summary -->

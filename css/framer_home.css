@@ -289,6 +289,8 @@ h3 {
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     border: 1px solid rgba(255, 255, 255, 0.1);
+    /* Remove top border to ensure a seamless connection with the navigation bar */
+    border-top: none;
     border-radius: 12px;
     box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
     /* Centering: JS sets left to trigger center, CSS shifts back 50% */
@@ -297,6 +299,7 @@ h3 {
     visibility: hidden;
     pointer-events: none;
     z-index: 9999;
+    /* Ensure it floats above the nav bar's border when pushed up 1px */
 }
 
 /* Invisible bridge so the mouse doesn't "fall off" between the nav and the dropdown */

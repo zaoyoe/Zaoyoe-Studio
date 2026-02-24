@@ -2537,7 +2537,7 @@ body {
    USER MANAGEMENT MODULE CSS (Refined)
    ======================================== */
 
-#module-users {
+:is(#module-users, #module-discounts, #module-tickets) {
     padding: 0 32px 32px 32px;
     /* Add horizontal breathing room */
 }
@@ -2566,14 +2566,14 @@ body {
     z-index: 1;
 }
 
-#usersTable {
+.users-table {
     width: 100%;
     border-collapse: separate;
     /* Changed from collapse to allow rounded corners */
     border-spacing: 0;
 }
 
-#usersTable th {
+.users-table th {
     text-align: left;
     padding: 12px 20px;
     color: var(--text-dim);
@@ -2583,7 +2583,7 @@ body {
     background: rgba(0, 0, 0, 0.02);
 }
 
-#usersTable td {
+.users-table td {
     padding: 12px 20px;
     border-bottom: 1px solid rgba(0, 0, 0, 0.05);
     background: transparent;
@@ -2591,10 +2591,12 @@ body {
 }
 
 /* Force center for empty/loading state cells */
-#usersTable td.empty-state,
-#usersTable td.loading-cell,
-#usersTable td[style*="text-align"] {
+.users-table td.empty-state,
+.users-table td.loading-cell,
+.users-table td[style*="text-align"] {
     text-align: center !important;
+    vertical-align: middle !important;
+    height: 300px;
 }
 
 /* Row Styles - Clean, no green border */
@@ -4145,7 +4147,7 @@ body {
    ============================================ */
 
 /* Toolbar Layout */
-#module-users .admin-toolbar {
+:is(#module-users, #module-discounts, #module-tickets) .admin-toolbar {
     display: flex;
     align-items: center;
     gap: 12px;
@@ -4157,32 +4159,32 @@ body {
     flex-wrap: wrap;
 }
 
-#module-users .toolbar-left {
+:is(#module-users, #module-discounts, #module-tickets) .toolbar-left {
     display: flex;
     align-items: center;
     gap: 10px;
     flex-wrap: wrap;
 }
 
-#module-users .filter-group {
+:is(#module-users, #module-discounts, #module-tickets) .filter-group {
     display: flex;
     gap: 10px;
 }
 
 /* Fix dropdown menus being clipped by overflow */
-#module-users .filter-dropdowns {
+:is(#module-users, #module-discounts, #module-tickets) .filter-dropdowns {
     overflow: visible;
 }
 
 /* Search Bar - Pill Style */
-#module-users .search-bar {
+:is(#module-users, #module-discounts, #module-tickets) .search-bar {
     position: relative;
     width: 280px;
     max-width: 100%;
     flex-shrink: 0;
 }
 
-#module-users .search-bar input {
+:is(#module-users, #module-discounts, #module-tickets) .search-bar input {
     width: 100%;
     height: 34px;
     padding: 0 12px 0 36px;
@@ -4195,11 +4197,11 @@ body {
     transition: all 0.2s;
 }
 
-#module-users .search-bar input::placeholder {
+:is(#module-users, #module-discounts, #module-tickets) .search-bar input::placeholder {
     color: #64748b;
 }
 
-#module-users .search-bar input:focus {
+:is(#module-users, #module-discounts, #module-tickets) .search-bar input:focus {
     background-color: #ffffff;
     border-color: #6b9ece;
     /* Starry Blue */
@@ -4208,7 +4210,7 @@ body {
     /* No glow */
 }
 
-#module-users .search-bar i {
+:is(#module-users, #module-discounts, #module-tickets) .search-bar i {
     position: absolute;
     left: 12px;
     top: 50%;
@@ -4219,7 +4221,7 @@ body {
 }
 
 /* Filter Dropdowns - Pill Style */
-#module-users .filter-select {
+:is(#module-users, #module-discounts, #module-tickets) .filter-select {
     height: 44px;
     padding: 0 36px 0 16px;
     background-color: rgba(255, 255, 255, 0.8);
@@ -4238,43 +4240,43 @@ body {
     min-width: 90px;
 }
 
-#module-users .filter-select:hover {
+:is(#module-users, #module-discounts, #module-tickets) .filter-select:hover {
     background-color: rgba(255, 255, 255, 1);
     border-color: rgba(0, 0, 0, 0.15);
 }
 
-#module-users .filter-select:focus {
+:is(#module-users, #module-discounts, #module-tickets) .filter-select:focus {
     border-color: #6b9ece;
     outline: none;
     box-shadow: none;
 }
 
-#module-users .filter-select option {
+:is(#module-users, #module-discounts, #module-tickets) .filter-select option {
     background-color: #ffffff;
     color: #1e293b;
     padding: 8px 12px;
     font-size: 0.9rem;
 }
 
-#module-users .filter-select option:checked,
-#module-users .filter-select option:hover {
+:is(#module-users, #module-discounts, #module-tickets) .filter-select option:checked,
+:is(#module-users, #module-discounts, #module-tickets) .filter-select option:hover {
     background-color: #f3e8ff;
     /* Lavender */
     color: #6b21a8;
 }
 
 /* Dark Mode Overrides */
-[data-theme="dark"] #module-users .search-bar input {
+[data-theme="dark"] :is(#module-users, #module-discounts, #module-tickets) .search-bar input {
     background-color: rgba(255, 255, 255, 0.05);
     border-color: rgba(255, 255, 255, 0.1);
     color: #f1f5f9;
 }
 
-[data-theme="dark"] #module-users .search-bar input::placeholder {
+[data-theme="dark"] :is(#module-users, #module-discounts, #module-tickets) .search-bar input::placeholder {
     color: rgba(255, 255, 255, 0.4);
 }
 
-[data-theme="dark"] #module-users .search-bar input:focus {
+[data-theme="dark"] :is(#module-users, #module-discounts, #module-tickets) .search-bar input:focus {
     background-color: rgba(255, 255, 255, 0.08);
     border-color: #6b9ece;
     /* Starry Blue */
@@ -4282,28 +4284,28 @@ body {
     /* No glow */
 }
 
-[data-theme="dark"] #module-users .search-bar i {
+[data-theme="dark"] :is(#module-users, #module-discounts, #module-tickets) .search-bar i {
     color: rgba(255, 255, 255, 0.5);
 }
 
-[data-theme="dark"] #module-users .filter-select {
+[data-theme="dark"] :is(#module-users, #module-discounts, #module-tickets) .filter-select {
     background-color: rgba(255, 255, 255, 0.05);
     border-color: rgba(255, 255, 255, 0.1);
     color: #f1f5f9;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.6)' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
 }
 
-[data-theme="dark"] #module-users .filter-select:hover {
+[data-theme="dark"] :is(#module-users, #module-discounts, #module-tickets) .filter-select:hover {
     background-color: rgba(255, 255, 255, 0.1);
     border-color: rgba(255, 255, 255, 0.2);
 }
 
-[data-theme="dark"] #module-users .filter-select:focus {
+[data-theme="dark"] :is(#module-users, #module-discounts, #module-tickets) .filter-select:focus {
     border-color: rgba(139, 92, 246, 0.5);
     box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.25);
 }
 
-[data-theme="dark"] #module-users .filter-select option {
+[data-theme="dark"] :is(#module-users, #module-discounts, #module-tickets) .filter-select option {
     background-color: #1e293b;
     color: #f1f5f9;
 }
@@ -4313,8 +4315,8 @@ body {
    ============================================ */
 @media (max-width: 768px) {
 
-    #module-users .filter-dropdown .filter-popup,
-    #module-users .filter-dropdown .glass-popup {
+    :is(#module-users, #module-discounts, #module-tickets) .filter-dropdown .filter-popup,
+    :is(#module-users, #module-discounts, #module-tickets) .filter-dropdown .glass-popup {
         min-width: 140px;
         max-width: calc(100vw - 32px);
         left: 0;
@@ -4322,26 +4324,26 @@ body {
     }
 
     /* Ensure filter dropdowns allow popup to escape container */
-    #module-users .filter-dropdowns {
+    :is(#module-users, #module-discounts, #module-tickets) .filter-dropdowns {
         overflow: visible;
     }
 
-    #module-users .admin-toolbar {
+    :is(#module-users, #module-discounts, #module-tickets) .admin-toolbar {
         flex-wrap: wrap;
         gap: 12px;
     }
 
-    #module-users .toolbar-left {
+    :is(#module-users, #module-discounts, #module-tickets) .toolbar-left {
         flex-wrap: wrap;
         width: 100%;
     }
 
-    #module-users .search-bar {
+    :is(#module-users, #module-discounts, #module-tickets) .search-bar {
         width: 100%;
         max-width: none;
     }
 
-    #module-users .filter-group {
+    :is(#module-users, #module-discounts, #module-tickets) .filter-group {
         flex-wrap: wrap;
     }
 }
@@ -8692,17 +8694,17 @@ input:checked+.toggle-slider:before {
     display: flex;
     align-items: center;
     gap: 10px;
-    /* Match #module-users .toolbar-left gap */
+    /* Match :is(#module-users, #module-discounts, #module-tickets) .toolbar-left gap */
     flex-wrap: wrap;
 }
 
 #points-view-batches .filter-dropdowns {
     display: flex;
     gap: 10px;
-    /* Match #module-users .filter-group gap */
+    /* Match :is(#module-users, #module-discounts, #module-tickets) .filter-group gap */
 }
 
-/* Search Bar - Mirrored from #module-users .search-bar */
+/* Search Bar - Mirrored from :is(#module-users, #module-discounts, #module-tickets) .search-bar */
 #points-view-batches .search-bar {
     position: relative;
     width: 280px;
@@ -8754,7 +8756,7 @@ input:checked+.toggle-slider:before {
     pointer-events: none;
 }
 
-/* Filter Buttons - Match #module-users .filter-select style */
+/* Filter Buttons - Match :is(#module-users, #module-discounts, #module-tickets) .filter-select style */
 #points-view-batches .filter-btn {
     height: 34px;
     /* Match search input height */
@@ -16761,8 +16763,8 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
     /* Fix User Table Column Visibility */
     /* Ensure Identity Column (Avatar/Name) is ALWAYS visible but SCROLLS with table */
-    #usersTable td:has(.user-cell),
-    #usersTable th:nth-child(2) {
+    .users-table td:has(.user-cell),
+    .users-table th:nth-child(2) {
         display: table-cell !important;
         width: auto !important;
         max-width: 140px;
@@ -16783,14 +16785,14 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     }
 
     /* Show all columns using specific classes (Robust against checkbox column) */
-    #usersTable th.col-active,
-    #usersTable td:has(.active-status),
-    #usersTable th.col-tags,
-    #usersTable td:has(.user-tags-cell),
-    #usersTable th.col-assets,
-    #usersTable td:has(.assets-cell),
-    #usersTable th.col-status,
-    #usersTable td:has(.status-badge) {
+    .users-table th.col-active,
+    .users-table td:has(.active-status),
+    .users-table th.col-tags,
+    .users-table td:has(.user-tags-cell),
+    .users-table th.col-assets,
+    .users-table td:has(.assets-cell),
+    .users-table th.col-status,
+    .users-table td:has(.status-badge) {
         display: table-cell !important;
     }
 
@@ -16801,7 +16803,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     }
 
     /* Adjust Assets column width */
-    #usersTable td:has(.assets-cell) {
+    .users-table td:has(.assets-cell) {
         width: 80px;
         text-align: right;
     }

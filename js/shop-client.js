@@ -5,11 +5,37 @@
  */
 
 const ShopClient = {
+    currentAgentId: null,
+    currentAgentName: null,
+
     init: async function () {
         console.log('🛍️ Shop Client Initialized');
 
-        // Read URL parameters to set initial category
+        // Read URL parameters
         const urlParams = new URLSearchParams(window.location.search);
+
+        // Agent Store Logic
+        const agentParam = urlParams.get('agent');
+        if (agentParam) {
+            try {
+                const { data } = await window.supabaseClient.from('profiles').select('id, username').eq('username', agentParam).single();
+                if (data && data.id) {
+                    this.currentAgentId = data.id;
+                    this.currentAgentName = data.username;
+                    console.log(`🛍️ Welcome to Agent Store: ${this.currentAgentName}`);
+
+                    // Update Page Title and Hero Title if exists
+                    document.title = `${this.currentAgentName} ${window.i18n?.t('shop.agentStore') || '的专属福利商店'}`;
+                    const heroTitle = document.querySelector('.hero-title');
+                    if (heroTitle) {
+                        heroTitle.innerHTML = `<i class="fas fa-store" style="color:#10b981; margin-right:10px;"></i>${this.currentAgentName} ${window.i18n?.t('shop.agentStore') || '的专属福利商店'}`;
+                    }
+                }
+            } catch (err) {
+                console.warn('Agent lookup failed:', err);
+            }
+        }
+
         const categoryParam = urlParams.get('category');
         if (categoryParam) {
             this.currentCategory = categoryParam;
@@ -133,6 +159,12 @@ const ShopClient = {
 
         container.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text-dim);"><i class="fas fa-spinner fa-spin"></i> ${window.i18n?.t('common.loading') || '加载中...'}</div>`;
 
+        // Clear existing timer if any
+        if (this.flashSaleInterval) {
+            clearInterval(this.flashSaleInterval);
+            this.flashSaleInterval = null;
+        }
+
         try {
             // Fetch ONLY active products
             let query = supabaseClient
@@ -153,6 +185,21 @@ const ShopClient = {
             if (!data || data.length === 0) {
                 container.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text-dim);" data-i18n="shop.noProducts">${window.i18n?.t('shop.noProducts') || '暂无商品上架'}</div>`;
                 return;
+            }
+
+            // Fetch Agent Prices if available
+            let agentPrices = {};
+            if (this.currentAgentId) {
+                const { data: agentData } = await window.supabaseClient
+                    .from('agent_prices')
+                    .select('product_id, custom_price')
+                    .eq('agent_id', this.currentAgentId);
+
+                if (agentData) {
+                    agentData.forEach(ap => {
+                        agentPrices[ap.product_id] = ap.custom_price;
+                    });
+                }
             }
 
             data.forEach((p, index) => {
@@ -190,11 +237,44 @@ const ShopClient = {
                 const displayDesc = (currentLang === 'en' && p.description_en)
                     ? p.description_en
                     : (p.description || (window.i18n?.t('shop.noDescription') || '暂无描述'));
+                const qtyRulesStr = p.quantity_rules ? encodeURIComponent(JSON.stringify(p.quantity_rules)) : '';
+
+                // Flash Sale Logic
+                const nowTime = new Date();
+                const flashEnd = p.flash_sale_end ? new Date(p.flash_sale_end) : null;
+                const isFlashSale = flashEnd && flashEnd > nowTime && p.flash_sale_price != null;
+
+                let currentPrice = p[window.SiteConfig?.getPriceField() || 'price_points'] || p.price_points;
+                let originalPriceHtml = '';
+                let flashSaleBadge = '';
+                let flashShadowClass = '';
+                let agentBadgeHtml = '';
+
+                // Agent override highest priority if > base price
+                if (this.currentAgentId && agentPrices[p.id] && agentPrices[p.id] > currentPrice) {
+                    originalPriceHtml = `<span style="text-decoration: line-through; color: rgba(255,255,255,0.4); font-size: 0.8em; margin-right: 6px;">${currentPrice}</span>`;
+                    currentPrice = agentPrices[p.id];
+                    agentBadgeHtml = `<div style="position:absolute; bottom:12px; left:12px; z-index: 10; font-size: 11px; background: rgba(16, 185, 129, 0.2); color: #10b981; padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.4);">${window.i18n?.t('shop.exclusiveBuff') || '专属加持'}</div>`;
+                }
+
+                // Check flash sale (only if no agent custom price overriding it)
+                const now = new Date();
+                if (p.flash_sale_price != null && p.flash_sale_end && new Date(p.flash_sale_end) > now && agentBadgeHtml === '') {
+                    isFlashSale = true;
+                    originalPriceHtml = `<span style="text-decoration: line-through; color: rgba(255,255,255,0.4); font-size: 0.8em; margin-right: 6px;">${currentPrice}</span>`;
+                    currentPrice = p.flash_sale_price;
+                    flashSaleBadge = `<div class="flash-sale-badge" data-endtime="${p.flash_sale_end}" style="position:absolute; top:12px; left:12px; z-index: 10; font-size: 11px; background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white; padding: 4px 8px; border-radius: 4px; font-weight:bold; box-shadow: 0 0 10px rgba(239,68,68,0.5);"><i class="fas fa-bolt"></i> <span class="countdown-timer">${window.i18n?.t('shop.calculating') || '计算中...'}</span></div>`;
+                    flashShadowClass = 'flash-sale-card';
+                }
+
+                el.className = `shop-card user-product-card breathing ${flashShadowClass}`;
 
                 el.innerHTML = `
-                    <div class="shop-card-image">
+                    <div class="shop-card-image" style="position:relative;">
+                        ${flashSaleBadge}
                         ${displayHtml}
-                        <div class="shop-stock-badge ${noStock ? 'out-of-stock' : 'in-stock'}" style="position:absolute; top:12px; right:12px;">
+                        ${agentBadgeHtml}
+                        <div class="shop-stock-badge ${noStock ? 'out-of-stock' : 'in-stock'}" style="position:absolute; top:12px; right:12px; z-index: 10;">
                             ${stockLabel}
                         </div>
                     </div>
@@ -204,8 +284,8 @@ const ShopClient = {
                         <p class="shop-card-desc">${displayDesc}</p>
                         
                         <div style="margin-top:auto; padding-top:20px; display:flex; justify-content:space-between; align-items:center;">
-                            <div class="shop-card-price">${window.SiteConfig?.formatPrice(p[window.SiteConfig?.getPriceField() || 'price_points'] || p.price_points) || p.price_points} <span data-i18n="shop.points">${window.SiteConfig?.getPointsLabel() || window.i18n?.t('shop.points') || '积分'}</span></div>
-                            <button onclick="ShopClient.buyProduct('${p.id}', '${p.name}', '${p.name_en || ''}', ${p[window.SiteConfig?.getPriceField() || 'price_points'] || p.price_points})"
+                            <div class="shop-card-price">${originalPriceHtml}${window.SiteConfig?.formatPrice(currentPrice) || currentPrice} <span data-i18n="shop.points">${window.SiteConfig?.getPointsLabel() || window.i18n?.t('shop.points') || '积分'}</span></div>
+                            <button onclick="ShopClient.buyProduct('${p.id}', '${p.name}', '${p.name_en || ''}', ${currentPrice}, '${qtyRulesStr}')"
                                 ${noStock ? 'disabled' : ''}
                                 class="shop-buy-btn ${buyBtnClass}">
                                 ${buyBtnText}
@@ -217,19 +297,57 @@ const ShopClient = {
             });
 
         } catch (err) {
-            console.error('[ShopClient] Load Error:', err);
-            container.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:20px;color:#ff4d4f;">加载失败: ${err.message}</div>`;
+            container.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:20px;color:#ff4d4f;">${window.i18n?.t('common.error') || '加载失败'}: ${err.message}</div>`;
         }
+
+        this.startFlashSaleTimer();
+    },
+
+    flashSaleInterval: null,
+
+    startFlashSaleTimer: function () {
+        if (this.flashSaleInterval) clearInterval(this.flashSaleInterval);
+        this.flashSaleInterval = setInterval(() => {
+            let activeFlashSales = 0;
+            document.querySelectorAll('.flash-sale-badge').forEach(badge => {
+                const endTime = parseInt(badge.dataset.endtime);
+                const now = Date.now();
+                if (now >= endTime) {
+                    // Flash sale ended, reload products completely
+                    clearInterval(this.flashSaleInterval);
+                    this.loadProducts();
+                    return; // Stop processing further
+                } else {
+                    activeFlashSales++;
+                    const diff = endTime - now;
+                    const h = Math.floor(diff / (1000 * 60 * 60));
+                    const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+                    const s = Math.floor((diff % (1000 * 60)) / 1000);
+                    const timerSpan = badge.querySelector('.countdown-timer');
+                    if (timerSpan) {
+                        timerSpan.textContent = h > 0
+                            ? `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
+                            : `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+                    }
+                }
+            });
+            // Cleanup interval if no more flash sales on page
+            if (activeFlashSales === 0) {
+                clearInterval(this.flashSaleInterval);
+                this.flashSaleInterval = null;
+            }
+        }, 1000);
     },
 
     // State for the purchase modal
-    currentPurchase: { productId: null, productName: null, unitPrice: 0, quantity: 1, orderId: null },
+    currentPurchase: { productId: null, productName: null, productNameEn: null, basePrice: 0, unitPrice: 0, quantity: 1, orderId: null, rules: [], discountCode: null, discountAmount: 0 },
 
     // ---- New Purchase Flow via Modal ----
 
-    buyProduct: async function (productId, productName, productNameEn, price) {
+    buyProduct: async function (productId, productName, productNameEn, price, rulesStr) {
+        const rules = rulesStr ? JSON.parse(decodeURIComponent(rulesStr)) : [];
         // 1. Open Modal immediately for instant feedback
-        this.openPurchaseModal(productId, productName, productNameEn, price);
+        this.openPurchaseModal(productId, productName, productNameEn, price, rules);
 
         // 2. Auth Check in background
         const { data: { user } } = await supabaseClient.auth.getUser();
@@ -244,8 +362,8 @@ const ShopClient = {
         }
     },
 
-    openPurchaseModal: function (productId, productName, productNameEn, price) {
-        this.currentPurchase = { productId, productName, productNameEn, unitPrice: price, quantity: 1 };
+    openPurchaseModal: function (productId, productName, productNameEn, price, rules) {
+        this.currentPurchase = { productId, productName, productNameEn, basePrice: price, unitPrice: price, quantity: 1, rules: rules, discountCode: null, discountAmount: 0 };
 
         // Update UI - show name based on current language
         const currentLang = window.i18n?.getCurrentLanguage() || 'zh';
@@ -254,6 +372,17 @@ const ShopClient = {
         document.getElementById('modalUnitPrice').textContent = price;
         document.getElementById('modalTotalPrice').textContent = price;
         document.getElementById('purchaseQuantity').value = 1;
+
+        // Reset Discount UI
+        const discountInput = document.getElementById('purchaseDiscountCode');
+        const discountMsg = document.getElementById('discountMessage');
+        const applyBtn = document.getElementById('applyDiscountBtn');
+        if (discountInput) discountInput.value = '';
+        if (discountMsg) discountMsg.style.display = 'none';
+        if (applyBtn) {
+            applyBtn.innerHTML = window.i18n?.t('shop.verify') || '验证';
+            applyBtn.disabled = false;
+        }
 
         // Reset purchase button state (in case previous purchase left it disabled)
         const btn = document.getElementById('confirmPurchaseBtn');
@@ -271,6 +400,122 @@ const ShopClient = {
         document.getElementById('shopPurchaseModal').classList.remove('active');
     },
 
+    updatePriceForQuantity: function (qty) {
+        let unitPrice = this.currentPurchase.basePrice;
+        if (this.currentPurchase.rules && this.currentPurchase.rules.length > 0) {
+            this.currentPurchase.rules.forEach(rule => {
+                if (qty >= rule.qty && rule.price < unitPrice) {
+                    unitPrice = rule.price;
+                }
+            });
+        }
+        this.currentPurchase.unitPrice = unitPrice;
+
+        // Show wholesale UI feedback dynamically
+        const modalProductName = document.getElementById('modalProductName');
+        const currentLang = window.i18n?.getCurrentLanguage() || 'zh';
+        const displayName = (currentLang === 'en' && this.currentPurchase.productNameEn) ? this.currentPurchase.productNameEn : this.currentPurchase.productName;
+
+        if (unitPrice < this.currentPurchase.basePrice) {
+            modalProductName.innerHTML = `${displayName} <span style="font-size:12px; color:#10b981; background:rgba(16,185,129,0.1); padding:2px 6px; border-radius:4px; margin-left:6px; display:inline-flex; align-items:center; gap:4px; vertical-align:middle; line-height:1;"><i class="fas fa-tags" style="font-size:10px;"></i> ${window.i18n?.t('shop.wholesalePrice') || '批发价'}</span>`;
+        } else {
+            modalProductName.textContent = displayName;
+        }
+
+        document.getElementById('modalUnitPrice').textContent = unitPrice;
+
+        let total = qty * unitPrice;
+
+        // Re-apply discount silently if exists
+        if (this.currentPurchase.discountCode) {
+            setTimeout(() => ShopClient.applyDiscount(true), 10);
+        } else {
+            document.getElementById('modalTotalPrice').textContent = total;
+        }
+
+        return total;
+    },
+
+    applyDiscount: async function (silent = false) {
+        const codeInputElem = document.getElementById('purchaseDiscountCode');
+        const codeInput = codeInputElem ? codeInputElem.value.trim() : '';
+        const msgBox = document.getElementById('discountMessage');
+        const applyBtn = document.getElementById('applyDiscountBtn');
+
+        if (!codeInput) {
+            if (!silent && msgBox) {
+                msgBox.style.color = '#ef4444';
+                msgBox.textContent = window.i18n?.t('shop.enterDiscountCode') || '请输入优惠码';
+                msgBox.style.display = 'block';
+            }
+            this.currentPurchase.discountCode = null;
+            this.currentPurchase.discountAmount = 0;
+            const subtotal = this.currentPurchase.quantity * this.currentPurchase.unitPrice;
+            document.getElementById('modalTotalPrice').textContent = subtotal;
+            return;
+        }
+
+        if (applyBtn && !silent) {
+            applyBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            applyBtn.disabled = true;
+        }
+
+        try {
+            const { data, error } = await supabaseClient
+                .from('discount_codes')
+                .select('*')
+                .eq('code', codeInput)
+                .eq('is_active', true)
+                .single();
+
+            if (error || !data) {
+                throw new Error(window.i18n?.t('shop.invalidCode') || '无效的优惠码');
+            }
+
+            if (data.expires_at && new Date(data.expires_at) < new Date()) {
+                throw new Error(window.i18n?.t('shop.expiredCode') || '优惠码已过期');
+            }
+
+            if (data.max_uses > 0 && data.used_count >= data.max_uses) {
+                throw new Error(window.i18n?.t('shop.codeLimitReached') || '优惠码使用次数已达上限');
+            }
+
+            this.currentPurchase.discountCode = data.code;
+            const subtotal = this.currentPurchase.quantity * this.currentPurchase.unitPrice;
+
+            if (data.discount_type === 'percent') {
+                this.currentPurchase.discountAmount = Math.floor(subtotal * (data.discount_value / 100));
+            } else {
+                this.currentPurchase.discountAmount = Math.min(subtotal, data.discount_value);
+            }
+
+            const finalTotal = Math.max(0, subtotal - this.currentPurchase.discountAmount);
+            document.getElementById('modalTotalPrice').textContent = finalTotal;
+
+            if (msgBox) {
+                msgBox.style.color = '#10b981';
+                msgBox.innerHTML = `<i class="fas fa-check-circle"></i> ${window.i18n?.t('shop.discountApplied') || '已抵扣'} ${this.currentPurchase.discountAmount} ${window.i18n?.t('shop.points') || '积分'}`;
+                msgBox.style.display = 'block';
+            }
+
+        } catch (err) {
+            if (!silent && msgBox) {
+                msgBox.style.color = '#ef4444';
+                msgBox.innerHTML = `<i class="fas fa-times-circle"></i> ${err.message || (window.i18n?.t('shop.verifyFailed') || '验证失败')}`;
+                msgBox.style.display = 'block';
+            }
+            this.currentPurchase.discountCode = null;
+            this.currentPurchase.discountAmount = 0;
+            const subtotal = this.currentPurchase.quantity * this.currentPurchase.unitPrice;
+            document.getElementById('modalTotalPrice').textContent = subtotal;
+        } finally {
+            if (applyBtn && !silent) {
+                applyBtn.innerHTML = window.i18n?.t('shop.verify') || '验证';
+                applyBtn.disabled = false;
+            }
+        }
+    },
+
     adjustQuantity: function (delta) {
         let newQty = this.currentPurchase.quantity + delta;
         if (newQty < 1) newQty = 1;
@@ -280,8 +525,7 @@ const ShopClient = {
         document.getElementById('purchaseQuantity').value = newQty;
 
         // Update Total
-        const total = newQty * this.currentPurchase.unitPrice;
-        document.getElementById('modalTotalPrice').textContent = total;
+        this.updatePriceForQuantity(newQty);
     },
 
     // Handle direct keyboard input
@@ -292,8 +536,7 @@ const ShopClient = {
 
         this.currentPurchase.quantity = val;
         // Update Total
-        const total = val * this.currentPurchase.unitPrice;
-        document.getElementById('modalTotalPrice').textContent = total;
+        this.updatePriceForQuantity(val);
     },
 
     confirmPurchase: async function () {
@@ -310,44 +553,33 @@ const ShopClient = {
             const { data: { user } } = await supabaseClient.auth.getUser();
             if (!user) throw new Error(window.i18n?.t('shop.loginRequired') || "未登录");
 
-            // DB function signature: fn_purchase_shop_item(p_product_id, p_user_id, p_site)
-            // No p_quantity param - loop client-side for multiple items
-            const allContents = [];
-            let lastOrderId = null;
-            let remainingPoints = null;
-            let usageInstructions = null;
+            // DB function signature: fn_purchase_shop_item(p_product_id, p_user_id, p_site, p_quantity, p_discount_code, p_agent_id)
+            const { data, error } = await supabaseClient.rpc('fn_purchase_shop_item', {
+                p_product_id: productId,
+                p_user_id: user.id,
+                p_site: window.SiteConfig?.site || 'cn',
+                p_quantity: quantity,
+                p_discount_code: this.currentPurchase.discountCode,
+                p_agent_id: this.currentAgentId
+            });
 
-            for (let i = 0; i < quantity; i++) {
-                const { data, error } = await supabaseClient.rpc('fn_purchase_shop_item', {
-                    p_product_id: productId,
-                    p_user_id: user.id,
-                    p_site: window.SiteConfig?.site || 'cn'
-                });
-
-                if (error) {
-                    throw error;
-                }
-
-                if (!data.success) {
-                    if (i > 0) {
-                        // Some items were purchased before this failure
-                        break;
-                    }
-                    throw new Error(data.message || (window.i18n?.t('shop.redeemFailed') || '兑换失败'));
-                }
-
-                const purchaseData = data.data;
-                if (purchaseData.content) {
-                    allContents.push(purchaseData.content);
-                }
-                lastOrderId = purchaseData.order_id;
-                remainingPoints = purchaseData.remaining_points;
-
-                // Capture usage instructions from first response
-                if (i === 0 && purchaseData.show_usage_instructions && purchaseData.usage_instructions) {
-                    usageInstructions = purchaseData.usage_instructions;
-                }
+            if (error) {
+                throw error;
             }
+
+            if (!data.success) {
+                throw new Error(data.message || (window.i18n?.t('shop.redeemFailed') || '兑换失败'));
+            }
+
+            const purchaseData = data.data;
+            let allContents = [];
+            if (purchaseData.content) {
+                // The new backend returns newline separated contents
+                allContents = purchaseData.content.split('\n----\n');
+            }
+            let lastOrderId = purchaseData.order_id;
+            let remainingPoints = purchaseData.remaining_points;
+            let usageInstructions = purchaseData.usage_instructions || null;
 
             // Success
             const finalContent = allContents.length > 0
@@ -372,12 +604,22 @@ const ShopClient = {
         } catch (err) {
             console.error(err);
             const errMsg = (err.message || (window.i18n?.t('shop.unknownError') || '未知错误'));
-            alert((window.i18n?.t('shop.redeemFailed') || '兑换失败') + ': ' + errMsg);
 
-            // If insufficient points, open wallet modal for recharging
+            // If insufficient points, show toast and open wallet for recharging
             if (errMsg.includes('积分') || errMsg.includes('余额') || errMsg.includes('nsufficient') || errMsg.includes('balance')) {
+                this.closePurchaseModal();
+                // Show a visible toast notification instead of native alert
+                if (window.WalletModal && window.WalletModal.showToast) {
+                    window.WalletModal.showToast(`❌ ${window.i18n?.t('shop.insufficientPoints') || '积分不足，请先充值'}`, 'error');
+                }
+                // Open wallet modal for recharging
                 if (window.WalletModal && window.WalletModal.open) {
-                    window.WalletModal.open();
+                    setTimeout(() => window.WalletModal.open('recharge'), 300);
+                }
+            } else {
+                // For other errors, show toast in the purchase modal
+                if (window.WalletModal && window.WalletModal.showToast) {
+                    window.WalletModal.showToast(`❌ ${window.i18n?.t('shop.redeemFailed') || '兑换失败'}: ${errMsg}`, 'error');
                 }
             }
 
@@ -474,20 +716,30 @@ const ShopClient = {
                 productNameDot.setAttribute('data-tooltip', productName);
             }
 
-            const createCardMsg = (text) => `
-                <div class="content-card">
-                    <div class="item-content-box">
-                        <div class="item-text">${this.escapeHtml(text)}</div>
+            const isShortKeys = items.every(t => t.length <= 40 && !t.includes('\n'));
+            const gridStyle = items.length > 1 && isShortKeys
+                ? 'display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%;'
+                : 'display: flex; flex-direction: column; gap: 8px; width: 100%;';
+
+            const createCardMsg = (text) => {
+                const escaped = this.escapeHtml(text).replace(/`/g, '\\`');
+                return `
+                <div class="content-card" style="margin-bottom: 0 !important; cursor: pointer; transition: all 0.2s; padding: 10px 6px !important; display: flex; align-items: center; justify-content: center; border-radius: 10px !important;" onclick="navigator.clipboard.writeText(\`${escaped}\`).then(() => { const t = document.getElementById('shopSuccessToast'); if(t){ t.textContent='✅ 已复制'; t.style.opacity=1; setTimeout(()=>t.style.opacity=0, 1500); } })" title="${window.i18n?.t('wallet.clickToCopy') || '点击复制'}" onmouseover="this.style.borderColor='rgba(107, 158, 206, 0.5)'; this.style.background='rgba(255, 255, 255, 0.08)';" onmouseout="this.style.borderColor='rgba(255, 255, 255, 0.1)'; this.style.background='rgba(255, 255, 255, 0.05)';">
+                    <div class="item-content-box" style="padding: 0 !important; width: 100%; background: transparent !important; border-radius: 0 !important;">
+                        <div class="item-text" style="text-align: center; font-size: 13px; letter-spacing: 0.5px; line-height: 1.3;">${this.escapeHtml(text)}</div>
                     </div>
                 </div>`;
+            };
 
             // Clear previous content style that might conflict
             contentBox.style.whiteSpace = 'normal';
             contentBox.style.fontFamily = 'inherit';
+            // Add toast element for copy feedback
+            const toastEl = '<div id="shopSuccessToast" style="position:fixed;top:20%;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.8);color:#fff;padding:8px 20px;border-radius:20px;font-size:13px;pointer-events:none;opacity:0;transition:opacity 0.3s;z-index:999999;"></div>';
 
             if (totalItems <= 2) {
-                // 2 or fewer items: show directly
-                contentBox.innerHTML = items.map(createCardMsg).join('');
+                // 2 or fewer items: show directly in grid
+                contentBox.innerHTML = `<div style="${gridStyle}">${items.map(createCardMsg).join('')}</div>${toastEl}`;
             } else {
                 // More than 2 items: show first 2, collapse rest
                 const visibleHTML = items.slice(0, 2).map(createCardMsg).join('');
@@ -505,9 +757,9 @@ const ShopClient = {
                     </span>
                 </div>`;
 
-                const hiddenSection = `<div id="hiddenContent" style="display:none;margin-top:12px;">${hiddenHTML}</div>`;
+                const hiddenSection = `<div id="hiddenContent" style="display:none;margin-top:8px;">${hiddenHTML}</div>`;
 
-                contentBox.innerHTML = visibleHTML + expandBtn + hiddenSection;
+                contentBox.innerHTML = `<div style="${gridStyle}">${visibleHTML}${hiddenSection}</div>${expandBtn}${toastEl}`;
             }
 
             // Handle Warning
