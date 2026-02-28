@@ -6267,12 +6267,24 @@
                     <div class="input-group-row">
                         <div class="modern-form-group" style="flex:1;">
                             <label class="modern-label"><i class="fas fa-layer-group"
-                                    style="color:#f29c38; margin-right:6px;"></i>阶梯定价规则 (JSON)</label>
-                            <input type="text" id="prodQuantityRules" class="modern-input"
-                                placeholder='[{"qty":10, "price":8}]'>
-                            <small
-                                style="color:rgba(255,255,255,0.4); font-size:11px; margin-top:4px; display:block;">示例:
-                                满10件单价降至8积分。留空则不开启。</small>
+                                    style="color:#f29c38; margin-right:6px;"></i>阶梯定价规则 (买满 x 件享特价)</label>
+
+                            <!-- Visual Builder Container -->
+                            <div id="prodQuantityRulesContainer"
+                                style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px;">
+                                <!-- Rows injected by JS -->
+                            </div>
+
+                            <!-- Add Rule Button -->
+                            <button type="button" onclick="ShopAdmin.addTieredPricingRow()"
+                                style="background: rgba(255,255,255,0.05); border: 1px dashed rgba(255,255,255,0.2); border-radius: 8px; color: #6b9ece; padding: 10px 15px; width: 100%; cursor: pointer; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 8px; transition: all 0.2s;"
+                                onmouseover="this.style.background='rgba(107, 158, 206, 0.1)'; this.style.borderColor='#6b9ece'"
+                                onmouseout="this.style.background='rgba(255,255,255,0.05)'; this.style.borderColor='rgba(255,255,255,0.2)'">
+                                <i class="fas fa-plus"></i> 添加阶梯价
+                            </button>
+
+                            <!-- Hidden storage for actual JSON persistence -->
+                            <input type="hidden" id="prodQuantityRules" value="[]">
                         </div>
                     </div>
                     <div class="input-group-row">
@@ -6293,11 +6305,38 @@
                         <div class="modern-form-group">
                             <label class="modern-label"><i class="fas fa-truck"
                                     style="color:#10b981; margin-right:6px;"></i>发货模式</label>
-                            <select id="prodDeliveryType" class="modern-input"
-                                onchange="ShopAdmin.toggleWebhookField(this.value)">
-                                <option value="KEY">卡密池发放 (KEY)</option>
-                                <option value="API">外部接口履约 (API Webhook)</option>
-                            </select>
+                            <!-- Hidden input to store actual value -->
+                            <input type="hidden" id="prodDeliveryType" value="KEY">
+                            <!-- Custom dropdown -->
+                            <div class="custom-category-dropdown" id="prodDeliveryTypeDropdown">
+                                <div class="custom-category-selected" onclick="ShopAdmin.toggleDeliveryTypeDropdown()">
+                                    <span class="category-name" id="prodDeliveryTypeName">卡密池发放 (KEY)</span>
+                                    <svg class="dropdown-arrow" width="12" height="12" viewBox="0 0 12 12">
+                                        <path fill="currentColor"
+                                            d="M6 8.59L2.5 5.09L3.91 3.67L6 5.76M9.09 3.67L10.5 5.09L6 8.59z" />
+                                    </svg>
+                                </div>
+                                <div class="custom-category-options" id="prodDeliveryTypeOptions">
+                                    <div class="custom-category-option"
+                                        onclick="ShopAdmin.selectDeliveryType('KEY', '卡密池发放 (KEY)')">
+                                        <span class="category-name">卡密池发放 (KEY)</span>
+                                    </div>
+                                    <div class="custom-category-option"
+                                        onclick="ShopAdmin.selectDeliveryType('API', '外部接口履约 (API Webhook)')">
+                                        <span class="category-name">外部接口履约 (API Webhook)</span>
+                                    </div>
+                                </div>
+                                <!-- Appended styles purely to ensure dropdown layers properly -->
+                                <style>
+                                    #prodDeliveryTypeDropdown .custom-category-options {
+                                        top: 100%;
+                                        left: 0;
+                                        width: 100%;
+                                        z-index: 99999;
+                                        /* Ensure it stays above webhook toggles and other inputs */
+                                    }
+                                </style>
+                            </div>
                         </div>
                         <div class="modern-form-group" id="webhookTargetGroup" style="display: none;">
                             <label class="modern-label">Webhook URL</label>

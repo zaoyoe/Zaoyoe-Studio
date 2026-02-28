@@ -16802,9 +16802,35 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
         -webkit-overflow-scrolling: touch;
     }
 
-    /* Adjust Assets column width */
     .users-table td:has(.assets-cell) {
         width: 80px;
         text-align: right;
     }
+}
+
+/* ========================================
+   GLOBAL CUSTOM SCROLLBARS (DARK THEME)
+   ======================================== */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 6px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.25);
+}
+
+.modal-content::-webkit-scrollbar,
+.custom-category-options::-webkit-scrollbar,
+.custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
 }

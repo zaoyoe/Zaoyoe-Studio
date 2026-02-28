@@ -242,7 +242,7 @@ const ShopClient = {
                 // Flash Sale Logic
                 const nowTime = new Date();
                 const flashEnd = p.flash_sale_end ? new Date(p.flash_sale_end) : null;
-                const isFlashSale = flashEnd && flashEnd > nowTime && p.flash_sale_price != null;
+                let isFlashSale = flashEnd && flashEnd > nowTime && p.flash_sale_price != null;
 
                 let currentPrice = p[window.SiteConfig?.getPriceField() || 'price_points'] || p.price_points;
                 let originalPriceHtml = '';
@@ -263,7 +263,7 @@ const ShopClient = {
                     isFlashSale = true;
                     originalPriceHtml = `<span style="text-decoration: line-through; color: rgba(255,255,255,0.4); font-size: 0.8em; margin-right: 6px;">${currentPrice}</span>`;
                     currentPrice = p.flash_sale_price;
-                    flashSaleBadge = `<div class="flash-sale-badge" data-endtime="${p.flash_sale_end}" style="position:absolute; top:12px; left:12px; z-index: 10; font-size: 11px; background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white; padding: 4px 8px; border-radius: 4px; font-weight:bold; box-shadow: 0 0 10px rgba(239,68,68,0.5);"><i class="fas fa-bolt"></i> <span class="countdown-timer">${window.i18n?.t('shop.calculating') || '计算中...'}</span></div>`;
+                    flashSaleBadge = `<div class="flash-sale-badge flash-badge-glass" data-endtime="${p.flash_sale_end}"><i class="fas fa-bolt"></i> <span class="countdown-timer">${window.i18n?.t('shop.calculating') || '计算中...'}</span></div>`;
                     flashShadowClass = 'flash-sale-card';
                 }
 
@@ -310,7 +310,7 @@ const ShopClient = {
         this.flashSaleInterval = setInterval(() => {
             let activeFlashSales = 0;
             document.querySelectorAll('.flash-sale-badge').forEach(badge => {
-                const endTime = parseInt(badge.dataset.endtime);
+                const endTime = new Date(badge.dataset.endtime).getTime();
                 const now = Date.now();
                 if (now >= endTime) {
                     // Flash sale ended, reload products completely

@@ -1006,12 +1006,88 @@ Example output format:
         }
     },
 
+    // Toggle Custom Delivery Type Dropdown
+    toggleDeliveryTypeDropdown: function (e) {
+        if (e) e.stopPropagation();
+        const dropdown = document.getElementById('prodDeliveryTypeDropdown');
+        if (dropdown) dropdown.classList.toggle('open');
+    },
+
+    // Handle selection from custom dropdown — fully self-contained
+    selectDeliveryType: function (newType, typeName) {
+        const dropdown = document.getElementById('prodDeliveryTypeDropdown');
+        if (dropdown) dropdown.classList.remove('open');
+
+        const input = document.getElementById('prodDeliveryType');
+        if (!input) return;
+        const previousType = input.value;
+        if (previousType === newType) return;
+
+        // Show confirmation modal
+        const warningText = newType === 'API'
+            ? '切换为 API 模式后，系统将停止从卡密池发货，改为向您提供的 Webhook 地址发送 POST 请求。<br><br>请确保您的接口已准备就绪。'
+            : '切换为卡密模式后，系统将自动从库存池中提取尚未使用的卡密发给买家。<br><br>请确保底层库存充足。';
+
+        const modalId = 'deliveryConfirmModal';
+        let modal = document.getElementById(modalId);
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = modalId;
+            modal.style.cssText = 'display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.55); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); z-index:10000; align-items:center; justify-content:center;';
+            document.body.appendChild(modal);
+        }
+
+        modal.innerHTML = `
+            <div style="background: rgba(18, 22, 36, 0.95); border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 30px; width: 90%; max-width: 400px; box-shadow: 0 24px 60px rgba(0,0,0,0.5); animation: modalFadeIn 0.3s ease-out;">
+                <div style="display:flex; align-items:center; gap:12px; margin-bottom:20px;">
+                    <div style="width:40px; height:40px; border-radius:12px; background:rgba(239, 68, 68, 0.1); display:flex; align-items:center; justify-content:center; color:#ef4444;">
+                        <i class="fas fa-exclamation-triangle" style="font-size:18px;"></i>
+                    </div>
+                    <h3 style="margin:0; font-size:1.1rem; color:#fff; font-weight:600;">切换发货模式</h3>
+                </div>
+                <div style="color:rgba(255,255,255,0.7); font-size:0.95rem; line-height:1.6; margin-bottom:24px;">
+                    即将发货模式切换为 <strong style="color:#6b9ece;">${typeName}</strong>。<br><br>
+                    <span style="color:rgba(255,255,255,0.5); font-size:0.85rem;">${warningText}</span>
+                </div>
+                <div style="display:flex; gap:12px;">
+                    <button id="cancelDeliveryChange" style="flex:1; padding:10px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:8px; color:rgba(255,255,255,0.7); cursor:pointer; font-size:0.95rem; transition:all 0.2s;">取消</button>
+                    <button id="confirmDeliveryChange" style="flex:1; padding:10px; background:#ef4444; border:none; border-radius:8px; color:#fff; cursor:pointer; font-size:0.95rem; font-weight:500; transition:all 0.2s;">确定切换</button>
+                </div>
+            </div>
+        `;
+
+        modal.style.display = 'flex';
+
+        document.getElementById('cancelDeliveryChange').onclick = function () {
+            modal.style.display = 'none';
+        };
+
+        document.getElementById('confirmDeliveryChange').onclick = function () {
+            // Apply the change
+            input.value = newType;
+            var nameLabel = document.getElementById('prodDeliveryTypeName');
+            if (nameLabel) nameLabel.textContent = typeName;
+            // Toggle webhook field
+            var group = document.getElementById('webhookTargetGroup');
+            if (group) group.style.display = (newType === 'API') ? 'block' : 'none';
+            modal.style.display = 'none';
+        };
+    },
+
     // Toggle Webhook field visibility
     toggleWebhookField: function (deliveryType) {
         const group = document.getElementById('webhookTargetGroup');
         if (group) {
             group.style.display = (deliveryType === 'API') ? 'block' : 'none';
         }
+    },
+
+    // Legacy handler kept for backward compatibility — no longer used by custom dropdown
+    handleDeliveryTypeChange: function (selectElement) {
+        if (!selectElement || !selectElement.value) return;
+        var newType = selectElement.value;
+        var label = newType === 'API' ? '外部接口履约 (API Webhook)' : '卡密池发放 (KEY)';
+        this.selectDeliveryType(newType, label);
     },
 
     openProductModal: async function (isEdit = false) {
@@ -1064,13 +1140,17 @@ Example output format:
             document.getElementById('prodDesc').value = '';
             document.getElementById('prodSort').value = '0';
 
+            document.getElementById('prodSort').value = '0';
+
             // Reset marketing fields
-            document.getElementById('prodQuantityRules').value = '';
+            this.renderTieredPricingRules([]);
             document.getElementById('prodFlashSalePrice').value = '';
             document.getElementById('prodFlashSaleEnd').value = '';
 
             // Reset delivery fields
             document.getElementById('prodDeliveryType').value = 'KEY';
+            const nameLabel = document.getElementById('prodDeliveryTypeName');
+            if (nameLabel) nameLabel.textContent = '卡密池发放 (KEY)';
             document.getElementById('prodWebhookTarget').value = '';
             this.toggleWebhookField('KEY');
 
@@ -1100,7 +1180,18 @@ Example output format:
             document.getElementById('prodSort').value = data.display_order;
 
             // Populate marketing fields (Phase 2)
-            document.getElementById('prodQuantityRules').value = data.quantity_rules ? JSON.stringify(data.quantity_rules) : '';
+            let parsedRules = [];
+            if (data.quantity_rules && Array.isArray(data.quantity_rules)) {
+                parsedRules = data.quantity_rules;
+            } else if (typeof data.quantity_rules === 'string' && data.quantity_rules.trim() !== '') {
+                try {
+                    parsedRules = JSON.parse(data.quantity_rules);
+                } catch (e) {
+                    console.error("Failed to parse quantity rules:", e);
+                }
+            }
+            this.renderTieredPricingRules(parsedRules);
+
             document.getElementById('prodFlashSalePrice').value = data.flash_sale_price != null ? data.flash_sale_price : '';
             if (data.flash_sale_end) {
                 const date = new Date(data.flash_sale_end);
@@ -1113,6 +1204,10 @@ Example output format:
             // Populate delivery fields
             const deliveryType = data.delivery_type || 'KEY';
             document.getElementById('prodDeliveryType').value = deliveryType;
+            const typeName = deliveryType === 'API' ? '外部接口履约 (API Webhook)' : '卡密池发放 (KEY)';
+            const nameLabel = document.getElementById('prodDeliveryTypeName');
+            if (nameLabel) nameLabel.textContent = typeName;
+
             document.getElementById('prodWebhookTarget').value = data.webhook_target || '';
             this.toggleWebhookField(deliveryType);
 
@@ -1136,120 +1231,162 @@ Example output format:
     },
 
     saveProduct: async function () {
-        const id = document.getElementById('editProductId').value;
-        const name = document.getElementById('prodName').value;
-        const price = document.getElementById('prodPrice').value;
-        const description = document.getElementById('prodDesc').value;
-
-        if (!name || !price) { alert('名称和价格必填'); return; }
-
-        // Auto-translate to English if Gemini API is available
-        let name_en = null, description_en = null;
+        console.log('[ShopAdmin] saveProduct started');
         try {
-            const saveBtn = document.querySelector('#productModal .primary-btn');
-            if (saveBtn) {
-                saveBtn.disabled = true;
-                saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 翻译中...';
-            }
-            const translation = await this.translateToEnglish(name, description);
-            name_en = translation.name_en;
-            description_en = translation.description_en;
-            if (saveBtn) {
-                saveBtn.disabled = false;
-                saveBtn.innerHTML = '保存';
-            }
-        } catch (e) {
-            console.warn('[ShopAdmin] Translation step failed, continuing without:', e);
-        }
+            const id = document.getElementById('editProductId').value;
+            const name = document.getElementById('prodName').value;
+            const price = document.getElementById('prodPrice').value;
+            const description = document.getElementById('prodDesc').value;
+            console.log('[ShopAdmin] Base fields read successfully');
 
-        const fields = this.getFieldMap();
-        const editSite = this.getEditSite();
+            if (!name || !price) { alert('名称和价格必填'); return; }
 
-        const payload = {
-            [fields.name]: name,
-            [fields.price]: parseInt(price),
-            [fields.desc]: description,
-            icon_url: document.getElementById('prodIcon').value,
-            category: document.getElementById('prodCategory').value,
-            display_order: parseInt(document.getElementById('prodSort').value),
-            show_usage_instructions: document.getElementById('prodShowUsageInstructions').checked,
-            usage_instructions: document.getElementById('prodUsageInstructions').value || null,
-            delivery_type: document.getElementById('prodDeliveryType').value,
-            webhook_target: document.getElementById('prodWebhookTarget').value || null,
-
-            // Marketing fields
-            quantity_rules: null,
-            flash_sale_price: null,
-            flash_sale_end: null
-        };
-
-        // Parse marketing fields
-        const quantityRulesRaw = document.getElementById('prodQuantityRules').value.trim();
-        if (quantityRulesRaw) {
+            // Auto-translate to English if Gemini API is available
+            let name_en = null, description_en = null;
             try {
-                payload.quantity_rules = JSON.parse(quantityRulesRaw);
-                if (!Array.isArray(payload.quantity_rules)) throw new Error('必须是数组形式');
+                const saveBtn = document.querySelector('#productModal .primary-btn');
+                if (saveBtn) {
+                    saveBtn.disabled = true;
+                    saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 翻译中...';
+                }
+                const translation = await this.translateToEnglish(name, description);
+                name_en = translation.name_en;
+                description_en = translation.description_en;
+                if (saveBtn) {
+                    saveBtn.disabled = false;
+                    saveBtn.innerHTML = '保存';
+                }
             } catch (e) {
-                alert('阶梯定价规则 JSON 格式错误: ' + e.message);
-                return;
+                console.warn('[ShopAdmin] Translation step failed, continuing without:', e);
             }
-        }
 
-        const flashPriceRaw = document.getElementById('prodFlashSalePrice').value.trim();
-        if (flashPriceRaw !== '') {
-            payload.flash_sale_price = parseInt(flashPriceRaw);
-        }
+            const fields = this.getFieldMap();
+            const editSite = this.getEditSite();
 
-        const flashEndRaw = document.getElementById('prodFlashSaleEnd').value;
-        if (flashEndRaw) {
-            payload.flash_sale_end = new Date(flashEndRaw).toISOString();
-        }
+            const payload = {
+                [fields.name]: name,
+                [fields.price]: parseInt(price),
+                [fields.desc]: description,
+                icon_url: document.getElementById('prodIcon').value,
+                category: document.getElementById('prodCategory').value,
+                display_order: parseInt(document.getElementById('prodSort').value),
+                show_usage_instructions: document.getElementById('prodShowUsageInstructions').checked,
+                usage_instructions: document.getElementById('prodUsageInstructions').value || null,
+                delivery_type: document.getElementById('prodDeliveryType').value,
+                webhook_target: document.getElementById('prodWebhookTarget').value || null,
 
-        // For CN site, also save auto-translated English fields
-        if (editSite === 'cn' && name_en) {
-            payload.name_en = name_en;
-            payload.description_en = description_en;
-        }
+                // Marketing fields
+                quantity_rules: null,
+                flash_sale_price: null,
+                flash_sale_end: null
+            };
 
-        try {
-            // If there's a pending new category, save it first
-            if (this.pendingCategory && payload.category === this.pendingCategory.name) {
-                console.log('Saving pending category:', this.pendingCategory);
-                const { error: catError } = await supabaseClient
-                    .from('shop_categories')
-                    .insert([{
-                        name: this.pendingCategory.name,
-                        color: this.pendingCategory.color,
-                        sort_order: (this.categoryData.length + 1) * 10
-                    }]);
+            // Parse marketing fields visually
+            let quantityRulesRaw = null;
+            const container = document.getElementById('prodQuantityRulesContainer');
+            if (container) {
+                const rows = container.querySelectorAll('.tiered-pricing-row');
+                if (rows.length > 0) {
+                    const rulesArray = [];
+                    let hasError = false;
 
-                if (catError) {
-                    console.error('Failed to save new category:', catError);
-                    // Continue anyway, the product can still be saved with the category name
+                    rows.forEach(row => {
+                        const qtyVal = row.querySelector('.tp-qty').value;
+                        const priceVal = row.querySelector('.tp-price').value;
+
+                        if (qtyVal && priceVal) {
+                            const qty = parseInt(qtyVal);
+                            const price = parseFloat(priceVal);
+
+                            if (isNaN(qty) || isNaN(price) || qty <= 0 || price < 0) {
+                                alert('阶梯定价规则格式错误：满减数量必须大于0，单价不能为负数');
+                                hasError = true;
+                                return;
+                            }
+
+                            rulesArray.push({ qty, price });
+                        }
+                    });
+
+                    if (hasError) return;
+
+                    if (rulesArray.length > 0) {
+                        quantityRulesRaw = rulesArray;
+                    }
                 }
             }
 
-            let error;
-            if (id) {
-                const res = await supabaseClient.from('shop_products').update(payload).eq('id', id);
-                error = res.error;
-            } else {
-                const res = await supabaseClient.from('shop_products').insert(payload);
-                error = res.error;
+            if (quantityRulesRaw) {
+                payload.quantity_rules = quantityRulesRaw;
             }
 
-            if (error) throw error;
+            const flashPriceRaw = document.getElementById('prodFlashSalePrice').value.trim();
+            if (flashPriceRaw !== '') {
+                payload.flash_sale_price = parseInt(flashPriceRaw);
+            }
 
-            // Clear pending category after successful save
-            this.pendingCategory = null;
+            const flashEndRaw = document.getElementById('prodFlashSaleEnd').value;
+            if (flashEndRaw) {
+                payload.flash_sale_end = new Date(flashEndRaw).toISOString();
+            }
 
-            document.getElementById('productModal').style.display = 'none';
-            alert('保存成功' + (name_en ? ' (已自动翻译)' : ''));
+            // For CN site, also save auto-translated English fields
+            if (editSite === 'cn' && name_en) {
+                payload.name_en = name_en;
+                payload.description_en = description_en;
+            }
 
-            // Refresh products and category filters
-            this.loadProducts();
-            await this.renderProductCategoryFilters();
-        } catch (err) { alert('Save failed: ' + err.message); }
+            try {
+                // If there's a pending new category, save it first
+                if (this.pendingCategory && payload.category === this.pendingCategory.name) {
+                    console.log('Saving pending category:', this.pendingCategory);
+                    const { error: catError } = await supabaseClient
+                        .from('shop_categories')
+                        .insert([{
+                            name: this.pendingCategory.name,
+                            color: this.pendingCategory.color,
+                            sort_order: (this.categoryData.length + 1) * 10
+                        }]);
+
+                    if (catError) {
+                        console.error('Failed to save new category:', catError);
+                        // Continue anyway, the product can still be saved with the category name
+                    }
+                }
+
+                let error;
+                if (id) {
+                    const res = await supabaseClient.from('shop_products').update(payload).eq('id', id).select();
+                    error = res.error;
+                    console.log('[ShopAdmin] Update result:', res);
+                    if (!error && (!res.data || res.data.length === 0)) {
+                        throw new Error('更新失败：没有权限修改此商品，请确认您已登录管理员账号。\n(RLS policy blocked the update)');
+                    }
+                } else {
+                    const res = await supabaseClient.from('shop_products').insert(payload).select();
+                    error = res.error;
+                    console.log('[ShopAdmin] Insert result:', res);
+                }
+
+                if (error) throw error;
+
+                // Clear pending category after successful save
+                this.pendingCategory = null;
+
+                document.getElementById('productModal').style.display = 'none';
+                alert('保存成功' + (name_en ? ' (已自动翻译)' : ''));
+
+                // Refresh products and category filters
+                this.loadProducts();
+                await this.renderProductCategoryFilters();
+            } catch (err) {
+                console.error('[ShopAdmin] Save process completely failed:', err);
+                alert('Save failed: ' + err.message);
+            }
+        } catch (err) {
+            console.error('[ShopAdmin] Outer try-catch failed:', err);
+            alert('Save failed: ' + err.message);
+        }
     },
 
     deleteProduct: async function (id, name) {
@@ -1409,6 +1546,51 @@ Example output format:
                 btnElement.disabled = false;
             }
         }
+    },
+
+    // ==================== Marketing Visual Builders ====================
+    renderTieredPricingRules: function (rules = []) {
+        const container = document.getElementById('prodQuantityRulesContainer');
+        if (!container) return;
+
+        container.innerHTML = '';
+
+        if (rules.length === 0) {
+            // Empty initially 
+        } else {
+            rules.forEach((rule, index) => {
+                this.injectTieredPricingRow(rule.qty, rule.price, index);
+            });
+        }
+    },
+
+    injectTieredPricingRow: function (qty = '', price = '', index = Date.now()) {
+        const container = document.getElementById('prodQuantityRulesContainer');
+        if (!container) return;
+
+        const row = document.createElement('div');
+        row.className = 'tiered-pricing-row';
+        row.style.cssText = 'display: flex; gap: 8px; align-items: center; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); animation: modalFadeIn 0.2s ease-out;';
+        row.innerHTML = `
+            <div style="flex: 1; display: flex; align-items: center; gap: 6px;">
+                <span style="color: rgba(255,255,255,0.5); font-size: 13px;">满</span>
+                <input type="number" class="modern-input tp-qty" placeholder="10" value="${qty}" style="padding: 8px; flex: 1; min-width: 50px;">
+                <span style="color: rgba(255,255,255,0.5); font-size: 13px;">件</span>
+            </div>
+            <div style="flex: 1; display: flex; align-items: center; gap: 6px;">
+                <span style="color: rgba(255,255,255,0.5); font-size: 13px;">单价降至</span>
+                <input type="number" class="modern-input tp-price" placeholder="8" value="${price}" style="padding: 8px; flex: 1; min-width: 50px;">
+                <span style="color: rgba(255,255,255,0.5); font-size: 13px;">积分</span>
+            </div>
+            <button type="button" onclick="this.parentElement.remove()" style="background: rgba(239,68,68,0.1); border: none; color: #ef4444; width: 32px; height: 32px; border-radius: 6px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.2)'" onmouseout="this.style.background='rgba(239,68,68,0.1)'">
+                <i class="fas fa-trash-alt"></i>
+            </button>
+        `;
+        container.appendChild(row);
+    },
+
+    addTieredPricingRow: function () {
+        this.injectTieredPricingRow();
     },
 
     // ==================== Orders (Fix FK Issue) ====================
