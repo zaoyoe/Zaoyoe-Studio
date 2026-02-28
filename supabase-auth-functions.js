@@ -530,6 +530,16 @@ async function handleAuthClick(event) {
                 dropdown.classList.remove('active');
                 if (overlay) overlay.classList.remove('active');
             } else {
+                // 🆕 Dynamically position dropdown relative to avatar button
+                const authBtn = document.getElementById('authBtn');
+                if (authBtn) {
+                    const rect = authBtn.getBoundingClientRect();
+                    const dropdownWidth = dropdown.offsetWidth || 220;
+                    // Align dropdown right edge with avatar button right edge
+                    const rightOffset = window.innerWidth - rect.right;
+                    dropdown.style.right = Math.max(10, rightOffset) + 'px';
+                    dropdown.style.top = (rect.bottom + 8) + 'px';
+                }
                 dropdown.classList.add('active');
                 if (overlay) overlay.classList.add('active');
             }

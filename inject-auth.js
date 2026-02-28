@@ -286,6 +286,7 @@
                 display: flex !important;
                 align-items: center !important;
                 justify-content: center !important;
+                position: relative !important;
             }
             
             /* Default auth icon - gray transparent style */
@@ -334,7 +335,7 @@
                 opacity: 0;
                 visibility: hidden;
                 transform: translateY(-10px) scale(0.95);
-                transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+                transition: opacity 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), visibility 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
                 display: block;
                 text-align: left;
                 z-index: 9999;
@@ -865,14 +866,31 @@
             /* Avatar unread badge (red dot on avatar) */
             .avatar-unread-badge {
                 position: absolute;
-                top: -2px;
-                right: -2px;
+                top: 0px;
+                right: 0px;
                 width: 10px;
                 height: 10px;
                 background: #ef4444;
                 border-radius: 50%;
                 border: 2px solid rgba(0, 0, 0, 0.8);
                 box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.3);
+                z-index: 10;
+            }
+            
+            /* Ripple animation for avatar badge */
+            .avatar-unread-badge::after {
+                content: '';
+                position: absolute;
+                inset: -2px; /* Pull it slightly out */
+                border-radius: 50%;
+                border: 1px solid rgba(239, 68, 68, 0.6);
+                animation: avatarDotPulse 1.5s infinite ease-out;
+                z-index: -1;
+            }
+            
+            @keyframes avatarDotPulse {
+                0% { transform: scale(1); opacity: 1; }
+                100% { transform: scale(2.5); opacity: 0; }
             }
             
             /* Light mode adjustments for notification UI */

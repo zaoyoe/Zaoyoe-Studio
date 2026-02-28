@@ -110,8 +110,8 @@
                             </div>
 
                             <div class="wallet-menu-item" data-view="affiliate" onclick="WalletModal.switchView('affiliate')">
-                                <span class="menu-icon">🌟</span>
-                                <span class="menu-text" data-i18n="wallet.affiliate">推广返回</span>
+                                <span class="menu-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #10b981;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></span>
+                                <span class="menu-text" data-i18n="wallet.affiliate">推广</span>
                             </div>
                         </div>
                         
@@ -217,32 +217,41 @@
                                 </div>
                             </div>
 
-                            <div class="wallet-view" id="view-affiliate">
-                                <div class="balance-card compact-premium-card" style="margin-bottom: 20px;">
-                                    <div class="card-left">
-                                        <label data-i18n="wallet.totalCommission">${window.i18n?.t('wallet.totalCommission') || '累计获得佣金'}</label>
-                                        <div class="balance-amount" id="affiliate-commission">0</div>
+                            <div class="wallet-view wallet-view-flex" id="view-affiliate" style="flex-direction:column; gap:20px;">
+                                <!-- Top Stats Cards -->
+                                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px;">
+                                    <div class="stat-box" style="background: linear-gradient(135deg, rgba(245,158,11,0.1), rgba(217,119,6,0.15)); border:1px solid rgba(245,158,11,0.25); padding:20px; border-radius:16px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; transition:transform 0.2s; cursor:default;" onmouseover="this.style.transform='scale(1.02)'" onmouseout="this.style.transform='scale(1)'">
+                                        <div style="font-size:13px; color:#fcd34d; margin-bottom:10px; display:flex; align-items:center; gap:6px;"><i class="fas fa-coins"></i> ${window.i18n?.t('wallet.totalCommission') || '累计获得佣金'}</div>
+                                        <div id="affiliate-commission" style="font-size:36px; font-weight:700; color:#fff; font-family:monospace; line-height:1;">0</div>
                                     </div>
-                                    <div class="card-right">
-                                        <div class="balance-detail-row">
-                                            <span class="detail-label" data-i18n="wallet.invitedCount">${window.i18n?.t('wallet.invitedCount') || '成功邀请人数'}</span>
-                                            <strong id="affiliate-count" class="detail-val">0</strong>
-                                        </div>
+                                    
+                                    <div class="stat-box" style="background: linear-gradient(135deg, rgba(59,130,246,0.1), rgba(37,99,235,0.15)); border:1px solid rgba(59,130,246,0.25); padding:20px; border-radius:16px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; transition:transform 0.2s; cursor:default;" onmouseover="this.style.transform='scale(1.02)'" onmouseout="this.style.transform='scale(1)'">
+                                        <div style="font-size:13px; color:#93c5fd; margin-bottom:10px; display:flex; align-items:center; gap:6px;"><i class="fas fa-users"></i> ${window.i18n?.t('wallet.invitedCount') || '成功邀请人数'}</div>
+                                        <div id="affiliate-count" style="font-size:36px; font-weight:700; color:#fff; font-family:monospace; line-height:1; display:flex; align-items:baseline; gap:4px;">0 <span style="font-size:14px; color:rgba(255,255,255,0.5); font-weight:normal; font-family:sans-serif;">人</span></div>
                                     </div>
                                 </div>
 
-                                <div class="redeem-section premium-panel">
-                                    <h3 style="margin-top:0; color:#fff; font-size:16px;" data-i18n="wallet.getInviteLink">${window.i18n?.t('wallet.getInviteLink') || '获取专属推广链接'}</h3>
-                                    <p style="color:var(--text-dim); font-size:13px; margin-bottom:15px; line-height: 1.5;" data-i18n="wallet.inviteLinkDesc">
-                                        ${window.i18n?.t('wallet.inviteLinkDesc') || '分享此链接给好友，好友注册且在商城消费时，您将自动获得 10% 的消费积分佣金返还。'}
-                                    </p>
-                                    <div class="input-group">
-                                        <input type="text" id="affiliate-link" readonly class="code-input" style="background: rgba(0,0,0,0.3); color:#fff; cursor:pointer;" onclick="this.select()" />
-                                        <button class="redeem-btn" onclick="WalletModal.copyAffiliateLink()" data-i18n="wallet.copyLink">${window.i18n?.t('wallet.copyLink') || '复制链接'}</button>
+                                <!-- Link Section -->
+                                <div class="premium-panel" style="padding:24px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:16px; display:flex; flex-direction:column; gap:16px; box-shadow:0 10px 30px rgba(0,0,0,0.2);">
+                                    <div>
+                                        <h3 style="margin:0 0 8px 0; color:#fff; font-size:16px; display:flex; align-items:center; gap:8px;">
+                                            <i class="fas fa-link" style="color:#10b981;"></i> ${window.i18n?.t('wallet.getInviteLink') || '获取专属推广链接'}
+                                        </h3>
+                                        <p id="affiliate-desc-text" style="margin:0; color:rgba(255,255,255,0.5); font-size:13px; line-height:1.6;">
+                                            加载中...
+                                        </p>
                                     </div>
-                                    <div class="input-group" style="margin-top: 15px;">
-                                        <button class="redeem-btn" style="width: 100%; background: linear-gradient(135deg, #10b981 0%, #059669 100%);" onclick="WalletModal.generateAffiliatePoster()" data-i18n="wallet.generatePoster">${window.i18n?.t('wallet.generatePoster') || '生成精美推广海报'}</button>
+                                    
+                                    <div style="display:flex; gap:12px; align-items:center; background:rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.1); border-radius:12px; padding:6px; padding-left:16px;">
+                                        <input type="text" id="affiliate-link" readonly style="flex:1; background:transparent; border:none; color:#10b981; font-family:monospace; font-size:14px; outline:none; white-space:nowrap; text-overflow:ellipsis; cursor:pointer;" onclick="this.select()" />
+                                        <button onclick="WalletModal.copyAffiliateLink()" style="background:#fff; color:#000; border:none; padding:10px 20px; border-radius:8px; font-weight:600; cursor:pointer; font-size:13px; transition:all 0.2s; white-space:nowrap;" onmouseover="this.style.background='#f0f0f0';this.style.transform='scale(1.05)'" onmouseout="this.style.background='#fff';this.style.transform='scale(1)'">
+                                            ${window.i18n?.t('wallet.copyLink') || '复制链接'}
+                                        </button>
                                     </div>
+
+                                    <button onclick="WalletModal.generateAffiliatePoster()" style="margin-top:8px; width:100%; border:none; padding:14px; border-radius:12px; background:linear-gradient(135deg, #10b981, #059669); color:#fff; font-weight:600; font-size:14px; cursor:pointer; box-shadow:0 10px 20px rgba(16,185,129,0.2); transition:all 0.25s; display:flex; align-items:center; justify-content:center; gap:8px;" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 15px 25px rgba(16,185,129,0.3)';" onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='0 10px 20px rgba(16,185,129,0.2)';">
+                                        <i class="fas fa-image"></i> ${window.i18n?.t('wallet.generatePoster') || '生成精美推广海报'}
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -334,6 +343,18 @@
 
                     if (commissionEl) commissionEl.textContent = data.total_commission;
                     if (countEl) countEl.textContent = data.invited_count + ' ' + (window.i18n?.t('wallet.people') || '人');
+
+                    const descEl = document.getElementById('affiliate-desc-text');
+                    if (descEl && data.commission_rate_shop !== undefined) {
+                        const ratePercent = (data.commission_rate_shop * 100).toFixed(0) + '%';
+                        const regPoints = data.registration_reward_points || 0;
+
+                        if (regPoints > 0) {
+                            descEl.innerHTML = `分享专属链接邀请新用户。当好友注册并在商城<strong>完成首笔充值或消费</strong>后，您将获得 <strong style="color:#10b981; font-weight:600;">${regPoints} 积分</strong> 专属拉新奖励！此外，还会自动无上限将好友所有订单金额的 <strong style="color:#f59e0b; font-weight:600;">${ratePercent}</strong> 作为持久佣金返还给您。`;
+                        } else {
+                            descEl.innerHTML = `分享下方链接给好友。当好友注册并在商城完成消费时，系统会自动将订单金额的 <strong style="color:#f59e0b; font-weight:600;">${ratePercent}</strong> 作为奖励发放至您的积分钱包。`;
+                        }
+                    }
 
                     if (linkEl && data.invite_code) {
                         const baseUrl = window.location.origin + window.location.pathname;

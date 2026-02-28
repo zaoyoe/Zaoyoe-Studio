@@ -226,6 +226,11 @@
             -webkit-line-clamp: 2;
             -webkit-box-orient: vertical;
             overflow: hidden;
+            transition: all 0.3s ease;
+        }
+        
+        .notif-card.expanded .notif-card-body {
+            -webkit-line-clamp: unset; /* Remove line clamp when expanded */
         }
         .notif-card-time {
             font-size: 0.65rem;
@@ -637,12 +642,17 @@
     };
 
     window.handleNotifClick = function (id, el) {
+        // Toggle expanded state to show full text
+        if (el) {
+            el.classList.toggle('expanded');
+        }
+
         const note = notifications.find(n => n.id === id);
         if (note && !note.is_read) {
             note.is_read = true;
             unreadCount = Math.max(0, unreadCount - 1);
             updateBadge();
-            el.classList.remove('unread');
+            if (el) el.classList.remove('unread');
 
             window.supabaseClient
                 .from('system_notifications')

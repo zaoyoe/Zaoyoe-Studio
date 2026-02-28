@@ -43,6 +43,7 @@ async function loadAllSystemConfig() {
         renderGalleryConfig();
         renderCommentRulesConfig();
         renderVerifyConfig();
+        loadAffiliateSettings();
 
     } catch (err) {
         console.warn('[Config] Load error:', err.message);

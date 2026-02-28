@@ -678,6 +678,9 @@
                     <button class="admin-tab" data-settings-view="content" onclick="switchSettingsView('content')">
                         📚 内容设置
                     </button>
+                    <button class="admin-tab" data-settings-view="affiliate" onclick="switchSettingsView('affiliate')">
+                        🌟 推广返现
+                    </button>
                     <button class="admin-tab" data-settings-view="export" onclick="switchSettingsView('export')">
                         📦 导出
                     </button>
@@ -1460,6 +1463,107 @@
                                             max="5" value="3">
                                         <span class="config-unit">层</span>
                                         <span class="config-save-indicator">✓</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- AFFILIATE VIEW -->
+                <div id="settings-view-affiliate" class="view-section">
+                    <div class="module-content">
+                        <!-- Card 1: Shop Commission -->
+                        <div class="config-card">
+                            <div class="config-card-header">
+                                <div class="config-card-title">
+                                    <i class="fas fa-shopping-cart"></i>
+                                    <span>商城消费返佣比例</span>
+                                </div>
+                            </div>
+                            <div class="config-card-body">
+                                <div class="config-row">
+                                    <div class="config-info">
+                                        <div class="config-label">基础商品提成</div>
+                                        <div class="config-desc">当被邀请人在商城消费时，邀请人可获得的积分比例（例如填入 0.15 代表 15%）</div>
+                                    </div>
+                                    <div class="config-input-wrapper">
+                                        <input type="number" id="affiliate_setting_commission_rate_shop" step="0.01"
+                                            min="0" max="1" placeholder="0.10" class="config-input"
+                                            onchange="window.saveAffiliateSetting('commission_rate_shop', this.value)">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Card 2: Agent Commission -->
+                        <div class="config-card">
+                            <div class="config-card-header">
+                                <div class="config-card-title">
+                                    <i class="fas fa-user-tie"></i>
+                                    <span>分销渠道返佣比例</span>
+                                </div>
+                            </div>
+                            <div class="config-card-body">
+                                <div class="config-row">
+                                    <div class="config-info">
+                                        <div class="config-label">代理商/分销商资源购买</div>
+                                        <div class="config-desc">当被邀请人购买分销渠道特权资源时，邀请人可获得的佣金比例</div>
+                                    </div>
+                                    <div class="config-input-wrapper">
+                                        <input type="number" id="affiliate_setting_commission_rate_agent" step="0.01"
+                                            min="0" max="1" placeholder="0.10" class="config-input"
+                                            onchange="window.saveAffiliateSetting('commission_rate_agent', this.value)">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Card 3: Registration Reward -->
+                        <div class="config-card">
+                            <div class="config-card-header">
+                                <div class="config-card-title">
+                                    <i class="fas fa-user-plus"></i>
+                                    <span>拉新注册奖励 (盲盒/红包)</span>
+                                </div>
+                            </div>
+                            <div class="config-card-body">
+                                <div class="config-row">
+                                    <div class="config-info">
+                                        <div class="config-label">固定积分奖励</div>
+                                        <div class="config-desc">每成功邀请一位新用户注册并在商城产生首笔订单，向邀请人发放的固定积分。填0则不开启该奖励。</div>
+                                    </div>
+                                    <div class="config-input-wrapper">
+                                        <input type="number" id="affiliate_setting_registration_reward_points" step="1"
+                                            min="0" placeholder="100" class="config-input"
+                                            onchange="window.saveAffiliateSetting('registration_reward_points', this.value)">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Card 4: Anti-Fraud Mechanism -->
+                        <div class="config-card">
+                            <div class="config-card-header">
+                                <div class="config-card-title">
+                                    <i class="fas fa-shield-alt"></i>
+                                    <span>防刷防作弊机制</span>
+                                </div>
+                            </div>
+                            <div class="config-card-body">
+                                <div class="config-row">
+                                    <div class="config-info">
+                                        <div class="config-label">拉新红包需要首充/首单激活</div>
+                                        <div class="config-desc">
+                                            【强烈建议开启】开启后，注册奖励将被冻结，直到新用户通过验证产生任何交易订单后才会解冻发放，彻底杜绝恶意刷僵尸号。</div>
+                                    </div>
+                                    <div class="config-input-wrapper">
+                                        <label class="toggle-switch">
+                                            <input type="checkbox"
+                                                id="affiliate_setting_registration_reward_requires_purchase" checked
+                                                onchange="window.saveAffiliateSetting('registration_reward_requires_purchase', this.checked ? 'true' : 'false')">
+                                            <span class="toggle-slider"></span>
+                                        </label>
                                     </div>
                                 </div>
                             </div>
@@ -5553,7 +5657,7 @@
                                 <th>关联订单号</th>
                                 <th>用户UUID</th>
                                 <th>问题描述</th>
-                                <th>分类/状态</th>
+                                <th style="text-align: center;">分类/状态</th>
                                 <th>操作</th>
                             </tr>
                         </thead>
@@ -5567,33 +5671,63 @@
                 <div class="pagination" id="ticketsPagination"></div>
 
                 <!-- Ticket Reply Modal -->
-                <div id="ticketReplyModal" class="modal-overlay"
-                    onclick="if(event.target===this) this.style.display='none'"
-                    style="display: none; z-index: 10000; justify-content:center; align-items:center; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);">
-                    <div class="modal-content" style="max-width: 500px;">
-                        <h2 class="modal-title">处理售化工单</h2>
-                        <form id="ticketReplyForm" onsubmit="return false;">
-                            <div class="modern-form-group">
-                                <label class="modern-label">管理员回复 (反馈给用户)</label>
-                                <textarea id="ticketAdminReply" class="modern-input"
-                                    placeholder="请输入处理结果或回复"></textarea>
+                <div id="ticketReplyModal"
+                    onclick="if(event.target===this){this.style.display='none';this.style.visibility='hidden';this.style.opacity='0';}"
+                    style="display: none; z-index: 10000; justify-content:center; align-items:center; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.55); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);">
+                    <div
+                        style="background: rgba(18, 22, 36, 0.97); border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; padding: 0; width: 90%; max-width: 480px; box-shadow: 0 24px 80px rgba(0,0,0,0.6); animation: modalSlideIn 0.3s ease; overflow: hidden;">
+                        <!-- Header -->
+                        <div
+                            style="display:flex; align-items:center; gap:14px; padding: 24px 28px 20px; border-bottom: 1px solid rgba(255,255,255,0.06);">
+                            <div
+                                style="width:40px; height:40px; border-radius:12px; background:linear-gradient(135deg, #4a8ec7, #5b9bd5); display:flex; align-items:center; justify-content:center; box-shadow: 0 4px 15px rgba(91,155,213,0.25); flex-shrink:0;">
+                                <i class="fas fa-headset" style="color:white; font-size:1rem;"></i>
                             </div>
-                            <div class="modern-form-group">
-                                <label class="modern-label" style="display:flex; align-items:center; gap:8px;">
-                                    <input type="checkbox" id="ticketRefundCheckbox" style="width: 16px; height: 16px;">
+                            <div>
+                                <h2 class="modal-title"
+                                    style="margin:0; font-size:1.15rem; font-weight:600; color:#e8edf4;">处理售后工单</h2>
+                                <p style="margin:2px 0 0; font-size:0.78rem; color:rgba(255,255,255,0.35);">回复处理结果并通知用户
+                                </p>
+                            </div>
+                        </div>
+                        <!-- Body -->
+                        <form id="ticketReplyForm" onsubmit="return false;" style="padding: 24px 28px 28px;">
+                            <div style="margin-bottom:20px;">
+                                <label
+                                    style="display:block; font-size:0.8rem; font-weight:500; color:rgba(255,255,255,0.5); margin-bottom:8px; letter-spacing:0.3px;">管理员回复</label>
+                                <textarea id="ticketAdminReply" placeholder="请输入处理结果或回复..."
+                                    style="width:100%; padding:12px 16px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:12px; color:#e8edf4; font-size:0.9rem; outline:none; transition:border-color 0.2s, box-shadow 0.2s; box-sizing:border-box; min-height:100px; resize:vertical; font-family:inherit; line-height:1.6;"
+                                    onfocus="this.style.borderColor='rgba(91,155,213,0.5)';this.style.boxShadow='0 0 0 3px rgba(91,155,213,0.1)';"
+                                    onblur="this.style.borderColor='rgba(255,255,255,0.08)';this.style.boxShadow='none';"></textarea>
+                            </div>
+                            <div
+                                style="margin-bottom:24px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); border-radius:12px; padding:14px 16px;">
+                                <label
+                                    style="display:flex; align-items:center; gap:10px; cursor:pointer; font-size:0.9rem; color:rgba(255,255,255,0.8); font-weight:500;">
+                                    <input type="checkbox" id="ticketRefundCheckbox"
+                                        style="width:18px; height:18px; accent-color:#5b9bd5; cursor:pointer;">
+                                    <i class="fas fa-undo-alt" style="color:#5b9bd5; font-size:0.85rem;"></i>
                                     退还订单积分
                                 </label>
-                                <small
-                                    style="color: rgba(255,255,255,0.4);">如果勾选，将自动将该订单对应的积分退还给用户（需要确保在订单记录中能找到支付金额）</small>
+                                <p
+                                    style="margin:8px 0 0 28px; font-size:0.75rem; color:rgba(255,255,255,0.3); line-height:1.5;">
+                                    勾选后将自动退还该订单对应的积分给用户</p>
                             </div>
                             <input type="hidden" id="replyTicketId">
                             <input type="hidden" id="replyNewStatus">
 
-                            <div class="modal-actions" style="margin-top:20px; text-align:right;">
-                                <button type="button" class="btn-secondary"
-                                    onclick="document.getElementById('ticketReplyModal').style.display='none'">取消</button>
-                                <button type="button" class="btn-primary"
-                                    onclick="AdminTickets.submitReply()">确认处理</button>
+                            <div style="display:flex; justify-content:flex-end; gap:12px;">
+                                <button type="button"
+                                    onclick="var m=document.getElementById('ticketReplyModal');m.style.display='none';m.style.visibility='hidden';m.style.opacity='0';"
+                                    style="padding:11px 24px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); border-radius:12px; color:rgba(255,255,255,0.5); font-size:0.9rem; font-weight:500; cursor:pointer; transition:all 0.2s;"
+                                    onmouseover="this.style.background='rgba(255,255,255,0.08)';this.style.color='rgba(255,255,255,0.8)';"
+                                    onmouseout="this.style.background='rgba(255,255,255,0.04)';this.style.color='rgba(255,255,255,0.5)';">取消</button>
+                                <button type="button" class="btn-primary" onclick="AdminTickets.submitReply()"
+                                    style="padding:11px 28px; background:linear-gradient(135deg, #4a8ec7, #5b9bd5); border:none; border-radius:12px; color:white; font-size:0.9rem; font-weight:600; cursor:pointer; box-shadow:0 4px 15px rgba(91,155,213,0.25); transition:all 0.3s; display:flex; align-items:center; gap:8px;"
+                                    onmouseover="this.style.transform='translateY(-1px)';this.style.boxShadow='0 6px 20px rgba(91,155,213,0.35)';"
+                                    onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='0 4px 15px rgba(91,155,213,0.25)';">
+                                    <i class="fas fa-check-circle"></i> 确认处理
+                                </button>
                             </div>
                         </form>
                     </div>

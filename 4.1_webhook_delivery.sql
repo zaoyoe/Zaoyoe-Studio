@@ -204,19 +204,33 @@ BEGIN
         VALUES (p_user_id, -v_total_price, '商城购买: ' || v_product.name, 'SHOP_ORDER_' || v_order_id);
     END IF;
 
-    -- H. Affiliate Commission (推广返佣 10%)
+    -- H. Affiliate Commission
     DECLARE
         v_inviter_id UUID;
         v_commission INT;
-        v_commission_rate FLOAT := 0.10;
+        v_commission_rate FLOAT;
     BEGIN
+        SELECT COALESCE((SELECT value::FLOAT FROM system_settings WHERE key = 'commission_rate_shop'), 0.10) INTO v_commission_rate;
+        
         SELECT invited_by INTO v_inviter_id FROM profiles WHERE id = p_user_id;
         IF v_inviter_id IS NOT NULL AND v_total_price > 0 THEN
             v_commission := FLOOR(v_total_price * v_commission_rate);
             IF v_commission > 0 THEN
                 UPDATE points_balance SET bonus_balance = bonus_balance + v_commission, updated_at = NOW() WHERE user_id = v_inviter_id;
-                INSERT INTO points_ledger (user_id, amount, reason, reference_id) VALUES (v_inviter_id, v_commission, '推广返佣', 'AFFILIATE_REWARD_' || v_order_id);
+                INSERT INTO points_ledger (user_id, amount, reason, reference_id) VALUES (v_inviter_id, v_commission, '推广返佣 (' || (v_commission_rate * 100) || '%): 下线购买商品', 'AFFILIATE_REWARD_' || v_order_id);
             END IF;
+        END IF;
+    END;
+
+    -- I. Unlock Pending Registration Rewards
+    DECLARE
+        v_pending_reward RECORD;
+    BEGIN
+        SELECT * INTO v_pending_reward FROM pending_referral_rewards WHERE invitee_id = p_user_id;
+        IF FOUND AND v_total_price > 0 THEN
+            UPDATE points_balance SET bonus_balance = bonus_balance + v_pending_reward.reward_points, updated_at = NOW() WHERE user_id = v_pending_reward.inviter_id;
+            INSERT INTO points_ledger (user_id, amount, reason, reference_id) VALUES (v_pending_reward.inviter_id, v_pending_reward.reward_points, '拉新固定奖励 (下线首单激活)', 'REG_REWARD_UNLOCK_' || v_order_id);
+            DELETE FROM pending_referral_rewards WHERE id = v_pending_reward.id;
         END IF;
     END;
 

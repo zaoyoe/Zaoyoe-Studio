@@ -2599,6 +2599,12 @@ body {
     height: 300px;
 }
 
+/* Ticket status cell - centered but normal height */
+.ticket-status-cell {
+    text-align: center;
+    vertical-align: middle;
+}
+
 /* Row Styles - Clean, no green border */
 .user-row {
     cursor: pointer;
@@ -14438,24 +14444,43 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 .config-row {
     display: flex;
     justify-content: space-between;
-    align-items: center;
-    padding: 10px 0;
+    align-items: flex-start;
+    padding: 16px 0;
     border-bottom: 1px solid var(--card-border);
+    gap: 20px;
 }
 
 .config-row:last-child {
     border-bottom: none;
+    padding-bottom: 4px;
 }
 
-.config-row label {
+.config-info {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.config-label {
     color: var(--text-main);
-    font-size: 0.9rem;
+    font-size: 0.95rem;
+    font-weight: 500;
+}
+
+.config-desc {
+    color: var(--text-dim);
+    font-size: 0.8rem;
+    line-height: 1.4;
+    max-width: 90%;
 }
 
 .config-input-wrapper {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 12px;
+    flex: 0 0 auto;
+    margin-top: 4px;
 }
 
 /* Fixed width for alignment in security settings */

@@ -245,15 +245,17 @@ BEGIN
         v_inviter_id UUID;
         v_commission INT := 0;
         v_agent_profit INT := 0;
-        v_commission_rate FLOAT := 0.10;
+        v_commission_rate FLOAT;
     BEGIN
+        SELECT COALESCE((SELECT value::FLOAT FROM system_settings WHERE key = 'commission_rate_agent'), 0.10) INTO v_commission_rate;
+        
         -- Handle global affiliate referral
         SELECT invited_by INTO v_inviter_id FROM profiles WHERE id = p_user_id;
         IF v_inviter_id IS NOT NULL AND v_total_price > 0 THEN
             v_commission := FLOOR(v_base_unit_price * p_quantity * v_commission_rate);
             IF v_commission > 0 THEN
                 UPDATE points_balance SET bonus_balance = bonus_balance + v_commission, updated_at = NOW() WHERE user_id = v_inviter_id;
-                INSERT INTO points_ledger (user_id, amount, reason, reference_id) VALUES (v_inviter_id, v_commission, '推广返佣', 'AFF_REW_' || v_order_id);
+                INSERT INTO points_ledger (user_id, amount, reason, reference_id) VALUES (v_inviter_id, v_commission, '推广返佣 (' || (v_commission_rate * 100) || '%): 下线购买分销资源', 'AFF_REW_' || v_order_id);
             END IF;
         END IF;
 
@@ -267,6 +269,18 @@ BEGIN
                 UPDATE points_balance SET paid_balance = paid_balance + v_agent_profit, updated_at = NOW() WHERE user_id = p_agent_id;
                 INSERT INTO points_ledger (user_id, amount, reason, reference_id) VALUES (p_agent_id, v_agent_profit, '代理商网店利润差额: ' || v_product.name, 'AGENT_PROF_' || v_order_id);
             END IF;
+        END IF;
+    END;
+
+    -- 4. Unlock Pending Registration Rewards
+    DECLARE
+        v_pending_reward RECORD;
+    BEGIN
+        SELECT * INTO v_pending_reward FROM pending_referral_rewards WHERE invitee_id = p_user_id;
+        IF FOUND AND v_total_price > 0 THEN
+            UPDATE points_balance SET bonus_balance = bonus_balance + v_pending_reward.reward_points, updated_at = NOW() WHERE user_id = v_pending_reward.inviter_id;
+            INSERT INTO points_ledger (user_id, amount, reason, reference_id) VALUES (v_pending_reward.inviter_id, v_pending_reward.reward_points, '拉新固定奖励 (下线首单激活)', 'REG_REWARD_UNLOCK_' || v_order_id);
+            DELETE FROM pending_referral_rewards WHERE id = v_pending_reward.id;
         END IF;
     END;
 
