@@ -109,10 +109,12 @@ async function loadGuestbookMessages(forceRefresh = false, scrollTargetId = null
                 const currentSite = window.SiteConfig?.site || 'cn';
                 const age = Date.now() - prefetch.timestamp;
 
-                // Use prefetch if < 30s old and same site
-                if (age < 30000 && prefetch.site === currentSite && prefetch.data) {
+                // Always clean up the prefetch data after reading it, regardless of age
+                sessionStorage.removeItem('guestbook_prefetch');
+
+                // Use prefetch if < 5m old and same site
+                if (age < 300000 && prefetch.site === currentSite && prefetch.data) {
                     console.log(`⚡ Using prefetched data (${Math.round(age)}ms old)`);
-                    sessionStorage.removeItem('guestbook_prefetch'); // One-time use
 
                     const rpcData = prefetch.data;
                     const messages = rpcData.messages || [];

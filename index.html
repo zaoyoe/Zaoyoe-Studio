@@ -489,10 +489,11 @@
             // === Route detection & dispatch ===
 
             function getTarget(el) {
-                const link = el.closest('a[href], .entry-card[href]');
+                const link = el.closest('a[href], .entry-card[href], [onclick*="openGuestbookModal"]');
                 if (!link) return null;
                 const href = link.getAttribute('href') || '';
-                if (href.includes('guestbook.html')) return 'guestbook';
+                const onclick = link.getAttribute('onclick') || '';
+                if (href.includes('guestbook.html') || onclick.includes('openGuestbookModal')) return 'guestbook';
                 if (href.includes('shop.html')) return 'shop';
                 if (href.includes('prompts.html')) return 'prompts';
                 if (href.includes('verify.html')) return 'verify';
