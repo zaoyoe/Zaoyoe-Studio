@@ -101,10 +101,10 @@ function renderRewardsConfig() {
     const config = systemConfigCache['rewards'] || {};
 
     const fields = {
-        'cfgSignupBonus': config.signup_bonus || 50,
-        'cfgDailyCheckin': config.daily_checkin || 5,
-        'cfgCommentReward': config.comment_reward || 2,
-        'cfgInviteReward': config.invite_reward || 100
+        'cfgSignupBonus': config.signup_bonus ?? 50,
+        'cfgDailyCheckin': config.daily_checkin ?? 5,
+        'cfgCommentReward': config.comment_reward ?? 2,
+        'cfgInviteReward': config.invite_reward ?? 100
     };
 
     Object.entries(fields).forEach(([id, value]) => {

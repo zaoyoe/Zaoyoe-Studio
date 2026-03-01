@@ -149,7 +149,7 @@
                             text = lang === 'zh' ? `排队等待中 (前面还有 ${match[1]} 人)...` : `Waiting in queue (${match[1]} ahead)...`;
                         }
                     }
-                    return `${val.icon} ${text}`;
+                    return text; // Removed emoji icon concatenation
                 }
             }
         }
@@ -163,15 +163,15 @@
                 const isError = errorKeywords.some(k => lower.includes(k));
                 // For Chinese, show a generic error message; for English, show original
                 if (isError && lang === 'zh') {
-                    return `❌ 验证失败: ${message}`;
+                    return `验证失败: ${message}`;
                 }
-                return `${isError ? '❌' : s.icon} ${message}`;
+                return message;
             }
-            return `${s.icon} ${s[lang] || s.zh}`;
+            return s[lang] || s.zh;
         }
-        // Fallback: show original message with icon
-        if (message) return `⚠️ ${message}`;
-        return lang === 'zh' ? '❓ 未知状态' : '❓ Unknown status';
+        // Fallback: show original message without icon
+        if (message) return message;
+        return lang === 'zh' ? '未知状态' : 'Unknown status';
     }
 
     /**
@@ -1108,7 +1108,7 @@
             iconEl.className = `fas ${icons[status] || 'fa-spinner fa-spin'}`;
         }
         const msgEl = item.querySelector('.verify-result-item-message');
-        if (msgEl) msgEl.textContent = message;
+        if (msgEl) msgEl.innerHTML = message;
     }
 
     function updateBatchProgress(current, total) {
@@ -1234,12 +1234,12 @@
     function getHistoryStatusText(status) {
         if (!status) return '--';
         const s = status.toLowerCase();
-        if (s.includes('success') || s.includes('completed')) return `✅ ${t('verify.successText', '成功')}`;
-        if (s.includes('fail') || s.includes('error')) return `❌ ${t('verify.failText', '失败')}`;
-        if (s.includes('reject')) return `❌ ${t('verify.rejectText', '被拒')}`;
-        if (s.includes('cancel')) return `⚪ ${t('verify.cancelText', '取消')}`;
-        if (s.includes('review')) return `⏳ ${t('verify.reviewText', '审核中')}`;
-        if (s.includes('pending') || s.includes('processing')) return `🔄 ${t('verify.processText', '处理中')}`;
+        if (s.includes('success') || s.includes('completed')) return `<i class="fas fa-check-circle" style="color: #22c55e;"></i> ${t('verify.successText', '成功')}`;
+        if (s.includes('fail') || s.includes('error')) return `<i class="fas fa-times-circle" style="color: #ef4444;"></i> ${t('verify.failText', '失败')}`;
+        if (s.includes('reject')) return `<i class="fas fa-times-circle" style="color: #ef4444;"></i> ${t('verify.rejectText', '被拒')}`;
+        if (s.includes('cancel')) return `<i class="fas fa-ban" style="color: rgba(255,255,255,0.4);"></i> ${t('verify.cancelText', '取消')}`;
+        if (s.includes('review')) return `<i class="fas fa-hourglass-half" style="color: #f39c12;"></i> ${t('verify.reviewText', '审核中')}`;
+        if (s.includes('pending') || s.includes('processing')) return `<i class="fas fa-sync fa-spin" style="color: #3498db;"></i> ${t('verify.processText', '处理中')}`;
         return status;
     }
 
@@ -1250,11 +1250,11 @@
         const vid = el.getAttribute('data-vid');
         if (!vid || vid === '--') return;
         navigator.clipboard.writeText(vid).then(() => {
-            const original = el.textContent;
-            el.textContent = `✅ ${t('verify.copied', '已复制')}`;
+            const original = el.innerHTML;
+            el.innerHTML = `<i class="fas fa-check" style="color: #22c55e;"></i> ${t('verify.copied', '已复制')}`;
             el.style.color = '#22c55e';
             setTimeout(() => {
-                el.textContent = original;
+                el.innerHTML = original;
                 el.style.color = '';
             }, 1200);
         }).catch(() => {
@@ -1267,11 +1267,11 @@
             ta.select();
             document.execCommand('copy');
             document.body.removeChild(ta);
-            const original = el.textContent;
-            el.textContent = '✅ 已复制';
+            const original = el.innerHTML;
+            el.innerHTML = `<i class="fas fa-check" style="color: #22c55e;"></i> 已复制`;
             el.style.color = '#22c55e';
             setTimeout(() => {
-                el.textContent = original;
+                el.innerHTML = original;
                 el.style.color = '';
             }, 1200);
         });
@@ -1311,7 +1311,7 @@
         const rows = data.map(item => {
             const time = new Date(item.created_at).toLocaleString('zh-CN');
             const vId = item.verification_id || '--';
-            const statusText = getHistoryStatusText(item.status).replace(/[✅❌⚪⏳🔄] /g, '');
+            const statusText = getHistoryStatusText(item.status).replace(/<[^>]*>?/gm, '').trim();
             const cost = item.points_deducted || 0;
             // Escape fields containing commas or quotes
             return [time, vId, statusText, cost > 0 ? '-' + cost : '0'].map(f => `"${String(f).replace(/"/g, '""')}"`).join(',');
