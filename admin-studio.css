@@ -14382,8 +14382,8 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 }
 
 .config-card:hover {
-    border-color: rgba(100, 160, 255, 0.6);
-    box-shadow: 0 0 12px rgba(100, 160, 255, 0.15);
+    border-color: var(--accent-starry);
+    box-shadow: 0 0 12px rgba(107, 158, 206, 0.2);
 }
 
 .config-card-header {
