@@ -67,7 +67,8 @@ const ShopClient = {
                     if (prefetchRaw) {
                         const prefetch = JSON.parse(prefetchRaw);
                         const age = Date.now() - prefetch.timestamp;
-                        if (age < 300000 && prefetch.categories && prefetch.products) {
+                        // Only use prefetch if it actually contains products, otherwise ignore (Safari empty state bug)
+                        if (age < 300000 && prefetch.categories && prefetch.products && prefetch.products.length > 0) {
                             sessionStorage.removeItem('shop_prefetch');
                             // Inject prefetched data into Cache for loadCategoryFilters / loadProducts to use
                             this._prefetchedCategories = prefetch.categories;

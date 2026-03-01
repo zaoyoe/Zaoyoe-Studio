@@ -450,12 +450,17 @@
                         window.supabaseClient.from('shop_categories').select('*').order('sort_order'),
                         window.supabaseClient.from('shop_products').select('*').eq('is_active', true).order('sort_order')
                     ]);
-                    sessionStorage.setItem('shop_prefetch', JSON.stringify({
-                        categories: catResult.data || [],
-                        products: prodResult.data || [],
-                        timestamp: Date.now()
-                    }));
-                    console.log('⚡ Shop prefetched');
+
+                    if (prodResult.data && prodResult.data.length > 0) {
+                        sessionStorage.setItem('shop_prefetch', JSON.stringify({
+                            categories: catResult.data || [],
+                            products: prodResult.data,
+                            timestamp: Date.now()
+                        }));
+                        console.log('⚡ Shop prefetched');
+                    } else {
+                        console.log('⚡ Shop prefetch skipped (no active products loaded)');
+                    }
                 } catch (e) { console.warn('Shop prefetch failed:', e.message); }
             }
 
@@ -523,6 +528,9 @@
                 if (target) handleHover(target);
             });
             document.addEventListener('touchstart', (e) => {
+                // On mobile Safari, touching a link triggers touchstart then click. 
+                // We shouldn't prefetch if the user is actively tapping to navigate right now.
+                if (e.target.closest('a')) return;
                 const target = getTarget(e.target);
                 if (target) handleHover(target);
             }, { passive: true });
