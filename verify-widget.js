@@ -44,6 +44,9 @@
         'Waiting for review...': {
             zh: '等待人工审核中...', en: 'Under manual review...', icon: '⏳', css: 'processing'
         },
+        'Waiting in queue': {
+            zh: '排队等待中...', en: 'Waiting in queue...', icon: '⏳', css: 'processing'
+        },
         'Failed to submit personal information': {
             zh: '提交个人信息失败', en: 'Failed to submit personal info', icon: '❌', css: 'error'
         },
@@ -138,7 +141,15 @@
         if (message) {
             for (const [key, val] of Object.entries(STATUS_MAP)) {
                 if (message.toLowerCase().includes(key.toLowerCase())) {
-                    return `${val.icon} ${val[lang] || val.zh}`;
+                    let text = val[lang] || val.zh;
+                    // Extract queue position if present (e.g., "Waiting in queue, position: 4")
+                    if (key === 'Waiting in queue') {
+                        const match = message.match(/position:\s*(\d+)/i);
+                        if (match && match[1]) {
+                            text = lang === 'zh' ? `排队等待中 (前面还有 ${match[1]} 人)...` : `Waiting in queue (${match[1]} ahead)...`;
+                        }
+                    }
+                    return `${val.icon} ${text}`;
                 }
             }
         }
@@ -197,6 +208,7 @@
 
         if (message) {
             const lower = message.toLowerCase();
+            if (lower.includes('queue')) return false; // Force non-terminal if in queue
             if (terminalMessages.some(t => lower.includes(t))) return true;
         }
         if (status && terminalStatuses.includes(status)) return true;
@@ -730,26 +742,30 @@
         submitBtn.style.display = 'none';
         if (cancelBtn) cancelBtn.style.display = 'flex';
 
-        // Get user ID (with timeout to prevent hanging)
-        let userId;
-        try {
-            console.log('[VerifyWidget] Getting user ID...');
-            const userPromise = window.supabaseClient.auth.getUser();
-            const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('获取用户信息超时 / User auth timeout')), 5000)
-            );
-            const { data } = await Promise.race([userPromise, timeoutPromise]);
-            userId = data?.user?.id;
-            if (!userId) throw new Error('请先登录 / Please login first');
-            console.log('[VerifyWidget] User ID obtained:', userId.substring(0, 8) + '...');
-        } catch (e) {
-            console.error('[VerifyWidget] getUser failed:', e);
-            validLinks.forEach(({ index }) =>
-                updateResultItem(index, 'error', '❌ ' + (e.message || '请先登录'))
-            );
-            batchStats.failed += validLinks.length;
-            finishVerification();
-            return;
+        // Get user ID - use cached user first to prevent unnecessary network timeouts
+        let userId = currentUser?.id || currentUser?.user_id;
+
+        if (!userId) {
+            try {
+                console.log('[VerifyWidget] Getting user ID from network...');
+                const userPromise = window.supabaseClient.auth.getUser();
+                const timeoutPromise = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('获取用户信息超时 / User auth timeout')), 5000)
+                );
+                const { data } = await Promise.race([userPromise, timeoutPromise]);
+                userId = data?.user?.id;
+
+                if (!userId) throw new Error('请先登录 / Please login first');
+                console.log('[VerifyWidget] User ID obtained:', userId.substring(0, 8) + '...');
+            } catch (e) {
+                console.error('[VerifyWidget] getUser failed:', e);
+                validLinks.forEach(({ index }) =>
+                    updateResultItem(index, 'error', '❌ ' + (e.message || '请先登录'))
+                );
+                batchStats.failed += validLinks.length;
+                finishVerification();
+                return;
+            }
         }
 
         // Submit each item and start polling
@@ -774,6 +790,12 @@
                 clearTimeout(fetchTimeout);
 
                 const data = await res.json();
+
+                // If user clicked cancel during this fetch, immediately abort UI updates for this task
+                if (!isLoading) {
+                    updateResultItem(item.index, 'cancelled', '⚪ 已取消 / Cancelled');
+                    break;
+                }
 
                 if (!res.ok || !data.success) {
                     updateResultItem(item.index, 'error',
@@ -871,7 +893,20 @@
                     const res = await fetch(url);
                     const data = await res.json();
 
+                    // Check if user clicked cancel while waiting for network
+                    if (taskInfo.aborted) {
+                        resolve({ success: false, cancelled: true });
+                        return;
+                    }
+
                     if (!res.ok) {
+                        // Don't abort if the backend throws an HTTP error (e.g. 429) but it's just waiting in queue
+                        if (data.message && data.message.toLowerCase().includes('queue')) {
+                            const translated = translateStatus(data.message, 'pending');
+                            updateResultItem(itemIndex, 'processing', translated);
+                            return; // Continue polling next interval
+                        }
+
                         clearInterval(timer);
                         activeTasks.delete(taskId);
                         updateResultItem(itemIndex, 'error',
@@ -1129,11 +1164,11 @@
         if (!listEl) return;
 
         if (!currentUser || !window.supabaseClient) {
-            listEl.innerHTML = '<div class="verify-history-empty">登录后查看历史记录</div>';
+            listEl.innerHTML = `<div class="verify-history-empty">${t('verify.historyLoginPrompt', '登录后查看历史记录')}</div>`;
             return;
         }
 
-        listEl.innerHTML = '<div class="verify-history-loading"><i class="fas fa-spinner fa-spin"></i> 加载中...</div>';
+        listEl.innerHTML = `<div class="verify-history-loading"><i class="fas fa-spinner fa-spin"></i> ${t('verify.loading', '加载中...')}</div>`;
 
         try {
             const { data, error } = await window.supabaseClient
@@ -1146,14 +1181,14 @@
 
             if (error) {
                 console.error('[VerifyHistory] Supabase error:', error.message, error.code, error.details);
-                listEl.innerHTML = '<div class="verify-history-empty"><i class="fas fa-inbox"></i> 暂无历史记录</div>';
+                listEl.innerHTML = `<div class="verify-history-empty"><i class="fas fa-inbox"></i> ${t('verify.historyEmpty', '暂无历史记录')}</div>`;
                 return;
             }
 
             console.log('[VerifyHistory] Loaded', data?.length || 0, 'records for user', currentUser.id);
 
             if (!data || data.length === 0) {
-                listEl.innerHTML = '<div class="verify-history-empty"><i class="fas fa-inbox"></i> 暂无历史记录</div>';
+                listEl.innerHTML = `<div class="verify-history-empty"><i class="fas fa-inbox"></i> ${t('verify.historyEmpty', '暂无历史记录')}</div>`;
                 return;
             }
 
@@ -1174,7 +1209,7 @@
                 return `
                     <div class="verify-history-item ${statusCss}">
                         <div class="verify-history-item-time">${time}</div>
-                        <div class="verify-history-item-id" title="点击复制: ${vId}" data-vid="${vId}" onclick="VerifyWidget.copyId(this)">${shortId}</div>
+                        <div class="verify-history-item-id" title="${t('verify.clickToCopy', '点击复制')}: ${vId}" data-vid="${vId}" onclick="VerifyWidget.copyId(this)">${shortId}</div>
                         <div class="verify-history-item-status">${statusText}</div>
                         <div class="verify-history-item-cost">${cost > 0 ? '-' + cost : '--'}</div>
                     </div>
@@ -1182,7 +1217,7 @@
             }).join('');
 
         } catch (e) {
-            listEl.innerHTML = '<div class="verify-history-empty">加载失败</div>';
+            listEl.innerHTML = `<div class="verify-history-empty">${t('verify.loadFailed', '加载失败')}</div>`;
         }
     }
 
@@ -1199,12 +1234,12 @@
     function getHistoryStatusText(status) {
         if (!status) return '--';
         const s = status.toLowerCase();
-        if (s.includes('success') || s.includes('completed')) return '✅ 成功';
-        if (s.includes('fail') || s.includes('error')) return '❌ 失败';
-        if (s.includes('reject')) return '❌ 被拒';
-        if (s.includes('cancel')) return '⚪ 取消';
-        if (s.includes('review')) return '⏳ 审核中';
-        if (s.includes('pending') || s.includes('processing')) return '🔄 处理中';
+        if (s.includes('success') || s.includes('completed')) return `✅ ${t('verify.successText', '成功')}`;
+        if (s.includes('fail') || s.includes('error')) return `❌ ${t('verify.failText', '失败')}`;
+        if (s.includes('reject')) return `❌ ${t('verify.rejectText', '被拒')}`;
+        if (s.includes('cancel')) return `⚪ ${t('verify.cancelText', '取消')}`;
+        if (s.includes('review')) return `⏳ ${t('verify.reviewText', '审核中')}`;
+        if (s.includes('pending') || s.includes('processing')) return `🔄 ${t('verify.processText', '处理中')}`;
         return status;
     }
 
@@ -1216,7 +1251,7 @@
         if (!vid || vid === '--') return;
         navigator.clipboard.writeText(vid).then(() => {
             const original = el.textContent;
-            el.textContent = '✅ 已复制';
+            el.textContent = `✅ ${t('verify.copied', '已复制')}`;
             el.style.color = '#22c55e';
             setTimeout(() => {
                 el.textContent = original;

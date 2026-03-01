@@ -15,22 +15,30 @@
     console.log('[PointsService] ✅ Initializing...');
 
     const PointsService = {
+        // Cached session to avoid redundant getSession() calls
+        _cachedUserId: null,
+
+        async _getUserId() {
+            if (this._cachedUserId) return this._cachedUserId;
+            const { data: { session } } = await supabase.auth.getSession();
+            this._cachedUserId = session?.user?.id || null;
+            return this._cachedUserId;
+        },
+
         /**
          * Get user's current balance
          */
         async getBalance() {
             try {
-                // Use getSession() - cached, instant
-                const { data: { session } } = await supabase.auth.getSession();
-                if (!session?.user) {
-                    console.warn('[PointsService] User not logged in');
+                const userId = await this._getUserId();
+                if (!userId) {
                     return { paid_balance: 0, bonus_balance: 0, total_balance: 0 };
                 }
 
                 const { data, error } = await supabase
                     .from('points_balance')
                     .select('paid_balance, bonus_balance, total_balance')
-                    .eq('user_id', session.user.id)
+                    .eq('user_id', userId)
                     .eq('site', window.SiteConfig?.site || 'cn')
                     .maybeSingle();
 
@@ -39,7 +47,6 @@
                     return { paid_balance: 0, bonus_balance: 0, total_balance: 0 };
                 }
 
-                // If no record exists, return zeros
                 return data || { paid_balance: 0, bonus_balance: 0, total_balance: 0 };
             } catch (e) {
                 console.error('[PointsService] Exception in getBalance:', e);
@@ -94,30 +101,27 @@
         },
 
         /**
-         * Mock payment (for testing)
+         * Mock payment - accepts optional package data to skip DB fetch
          */
-        async mockPay(packageId) {
-            // Use getSession() - instant
-            const { data: { session } } = await supabase.auth.getSession();
-            if (!session?.user) throw new Error('请先登录');
+        async mockPay(packageId, packageData) {
+            const userId = await this._getUserId();
+            if (!userId) throw new Error('请先登录');
 
-            // Get package info
-            const { data: pkg, error: pkgError } = await supabase
-                .from('points_packages')
-                .select('*')
-                .eq('id', packageId)
-                .single();
+            // Use passed package data or fetch from DB
+            let pkg = packageData;
+            if (!pkg) {
+                const { data, error } = await supabase
+                    .from('points_packages')
+                    .select('*')
+                    .eq('id', packageId)
+                    .single();
+                if (error || !data) throw new Error('套餐不存在');
+                pkg = data;
+            }
 
-            if (pkgError || !pkg) throw new Error('套餐不存在');
-
-            console.log(`[PointsService] 🔄 Mock paying for: ${pkg.name}`);
-
-            // Simulate delay (reduced for better UX)
-            await new Promise(r => setTimeout(r, 800));
-
-            // Call RPC to recharge points (separating paid and bonus)
+            // Single RPC call — the only real network request
             const { error: rpcError } = await supabase.rpc('fn_recharge_points', {
-                target_user_id: session.user.id,
+                target_user_id: userId,
                 p_paid: pkg.points_amount,
                 p_bonus: pkg.bonus_points || 0,
                 p_reason: `模拟充值: ${pkg.name}`,
@@ -126,8 +130,6 @@
             });
 
             if (rpcError) throw rpcError;
-
-            console.log('[PointsService] ✅ Mock payment successful');
             return { success: true };
         }
     };

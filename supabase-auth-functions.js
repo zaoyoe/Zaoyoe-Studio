@@ -542,6 +542,11 @@ async function handleAuthClick(event) {
                 }
                 dropdown.classList.add('active');
                 if (overlay) overlay.classList.add('active');
+
+                // Pre-fetch wallet data so 'My Orders' opens instantly
+                if (window.WalletModal && window.WalletModal.prefetchData) {
+                    window.WalletModal.prefetchData();
+                }
             }
         }
 

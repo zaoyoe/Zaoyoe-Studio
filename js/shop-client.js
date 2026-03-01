@@ -60,9 +60,31 @@ const ShopClient = {
                     await new Promise(resolve => setTimeout(resolve, 500));
                 }
 
+                // === Check sessionStorage for prefetched shop data ===
+                let usedPrefetch = false;
+                try {
+                    const prefetchRaw = sessionStorage.getItem('shop_prefetch');
+                    if (prefetchRaw) {
+                        const prefetch = JSON.parse(prefetchRaw);
+                        const age = Date.now() - prefetch.timestamp;
+                        if (age < 300000 && prefetch.categories && prefetch.products) {
+                            sessionStorage.removeItem('shop_prefetch');
+                            // Inject prefetched data into Cache for loadCategoryFilters / loadProducts to use
+                            this._prefetchedCategories = prefetch.categories;
+                            this._prefetchedProducts = prefetch.products;
+                            usedPrefetch = true;
+                            console.log(`⚡ Using prefetched shop data (${Math.round(age / 1000)}s old)`);
+                        }
+                    }
+                } catch (e) { /* ignore */ }
+
                 // Load category filters first, then products
                 await this.loadCategoryFilters();
                 await this.loadProducts();
+
+                // Clear prefetch references
+                this._prefetchedCategories = null;
+                this._prefetchedProducts = null;
 
                 clearTimeout(fallbackTimer);
 
@@ -108,17 +130,22 @@ const ShopClient = {
         if (!container) return;
 
         try {
-            const { data, error } = await supabaseClient
-                .from('shop_categories')
-                .select('*')
-                .order('sort_order');
-
-            console.log('🛍️ Shop categories from DB:', { data, error });
-
-            let categories = data || [];
+            // Use prefetched data if available
+            let categories;
+            if (this._prefetchedCategories) {
+                categories = this._prefetchedCategories;
+                console.log('⚡ Using prefetched categories');
+            } else {
+                const { data, error } = await supabaseClient
+                    .from('shop_categories')
+                    .select('*')
+                    .order('sort_order');
+                console.log('🛍️ Shop categories from DB:', { data, error });
+                categories = (error || !data || data.length === 0) ? null : data;
+            }
 
             // Fallback to defaults if empty
-            if (error || categories.length === 0) {
+            if (!categories || categories.length === 0) {
                 console.warn('shop_categories load failed or empty, using defaults');
                 categories = [
                     { name: 'account', color: '#6b9ece' },
@@ -157,7 +184,10 @@ const ShopClient = {
         const container = document.getElementById('userShopGrid');
         if (!container) return;
 
-        container.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text-dim);"><i class="fas fa-spinner fa-spin"></i> ${window.i18n?.t('common.loading') || '加载中...'}</div>`;
+        // Only show spinner if no prefetched data and no skeleton already visible
+        if (!this._prefetchedProducts && !container.querySelector('.skeleton')) {
+            container.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text-dim);"><i class="fas fa-spinner fa-spin"></i> ${window.i18n?.t('common.loading') || '加载中...'}</div>`;
+        }
 
         // Clear existing timer if any
         if (this.flashSaleInterval) {
@@ -166,20 +196,32 @@ const ShopClient = {
         }
 
         try {
-            // Fetch ONLY active products
-            let query = supabaseClient
-                .from('shop_products')
-                .select('*')
-                .eq('is_active', true)
-                .order('display_order', { ascending: false });
+            let data;
 
-            if (this.currentCategory !== 'all') {
-                query = query.eq('category', this.currentCategory);
+            // Use prefetched data if available
+            if (this._prefetchedProducts) {
+                data = this._prefetchedProducts;
+                // Apply category filter client-side
+                if (this.currentCategory !== 'all') {
+                    data = data.filter(p => p.category === this.currentCategory);
+                }
+                console.log('⚡ Using prefetched products');
+            } else {
+                // Fetch ONLY active products
+                let query = supabaseClient
+                    .from('shop_products')
+                    .select('*')
+                    .eq('is_active', true)
+                    .order('display_order', { ascending: false });
+
+                if (this.currentCategory !== 'all') {
+                    query = query.eq('category', this.currentCategory);
+                }
+
+                const result = await query;
+                if (result.error) throw result.error;
+                data = result.data;
             }
-
-            const { data, error } = await query;
-
-            if (error) throw error;
 
             container.innerHTML = '';
             if (!data || data.length === 0) {

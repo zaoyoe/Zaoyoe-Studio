@@ -54,7 +54,7 @@
                     <i class="fas fa-wallet"></i>
                     <span data-i18n="wallet.title">我的钱包</span>
                 </button>
-                <button class="dropdown-action" onclick="WalletModal.open(); setTimeout(() => WalletModal.switchView('orders'), 50);">
+                <button class="dropdown-action" onclick="WalletModal.open('orders')">
                     <i class="fas fa-box-open"></i>
                     <span data-i18n="wallet.myOrders">我的订单</span>
                 </button>
@@ -64,7 +64,7 @@
                 </button>
                 <button class="dropdown-action" id="enterStudioBtn" style="display: none;" onclick="window.location.href='admin-studio.html'">
                      <i class="fas fa-palette"></i>
-                     <span>Enter Studio</span>
+                     <span data-i18n="admin.enterStudio">Enter Studio</span>
                 </button>
                 <button class="dropdown-action" onclick="window.handleLogout(event)">
                     <i class="fas fa-sign-out-alt"></i>

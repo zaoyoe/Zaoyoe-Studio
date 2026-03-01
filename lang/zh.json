@@ -293,6 +293,7 @@
     },
     "wallet": {
         "title": "我的钱包",
+        "myOrders": "我的订单",
         "balance": "余额",
         "recharge": "充值",
         "records": "记录",
@@ -368,7 +369,7 @@
         "ticketSuccess": "工单提交成功，客服将尽快核实处理。",
         "ticketFailed": "工单提交失败",
         "reportIssue": "报告问题",
-        "affiliate": "推广返利",
+        "affiliate": "推广",
         "totalCommission": "累计获得佣金",
         "invitedCount": "成功邀请人数",
         "people": "人",
@@ -384,7 +385,12 @@
         "posterSubtitle": "邀您体验「早鸟精选资源」",
         "posterScan": "在此扫码注册",
         "posterJoin": "加入我们获取新人专属福利",
-        "posterFailed": "海报生成失败"
+        "posterFailed": "海报生成失败",
+        "dailyCheckin": "每日签到",
+        "adminAdjustment": "管理员调整:",
+        "unlockPrompt": "解锁提示词:",
+        "promptItem": "提示词",
+        "checkin": "签到"
     },
     "privacy": {
         "title": "隐私政策",
@@ -435,7 +441,20 @@
         "clickToJoin": "点击加入",
         "serviceUnavailable": "服务暂不可用",
         "quotaExhausted": "API验证次数已用完，请联系管理员补货",
-        "cancelled": "已取消验证"
+        "cancelled": "已取消验证",
+        "history": "验证历史",
+        "historyLoginPrompt": "登录后查看历史记录",
+        "historyEmpty": "暂无历史记录",
+        "loading": "加载中...",
+        "loadFailed": "加载失败",
+        "successText": "成功",
+        "failText": "失败",
+        "rejectText": "被拒",
+        "cancelText": "取消",
+        "reviewText": "审核中",
+        "processText": "处理中",
+        "clickToCopy": "点击复制",
+        "copied": "已复制"
     },
     "chat": {
         "sidebarTitle": "客服消息",
@@ -503,5 +522,8 @@
             "privacy": "隐私政策",
             "support": "支持我们"
         }
+    },
+    "admin": {
+        "enterStudio": "进入工作室"
     }
 }

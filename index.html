@@ -387,6 +387,9 @@
             modal.classList.add('active');
             document.body.classList.add('no-scroll');
 
+            // Trigger guestbook data prefetch while user reads the modal
+            if (typeof window._prefetchGuestbook === 'function') window._prefetchGuestbook();
+
             // Step 3: After one frame (modal is now display:flex), start staggered reveal
             requestAnimationFrame(() => {
                 requestAnimationFrame(() => {
@@ -414,6 +417,118 @@
             }
             this._overlayDown = false;
         });
+    </script>
+
+    <!-- Universal Hover Prefetch: Pre-load target page data on hover intent -->
+    <script>
+        (function () {
+            const prefetched = {}; // Track which targets are already prefetched
+            let prefetching = {};  // Track in-progress prefetches
+
+            const site = () => window.SiteConfig?.site || 'cn';
+
+            // === Prefetch functions for each target ===
+
+            async function prefetchGuestbook() {
+                try {
+                    const sessionResult = await window.supabaseClient.auth.getUser();
+                    const userId = sessionResult.data?.user?.id || null;
+                    const { data, error } = await window.supabaseClient
+                        .rpc('fn_load_guestbook', { p_site: site(), p_limit: 50, p_user_id: userId });
+                    if (!error && data) {
+                        sessionStorage.setItem('guestbook_prefetch', JSON.stringify({
+                            data, timestamp: Date.now(), site: site()
+                        }));
+                        console.log('⚡ Guestbook prefetched');
+                    }
+                } catch (e) { console.warn('Guestbook prefetch failed:', e.message); }
+            }
+
+            async function prefetchShop() {
+                try {
+                    const [catResult, prodResult] = await Promise.all([
+                        window.supabaseClient.from('shop_categories').select('*').order('sort_order'),
+                        window.supabaseClient.from('shop_products').select('*').eq('is_active', true).order('sort_order')
+                    ]);
+                    sessionStorage.setItem('shop_prefetch', JSON.stringify({
+                        categories: catResult.data || [],
+                        products: prodResult.data || [],
+                        timestamp: Date.now()
+                    }));
+                    console.log('⚡ Shop prefetched');
+                } catch (e) { console.warn('Shop prefetch failed:', e.message); }
+            }
+
+            async function prefetchPrompts() {
+                // Prompts use static prompts-data.js — just warm up the browser cache
+                try {
+                    const link = document.createElement('link');
+                    link.rel = 'prefetch';
+                    link.href = '/prompts.html';
+                    document.head.appendChild(link);
+                    // Also prefetch the data file
+                    const link2 = document.createElement('link');
+                    link2.rel = 'prefetch';
+                    link2.href = '/prompts-data.js';
+                    document.head.appendChild(link2);
+                    console.log('⚡ Prompts page prefetched (browser cache)');
+                } catch (e) { /* ignore */ }
+            }
+
+            async function prefetchVerify() {
+                // Verify is mostly static — browser prefetch the HTML
+                try {
+                    const link = document.createElement('link');
+                    link.rel = 'prefetch';
+                    link.href = '/verify.html';
+                    document.head.appendChild(link);
+                    console.log('⚡ Verify page prefetched (browser cache)');
+                } catch (e) { /* ignore */ }
+            }
+
+            // === Route detection & dispatch ===
+
+            function getTarget(el) {
+                const link = el.closest('a[href], .entry-card[href]');
+                if (!link) return null;
+                const href = link.getAttribute('href') || '';
+                if (href.includes('guestbook.html')) return 'guestbook';
+                if (href.includes('shop.html')) return 'shop';
+                if (href.includes('prompts.html')) return 'prompts';
+                if (href.includes('verify.html')) return 'verify';
+                return null;
+            }
+
+            const handlers = {
+                guestbook: prefetchGuestbook,
+                shop: prefetchShop,
+                prompts: prefetchPrompts,
+                verify: prefetchVerify
+            };
+
+            async function handleHover(target) {
+                if (prefetched[target] || prefetching[target]) return;
+                prefetching[target] = true;
+                try {
+                    await handlers[target]();
+                    prefetched[target] = true;
+                } catch (e) { /* ignore */ }
+                prefetching[target] = false;
+            }
+
+            // === Single event delegation for ALL links ===
+            document.addEventListener('mouseover', (e) => {
+                const target = getTarget(e.target);
+                if (target) handleHover(target);
+            });
+            document.addEventListener('touchstart', (e) => {
+                const target = getTarget(e.target);
+                if (target) handleHover(target);
+            }, { passive: true });
+
+            // Expose guestbook prefetch for the modal
+            window._prefetchGuestbook = () => handleHover('guestbook');
+        })();
     </script>
 </body>
 

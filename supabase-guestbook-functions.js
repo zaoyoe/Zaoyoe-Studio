@@ -100,118 +100,221 @@ async function loadGuestbookMessages(forceRefresh = false, scrollTargetId = null
         return;
     }
 
+    // === INSTANT PATH: Check sessionStorage prefetch from homepage ===
+    if (!forceRefresh) {
+        try {
+            const prefetchRaw = sessionStorage.getItem('guestbook_prefetch');
+            if (prefetchRaw) {
+                const prefetch = JSON.parse(prefetchRaw);
+                const currentSite = window.SiteConfig?.site || 'cn';
+                const age = Date.now() - prefetch.timestamp;
+
+                // Use prefetch if < 30s old and same site
+                if (age < 30000 && prefetch.site === currentSite && prefetch.data) {
+                    console.log(`⚡ Using prefetched data (${Math.round(age)}ms old)`);
+                    sessionStorage.removeItem('guestbook_prefetch'); // One-time use
+
+                    const rpcData = prefetch.data;
+                    const messages = rpcData.messages || [];
+                    const comments = rpcData.comments || [];
+                    const userLikes = rpcData.user_likes || [];
+
+                    // Process user likes
+                    guestbookCache.userLikes = new Set(
+                        userLikes.map(l => {
+                            const normalizedType = l.target_type.charAt(0).toUpperCase() + l.target_type.slice(1);
+                            return `${normalizedType}_${l.target_id}`;
+                        })
+                    );
+
+                    // Attach comments to messages
+                    const messagesWithComments = messages.map(msg => ({
+                        ...msg,
+                        comments: buildCommentTree(
+                            comments
+                                .filter(c => c.message_id === msg.id)
+                                .map(c => ({
+                                    ...c,
+                                    profiles: c.profiles || { username: 'Anonymous', avatar_url: null }
+                                }))
+                        )
+                    }));
+
+                    // Update cache
+                    guestbookCache.messages = messagesWithComments;
+                    guestbookCache.lastFetch = Date.now();
+
+                    displayMessages(messagesWithComments);
+
+                    if (scrollTargetId) {
+                        setTimeout(() => {
+                            const target = document.getElementById(scrollTargetId);
+                            if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }, 300);
+                    }
+                    return;
+                }
+            }
+        } catch (e) {
+            console.warn('Prefetch read failed:', e.message);
+        }
+    }
+
     try {
-        // Fetch messages (without join - will fetch profiles separately)
         const currentSite = window.SiteConfig?.site || 'cn';
-        const { data: messages, error } = await window.supabaseClient
-            .from('guestbook_messages')
-            .select('*')
-            .eq('site', currentSite)
-            .order('created_at', { ascending: false })
-            .limit(50);
 
-        if (error) throw error;
+        // Get user session first (lightweight, usually cached)
+        const { data: { user } } = await window.supabaseClient.auth.getUser();
 
-        // Fetch profiles for all message authors
-        const userIds = [...new Set(messages.map(m => m.user_id))];
-        const { data: profiles } = await window.supabaseClient
-            .from('profiles')
-            .select('id, username, avatar_url')
-            .in('id', userIds);
-
-        // Create a map for quick lookup
-        const profileMap = {};
-        (profiles || []).forEach(p => {
-            profileMap[p.id] = p;
-        });
-
-        // Attach profiles to messages
-        const messagesWithProfiles = messages.map(msg => ({
-            ...msg,
-            profiles: profileMap[msg.user_id] || { username: 'Anonymous', avatar_url: null }
-        }));
-
-        // Fetch comments for all messages
-        const messageIds = messages.map(m => m.id);
-        let comments = [];
-        if (messageIds.length > 0) {
-            const { data: commentsData } = await window.supabaseClient
-                .from('guestbook_comments')
-                .select('*')
-                .in('message_id', messageIds)
-                .order('created_at', { ascending: true });
-            comments = commentsData || [];
-
-            // Fetch profiles for comment authors
-            const commentUserIds = [...new Set(comments.map(c => c.user_id))];
-            if (commentUserIds.length > 0) {
-                const { data: commentProfiles } = await window.supabaseClient
-                    .from('profiles')
-                    .select('id, username, avatar_url')
-                    .in('id', commentUserIds);
-
-                (commentProfiles || []).forEach(p => {
-                    profileMap[p.id] = p;
+        // === FAST PATH: Single RPC call (1 round-trip) ===
+        let rpcSuccess = false;
+        try {
+            const { data: rpcData, error: rpcError } = await window.supabaseClient
+                .rpc('fn_load_guestbook', {
+                    p_site: currentSite,
+                    p_limit: 50,
+                    p_user_id: user?.id || null
                 });
+
+            if (!rpcError && rpcData) {
+                rpcSuccess = true;
+                console.log('⚡ RPC fast path: loaded all data in 1 query');
+
+                const messages = rpcData.messages || [];
+                const comments = rpcData.comments || [];
+                const userLikes = rpcData.user_likes || [];
+
+                // Process user likes
+                guestbookCache.userLikes = new Set(
+                    userLikes.map(l => {
+                        const normalizedType = l.target_type.charAt(0).toUpperCase() + l.target_type.slice(1);
+                        return `${normalizedType}_${l.target_id}`;
+                    })
+                );
+
+                // Attach comments to messages
+                const messagesWithComments = messages.map(msg => ({
+                    ...msg,
+                    comments: buildCommentTree(
+                        comments
+                            .filter(c => c.message_id === msg.id)
+                            .map(c => ({
+                                ...c,
+                                profiles: c.profiles || { username: 'Anonymous', avatar_url: null }
+                            }))
+                    )
+                }));
+
+                // Update cache
+                guestbookCache.messages = messagesWithComments;
+                guestbookCache.lastFetch = Date.now();
+
+                console.log(`✅ Loaded ${messages.length} messages (single RPC)`);
+                displayMessages(messagesWithComments);
             }
-
-            // Fetch like counts for all comments
-            const commentIds = comments.map(c => c.id);
-            const commentLikeCounts = {};
-            if (commentIds.length > 0) {
-                const { data: commentLikes } = await window.supabaseClient
-                    .from('guestbook_likes')
-                    .select('target_id')
-                    .eq('target_type', 'comment')
-                    .in('target_id', commentIds);
-
-                // Count likes per comment
-                (commentLikes || []).forEach(like => {
-                    commentLikeCounts[like.target_id] = (commentLikeCounts[like.target_id] || 0) + 1;
-                });
-            }
-
-            // Attach profiles and like counts to comments
-            comments = comments.map(c => ({
-                ...c,
-                profiles: profileMap[c.user_id] || { username: 'Anonymous', avatar_url: null },
-                like_count: commentLikeCounts[c.id] || 0
-            }));
+        } catch (rpcErr) {
+            console.warn('⚠️ RPC not available, using fallback:', rpcErr.message);
         }
 
-        // Fetch current user's likes
-        const { data: { user } } = await window.supabaseClient.auth.getUser();
-        if (user) {
-            const { data: likes } = await window.supabaseClient
-                .from('guestbook_likes')
-                .select('target_type, target_id')
-                .eq('user_id', user.id);
+        // === FALLBACK: Parallel multi-query approach (3 round-trips) ===
+        if (!rpcSuccess) {
+            // Phase 1: Messages + session in parallel
+            const { data: messages, error } = await window.supabaseClient
+                .from('guestbook_messages')
+                .select('*')
+                .eq('site', currentSite)
+                .order('created_at', { ascending: false })
+                .limit(50);
 
-            // Normalize target_type to match guestbook.js format (Message/Comment)
-            // Database stores lowercase ('message'/'comment'), but JS uses title case
+            if (error) throw error;
+
+            const messageIds = messages.map(m => m.id);
+            const userIds = [...new Set(messages.map(m => m.user_id))];
+
+            // Phase 2: Profiles, comments, user likes in parallel
+            const [profilesResult, commentsResult, userLikesResult] = await Promise.all([
+                window.supabaseClient
+                    .from('profiles')
+                    .select('id, username, avatar_url')
+                    .in('id', userIds),
+                messageIds.length > 0
+                    ? window.supabaseClient
+                        .from('guestbook_comments')
+                        .select('*')
+                        .in('message_id', messageIds)
+                        .order('created_at', { ascending: true })
+                    : Promise.resolve({ data: [] }),
+                user
+                    ? window.supabaseClient
+                        .from('guestbook_likes')
+                        .select('target_type, target_id')
+                        .eq('user_id', user.id)
+                    : Promise.resolve({ data: [] })
+            ]);
+
+            const profileMap = {};
+            (profilesResult.data || []).forEach(p => { profileMap[p.id] = p; });
+
             guestbookCache.userLikes = new Set(
-                (likes || []).map(l => {
+                (userLikesResult.data || []).map(l => {
                     const normalizedType = l.target_type.charAt(0).toUpperCase() + l.target_type.slice(1);
                     return `${normalizedType}_${l.target_id}`;
                 })
             );
-        }
 
-        // Attach comments to messages
-        const messagesWithComments = messagesWithProfiles.map(msg => {
-            const msgComments = comments.filter(c => c.message_id === msg.id);
-            return {
+            let comments = commentsResult.data || [];
+
+            // Phase 3: Comment profiles + comment likes in parallel
+            if (comments.length > 0) {
+                const commentUserIds = [...new Set(comments.map(c => c.user_id))];
+                const commentIds = comments.map(c => c.id);
+
+                const [commentProfilesResult, commentLikesResult] = await Promise.all([
+                    commentUserIds.length > 0
+                        ? window.supabaseClient
+                            .from('profiles')
+                            .select('id, username, avatar_url')
+                            .in('id', commentUserIds)
+                        : Promise.resolve({ data: [] }),
+                    commentIds.length > 0
+                        ? window.supabaseClient
+                            .from('guestbook_likes')
+                            .select('target_id')
+                            .eq('target_type', 'comment')
+                            .in('target_id', commentIds)
+                        : Promise.resolve({ data: [] })
+                ]);
+
+                (commentProfilesResult.data || []).forEach(p => { profileMap[p.id] = p; });
+
+                const commentLikeCounts = {};
+                (commentLikesResult.data || []).forEach(like => {
+                    commentLikeCounts[like.target_id] = (commentLikeCounts[like.target_id] || 0) + 1;
+                });
+
+                comments = comments.map(c => ({
+                    ...c,
+                    profiles: profileMap[c.user_id] || { username: 'Anonymous', avatar_url: null },
+                    like_count: commentLikeCounts[c.id] || 0
+                }));
+            }
+
+            const messagesWithProfiles = messages.map(msg => ({
                 ...msg,
-                comments: buildCommentTree(msgComments)
-            };
-        });
+                profiles: profileMap[msg.user_id] || { username: 'Anonymous', avatar_url: null }
+            }));
 
-        // Update cache
-        guestbookCache.messages = messagesWithComments;
-        guestbookCache.lastFetch = Date.now();
+            const messagesWithComments = messagesWithProfiles.map(msg => ({
+                ...msg,
+                comments: buildCommentTree(comments.filter(c => c.message_id === msg.id))
+            }));
 
-        console.log(`✅ Loaded ${messages.length} messages`);
-        displayMessages(messagesWithComments);
+            guestbookCache.messages = messagesWithComments;
+            guestbookCache.lastFetch = Date.now();
+
+            console.log(`✅ Loaded ${messages.length} messages (parallel fallback)`);
+            displayMessages(messagesWithComments);
+        }
 
         // Scroll to target if specified
         if (scrollTargetId) {

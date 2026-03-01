@@ -293,6 +293,7 @@
     },
     "wallet": {
         "title": "My Wallet",
+        "myOrders": "My Orders",
         "balance": "Balance",
         "recharge": "Recharge",
         "records": "Records",
@@ -384,7 +385,12 @@
         "posterSubtitle": "Experience Premium Resources",
         "posterScan": "Scan to Register",
         "posterJoin": "Join Us & Get Welcome Bonus",
-        "posterFailed": "Failed to generate poster"
+        "posterFailed": "Failed to generate poster",
+        "dailyCheckin": "Daily Check-in",
+        "adminAdjustment": "Admin Adjustment:",
+        "unlockPrompt": "Unlock Prompt:",
+        "promptItem": "Prompt",
+        "checkin": "Check-in"
     },
     "privacy": {
         "title": "Privacy Policy",
@@ -433,9 +439,22 @@
         "supportUs": "Support us",
         "chatGroup": "Chat Group",
         "clickToJoin": "Click to join",
-        "serviceUnavailable": "Service Unavailable",
-        "quotaExhausted": "API verification quota exhausted. Please contact admin.",
-        "cancelled": "Verification cancelled"
+        "serviceUnavailable": "Service temporarily unavailable",
+        "quotaExhausted": "API verification quota exhausted, please contact admin",
+        "cancelled": "Verification cancelled",
+        "history": "History",
+        "historyLoginPrompt": "Login to view history",
+        "historyEmpty": "No history found",
+        "loading": "Loading...",
+        "loadFailed": "Load failed",
+        "successText": "Success",
+        "failText": "Failed",
+        "rejectText": "Rejected",
+        "cancelText": "Cancelled",
+        "reviewText": "Reviewing",
+        "processText": "Processing",
+        "clickToCopy": "Click to copy",
+        "copied": "Copied"
     },
     "chat": {
         "sidebarTitle": "Messages",
@@ -503,5 +522,8 @@
             "privacy": "Privacy Policy",
             "support": "Support Us"
         }
+    },
+    "admin": {
+        "enterStudio": "Enter Studio"
     }
 }

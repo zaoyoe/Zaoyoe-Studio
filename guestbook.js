@@ -512,7 +512,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const toggleButtonHtml = shouldCollapse
             ? `<button class="comment-toggle-btn" data-message-id="${msg.id}" data-count="${commentCount}">
-                <span>${window.i18n?.t('guestbook.expand') || '展开'}</span>
+                <span data-i18n="guestbook.expand">展开</span>
                 <i class="fas fa-chevron-down"></i>
                </button>`
             : '';
@@ -643,7 +643,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 // ⚡ FIX: Add 50px buffer to prevent snap at end of animation
                 commentList.style.maxHeight = (fullHeight + 50) + 'px';
                 icon.className = 'fas fa-chevron-up';
-                span.textContent = window.i18n?.t('guestbook.collapse') || '收起';
+                span.textContent = window.i18n?.t('guestbook.collapse', '收起');
+                span.setAttribute('data-i18n', 'guestbook.collapse');
 
                 // Timeout = duration + 0.2s buffer
                 setTimeout(() => {
@@ -696,7 +697,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 // 🔧 FIX: Revert button text and icon
                 icon.className = 'fas fa-chevron-down';
-                span.textContent = window.i18n?.t('guestbook.expand') || '展开';
+                span.textContent = window.i18n?.t('guestbook.expand', '展开');
+                span.setAttribute('data-i18n', 'guestbook.expand');
             }
         });
 
@@ -1923,8 +1925,8 @@ window.addEventListener('languageChanged', () => {
             // Check current state by icon class
             const isExpanded = icon.classList.contains('fa-chevron-up');
             span.textContent = isExpanded
-                ? (window.i18n?.t('guestbook.collapse') || '收起')
-                : (window.i18n?.t('guestbook.expand') || '展开');
+                ? window.i18n?.t('guestbook.collapse', '收起')
+                : window.i18n?.t('guestbook.expand', '展开');
         }
     });
 

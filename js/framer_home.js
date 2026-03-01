@@ -25,13 +25,13 @@ const FramerHome = {
       await window.i18n.ready();
     }
 
-    // Load configuration and data
+    // Load configuration and data (uses sessionStorage prefetch if available)
     await this.loadAll();
 
-    // Render all sections
+    // Render all sections (single render, no double-paint)
     this.renderAll();
 
-    // Initialize navigation dropdowns (only once, after initial render)
+    // Initialize navigation dropdowns
     this.initNavDropdowns();
 
     // Initialize interactions
@@ -115,6 +115,24 @@ const FramerHome = {
    * Load all configuration and aggregate data
    */
   async loadAll() {
+    // === Check sessionStorage for prefetched data ===
+    try {
+      const prefetchRaw = sessionStorage.getItem('homepage_prefetch');
+      if (prefetchRaw) {
+        const prefetch = JSON.parse(prefetchRaw);
+        const age = Date.now() - prefetch.timestamp;
+        // Use if < 5 minutes old (don't remove — it persists for next navigation)
+        if (age < 300000 && prefetch.cachedData && prefetch.config) {
+          this.cachedData = prefetch.cachedData;
+          this.config = prefetch.config;
+          console.log(`⚡ Using prefetched homepage data (${Math.round(age / 1000)}s old)`);
+          return;
+        }
+      }
+    } catch (e) {
+      // Ignore parse errors
+    }
+
     try {
       // Fetch homepage config from Supabase
       this.config = await this.fetchHomepageConfig();
@@ -143,6 +161,17 @@ const FramerHome = {
       }
 
       console.log('📦 Data aggregated:', this.cachedData);
+
+      // Save to sessionStorage so sub-page prefetch can serve it on next visit
+      try {
+        sessionStorage.setItem('homepage_prefetch', JSON.stringify({
+          cachedData: this.cachedData,
+          config: this.config,
+          timestamp: Date.now()
+        }));
+      } catch (e) {
+        // sessionStorage might be full, ignore
+      }
     } catch (error) {
       console.error('❌ Failed to load data:', error);
       // Use fallback default data

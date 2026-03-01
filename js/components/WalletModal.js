@@ -26,6 +26,45 @@
         isOpen: false,
         modalEl: null,
         promptCache: {}, // Local simple cache for titles
+
+        /**
+         * Pre-fetch wallet data in background (called when avatar dropdown opens)
+         * So data is instantly available when user clicks 'My Orders'
+         */
+        prefetchData() {
+            if (this._prefetched || this.ordersLoaded) return;
+            this._prefetched = true;
+
+            // Fire and forget - load orders data silently
+            supabase.auth.getSession().then(({ data: { session } }) => {
+                if (!session?.user) return;
+                const user = session.user;
+                const site = window.SiteConfig?.site || 'cn';
+
+                // Pre-fetch orders + ledger in parallel
+                Promise.all([
+                    supabase.from('shop_orders')
+                        .select('id, total_price, item_count, status, created_at, snapshot_product_name, shop_order_items (id, snapshot_product_name)')
+                        .eq('user_id', user.id)
+                        .eq('site', site)
+                        .order('created_at', { ascending: false })
+                        .limit(100),
+                    supabase.from('points_ledger')
+                        .select('id, amount, reason, reference_id, created_at')
+                        .eq('user_id', user.id)
+                        .eq('site', site)
+                        .order('created_at', { ascending: false })
+                        .limit(100)
+                ]).then(([shopResult, ledgerResult]) => {
+                    this._prefetchedShopOrders = shopResult.data || [];
+                    this._prefetchedLedger = ledgerResult.data || [];
+                    console.log('[WalletModal] ✅ Data prefetched in background');
+                }).catch(err => {
+                    console.warn('[WalletModal] Prefetch failed (non-critical):', err);
+                });
+            });
+        },
+
         /**
          * Open the wallet modal
          */
@@ -40,22 +79,36 @@
             const dropdownOverlay = document.getElementById('dropdownOverlay');
             if (dropdownOverlay) dropdownOverlay.classList.remove('active');
 
-            // Use getSession() - INSTANT (cached locally) instead of getUser() (network call)
-            const { data: { session } } = await supabase.auth.getSession();
-            if (!session) {
-                alert(window.i18n?.t('security.loginRequired') || '请先登录');
-                return;
-            }
-
             this.isOpen = true;
             this.ordersLoaded = false; // Reset loaded flag for new session
             document.body.style.overflow = 'hidden'; // Lock body scroll
+
+            // Render UI immediately so there's zero delay for the user
             this.render();
 
-            // Load data immediately after render
-            await this.loadData();
+            // Reset check-in button state (DOM is cached, needs refresh)
+            const checkinBtn = document.getElementById('wallet-checkin-btn');
+            if (checkinBtn) {
+                checkinBtn.disabled = false;
+                checkinBtn.classList.remove('checked', 'just-checked');
+                const checkinText = document.getElementById('checkin-btn-text');
+                if (checkinText) checkinText.textContent = window.i18n?.t('wallet.dailyCheckin') || '每日签到';
+            }
 
-            // Initialize indicator position and switch to requested view
+            // Handle session asynchronously to not block initial render on hard refresh
+            supabase.auth.getSession().then(({ data: { session } }) => {
+                if (!session) {
+                    this.close();
+                    alert(window.i18n?.t('security.loginRequired') || '请先登录');
+                    return;
+                }
+
+                // Load data after session is confirmed
+                this.loadData().catch(e => console.error('[WalletModal] Initial load failed:', e));
+            });
+
+
+            // Initialize indicator position and switch to requested view immediately
             setTimeout(() => {
                 this.updateIndicatorPosition();
                 if (initialView) this.switchView(initialView);
@@ -67,12 +120,13 @@
          */
         close() {
             if (this.modalEl) {
-                this.modalEl.remove();
-                this.modalEl = null;
+                this.modalEl.style.display = 'none';
+                this.modalEl.classList.remove('active');
             }
             document.body.style.overflow = ''; // Unlock body scroll
             this.isOpen = false;
             this.ordersLoaded = false;
+            this._prefetched = false; // Allow prefetch on next dropdown open
             console.log('[WalletModal] Closed');
         },
 
@@ -80,9 +134,20 @@
          * Render the modal HTML - Split Panel Layout
          */
         render() {
-            const overlay = document.createElement('div');
+            let overlay = document.getElementById('wallet-modal-overlay');
+            if (overlay) {
+                overlay.style.display = 'flex';
+                // Trigger reflow for transition
+                void overlay.offsetWidth;
+                overlay.classList.add('active');
+                this.modalEl = overlay;
+                return;
+            }
+
+            overlay = document.createElement('div');
             overlay.id = 'wallet-modal-overlay';
-            overlay.className = 'wallet-overlay';
+            overlay.className = 'wallet-overlay active';
+            overlay.style.display = 'flex';
             overlay.innerHTML = `
                 <div class="wallet-modal">
                     <button class="wallet-close-btn" onclick="WalletModal.close()">✕</button>
@@ -111,7 +176,12 @@
 
                             <div class="wallet-menu-item" data-view="affiliate" onclick="WalletModal.switchView('affiliate')">
                                 <span class="menu-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #10b981;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></span>
-                                <span class="menu-text" data-i18n="wallet.affiliate">推广</span>
+                                <span class="menu-text">${window.i18n?.t('wallet.affiliate') || '推广'}</span>
+                            </div>
+
+                            <div class="wallet-menu-item" data-view="checkin" onclick="WalletModal.switchView('checkin')">
+                                <span class="menu-icon">🔖</span>
+                                <span class="menu-text">${window.i18n?.t('wallet.checkin') || '签到'}</span>
                             </div>
                         </div>
                         
@@ -135,6 +205,8 @@
                                         </div>
                                     </div>
                                 </div>
+                                
+                                <!-- No more standalone checkin button here -->
                                 
                                 <!-- Consolidated Redeem Section -->
                                 <div class="redeem-section">
@@ -177,6 +249,36 @@
                             </div>
 
 
+                            <!-- Calendar Check-in View -->
+                            <div class="wallet-view" id="view-checkin">
+                                <div class="checkin-dashboard">
+                                    <div class="checkin-header">
+                                        <div class="checkin-month-title" id="checkin-month-title">--月打卡</div>
+                                        <div class="checkin-streak">已连续 <strong id="checkin-streak-count">0</strong> 天</div>
+                                    </div>
+                                    
+                                    <!-- Mystery Rewards Progress -->
+                                    <div class="mystery-progress-wrapper" style="display: none;" id="mystery-progress-box">
+                                        <div class="mystery-progress-label">本周神秘盲盒进度</div>
+                                        <div class="mystery-progress-bar">
+                                            <div class="mystery-progress-fill" id="mystery-progress-fill" style="width: 0%;"></div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Calendar Grid -->
+                                    <div class="calendar-wrapper">
+                                        <div class="calendar-weekdays">
+                                            <span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span>
+                                        </div>
+                                        <div class="calendar-grid" id="calendar-grid">
+                                            <!-- Dynamically generated days go here -->
+                                            <div class="loading-calendar">加载中...</div>
+                                        </div>
+                                    </div>
+                                    
+                                </div>
+                            </div>
+                            
                             <!-- Orders View (Shop Purchase History) -->
                             <div class="wallet-view" id="view-orders">
                                 <div class="history-header">
@@ -297,6 +399,11 @@
             if (viewId === 'affiliate' && !this.affiliateLoaded) {
                 this.loadAffiliateData();
             }
+
+            // Load check-in data when switching to checkin view
+            if (viewId === 'checkin') {
+                this.loadCheckinData();
+            }
         },
 
         /**
@@ -327,7 +434,8 @@
          */
         async loadAffiliateData() {
             try {
-                const { data: { user } } = await window.supabaseClient.auth.getUser();
+                const { data: { session } } = await window.supabaseClient.auth.getSession();
+                const user = session?.user;
                 if (!user) return;
 
                 const { data, error } = await window.supabaseClient.rpc('fn_get_affiliate_stats', {
@@ -534,8 +642,14 @@
                     }
                 }
 
-                // Store history data for filtering (used by old history view, now deprecated)
+                // Store packages & history data for reuse
+                this._packagesCache = packages;
                 this.historyData = history;
+
+                // Trigger loading orders in the background so it's ready when the user clicks the tab
+                if (!this.ordersLoaded && !this.ordersLoading) {
+                    this.loadOrders().catch(e => console.error('Background order load failed:', e));
+                }
 
                 // Note: History tab has been merged into Orders tab
                 // The renderHistory() call has been removed as the wallet-history element no longer exists
@@ -583,22 +697,314 @@
                 // Show loading state
                 if (overlay) overlay.classList.add('loading');
 
-                await PointsService.mockPay(packageId);
+                // Use cached package data to skip the DB fetch in mockPay
+                const cachedPkg = (this._packagesCache || []).find(p => p.id === packageId);
+                await PointsService.mockPay(packageId, cachedPkg);
 
                 // Remove loading state BEFORE refreshing data
                 if (overlay) overlay.classList.remove('loading');
 
-                // Refresh data to show new balance
-                await this.loadData();
-
-                // Show success toast (non-blocking)
+                // Show success toast immediately (don't wait for data refresh)
                 this.showToast('✅ 充值成功！', 'success');
+
+                // Refresh data in background to show new balance
+                this.loadData();
 
             } catch (err) {
                 console.error('[WalletModal] Purchase failed:', err);
                 // Remove loading state on error
                 if (overlay) overlay.classList.remove('loading');
                 alert('❌ 支付失败: ' + (err.message || '未知错误'));
+            }
+        },
+
+        /**
+         * Load comprehensive check-in data and render the calendar UI
+         */
+        async loadCheckinData() {
+            try {
+                const { data: { session } } = await window.supabaseClient.auth.getSession();
+                if (!session?.user) return;
+
+                const now = new Date();
+                const year = now.getFullYear();
+                const month = now.getMonth() + 1;
+
+                // Update month title
+                const titleEl = document.getElementById('checkin-month-title');
+                if (titleEl) titleEl.textContent = `${month}月打卡`;
+
+                // Fetch data from RPC
+                const { data, error } = await window.supabaseClient.rpc('fn_get_checkin_data', {
+                    p_user_id: session.user.id,
+                    p_site: window.SiteConfig?.site || 'cn',
+                    p_year: year,
+                    p_month: month
+                });
+
+                if (error) throw error;
+
+                if (data && data.success) {
+                    // Update streak
+                    const streakCountEl = document.getElementById('checkin-streak-count');
+                    if (streakCountEl) streakCountEl.textContent = data.consecutive_days || 0;
+
+                    // Render calendar
+                    this.renderCalendar(year, month, data.checked_dates || [], data.current_date);
+
+                    // Render Mystery Progress (mock for now, logic can be tied to config later)
+                    // Config would tell us if we are in week 1, 2, 3, etc.
+                    const streakRem = (data.consecutive_days || 0) % 7;
+                    const progressPercent = (streakRem / 7) * 100;
+                    const fill = document.getElementById('mystery-progress-fill');
+                    if (fill) fill.style.width = `${progressPercent}%`;
+                }
+
+            } catch (err) {
+                console.error('[WalletModal] Error loading check-in data:', err);
+                const grid = document.getElementById('calendar-grid');
+                if (grid) grid.innerHTML = `<div class="loading-calendar" style="color:#ef4444;">加载失败</div>`;
+            }
+        },
+
+        /**
+         * Render the calendar grid
+         */
+        renderCalendar(year, month, checkedDates, currentDateStr) {
+            const grid = document.getElementById('calendar-grid');
+            const mainBtn = document.getElementById('calendar-main-checkin-btn');
+            if (!grid) return;
+
+            const daysInMonth = new Date(year, month, 0).getDate();
+            const firstDayIndex = new Date(year, month - 1, 1).getDay(); // 0 is Sunday
+
+            let html = '';
+
+            // Empty slots for days of previous month
+            for (let i = 0; i < firstDayIndex; i++) {
+                html += `<div class="calendar-day empty"></div>`;
+            }
+
+            // Determine if today is checked
+            const todayIsChecked = checkedDates.includes(currentDateStr);
+
+            // Days of current month
+            for (let i = 1; i <= daysInMonth; i++) {
+                // Pad month and day
+                const mStr = String(month).padStart(2, '0');
+                const dStr = String(i).padStart(2, '0');
+                const dateStr = `${year}-${mStr}-${dStr}`;
+                let dayClass = 'calendar-day';
+                let innerHtml = `<span>${i}</span>`;
+                let clickAction = '';
+
+                // Calculate if this day is the 7th day of a streak
+                // For simplicity in the UI preview, let's just highlight the next upcoming 7th day milestone
+                // Real logic would calculate exactly which days cross the 7-day boundary
+                const isChecked = checkedDates.includes(dateStr);
+                const isToday = dateStr === currentDateStr;
+                const isPast = dateStr < currentDateStr;
+
+                // Simple logic to show mystery box on the *next* milestone day
+                const currentStreak = window.walletCheckinData?.consecutive_days || 0;
+                const daysUntilMilestone = 7 - (currentStreak % 7);
+
+                // We show the gift icon if:
+                // 1. the day is exactly `daysUntilMilestone` days from today AND it's not past OR
+                // 2. it's already checked and corresponds to a multiple of 7 in the month (approximate visual)
+                let isGiftDay = false;
+
+                if (isToday && daysUntilMilestone === 7 && currentStreak > 0 && currentStreak % 7 === 0) {
+                    // Just reached it today
+                    isGiftDay = true;
+                } else if (!isPast && !isChecked) {
+                    // It's a future day
+                    const todayDateObj = new Date(currentDateStr);
+                    const thisCellDateObj = new Date(dateStr);
+                    const diffTime = Math.abs(thisCellDateObj - todayDateObj);
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                    if (diffDays === daysUntilMilestone && !isToday) {
+                        isGiftDay = true;
+                    } else if (isToday && daysUntilMilestone === 7 && currentStreak === 0) {
+                        // User hasn't started, day 7 is not today.
+                    } else if (isToday && daysUntilMilestone === 7) {
+                        // already handled above
+                    }
+                }
+
+                if (isChecked) {
+                    dayClass += ' checked';
+                    // SVG Checkmark or Coin
+                    innerHtml = `
+                        <svg class="check-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M20 6L9 17L4 12" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    `;
+                } else if (isToday) {
+                    dayClass += ' today';
+                    clickAction = `onclick="WalletModal.dailyCheckinV2()"`;
+                    innerHtml = `<span class="today-text">今日</span>`;
+                } else if (isPast) {
+                    dayClass += ' missed';
+                    innerHtml += `<div class="makeup-badge">补</div>`;
+                    clickAction = `onclick="WalletModal.makeupCheckin('${dateStr}')"`;
+                } else {
+                    dayClass += ' future';
+                }
+
+                if (isGiftDay && !isChecked) {
+                    innerHtml += `
+                    <div class="mystery-gift-container" title="连续签到7天神秘盲盒">
+                        <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M22 17.5C22 19.433 20.433 21 18.5 21H5.5C3.567 21 2 19.433 2 17.5V11H22V17.5ZM2 8.5C2 7.119 3.119 6 4.5 6H7.132C7.045 5.688 7 5.352 7 5C7 3.343 8.343 2 10 2C10.978 2 11.846 2.47 12.399 3.208L12 3.159L11.601 3.208C12.154 2.47 13.022 2 14 2C15.657 2 17 3.343 17 5C17 5.352 16.955 5.688 16.868 6H19.5C20.881 6 22 7.119 22 8.5V9H2V8.5ZM13 11V21H11V11H13ZM13 6V9H11V6H13Z" />
+                        </svg>
+                    </div>`;
+                }
+
+                html += `<div class="${dayClass}" ${clickAction}>${innerHtml}</div>`;
+            }
+
+            grid.innerHTML = html;
+        },
+
+        /**
+         * Check-in V2
+         */
+        async dailyCheckinV2() {
+            if (this.isCheckingIn) return;
+            this.isCheckingIn = true;
+
+            const gridToday = document.querySelector('.calendar-day.today');
+            if (gridToday) {
+                gridToday.innerHTML = `<span class="today-text" style="font-size: 10px;">...</span>`;
+            }
+
+            try {
+                const { data: { session } } = await window.supabaseClient.auth.getSession();
+                if (!session?.user) {
+                    this.showToast('请先登录', 'error');
+                    this.isCheckingIn = false;
+                    if (gridToday) gridToday.innerHTML = `<span class="today-text">今日</span>`;
+                    return;
+                }
+
+                const { data, error } = await window.supabaseClient.rpc('fn_daily_checkin_v2', {
+                    p_user_id: session.user.id,
+                    p_site: window.SiteConfig?.site || 'cn'
+                });
+
+                if (error) throw error;
+
+                if (data?.already_checked) {
+                    this.showToast('今日已签到过了', 'info');
+                    this.loadCheckinData(); // refresh grid
+                } else if (data?.success) {
+                    // Celebration Animations
+                    this.playConfetti();
+
+                    // Show message combining base and bonus (if any)
+                    let msg = `💰 签到奖励 +${data.points} 积分`;
+                    if (data.message && data.message !== '签到成功') {
+                        msg += `\\n${data.message}`; // Append the bonus message
+                    }
+                    this.showToast(msg, 'success');
+
+                    // Update balance display
+                    if (data.new_balance !== undefined) {
+                        const totalEl = document.getElementById('wallet-total');
+                        if (totalEl) totalEl.textContent = data.new_balance;
+                    }
+
+                    // Relax and let the user see the animation, then reload
+                    setTimeout(() => {
+                        this.loadCheckinData();
+                        this.loadData().catch(() => { });
+                    }, 1000);
+                } else {
+                    throw new Error(data?.message || '签到失败');
+                }
+            } catch (e) {
+                console.error('[WalletModal] Check-in V2 failed:', e);
+                this.showToast('❌ ' + (e.message || '签到失败'), 'error');
+                if (gridToday) {
+                    gridToday.innerHTML = `<span class="today-text">今日</span>`;
+                }
+            } finally {
+                this.isCheckingIn = false;
+            }
+        },
+
+        /**
+         * Popup logic for Makeup Checkin
+         */
+        makeupCheckin(dateStr) {
+            // Future extension: present a modal letting user choose 'points', 'comment', or 'invite'
+            // For now, default to points, but ask for confirmation.
+            // Ideally, we'd read the cost from `systemConfigCache` if we loaded it in frontend,
+            // but for simplicity, we let backend handle/reject.
+
+            if (!confirm(`确认要补签 ${dateStr} 吗？\\n这将扣除配置的积分(如10分)`)) {
+                return;
+            }
+
+            this.executeMakeup(dateStr, 'points');
+        },
+
+        async executeMakeup(dateStr, method) {
+            try {
+                const { data: { session } } = await window.supabaseClient.auth.getSession();
+                if (!session?.user) return this.showToast('请先登录', 'error');
+
+                const { data, error } = await window.supabaseClient.rpc('fn_makeup_checkin', {
+                    p_user_id: session.user.id,
+                    p_site: window.SiteConfig?.site || 'cn',
+                    p_date: dateStr,
+                    p_method: method
+                });
+
+                if (error) throw error;
+
+                if (data.success) {
+                    this.showToast(`✅ 补签成功! 扣除 ${data.cost} 积分`, 'success');
+
+                    // Update balance display
+                    if (data.new_balance !== undefined) {
+                        const totalEl = document.getElementById('wallet-total');
+                        if (totalEl) totalEl.textContent = data.new_balance;
+                    }
+
+                    // Refresh calendar and data
+                    this.loadCheckinData();
+                    this.loadData().catch(() => { });
+                } else {
+                    this.showToast(`❌ ${data.message}`, 'error');
+                }
+            } catch (e) {
+                console.error('[WalletModal] Makeup failed:', e);
+                this.showToast(`更补签失败: ${e.message}`, 'error');
+            }
+        },
+
+        /**
+         * Play Confetti animation using native JS/CSS
+         */
+        playConfetti() {
+            // Simplified particle animation over the calendar grid
+            const grid = document.getElementById('calendar-grid');
+            if (!grid) return;
+
+            for (let i = 0; i < 30; i++) {
+                const particle = document.createElement('div');
+                particle.className = 'confetti-particle';
+                particle.style.left = Math.random() * 100 + '%';
+                particle.style.backgroundColor = ['#fbbf24', '#f87171', '#60a5fa', '#34d399', '#a78bfa'][Math.floor(Math.random() * 5)];
+                const duration = Math.random() * 1 + 1; // 1 to 2s
+                const delay = Math.random() * 0.2;
+                particle.style.animation = `confetti-fall ${duration}s ${delay}s ease-out forwards`;
+
+                grid.appendChild(particle);
+
+                setTimeout(() => particle.remove(), (duration + delay) * 1000);
             }
         },
 
@@ -865,25 +1271,29 @@
 
                 // 1. Handle Admin Adjustment
                 if (reason.startsWith('admin_manual:')) {
-                    // Remove admin email/id inside brackets [xxx]
-                    reason = reason.replace(/admin_manual:\s*\[.*?\]\s*/, '管理员调整: ');
-                    // Or if regex fails to match brackets but has prefix
+                    const adminLabel = window.i18n?.t('wallet.adminAdjustment') || '管理员调整:';
+                    reason = reason.replace(/admin_manual:\s*\[.*?\]\s*/, `${adminLabel} `);
                     if (reason.startsWith('admin_manual:')) {
-                        reason = reason.replace('admin_manual:', '管理员调整');
+                        reason = reason.replace('admin_manual:', adminLabel);
                     }
                 }
 
                 // 2. Handle Unlock Prompt
                 else if (reason === 'unlock_prompt') {
                     const promptId = item.reference_id;
-                    let promptTitle = this.promptCache[promptId] || '加载中...'; // Use Cache
+                    let promptTitle = this.promptCache[promptId] || (window.i18n?.t('wallet.loading') || '加载中...');
 
-                    // If still loading (in missing set), show checking or ID
                     if (!this.promptCache[promptId]) {
-                        promptTitle = `提示词 (ID: ${promptId})`;
+                        promptTitle = `${window.i18n?.t('wallet.promptItem') || '提示词'} (ID: ${promptId})`;
                     }
 
-                    reason = `解锁提示词: ${promptTitle}`;
+                    const unlockLabel = window.i18n?.t('wallet.unlockPrompt') || '解锁提示词:';
+                    reason = `${unlockLabel} ${promptTitle}`;
+                }
+
+                // 3. Handle Daily Checkin
+                else if (reason === 'daily_checkin') {
+                    reason = window.i18n?.t('wallet.dailyCheckin') || '每日签到';
                 }
 
                 return `
@@ -1383,7 +1793,8 @@
             }
 
             try {
-                const { data: { user } } = await window.supabaseClient.auth.getUser();
+                const { data: { session } } = await window.supabaseClient.auth.getSession();
+                const user = session?.user;
                 if (!user) {
                     this.showToast(window.i18n?.t('security.loginRequired') || '请先登录', 'error');
                     return;
@@ -1438,53 +1849,65 @@
          * Load all transactions: shop orders, prompt unlocks, recharges, redemptions
          */
         async loadOrders() {
+            if (this.ordersLoading) return;
+            this.ordersLoading = true;
             try {
                 console.log('[WalletModal] 🔄 Loading all transactions...');
                 const container = document.getElementById('wallet-orders');
                 if (!container) return;
 
-                const { data: { user } } = await window.supabaseClient.auth.getUser();
+                const { data: { session } } = await window.supabaseClient.auth.getSession();
+                const user = session?.user;
                 if (!user) {
                     container.innerHTML = `<div class="empty-text">${window.i18n?.t('security.loginRequired') || '请先登录'}</div>`;
                     return;
                 }
 
-                // Fetch shop orders AND all ledger entries in parallel
-                const [shopOrdersResult, ledgerResult] = await Promise.all([
-                    // Shop orders
-                    supabase
-                        .from('shop_orders')
-                        .select(`
-                            id, 
-                            total_price, 
-                            item_count, 
-                            status, 
-                            created_at, 
-                            snapshot_product_name,
-                            shop_order_items (
-                                id,
-                                snapshot_product_name
-                            )
-                        `)
-                        .eq('user_id', user.id)
-                        .eq('site', window.SiteConfig?.site || 'cn')
-                        .order('created_at', { ascending: false })
-                        .limit(100),
+                // Use prefetched data if available (instant!), otherwise fetch from network
+                let shopOrders, ledgerEntries;
 
-                    // All points ledger entries (prompts, recharges, redemptions)
-                    supabase
-                        .from('points_ledger')
-                        .select('id, amount, reason, reference_id, created_at')
-                        .eq('user_id', user.id)
-                        .eq('site', window.SiteConfig?.site || 'cn')
-                        .order('created_at', { ascending: false })
-                        .limit(100)
-                ]);
+                if (this._prefetchedShopOrders && this._prefetchedLedger) {
+                    console.log('[WalletModal] ⚡ Using prefetched data (instant)');
+                    shopOrders = this._prefetchedShopOrders;
+                    ledgerEntries = this._prefetchedLedger;
+                    // Clear prefetched data after use
+                    this._prefetchedShopOrders = null;
+                    this._prefetchedLedger = null;
+                } else {
+                    // Fetch shop orders AND all ledger entries in parallel
+                    const [shopOrdersResult, ledgerResult] = await Promise.all([
+                        supabase
+                            .from('shop_orders')
+                            .select(`
+                                id, 
+                                total_price, 
+                                item_count, 
+                                status, 
+                                created_at, 
+                                snapshot_product_name,
+                                shop_order_items (
+                                    id,
+                                    snapshot_product_name
+                                )
+                            `)
+                            .eq('user_id', user.id)
+                            .eq('site', window.SiteConfig?.site || 'cn')
+                            .order('created_at', { ascending: false })
+                            .limit(100),
 
-                if (shopOrdersResult.error) throw shopOrdersResult.error;
+                        supabase
+                            .from('points_ledger')
+                            .select('id, amount, reason, reference_id, created_at')
+                            .eq('user_id', user.id)
+                            .eq('site', window.SiteConfig?.site || 'cn')
+                            .order('created_at', { ascending: false })
+                            .limit(100)
+                    ]);
 
-                const shopOrders = shopOrdersResult.data || [];
-                const ledgerEntries = ledgerResult.data || [];
+                    if (shopOrdersResult.error) throw shopOrdersResult.error;
+                    shopOrders = shopOrdersResult.data || [];
+                    ledgerEntries = ledgerResult.data || [];
+                }
 
                 // Fetch prompt titles for unlock entries
                 const promptIds = ledgerEntries
@@ -1514,8 +1937,12 @@
                     // Categorize by reason
                     if (entry.reason === 'unlock_prompt') {
                         transactionType = 'prompt';
-                        displayName = promptTitles[entry.reference_id] || `提示词 #${entry.reference_id}`;
+                        displayName = promptTitles[entry.reference_id] || `${window.i18n?.t('wallet.promptItem') || '提示词'} #${entry.reference_id}`;
                         icon = '💡';
+                    } else if (entry.reason === 'daily_checkin') {
+                        transactionType = 'recharge'; // Or whatever visual category is appropriate (positive)
+                        displayName = window.i18n?.t('wallet.dailyCheckin') || '每日签到';
+                        icon = '⚡';
                     } else if (entry.reason && (entry.reason.startsWith('模拟充值') || entry.reason === 'package_purchase' || entry.reason === 'afdian_recharge')) {
                         // Package recharges (mock or real)
                         transactionType = 'recharge';
@@ -1527,9 +1954,10 @@
                         icon = '🎟️';
                     } else if (entry.reason && entry.reason.startsWith('admin_manual')) {
                         transactionType = 'recharge'; // Treat admin adjustments as recharge type
-                        displayName = entry.reason.replace(/admin_manual:\s*\[.*?\]\s*/, '管理员调整: ');
+                        const adminLabel = window.i18n?.t('wallet.adminAdjustment') || '管理员调整:';
+                        displayName = entry.reason.replace(/admin_manual:\s*\[.*?\]\s*/, `${adminLabel} `);
                         if (displayName.startsWith('admin_manual:')) {
-                            displayName = displayName.replace('admin_manual:', '管理员调整');
+                            displayName = displayName.replace('admin_manual:', adminLabel);
                         }
                         icon = '👤';
                     } else if (entry.amount > 0) {
@@ -1580,6 +2008,8 @@
                 if (container) {
                     container.innerHTML = '<div class="empty-text">加载失败</div>';
                 }
+            } finally {
+                this.ordersLoading = false;
             }
         },
 
@@ -1991,7 +2421,8 @@
 
         async submitTicket(orderId, description) {
             try {
-                const { data: { user } } = await window.supabaseClient.auth.getUser();
+                const { data: { session } } = await window.supabaseClient.auth.getSession();
+                const user = session?.user;
                 if (!user) throw new Error("未登录");
 
                 const { error } = await window.supabaseClient.from('shop_tickets').insert({
@@ -2239,5 +2670,30 @@
 
     // Export to window
     window.WalletModal = WalletModal;
+
+    // Listen to global language change
+    window.addEventListener('languageChanged', () => {
+        // Remember the current active view so we can restore it
+        const activeView = document.querySelector('.wallet-menu-item.active')?.dataset?.view || 'balance';
+
+        // Destroy the cached overlay so render() rebuilds it with new language
+        const oldOverlay = document.getElementById('wallet-modal-overlay');
+        if (oldOverlay) {
+            oldOverlay.remove();
+        }
+        WalletModal.modalEl = null;
+
+        if (WalletModal.isOpen) {
+            console.log('[WalletModal] Language changed, rebuilding UI');
+            // Rebuild the entire modal HTML with new language
+            WalletModal.render();
+            // Restore the previously active view
+            WalletModal.switchView(activeView);
+            // Reload data (packages, balance, orders) with new language
+            WalletModal.ordersLoaded = false;
+            WalletModal.loadData().catch(e => console.error(e));
+        }
+    });
+
     console.log('[WalletModal] ✅ Ready');
 })();
