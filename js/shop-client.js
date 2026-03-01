@@ -766,7 +766,7 @@ const ShopClient = {
             const createCardMsg = (text) => {
                 const escaped = this.escapeHtml(text).replace(/`/g, '\\`');
                 return `
-                <div class="content-card" style="margin-bottom: 0 !important; cursor: pointer; transition: all 0.2s; padding: 10px 6px !important; display: flex; align-items: center; justify-content: center; border-radius: 10px !important;" onclick="navigator.clipboard.writeText(\`${escaped}\`).then(() => { const t = document.getElementById('shopSuccessToast'); if(t){ t.textContent='✅ 已复制'; t.style.opacity=1; setTimeout(()=>t.style.opacity=0, 1500); } })" title="${window.i18n?.t('wallet.clickToCopy') || '点击复制'}" onmouseover="this.style.borderColor='rgba(107, 158, 206, 0.5)'; this.style.background='rgba(255, 255, 255, 0.08)';" onmouseout="this.style.borderColor='rgba(255, 255, 255, 0.1)'; this.style.background='rgba(255, 255, 255, 0.05)';">
+                <div class="content-card" style="margin-bottom: 0 !important; cursor: pointer; transition: all 0.2s; padding: 10px 6px !important; display: flex; align-items: center; justify-content: center; border-radius: 10px !important;" onclick="navigator.clipboard.writeText(\`${escaped}\`).then(() => { if(window.WalletModal && window.WalletModal.showToast){ window.WalletModal.showToast(window.i18n?.t('common.copied') || '已复制', 'success'); } else { const t = document.getElementById('shopSuccessToast'); if(t){ t.textContent='已复制'; t.style.opacity=1; setTimeout(()=>t.style.opacity=0, 1500); } } })" title="${window.i18n?.t('wallet.clickToCopy') || '点击复制'}" onmouseover="this.style.borderColor='rgba(107, 158, 206, 0.5)'; this.style.background='rgba(255, 255, 255, 0.08)';" onmouseout="this.style.borderColor='rgba(255, 255, 255, 0.1)'; this.style.background='rgba(255, 255, 255, 0.05)';">
                     <div class="item-content-box" style="padding: 0 !important; width: 100%; background: transparent !important; border-radius: 0 !important;">
                         <div class="item-text" style="text-align: center; font-size: 13px; letter-spacing: 0.5px; line-height: 1.3;">${this.escapeHtml(text)}</div>
                     </div>
@@ -958,6 +958,11 @@ const ShopClient = {
                 btn.style.background = ''; // reset to class style
                 btn.style.color = '';
             }, 2000);
+
+            // Also trigger the elegant success toast
+            if (window.WalletModal && window.WalletModal.showToast) {
+                window.WalletModal.showToast(window.i18n?.t('common.copied') || '已复制', 'success');
+            }
         });
     },
 
