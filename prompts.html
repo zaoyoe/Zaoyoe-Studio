@@ -31,8 +31,10 @@
     <script>
         (function () {
             const savedTheme = localStorage.getItem('theme');
-            if (savedTheme === 'dark') {
+            if (savedTheme !== 'light') {
                 document.documentElement.setAttribute('data-theme', 'dark');
+            } else {
+                document.documentElement.setAttribute('data-theme', 'light');
             }
         })();
     </script>
@@ -523,7 +525,7 @@
 
     <script>
         // Initialize Supabase client for browser
-        const SUPABASE_URL = 'https://mmkugdibsaeoevliebzk.supabase.co';
+        const SUPABASE_URL = 'https://auth.zaoyoe.com';
         const SUPABASE_KEY = 'sb_publishable_lwkiF-sQ80z8e9oMcejFPQ_j7oezjcF';
         window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
         console.log('Supabase browser client initialized');

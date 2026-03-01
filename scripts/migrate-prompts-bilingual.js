@@ -11,7 +11,7 @@ import { createClient } from '@supabase/supabase-js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 // Configuration - read from environment
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://mmkugdibsaeoevliebzk.supabase.co';
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://auth.zaoyoe.com';
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'sb_publishable_lwkiF-sQ80z8e9oMcejFPQ_j7oezjcF';
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 

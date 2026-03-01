@@ -8,7 +8,7 @@ const fs = require('fs');
 const path = require('path');
 
 // Supabase configuration
-const SUPABASE_URL = 'https://mmkugdibsaeoevliebzk.supabase.co';
+const SUPABASE_URL = 'https://auth.zaoyoe.com';
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY; // Need service key for updates
 
 if (!SUPABASE_SERVICE_KEY) {

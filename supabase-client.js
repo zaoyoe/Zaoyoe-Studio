@@ -2,7 +2,7 @@
 // This file is loaded directly in HTML without module bundler
 
 // Supabase configuration
-const SUPABASE_URL = 'https://mmkugdibsaeoevliebzk.supabase.co';
+const SUPABASE_URL = 'https://auth.zaoyoe.com';
 const SUPABASE_KEY = 'sb_publishable_lwkiF-sQ80z8e9oMcejFPQ_j7oezjcF';
 
 // Initialize Supabase client (using global supabase from CDN)

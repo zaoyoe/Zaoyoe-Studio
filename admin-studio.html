@@ -31,10 +31,10 @@
     <script>
         (function () {
             const savedTheme = localStorage.getItem('theme');
-            if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            if (savedTheme !== 'light') {
                 document.documentElement.setAttribute('data-theme', 'dark');
             } else {
-                document.documentElement.removeAttribute('data-theme');
+                document.documentElement.setAttribute('data-theme', 'light');
             }
         })();
     </script>
@@ -6557,7 +6557,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
         // Initialize Supabase client
-        const SUPABASE_URL = 'https://mmkugdibsaeoevliebzk.supabase.co';
+        const SUPABASE_URL = 'https://auth.zaoyoe.com';
         const SUPABASE_KEY = 'sb_publishable_lwkiF-sQ80z8e9oMcejFPQ_j7oezjcF';
         window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 

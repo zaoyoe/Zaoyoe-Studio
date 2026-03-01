@@ -20,7 +20,7 @@ const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME || 'zaoyoeimages';
 const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL || 'https://cdn.zaoyoe.com';
 
 // Supabase 配置 (anon key 是公开的)
-const SUPABASE_URL = 'https://mmkugdibsaeoevliebzk.supabase.co';
+const SUPABASE_URL = 'https://auth.zaoyoe.com';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ta3VnZGlic2Flb2V2bGllYnprIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzAyNjU5NTIsImV4cCI6MjA0NTg0MTk1Mn0.P2cU_WekPHK-hSU7cwnCEpXVfYSeZgL4jfs4w2t8uFQ';
 
 // 验证 R2 环境变量

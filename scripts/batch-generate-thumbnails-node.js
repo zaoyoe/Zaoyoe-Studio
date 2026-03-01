@@ -18,7 +18,7 @@ const https = require('https');
 const http = require('http');
 
 // Configuration
-const SUPABASE_URL = 'https://mmkugdibsaeoevliebzk.supabase.co';
+const SUPABASE_URL = 'https://auth.zaoyoe.com';
 const SUPABASE_ANON_KEY = 'sb_publishable_lwkiF-sQ80z8e9oMcejFPQ_j7oezjcF';
 
 // R2 Configuration from .env.local

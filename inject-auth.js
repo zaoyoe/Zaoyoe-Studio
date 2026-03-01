@@ -1096,7 +1096,9 @@
     // Init Theme
     try {
         const savedTheme = localStorage.getItem('theme');
-        if (savedTheme === 'light') {
+        if (savedTheme !== 'light') {
+            document.documentElement.setAttribute('data-theme', 'dark');
+        } else {
             document.documentElement.setAttribute('data-theme', 'light');
         }
     } catch (e) { }

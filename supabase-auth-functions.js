@@ -880,7 +880,7 @@ async function uploadAvatarToR2({ userId, imageUrl, imageData }) {
             throw new Error('User not authenticated');
         }
 
-        const SUPABASE_URL = 'https://mmkugdibsaeoevliebzk.supabase.co';
+        const SUPABASE_URL = 'https://auth.zaoyoe.com';
 
         // Call Edge Function
         const response = await fetch(

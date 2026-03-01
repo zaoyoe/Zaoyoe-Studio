@@ -1,6 +1,6 @@
 const { createClient } = require('@supabase/supabase-js');
 
-const supabaseUrl = 'https://mmkugdibsaeoevliebzk.supabase.co';
+const supabaseUrl = 'https://auth.zaoyoe.com';
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1ta3VnZGlic2Flb2V2bGllYnprIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTczNDMyNDU4MywiZXhwIjoyMDQ5OTAwNTgzfQ.5RAfmnxOFB17bVfNLnDv8uGYyJ6hJD3gLCfVbT-aTIY';
 
 const supabase = createClient(supabaseUrl, supabaseKey);
