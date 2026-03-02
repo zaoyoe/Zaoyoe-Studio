@@ -834,15 +834,20 @@ async function loadGoogleIdentityServices() {
             const width = widthMatch ? parseInt(widthMatch[1]) : 500;
             const height = heightMatch ? parseInt(heightMatch[1]) : 600;
 
-            // Calculate centered position relative to the current browser window
+            // Calculate centered position strictly relative to the browser viewport (webpage)
             const dualScreenLeft = window.screenLeft !== undefined ? window.screenLeft : window.screenX;
             const dualScreenTop = window.screenTop !== undefined ? window.screenTop : window.screenY;
 
-            const winWidth = window.innerWidth ? window.innerWidth : document.documentElement.clientWidth ? document.documentElement.clientWidth : screen.width;
-            const winHeight = window.innerHeight ? window.innerHeight : document.documentElement.clientHeight ? document.documentElement.clientHeight : screen.height;
+            const winWidth = window.innerWidth;
+            const winHeight = window.innerHeight;
 
-            const left = Math.round((winWidth / 2) - (width / 2) + dualScreenLeft);
-            const top = Math.round((winHeight / 2) - (height / 2) + dualScreenTop);
+            // Calculate browser chrome height (address bar, tabs, etc)
+            const chromeHeight = window.outerHeight > window.innerHeight ? (window.outerHeight - window.innerHeight) : 0;
+            const chromeWidth = window.outerWidth > window.innerWidth ? (window.outerWidth - window.innerWidth) / 2 : 0;
+
+            const left = Math.round((winWidth / 2) - (width / 2) + dualScreenLeft + chromeWidth);
+            // Add the chrome height to push it down into the actual viewport center
+            const top = Math.round((winHeight / 2) - (height / 2) + dualScreenTop + chromeHeight);
 
             // Replace or add left/top in features
             let newFeatures = features
@@ -901,15 +906,15 @@ function renderGoogleButtonInModal() {
         // Hide the custom button
         btn.style.display = 'none';
 
-        // Render Google's official dark-themed button
+        // Render Google's official button (using outline theme for better dark mode blending)
         google.accounts.id.renderButton(gsiContainer, {
             type: 'standard',
-            theme: 'filled_black',
+            theme: 'outline', // Outline theme works much better on dark backgrounds, removes white square around logo
             size: 'large',
             width: btn.offsetWidth || 300,
             text: 'signin_with',
-            shape: 'rectangular',
-            logo_alignment: 'left'
+            shape: 'rectangular', // MATCH the 16px border-radius of regular inputs
+            logo_alignment: 'center'
         });
     });
 

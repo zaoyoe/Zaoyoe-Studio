@@ -244,31 +244,40 @@
     display: flex;
     justify-content: center;
     align-items: center;
-    min-height: 44px;
+    height: 52px;
+    /* Fixed height to perfectly match input fields */
     border-radius: 16px;
+    /* Matched the 16px of .glass-input */
+    margin-bottom: 24px;
+    /* Space it out from the "或者" divider */
     overflow: hidden;
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(155, 93, 229, 0.3);
-    padding: 2px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.15);
     transition: all 0.3s ease;
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
 }
 
 .login-card .gsi-btn-container:hover {
-    border-color: rgba(155, 93, 229, 0.5);
-    background: rgba(0, 0, 0, 0.4);
-    box-shadow: 0 0 15px rgba(155, 93, 229, 0.1);
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.3);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
 }
 
 /* Make the Google iframe button fill the container nicely */
 .login-card .gsi-btn-container iframe {
-    border-radius: 14px !important;
+    /* Google outline theme already has round borders, we blend with it */
     color-scheme: dark;
+    opacity: 0.95;
+    transition: opacity 0.3s;
+}
+
+.login-card .gsi-btn-container:hover iframe {
+    opacity: 1;
 }
 
 /* Override Google's default div wrapper to fill width */
-.login-card .gsi-btn-container > div {
+.login-card .gsi-btn-container>div {
     width: 100% !important;
     display: flex !important;
     justify-content: center !important;
