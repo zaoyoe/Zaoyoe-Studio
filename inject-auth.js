@@ -950,14 +950,14 @@
                     console.log(`🎨 Injected CSS: ${href}`);
                 }
             }
-            loadCSS(`login_styles.css?v=DARK_BG_INPUTS_V12`);
-            loadCSS(`login_dual_mode.css?v=DARK_BG_INPUTS_V12`);
+            loadCSS(`login_styles.css?v=20260302_G_AUTH`);
+            loadCSS(`login_dual_mode.css?v=20260302_G_AUTH`);
 
             // Supabase Auth
-            await loadScript('./supabase-auth-functions.js?v=INITIAL');
+            await loadScript('./supabase-auth-functions.js?v=20260302_G_AUTH');
 
             // ✅ 加载 script.js (包含 sendVerificationCode 函数)
-            await loadScript('./script.js?v=EMAIL_FIX_V1');
+            await loadScript('./script.js?v=20260302_G_AUTH');
 
             // Initialize UI - now using Supabase
             if (window.supabaseClient) {
