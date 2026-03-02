@@ -832,18 +832,14 @@ async function loadGoogleIdentityServices() {
     // to spawn the popup. However, manipulating opacity/pointer-events triggers a 400 error
     // (clickjacking protection). We must use a safe off-screen or safe sizing approach
     // that doesn't trigger security blocks but nudges the window.
-    // Position it at the exact center of the page horizontally and vertically
-    // We use a high z-index and hide it under the login modal overlay visually without display:none
-    hiddenContainer.style.position = 'absolute';
-    hiddenContainer.style.left = '50%';
-    hiddenContainer.style.top = '50%';
-    hiddenContainer.style.marginLeft = '-100px'; // approximate half width of google button
 
-    // Completely hide it visually so it doesn't linger on screen, 
-    // but keep it rendered in DOM to avoid 400 clickjacking errors.
-    hiddenContainer.style.opacity = '0';
-    hiddenContainer.style.zIndex = '-9999';
-    hiddenContainer.style.pointerEvents = 'none';
+    // Position it far off-screen to the top-left so it's completely invisible, 
+    // but without using opacity: 0 or display: none which blocks Google's render.
+    // The window.open monkey patch handles the centering of the actual popup later.
+    hiddenContainer.style.position = 'absolute';
+    hiddenContainer.style.left = '-9999px';
+    hiddenContainer.style.top = '-9999px';
+    hiddenContainer.style.zIndex = '-1';
 
     // Fix white flash on popup open by forcing the container to declare a dark color scheme
     hiddenContainer.style.colorScheme = 'dark';
@@ -887,82 +883,108 @@ window.triggerGoogleLogin = () => {
 
     // Find the hidden Google button and click it to spawn the classic center popup
     // (This bypasses the One Tap top-right drawer)
-    const googleButton = document.querySelector('#hidden-gsi-container div[role=button]');
 
-    if (googleButton) {
-        // Set a checker that clears the spinner if the popup is closed or doesn't trigger response
-        // Usually popup stays open indefinitely, but if user clicks away or hits esc, it goes away.
-        // We will run an interval to check if the iframe exists and is visible.
-        const checkPopupInterval = setInterval(() => {
-            // If they are verifying token, then credential response fired, we let that handle it.
-            if (window.isVerifyingGoogleToken) {
-                clearInterval(checkPopupInterval);
-                return;
-            }
+    // Function to attempt clicking the button
+    const tryClickGoogleButton = (attemptsLeft) => {
+        const googleButton = document.querySelector('#hidden-gsi-container div[role=button]');
 
-            // Google popup iframe class is usually sent through an iframe that has credential_picker or similar
-            // However, relying on iframe presence is flaky because Google keeps changing IDs.
-            // If user closes modal, we must reset the spinner.
-            const loginModal = document.getElementById('loginModal');
-            if (loginModal && !loginModal.classList.contains('active')) {
-                clearInterval(checkPopupInterval);
+        if (googleButton) {
+
+            // Set a checker that clears the spinner if the popup is closed or doesn't trigger response
+            // Usually popup stays open indefinitely, but if user clicks away or hits esc, it goes away.
+            // We will run an interval to check if the iframe exists and is visible.
+            const checkPopupInterval = setInterval(() => {
+                // If they are verifying token, then credential response fired, we let that handle it.
+                if (window.isVerifyingGoogleToken) {
+                    clearInterval(checkPopupInterval);
+                    return;
+                }
+
+                // Google popup iframe class is usually sent through an iframe that has credential_picker or similar
+                // However, relying on iframe presence is flaky because Google keeps changing IDs.
+                // If user closes modal, we must reset the spinner.
+                const loginModal = document.getElementById('loginModal');
+                if (loginModal && !loginModal.classList.contains('active')) {
+                    clearInterval(checkPopupInterval);
+                    if (defaultIcon) defaultIcon.className = 'fas fa-user-circle';
+                }
+            }, 1000);
+
+            // Also add a 5-second automatic timeout as a fallback so it never spins infinitely
+            // if they don't even log in within the popup (which would block the UI indefinitely if they minimize it)
+            setTimeout(() => {
+                if (!window.isVerifyingGoogleToken && defaultIcon) {
+                    defaultIcon.className = 'fas fa-user-circle';
+                    clearInterval(checkPopupInterval);
+                }
+            }, 10000); // Wait 10 seconds. Typically users login within 10s. If longer, spinner stops but popup still works.
+
+            // Intercept Google's window.open to force it to center on the CURRENT browser window
+            // instead of the physical monitor (which is the default OS/browser behavior for popups).
+            const originalWindowOpen = window.open;
+            window.open = function (url, windowName, windowFeatures) {
+                if (url && url.includes('accounts.google.com')) {
+                    const popupWidth = 500;
+                    const popupHeight = 650;
+
+                    // Calculate center relative to the physical browser window on screen
+                    const left = Math.round(window.screenX + (window.outerWidth - popupWidth) / 2);
+
+                    // We want to center the popup relative to the *webpage viewport* (innerHeight),
+                    // not the entire browser window (which includes the URL bar and tabs).
+                    // ScreenY is the top of the browser window. The actual webpage starts lower.
+                    const browserChromeHeight = window.outerHeight - window.innerHeight;
+                    const top = Math.round(window.screenY + browserChromeHeight + (window.innerHeight - popupHeight) / 2);
+
+                    // Clean up string and append our precise coordinates
+                    let customFeatures = windowFeatures || '';
+                    customFeatures = customFeatures.replace(/left=[^,]*/i, '')
+                        .replace(/top=[^,]*/i, '')
+                        .replace(/,+/g, ',');
+                    customFeatures += `,left=${left},top=${top}`;
+
+                    // Attempt to call original with hijacked coordinates
+                    return originalWindowOpen.call(window, url, windowName, customFeatures);
+                }
+                // For non-Google URLs, just pass through
+                return originalWindowOpen.call(window, url, windowName, windowFeatures);
+            };
+
+            googleButton.click();
+
+            // Google's click handler might be slightly asynchronous, so we restore the original
+            // Google's click handler might be slightly asynchronous, so we restore the original
+            // window.open after a short delay to ensure we catch it.
+            setTimeout(() => {
+                if (window.open !== originalWindowOpen) {
+                    window.open = originalWindowOpen;
+                }
+            }, 500);
+        } else {
+            if (attemptsLeft > 0) {
+                console.log(`[Google Auth] Google button not ready, retrying in 500ms... (${attemptsLeft} attempts left)`);
+                setTimeout(() => tryClickGoogleButton(attemptsLeft - 1), 500);
+            } else {
+                console.error('Failed to find hidden Google button to click after 5 seconds');
                 if (defaultIcon) defaultIcon.className = 'fas fa-user-circle';
+
+                // Ensure i18n fallback if translation missing
+                const msg = window.i18n && typeof window.i18n.t === 'function' ?
+                    window.i18n.t('auth.loginSuccess') :
+                    'Google 登录服务尚未加载完成，请稍候再试。';
+
+                // Use standard alert if notification system isn't ready
+                if (typeof showNotification === 'function') {
+                    showNotification('Google 登录服务尚未加载完成，请稍候再试。', 'error');
+                } else {
+                    alert('Google 登录服务尚未加载完成，请稍候再试。\nGoogle sign-in service not loaded yet, please try again.');
+                }
             }
-        }, 1000);
+        }
+    };
 
-        // Also add a 5-second automatic timeout as a fallback so it never spins infinitely
-        // if they don't even log in within the popup (which would block the UI indefinitely if they minimize it)
-        setTimeout(() => {
-            if (!window.isVerifyingGoogleToken && defaultIcon) {
-                defaultIcon.className = 'fas fa-user-circle';
-                clearInterval(checkPopupInterval);
-            }
-        }, 10000); // Wait 10 seconds. Typically users login within 10s. If longer, spinner stops but popup still works.
-
-        // Intercept Google's window.open to force it to center on the CURRENT browser window
-        // instead of the physical monitor (which is the default OS/browser behavior for popups).
-        const originalWindowOpen = window.open;
-        window.open = function (url, windowName, windowFeatures) {
-            if (url && url.includes('accounts.google.com')) {
-                const popupWidth = 500;
-                const popupHeight = 650;
-
-                // Calculate center relative to the physical browser window on screen
-                const left = Math.round(window.screenX + (window.outerWidth - popupWidth) / 2);
-
-                // We want to center the popup relative to the *webpage viewport* (innerHeight),
-                // not the entire browser window (which includes the URL bar and tabs).
-                // ScreenY is the top of the browser window. The actual webpage starts lower.
-                const browserChromeHeight = window.outerHeight - window.innerHeight;
-                const top = Math.round(window.screenY + browserChromeHeight + (window.innerHeight - popupHeight) / 2);
-
-                // Clean up string and append our precise coordinates
-                let customFeatures = windowFeatures || '';
-                customFeatures = customFeatures.replace(/left=[^,]*/i, '')
-                    .replace(/top=[^,]*/i, '')
-                    .replace(/,+/g, ',');
-                customFeatures += `,left=${left},top=${top}`;
-
-                // Attempt to call original with hijacked coordinates
-                return originalWindowOpen.call(window, url, windowName, customFeatures);
-            }
-            // For non-Google URLs, just pass through
-            return originalWindowOpen.call(window, url, windowName, windowFeatures);
-        };
-
-        googleButton.click();
-
-        // Google's click handler might be slightly asynchronous, so we restore the original
-        // window.open after a short delay to ensure we catch it.
-        setTimeout(() => {
-            if (window.open !== originalWindowOpen) {
-                window.open = originalWindowOpen;
-            }
-        }, 2000);
-    } else {
-        if (defaultIcon) defaultIcon.className = 'fas fa-user-circle';
-        alert('Google 登录服务尚未加载完成，请稍候再试。');
-    }
+    // Start polling for the button with 10 attempts (5 seconds max wait)
+    tryClickGoogleButton(10);
 };
 
 window.handleGoogleCredentialResponse = async (response) => {
