@@ -883,10 +883,30 @@ window.triggerGoogleLogin = () => {
     const defaultIcon = document.getElementById('defaultAuthIcon');
     if (defaultIcon) defaultIcon.className = 'fas fa-spinner fa-spin';
 
+    // Add loading state to the Google login button itself for immediate feedback
+    const googleBtn = document.querySelector('.google-login-btn');
+    let originalBtnHTML = '';
+    if (googleBtn) {
+        originalBtnHTML = googleBtn.innerHTML;
+        googleBtn.innerHTML = '<i class="fas fa-spinner fa-spin" style="margin-right: 8px;"></i> <span>正在加载...</span>';
+        googleBtn.style.pointerEvents = 'none';
+        googleBtn.style.opacity = '0.7';
+    }
+
+    // Helper to reset button state
+    const resetGoogleBtn = () => {
+        if (googleBtn && originalBtnHTML) {
+            googleBtn.innerHTML = originalBtnHTML;
+            googleBtn.style.pointerEvents = '';
+            googleBtn.style.opacity = '';
+        }
+    };
+
     // Check if Google Identity Services is loaded
     if (typeof google === 'undefined' || !google.accounts || !google.accounts.id) {
         console.error('[Google Auth] Google Identity Services not loaded');
         if (defaultIcon) defaultIcon.className = 'fas fa-user-circle';
+        resetGoogleBtn();
         if (typeof showNotification === 'function') {
             showNotification('Google 登录服务尚未加载完成，请稍候再试。', 'error');
         } else {
@@ -896,34 +916,36 @@ window.triggerGoogleLogin = () => {
     }
 
     // Use google.accounts.id.prompt() — the official programmatic API.
-    // This triggers the Google account chooser directly without needing
-    // any DOM click hacks on hidden iframes (which Google blocks on production domains).
     google.accounts.id.prompt((notification) => {
         console.log('[Google Auth] Prompt notification:', notification);
 
         if (notification.isNotDisplayed()) {
             const reason = notification.getNotDisplayedReason();
             console.warn('[Google Auth] Prompt not displayed, reason:', reason);
-
-            // If prompt can't show (e.g. user dismissed previously, or browser blocks),
-            // fall back to clicking the rendered button
+            resetGoogleBtn();
             fallbackToButtonClick(defaultIcon);
         } else if (notification.isSkippedMoment()) {
             const reason = notification.getSkippedReason();
             console.warn('[Google Auth] Prompt skipped, reason:', reason);
+            resetGoogleBtn();
             fallbackToButtonClick(defaultIcon);
+        } else if (notification.isDisplayMoment()) {
+            // Prompt is now visible — reset button loading state
+            console.log('[Google Auth] Prompt displayed successfully');
+            resetGoogleBtn();
         } else if (notification.isDismissedMoment()) {
-            // User dismissed the prompt
             console.log('[Google Auth] User dismissed prompt');
             if (defaultIcon) defaultIcon.className = 'fas fa-user-circle';
+            resetGoogleBtn();
         }
     });
 
-    // Auto-reset spinner after 15 seconds as safety net
+    // Auto-reset after 15 seconds as safety net
     setTimeout(() => {
         if (!window.isVerifyingGoogleToken && defaultIcon) {
             defaultIcon.className = 'fas fa-user-circle';
         }
+        resetGoogleBtn();
     }, 15000);
 };
 
