@@ -828,22 +828,24 @@ async function loadGoogleIdentityServices() {
     const hiddenContainer = document.createElement('div');
     hiddenContainer.id = 'hidden-gsi-container';
 
-    // Google Identity Services (GSI) iframe uses the physical location of this container
-    // to spawn the popup. However, manipulating opacity/pointer-events triggers a 400 error
-    // (clickjacking protection). We must use a safe off-screen or safe sizing approach
-    // that doesn't trigger security blocks but nudges the window.
-
-    // Position it far off-screen to the top-left so it's completely invisible, 
-    // but without using opacity: 0 or display: none which blocks Google's render.
-    // The window.open monkey patch handles the centering of the actual popup later.
-    hiddenContainer.style.position = 'absolute';
-    hiddenContainer.style.left = '-9999px';
-    hiddenContainer.style.top = '-9999px';
+    // Google Identity Services (GSI) anti-clickjacking protection:
+    // - display:none / visibility:hidden / opacity:0 → blocks iframe render entirely
+    // - position off-screen (left:-9999px) → blocks programmatic click() on production domains
+    // - localhost is exempt from these checks, which is why it works locally
+    //
+    // Solution: Keep the container technically "visible" as a 1x1 pixel element 
+    // in the viewport corner. It's imperceptible to users but passes Google's checks.
+    hiddenContainer.style.position = 'fixed';
+    hiddenContainer.style.left = '0';
+    hiddenContainer.style.bottom = '0';
+    hiddenContainer.style.width = '1px';
+    hiddenContainer.style.height = '1px';
+    hiddenContainer.style.overflow = 'hidden';
     hiddenContainer.style.zIndex = '-1';
 
     // Fix white flash on popup open by forcing the container to declare a dark color scheme
     hiddenContainer.style.colorScheme = 'dark';
-    hiddenContainer.style.backgroundColor = '#1a1a1a'; // Match dark theme background
+    hiddenContainer.style.backgroundColor = '#1a1a1a';
 
     document.body.appendChild(hiddenContainer);
 
@@ -959,7 +961,6 @@ window.triggerGoogleLogin = () => {
 
             googleButton.click();
 
-            // Google's click handler might be slightly asynchronous, so we restore the original
             // Google's click handler might be slightly asynchronous, so we restore the original
             // window.open after a short delay to ensure we catch it.
             setTimeout(() => {
