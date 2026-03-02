@@ -4,7 +4,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Banana Pro Gallery | Light Poetry</title>
+    <meta name="description" content="Banana Pro Gallery 提示词图库，精选高质量 AI 提示词与作品灵感，支持分类筛选与快速检索。">
+    <title>Banana Pro Gallery | Zaoyoe</title>
+    <link rel="canonical" href="https://zaoyoe.com/prompts.html">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Banana Pro Gallery | Zaoyoe">
+    <meta property="og:description" content="精选高质量 AI 提示词与作品灵感，支持分类筛选与快速检索。">
+    <meta property="og:url" content="https://zaoyoe.com/prompts.html">
+    <meta property="og:image" content="https://zaoyoe.com/assets/favicon.png">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Banana Pro Gallery | Zaoyoe">
+    <meta name="twitter:description" content="精选高质量 AI 提示词与作品灵感，支持分类筛选与快速检索。">
+    <meta name="twitter:image" content="https://zaoyoe.com/assets/favicon.png">
     <link rel="icon" type="image/png" href="assets/favicon.png">
 
     <!-- Fonts -->
@@ -68,9 +79,19 @@
         body.loaded .gallery-container {
             opacity: 1;
         }
-    </style>
 
-    <script src="/tmp/debug_spinner.js"></script>
+        .visually-hidden-h1 {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+    </style>
 </head>
 
 <body>
@@ -164,13 +185,16 @@
                     <i class="fas fa-chevron-down"></i>
                 </button>
                 <div class="mobile-submenu" id="support-mobile">
-                    <a href="https://t.me/zaoyoe" target="_blank" class="mobile-menu-link">TG</a>
-                    <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank" class="mobile-menu-link"><span
+                    <a href="https://t.me/zaoyoe" target="_blank" rel="noopener noreferrer" class="mobile-menu-link">TG</a>
+                    <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank" rel="noopener noreferrer" class="mobile-menu-link"><span
                             data-i18n="nav.tgGroup">TG群组</span></a>
                 </div>
             </div>
         </div>
     </div>
+
+    <main id="main-content" role="main">
+        <h1 class="visually-hidden-h1">Banana Pro Gallery 提示词图库</h1>
 
     <!-- User Header injected by inject-auth.js -->
 
@@ -350,15 +374,16 @@
                 如有侵权，请联系删除，所有内容版权归原作者所有
             </p>
             <p class="support-link" style="margin-top: 12px; font-size: 12px; opacity: 0.6;">
-                <span data-i18n="gallery.supportUs">支持我们</span>: <a href="https://afdian.com/a/zaoyoe" target="_blank"
+                <span data-i18n="gallery.supportUs">支持我们</span>: <a href="https://afdian.com/a/zaoyoe" target="_blank" rel="noopener noreferrer"
                     style="color: inherit; text-decoration: none; border-bottom: 1px dashed rgba(255,255,255,0.4);">afdian.com/a/zaoyoe</a>
                 <span style="margin: 0 10px; opacity: 0.4;">|</span>
-                <span data-i18n="gallery.joinGroup">交流群</span>: <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank"
+                <span data-i18n="gallery.joinGroup">交流群</span>: <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank" rel="noopener noreferrer"
                     style="color: inherit; text-decoration: none; border-bottom: 1px dashed rgba(255,255,255,0.4);"
                     data-i18n="common.clickToJoin">点击加入</a>
             </p>
         </div>
     </footer>
+    </main>
 
     <!-- Admin Login Modal -->
     <div id="adminLoginModal" class="admin-login-modal">
@@ -546,9 +571,9 @@
     <script src="js/services/PointsService.js?v=20260302_G_AUTH"></script>
     <script src="js/components/WalletModal.js?v=20260302_G_AUTH"></script>
     <script src="./js/avatar-uploader.js" defer></script>
-    <script src="supabase-auth-functions.js?v=20260302_G_AUTH" defer></script>
+    <script src="supabase-auth-functions.js?v=20260303_SESSION_STABLE" defer></script>
     <script src="js/i18n.js?v=1" defer></script>
-    <script src="inject-auth.js?v=20260302_G_AUTH" defer></script>
+    <script src="inject-auth.js?v=20260303_SESSION_STABLE" defer></script>
     <script src="notification-client.js"></script>
     <script src="js/heartbeat.js"></script>
     <script src="js/framer_home.js?v=NAV_UNIFIED"></script>

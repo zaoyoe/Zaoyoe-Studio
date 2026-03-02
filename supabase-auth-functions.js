@@ -188,7 +188,7 @@ async function handleLogin(event) {
         toggleLoginModal();
 
         // 更新UI
-        let avatarUrl = profile?.avatar_url || data.user.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(data.user.email)}&background=random`;
+        let avatarUrl = profile?.avatar_url || data.user.user_metadata?.avatar_url || '';
 
         // 🆕 Auto-upload Google OAuth avatar to R2 (if Google avatar and not yet uploaded)
         if (data.user.user_metadata?.avatar_url &&
@@ -437,7 +437,7 @@ async function checkSessionTimeout() {
 
         // 自动登出
         await window.supabaseClient.auth.signOut();
-        updateUserUI(null);
+        updateUserUI(null, { clearCacheOnLogout: true });
 
         alert('⏰ 由于长时间无操作，您已被自动登出。');
     }
@@ -574,88 +574,225 @@ async function handleAuthClick(event) {
 window.handleAuthClick = handleAuthClick;
 
 // ==================== 检查登录状态 (Supabase 版本) ====================
-async function checkAuthState() {
+function readCachedUserProfile() {
+    try {
+        const raw = localStorage.getItem('cached_user_profile');
+        if (!raw) return null;
+        return JSON.parse(raw);
+    } catch (e) {
+        return null;
+    }
+}
+
+function hasCachedIdentity(profile) {
+    if (!profile) return false;
+    return !!(profile.objectId || profile.id || profile.user_id || profile.email);
+}
+
+async function checkAuthState(options = {}) {
+    const { allowSoftNull = true } = options;
     console.log('🔍 检查登录状态...');
 
-    const { data: { user } } = await window.supabaseClient.auth.getUser();
-
-    if (user) {
-        console.log('✅ 用户已登录:', user);
-
-        // 获取 profile
-        const { data: profile } = await window.supabaseClient
-            .from('profiles')
-            .select('*')
-            .eq('id', user.id)
-            .single();
-
-        // Validate custom avatar (same logic as prompts-poetry.js)
-        let validCustomAvatar = null;
-        const MIN_BASE64_LENGTH = 100;
-
-        if (profile?.avatar_url) {
-            const url = profile.avatar_url.trim();
-            if (url.startsWith('http')) {
-                validCustomAvatar = url;
-            } else if (url.startsWith('data:') && url.length > MIN_BASE64_LENGTH) {
-                validCustomAvatar = url;
-            }
+    const cachedProfile = readCachedUserProfile();
+    let user = null;
+    try {
+        // getSession() is local-storage based and returns immediately.
+        const { data: { session }, error } = await window.supabaseClient.auth.getSession();
+        if (error) {
+            console.warn('⚠️ getSession failed:', error.message);
         }
-
-        let avatarUrl = validCustomAvatar || user.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.email)}&background=6b9ece&color=fff`;
-
-        // 🆕 Auto-upload Google OAuth avatar to R2 asynchronously (non-blocking)
-        if (user.user_metadata?.avatar_url &&
-            user.user_metadata.avatar_url.includes('googleusercontent.com') &&
-            (!profile?.avatar_url || profile.avatar_url.includes('googleusercontent.com'))) {
-            // Do not await to avoid blocking UI update
-            setTimeout(async () => {
-                console.log('📸 [checkAuthState] Google avatar detected, uploading to R2 in background...');
-                try {
-                    if (typeof uploadAvatarToR2 === 'function') {
-                        const r2Url = await uploadAvatarToR2({
-                            userId: user.id,
-                            imageUrl: user.user_metadata.avatar_url
-                        });
-                        if (r2Url && !r2Url.includes('dicebear.com')) {
-                            // Only update UI if we're still logged in as the same user
-                            const currentNavAvatar = document.getElementById('navUserAvatar');
-                            if (currentNavAvatar) currentNavAvatar.src = r2Url;
-                            console.log('✅ Google avatar uploaded to R2 and updated:', r2Url);
-                        }
-                    }
-                } catch (err) {
-                    console.warn('⚠️ Failed to upload Google avatar to R2:', err.message);
-                }
-            }, 100);
-        }
-
-        updateUserUI({
-            objectId: user.id,
-            username: user.email,
-            email: user.email,
-            nickname: profile?.username || user.user_metadata?.full_name || user.email.split('@')[0],
-            avatarUrl: avatarUrl
-        });
-
-        // 🔒 启动会话超时监控
-        startSessionTimeoutMonitor();
-    } else {
-        console.log('❌ 用户未登录');
-        updateUserUI(null);
+        user = session?.user || null;
+    } catch (err) {
+        console.warn('⚠️ getSession exception:', err.message);
     }
+
+    if (!user) {
+        // Avoid false "logged-out" flash during cross-page session restore.
+        if (allowSoftNull && hasCachedIdentity(cachedProfile)) {
+            console.log('⚡ Session pending, keep cached logged-in UI');
+            updateUserUI(cachedProfile, { animateAvatar: false, preferImmediateAvatar: true });
+            setTimeout(() => {
+                checkAuthState({ allowSoftNull: false });
+            }, 900);
+            return;
+        }
+
+        console.log('❌ 用户未登录');
+        updateUserUI(null, { clearCacheOnLogout: true });
+        return;
+    }
+
+    console.log('✅ 用户已登录:', user);
+
+    const cachedAvatarCandidate = cachedProfile?.avatarUrl;
+    const cleanCachedAvatar = (isUsableAvatarUrl(cachedAvatarCandidate) &&
+        !isGeneratedAvatarUrl(cachedAvatarCandidate) &&
+        !isTransientAvatarUrl(cachedAvatarCandidate))
+        ? String(cachedAvatarCandidate).trim()
+        : '';
+    const optimisticAvatar = cleanCachedAvatar || user.user_metadata?.avatar_url || '';
+
+    const optimisticUser = {
+        objectId: user.id,
+        username: user.email,
+        email: user.email,
+        nickname: cachedProfile?.nickname || user.user_metadata?.full_name || user.email.split('@')[0],
+        avatarUrl: optimisticAvatar || ''
+    };
+    updateUserUI(optimisticUser, { animateAvatar: false, preferImmediateAvatar: true });
+
+    // 获取 profile
+    const { data: profile } = await window.supabaseClient
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+    // Validate custom avatar (same logic as prompts-poetry.js)
+    let validCustomAvatar = null;
+    const MIN_BASE64_LENGTH = 100;
+
+    if (profile?.avatar_url) {
+        const url = profile.avatar_url.trim();
+        if (url.startsWith('http')) {
+            validCustomAvatar = url;
+        } else if (url.startsWith('data:') && url.length > MIN_BASE64_LENGTH) {
+            validCustomAvatar = url;
+        }
+    }
+
+    // Always prefer profile.avatar_url (custom uploads are persisted to R2 there).
+    let avatarUrl = validCustomAvatar || cleanCachedAvatar || user.user_metadata?.avatar_url || '';
+    const resolvedNickname = profile?.username || user.user_metadata?.full_name || user.email.split('@')[0];
+
+    // 🆕 Auto-upload Google OAuth avatar to R2 asynchronously (non-blocking)
+    if (user.user_metadata?.avatar_url &&
+        user.user_metadata.avatar_url.includes('googleusercontent.com') &&
+        (!profile?.avatar_url || profile.avatar_url.includes('googleusercontent.com'))) {
+        // Do not await to avoid blocking UI update
+        setTimeout(async () => {
+            console.log('📸 [checkAuthState] Google avatar detected, uploading to R2 in background...');
+            try {
+                if (typeof uploadAvatarToR2 === 'function') {
+                    const r2Url = await uploadAvatarToR2({
+                        userId: user.id,
+                        imageUrl: user.user_metadata.avatar_url
+                    });
+                    if (r2Url && !r2Url.includes('dicebear.com')) {
+                        updateUserUI({
+                            objectId: user.id,
+                            username: user.email,
+                            email: user.email,
+                            nickname: resolvedNickname,
+                            avatarUrl: r2Url
+                        }, { animateAvatar: false });
+                        console.log('✅ Google avatar uploaded to R2 and updated:', r2Url);
+                    }
+                }
+            } catch (err) {
+                console.warn('⚠️ Failed to upload Google avatar to R2:', err.message);
+            }
+        }, 100);
+    }
+
+    updateUserUI({
+        objectId: user.id,
+        username: user.email,
+        email: user.email,
+        nickname: resolvedNickname,
+        avatarUrl: avatarUrl
+    }, { animateAvatar: false });
+
+    // 🔒 启动会话超时监控
+    startSessionTimeoutMonitor();
 }
 
 // ==================== 更新用户UI ====================
 const ADMIN_EMAILS = ['zaoyoe@gmail.com'];
 
-function updateUserUI(user) {
+function normalizeAvatarUrl(url) {
+    if (!url) return '';
+    try {
+        const u = new URL(url, window.location.origin);
+        return `${u.origin}${u.pathname}`;
+    } catch (_) {
+        return String(url).split('?')[0];
+    }
+}
+
+function getAvatarFallbackUrl(seed) {
+    return `https://ui-avatars.com/api/?name=${encodeURIComponent(seed || 'User')}&background=6b9ece&color=fff`;
+}
+
+function isGeneratedAvatarUrl(url) {
+    if (!url) return false;
+    return /ui-avatars\.com|dicebear\.com/i.test(String(url));
+}
+
+function isTransientAvatarUrl(url) {
+    if (!url) return false;
+    return /googleusercontent\.com|lh3\.googleusercontent\.com/i.test(String(url));
+}
+
+function isUsableAvatarUrl(url) {
+    if (!url) return false;
+    const value = String(url).trim();
+    if (!value) return false;
+    if (value.startsWith('http')) return true;
+    if (value.startsWith('data:') && value.length > 100) return true;
+    return false;
+}
+
+function setProfileModalAvatar(avatarUrl, fallbackSeed = 'User', options = {}) {
+    const { preferImmediate = false, keepCurrentOnEmpty = true } = options;
+    const profileModalAvatar = document.getElementById('profileModalAvatar');
+    if (!profileModalAvatar) return;
+
+    const fallbackUrl = getAvatarFallbackUrl(fallbackSeed);
+    const currentRaw = profileModalAvatar.getAttribute('src') || profileModalAvatar.src || '';
+    const incomingUrl = isUsableAvatarUrl(avatarUrl) ? String(avatarUrl).trim() : '';
+    if (!incomingUrl) {
+        if (keepCurrentOnEmpty) return;
+        profileModalAvatar.src = fallbackUrl;
+        return;
+    }
+
+    const targetUrl = incomingUrl;
+    const currentBase = normalizeAvatarUrl(currentRaw);
+    const targetBase = normalizeAvatarUrl(targetUrl);
+    if (currentBase && currentBase === targetBase) return;
+
+    const applySrc = (url) => {
+        profileModalAvatar.onerror = function () {
+            const failedBase = normalizeAvatarUrl(this.src || '');
+            const fallbackBase = normalizeAvatarUrl(fallbackUrl);
+            if (failedBase === fallbackBase) return;
+            this.src = fallbackUrl;
+        };
+        profileModalAvatar.src = url;
+    };
+
+    if (preferImmediate || !currentRaw) {
+        applySrc(targetUrl);
+        return;
+    }
+
+    const probe = new Image();
+    probe.onload = () => applySrc(targetUrl);
+    probe.onerror = () => {
+        if (keepCurrentOnEmpty) return;
+        applySrc(fallbackUrl);
+    };
+    probe.src = targetUrl;
+}
+
+function updateUserUI(user, options = {}) {
+    const { animateAvatar = false, preferImmediateAvatar = false, clearCacheOnLogout = false } = options;
     const defaultIcon = document.getElementById('defaultAuthIcon');
     const navAvatar = document.getElementById('navUserAvatar');
     const btnText = document.getElementById('authBtnText');
     const userDropdown = document.getElementById('userDropdown');
     const profileModalEmail = document.getElementById('profileModalEmail');
-    const profileModalAvatar = document.getElementById('profileModalAvatar');
     const enterStudioBtn = document.getElementById('enterStudioBtn');
 
     if (user) {
@@ -664,35 +801,110 @@ function updateUserUI(user) {
         // Check if user is admin
         const isAdmin = ADMIN_EMAILS.includes(user.email);
 
-        if (defaultIcon) defaultIcon.style.display = 'none';
         if (navAvatar) {
-            const newAvatarUrl = user.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.nickname || user.username || 'User')}&background=random`;
-            const fallbackUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.nickname || user.username || 'User')}&background=6b9ece&color=fff`;
+            const fallbackSeed = user.email || user.username || user.nickname || 'User';
+            const fallbackUrl = getAvatarFallbackUrl(fallbackSeed);
+            const incomingAvatarUrl = isUsableAvatarUrl(user.avatarUrl) ? String(user.avatarUrl).trim() : '';
+            let cachedAvatarUrl = '';
+            try {
+                const cachedRaw = localStorage.getItem('cached_user_profile');
+                if (cachedRaw) {
+                    const cachedUser = JSON.parse(cachedRaw);
+                    const sameUser = (cachedUser?.objectId && user.objectId && cachedUser.objectId === user.objectId) ||
+                        (cachedUser?.email && user.email && cachedUser.email === user.email);
+                    if (sameUser && isUsableAvatarUrl(cachedUser?.avatarUrl) && !isGeneratedAvatarUrl(cachedUser?.avatarUrl)) {
+                        cachedAvatarUrl = String(cachedUser.avatarUrl).trim();
+                    }
+                }
+            } catch (_) {
+                // ignore cache parse errors
+            }
 
-            // 🆕 只在头像 URL 变化时才更新，避免闪烁
-            const currentSrc = navAvatar.src;
-            const urlChanged = !currentSrc || !currentSrc.includes(newAvatarUrl.split('?')[0]);
+            const preferredAvatarUrl = (isTransientAvatarUrl(incomingAvatarUrl) && cachedAvatarUrl)
+                ? cachedAvatarUrl
+                : (incomingAvatarUrl || cachedAvatarUrl || '');
+            const currentRaw = navAvatar.getAttribute('src') || navAvatar.src || '';
+            const currentBase = normalizeAvatarUrl(currentRaw);
+            const hasVisibleAvatar = navAvatar.style.display !== 'none' && navAvatar.classList.contains('show');
 
-            navAvatar.style.display = 'inline-block';
-            navAvatar.style.visibility = 'visible';
-            navAvatar.style.opacity = '1';
-            navAvatar.classList.add('show');
+            const revealAvatar = (url, playAnimation) => {
+                navAvatar.onerror = function () {
+                    console.warn('⚠️ Avatar load failed');
+                    this.onerror = null;
+                    if (isTransientAvatarUrl(url)) {
+                        if (hasVisibleAvatar && currentRaw && !isGeneratedAvatarUrl(currentRaw)) {
+                            this.src = currentRaw;
+                            return;
+                        }
+                        this.style.display = 'none';
+                        this.classList.remove('show');
+                        if (defaultIcon) defaultIcon.style.display = 'inline';
+                        return;
+                    }
+                    this.src = fallbackUrl;
+                };
+                navAvatar.src = url;
+                navAvatar.style.display = 'inline-block';
+                navAvatar.style.visibility = 'visible';
+                navAvatar.style.opacity = '1';
+                navAvatar.classList.add('show');
+                if (defaultIcon) defaultIcon.style.display = 'none';
 
-            // 🆕 Add error handler for when Google CDN is rate-limited (429) or unavailable
-            navAvatar.onerror = function () {
-                console.warn('⚠️ Avatar load failed (possibly rate limited), using fallback');
-                this.onerror = null; // Prevent infinite loop
-                this.src = fallbackUrl;
+                if (playAnimation) {
+                    navAvatar.classList.remove('animate-in');
+                    // Force reflow so animation can restart deterministically
+                    void navAvatar.offsetWidth;
+                    navAvatar.classList.add('animate-in');
+                }
             };
 
-            if (urlChanged) {
-                navAvatar.classList.remove('animate-in');
-                navAvatar.src = newAvatarUrl;
-                setTimeout(() => {
-                    navAvatar.classList.add('animate-in');
-                }, 50);
+            if (!preferredAvatarUrl) {
+                if (hasVisibleAvatar) {
+                    navAvatar.style.display = 'inline-block';
+                    navAvatar.style.visibility = 'visible';
+                    navAvatar.style.opacity = '1';
+                    navAvatar.classList.add('show');
+                    if (defaultIcon) defaultIcon.style.display = 'none';
+                } else {
+                    navAvatar.style.display = 'none';
+                    if (defaultIcon) defaultIcon.style.display = 'inline';
+                }
+            } else {
+                const nextBase = normalizeAvatarUrl(preferredAvatarUrl);
+                // If avatar URL is effectively unchanged, only ensure visible state.
+                if (currentBase && currentBase === nextBase) {
+                    revealAvatar(preferredAvatarUrl, false);
+                } else if (preferImmediateAvatar && !hasVisibleAvatar) {
+                    const shouldAnimate = animateAvatar && !hasVisibleAvatar;
+                    revealAvatar(preferredAvatarUrl, shouldAnimate);
+                } else {
+                    // Keep current avatar/default icon until new image is decoded to avoid flash.
+                    const probe = new Image();
+                    probe.onload = () => {
+                        const shouldAnimate = animateAvatar && !hasVisibleAvatar;
+                        revealAvatar(preferredAvatarUrl, shouldAnimate);
+                    };
+                    probe.onerror = () => {
+                        if (/googleusercontent\.com/i.test(preferredAvatarUrl)) {
+                            if (!hasVisibleAvatar && defaultIcon) defaultIcon.style.display = 'inline';
+                            return;
+                        }
+                        if (hasVisibleAvatar) return;
+                        const shouldAnimate = animateAvatar && !hasVisibleAvatar;
+                        revealAvatar(fallbackUrl, shouldAnimate);
+                    };
+                    probe.src = preferredAvatarUrl;
+
+                    // If there is no current avatar shown, keep default icon visible while loading.
+                    if (!hasVisibleAvatar && defaultIcon) {
+                        defaultIcon.style.display = 'inline';
+                    }
+                }
             }
+        } else if (defaultIcon) {
+            defaultIcon.style.display = 'none';
         }
+
         if (btnText) {
             btnText.textContent = user.nickname || user.username || 'User';
         }
@@ -708,13 +920,45 @@ function updateUserUI(user) {
         if (authBtn) authBtn.classList.add('logged-in');
 
         if (profileModalEmail) profileModalEmail.textContent = user.email || '未绑定邮箱';
-        if (profileModalAvatar && user.avatarUrl) profileModalAvatar.src = user.avatarUrl;
+        setProfileModalAvatar(
+            user.avatarUrl,
+            user.email || user.username || user.nickname || 'User'
+        );
         if (userDropdown) userDropdown.style.display = '';
 
         // Show Enter Studio for admin only
         if (enterStudioBtn) enterStudioBtn.style.display = isAdmin ? 'flex' : 'none';
 
-        localStorage.setItem('cached_user_profile', JSON.stringify(user));
+        const userForCache = { ...user };
+        const cacheAvatar = isUsableAvatarUrl(userForCache.avatarUrl) ? String(userForCache.avatarUrl).trim() : '';
+        if (!cacheAvatar) {
+            delete userForCache.avatarUrl;
+        } else {
+            userForCache.avatarUrl = cacheAvatar;
+        }
+
+        try {
+            const previousRaw = localStorage.getItem('cached_user_profile');
+            if (previousRaw) {
+                const previous = JSON.parse(previousRaw);
+                const sameUser = (previous?.objectId && userForCache.objectId && previous.objectId === userForCache.objectId) ||
+                    (previous?.email && userForCache.email && previous.email === userForCache.email);
+                if (sameUser && isUsableAvatarUrl(previous?.avatarUrl) && !isGeneratedAvatarUrl(previous?.avatarUrl) &&
+                    (isGeneratedAvatarUrl(userForCache.avatarUrl) ||
+                        !isUsableAvatarUrl(userForCache.avatarUrl) ||
+                        isTransientAvatarUrl(userForCache.avatarUrl))) {
+                    userForCache.avatarUrl = previous.avatarUrl;
+                }
+            }
+        } catch (_) {
+            // ignore cache parse errors
+        }
+
+        if (isGeneratedAvatarUrl(userForCache.avatarUrl) || isTransientAvatarUrl(userForCache.avatarUrl)) {
+            delete userForCache.avatarUrl;
+        }
+
+        localStorage.setItem('cached_user_profile', JSON.stringify(userForCache));
     } else {
         if (defaultIcon) {
             defaultIcon.className = 'fas fa-user-circle'; // Ensure spinner is cleared
@@ -725,7 +969,9 @@ function updateUserUI(user) {
         if (userDropdown) userDropdown.classList.remove('active');
         if (enterStudioBtn) enterStudioBtn.style.display = 'none';
 
-        localStorage.removeItem('cached_user_profile');
+        if (clearCacheOnLogout) {
+            localStorage.removeItem('cached_user_profile');
+        }
     }
 }
 
@@ -988,6 +1234,17 @@ window.handleGoogleCredentialResponse = async (response) => {
 
         console.log('✅ Google ID Token login successful!');
 
+        // Update avatar/button immediately from OAuth response metadata (no extra round-trip wait).
+        if (data?.user) {
+            updateUserUI({
+                objectId: data.user.id,
+                username: data.user.email,
+                email: data.user.email,
+                nickname: data.user.user_metadata?.full_name || data.user.email?.split('@')[0],
+                avatarUrl: data.user.user_metadata?.avatar_url || ''
+            }, { animateAvatar: false, preferImmediateAvatar: true });
+        }
+
         // Reset spinner on successful login before it gets hidden
         if (defaultIcon) defaultIcon.className = 'fas fa-user-circle';
 
@@ -1000,6 +1257,7 @@ window.handleGoogleCredentialResponse = async (response) => {
                 toggleLoginModal();
             }
         }
+        window.isVerifyingGoogleToken = false;
     } catch (error) {
         window.isVerifyingGoogleToken = false;
         console.error('❌ Google ID Token login error:', error);
@@ -1227,7 +1485,7 @@ async function forceLogout(event) {
     localStorage.removeItem('remembered_credentials');
     localStorage.removeItem('cached_user_profile');
 
-    updateUserUI(null);
+    updateUserUI(null, { clearCacheOnLogout: true });
     console.log('✅ 已强制登出');
 }
 
@@ -1359,18 +1617,29 @@ document.addEventListener('DOMContentLoaded', async function () {
                     recordLoginIP(session.user.id);
                 }
             } else if (event === 'SIGNED_OUT') {
-                updateUserUI(null);
+                updateUserUI(null, { clearCacheOnLogout: true });
             }
             authStateInitialized = true;
         }, 100);
     });
 });
 
+let profileModalOpenLock = false;
+let lastProfileModalOpenAt = 0;
+
 // ==================== 打开个人资料模态框 (Supabase 版本) ====================
 async function openProfileModal(event) {
     if (event) {
+        if (typeof event.preventDefault === 'function') event.preventDefault();
         event.stopPropagation();
     }
+
+    const now = Date.now();
+    if (profileModalOpenLock || now - lastProfileModalOpenAt < 250) {
+        return;
+    }
+    profileModalOpenLock = true;
+    lastProfileModalOpenAt = now;
 
     // 关闭下拉菜单
     const dropdown = document.getElementById('userDropdown');
@@ -1384,10 +1653,13 @@ async function openProfileModal(event) {
         // 不在主页，跳转到主页并设置标记打开模态框
         sessionStorage.setItem('openProfileModal', 'true');
         window.location.href = 'index.html';
+        profileModalOpenLock = false;
         return;
     }
 
-    // 立即打开模态框（显示加载中状态）
+    const wasActive = modal.classList.contains('active');
+
+    // 立即打开模态框
     modal.classList.add('active');
     modal.style.visibility = 'visible';
     modal.style.opacity = '1';
@@ -1414,9 +1686,9 @@ async function openProfileModal(event) {
         profileModalElement.classList.remove('wide');
     }
 
-    // 触发资料页面的错落上升动画（在modal打开时立即触发）
+    // 仅首次打开时触发错落动画，避免重复闪烁
     const profileFront = document.querySelector('.profile-front');
-    if (profileFront) {
+    if (profileFront && !wasActive) {
         setTimeout(() => {
             profileFront.classList.remove('animate-in');
             void profileFront.offsetWidth;
@@ -1424,14 +1696,10 @@ async function openProfileModal(event) {
         }, 50);
     }
 
-    // 设置加载状态
+    // 保持当前数据，避免每次打开先闪“加载中...”
     const nicknameSpan = document.getElementById('profileModalNickname');
     const emailDiv = document.getElementById('profileModalEmail');
     const memberSinceSpan = document.getElementById('profileMemberSince');
-
-    if (nicknameSpan) nicknameSpan.textContent = '加载中...';
-    if (emailDiv) emailDiv.textContent = '加载中...';
-    if (memberSinceSpan) memberSinceSpan.textContent = '加载中...';
 
     // 异步加载数据（不阻塞UI）
     (async () => {
@@ -1444,36 +1712,16 @@ async function openProfileModal(event) {
                 return;
             }
 
-            // 获取 profile
-            const { data: profile } = await window.supabaseClient
-                .from('profiles')
-                .select('*')
-                .eq('id', user.id)
-                .single();
-
-            // 更新模态框内容
-            const avatarImg = document.getElementById('profileModalAvatar');
-
-            if (avatarImg) {
-                avatarImg.src = profile?.avatar_url || user.user_metadata?.avatar_url ||
-                    `https://ui-avatars.com/api/?name=${encodeURIComponent(user.email)}&background=random`;
-            }
-
-            if (emailDiv) {
-                emailDiv.textContent = user.email;
-            }
-
-            if (nicknameSpan) {
-                nicknameSpan.textContent = profile?.username || user.user_metadata?.full_name || user.email.split('@')[0];
-            }
+            const optimisticNickname = user.user_metadata?.full_name || user.email.split('@')[0];
+            if (emailDiv) emailDiv.textContent = user.email;
+            if (nicknameSpan) nicknameSpan.textContent = optimisticNickname;
+            setProfileModalAvatar(user.user_metadata?.avatar_url, user.email || optimisticNickname);
 
             if (memberSinceSpan) {
                 const createdAt = new Date(user.created_at);
                 const year = createdAt.getFullYear();
                 const month = createdAt.getMonth() + 1;
                 const day = createdAt.getDate();
-
-                // Use i18n for member since text
                 const isEnglish = window.i18n?.isEnglish?.();
                 if (isEnglish) {
                     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -1482,11 +1730,34 @@ async function openProfileModal(event) {
                     memberSinceSpan.textContent = `注册于 ${year}年${month}月${day}日`;
                 }
             }
+
+            // 获取 profile
+            const { data: profile } = await window.supabaseClient
+                .from('profiles')
+                .select('*')
+                .eq('id', user.id)
+                .single();
+
+            const resolvedNickname = profile?.username || optimisticNickname;
+            const resolvedAvatar = profile?.avatar_url || user.user_metadata?.avatar_url || getAvatarFallbackUrl(user.email);
+            setProfileModalAvatar(resolvedAvatar, user.email || resolvedNickname);
+
+            if (emailDiv) {
+                emailDiv.textContent = user.email;
+            }
+
+            if (nicknameSpan) {
+                nicknameSpan.textContent = resolvedNickname;
+            }
         } catch (error) {
             console.error('Error loading profile:', error);
             if (nicknameSpan) nicknameSpan.textContent = '加载失败';
             if (emailDiv) emailDiv.textContent = '加载失败';
             if (memberSinceSpan) memberSinceSpan.textContent = '加载失败';
+        } finally {
+            setTimeout(() => {
+                profileModalOpenLock = false;
+            }, 120);
         }
     })();
 }
@@ -1517,7 +1788,7 @@ async function handleSwitchAccount(event) {
     console.log('🗑️ 已清除记住的凭证');
 
     // 重置UI为未登录状态
-    updateUserUI(null);
+    updateUserUI(null, { clearCacheOnLogout: true });
 
     // 打开登录弹窗
     setTimeout(() => {

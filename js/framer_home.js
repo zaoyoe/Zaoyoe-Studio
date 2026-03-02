@@ -20,6 +20,9 @@ const FramerHome = {
     // Check performance and apply degradation if needed
     this.checkPerformance();
 
+    // First paint Hero immediately to avoid blank first screen on slow networks
+    this.renderHeroFirstPaint();
+
     // Wait for i18n to be ready before loading data
     if (window.i18n?.ready) {
       await window.i18n.ready();
@@ -111,6 +114,80 @@ const FramerHome = {
     }
   },
 
+  readHeroTextCache() {
+    try {
+      const raw = sessionStorage.getItem('homepage_hero_text');
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed?.title) return null;
+      const age = Date.now() - (parsed.timestamp || 0);
+      if (age > 7 * 24 * 60 * 60 * 1000) return null;
+      return parsed;
+    } catch (e) {
+      return null;
+    }
+  },
+
+  writeHeroTextCache(hero) {
+    if (!hero?.title) return;
+    try {
+      sessionStorage.setItem('homepage_hero_text', JSON.stringify({
+        title: hero.title,
+        subtitle: hero.subtitle || '',
+        timestamp: Date.now()
+      }));
+    } catch (e) {
+      // ignore storage failures
+    }
+  },
+
+  /**
+   * Render Hero immediately from prefetched/session/fallback data.
+   * This runs before full async data load to remove perceived delay.
+   */
+  renderHeroFirstPaint() {
+    try {
+      const section = document.getElementById('hero-section');
+      if (!section) return;
+
+      const sv = window.SectionVisibility;
+      if (sv && !sv.isVisible('hero')) return;
+
+      let heroData = null;
+      try {
+        const prefetchRaw = sessionStorage.getItem('homepage_prefetch');
+        if (prefetchRaw) {
+          const prefetch = JSON.parse(prefetchRaw);
+          const age = Date.now() - prefetch.timestamp;
+          if (age < 300000) {
+            heroData = prefetch.cachedData?.hero || this.buildHeroData(prefetch.config?.hero || {});
+          }
+        }
+      } catch (e) {
+        // Ignore parse errors and fallback below
+      }
+
+      if (!heroData) {
+        const heroTextCache = this.readHeroTextCache();
+        if (heroTextCache) {
+          heroData = this.buildHeroData({});
+          heroData.title = heroTextCache.title;
+          heroData.subtitle = heroTextCache.subtitle || heroData.subtitle;
+        }
+      }
+
+      if (!heroData) {
+        heroData = this.buildHeroData({});
+      }
+
+      this.cachedData = this.cachedData || {};
+      this.cachedData.hero = heroData;
+      this.renderHero();
+    } catch (error) {
+      console.warn('Hero first paint skipped:', error.message);
+    }
+  },
+
   /**
    * Load all configuration and aggregate data
    */
@@ -125,6 +202,7 @@ const FramerHome = {
         if (age < 300000 && prefetch.cachedData && prefetch.config) {
           this.cachedData = prefetch.cachedData;
           this.config = prefetch.config;
+          this.writeHeroTextCache(this.cachedData.hero);
           console.log(`⚡ Using prefetched homepage data (${Math.round(age / 1000)}s old)`);
           return;
         }
@@ -137,28 +215,26 @@ const FramerHome = {
       // Fetch homepage config from Supabase
       this.config = await this.fetchHomepageConfig();
 
-      // Aggregate all section data EXCEPT ticker (which depends on shop data)
+      // Aggregate section data in parallel to reduce initial waiting time
+      const [prompts, shop, guestbook, shopCategories] = await Promise.all([
+        this.aggregatePrompts(this.config.prompts || {}),
+        this.aggregateShop(this.config.shop || {}),
+        this.aggregateGuestbook(this.config.guestbook || {}),
+        this.fetchShopCategories()
+      ]);
+
       this.cachedData = {
-        hero: this.buildHeroData(this.config.hero),
-        prompts: await this.aggregatePrompts(this.config.prompts),
-        shop: await this.aggregateShop(this.config.shop),
-        verify: this.buildVerifyData(this.config.verify),
-        guestbook: await this.aggregateGuestbook(this.config.guestbook)
+        hero: this.buildHeroData(this.config.hero || {}),
+        prompts,
+        shop,
+        verify: this.buildVerifyData(this.config.verify || {}),
+        guestbook,
+        shopCategories
       };
 
       // Build ticker data AFTER cachedData is assigned so it can access shop data
-      this.cachedData.ticker = await this.buildTickerData(this.config.ticker);
-
-      // Fetch shop categories from dedicated table (for nav dropdown)
-      try {
-        const { data } = await window.supabaseClient
-          .from('shop_categories')
-          .select('name')
-          .order('sort_order');
-        this.cachedData.shopCategories = (data || []).map(c => c.name);
-      } catch (e) {
-        this.cachedData.shopCategories = [];
-      }
+      this.cachedData.ticker = await this.buildTickerData(this.config.ticker || {});
+      this.writeHeroTextCache(this.cachedData.hero);
 
       console.log('📦 Data aggregated:', this.cachedData);
 
@@ -176,6 +252,21 @@ const FramerHome = {
       console.error('❌ Failed to load data:', error);
       // Use fallback default data
       this.useFallbackData();
+    }
+  },
+
+  /**
+   * Fetch shop categories for nav dropdown (safe fallback)
+   */
+  async fetchShopCategories() {
+    try {
+      const { data } = await window.supabaseClient
+        .from('shop_categories')
+        .select('name')
+        .order('sort_order');
+      return (data || []).map(c => c.name);
+    } catch (e) {
+      return [];
     }
   },
 
@@ -209,7 +300,7 @@ const FramerHome = {
   buildHeroData(config) {
     return {
       // Prioritize i18n translations for multilingual support
-      title: this.getLocalizedField(config, 'title') || window.i18n?.t('home.hero.title') || '早鸟工作室',
+      title: this.getLocalizedField(config, 'title') || window.i18n?.t('home.hero.title') || '早鸟',
       subtitle: this.getLocalizedField(config, 'subtitle') || window.i18n?.t('home.hero.subtitle') || '创意 · 效率 · 无限可能',
       cta: config.cta || {
         primary: { text: '开始探索', link: '#prompts' },
@@ -229,10 +320,12 @@ const FramerHome = {
    * Aggregate prompts data (auto or manual)
    */
   async aggregatePrompts(config) {
+    const promptPool = Array.isArray(window.PROMPTS) ? window.PROMPTS : [];
+
     // Manual mode - use custom selected items
     if (!config.enable_auto && config.featured_items?.length > 0) {
       return config.featured_items
-        .map(item => window.PROMPTS.find(p => p.id === item.id))
+        .map(item => promptPool.find(p => p.id === item.id))
         .filter(Boolean)
         .slice(0, config.max_items || 24);
     }
@@ -241,7 +334,7 @@ const FramerHome = {
     const maxItems = config.max_items || 24;
     const sortStrategy = config.sort || 'popular';
 
-    let sorted = [...window.PROMPTS];
+    let sorted = [...promptPool];
 
     if (sortStrategy === 'popular') {
       // Sort by number of AI tags (rough popularity metric)
@@ -390,12 +483,13 @@ const FramerHome = {
   /**
    * Build ticker data (tags + products)
    */
-  async buildTickerData(config) {
+  async buildTickerData(config = {}) {
     const lang = window.i18n?.getCurrentLanguage() || 'zh';
+    const promptPool = Array.isArray(window.PROMPTS) ? window.PROMPTS : [];
 
     // Extract tags from aiTags (bilingual support)
     const tagSet = new Set();
-    window.PROMPTS.forEach(p => {
+    promptPool.forEach(p => {
       if (p.aiTags && typeof p.aiTags === 'object') {
         // Extract from all categories with current language
         ['styles', 'objects', 'scenes', 'mood'].forEach(cat => {
@@ -424,6 +518,7 @@ const FramerHome = {
   */
   useFallbackData() {
     console.warn('⚠️ Using fallback data');
+    const promptPool = Array.isArray(window.PROMPTS) ? window.PROMPTS : [];
     this.config = {
       hero: { enable_auto: true },
       prompts: { enable_auto: true, max_items: 24, sort: 'popular', section_title: 'AI 提示词工作室', section_subtitle: '让创作更高效，让灵感更自由' },
@@ -436,12 +531,12 @@ const FramerHome = {
     // Rebuild cachedData with fallback config
     this.cachedData = {
       hero: this.buildHeroData(this.config.hero),
-      prompts: window.PROMPTS ? window.PROMPTS.slice(0, 6) : [],
+      prompts: promptPool.slice(0, 6),
       shop: [],
       verify: this.buildVerifyData(this.config.verify),
       guestbook: [],
       ticker: {
-        top: window.PROMPTS ? [...new Set(window.PROMPTS.flatMap(p => p.tags || []))].slice(0, 20) : [],
+        top: [...new Set(promptPool.flatMap(p => p.tags || []))].slice(0, 20),
         bottom: []
       }
     };
@@ -771,12 +866,30 @@ const FramerHome = {
   renderHero() {
     const data = this.cachedData.hero;
     const section = document.getElementById('hero-section');
+    if (!data || !section) return;
 
     // Filter out entries for disabled sections
     const sv = window.SectionVisibility;
     const visibleEntries = sv
       ? data.entries.filter(e => !e.section || sv.isVisible(e.section))
       : data.entries;
+
+    const heroSignature = JSON.stringify({
+      title: data.title || '',
+      subtitle: data.subtitle || '',
+      entries: visibleEntries.map((entry) => ({
+        icon: entry.icon || '',
+        text: entry.text || '',
+        link: entry.link || '',
+        action: entry.action || '',
+        color: entry.color || ''
+      }))
+    });
+
+    // Avoid replacing Hero DOM when content is unchanged (prevents visual jump on re-init).
+    if (section.dataset.renderSignature === heroSignature) {
+      return;
+    }
 
     section.innerHTML = `
       <div class="raycast-beams">
@@ -809,6 +922,13 @@ const FramerHome = {
         </div>
       </div>
     `;
+    section.dataset.renderSignature = heroSignature;
+    this.writeHeroTextCache(data);
+
+    // Hero is above-the-fold; reveal immediately instead of waiting for observer.
+    section.querySelectorAll('.fade-in-up').forEach(el => {
+      el.classList.add('visible');
+    });
 
     // Initialize carousel interactions
     this.initCarousel();
@@ -1221,18 +1341,6 @@ const FramerHome = {
 
     // Center all cards initially by scrolling to middle of carousel
     let isInitializing = true; // Flag to prevent initial scroll from triggering interaction
-    setTimeout(() => {
-      const scrollWidth = carousel.scrollWidth - carousel.clientWidth;
-      carousel.scrollTo({
-        left: scrollWidth / 2,
-        behavior: 'instant'
-      });
-      // Mark initialization complete after scroll settles
-      setTimeout(() => {
-        isInitializing = false;
-        updateCarousel(); // Sync tick visibility on init
-      }, 50);
-    }, 100);
 
     // Update card scales and progress indicator
     const updateCarousel = () => {
@@ -1294,6 +1402,21 @@ const FramerHome = {
         card.style.opacity = opacity;
       });
     };
+
+    const applyInitialCenter = () => {
+      // Skip if node was replaced by a later render.
+      if (!document.body.contains(carousel)) return;
+      const maxScroll = Math.max(0, carousel.scrollWidth - carousel.clientWidth);
+      carousel.scrollLeft = maxScroll / 2;
+      updateCarousel();
+    };
+
+    // Apply immediately (before first paint) + one RAF sync for late layout settles.
+    applyInitialCenter();
+    requestAnimationFrame(() => {
+      applyInitialCenter();
+      isInitializing = false;
+    });
 
     // Track scroll activity for thumb glow effect
     let scrollTimeout = null;
@@ -1375,7 +1498,7 @@ const FramerHome = {
       });
     });
 
-    // Initial update
+    // Initial update (safe no-op if already centered)
     requestAnimationFrame(updateCarousel);
   },
 

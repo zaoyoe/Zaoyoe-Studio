@@ -352,7 +352,8 @@
     content: "";
     flex: 1;
     height: 1px;
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.3);
+    margin-right: 14px;
 }
 
 .login-divider span {

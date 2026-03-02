@@ -3,10 +3,20 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="早鸟工作室 - AI 驱动的创意资源平台，提供 Prompt 提示词、API 验证、资源商城等服务">
     <meta name="keywords" content="AI提示词,Prompt Gallery,Gemini验证,资源商城,早鸟工作室">
     <title>早鸟工作室 - 创意·效率·无限可能</title>
+    <link rel="canonical" href="https://zaoyoe.com/">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="早鸟工作室 - 创意·效率·无限可能">
+    <meta property="og:description" content="AI 驱动的创意资源平台，提供 Prompt 提示词、API 验证、资源商城等服务。">
+    <meta property="og:url" content="https://zaoyoe.com/">
+    <meta property="og:image" content="https://zaoyoe.com/assets/favicon.png">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="早鸟工作室 - 创意·效率·无限可能">
+    <meta name="twitter:description" content="AI 驱动的创意资源平台，提供 Prompt 提示词、API 验证、资源商城等服务。">
+    <meta name="twitter:image" content="https://zaoyoe.com/assets/favicon.png">
     <link rel="icon" type="image/png" href="assets/favicon.png">
 
     <!-- Preconnect for performance -->
@@ -87,6 +97,18 @@
         .login-trigger-btn.logged-in:hover .nav-user-avatar,
         .login-trigger-btn.logged-in:hover #navUserAvatar {
             transform: scale(0.85) !important;
+        }
+
+        .visually-hidden-h1 {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
         }
     </style>
 </head>
@@ -171,13 +193,16 @@
                     <i class="fas fa-chevron-down"></i>
                 </button>
                 <div class="mobile-submenu" id="support-mobile">
-                    <a href="https://t.me/zaoyoe" target="_blank" class="mobile-menu-link">TG</a>
-                    <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank" class="mobile-menu-link"><span
+                    <a href="https://t.me/zaoyoe" target="_blank" rel="noopener noreferrer" class="mobile-menu-link">TG</a>
+                    <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank" rel="noopener noreferrer" class="mobile-menu-link"><span
                             data-i18n="nav.tgGroup">TG群组</span></a>
                 </div>
             </div>
         </div>
     </div>
+
+    <main id="main-content" role="main">
+        <h1 class="visually-hidden-h1">早鸟工作室 - AI 驱动的创意资源平台</h1>
 
     <!-- Hero Section -->
     <section id="hero-section" class="hero-section"></section>
@@ -208,7 +233,7 @@
                     AI 驱动的创意资源平台
                 </p>
                 <div class="footer-social">
-                    <a href="https://t.me/zaoyoe" target="_blank" title="Telegram">
+                    <a href="https://t.me/zaoyoe" target="_blank" rel="noopener noreferrer" title="Telegram">
                         <i class="fab fa-telegram"></i>
                     </a>
 
@@ -227,14 +252,14 @@
             <!-- Resources -->
             <div class="footer-col">
                 <h4 data-i18n="footer.resources.title">资源</h4>
-                <a href="https://afdian.com/a/zaoyoe" target="_blank" data-i18n="footer.resources.sponsor">赞助支持</a>
+                <a href="https://afdian.com/a/zaoyoe" target="_blank" rel="noopener noreferrer" data-i18n="footer.resources.sponsor">赞助支持</a>
                 <a href="/privacy.html" data-i18n="footer.resources.privacy">隐私政策</a>
             </div>
 
             <!-- Company -->
             <div class="footer-col">
                 <h4 data-i18n="footer.about.title">关于</h4>
-                <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank" data-i18n="footer.about.tgGroup">TG群组</a>
+                <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank" rel="noopener noreferrer" data-i18n="footer.about.tgGroup">TG群组</a>
                 <span style="color: rgba(255,255,255,0.6); font-size: 14px;">zaoyoe@gmail.com</span>
 
             </div>
@@ -244,15 +269,16 @@
             <span data-i18n="footer.bottom.copyright">© 早鸟工作室 2026. All rights reserved.</span>
             <div>
                 <a href="/privacy.html" data-i18n="footer.bottom.privacy">隐私政策</a>
-                <a href="https://afdian.com/a/zaoyoe" target="_blank" data-i18n="footer.bottom.support">支持我们</a>
+                <a href="https://afdian.com/a/zaoyoe" target="_blank" rel="noopener noreferrer" data-i18n="footer.bottom.support">支持我们</a>
             </div>
         </div>
     </footer>
+    </main>
 
     <!-- Auth System (integrated from inject-auth.js) -->
     <script src="./js/avatar-uploader.js" defer></script>
-    <script src="./supabase-auth-functions.js?v=20260302_G_AUTH" defer></script>
-    <script src="./inject-auth.js?v=20260302_G_AUTH" defer></script>
+    <script src="./supabase-auth-functions.js?v=20260303_SESSION_STABLE" defer></script>
+    <script src="./inject-auth.js?v=20260303_SESSION_STABLE" defer></script>
     <script src="./notification-client.js?v=20260209" defer></script>
 
     <!-- Supabase Guestbook Functions (for modal form) -->
@@ -539,9 +565,6 @@
             window._prefetchGuestbook = () => handleHover('guestbook');
         })();
     </script>
-</body>
-
-</html>
 <!-- Profile Modal (for user profile/security settings) -->
 <script src="security-cards.js?v=1" defer></script>
 <div class="modal-overlay" id="profileModal" onmousedown="closeModal(event)" onmouseup="closeModal(event)">
@@ -656,10 +679,10 @@
                             <!-- Change Password Panel -->
                             <div class="security-detail-content" id="detail-change-password" style="display: none;">
                                 <h3 class="detail-title" data-i18n="security.changePassword">修改密码</h3>
-                                <input type="password" id="oldPasswordInput" placeholder="当前密码" class="security-input"
+                                <input type="password" id="oldPasswordInput" placeholder="当前密码" class="security-input glass-input"
                                     autocomplete="new-password" data-i18n-placeholder="security.currentPassword">
                                 <input type="password" id="newPasswordInput" placeholder="新密码 (至少6位)"
-                                    class="security-input" autocomplete="new-password"
+                                    class="security-input glass-input" autocomplete="new-password"
                                     data-i18n-placeholder="security.newPassword">
                                 <button class="gradient-btn" onclick="changePassword()"
                                     data-i18n="security.updatePassword">更新密码</button>
@@ -671,13 +694,13 @@
                                 <p class="detail-desc" data-i18n="security.bindPhoneDesc">绑定手机号可以增强账户安全性</p>
                                 <div class="input-group input-with-action"
                                     style="max-width: 100%; margin-bottom: 12px;">
-                                    <input type="tel" id="phoneNumberInput" placeholder="输入手机号" class="security-input"
+                                    <input type="tel" id="phoneNumberInput" placeholder="输入手机号" class="security-input glass-input"
                                         maxlength="11" data-i18n-placeholder="security.enterPhone">
                                     <button type="button" class="verify-code-btn" id="sendPhoneCodeBtn"
                                         onclick="sendPhoneVerificationCode()"
                                         data-i18n="security.getVerifyCode">获取验证码</button>
                                 </div>
-                                <input type="text" id="phoneCodeInput" placeholder="输入6位验证码" class="security-input"
+                                <input type="text" id="phoneCodeInput" placeholder="输入6位验证码" class="security-input glass-input"
                                     maxlength="6" data-i18n-placeholder="security.enterVerifyCode">
                                 <button class="gradient-btn" onclick="bindPhone()"
                                     data-i18n="security.bindPhone">绑定手机号</button>
@@ -703,11 +726,11 @@
                         <div class="mobile-security-section">
                             <h3 class="mobile-section-title" data-i18n="security.changePassword">修改密码</h3>
                             <div class="input-group">
-                                <input type="password" id="mobile_oldPassword" class="security-input" placeholder="当前密码"
+                                <input type="password" id="mobile_oldPassword" class="security-input glass-input" placeholder="当前密码"
                                     autocomplete="new-password" data-i18n-placeholder="security.currentPassword">
                             </div>
                             <div class="input-group">
-                                <input type="password" id="mobile_newPassword" class="security-input"
+                                <input type="password" id="mobile_newPassword" class="security-input glass-input"
                                     placeholder="新密码 (至少6位)" autocomplete="new-password"
                                     data-i18n-placeholder="security.newPassword">
                             </div>
@@ -720,11 +743,11 @@
                             <h3 class="mobile-section-title" data-i18n="security.bindPhone">绑定手机号</h3>
                             <p class="mobile-section-desc" data-i18n="security.bindPhoneDesc">绑定手机号可以增强账户安全性</p>
                             <div class="input-group">
-                                <input type="tel" id="mobile_phoneNumberInput" class="security-input"
+                                <input type="tel" id="mobile_phoneNumberInput" class="security-input glass-input"
                                     placeholder="输入手机号" data-i18n-placeholder="security.enterPhone">
                             </div>
                             <div class="input-group" style="display: flex; gap: 10px;">
-                                <input type="text" id="mobile_phoneCodeInput" class="security-input"
+                                <input type="text" id="mobile_phoneCodeInput" class="security-input glass-input"
                                     placeholder="输入6位验证码" style="flex: 1;"
                                     data-i18n-placeholder="security.enterVerifyCode">
                                 <button class="code-btn" id="mobile_sendPhoneCodeBtn"
@@ -751,3 +774,6 @@
         </div>
     </div>
 </div>
+</body>
+
+</html>

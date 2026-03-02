@@ -87,9 +87,10 @@
 
             // Build minimal hero data
             const heroConfig = config.hero || {};
+            const currentLang = window.i18n?.getCurrentLanguage?.() || 'zh';
             const hero = {
-                title: heroConfig.title || '早鸟工作室',
-                subtitle: heroConfig.subtitle || 'AI 驱动的创意资源平台',
+                title: heroConfig[`title_${currentLang}`] || heroConfig.title || window.i18n?.t('home.hero.title') || '早鸟',
+                subtitle: heroConfig[`subtitle_${currentLang}`] || heroConfig.subtitle || window.i18n?.t('home.hero.subtitle') || 'AI 驱动的创意资源平台',
                 entries: heroConfig.entries || [
                     { icon: 'fa-palette', text: '提示词图库', link: '/prompts.html', color: '#a78bfa' },
                     { icon: 'fa-store', text: '资源商城', link: '/shop.html', color: '#34d399' },

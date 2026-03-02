@@ -3,16 +3,24 @@
 
     // 🆕 Check for cached user profile to prevent avatar flashing
     let cachedProfile = null;
+    const isGeneratedAvatarUrl = (url) => /ui-avatars\.com|dicebear\.com/i.test(String(url || ''));
+    const isTransientAvatarUrl = (url) => /googleusercontent\.com|lh3\.googleusercontent\.com/i.test(String(url || ''));
     try {
         const cached = localStorage.getItem('cached_user_profile');
-        if (cached) cachedProfile = JSON.parse(cached);
+        if (cached) {
+            cachedProfile = JSON.parse(cached);
+            if (cachedProfile && (isGeneratedAvatarUrl(cachedProfile.avatarUrl) || isTransientAvatarUrl(cachedProfile.avatarUrl))) {
+                delete cachedProfile.avatarUrl;
+                localStorage.setItem('cached_user_profile', JSON.stringify(cachedProfile));
+            }
+        }
     } catch (e) { /* ignore */ }
 
     const isLoggedIn = !!cachedProfile;
-    const avatarUrl = cachedProfile?.avatarUrl || '';
-    const defaultIconDisplay = isLoggedIn ? 'none' : 'inline';
-    const avatarDisplay = isLoggedIn ? 'inline-block' : 'none';
-    const avatarOpacity = isLoggedIn ? '1' : '0';
+    const avatarUrl = (!isGeneratedAvatarUrl(cachedProfile?.avatarUrl) ? (cachedProfile?.avatarUrl || '') : '');
+    const defaultIconDisplay = (isLoggedIn && avatarUrl) ? 'none' : 'inline';
+    const avatarDisplay = (isLoggedIn && avatarUrl) ? 'inline-block' : 'none';
+    const avatarOpacity = (isLoggedIn && avatarUrl) ? '1' : '0';
 
     // 1. Define HTML Structure - SEPARATED for flexible injection
     // Auth Button ONLY (will be injected into #auth-container if available)
@@ -122,7 +130,7 @@
 
                     <!-- Forgot Password Link -->
                     <div style="text-align: right; margin-bottom: 16px;">
-                        <span class="forgot-password-link" onclick="switchAuthView('reset')" data-i18n="auth.forgotPassword">忘记密码了吗？</span>
+                        <span class="forgot-password-link" onclick="switchAuthView('reset')" data-i18n="auth.forgotPassword">忘记密码？</span>
                     </div>
 
                     <!-- Remember Me Checkbox -->
@@ -954,7 +962,7 @@
             loadCSS(`login_dual_mode.css?v=20260302_G_AUTH`);
 
             // Supabase Auth
-            await loadScript('./supabase-auth-functions.js?v=20260302_G_AUTH');
+            await loadScript('./supabase-auth-functions.js?v=20260303_SESSION_STABLE');
 
             // ✅ 加载 script.js (包含 sendVerificationCode 函数)
             await loadScript('./script.js?v=20260302_G_AUTH');

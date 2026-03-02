@@ -26,6 +26,83 @@
     let batchStats = { success: 0, failed: 0, cancelled: 0, total: 0 };
     let activeTasks = new Map(); // taskId -> { index, verificationId, timer, aborted }
     let historyData = []; // Cached history for export
+    let authBootstrapResolved = false;
+    let hadOptimisticLogin = false;
+    let authNullConfirmTimer = null;
+
+    function getUserId(user) {
+        return user?.id || user?.user_id || user?.objectId || null;
+    }
+
+    function isTransientAvatarUrl(url) {
+        if (!url) return false;
+        return /googleusercontent\.com|lh3\.googleusercontent\.com/i.test(String(url));
+    }
+
+    function isGeneratedAvatarUrl(url) {
+        if (!url) return false;
+        return /ui-avatars\.com|dicebear\.com/i.test(String(url));
+    }
+
+    function readCachedProfile() {
+        try {
+            const raw = localStorage.getItem('cached_user_profile');
+            if (!raw) return null;
+            const parsed = JSON.parse(raw);
+            const userId = getUserId(parsed);
+            if (!userId) return null;
+            return {
+                ...parsed,
+                id: parsed.id || userId,
+                user_id: parsed.user_id || userId,
+                objectId: parsed.objectId || userId
+            };
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function persistMergedCachedProfile(authUser) {
+        const authUserId = getUserId(authUser);
+        if (!authUserId) return;
+
+        const cached = readCachedProfile() || {};
+        const incomingMeta = (authUser?.user_metadata && typeof authUser.user_metadata === 'object')
+            ? authUser.user_metadata
+            : {};
+        const cachedMeta = (cached?.user_metadata && typeof cached.user_metadata === 'object')
+            ? cached.user_metadata
+            : {};
+
+        const merged = {
+            ...cached,
+            id: authUserId,
+            user_id: authUserId,
+            objectId: authUserId,
+            email: authUser?.email || cached?.email || '',
+            user_metadata: { ...cachedMeta, ...incomingMeta }
+        };
+
+        const incomingNickname = typeof authUser?.nickname === 'string' ? authUser.nickname.trim() : '';
+        const metadataName = typeof incomingMeta?.full_name === 'string' ? incomingMeta.full_name.trim() : '';
+        if (!merged.nickname && (incomingNickname || metadataName)) {
+            merged.nickname = incomingNickname || metadataName;
+        }
+
+        const incomingAvatarRaw = typeof authUser?.avatarUrl === 'string' ? authUser.avatarUrl.trim() : '';
+        const metadataAvatarRaw = typeof incomingMeta?.avatar_url === 'string' ? incomingMeta.avatar_url.trim() : '';
+        const incomingAvatar = isTransientAvatarUrl(incomingAvatarRaw) ? '' : incomingAvatarRaw;
+        const metadataAvatar = isTransientAvatarUrl(metadataAvatarRaw) ? '' : metadataAvatarRaw;
+        if (!merged.avatarUrl && (incomingAvatar || metadataAvatar)) {
+            merged.avatarUrl = incomingAvatar || metadataAvatar;
+        }
+
+        if (isGeneratedAvatarUrl(merged.avatarUrl) || isTransientAvatarUrl(merged.avatarUrl)) {
+            delete merged.avatarUrl;
+        }
+
+        localStorage.setItem('cached_user_profile', JSON.stringify(merged));
+    }
 
     // =============================================
     // Bilingual Status Messages (hardcoded)
@@ -254,17 +331,12 @@
         await loadConfig();
 
         let isLoggedIn = false;
-        try {
-            const cachedProfile = localStorage.getItem('cached_user_profile');
-            if (cachedProfile) {
-                const user = JSON.parse(cachedProfile);
-                if (user && (user.id || user.user_id)) {
-                    if (!user.id && user.user_id) user.id = user.user_id;
-                    currentUser = user;
-                    isLoggedIn = true;
-                }
-            }
-        } catch (e) { /* ignored */ }
+        const cachedUser = readCachedProfile();
+        if (cachedUser) {
+            currentUser = cachedUser;
+            isLoggedIn = true;
+        }
+        hadOptimisticLogin = isLoggedIn;
 
         if (!window.i18n || typeof window.i18n.t !== 'function') {
             await new Promise(resolve => {
@@ -533,31 +605,94 @@
     // =============================================
     function setupAuthListener() {
         if (!window.supabaseClient) return;
-        window.supabaseClient.auth.getUser().then(({ data: { user } }) => updateAuthState(user));
-        window.supabaseClient.auth.onAuthStateChange((_, session) => updateAuthState(session?.user || null));
+
+        const applyResolvedAuthState = (user, source = 'unknown') => {
+            if (getUserId(user)) {
+                authBootstrapResolved = true;
+                updateAuthState(user, { source });
+                return;
+            }
+
+            // Keep optimistic logged-in UI until session restore is confirmed.
+            if (!authBootstrapResolved && hadOptimisticLogin) {
+                console.log(`[VerifyWidget] Skip transient null auth from ${source}`);
+                return;
+            }
+
+            authBootstrapResolved = true;
+            updateAuthState(null, { source, clearCache: true });
+        };
+
+        window.supabaseClient.auth.getUser()
+            .then(({ data: { user } }) => applyResolvedAuthState(user, 'getUser'))
+            .catch(() => applyResolvedAuthState(null, 'getUserError'));
+
+        window.supabaseClient.auth.onAuthStateChange((event, session) => {
+            if (authNullConfirmTimer) {
+                clearTimeout(authNullConfirmTimer);
+                authNullConfirmTimer = null;
+            }
+
+            if (event === 'INITIAL_SESSION') {
+                if (session?.user) {
+                    applyResolvedAuthState(session.user, 'INITIAL_SESSION');
+                    return;
+                }
+
+                if (!hadOptimisticLogin) {
+                    applyResolvedAuthState(null, 'INITIAL_SESSION_NO_SESSION');
+                    return;
+                }
+
+                // One delayed confirmation before downgrading optimistic login state.
+                authNullConfirmTimer = setTimeout(async () => {
+                    if (authBootstrapResolved) return;
+                    try {
+                        const { data: { user } } = await window.supabaseClient.auth.getUser();
+                        if (getUserId(user)) {
+                            applyResolvedAuthState(user, 'INITIAL_SESSION_CONFIRM');
+                        } else {
+                            authBootstrapResolved = true;
+                            updateAuthState(null, { source: 'INITIAL_SESSION_CONFIRM_NULL', clearCache: true });
+                        }
+                    } catch (_) {
+                        authBootstrapResolved = true;
+                        updateAuthState(null, { source: 'INITIAL_SESSION_CONFIRM_ERROR', clearCache: true });
+                    }
+                }, 1200);
+                return;
+            }
+
+            if (event === 'SIGNED_OUT') {
+                authBootstrapResolved = true;
+                updateAuthState(null, { source: 'SIGNED_OUT', clearCache: true });
+                return;
+            }
+
+            applyResolvedAuthState(session?.user || null, `onAuthStateChange:${event || 'unknown'}`);
+        });
     }
 
-    async function updateAuthState(user) {
-        currentUser = user;
+    async function updateAuthState(user, options = {}) {
+        const { clearCache = false } = options;
+        currentUser = getUserId(user) ? user : null;
         const loginPrompt = document.getElementById('verifyLoginPrompt');
         const form = document.getElementById('verifyForm');
         const balanceEl = document.getElementById('verifyBalance');
 
-        if (user) {
+        if (currentUser) {
             if (loginPrompt) loginPrompt.style.display = 'none';
             if (form) form.style.display = 'block';
             if (balanceEl) balanceEl.style.display = 'flex';
-            try {
-                localStorage.setItem('cached_user_profile', JSON.stringify({
-                    id: user.id, email: user.email, user_metadata: user.user_metadata
-                }));
-            } catch (e) { /* ignored */ }
+            persistMergedCachedProfile(currentUser);
             await loadUserBalance();
         } else {
             if (loginPrompt) loginPrompt.style.display = 'block';
             if (form) form.style.display = 'none';
             if (balanceEl) balanceEl.style.display = 'none';
-            localStorage.removeItem('cached_user_profile');
+            if (clearCache) {
+                localStorage.removeItem('cached_user_profile');
+            }
         }
     }
 

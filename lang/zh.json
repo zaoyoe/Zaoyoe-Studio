@@ -44,7 +44,7 @@
     },
     "home": {
         "hero": {
-            "title": "早鸟工作室",
+            "title": "早鸟",
             "subtitle": "创意 · 效率 · 无限可能"
         },
         "entries": {
@@ -140,7 +140,7 @@
         "or": "或者",
         "emailPlaceholder": "邮箱地址",
         "passwordPlaceholder": "密码",
-        "forgotPassword": "忘记密码了吗？",
+        "forgotPassword": "忘记密码？",
         "rememberMe": "记住密码",
         "rememberMeTip": "勾选后将自动保存您的登录信息，30天内无需重复输入密码",
         "loginBtn": "登录",

@@ -2921,7 +2921,8 @@ button.upload-icon-btn {
     content: "";
     flex: 1;
     height: 1px;
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.3);
+    margin-right: 14px;
     /* Subtle divider line */
 }
 
@@ -5181,27 +5182,115 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
 .security-input {
     width: 100%;
     box-sizing: border-box;
-    /* 确保 padding 包含在宽度内 */
-    background: transparent;
-    border: 1px solid rgba(155, 93, 229, 0.3);
-    border-radius: 8px;
-    padding: 10px 12px;
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(155, 93, 229, 0.5);
+    border-radius: 12px;
+    padding: 10px 16px;
     color: white;
-    font-size: 13px;
-    margin-bottom: 10px;
-    transition: all 0.2s ease;
+    font-size: 14px;
+    margin-bottom: 12px;
+    outline: none;
+    letter-spacing: 0.3px;
+    transition: all 0.3s ease;
 }
 
 .security-input::placeholder {
-    color: rgba(255, 255, 255, 0.4);
+    color: rgba(255, 255, 255, 0.6);
     text-shadow: none;
 }
 
 .security-input:focus {
     outline: none;
     border-color: rgba(155, 93, 229, 0.7);
-    background: transparent !important;
-    box-shadow: 0 0 0 3px rgba(155, 93, 229, 0.15);
+    background: rgba(0, 0, 0, 0.5) !important;
+    box-shadow: 0 0 0 3px rgba(155, 93, 229, 0.15), 0 0 20px rgba(168, 85, 247, 0.12);
+}
+
+/* Profile Security - keep phone bind row consistent with login modal controls */
+#profileModal .security-detail-content .input-group.input-with-action {
+    display: grid !important;
+    grid-template-columns: 1fr auto !important;
+    gap: 12px !important;
+    align-items: center !important;
+}
+
+#profileModal .security-detail-content .input-group.input-with-action .security-input.glass-input {
+    margin-bottom: 0 !important;
+    padding: 10px 16px !important;
+    padding-right: 16px !important;
+    font-size: 14px !important;
+    line-height: 1.2 !important;
+    background: rgba(0, 0, 0, 0.4) !important;
+    border: 1px solid rgba(155, 93, 229, 0.5) !important;
+    border-radius: 12px !important;
+    color: #ffffff !important;
+}
+
+#profileModal .security-detail-content .security-input.glass-input:focus {
+    border-color: rgba(155, 93, 229, 0.75) !important;
+    background: rgba(0, 0, 0, 0.5) !important;
+    box-shadow: 0 0 0 3px rgba(155, 93, 229, 0.18), 0 0 20px rgba(168, 85, 247, 0.14) !important;
+}
+
+#profileModal .security-detail-content .input-group.input-with-action .security-input.glass-input:focus {
+    border-color: rgba(155, 93, 229, 0.75) !important;
+    background: rgba(0, 0, 0, 0.5) !important;
+    box-shadow: 0 0 0 3px rgba(155, 93, 229, 0.18), 0 0 20px rgba(168, 85, 247, 0.14) !important;
+}
+
+#profileModal #sendPhoneCodeBtn.verify-code-btn,
+#profileModal #mobile_sendPhoneCodeBtn.code-btn {
+    width: auto !important;
+    min-width: 118px !important;
+    white-space: nowrap !important;
+    position: relative !important;
+    top: auto !important;
+    right: auto !important;
+    transform: none !important;
+    margin: 0 !important;
+    align-self: center !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+
+    padding: 10px 14px !important;
+    border-radius: 12px !important;
+    background: rgba(155, 93, 229, 0.2) !important;
+    border: 1px solid rgba(155, 93, 229, 0.3) !important;
+    color: #9b5de5 !important;
+    font-size: 13px !important;
+    font-weight: 600 !important;
+    line-height: 1 !important;
+    transition: all 0.3s ease !important;
+}
+
+#profileModal #sendPhoneCodeBtn.verify-code-btn:hover,
+#profileModal #mobile_sendPhoneCodeBtn.code-btn:hover {
+    background: rgba(155, 93, 229, 0.3) !important;
+    border-color: rgba(155, 93, 229, 0.5) !important;
+}
+
+#profileModal #sendPhoneCodeBtn.verify-code-btn:disabled,
+#profileModal #mobile_sendPhoneCodeBtn.code-btn:disabled {
+    opacity: 0.5 !important;
+    cursor: not-allowed !important;
+}
+
+#profileModal .mobile-security-layout .security-input.glass-input {
+    background: rgba(0, 0, 0, 0.4) !important;
+    border: 1px solid rgba(155, 93, 229, 0.5) !important;
+    border-radius: 12px !important;
+    color: #ffffff !important;
+    padding: 10px 16px !important;
+    height: auto !important;
+}
+
+#profileModal .mobile-security-layout .security-input.glass-input:focus {
+    border-color: rgba(155, 93, 229, 0.75) !important;
+    background: rgba(0, 0, 0, 0.5) !important;
+    box-shadow: 0 0 0 3px rgba(155, 93, 229, 0.18), 0 0 20px rgba(168, 85, 247, 0.14) !important;
 }
 
 .danger-zone {
@@ -5442,7 +5531,7 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     top: 50%;
     width: 100%;
     height: 1px;
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.3);
 }
 
 .login-divider span {
@@ -5938,7 +6027,7 @@ input[type="submit"],
     top: 50%;
     width: 100%;
     height: 1px;
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.3);
 }
 
 .login-divider span {
@@ -6349,12 +6438,11 @@ input[type="submit"],
    ========================================= */
 .guestbook-form input,
 .guestbook-form textarea,
-.modal-content input,
+.modal-content input:not(.security-input),
 .modal-content textarea,
 .login-card input,
 .login-card textarea,
-.nickname-edit input,
-.security-input {
+.nickname-edit input {
     background: rgba(255, 255, 255, 0.1) !important;
     border: 1px solid rgba(255, 255, 255, 0.2) !important;
     color: white !important;
@@ -6364,7 +6452,7 @@ input[type="submit"],
 
 .guestbook-form input::placeholder,
 .guestbook-form textarea::placeholder,
-.modal-content input::placeholder,
+.modal-content input:not(.security-input)::placeholder,
 .modal-content textarea::placeholder,
 .login-card input::placeholder {
     color: rgba(255, 255, 255, 0.5) !important;

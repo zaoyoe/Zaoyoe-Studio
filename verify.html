@@ -4,9 +4,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport"
-        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+        content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta name="description" content="Gemini 学生验证服务页，支持验证链接处理与账号结果查询。">
     <title data-i18n="verify.pageTitle">Gemini 验证 - Zaoyoe</title>
+    <link rel="canonical" href="https://zaoyoe.com/verify.html">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Gemini 验证 - Zaoyoe">
+    <meta property="og:description" content="Gemini 学生验证服务页，支持验证链接处理与账号结果查询。">
+    <meta property="og:url" content="https://zaoyoe.com/verify.html">
+    <meta property="og:image" content="https://zaoyoe.com/assets/favicon.png">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Gemini 验证 - Zaoyoe">
+    <meta name="twitter:description" content="Gemini 学生验证服务页，支持验证链接处理与账号结果查询。">
+    <meta name="twitter:image" content="https://zaoyoe.com/assets/favicon.png">
     <link rel="icon" type="image/png" href="assets/favicon.png">
 
     <!-- Fonts -->
@@ -117,6 +128,18 @@
             align-items: center;
             justify-content: center;
             gap: 12px;
+        }
+
+        .visually-hidden-h1 {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
         }
 
         .verify-page-header h1 i {
@@ -357,13 +380,16 @@
                     <i class="fas fa-chevron-down"></i>
                 </button>
                 <div class="mobile-submenu" id="support-mobile">
-                    <a href="https://t.me/zaoyoe" target="_blank" class="mobile-menu-link">TG</a>
-                    <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank" class="mobile-menu-link"><span
+                    <a href="https://t.me/zaoyoe" target="_blank" rel="noopener noreferrer" class="mobile-menu-link">TG</a>
+                    <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank" rel="noopener noreferrer" class="mobile-menu-link"><span
                             data-i18n="nav.tgGroup">TG群组</span></a>
                 </div>
             </div>
         </div>
     </div>
+
+    <main id="main-content" role="main">
+        <h1 class="visually-hidden-h1">Gemini 验证</h1>
 
     <!-- Main Container -->
     <div class="content-wrapper">
@@ -404,7 +430,7 @@
                         蓝色按钮的链接（不在浏览器打开）成功率更高。</li>
                     <li><span data-i18n="verify.instruction2">认证成功提示没有资格用这个链接进去:</span> <br><a
                             href="https://one.google.com/ai-student?g1_landing_page=75&utm_source=antigravity&utm_campaign=argon_limit_reached"
-                            target="_blank"
+                            target="_blank" rel="noopener noreferrer"
                             style="word-break: break-all; color: #6b9ece;">https://one.google.com/ai-student?g1_landing_page=75&utm_source=antigravity&utm_campaign=argon_limit_reached</a>
                     </li>
                     <li data-i18n="verify.instruction3">在 https://one.google.com/ai-student 的那个蓝色按钮上右键 别点进去 直接右键复制链接出来!
@@ -418,14 +444,15 @@
     <!-- Afdian Support Link (Flow Sticky Footer) -->
     <div class="verify-footer">
         <span style="font-size: 13px; color: rgba(255, 255, 255, 0.8);"><span data-i18n="verify.supportUs">支持我们</span>:
-            <a href="https://afdian.com/a/zaoyoe" target="_blank"
+            <a href="https://afdian.com/a/zaoyoe" target="_blank" rel="noopener noreferrer"
                 style="color: inherit; text-decoration: none; transition: all 0.3s; border-bottom: 1px dashed rgba(255,255,255,0.4);">afdian.com/a/zaoyoe</a>
             <span style="margin: 0 10px; opacity: 0.4;">|</span>
-            <span data-i18n="verify.chatGroup">交流群</span>: <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank"
+            <span data-i18n="verify.chatGroup">交流群</span>: <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank" rel="noopener noreferrer"
                 style="color: inherit; text-decoration: none; transition: all 0.3s; border-bottom: 1px dashed rgba(255,255,255,0.4);"
                 data-i18n="verify.clickToJoin">点击加入</a>
         </span>
     </div>
+    </main>
 
     <!-- Points Service (for balance loading) -->
     <script src="./js/services/PointsService.js"></script>
@@ -434,7 +461,7 @@
     <script src="./starry-sky.js?v=1"></script>
 
     <!-- Verify Widget Script -->
-    <script src="./verify-widget.js?v=8-full-logging"></script>
+    <script src="./verify-widget.js?v=20260303_AUTH_BOOTSTRAP_FIX"></script>
 
     <!-- Load price from config -->
     <script>
@@ -455,12 +482,9 @@
             }
         });
     </script>
-    <!-- Commercial Points System (loaded at end of body for reliability) -->
-    <script src="js/services/PointsService.js?v=2"></script>
-
     <!-- Auth Injection & Modals -->
     <script src="js/i18n.js?v=1" defer></script>
-    <script src="inject-auth.js?v=20260302_G_AUTH" defer></script>
+    <script src="inject-auth.js?v=20260303_SESSION_STABLE" defer></script>
     <script src="js/framer_home.js?v=NAV_UNIFIED" defer></script>
     <script src="js/components/WalletModal.js?v=20260302_G_AUTH" defer></script>
     <script src="notification-client.js"></script>
