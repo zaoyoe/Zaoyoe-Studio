@@ -824,31 +824,6 @@ async function loadGoogleIdentityServices() {
 
     const hashedNonce = await generateNonce();
 
-    // Create a hidden container for the official button
-    const hiddenContainer = document.createElement('div');
-    hiddenContainer.id = 'hidden-gsi-container';
-
-    // Google Identity Services (GSI) anti-clickjacking protection:
-    // - display:none / visibility:hidden / opacity:0 → blocks iframe render entirely
-    // - position off-screen (left:-9999px) → blocks programmatic click() on production domains
-    // - localhost is exempt from these checks, which is why it works locally
-    //
-    // Solution: Keep the container technically "visible" as a 1x1 pixel element 
-    // in the viewport corner. It's imperceptible to users but passes Google's checks.
-    hiddenContainer.style.position = 'fixed';
-    hiddenContainer.style.left = '0';
-    hiddenContainer.style.bottom = '0';
-    hiddenContainer.style.width = '1px';
-    hiddenContainer.style.height = '1px';
-    hiddenContainer.style.overflow = 'hidden';
-    hiddenContainer.style.zIndex = '-1';
-
-    // Fix white flash on popup open by forcing the container to declare a dark color scheme
-    hiddenContainer.style.colorScheme = 'dark';
-    hiddenContainer.style.backgroundColor = '#1a1a1a';
-
-    document.body.appendChild(hiddenContainer);
-
     const script = document.createElement('script');
     script.src = "https://accounts.google.com/gsi/client";
     script.id = 'gsi-script';
@@ -865,71 +840,91 @@ async function loadGoogleIdentityServices() {
                 auto_select: false
             });
 
-            // Render the official button silently into the hidden container
-            google.accounts.id.renderButton(hiddenContainer, {
-                type: 'standard', // Required for clicking
-                theme: 'filled_black' // Tell the resultant popup to use dark mode
-            });
+            // Render Google's official button directly into the login modal
+            // replacing the custom button. Real clicks = no anti-clickjacking,
+            // no cooldown, no Client Secret needed.
+            renderGoogleButtonInModal();
         }
     };
     document.head.appendChild(script);
 }
 
-// Custom programmatic trigger for Google login — uses Supabase OAuth directly
-window.triggerGoogleLogin = async () => {
-    console.log('🔵 Custom Google Login button clicked');
+// Render Google's official sign-in button into the login modal
+function renderGoogleButtonInModal() {
+    // Find all custom Google login buttons and replace them with real Google buttons
+    const customBtns = document.querySelectorAll('.google-login-btn');
+    customBtns.forEach(btn => {
+        // Create a container for the real Google button
+        let gsiContainer = btn.parentElement.querySelector('.gsi-btn-container');
+        if (!gsiContainer) {
+            gsiContainer = document.createElement('div');
+            gsiContainer.className = 'gsi-btn-container';
+            gsiContainer.style.display = 'flex';
+            gsiContainer.style.justifyContent = 'center';
+            gsiContainer.style.width = '100%';
+            gsiContainer.style.minHeight = '44px';
+            btn.parentElement.insertBefore(gsiContainer, btn);
+        }
 
-    // Show loading state on button
+        // Hide the custom button
+        btn.style.display = 'none';
+
+        // Render Google's official button into the container
+        google.accounts.id.renderButton(gsiContainer, {
+            type: 'standard',
+            theme: 'filled_black',
+            size: 'large',
+            width: Math.min(btn.offsetWidth || 300, 400),
+            text: 'signin_with',
+            shape: 'pill'
+        });
+    });
+
+    console.log('[Google Auth] Official Google button rendered in login modal');
+}
+
+// triggerGoogleLogin is kept for backward compatibility (prompts.html uses it)
+// but now it just ensures the Google button is visible
+window.triggerGoogleLogin = () => {
+    console.log('🔵 triggerGoogleLogin called');
+
+    // If GSI is loaded and button hasn't been rendered yet, render it now
+    if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
+        renderGoogleButtonInModal();
+        // Show a hint to the user
+        const customBtn = document.querySelector('.google-login-btn');
+        if (customBtn && customBtn.style.display === 'none') {
+            // Button is already replaced, user should click the Google button above
+            return;
+        }
+    }
+
+    // If GSI isn't loaded yet, wait for it
     const googleBtn = document.querySelector('.google-login-btn');
-    let originalBtnHTML = '';
     if (googleBtn) {
-        originalBtnHTML = googleBtn.innerHTML;
-        googleBtn.innerHTML = '<i class="fas fa-spinner fa-spin" style="margin-right: 8px;"></i> <span>正在跳转...</span>';
+        const originalHTML = googleBtn.innerHTML;
+        googleBtn.innerHTML = '<i class="fas fa-spinner fa-spin" style="margin-right: 8px;"></i> <span>正在加载...</span>';
         googleBtn.style.pointerEvents = 'none';
         googleBtn.style.opacity = '0.7';
-    }
 
-    if (!window.supabaseClient) {
-        console.error('[Google Auth] Supabase client not available');
-        if (googleBtn && originalBtnHTML) {
-            googleBtn.innerHTML = originalBtnHTML;
-            googleBtn.style.pointerEvents = '';
-            googleBtn.style.opacity = '';
-        }
-        alert('登录服务尚未加载完成，请稍候再试。');
-        return;
-    }
-
-    try {
-        const { data, error } = await window.supabaseClient.auth.signInWithOAuth({
-            provider: 'google',
-            options: {
-                redirectTo: window.location.origin + window.location.pathname,
-                queryParams: {
-                    prompt: 'select_account'  // Always show account chooser, supports new accounts
-                }
-            }
-        });
-
-        if (error) {
-            console.error('[Google Auth] Supabase OAuth error:', error);
-            if (googleBtn && originalBtnHTML) {
-                googleBtn.innerHTML = originalBtnHTML;
+        let attempts = 0;
+        const waitInterval = setInterval(() => {
+            attempts++;
+            if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
+                clearInterval(waitInterval);
+                renderGoogleButtonInModal();
+            } else if (attempts >= 17) {
+                clearInterval(waitInterval);
+                googleBtn.innerHTML = originalHTML;
                 googleBtn.style.pointerEvents = '';
                 googleBtn.style.opacity = '';
+                alert('Google 登录服务加载失败，请检查网络连接后刷新页面重试。');
             }
-            showNotification('Google 登录失败: ' + error.message, 'error');
-        }
-        // If successful, the page will redirect to Google's sign-in page
-    } catch (err) {
-        console.error('[Google Auth] OAuth exception:', err);
-        if (googleBtn && originalBtnHTML) {
-            googleBtn.innerHTML = originalBtnHTML;
-            googleBtn.style.pointerEvents = '';
-            googleBtn.style.opacity = '';
-        }
+        }, 300);
     }
 };
+
+
 
 
 window.handleGoogleCredentialResponse = async (response) => {
