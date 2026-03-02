@@ -886,7 +886,14 @@ window.triggerGoogleLogin = () => {
 
     // Function to attempt clicking the button
     const tryClickGoogleButton = (attemptsLeft) => {
-        const googleButton = document.querySelector('#hidden-gsi-container div[role=button]');
+        // Google Identity Services dynamically renders the button. 
+        // Locally it might wrap the iframe in a div[role=button], but in production 
+        // it renders directly into a branded div wrapper (often classed .S9gUrf-YoZ4jf)
+        let googleButton = document.querySelector('#hidden-gsi-container div[role=button]');
+        if (!googleButton) {
+            // Fallback: click the first child div of the GSI container that Google generated
+            googleButton = document.querySelector('#hidden-gsi-container > div');
+        }
 
         if (googleButton) {
 
