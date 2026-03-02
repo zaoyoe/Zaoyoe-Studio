@@ -1369,7 +1369,9 @@
                                     <span class="config-hint">lacedore.org 验证服务的 sk- 密钥</span>
                                 </div>
                                 <input type="password" id="cfgVerifyApiKey" class="config-input"
-                                    placeholder="sk-XXXX-XXXX-XXXX-XXXX"
+                                    placeholder="sk-XXXX-XXXX-XXXX-XXXX" autocomplete="new-password" readonly
+                                    onfocus="this.removeAttribute('readonly');"
+                                    onblur="this.setAttribute('readonly', 'readonly');"
                                     style="width: 100%; text-align: left; box-sizing: border-box;"
                                     onchange="window.saveVerifyConfig && window.saveVerifyConfig()">
                             </div>

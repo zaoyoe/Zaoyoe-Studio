@@ -556,3 +556,35 @@
     width: 900px;
     max-width: 95vw;
 }
+
+/* ==================== Google Identity Services Styling Fixes ==================== */
+/* Fix the white flash iframe background during Google GIS Loading */
+iframe[src*="accounts.google.com"] {
+    background: transparent !important;
+    background-color: transparent !important;
+    color-scheme: dark !important;
+}
+
+/* Make the injection container transparent */
+#google-login-container,
+#admin-google-login-container {
+    background: transparent !important;
+    border-radius: 16px;
+    overflow: hidden;
+    /* Clip the google button borders */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+/* Force Google One Tap Popup to Center Screen */
+#credential_picker_container {
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%) !important;
+    right: auto !important;
+    bottom: auto !important;
+    margin: 0 !important;
+    position: fixed !important;
+    z-index: 99999 !important;
+}

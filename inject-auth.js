@@ -102,7 +102,7 @@
                 <p class="card-subtitle" data-i18n="auth.loginSubtitle">请输入您的账号信息以登录</p>
 
                 <!-- Google Login Button -->
-                <button type="button" class="google-login-btn" onclick="handleGoogleLogin()">
+                <button type="button" class="google-login-btn" onclick="triggerGoogleLogin()">
                     <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" width="18" height="18">
                     <span data-i18n="auth.googleLogin">使用 Google 登录</span>
                 </button>

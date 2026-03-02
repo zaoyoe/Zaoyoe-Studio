@@ -611,31 +611,17 @@ function closeAdminLoginModal() {
 function handleGalleryLogin() {
     console.log('🔐 Gallery login clicked');
     toggleAvatarMenu(); // Close dropdown
-    handleGoogleLogin(); // Trigger Google login
-}
 
-async function handleGoogleLogin() {
-    console.log('🔵 Google Login button clicked');
-
-    const redirectUrl = window.location.href.split('?')[0];
-    console.log('🔗 Redirect URL:', redirectUrl);
-
-    try {
-        const { data, error } = await window.supabaseClient.auth.signInWithOAuth({
-            provider: 'google',
-            options: {
-                redirectTo: redirectUrl
+    if (typeof window.triggerGoogleLogin === 'function') {
+        window.triggerGoogleLogin();
+    } else if (window.google && google.accounts && google.accounts.id) {
+        google.accounts.id.prompt((notification) => {
+            if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+                showLoginModal();
             }
         });
-
-        if (error) throw error;
-
-        console.log('🔄 Redirecting to Google...');
-        closeAdminLoginModal();
-
-    } catch (error) {
-        console.error('❌ Google login error:', error);
-        alert('Google 登录失败: ' + error.message);
+    } else {
+        showLoginModal(); // Fallback if script not loaded
     }
 }
 

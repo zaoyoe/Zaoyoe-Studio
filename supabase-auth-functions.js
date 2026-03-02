@@ -604,25 +604,30 @@ async function checkAuthState() {
 
         let avatarUrl = validCustomAvatar || user.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.email)}&background=6b9ece&color=fff`;
 
-        // 🆕 Auto-upload Google OAuth avatar to R2 (if Google avatar and not yet on R2)
+        // 🆕 Auto-upload Google OAuth avatar to R2 asynchronously (non-blocking)
         if (user.user_metadata?.avatar_url &&
             user.user_metadata.avatar_url.includes('googleusercontent.com') &&
             (!profile?.avatar_url || profile.avatar_url.includes('googleusercontent.com'))) {
-            console.log('📸 [checkAuthState] Google avatar detected, uploading to R2...');
-            try {
-                if (typeof uploadAvatarToR2 === 'function') {
-                    const r2Url = await uploadAvatarToR2({
-                        userId: user.id,
-                        imageUrl: user.user_metadata.avatar_url
-                    });
-                    if (r2Url && !r2Url.includes('dicebear.com')) {
-                        avatarUrl = r2Url;
-                        console.log('✅ Google avatar uploaded to R2:', r2Url);
+            // Do not await to avoid blocking UI update
+            setTimeout(async () => {
+                console.log('📸 [checkAuthState] Google avatar detected, uploading to R2 in background...');
+                try {
+                    if (typeof uploadAvatarToR2 === 'function') {
+                        const r2Url = await uploadAvatarToR2({
+                            userId: user.id,
+                            imageUrl: user.user_metadata.avatar_url
+                        });
+                        if (r2Url && !r2Url.includes('dicebear.com')) {
+                            // Only update UI if we're still logged in as the same user
+                            const currentNavAvatar = document.getElementById('navUserAvatar');
+                            if (currentNavAvatar) currentNavAvatar.src = r2Url;
+                            console.log('✅ Google avatar uploaded to R2 and updated:', r2Url);
+                        }
                     }
+                } catch (err) {
+                    console.warn('⚠️ Failed to upload Google avatar to R2:', err.message);
                 }
-            } catch (err) {
-                console.warn('⚠️ Failed to upload Google avatar to R2:', err.message);
-            }
+            }, 100);
         }
 
         updateUserUI({
@@ -711,7 +716,10 @@ function updateUserUI(user) {
 
         localStorage.setItem('cached_user_profile', JSON.stringify(user));
     } else {
-        if (defaultIcon) defaultIcon.style.display = 'inline';
+        if (defaultIcon) {
+            defaultIcon.className = 'fas fa-user-circle'; // Ensure spinner is cleared
+            defaultIcon.style.display = 'inline';
+        }
         if (navAvatar) navAvatar.style.display = 'none';
         if (btnText) btnText.textContent = 'Sign In';
         if (userDropdown) userDropdown.classList.remove('active');
@@ -794,34 +802,209 @@ function updateResetButtonCountdown(button, originalText) {
     }
 }
 
-// ==================== Google OAuth 登录 (Supabase 版本) ====================
-async function handleGoogleLogin() {
-    console.log('🔵 Google Login button clicked');
+// ==================== Google Identity Services (ID Token Flow) ====================
+// Generate a secure nonce for Supabase
+window.currentGoogleNonce = null;
 
-    // 移除 query 和 hash 部分，确保干净的 redirect URL
-    const redirectUrl = window.location.origin + window.location.pathname.replace(/\/$/, '');
-    console.log('🔗 Redirect URL:', redirectUrl);
+async function generateNonce() {
+    const nonce = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))));
+    const encoder = new TextEncoder();
+    const encodedNonce = encoder.encode(nonce);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', encodedNonce);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashedNonce = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 
-    try {
-        const { data, error } = await window.supabaseClient.auth.signInWithOAuth({
-            provider: 'google',
-            options: {
-                redirectTo: redirectUrl
+    // Store original nonce to send to Supabase later
+    window.currentGoogleNonce = nonce;
+    return hashedNonce;
+}
+
+async function loadGoogleIdentityServices() {
+    if (document.getElementById('gsi-script')) return;
+
+    const hashedNonce = await generateNonce();
+
+    // Create a hidden container for the official button
+    const hiddenContainer = document.createElement('div');
+    hiddenContainer.id = 'hidden-gsi-container';
+
+    // Google Identity Services (GSI) iframe uses the physical location of this container
+    // to spawn the popup. However, manipulating opacity/pointer-events triggers a 400 error
+    // (clickjacking protection). We must use a safe off-screen or safe sizing approach
+    // that doesn't trigger security blocks but nudges the window.
+    // Position it at the exact center of the page horizontally and vertically
+    // We use a high z-index and hide it under the login modal overlay visually without display:none
+    hiddenContainer.style.position = 'absolute';
+    hiddenContainer.style.left = '50%';
+    hiddenContainer.style.top = '50%';
+    hiddenContainer.style.marginLeft = '-100px'; // approximate half width of google button
+
+    // Completely hide it visually so it doesn't linger on screen, 
+    // but keep it rendered in DOM to avoid 400 clickjacking errors.
+    hiddenContainer.style.opacity = '0';
+    hiddenContainer.style.zIndex = '-9999';
+    hiddenContainer.style.pointerEvents = 'none';
+
+    // Fix white flash on popup open by forcing the container to declare a dark color scheme
+    hiddenContainer.style.colorScheme = 'dark';
+    hiddenContainer.style.backgroundColor = '#1a1a1a'; // Match dark theme background
+
+    document.body.appendChild(hiddenContainer);
+
+    const script = document.createElement('script');
+    script.src = "https://accounts.google.com/gsi/client";
+    script.id = 'gsi-script';
+    script.async = true;
+    script.defer = true;
+    script.onload = () => {
+        if (window.google) {
+            google.accounts.id.initialize({
+                client_id: '1017068787594-ep4bj8cdirkllqlpbmlfk436br0vbifp.apps.googleusercontent.com',
+                callback: handleGoogleCredentialResponse,
+                nonce: hashedNonce,
+                context: 'signin',
+                ux_mode: 'popup',
+                auto_select: false
+            });
+
+            // Render the official button silently into the hidden container
+            google.accounts.id.renderButton(hiddenContainer, {
+                type: 'standard', // Required for clicking
+                theme: 'filled_black' // Tell the resultant popup to use dark mode
+            });
+        }
+    };
+    document.head.appendChild(script);
+}
+
+// Custom programmatic trigger for Google One Tap prompt
+window.triggerGoogleLogin = () => {
+    console.log('🔵 Custom Google Login button clicked');
+
+    // Visually indicate something is happening in case it's slow
+    const defaultIcon = document.getElementById('defaultAuthIcon');
+    if (defaultIcon) defaultIcon.className = 'fas fa-spinner fa-spin';
+
+    // Find the hidden Google button and click it to spawn the classic center popup
+    // (This bypasses the One Tap top-right drawer)
+    const googleButton = document.querySelector('#hidden-gsi-container div[role=button]');
+
+    if (googleButton) {
+        // Set a checker that clears the spinner if the popup is closed or doesn't trigger response
+        // Usually popup stays open indefinitely, but if user clicks away or hits esc, it goes away.
+        // We will run an interval to check if the iframe exists and is visible.
+        const checkPopupInterval = setInterval(() => {
+            // If they are verifying token, then credential response fired, we let that handle it.
+            if (window.isVerifyingGoogleToken) {
+                clearInterval(checkPopupInterval);
+                return;
             }
+
+            // Google popup iframe class is usually sent through an iframe that has credential_picker or similar
+            // However, relying on iframe presence is flaky because Google keeps changing IDs.
+            // If user closes modal, we must reset the spinner.
+            const loginModal = document.getElementById('loginModal');
+            if (loginModal && !loginModal.classList.contains('active')) {
+                clearInterval(checkPopupInterval);
+                if (defaultIcon) defaultIcon.className = 'fas fa-user-circle';
+            }
+        }, 1000);
+
+        // Also add a 5-second automatic timeout as a fallback so it never spins infinitely
+        // if they don't even log in within the popup (which would block the UI indefinitely if they minimize it)
+        setTimeout(() => {
+            if (!window.isVerifyingGoogleToken && defaultIcon) {
+                defaultIcon.className = 'fas fa-user-circle';
+                clearInterval(checkPopupInterval);
+            }
+        }, 10000); // Wait 10 seconds. Typically users login within 10s. If longer, spinner stops but popup still works.
+
+        // Intercept Google's window.open to force it to center on the CURRENT browser window
+        // instead of the physical monitor (which is the default OS/browser behavior for popups).
+        const originalWindowOpen = window.open;
+        window.open = function (url, windowName, windowFeatures) {
+            if (url && url.includes('accounts.google.com')) {
+                const popupWidth = 500;
+                const popupHeight = 650;
+
+                // Calculate center relative to the physical browser window on screen
+                const left = Math.round(window.screenX + (window.outerWidth - popupWidth) / 2);
+
+                // We want to center the popup relative to the *webpage viewport* (innerHeight),
+                // not the entire browser window (which includes the URL bar and tabs).
+                // ScreenY is the top of the browser window. The actual webpage starts lower.
+                const browserChromeHeight = window.outerHeight - window.innerHeight;
+                const top = Math.round(window.screenY + browserChromeHeight + (window.innerHeight - popupHeight) / 2);
+
+                // Clean up string and append our precise coordinates
+                let customFeatures = windowFeatures || '';
+                customFeatures = customFeatures.replace(/left=[^,]*/i, '')
+                    .replace(/top=[^,]*/i, '')
+                    .replace(/,+/g, ',');
+                customFeatures += `,left=${left},top=${top}`;
+
+                // Attempt to call original with hijacked coordinates
+                return originalWindowOpen.call(window, url, windowName, customFeatures);
+            }
+            // For non-Google URLs, just pass through
+            return originalWindowOpen.call(window, url, windowName, windowFeatures);
+        };
+
+        googleButton.click();
+
+        // Google's click handler might be slightly asynchronous, so we restore the original
+        // window.open after a short delay to ensure we catch it.
+        setTimeout(() => {
+            if (window.open !== originalWindowOpen) {
+                window.open = originalWindowOpen;
+            }
+        }, 2000);
+    } else {
+        if (defaultIcon) defaultIcon.className = 'fas fa-user-circle';
+        alert('Google 登录服务尚未加载完成，请稍候再试。');
+    }
+};
+
+window.handleGoogleCredentialResponse = async (response) => {
+    try {
+        console.log('🔵 Received Google ID Token, authenticating with Supabase...');
+        window.isVerifyingGoogleToken = true;
+
+        // Show loading state if buttons exist
+        const defaultIcon = document.getElementById('defaultAuthIcon');
+        if (defaultIcon) defaultIcon.className = 'fas fa-spinner fa-spin';
+
+        const { data, error } = await window.supabaseClient.auth.signInWithIdToken({
+            provider: 'google',
+            token: response.credential,
+            nonce: window.currentGoogleNonce
         });
 
         if (error) throw error;
 
-        // OAuth will redirect, so nothing to do here
-        console.log('🔄 Redirecting to Google...');
+        console.log('✅ Google ID Token login successful!');
 
+        // Reset spinner on successful login before it gets hidden
+        if (defaultIcon) defaultIcon.className = 'fas fa-user-circle';
+
+        // Let the normal auth state change listener handle UI updates
+        // For admin modal, close it
+        if (typeof closeAdminLoginModal === 'function') closeAdminLoginModal();
+        if (typeof toggleLoginModal === 'function') {
+            const loginModal = document.getElementById('loginModal');
+            if (loginModal && (loginModal.classList.contains('active') || loginModal.style.visibility === 'visible')) {
+                toggleLoginModal();
+            }
+        }
     } catch (error) {
-        console.error('❌ Google login error:', error);
+        window.isVerifyingGoogleToken = false;
+        console.error('❌ Google ID Token login error:', error);
         alert('Google 登录失败: ' + error.message);
+
+        const defaultIcon = document.getElementById('defaultAuthIcon');
+        if (defaultIcon) defaultIcon.className = 'fas fa-user-circle';
     }
 }
-
-window.handleGoogleLogin = handleGoogleLogin;
 
 // ==================== 图片压缩助手 ====================
 function resizeImage(file, maxSize = 200) {
@@ -1076,6 +1259,9 @@ document.addEventListener('DOMContentLoaded', async function () {
         console.warn('⚠️ Supabase client not ready, waiting...');
         await new Promise(resolve => setTimeout(resolve, 500));
     }
+
+    // 初始化 Google Identity Services
+    loadGoogleIdentityServices();
 
     // 检查登录状态 (will update UI again with fresh data)
     await checkAuthState();
