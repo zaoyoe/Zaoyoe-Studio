@@ -824,6 +824,39 @@ async function loadGoogleIdentityServices() {
 
     const hashedNonce = await generateNonce();
 
+    // Intercept window.open to center the Google popup
+    const originalWindowOpen = window.open;
+    window.open = function (url, target, features) {
+        if (features && typeof features === 'string' && (url || '').includes('accounts.google.com')) {
+            // Parse width and height from features string
+            const widthMatch = features.match(/width=(\d+)/);
+            const heightMatch = features.match(/height=(\d+)/);
+            const width = widthMatch ? parseInt(widthMatch[1]) : 500;
+            const height = heightMatch ? parseInt(heightMatch[1]) : 600;
+
+            // Calculate centered position relative to the current browser window
+            const dualScreenLeft = window.screenLeft !== undefined ? window.screenLeft : window.screenX;
+            const dualScreenTop = window.screenTop !== undefined ? window.screenTop : window.screenY;
+
+            const winWidth = window.innerWidth ? window.innerWidth : document.documentElement.clientWidth ? document.documentElement.clientWidth : screen.width;
+            const winHeight = window.innerHeight ? window.innerHeight : document.documentElement.clientHeight ? document.documentElement.clientHeight : screen.height;
+
+            const left = Math.round((winWidth / 2) - (width / 2) + dualScreenLeft);
+            const top = Math.round((winHeight / 2) - (height / 2) + dualScreenTop);
+
+            // Replace or add left/top in features
+            let newFeatures = features
+                .replace(/left=\d+/, `left=${left}`)
+                .replace(/top=\d+/, `top=${top}`);
+            if (!newFeatures.includes('left=')) newFeatures += `,left=${left}`;
+            if (!newFeatures.includes('top=')) newFeatures += `,top=${top}`;
+
+            console.log('[Google Auth] Centering popup:', { left, top, width, height });
+            return originalWindowOpen.call(window, url, target, newFeatures);
+        }
+        return originalWindowOpen.call(window, url, target, features);
+    };
+
     const script = document.createElement('script');
     script.src = "https://accounts.google.com/gsi/client";
     script.id = 'gsi-script';
@@ -851,36 +884,36 @@ async function loadGoogleIdentityServices() {
 
 // Render Google's official sign-in button into the login modal
 function renderGoogleButtonInModal() {
-    // Find all custom Google login buttons and replace them with real Google buttons
     const customBtns = document.querySelectorAll('.google-login-btn');
     customBtns.forEach(btn => {
-        // Create a container for the real Google button
-        let gsiContainer = btn.parentElement.querySelector('.gsi-btn-container');
-        if (!gsiContainer) {
-            gsiContainer = document.createElement('div');
-            gsiContainer.className = 'gsi-btn-container';
-            gsiContainer.style.display = 'flex';
-            gsiContainer.style.justifyContent = 'center';
-            gsiContainer.style.width = '100%';
-            gsiContainer.style.minHeight = '44px';
-            btn.parentElement.insertBefore(gsiContainer, btn);
-        }
+        if (btn.dataset.gsiOverlaid) return;
+        btn.dataset.gsiOverlaid = 'true';
+
+        // Create a container for Google's real button
+        const gsiContainer = document.createElement('div');
+        gsiContainer.className = 'gsi-btn-container';
+        gsiContainer.style.display = 'flex';
+        gsiContainer.style.justifyContent = 'center';
+        gsiContainer.style.width = '100%';
+        gsiContainer.style.minHeight = '44px';
+        btn.parentElement.insertBefore(gsiContainer, btn);
 
         // Hide the custom button
         btn.style.display = 'none';
 
-        // Render Google's official button into the container
+        // Render Google's official dark-themed button
         google.accounts.id.renderButton(gsiContainer, {
             type: 'standard',
             theme: 'filled_black',
             size: 'large',
-            width: Math.min(btn.offsetWidth || 300, 400),
+            width: btn.offsetWidth || 300,
             text: 'signin_with',
-            shape: 'pill'
+            shape: 'rectangular',
+            logo_alignment: 'left'
         });
     });
 
-    console.log('[Google Auth] Official Google button rendered in login modal');
+    console.log('[Google Auth] Google button rendered in login modal');
 }
 
 // triggerGoogleLogin is kept for backward compatibility (prompts.html uses it)
