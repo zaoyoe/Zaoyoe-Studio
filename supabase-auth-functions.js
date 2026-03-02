@@ -875,88 +875,28 @@ async function loadGoogleIdentityServices() {
     document.head.appendChild(script);
 }
 
-// Custom programmatic trigger for Google login
-window.triggerGoogleLogin = () => {
+// Custom programmatic trigger for Google login — uses Supabase OAuth directly
+window.triggerGoogleLogin = async () => {
     console.log('🔵 Custom Google Login button clicked');
 
-    // Visually indicate something is happening in case it's slow
-    const defaultIcon = document.getElementById('defaultAuthIcon');
-    if (defaultIcon) defaultIcon.className = 'fas fa-spinner fa-spin';
-
-    // Add loading state to the Google login button itself for immediate feedback
+    // Show loading state on button
     const googleBtn = document.querySelector('.google-login-btn');
     let originalBtnHTML = '';
     if (googleBtn) {
         originalBtnHTML = googleBtn.innerHTML;
-        googleBtn.innerHTML = '<i class="fas fa-spinner fa-spin" style="margin-right: 8px;"></i> <span>正在加载...</span>';
+        googleBtn.innerHTML = '<i class="fas fa-spinner fa-spin" style="margin-right: 8px;"></i> <span>正在跳转...</span>';
         googleBtn.style.pointerEvents = 'none';
         googleBtn.style.opacity = '0.7';
     }
 
-    // Helper to reset button state
-    const resetGoogleBtn = () => {
+    if (!window.supabaseClient) {
+        console.error('[Google Auth] Supabase client not available');
         if (googleBtn && originalBtnHTML) {
             googleBtn.innerHTML = originalBtnHTML;
             googleBtn.style.pointerEvents = '';
             googleBtn.style.opacity = '';
         }
-    };
-
-    // Check if Google Identity Services is loaded
-    if (typeof google === 'undefined' || !google.accounts || !google.accounts.id) {
-        console.error('[Google Auth] Google Identity Services not loaded');
-        if (defaultIcon) defaultIcon.className = 'fas fa-user-circle';
-        resetGoogleBtn();
-        if (typeof showNotification === 'function') {
-            showNotification('Google 登录服务尚未加载完成，请稍候再试。', 'error');
-        } else {
-            alert('Google 登录服务尚未加载完成，请稍候再试。');
-        }
-        return;
-    }
-
-    // Use google.accounts.id.prompt() — the official programmatic API.
-    google.accounts.id.prompt((notification) => {
-        console.log('[Google Auth] Prompt notification:', notification);
-
-        if (notification.isNotDisplayed()) {
-            const reason = notification.getNotDisplayedReason();
-            console.warn('[Google Auth] Prompt not displayed, reason:', reason);
-            resetGoogleBtn();
-            fallbackToButtonClick(defaultIcon);
-        } else if (notification.isSkippedMoment()) {
-            const reason = notification.getSkippedReason();
-            console.warn('[Google Auth] Prompt skipped, reason:', reason);
-            resetGoogleBtn();
-            fallbackToButtonClick(defaultIcon);
-        } else if (notification.isDisplayMoment()) {
-            // Prompt is now visible — reset button loading state
-            console.log('[Google Auth] Prompt displayed successfully');
-            resetGoogleBtn();
-        } else if (notification.isDismissedMoment()) {
-            console.log('[Google Auth] User dismissed prompt');
-            if (defaultIcon) defaultIcon.className = 'fas fa-user-circle';
-            resetGoogleBtn();
-        }
-    });
-
-    // Auto-reset after 15 seconds as safety net
-    setTimeout(() => {
-        if (!window.isVerifyingGoogleToken && defaultIcon) {
-            defaultIcon.className = 'fas fa-user-circle';
-        }
-        resetGoogleBtn();
-    }, 15000);
-};
-
-// Fallback: use Supabase's built-in OAuth flow (full Google sign-in page)
-// This supports adding new accounts and has no cooldown issues
-async function fallbackToButtonClick(defaultIcon) {
-    console.log('[Google Auth] Falling back to Supabase OAuth popup');
-
-    if (!window.supabaseClient) {
-        console.error('[Google Auth] Supabase client not available');
-        if (defaultIcon) defaultIcon.className = 'fas fa-user-circle';
+        alert('登录服务尚未加载完成，请稍候再试。');
         return;
     }
 
@@ -965,23 +905,31 @@ async function fallbackToButtonClick(defaultIcon) {
             provider: 'google',
             options: {
                 redirectTo: window.location.origin + window.location.pathname,
-                skipBrowserRedirect: false,
                 queryParams: {
-                    prompt: 'select_account'  // Always show account chooser, allow new accounts
+                    prompt: 'select_account'  // Always show account chooser, supports new accounts
                 }
             }
         });
 
         if (error) {
             console.error('[Google Auth] Supabase OAuth error:', error);
-            if (defaultIcon) defaultIcon.className = 'fas fa-user-circle';
-            showNotification('Google 登录失败，请稍后重试。', 'error');
+            if (googleBtn && originalBtnHTML) {
+                googleBtn.innerHTML = originalBtnHTML;
+                googleBtn.style.pointerEvents = '';
+                googleBtn.style.opacity = '';
+            }
+            showNotification('Google 登录失败: ' + error.message, 'error');
         }
+        // If successful, the page will redirect to Google's sign-in page
     } catch (err) {
         console.error('[Google Auth] OAuth exception:', err);
-        if (defaultIcon) defaultIcon.className = 'fas fa-user-circle';
+        if (googleBtn && originalBtnHTML) {
+            googleBtn.innerHTML = originalBtnHTML;
+            googleBtn.style.pointerEvents = '';
+            googleBtn.style.opacity = '';
+        }
     }
-}
+};
 
 
 window.handleGoogleCredentialResponse = async (response) => {
@@ -1349,9 +1297,14 @@ document.addEventListener('DOMContentLoaded', async function () {
     window.supabaseClient.auth.onAuthStateChange((event, session) => {
         console.log('🔔 Auth state changed:', event);
 
-        // 跳过初始的 INITIAL_SESSION 事件，因为我们已经在 checkAuthState 中处理了
+        // INITIAL_SESSION fires on page load. After OAuth redirect, this is where
+        // the session tokens first arrive. We must process it if a session exists.
         if (event === 'INITIAL_SESSION') {
             authStateInitialized = true;
+            if (session) {
+                console.log('🔔 INITIAL_SESSION has session, updating UI...');
+                checkAuthState();
+            }
             return;
         }
 
