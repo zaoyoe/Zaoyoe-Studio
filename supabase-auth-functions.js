@@ -906,14 +906,18 @@ function renderGoogleButtonInModal() {
         // Hide the custom button
         btn.style.display = 'none';
 
+        // Get exact width of a real input field to match perfectly, default to 280 (360 card - 80 padding)
+        const passwordInput = document.getElementById('login-password');
+        const exactWidth = passwordInput ? passwordInput.offsetWidth : 280;
+
         // Render Google's official button (using outline theme for better dark mode blending)
         google.accounts.id.renderButton(gsiContainer, {
             type: 'standard',
             theme: 'outline', // Outline theme works much better on dark backgrounds, removes white square around logo
             size: 'large',
-            width: btn.offsetWidth || 300,
+            width: exactWidth, // Strictly enforce width matched to the input boxes
             text: 'signin_with',
-            shape: 'rectangular', // MATCH the 16px border-radius of regular inputs
+            shape: 'pill', // Restore native rounded corners
             logo_alignment: 'center'
         });
     });

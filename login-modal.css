@@ -244,24 +244,14 @@
     display: flex;
     justify-content: center;
     align-items: center;
-    height: 52px;
-    /* Fixed height to perfectly match input fields */
-    border-radius: 16px;
-    /* Matched the 16px of .glass-input */
+    height: 56px;
+    /* Increased slightly to perfectly match the beefy glass inputs */
     margin-bottom: 24px;
     /* Space it out from the "或者" divider */
-    overflow: hidden;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    transition: all 0.3s ease;
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
 }
 
 .login-card .gsi-btn-container:hover {
-    background: rgba(255, 255, 255, 0.1);
-    border-color: rgba(255, 255, 255, 0.3);
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    transform: translateY(-2px);
 }
 
 /* Make the Google iframe button fill the container nicely */

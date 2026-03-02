@@ -298,6 +298,41 @@
     filter: brightness(0.9);
 }
 
+/* ==================== Google Official Button Container ==================== */
+.gsi-btn-container {
+    width: 100% !important;
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center !important;
+    height: 56px !important;
+    /* Force match with glass-input */
+    margin-bottom: 24px !important;
+}
+
+.gsi-btn-container:hover {
+    transform: translateY(-2px);
+}
+
+.gsi-btn-container iframe {
+    color-scheme: dark !important;
+    opacity: 0.95 !important;
+    transition: opacity 0.3s !important;
+}
+
+.gsi-btn-container:hover iframe {
+    opacity: 1 !important;
+}
+
+.gsi-btn-container>div {
+    width: 100% !important;
+    display: flex !important;
+    justify-content: center !important;
+}
+
+.google-login-btn img {
+    filter: brightness(0.9);
+}
+
 
 /* Login Divider */
 .login-divider {
