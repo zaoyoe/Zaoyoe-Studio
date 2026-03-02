@@ -663,12 +663,12 @@
                 width: auto !important;
                 min-width: 160px !important;
                 max-width: 200px !important;
-                padding: 14px 48px !important;
+                padding: 10px 48px !important;
                 margin: 8px auto 0 auto !important;
                 display: block !important;
                 border-radius: 12px !important;
                 background: linear-gradient(135deg, #9b5de5 0%, #f15bb5 100%) !important;
-                font-size: 16px !important;
+                font-size: 14px !important;
                 font-weight: 600 !important;
             }
             
@@ -696,20 +696,20 @@
             #resetView .glass-input {
                 width: 100% !important;
                 box-sizing: border-box !important;
-                background: rgba(0, 0, 0, 0.3) !important;
-                border: 1px solid rgba(155, 93, 229, 0.3) !important;
+                background: rgba(0, 0, 0, 0.4) !important;
+                border: 1px solid rgba(155, 93, 229, 0.5) !important;
                 backdrop-filter: blur(20px) !important;
                 -webkit-backdrop-filter: blur(20px) !important;
                 color: white !important;
-                font-size: 16px !important;
-                padding: 18px 22px !important;
-                border-radius: 16px !important;
+                font-size: 14px !important;
+                padding: 10px 16px !important;
+                border-radius: 12px !important;
             }
             
             /* Placeholder color matching */
             .login-overlay .glass-input::placeholder,
             .login-card .glass-input::placeholder {
-                color: rgba(255, 255, 255, 0.5) !important;
+                color: rgba(255, 255, 255, 0.6) !important;
             }
             
             /* Focus state - EXACT match from style.css line 2831-2834 */

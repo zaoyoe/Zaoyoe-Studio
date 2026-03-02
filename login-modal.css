@@ -244,8 +244,8 @@
     display: flex;
     justify-content: center;
     align-items: center;
-    height: 56px;
-    /* Increased slightly to perfectly match the beefy glass inputs */
+    height: 40px;
+    /* Reduced to strictly match the newly slimmed 40px glass inputs and Google button */
     margin-bottom: 24px;
     /* Space it out from the "或者" divider */
 }
@@ -299,14 +299,14 @@
     width: auto;
     min-width: 160px;
     max-width: 200px;
-    padding: 14px 48px;
+    padding: 10px 48px;
     margin: 8px auto 0 auto;
     display: block;
     border-radius: 12px;
     background: linear-gradient(135deg, #9b5de5 0%, #f15bb5 100%);
     border: none;
     color: white;
-    font-size: 16px;
+    font-size: 14px;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.3s ease;

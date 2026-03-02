@@ -304,7 +304,7 @@
     display: flex !important;
     justify-content: center !important;
     align-items: center !important;
-    height: 56px !important;
+    height: 40px !important;
     /* Force match with glass-input */
     margin-bottom: 24px !important;
 }
@@ -396,7 +396,7 @@
     margin: 0 !important;
     align-self: center !important;
 
-    padding: 14px 20px;
+    padding: 10px 14px;
     background: rgba(155, 93, 229, 0.2);
     border: 1px solid rgba(155, 93, 229, 0.3);
     border-radius: 12px;
@@ -421,12 +421,12 @@
 /* Submit Button */
 .login-submit-btn {
     width: 100%;
-    padding: 14px;
+    padding: 10px;
     background: linear-gradient(135deg, #9b5de5 0%, #f15bb5 100%);
     border: none;
     border-radius: 12px;
     color: white;
-    font-size: 16px;
+    font-size: 14px;
     font-weight: 600;
     cursor: pointer !important;
     transition: all 0.3s;
