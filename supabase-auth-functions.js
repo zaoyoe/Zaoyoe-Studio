@@ -949,46 +949,37 @@ window.triggerGoogleLogin = () => {
     }, 15000);
 };
 
-// Fallback: try clicking the hidden Google button (works on localhost)
-function fallbackToButtonClick(defaultIcon) {
-    console.log('[Google Auth] Falling back to hidden button click');
+// Fallback: use Supabase's built-in OAuth flow (full Google sign-in page)
+// This supports adding new accounts and has no cooldown issues
+async function fallbackToButtonClick(defaultIcon) {
+    console.log('[Google Auth] Falling back to Supabase OAuth popup');
 
-    let googleButton = document.querySelector('#hidden-gsi-container div[role=button]');
-    if (!googleButton) {
-        googleButton = document.querySelector('#hidden-gsi-container > div');
+    if (!window.supabaseClient) {
+        console.error('[Google Auth] Supabase client not available');
+        if (defaultIcon) defaultIcon.className = 'fas fa-user-circle';
+        return;
     }
 
-    if (googleButton) {
-        // Intercept window.open to center the popup
-        const originalWindowOpen = window.open;
-        window.open = function (url, windowName, windowFeatures) {
-            if (url && url.includes('accounts.google.com')) {
-                const popupWidth = 500;
-                const popupHeight = 650;
-                const left = Math.round(window.screenX + (window.outerWidth - popupWidth) / 2);
-                const browserChromeHeight = window.outerHeight - window.innerHeight;
-                const top = Math.round(window.screenY + browserChromeHeight + (window.innerHeight - popupHeight) / 2);
-                let customFeatures = windowFeatures || '';
-                customFeatures = customFeatures.replace(/left=[^,]*/i, '').replace(/top=[^,]*/i, '').replace(/,+/g, ',');
-                customFeatures += `,left=${left},top=${top}`;
-                return originalWindowOpen.call(window, url, windowName, customFeatures);
+    try {
+        const { data, error } = await window.supabaseClient.auth.signInWithOAuth({
+            provider: 'google',
+            options: {
+                redirectTo: window.location.origin + window.location.pathname,
+                skipBrowserRedirect: false,
+                queryParams: {
+                    prompt: 'select_account'  // Always show account chooser, allow new accounts
+                }
             }
-            return originalWindowOpen.call(window, url, windowName, windowFeatures);
-        };
+        });
 
-        googleButton.click();
-
-        setTimeout(() => {
-            if (window.open !== originalWindowOpen) {
-                window.open = originalWindowOpen;
-            }
-        }, 500);
-    } else {
-        console.error('[Google Auth] No Google button found');
-        if (defaultIcon) defaultIcon.className = 'fas fa-user-circle';
-        if (typeof showNotification === 'function') {
-            showNotification('Google 登录暂时不可用，请使用邮箱登录。', 'error');
+        if (error) {
+            console.error('[Google Auth] Supabase OAuth error:', error);
+            if (defaultIcon) defaultIcon.className = 'fas fa-user-circle';
+            showNotification('Google 登录失败，请稍后重试。', 'error');
         }
+    } catch (err) {
+        console.error('[Google Auth] OAuth exception:', err);
+        if (defaultIcon) defaultIcon.className = 'fas fa-user-circle';
     }
 }
 
