@@ -298,6 +298,26 @@
     filter: brightness(0.9);
 }
 
+/* Canonical login modal Google button (keep slim and consistent across pages) */
+.login-overlay .login-card .google-login-btn {
+    height: 44px !important;
+    min-height: 44px !important;
+    max-height: 44px !important;
+    padding: 0 16px !important;
+    margin: 0 0 24px 0 !important;
+    border-radius: 16px !important;
+    border: 1px solid #dadce0 !important;
+    background: #ffffff !important;
+    color: #3c4043 !important;
+    font-size: 15px !important;
+    line-height: 1 !important;
+    box-shadow: none !important;
+}
+
+.login-overlay .login-card .google-login-btn span {
+    line-height: 1 !important;
+}
+
 /* ==================== Google Official Button Container ==================== */
 .gsi-btn-container {
     width: 100% !important;

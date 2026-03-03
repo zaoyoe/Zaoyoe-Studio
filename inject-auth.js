@@ -942,6 +942,56 @@
         document.head.appendChild(forceStyle);
     }
 
+    // Always enforce the canonical Google button shape, even when auth UI was already injected.
+    const slimGoogleBtnStyle = `
+        #loginModal .google-login-btn,
+        .login-overlay .login-card .google-login-btn {
+            width: 100% !important;
+            box-sizing: border-box !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            gap: 12px !important;
+
+            height: 44px !important;
+            min-height: 44px !important;
+            max-height: 44px !important;
+            padding: 0 16px !important;
+            margin: 0 0 24px 0 !important;
+
+            border-radius: 16px !important;
+            border: 1px solid #dadce0 !important;
+            background: #ffffff !important;
+            color: #3c4043 !important;
+            font-size: 15px !important;
+            font-weight: 500 !important;
+            line-height: 1 !important;
+            box-shadow: none !important;
+        }
+
+        #loginModal .google-login-btn span,
+        .login-overlay .login-card .google-login-btn span {
+            line-height: 1 !important;
+            display: inline-flex !important;
+            align-items: center !important;
+        }
+
+        #loginModal .google-login-btn img,
+        .login-overlay .login-card .google-login-btn img {
+            width: 20px !important;
+            height: 20px !important;
+            flex: 0 0 20px !important;
+            filter: none !important;
+        }
+    `;
+    let slimStyleEl = document.getElementById('force-google-btn-slim-style');
+    if (!slimStyleEl) {
+        slimStyleEl = document.createElement('style');
+        slimStyleEl.id = 'force-google-btn-slim-style';
+        document.head.appendChild(slimStyleEl);
+    }
+    slimStyleEl.textContent = slimGoogleBtnStyle;
+
     // 3. Load Scripts if missing
     function loadScript(src) {
         return new Promise((resolve, reject) => {
@@ -986,7 +1036,7 @@
             loadCSS(`login_dual_mode.css?v=20260302_G_AUTH`);
 
             // Supabase Auth
-            await loadScript('./supabase-auth-functions.js?v=20260303_GOOGLE_OAUTH_FIX2');
+            await loadScript('./supabase-auth-functions.js?v=20260303_GOOGLE_OAUTH_FIX3');
 
             // ✅ 加载 script.js (包含 sendVerificationCode 函数)
             await loadScript('./script.js?v=20260302_G_AUTH');
