@@ -1121,7 +1121,10 @@ async function loadGoogleIdentityServices() {
                 nonce: hashedNonce,
                 context: 'signin',
                 ux_mode: 'popup',
-                auto_select: false
+                auto_select: false,
+                // Lock to classic GIS button/prompt so production and local render consistently
+                use_fedcm_for_prompt: false,
+                use_fedcm_for_button: false
             });
 
             // Render Google's official button directly into the login modal
