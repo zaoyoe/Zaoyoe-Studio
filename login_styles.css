@@ -300,16 +300,16 @@
 
 /* Canonical login modal Google button (keep slim and consistent across pages) */
 .login-overlay .login-card .google-login-btn {
-    height: 44px !important;
-    min-height: 44px !important;
-    max-height: 44px !important;
-    padding: 0 16px !important;
+    height: 40px !important;
+    min-height: 40px !important;
+    max-height: 40px !important;
+    padding: 0 14px !important;
     margin: 0 0 24px 0 !important;
-    border-radius: 16px !important;
+    border-radius: 14px !important;
     border: 1px solid #dadce0 !important;
     background: #ffffff !important;
     color: #3c4043 !important;
-    font-size: 15px !important;
+    font-size: 14px !important;
     line-height: 1 !important;
     box-shadow: none !important;
 }

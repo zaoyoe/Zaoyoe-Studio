@@ -693,18 +693,20 @@
             #loginModal .google-login-btn,
             #loginModal .login-card .google-login-btn {
                 width: 100% !important;
-                height: 44px !important;
-                padding: 0 16px !important;
-                border-radius: 16px !important;
+                height: 40px !important;
+                min-height: 40px !important;
+                max-height: 40px !important;
+                padding: 0 14px !important;
+                border-radius: 14px !important;
                 background: #ffffff !important;
                 border: 1px solid #dadce0 !important;
                 color: #3c4043 !important;
-                font-size: 15px !important;
+                font-size: 14px !important;
                 line-height: 1 !important;
                 display: flex !important;
                 align-items: center !important;
                 justify-content: center !important;
-                gap: 12px !important;
+                gap: 10px !important;
             }
 
             /* When GSI official button is rendered, force-hide fallback button */
@@ -953,17 +955,17 @@
             justify-content: center !important;
             gap: 12px !important;
 
-            height: 44px !important;
-            min-height: 44px !important;
-            max-height: 44px !important;
-            padding: 0 16px !important;
+            height: 40px !important;
+            min-height: 40px !important;
+            max-height: 40px !important;
+            padding: 0 14px !important;
             margin: 0 0 24px 0 !important;
 
-            border-radius: 16px !important;
+            border-radius: 14px !important;
             border: 1px solid #dadce0 !important;
             background: #ffffff !important;
             color: #3c4043 !important;
-            font-size: 15px !important;
+            font-size: 14px !important;
             font-weight: 500 !important;
             line-height: 1 !important;
             box-shadow: none !important;
@@ -978,9 +980,9 @@
 
         #loginModal .google-login-btn img,
         .login-overlay .login-card .google-login-btn img {
-            width: 20px !important;
-            height: 20px !important;
-            flex: 0 0 20px !important;
+            width: 18px !important;
+            height: 18px !important;
+            flex: 0 0 18px !important;
             filter: none !important;
         }
     `;
@@ -1032,11 +1034,11 @@
                     console.log(`🎨 Injected CSS: ${href}`);
                 }
             }
-            loadCSS(`login_styles.css?v=20260302_G_AUTH`);
-            loadCSS(`login_dual_mode.css?v=20260302_G_AUTH`);
+            loadCSS(`login_styles.css?v=20260303_GOOGLE_SLIM_FIX4`);
+            loadCSS(`login_dual_mode.css?v=20260303_GOOGLE_SLIM_FIX4`);
 
             // Supabase Auth
-            await loadScript('./supabase-auth-functions.js?v=20260303_GOOGLE_OAUTH_FIX3');
+            await loadScript('./supabase-auth-functions.js?v=20260303_GOOGLE_OAUTH_FIX4');
 
             // ✅ 加载 script.js (包含 sendVerificationCode 函数)
             await loadScript('./script.js?v=20260302_G_AUTH');
