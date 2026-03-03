@@ -112,7 +112,7 @@
                 <!-- Google Login Button -->
                 <button type="button" class="google-login-btn" onclick="triggerGoogleLogin()">
                     <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" width="18" height="18">
-                    <span data-i18n="auth.googleLogin">使用 Google 登录</span>
+                    <span>Sign in with Google</span>
                 </button>
 
                 <!-- Divider -->
@@ -630,18 +630,27 @@
             [data-theme="light"] .verify-login-prompt p { color: #475569 !important; }
 
             
-            /* Force Google button styles - MUST match main page */
-            .google-login-btn {
-                background: transparent !important;
-                border: 1px solid rgba(255, 255, 255, 0.15) !important;
-                color: rgba(255, 255, 255, 0.9) !important;
-                backdrop-filter: blur(10px) !important;
-                -webkit-backdrop-filter: blur(10px) !important;
+            /* Force Google button styles in auth modal - homepage standard (white) */
+            #loginModal .google-login-btn,
+            .login-overlay .login-card .google-login-btn {
+                background: #ffffff !important;
+                border: 1px solid #dadce0 !important;
+                color: #3c4043 !important;
+                backdrop-filter: none !important;
+                -webkit-backdrop-filter: none !important;
+                box-shadow: none !important;
             }
             
-            .google-login-btn:hover {
-                background: rgba(255, 255, 255, 0.08) !important;
-                border-color: rgba(255, 255, 255, 0.25) !important;
+            #loginModal .google-login-btn:hover,
+            .login-overlay .login-card .google-login-btn:hover {
+                background: #f8f9fa !important;
+                border-color: #d2d6dc !important;
+                box-shadow: 0 1px 3px rgba(60, 64, 67, 0.18) !important;
+            }
+
+            #loginModal .google-login-btn img,
+            .login-overlay .login-card .google-login-btn img {
+                filter: none !important;
             }
             
             /* ===========================================
@@ -681,13 +690,28 @@
             }
             
             /* Google Button - Full width within card */
-            .google-login-btn,
-            .login-card .google-login-btn {
+            #loginModal .google-login-btn,
+            #loginModal .login-card .google-login-btn {
                 width: 100% !important;
-                padding: 14px !important;
+                height: 44px !important;
+                padding: 0 16px !important;
                 border-radius: 16px !important;
-                background: transparent !important;
-                border: 1px solid rgba(255, 255, 255, 0.15) !important;
+                background: #ffffff !important;
+                border: 1px solid #dadce0 !important;
+                color: #3c4043 !important;
+                font-size: 15px !important;
+                line-height: 1 !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                gap: 12px !important;
+            }
+
+            /* When GSI official button is rendered, force-hide fallback button */
+            #loginModal .google-login-btn.gsi-hidden,
+            #loginModal .gsi-btn-container + .google-login-btn {
+                display: none !important;
+                visibility: hidden !important;
             }
             
             /* Input group spacing */
@@ -962,7 +986,7 @@
             loadCSS(`login_dual_mode.css?v=20260302_G_AUTH`);
 
             // Supabase Auth
-            await loadScript('./supabase-auth-functions.js?v=20260303_SESSION_STABLE');
+            await loadScript('./supabase-auth-functions.js?v=20260303_GOOGLE_DUP_FIX');
 
             // ✅ 加载 script.js (包含 sendVerificationCode 函数)
             await loadScript('./script.js?v=20260302_G_AUTH');

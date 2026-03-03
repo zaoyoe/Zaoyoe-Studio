@@ -1135,8 +1135,12 @@ async function loadGoogleIdentityServices() {
 
 // Render Google's official sign-in button into the login modal
 function renderGoogleButtonInModal() {
-    const customBtns = document.querySelectorAll('.google-login-btn');
+    const customBtns = document.querySelectorAll('#loginModal .google-login-btn');
     customBtns.forEach(btn => {
+        if (btn.previousElementSibling && btn.previousElementSibling.classList?.contains('gsi-btn-container')) {
+            btn.classList.add('gsi-hidden');
+            return;
+        }
         if (btn.dataset.gsiOverlaid) return;
         btn.dataset.gsiOverlaid = 'true';
 
@@ -1149,8 +1153,10 @@ function renderGoogleButtonInModal() {
         gsiContainer.style.minHeight = '44px';
         btn.parentElement.insertBefore(gsiContainer, btn);
 
-        // Hide the custom button
-        btn.style.display = 'none';
+        // Hide fallback button via class (beats later style overrides)
+        btn.classList.add('gsi-hidden');
+        btn.setAttribute('aria-hidden', 'true');
+        btn.tabIndex = -1;
 
         // Get exact width of a real input field to match perfectly, default to 280 (360 card - 80 padding)
         const passwordInput = document.getElementById('login-password');
@@ -1180,7 +1186,7 @@ window.triggerGoogleLogin = () => {
     if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
         renderGoogleButtonInModal();
         // Show a hint to the user
-        const customBtn = document.querySelector('.google-login-btn');
+        const customBtn = document.querySelector('#loginModal .google-login-btn');
         if (customBtn && customBtn.style.display === 'none') {
             // Button is already replaced, user should click the Google button above
             return;
@@ -1188,7 +1194,7 @@ window.triggerGoogleLogin = () => {
     }
 
     // If GSI isn't loaded yet, wait for it
-    const googleBtn = document.querySelector('.google-login-btn');
+    const googleBtn = document.querySelector('#loginModal .google-login-btn');
     if (googleBtn) {
         const originalHTML = googleBtn.innerHTML;
         googleBtn.innerHTML = '<i class="fas fa-spinner fa-spin" style="margin-right: 8px;"></i> <span>正在加载...</span>';
@@ -1492,7 +1498,7 @@ async function forceLogout(event) {
 window.forceLogout = forceLogout;
 
 // ==================== 页面加载时检查登录状态 ====================
-document.addEventListener('DOMContentLoaded', async function () {
+async function initializeAuthPageBoot() {
     console.log('📄 页面加载完成');
 
     // 🆕 Clean up malformed OAuth URLs (fix ##access_token issue)
@@ -1622,7 +1628,13 @@ document.addEventListener('DOMContentLoaded', async function () {
             authStateInitialized = true;
         }, 100);
     });
-});
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializeAuthPageBoot);
+} else {
+    initializeAuthPageBoot();
+}
 
 let profileModalOpenLock = false;
 let lastProfileModalOpenAt = 0;
