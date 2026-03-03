@@ -1048,235 +1048,99 @@ function updateResetButtonCountdown(button, originalText) {
     }
 }
 
-// ==================== Google Identity Services (ID Token Flow) ====================
-// Generate a secure nonce for Supabase
-window.currentGoogleNonce = null;
+// ==================== Google OAuth (Supabase Redirect Flow) ====================
+function cleanupLegacyGoogleIdentityButtons() {
+    // Remove old GSI containers rendered by previous builds (prevents duplicate/fat/Sign-in-as UI).
+    document.querySelectorAll('.gsi-btn-container, .g_id_signin, [id^="gsi_"]').forEach((node) => {
+        if (node && node.parentNode) node.parentNode.removeChild(node);
+    });
 
-async function generateNonce() {
-    const nonce = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))));
-    const encoder = new TextEncoder();
-    const encodedNonce = encoder.encode(nonce);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', encodedNonce);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const hashedNonce = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    const gsiScript = document.getElementById('gsi-script');
+    if (gsiScript && gsiScript.parentNode) {
+        gsiScript.parentNode.removeChild(gsiScript);
+    }
 
-    // Store original nonce to send to Supabase later
-    window.currentGoogleNonce = nonce;
-    return hashedNonce;
+    document.querySelectorAll('.google-login-btn').forEach((btn) => {
+        btn.classList.remove('gsi-hidden');
+        btn.removeAttribute('aria-hidden');
+        btn.removeAttribute('tabindex');
+        btn.style.pointerEvents = '';
+        btn.style.opacity = '';
+        delete btn.dataset.gsiOverlaid;
+        delete btn.dataset.googleBusy;
+    });
+}
+
+function getGoogleOAuthRedirectUrl() {
+    const url = new URL(window.location.href);
+    // Keep current path/query so users return to the same page; remove noisy hash fragments.
+    url.hash = '';
+    return url.toString();
+}
+
+function resolveActiveGoogleButton() {
+    if (document.activeElement && document.activeElement.classList?.contains('google-login-btn')) {
+        return document.activeElement;
+    }
+    return document.querySelector(
+        '#loginModal.active .google-login-btn, #adminLoginModal.active .google-login-btn, #loginModal .google-login-btn, #adminLoginModal .google-login-btn, .google-login-btn'
+    );
 }
 
 async function loadGoogleIdentityServices() {
-    if (document.getElementById('gsi-script')) return;
-
-    const hashedNonce = await generateNonce();
-
-    // Intercept window.open to center the Google popup
-    const originalWindowOpen = window.open;
-    window.open = function (url, target, features) {
-        if (features && typeof features === 'string' && (url || '').includes('accounts.google.com')) {
-            // Parse width and height from features string
-            const widthMatch = features.match(/width=(\d+)/);
-            const heightMatch = features.match(/height=(\d+)/);
-            const width = widthMatch ? parseInt(widthMatch[1]) : 500;
-            const height = heightMatch ? parseInt(heightMatch[1]) : 600;
-
-            // Calculate centered position strictly relative to the browser viewport (webpage)
-            const dualScreenLeft = window.screenLeft !== undefined ? window.screenLeft : window.screenX;
-            const dualScreenTop = window.screenTop !== undefined ? window.screenTop : window.screenY;
-
-            const winWidth = window.innerWidth;
-            const winHeight = window.innerHeight;
-
-            // Calculate browser chrome height (address bar, tabs, etc)
-            const chromeHeight = window.outerHeight > window.innerHeight ? (window.outerHeight - window.innerHeight) : 0;
-            const chromeWidth = window.outerWidth > window.innerWidth ? (window.outerWidth - window.innerWidth) / 2 : 0;
-
-            const left = Math.round((winWidth / 2) - (width / 2) + dualScreenLeft + chromeWidth);
-            // Add the chrome height to push it down into the actual viewport center
-            const top = Math.round((winHeight / 2) - (height / 2) + dualScreenTop + chromeHeight);
-
-            // Replace or add left/top in features
-            let newFeatures = features
-                .replace(/left=\d+/, `left=${left}`)
-                .replace(/top=\d+/, `top=${top}`);
-            if (!newFeatures.includes('left=')) newFeatures += `,left=${left}`;
-            if (!newFeatures.includes('top=')) newFeatures += `,top=${top}`;
-
-            console.log('[Google Auth] Centering popup:', { left, top, width, height });
-            return originalWindowOpen.call(window, url, target, newFeatures);
-        }
-        return originalWindowOpen.call(window, url, target, features);
-    };
-
-    const script = document.createElement('script');
-    script.src = "https://accounts.google.com/gsi/client";
-    script.id = 'gsi-script';
-    script.async = true;
-    script.defer = true;
-    script.onload = () => {
-        if (window.google) {
-            google.accounts.id.initialize({
-                client_id: '1017068787594-ep4bj8cdirkllqlpbmlfk436br0vbifp.apps.googleusercontent.com',
-                callback: handleGoogleCredentialResponse,
-                nonce: hashedNonce,
-                context: 'signin',
-                ux_mode: 'popup',
-                auto_select: false,
-                // Lock to classic GIS button/prompt so production and local render consistently
-                use_fedcm_for_prompt: false,
-                use_fedcm_for_button: false
-            });
-
-            // Render Google's official button directly into the login modal
-            // replacing the custom button. Real clicks = no anti-clickjacking,
-            // no cooldown, no Client Secret needed.
-            renderGoogleButtonInModal();
-        }
-    };
-    document.head.appendChild(script);
+    cleanupLegacyGoogleIdentityButtons();
 }
 
-// Render Google's official sign-in button into the login modal
-function renderGoogleButtonInModal() {
-    const customBtns = document.querySelectorAll('#loginModal .google-login-btn');
-    customBtns.forEach(btn => {
-        if (btn.previousElementSibling && btn.previousElementSibling.classList?.contains('gsi-btn-container')) {
-            btn.classList.add('gsi-hidden');
-            return;
-        }
-        if (btn.dataset.gsiOverlaid) return;
-        btn.dataset.gsiOverlaid = 'true';
+// triggerGoogleLogin is used by login modal and admin modal.
+window.triggerGoogleLogin = async () => {
+    console.log('🔵 triggerGoogleLogin called (Supabase OAuth flow)');
 
-        // Create a container for Google's real button
-        const gsiContainer = document.createElement('div');
-        gsiContainer.className = 'gsi-btn-container';
-        gsiContainer.style.display = 'flex';
-        gsiContainer.style.justifyContent = 'center';
-        gsiContainer.style.width = '100%';
-        gsiContainer.style.minHeight = '44px';
-        btn.parentElement.insertBefore(gsiContainer, btn);
-
-        // Hide fallback button via class (beats later style overrides)
-        btn.classList.add('gsi-hidden');
-        btn.setAttribute('aria-hidden', 'true');
-        btn.tabIndex = -1;
-
-        // Get exact width of a real input field to match perfectly, default to 280 (360 card - 80 padding)
-        const passwordInput = document.getElementById('login-password');
-        const exactWidth = passwordInput ? passwordInput.offsetWidth : 280;
-
-        // Render Google's official button (using outline theme for better dark mode blending)
-        google.accounts.id.renderButton(gsiContainer, {
-            type: 'standard',
-            theme: 'outline', // Outline theme works much better on dark backgrounds, removes white square around logo
-            size: 'large',
-            width: exactWidth, // Strictly enforce width matched to the input boxes
-            text: 'signin_with',
-            shape: 'pill', // Restore native rounded corners
-            logo_alignment: 'center'
-        });
-    });
-
-    console.log('[Google Auth] Google button rendered in login modal');
-}
-
-// triggerGoogleLogin is kept for backward compatibility (prompts.html uses it)
-// but now it just ensures the Google button is visible
-window.triggerGoogleLogin = () => {
-    console.log('🔵 triggerGoogleLogin called');
-
-    // If GSI is loaded and button hasn't been rendered yet, render it now
-    if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
-        renderGoogleButtonInModal();
-        // Show a hint to the user
-        const customBtn = document.querySelector('#loginModal .google-login-btn');
-        if (customBtn && customBtn.style.display === 'none') {
-            // Button is already replaced, user should click the Google button above
-            return;
-        }
+    if (!window.supabaseClient) {
+        alert('登录服务尚未就绪，请刷新页面重试。');
+        return;
     }
 
-    // If GSI isn't loaded yet, wait for it
-    const googleBtn = document.querySelector('#loginModal .google-login-btn');
+    cleanupLegacyGoogleIdentityButtons();
+
+    const googleBtn = resolveActiveGoogleButton();
+    const originalHTML = googleBtn ? googleBtn.innerHTML : '';
+    if (googleBtn && googleBtn.dataset.googleBusy === '1') return;
     if (googleBtn) {
-        const originalHTML = googleBtn.innerHTML;
-        googleBtn.innerHTML = '<i class="fas fa-spinner fa-spin" style="margin-right: 8px;"></i> <span>正在加载...</span>';
+        googleBtn.dataset.googleBusy = '1';
+        googleBtn.innerHTML = '<i class="fas fa-spinner fa-spin" style="margin-right: 8px;"></i><span>正在跳转...</span>';
         googleBtn.style.pointerEvents = 'none';
         googleBtn.style.opacity = '0.7';
-
-        let attempts = 0;
-        const waitInterval = setInterval(() => {
-            attempts++;
-            if (typeof google !== 'undefined' && google.accounts && google.accounts.id) {
-                clearInterval(waitInterval);
-                renderGoogleButtonInModal();
-            } else if (attempts >= 17) {
-                clearInterval(waitInterval);
-                googleBtn.innerHTML = originalHTML;
-                googleBtn.style.pointerEvents = '';
-                googleBtn.style.opacity = '';
-                alert('Google 登录服务加载失败，请检查网络连接后刷新页面重试。');
-            }
-        }, 300);
     }
-};
 
-
-
-
-window.handleGoogleCredentialResponse = async (response) => {
     try {
-        console.log('🔵 Received Google ID Token, authenticating with Supabase...');
-        window.isVerifyingGoogleToken = true;
-
-        // Show loading state if buttons exist
-        const defaultIcon = document.getElementById('defaultAuthIcon');
-        if (defaultIcon) defaultIcon.className = 'fas fa-spinner fa-spin';
-
-        const { data, error } = await window.supabaseClient.auth.signInWithIdToken({
+        const redirectTo = getGoogleOAuthRedirectUrl();
+        const { data, error } = await window.supabaseClient.auth.signInWithOAuth({
             provider: 'google',
-            token: response.credential,
-            nonce: window.currentGoogleNonce
+            options: {
+                redirectTo,
+                queryParams: {
+                    prompt: 'select_account'
+                }
+            }
         });
 
         if (error) throw error;
 
-        console.log('✅ Google ID Token login successful!');
-
-        // Update avatar/button immediately from OAuth response metadata (no extra round-trip wait).
-        if (data?.user) {
-            updateUserUI({
-                objectId: data.user.id,
-                username: data.user.email,
-                email: data.user.email,
-                nickname: data.user.user_metadata?.full_name || data.user.email?.split('@')[0],
-                avatarUrl: data.user.user_metadata?.avatar_url || ''
-            }, { animateAvatar: false, preferImmediateAvatar: true });
+        // Some SDK/runtime combos return URL without auto-redirect; handle that fallback.
+        if (data?.url) {
+            window.location.assign(data.url);
         }
-
-        // Reset spinner on successful login before it gets hidden
-        if (defaultIcon) defaultIcon.className = 'fas fa-user-circle';
-
-        // Let the normal auth state change listener handle UI updates
-        // For admin modal, close it
-        if (typeof closeAdminLoginModal === 'function') closeAdminLoginModal();
-        if (typeof toggleLoginModal === 'function') {
-            const loginModal = document.getElementById('loginModal');
-            if (loginModal && (loginModal.classList.contains('active') || loginModal.style.visibility === 'visible')) {
-                toggleLoginModal();
-            }
-        }
-        window.isVerifyingGoogleToken = false;
     } catch (error) {
-        window.isVerifyingGoogleToken = false;
-        console.error('❌ Google ID Token login error:', error);
-        alert('Google 登录失败: ' + error.message);
-
-        const defaultIcon = document.getElementById('defaultAuthIcon');
-        if (defaultIcon) defaultIcon.className = 'fas fa-user-circle';
+        console.error('❌ Google OAuth start failed:', error);
+        if (googleBtn) {
+            googleBtn.innerHTML = originalHTML;
+            googleBtn.style.pointerEvents = '';
+            googleBtn.style.opacity = '';
+            delete googleBtn.dataset.googleBusy;
+        }
+        alert('Google 登录失败: ' + (error.message || '请稍后重试'));
     }
-}
-
+};
 // ==================== 图片压缩助手 ====================
 function resizeImage(file, maxSize = 200) {
     return new Promise((resolve, reject) => {
