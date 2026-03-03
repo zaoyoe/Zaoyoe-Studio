@@ -1038,7 +1038,7 @@
             loadCSS(`login_dual_mode.css?v=20260303_GOOGLE_SLIM_FIX4`);
 
             // Supabase Auth
-            await loadScript('./supabase-auth-functions.js?v=20260303_GOOGLE_OAUTH_FIX4');
+            await loadScript('./supabase-auth-functions.js?v=20260303_GOOGLE_OAUTH_FIX8');
 
             // ✅ 加载 script.js (包含 sendVerificationCode 函数)
             await loadScript('./script.js?v=20260302_G_AUTH');

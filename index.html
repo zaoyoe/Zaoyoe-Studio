@@ -36,7 +36,14 @@
     <script>
         const SUPABASE_URL = 'https://auth.zaoyoe.com';
         const SUPABASE_KEY = 'sb_publishable_lwkiF-sQ80z8e9oMcejFPQ_j7oezjcF';
-        window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+            auth: {
+                persistSession: true,
+                autoRefreshToken: true,
+                detectSessionInUrl: true,
+                flowType: 'pkce'
+            }
+        });
     </script>
 
     <!-- Site Config (dual-site detection) -->
@@ -277,8 +284,8 @@
 
     <!-- Auth System (integrated from inject-auth.js) -->
     <script src="./js/avatar-uploader.js" defer></script>
-    <script src="./supabase-auth-functions.js?v=20260303_GOOGLE_OAUTH_FIX4" defer></script>
-    <script src="./inject-auth.js?v=20260303_GOOGLE_OAUTH_FIX4" defer></script>
+    <script src="./supabase-auth-functions.js?v=20260303_GOOGLE_OAUTH_FIX8" defer></script>
+    <script src="./inject-auth.js?v=20260303_GOOGLE_OAUTH_FIX8" defer></script>
     <script src="./notification-client.js?v=20260209" defer></script>
 
     <!-- Supabase Guestbook Functions (for modal form) -->

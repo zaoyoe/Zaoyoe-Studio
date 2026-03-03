@@ -1048,34 +1048,21 @@ function updateResetButtonCountdown(button, originalText) {
     }
 }
 
-// ==================== Google OAuth (Supabase Redirect Flow) ====================
+// ==================== Google Login (Primary: ID Token, Fallback: OAuth Redirect) ====================
+const GOOGLE_CLIENT_ID = '1017068787594-ep4bj8cdirkllqlpbmlfk436br0vbifp.apps.googleusercontent.com';
+let googleIdentityScriptPromise = null;
+window.currentGoogleNonce = null;
+
 function cleanupLegacyGoogleIdentityButtons() {
-    // Remove old GSI containers rendered by previous builds (prevents duplicate/fat/Sign-in-as UI).
     document.querySelectorAll('.gsi-btn-container, .g_id_signin, [id^="gsi_"]').forEach((node) => {
         if (node && node.parentNode) node.parentNode.removeChild(node);
     });
-
-    const gsiScript = document.getElementById('gsi-script');
-    if (gsiScript && gsiScript.parentNode) {
-        gsiScript.parentNode.removeChild(gsiScript);
-    }
 
     document.querySelectorAll('.google-login-btn').forEach((btn) => {
         btn.classList.remove('gsi-hidden');
         btn.removeAttribute('aria-hidden');
         btn.removeAttribute('tabindex');
-        btn.style.pointerEvents = '';
-        btn.style.opacity = '';
-        delete btn.dataset.gsiOverlaid;
-        delete btn.dataset.googleBusy;
     });
-}
-
-function getGoogleOAuthRedirectUrl() {
-    const url = new URL(window.location.href);
-    // Keep current path/query so users return to the same page; remove noisy hash fragments.
-    url.hash = '';
-    return url.toString();
 }
 
 function resolveActiveGoogleButton() {
@@ -1087,58 +1074,182 @@ function resolveActiveGoogleButton() {
     );
 }
 
+function setGoogleButtonsLoading(isLoading, text = '正在登录...') {
+    document.querySelectorAll('.google-login-btn').forEach((btn) => {
+        if (isLoading) {
+            if (!btn.dataset.originalHtml) btn.dataset.originalHtml = btn.innerHTML;
+            btn.dataset.googleBusy = '1';
+            btn.innerHTML = `<i class="fas fa-spinner fa-spin" style="margin-right: 8px;"></i><span>${text}</span>`;
+            btn.style.pointerEvents = 'none';
+            btn.style.opacity = '0.75';
+        } else {
+            if (btn.dataset.originalHtml) btn.innerHTML = btn.dataset.originalHtml;
+            delete btn.dataset.originalHtml;
+            delete btn.dataset.googleBusy;
+            btn.style.pointerEvents = '';
+            btn.style.opacity = '';
+        }
+    });
+}
+
+async function generateGoogleNonce() {
+    const randomBytes = crypto.getRandomValues(new Uint8Array(32));
+    const nonce = btoa(String.fromCharCode(...randomBytes));
+    const encoder = new TextEncoder();
+    const encoded = encoder.encode(nonce);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', encoded);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashedNonce = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+    window.currentGoogleNonce = nonce;
+    return hashedNonce;
+}
+
 async function loadGoogleIdentityServices() {
     cleanupLegacyGoogleIdentityButtons();
+    if (window.google?.accounts?.id) return true;
+
+    if (!googleIdentityScriptPromise) {
+        googleIdentityScriptPromise = new Promise((resolve, reject) => {
+            const existing = document.getElementById('gsi-script');
+            if (existing) {
+                existing.addEventListener('load', () => resolve(true), { once: true });
+                existing.addEventListener('error', () => reject(new Error('Google GSI script load failed')), { once: true });
+                return;
+            }
+            const script = document.createElement('script');
+            script.src = 'https://accounts.google.com/gsi/client';
+            script.id = 'gsi-script';
+            script.async = true;
+            script.defer = true;
+            script.onload = () => resolve(true);
+            script.onerror = () => reject(new Error('Google GSI script load failed'));
+            document.head.appendChild(script);
+        });
+    }
+
+    await googleIdentityScriptPromise;
+    return !!window.google?.accounts?.id;
+}
+
+async function initGoogleIdTokenFlow() {
+    const hashedNonce = await generateGoogleNonce();
+    google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: handleGoogleCredentialResponse,
+        nonce: hashedNonce,
+        context: 'signin',
+        auto_select: false,
+        use_fedcm_for_prompt: false,
+        use_fedcm_for_button: false
+    });
+}
+
+function getCurrentPageRedirectUrl() {
+    const url = new URL(window.location.href);
+    url.hash = '';
+    return url.toString();
+}
+
+async function triggerGoogleOAuthRedirectFallback() {
+    const redirectTo = getCurrentPageRedirectUrl();
+    const { data, error } = await window.supabaseClient.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+            redirectTo,
+            queryParams: { prompt: 'select_account' }
+        }
+    });
+    if (error) throw error;
+    if (data?.url) window.location.assign(data.url);
 }
 
 // triggerGoogleLogin is used by login modal and admin modal.
 window.triggerGoogleLogin = async () => {
-    console.log('🔵 triggerGoogleLogin called (Supabase OAuth flow)');
+    console.log('🔵 triggerGoogleLogin called');
 
     if (!window.supabaseClient) {
         alert('登录服务尚未就绪，请刷新页面重试。');
         return;
     }
 
-    cleanupLegacyGoogleIdentityButtons();
+    const activeBtn = resolveActiveGoogleButton();
+    if (activeBtn && activeBtn.dataset.googleBusy === '1') return;
 
-    const googleBtn = resolveActiveGoogleButton();
-    const originalHTML = googleBtn ? googleBtn.innerHTML : '';
-    if (googleBtn && googleBtn.dataset.googleBusy === '1') return;
-    if (googleBtn) {
-        googleBtn.dataset.googleBusy = '1';
-        googleBtn.innerHTML = '<i class="fas fa-spinner fa-spin" style="margin-right: 8px;"></i><span>正在跳转...</span>';
-        googleBtn.style.pointerEvents = 'none';
-        googleBtn.style.opacity = '0.7';
-    }
+    setGoogleButtonsLoading(true, '正在登录...');
 
     try {
-        const redirectTo = getGoogleOAuthRedirectUrl();
-        const { data, error } = await window.supabaseClient.auth.signInWithOAuth({
-            provider: 'google',
-            options: {
-                redirectTo,
-                queryParams: {
-                    prompt: 'select_account'
+        const loaded = await loadGoogleIdentityServices();
+        if (!loaded || !window.google?.accounts?.id) {
+            throw new Error('Google identity service unavailable');
+        }
+
+        await initGoogleIdTokenFlow();
+
+        // Use Google's prompt UI to keep custom button style while using ID token login.
+        google.accounts.id.prompt(async (notification) => {
+            try {
+                if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+                    console.warn('⚠️ Google ID prompt unavailable, fallback to OAuth redirect');
+                    await triggerGoogleOAuthRedirectFallback();
+                    return;
                 }
+
+                if (notification.isDismissedMoment()) {
+                    // User cancelled prompt; restore button state.
+                    setGoogleButtonsLoading(false);
+                }
+            } catch (err) {
+                console.error('❌ Google fallback failed:', err);
+                setGoogleButtonsLoading(false);
+                alert('Google 登录失败: ' + (err.message || '请稍后重试'));
             }
+        });
+    } catch (error) {
+        console.error('❌ Google login start failed:', error);
+        try {
+            await triggerGoogleOAuthRedirectFallback();
+        } catch (fallbackErr) {
+            console.error('❌ OAuth fallback failed:', fallbackErr);
+            setGoogleButtonsLoading(false);
+            alert('Google 登录失败: ' + (fallbackErr.message || error.message || '请稍后重试'));
+        }
+    }
+};
+
+window.handleGoogleCredentialResponse = async (response) => {
+    try {
+        if (!response?.credential) throw new Error('未获取到 Google 凭证');
+
+        const { data, error } = await window.supabaseClient.auth.signInWithIdToken({
+            provider: 'google',
+            token: response.credential,
+            nonce: window.currentGoogleNonce
         });
 
         if (error) throw error;
 
-        // Some SDK/runtime combos return URL without auto-redirect; handle that fallback.
-        if (data?.url) {
-            window.location.assign(data.url);
+        if (data?.user) {
+            updateUserUI({
+                objectId: data.user.id,
+                username: data.user.email,
+                email: data.user.email,
+                nickname: data.user.user_metadata?.full_name || data.user.email?.split('@')[0],
+                avatarUrl: data.user.user_metadata?.avatar_url || ''
+            }, { animateAvatar: false, preferImmediateAvatar: true });
+        }
+
+        if (typeof closeAdminLoginModal === 'function') closeAdminLoginModal();
+        if (typeof toggleLoginModal === 'function') {
+            const loginModal = document.getElementById('loginModal');
+            if (loginModal && (loginModal.classList.contains('active') || loginModal.style.visibility === 'visible')) {
+                toggleLoginModal();
+            }
         }
     } catch (error) {
-        console.error('❌ Google OAuth start failed:', error);
-        if (googleBtn) {
-            googleBtn.innerHTML = originalHTML;
-            googleBtn.style.pointerEvents = '';
-            googleBtn.style.opacity = '';
-            delete googleBtn.dataset.googleBusy;
-        }
+        console.error('❌ Google ID Token login error:', error);
         alert('Google 登录失败: ' + (error.message || '请稍后重试'));
+    } finally {
+        setGoogleButtonsLoading(false);
     }
 };
 // ==================== 图片压缩助手 ====================
@@ -1364,18 +1475,87 @@ async function forceLogout(event) {
 
 window.forceLogout = forceLogout;
 
+async function resolveOAuthCallbackSession() {
+    if (!window.supabaseClient?.auth) return false;
+
+    const url = new URL(window.location.href);
+    const hash = window.location.hash || '';
+    let hasResolvedSession = false;
+    let shouldCleanUrl = false;
+
+    // PKCE callback path: ?code=...
+    const code = url.searchParams.get('code');
+    if (code) {
+        console.log('🔐 Detected OAuth code callback, exchanging session...');
+        try {
+            const { data, error } = await window.supabaseClient.auth.exchangeCodeForSession(code);
+            if (error) {
+                console.warn('⚠️ exchangeCodeForSession failed:', error.message);
+            } else if (data?.session) {
+                hasResolvedSession = true;
+                console.log('✅ OAuth code exchanged successfully');
+            }
+        } catch (err) {
+            console.warn('⚠️ OAuth code exchange error:', err.message);
+        }
+
+        // Remove callback-only params to keep URL clean.
+        url.searchParams.delete('code');
+        url.searchParams.delete('state');
+        shouldCleanUrl = true;
+    }
+
+    // Implicit callback path: #access_token=...&refresh_token=...
+    if (!hasResolvedSession && /access_token=/.test(hash) && /refresh_token=/.test(hash)) {
+        console.log('🔐 Detected OAuth hash callback, restoring session...');
+        try {
+            const hashParams = new URLSearchParams(hash.replace(/^#/, ''));
+            const access_token = hashParams.get('access_token');
+            const refresh_token = hashParams.get('refresh_token');
+            if (access_token && refresh_token) {
+                const { data, error } = await window.supabaseClient.auth.setSession({
+                    access_token,
+                    refresh_token
+                });
+                if (error) {
+                    console.warn('⚠️ setSession from hash failed:', error.message);
+                } else if (data?.session) {
+                    hasResolvedSession = true;
+                    console.log('✅ OAuth hash session restored');
+                }
+            }
+        } catch (err) {
+            console.warn('⚠️ OAuth hash restore error:', err.message);
+        }
+        shouldCleanUrl = true;
+    }
+
+    // If provider returned an auth error in hash, log it for diagnosis and clean hash.
+    if (/error=/.test(hash)) {
+        const hashParams = new URLSearchParams(hash.replace(/^#/, ''));
+        const authError = hashParams.get('error_description') || hashParams.get('error');
+        if (authError) {
+            console.warn('⚠️ OAuth callback error:', decodeURIComponent(authError));
+        }
+        shouldCleanUrl = true;
+    }
+
+    // Fix malformed URLs like ##access_token...
+    if (window.location.href.includes('##') || (window.location.href.match(/#/g) || []).length > 1) {
+        shouldCleanUrl = true;
+    }
+
+    if (shouldCleanUrl) {
+        const cleanUrl = `${url.pathname}${url.search}`;
+        window.history.replaceState({}, document.title, cleanUrl || '/');
+    }
+
+    return hasResolvedSession;
+}
+
 // ==================== 页面加载时检查登录状态 ====================
 async function initializeAuthPageBoot() {
     console.log('📄 页面加载完成');
-
-    // 🆕 Clean up malformed OAuth URLs (fix ##access_token issue)
-    const currentUrl = window.location.href;
-    if (currentUrl.includes('##') || (currentUrl.match(/#/g) || []).length > 1) {
-        console.warn('⚠️ Detected malformed OAuth URL, cleaning up...');
-        // Remove all hash content and redirect to clean URL
-        const cleanUrl = window.location.origin + window.location.pathname;
-        window.history.replaceState({}, document.title, cleanUrl);
-    }
 
     // 🆕 Instant UI restoration from cache (prevents avatar flash on hard refresh)
     const cachedProfile = localStorage.getItem('cached_user_profile');
@@ -1397,6 +1577,9 @@ async function initializeAuthPageBoot() {
 
     // 初始化 Google Identity Services
     loadGoogleIdentityServices();
+
+    // OAuth callback兜底：确保从Google回跳后能拿到session
+    await resolveOAuthCallbackSession();
 
     // 检查登录状态 (will update UI again with fresh data)
     await checkAuthState();
