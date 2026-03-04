@@ -612,23 +612,35 @@
     <!-- Dropdown Blur Overlay -->
     <div class="dropdown-overlay" id="dropdownOverlay"></div>
 
-    <!-- Background Blobs -->
-    <div class="background-blobs">
-        <div class="blob blob-1"></div>
-        <div class="blob blob-2"></div>
-        <div class="blob blob-3"></div>
-    </div>
-
+    <!-- Ambient Light Canvas (Living Background) -->
+    <canvas id="ambientCanvas"></canvas>
     <!-- Starry Sky Canvas (Dark Mode Only) -->
     <canvas id="starryCanvas"></canvas>
 
     <style>
-        #starryCanvas {
+        /* Background Canvas Styles */
+        #ambientCanvas {
             position: fixed;
-            top: 0;
+            top: -10vh;
             left: 0;
             width: 100vw;
-            height: 100vh;
+            height: 120vh;
+            z-index: -1;
+            pointer-events: none;
+            opacity: 1;
+            transition: opacity 2s ease-in-out;
+        }
+
+        [data-theme="dark"] #ambientCanvas {
+            opacity: 0.4;
+        }
+
+        #starryCanvas {
+            position: fixed;
+            top: -10vh;
+            left: 0;
+            width: 100vw;
+            height: 120vh;
             z-index: 0;
             pointer-events: none;
             opacity: 0;
@@ -1223,6 +1235,7 @@
 
     <!-- Background Animations -->
     <script src="starry-sky.js"></script>
+    <script src="js/ambient-light.js"></script>
 
     <!-- System Announcement Loader -->
     <script src="announcement-loader.js?v=8"></script>
