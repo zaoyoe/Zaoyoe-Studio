@@ -564,18 +564,14 @@ async function handleAuthClick(event) {
         // no need to await getUser() here for dropdown toggle
     } else {
         // User is not logged in - open login modal
-        const loginModal = document.getElementById('loginModal');
-        if (loginModal) {
-            loginModal.classList.add('active');
-            // 🆕 Reset visibility/opacity that toggleLoginModal sets when closing
-            loginModal.style.visibility = 'visible';
-            loginModal.style.opacity = '1';
-            // 🆕 Also reset the card visibility
-            const card = loginModal.querySelector('.login-card');
-            if (card) {
-                card.style.display = 'block';
-                card.style.opacity = '1';
-                card.style.visibility = 'visible';
+        if (typeof window.openLoginModal === 'function') {
+            window.openLoginModal();
+        } else {
+            const loginModal = document.getElementById('loginModal');
+            if (loginModal) {
+                loginModal.classList.add('active');
+                loginModal.style.visibility = 'visible';
+                loginModal.style.opacity = '1';
             }
         }
     }
@@ -1753,13 +1749,12 @@ async function initializeAuthPageBoot() {
     if (sessionStorage.getItem('openLoginModal') === 'true') {
         sessionStorage.removeItem('openLoginModal');
         setTimeout(() => {
-            const loginModal = document.getElementById('loginModal');
-            if (loginModal) {
-                loginModal.classList.add('active');
-                if (typeof ensureGoogleInlineButtonReady === 'function') {
-                    ensureGoogleInlineButtonReady({ renderFallbackButton: true }).catch((err) => {
-                        console.warn('⚠️ ensureGoogleInlineButtonReady after openLoginModal failed:', err?.message || err);
-                    });
+            if (typeof window.openLoginModal === 'function') {
+                window.openLoginModal();
+            } else {
+                const loginModal = document.getElementById('loginModal');
+                if (loginModal) {
+                    loginModal.classList.add('active');
                 }
             }
         }, 300);
@@ -2025,9 +2020,13 @@ async function handleSwitchAccount(event) {
 
     // 打开登录弹窗
     setTimeout(() => {
-        const loginModal = document.getElementById('loginModal');
-        if (loginModal) {
-            loginModal.classList.add('active');
+        if (typeof window.openLoginModal === 'function') {
+            window.openLoginModal();
+        } else {
+            const loginModal = document.getElementById('loginModal');
+            if (loginModal) {
+                loginModal.classList.add('active');
+            }
         }
     }, 100);
 }

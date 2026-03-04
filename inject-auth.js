@@ -1116,34 +1116,86 @@
                 // Auth state will be checked by initializeAuthPageBoot() on DOMContentLoaded
             }
 
+            function isIOSMobileWebKit() {
+                const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+                    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+                return isIOS && window.matchMedia('(max-width: 768px)').matches;
+            }
+
+            function lockBodyForIOSLoginModal() {
+                if (!isIOSMobileWebKit()) return;
+                if (document.body.dataset.loginScrollLock === '1') return;
+
+                const scrollY = window.scrollY || window.pageYOffset || 0;
+                document.body.dataset.loginScrollLock = '1';
+                document.body.dataset.loginScrollTop = String(scrollY);
+                document.body.style.position = 'fixed';
+                document.body.style.top = `-${scrollY}px`;
+                document.body.style.left = '0';
+                document.body.style.right = '0';
+                document.body.style.width = '100%';
+            }
+
+            function unlockBodyForIOSLoginModal() {
+                if (document.body.dataset.loginScrollLock !== '1') return;
+                const top = parseInt(document.body.dataset.loginScrollTop || '0', 10) || 0;
+
+                document.body.style.position = '';
+                document.body.style.top = '';
+                document.body.style.left = '';
+                document.body.style.right = '';
+                document.body.style.width = '';
+                delete document.body.dataset.loginScrollLock;
+                delete document.body.dataset.loginScrollTop;
+                window.scrollTo(0, top);
+            }
+
+            function openLoginModal() {
+                const modal = document.getElementById('loginModal');
+                if (!modal) return;
+
+                modal.classList.add('active');
+                modal.style.display = 'flex';
+                modal.style.visibility = 'visible';
+                modal.style.opacity = '1';
+
+                const card = modal.querySelector('.login-card');
+                if (card) {
+                    card.style.display = 'block';
+                    card.style.opacity = '1';
+                    card.style.visibility = 'visible';
+                }
+
+                lockBodyForIOSLoginModal();
+
+                if (typeof window.ensureGoogleInlineButtonReady === 'function') {
+                    window.ensureGoogleInlineButtonReady({ renderFallbackButton: true }).catch((err) => {
+                        console.warn('⚠️ ensureGoogleInlineButtonReady on modal open failed:', err?.message || err);
+                    });
+                }
+            }
+
+            function closeLoginModal() {
+                const modal = document.getElementById('loginModal');
+                if (!modal) return;
+
+                modal.classList.remove('active', 'ios-focus-lock');
+                modal.style.display = 'none';
+                modal.style.visibility = 'hidden';
+                modal.style.opacity = '0';
+                unlockBodyForIOSLoginModal();
+            }
+
             // Add global handlers if needed
+            window.openLoginModal = openLoginModal;
+            window.closeLoginModal = closeLoginModal;
             window.toggleLoginModal = function () {
                 const modal = document.getElementById('loginModal');
-                if (modal) {
-                    modal.classList.toggle('active');
-                    const isActive = modal.classList.contains('active');
-
-                    if (isActive) {
-                        modal.style.display = 'flex';
-                        modal.style.visibility = 'visible';
-                        modal.style.opacity = '1';
-                        // 🆕 Force card visibility
-                        const card = modal.querySelector('.login-card');
-                        if (card) {
-                            card.style.display = 'block';
-                            card.style.opacity = '1';
-                            card.style.visibility = 'visible';
-                        }
-                        if (typeof window.ensureGoogleInlineButtonReady === 'function') {
-                            window.ensureGoogleInlineButtonReady({ renderFallbackButton: true }).catch((err) => {
-                                console.warn('⚠️ ensureGoogleInlineButtonReady on modal open failed:', err?.message || err);
-                            });
-                        }
-                    } else {
-                        modal.style.display = 'none';
-                        modal.style.visibility = 'hidden';
-                        modal.style.opacity = '0';
-                    }
+                if (!modal) return;
+                if (modal.classList.contains('active')) {
+                    closeLoginModal();
+                } else {
+                    openLoginModal();
                 }
             };
 

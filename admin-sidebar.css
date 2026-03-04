@@ -303,7 +303,8 @@ html {
 /* Responsive */
 @media (max-width: 768px) {
     .admin-sidebar {
-        width: 0;
+        width: 260px;
+        /* Use fixed width and only animate transform to avoid reflow overflow */
         transform: translateX(-100%);
     }
 
