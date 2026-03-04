@@ -143,9 +143,11 @@ const FramerHome = {
 
   /**
    * Render Hero immediately from prefetched/session/fallback data.
-   * This runs before full async data load to remove perceived delay.
+   * [DISABLED] - To prevent raw i18n keys from flashing on first load.
    */
   renderHeroFirstPaint() {
+    // Disabled. Wait for full data & i18n load in init() instead.
+    return;
     try {
       const section = document.getElementById('hero-section');
       if (!section) return;
@@ -198,17 +200,25 @@ const FramerHome = {
       if (prefetchRaw) {
         const prefetch = JSON.parse(prefetchRaw);
         const age = Date.now() - prefetch.timestamp;
-        // Use if < 5 minutes old (don't remove — it persists for next navigation)
-        if (age < 300000 && prefetch.cachedData && prefetch.config) {
+
+        // ONLY use cache if it was saved AFTER i18n was ready (a rudimentary check: title shouldn't equal its own key)
+        const isTranslated = prefetch.cachedData?.hero?.title && !prefetch.cachedData.hero.title.includes('home.hero');
+
+        // Use if < 5 minutes old and contains actual translated text
+        if (age < 300000 && prefetch.cachedData && prefetch.config && isTranslated) {
           this.cachedData = prefetch.cachedData;
           this.config = prefetch.config;
           this.writeHeroTextCache(this.cachedData.hero);
           console.log(`⚡ Using prefetched homepage data (${Math.round(age / 1000)}s old)`);
           return;
+        } else {
+          // Clear poisoned cache containing raw translation keys
+          sessionStorage.removeItem('homepage_prefetch');
         }
       }
     } catch (e) {
       // Ignore parse errors
+      sessionStorage.removeItem('homepage_prefetch');
     }
 
     try {
@@ -1766,12 +1776,12 @@ const FramerHome = {
 
 // Auto-initialize when DOM is ready and dependencies are loaded
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', async () => {
+  document.addEventListener('DOMContentLoaded', () => {
     // Wait for PROMPTS and supabaseClient to be available
     const waitForDeps = setInterval(() => {
       if (window.PROMPTS && window.supabaseClient) {
         clearInterval(waitForDeps);
-        FramerHome.init();
+        FramerHome.init(); // Now async, but we don't need to await it here
       }
     }, 100);
   });
@@ -1780,7 +1790,7 @@ if (document.readyState === 'loading') {
   const waitForDeps = setInterval(() => {
     if (window.PROMPTS && window.supabaseClient) {
       clearInterval(waitForDeps);
-      FramerHome.init();
+      FramerHome.init(); // Now async, but we don't need to await it here
     }
   }, 100);
 }
