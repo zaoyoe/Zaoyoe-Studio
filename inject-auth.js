@@ -328,7 +328,7 @@
             /* Dropdown Styles (Refined Glassmorphism) */
             .avatar-dropdown {
                 position: fixed;
-                top: 63px;
+                /* top is set dynamically by JS in handleAuthClick() */
                 right: 30px;
                 min-width: 220px;
                 /* Match nav bar glass effect */
@@ -941,17 +941,8 @@
                 border-color: rgba(255, 255, 255, 0.9);
             }
 
-            /* ========================================
-               MOBILE SPECIFIC OVERRIDES
-               ======================================== */
-            @media (max-width: 768px) {
-                /* Push the avatar dropdown down so it doesn't overlap the mobile status bar or dynamic island */
-                .avatar-dropdown,
-                #auth-container .avatar-dropdown {
-                    top: 80px !important;
-                    right: 16px !important;
-                }
-            }
+            /* Mobile overrides are no longer needed for .avatar-dropdown top/right.
+               JS in handleAuthClick() dynamically computes position from authBtn.getBoundingClientRect(). */
 
 
         `;

@@ -530,15 +530,25 @@ async function handleAuthClick(event) {
                 dropdown.classList.remove('active');
                 if (overlay) overlay.classList.remove('active');
             } else {
-                // 🆕 Dynamically position dropdown relative to avatar button
+                // 🆕 Dynamically position dropdown relative to nav bar bottom edge
                 const authBtn = document.getElementById('authBtn');
                 if (authBtn) {
                     const rect = authBtn.getBoundingClientRect();
-                    const dropdownWidth = dropdown.offsetWidth || 220;
+                    // Find the actual nav bar container to get its true bottom edge
+                    const navBar = authBtn.closest('.nav-bar') || authBtn.closest('nav') || authBtn.closest('.top-right-nav')?.parentElement;
+                    let anchorBottom;
+                    if (navBar) {
+                        anchorBottom = navBar.getBoundingClientRect().bottom;
+                    } else {
+                        // Fallback: use button bottom + generous margin
+                        anchorBottom = rect.bottom + 8;
+                    }
                     // Align dropdown right edge with avatar button right edge
                     const rightOffset = window.innerWidth - rect.right;
-                    dropdown.style.right = Math.max(10, rightOffset) + 'px';
-                    dropdown.style.top = (rect.bottom + 8) + 'px';
+                    // Use setProperty with !important to guarantee JS wins over any CSS rules
+                    dropdown.style.setProperty('right', Math.max(10, rightOffset) + 'px', 'important');
+                    // Shift up by 1px to fuse seamlessly with nav bar (same as nav-dropdown-portal)
+                    dropdown.style.setProperty('top', (anchorBottom - 1) + 'px', 'important');
                 }
                 dropdown.classList.add('active');
                 if (overlay) overlay.classList.add('active');
