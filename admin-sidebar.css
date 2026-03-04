@@ -306,6 +306,13 @@ html {
         width: 260px;
         /* Use fixed width and only animate transform to avoid reflow overflow */
         transform: translateX(-100%);
+        /* Extend vertically to prevent iOS toolbar gaps/rubber-banding */
+        top: -10vh;
+        bottom: -10vh;
+        height: auto;
+        /* Override any fixed height */
+        padding-top: calc(10vh + env(safe-area-inset-top, 0px));
+        padding-bottom: calc(10vh + env(safe-area-inset-bottom, 0px));
     }
 
     .admin-sidebar.open {

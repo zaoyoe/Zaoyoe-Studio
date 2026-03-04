@@ -1679,10 +1679,11 @@ input.submit-btn {
     -webkit-backdrop-filter: blur(40px) saturate(150%);
 }
 
-/* Prevent body scroll when modal is open */
-/* Prevent body scroll when modal is open */
+/* Prevent page scroll when modal is open */
+html.no-scroll,
 body.no-scroll {
     overflow: hidden !important;
+    overscroll-behavior: none !important;
     /* remove height: 100vh restriction which causes scroll jump on mobile */
 }
 
