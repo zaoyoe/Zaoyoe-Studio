@@ -832,15 +832,23 @@ const FramerHome = {
         dropdown.classList.add('visible');
       };
 
-      const hideDropdown = () => {
-        // Snappy timeout
+      // State tracking for intelligent hover
+      let isHoveringTrigger = false;
+      let isHoveringDropdown = false;
+
+      const hideDropdown = (e) => {
+        // Forgiving timeout to prevent premature closing when traversing gaps
         trigger._hideTimeout = setTimeout(() => {
-          // Double check hover state just in case
-          if (trigger.matches(':hover') || dropdown.matches(':hover')) return;
+          if (isHoveringTrigger || isHoveringDropdown) return;
+
+          // Extra check: if mouse is currently over either element
+          if (trigger.matches(':hover') || dropdown.matches(':hover')) {
+            return;
+          }
 
           dropdown.classList.remove('visible');
           trigger.classList.remove('active');
-        }, 100);
+        }, 200);
       };
 
       const keepDropdownOpen = () => {
@@ -851,12 +859,38 @@ const FramerHome = {
       };
 
       // Events - attach to the trigger
-      trigger.addEventListener('mouseenter', showDropdown);
-      trigger.addEventListener('mouseleave', hideDropdown);
+      trigger.addEventListener('mouseenter', () => {
+        isHoveringTrigger = true;
+        showDropdown();
+      });
+      trigger.addEventListener('mouseleave', (e) => {
+        isHoveringTrigger = false;
+
+        // Intelligent gap traversal check
+        // If moving straight down towards the dropdown, give extra time
+        if (e.movementY > 0) {
+          clearTimeout(trigger._hideTimeout);
+          trigger._hideTimeout = setTimeout(() => {
+            if (!isHoveringTrigger && !isHoveringDropdown) {
+              dropdown.classList.remove('visible');
+              trigger.classList.remove('active');
+            }
+          }, 400); // Longer grace period for the physical gap
+          return;
+        }
+
+        hideDropdown();
+      });
 
       // Events - attach to the precise dropdown element
-      dropdown.addEventListener('mouseenter', keepDropdownOpen);
-      dropdown.addEventListener('mouseleave', hideDropdown);
+      dropdown.addEventListener('mouseenter', () => {
+        isHoveringDropdown = true;
+        keepDropdownOpen();
+      });
+      dropdown.addEventListener('mouseleave', () => {
+        isHoveringDropdown = false;
+        hideDropdown();
+      });
     });
   },
 

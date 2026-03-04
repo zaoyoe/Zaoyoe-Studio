@@ -3,8 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport"
-        content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta name="description" content="Gemini 学生验证服务页，支持验证链接处理与账号结果查询。">
     <title data-i18n="verify.pageTitle">Gemini 验证 - Zaoyoe</title>
@@ -31,18 +30,8 @@
     <!-- Supabase -->
     <!-- Supabase Client (使用国内可访问的CDN) -->
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <script src="./supabase-client.js"></script>
     <script>
-        const SUPABASE_URL = 'https://auth.zaoyoe.com';
-        const SUPABASE_KEY = 'sb_publishable_lwkiF-sQ80z8e9oMcejFPQ_j7oezjcF';
-        window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
-            auth: {
-                persistSession: true,
-                autoRefreshToken: true,
-                detectSessionInUrl: true,
-                flowType: 'pkce'
-            }
-        });
-
         // Production verification server URL
         window.VERIFY_SERVER_URL = 'https://zaoyoe-verify-server-production.up.railway.app';
     </script>
@@ -387,9 +376,10 @@
                     <i class="fas fa-chevron-down"></i>
                 </button>
                 <div class="mobile-submenu" id="support-mobile">
-                    <a href="https://t.me/zaoyoe" target="_blank" rel="noopener noreferrer" class="mobile-menu-link">TG</a>
-                    <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank" rel="noopener noreferrer" class="mobile-menu-link"><span
-                            data-i18n="nav.tgGroup">TG群组</span></a>
+                    <a href="https://t.me/zaoyoe" target="_blank" rel="noopener noreferrer"
+                        class="mobile-menu-link">TG</a>
+                    <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank" rel="noopener noreferrer"
+                        class="mobile-menu-link"><span data-i18n="nav.tgGroup">TG群组</span></a>
                 </div>
             </div>
         </div>
@@ -398,67 +388,71 @@
     <main id="main-content" role="main">
         <h1 class="visually-hidden-h1">Gemini 验证</h1>
 
-    <!-- Main Container -->
-    <div class="content-wrapper">
-        <div class="verify-page-container">
-            <!-- Page Header -->
+        <!-- Main Container -->
+        <div class="content-wrapper">
+            <div class="verify-page-container">
+                <!-- Page Header -->
 
 
-            <!-- Verify Widget -->
-            <div id="verify-widget-container"></div>
+                <!-- Verify Widget -->
+                <div id="verify-widget-container"></div>
 
-            <!-- PRE-RENDER: Synchronous check of localStorage - inject CSS into HEAD (won't be overwritten by render) -->
-            <script>
-                (function () {
-                    try {
-                        const cached = localStorage.getItem('cached_user_profile');
-                        if (cached) {
-                            const user = JSON.parse(cached);
-                            if (user && (user.id || user.user_id)) {
-                                // User is logged in - inject CSS into HEAD (won't be removed by widget render)
-                                const style = document.createElement('style');
-                                style.id = 'verify-prerender-style';
-                                style.textContent = '#verifyLoginPrompt{display:none!important}#verifyForm{display:block!important}#verifyBalance{display:flex!important}';
-                                document.head.appendChild(style);
-                                console.log('[VerifyPreRender] Injected logged-in CSS into head');
+                <!-- PRE-RENDER: Synchronous check of localStorage - inject CSS into HEAD (won't be overwritten by render) -->
+                <script>
+                    (function () {
+                        try {
+                            const cached = localStorage.getItem('cached_user_profile');
+                            if (cached) {
+                                const user = JSON.parse(cached);
+                                if (user && (user.id || user.user_id)) {
+                                    // User is logged in - inject CSS into HEAD (won't be removed by widget render)
+                                    const style = document.createElement('style');
+                                    style.id = 'verify-prerender-style';
+                                    style.textContent = '#verifyLoginPrompt{display:none!important}#verifyForm{display:block!important}#verifyBalance{display:flex!important}';
+                                    document.head.appendChild(style);
+                                    console.log('[VerifyPreRender] Injected logged-in CSS into head');
+                                }
                             }
-                        }
-                    } catch (e) { console.warn('[VerifyPreRender] Error:', e); }
-                })();
-            </script>
+                        } catch (e) { console.warn('[VerifyPreRender] Error:', e); }
+                    })();
+                </script>
 
-            <!-- Info Cards removed as requested -->
+                <!-- Info Cards removed as requested -->
 
-            <!-- Instructions -->
-            <div class="verify-instructions">
-                <h3><i class="fas fa-lightbulb"></i> <span data-i18n="verify.instructionsTitle">使用说明</span></h3>
-                <ol>
-                    <li data-i18n="verify.instruction1">直接右键复制 <code>verify eligibility</code> / <code>验证学生资格</code>
-                        蓝色按钮的链接（不在浏览器打开）成功率更高。</li>
-                    <li><span data-i18n="verify.instruction2">认证成功提示没有资格用这个链接进去:</span> <br><a
-                            href="https://one.google.com/ai-student?g1_landing_page=75&utm_source=antigravity&utm_campaign=argon_limit_reached"
-                            target="_blank" rel="noopener noreferrer"
-                            style="word-break: break-all; color: #6b9ece;">https://one.google.com/ai-student?g1_landing_page=75&utm_source=antigravity&utm_campaign=argon_limit_reached</a>
-                    </li>
-                    <li data-i18n="verify.instruction3">在 https://one.google.com/ai-student 的那个蓝色按钮上右键 别点进去 直接右键复制链接出来!
-                        建议用无痕窗口登录账户获取！</li>
-                    <li data-i18n="verify.instruction4">如果你的验证链接中 verificationID 后面是空的：1.刷新网页再试。2.直接点进去重新获取。3.换号</li>
-                </ol>
+                <!-- Instructions -->
+                <div class="verify-instructions">
+                    <h3><i class="fas fa-lightbulb"></i> <span data-i18n="verify.instructionsTitle">使用说明</span></h3>
+                    <ol>
+                        <li data-i18n="verify.instruction1">直接右键复制 <code>verify eligibility</code> / <code>验证学生资格</code>
+                            蓝色按钮的链接（不在浏览器打开）成功率更高。</li>
+                        <li><span data-i18n="verify.instruction2">认证成功提示没有资格用这个链接进去:</span> <br><a
+                                href="https://one.google.com/ai-student?g1_landing_page=75&utm_source=antigravity&utm_campaign=argon_limit_reached"
+                                target="_blank" rel="noopener noreferrer"
+                                style="word-break: break-all; color: #6b9ece;">https://one.google.com/ai-student?g1_landing_page=75&utm_source=antigravity&utm_campaign=argon_limit_reached</a>
+                        </li>
+                        <li data-i18n="verify.instruction3">在 https://one.google.com/ai-student 的那个蓝色按钮上右键 别点进去
+                            直接右键复制链接出来!
+                            建议用无痕窗口登录账户获取！</li>
+                        <li data-i18n="verify.instruction4">如果你的验证链接中 verificationID 后面是空的：1.刷新网页再试。2.直接点进去重新获取。3.换号
+                        </li>
+                    </ol>
+                </div>
             </div>
         </div>
-    </div>
 
-    <!-- Afdian Support Link (Flow Sticky Footer) -->
-    <div class="verify-footer">
-        <span style="font-size: 13px; color: rgba(255, 255, 255, 0.8);"><span data-i18n="verify.supportUs">支持我们</span>:
-            <a href="https://afdian.com/a/zaoyoe" target="_blank" rel="noopener noreferrer"
-                style="color: inherit; text-decoration: none; transition: all 0.3s; border-bottom: 1px dashed rgba(255,255,255,0.4);">afdian.com/a/zaoyoe</a>
-            <span style="margin: 0 10px; opacity: 0.4;">|</span>
-            <span data-i18n="verify.chatGroup">交流群</span>: <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank" rel="noopener noreferrer"
-                style="color: inherit; text-decoration: none; transition: all 0.3s; border-bottom: 1px dashed rgba(255,255,255,0.4);"
-                data-i18n="verify.clickToJoin">点击加入</a>
-        </span>
-    </div>
+        <!-- Afdian Support Link (Flow Sticky Footer) -->
+        <div class="verify-footer">
+            <span style="font-size: 13px; color: rgba(255, 255, 255, 0.8);"><span
+                    data-i18n="verify.supportUs">支持我们</span>:
+                <a href="https://afdian.com/a/zaoyoe" target="_blank" rel="noopener noreferrer"
+                    style="color: inherit; text-decoration: none; transition: all 0.3s; border-bottom: 1px dashed rgba(255,255,255,0.4);">afdian.com/a/zaoyoe</a>
+                <span style="margin: 0 10px; opacity: 0.4;">|</span>
+                <span data-i18n="verify.chatGroup">交流群</span>: <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank"
+                    rel="noopener noreferrer"
+                    style="color: inherit; text-decoration: none; transition: all 0.3s; border-bottom: 1px dashed rgba(255,255,255,0.4);"
+                    data-i18n="verify.clickToJoin">点击加入</a>
+            </span>
+        </div>
     </main>
 
     <!-- Points Service (for balance loading) -->
@@ -491,7 +485,9 @@
     </script>
     <!-- Auth Injection & Modals -->
     <script src="js/i18n.js?v=1" defer></script>
-    <script src="inject-auth.js?v=20260303_GOOGLE_OAUTH_FIX24" defer></script>
+    <script src="./js/avatar-uploader.js" defer></script>
+    <script src="./supabase-auth-functions.js?v=20260304_DEEP_FIX" defer></script>
+    <script src="inject-auth.js?v=20260304_DEEP_FIX" defer></script>
     <script src="js/framer_home.js?v=NAV_UNIFIED" defer></script>
     <script src="js/components/WalletModal.js?v=20260302_G_AUTH" defer></script>
     <script src="notification-client.js"></script>

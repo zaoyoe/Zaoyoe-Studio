@@ -109,10 +109,10 @@
                 <h2 class="card-title" data-i18n="auth.welcomeBack">欢迎回来</h2>
                 <p class="card-subtitle" data-i18n="auth.loginSubtitle">请输入您的账号信息以登录</p>
 
-                <!-- Google Login Button -->
+                <!-- Google Login Button (single, custom-styled) -->
                 <button type="button" class="google-login-btn" onclick="triggerGoogleLogin()">
                     <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" width="18" height="18">
-                    <span>Sign in with Google</span>
+                    <span data-i18n="auth.googleLogin">使用 Google 账号登录</span>
                 </button>
 
                 <!-- Divider -->
@@ -998,13 +998,17 @@
     // 3. Load Scripts if missing
     function loadScript(src) {
         return new Promise((resolve, reject) => {
-            // Check by base path (without query string) to avoid duplicate loading
-            const basePath = src.split('?')[0];
-            const existing = document.querySelector(`script[src^="${basePath}"]`);
-            if (existing) {
+            // Check by filename (ignoring path/query) to avoid duplicate loading
+            const filename = src.split('?')[0].split('/').pop();
+            const existingScripts = Array.from(document.querySelectorAll('script'));
+            const isLoaded = existingScripts.some(s => s.src && s.src.split('?')[0].split('/').pop() === filename);
+
+            if (isLoaded) {
+                console.log(`✅ Script already loaded: ${filename}`);
                 resolve();
                 return;
             }
+
             const script = document.createElement('script');
             script.src = src;
             script.onload = resolve;
@@ -1038,30 +1042,14 @@
             loadCSS(`login_styles.css?v=20260303_G_AUTH_FIX15`);
             loadCSS(`login_dual_mode.css?v=20260303_G_AUTH_FIX15`);
 
-            // Supabase Auth
-            await loadScript('./supabase-auth-functions.js?v=20260303_GOOGLE_OAUTH_FIX24');
+            // Supabase Auth - loaded via static <script> tag in HTML, not dynamically
 
             // ✅ 加载 script.js (包含 sendVerificationCode 函数)
             await loadScript('./script.js?v=20260302_G_AUTH');
 
-            // Initialize UI - now using Supabase
-            if (window.supabaseClient) {
-                const { data: { user } } = await window.supabaseClient.auth.getUser();
-                if (user && typeof updateUserUI === 'function') {
-                    const { data: profile } = await window.supabaseClient
-                        .from('profiles')
-                        .select('*')
-                        .eq('id', user.id)
-                        .single();
-
-                    updateUserUI({
-                        objectId: user.id,
-                        username: user.email,
-                        email: user.email,
-                        nickname: profile?.username || user.user_metadata?.full_name || user.email.split('@')[0],
-                        avatarUrl: profile?.avatar_url || user.user_metadata?.avatar_url
-                    });
-                }
+            // Initialize UI - handled by supabase-auth-functions.js initializeAuthPageBoot()
+            if (window.supabaseClient && typeof checkAuthState === 'function') {
+                // Auth state will be checked by initializeAuthPageBoot() on DOMContentLoaded
             }
 
             // Add global handlers if needed

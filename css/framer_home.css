@@ -178,6 +178,7 @@ h3 {
     text-decoration: none;
     font-size: 15px;
     transition: color var(--transition-fast);
+    cursor: pointer;
 }
 
 .nav-menu a:hover {
@@ -302,16 +303,7 @@ h3 {
     /* Ensure it floats above the nav bar's border when pushed up 1px */
 }
 
-/* Invisible bridge so the mouse doesn't "fall off" between the nav and the dropdown */
-.nav-dropdown-portal::after {
-    content: '';
-    position: absolute;
-    top: -30px;
-    left: 0;
-    width: 100%;
-    height: 30px;
-    background: transparent;
-}
+
 
 .nav-dropdown-portal.visible {
     visibility: visible;

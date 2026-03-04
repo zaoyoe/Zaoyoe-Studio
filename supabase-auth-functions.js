@@ -595,15 +595,72 @@ async function checkAuthState(options = {}) {
 
     const cachedProfile = readCachedUserProfile();
     let user = null;
+
+    // 🔍 Boot diagnostic: Check raw localStorage before Supabase parses it
+    const sbKeys = Object.keys(localStorage).filter(k => k.startsWith('sb-'));
+    console.log('🔍 [checkAuthState] localStorage sb- keys at check time:', sbKeys);
+    if (sbKeys.length > 0) {
+        const rawVal = localStorage.getItem(sbKeys[0]);
+        console.log('🔍 [checkAuthState] Raw session key value exists:', !!rawVal, 'length:', rawVal?.length);
+    }
+
     try {
         // getSession() is local-storage based and returns immediately.
         const { data: { session }, error } = await window.supabaseClient.auth.getSession();
+        console.log('🔍 [checkAuthState] getSession result:', session ? 'HAS SESSION' : 'NULL', error?.message || '');
         if (error) {
             console.warn('⚠️ getSession failed:', error.message);
         }
         user = session?.user || null;
     } catch (err) {
         console.warn('⚠️ getSession exception:', err.message);
+    }
+
+    if (!user) {
+        // 🛡️ During init period: Supabase's in-memory session may be cleared even though
+        // localStorage still has valid tokens (protected by guard storage adapter).
+        // Try to restore the session from localStorage into Supabase's memory.
+        const pageAge = Date.now() - (window._pageLoadTime || 0);
+        if (pageAge < 5000) {
+            const sbKeys = Object.keys(localStorage).filter(k => k.startsWith('sb-') && k.endsWith('-auth-token'));
+            for (const key of sbKeys) {
+                try {
+                    const raw = localStorage.getItem(key);
+                    if (!raw) continue;
+                    const parsed = JSON.parse(raw);
+                    const token = parsed?.access_token || parsed?.currentSession?.access_token;
+
+                    if (token) {
+                        // CRITICAL FIX: setSession() triggers a network request that fails on custom domain CORS.
+                        // We bypass the network entirely by manually decoding the JWT payload from our guarded storage.
+                        const payload = decodeJwtPayload(token);
+
+                        // Verify token is not expired (with 5 min buffer)
+                        const now = Math.floor(Date.now() / 1000);
+                        if (payload && payload.exp && payload.exp > (now + 300)) {
+                            console.log('🔄 Restored session locally from guarded JWT payload (bypassed network)!');
+
+                            // Reconstruct the user object format that Supabase checkAuthState expects
+                            user = {
+                                id: payload.sub,
+                                email: payload.email,
+                                user_metadata: payload.user_metadata || {}
+                            };
+
+                            // Immediately update the UI to prevent race condition with INITIAL_SESSION
+                            updateUserUI(user, { animateAvatar: false });
+                            window._localJwtRestored = true;
+
+                            break;
+                        } else {
+                            console.warn('⚠️ Guarded token is expired or invalid.');
+                        }
+                    }
+                } catch (e) {
+                    console.warn('⚠️ Session restore parse error:', e);
+                }
+            }
+        }
     }
 
     if (!user) {
@@ -822,84 +879,45 @@ function updateUserUI(user, options = {}) {
 
             const preferredAvatarUrl = (isTransientAvatarUrl(incomingAvatarUrl) && cachedAvatarUrl)
                 ? cachedAvatarUrl
-                : (incomingAvatarUrl || cachedAvatarUrl || '');
-            const currentRaw = navAvatar.getAttribute('src') || navAvatar.src || '';
-            const currentBase = normalizeAvatarUrl(currentRaw);
+                : (incomingAvatarUrl || cachedAvatarUrl || fallbackUrl);
+
             const hasVisibleAvatar = navAvatar.style.display !== 'none' && navAvatar.classList.contains('show');
 
-            const revealAvatar = (url, playAnimation) => {
-                navAvatar.onerror = function () {
-                    console.warn('⚠️ Avatar load failed');
-                    this.onerror = null;
-                    if (isTransientAvatarUrl(url)) {
-                        if (hasVisibleAvatar && currentRaw && !isGeneratedAvatarUrl(currentRaw)) {
-                            this.src = currentRaw;
-                            return;
-                        }
-                        this.style.display = 'none';
-                        this.classList.remove('show');
-                        if (defaultIcon) defaultIcon.style.display = 'inline';
-                        return;
-                    }
-                    this.src = fallbackUrl;
-                };
-                navAvatar.src = url;
-                navAvatar.style.display = 'inline-block';
-                navAvatar.style.visibility = 'visible';
-                navAvatar.style.opacity = '1';
-                navAvatar.classList.add('show');
-                if (defaultIcon) defaultIcon.style.display = 'none';
-
-                if (playAnimation) {
-                    navAvatar.classList.remove('animate-in');
-                    // Force reflow so animation can restart deterministically
-                    void navAvatar.offsetWidth;
-                    navAvatar.classList.add('animate-in');
-                }
-            };
-
-            if (!preferredAvatarUrl) {
-                if (hasVisibleAvatar) {
+            // If we already have the exact same image showing, do nothing
+            const currentRaw = navAvatar.getAttribute('src') || navAvatar.src || '';
+            if (currentRaw && normalizeAvatarUrl(currentRaw) === normalizeAvatarUrl(preferredAvatarUrl) && hasVisibleAvatar) {
+                // Already showing the correct image
+            } else {
+                // Keep the current state (either old avatar or default icon) visible
+                // and load the new avatar silently in the background
+                const preloader = new Image();
+                preloader.onload = () => {
+                    navAvatar.src = preferredAvatarUrl;
                     navAvatar.style.display = 'inline-block';
                     navAvatar.style.visibility = 'visible';
                     navAvatar.style.opacity = '1';
                     navAvatar.classList.add('show');
                     if (defaultIcon) defaultIcon.style.display = 'none';
-                } else {
-                    navAvatar.style.display = 'none';
-                    if (defaultIcon) defaultIcon.style.display = 'inline';
-                }
-            } else {
-                const nextBase = normalizeAvatarUrl(preferredAvatarUrl);
-                // If avatar URL is effectively unchanged, only ensure visible state.
-                if (currentBase && currentBase === nextBase) {
-                    revealAvatar(preferredAvatarUrl, false);
-                } else if (preferImmediateAvatar && !hasVisibleAvatar) {
-                    const shouldAnimate = animateAvatar && !hasVisibleAvatar;
-                    revealAvatar(preferredAvatarUrl, shouldAnimate);
-                } else {
-                    // Keep current avatar/default icon until new image is decoded to avoid flash.
-                    const probe = new Image();
-                    probe.onload = () => {
-                        const shouldAnimate = animateAvatar && !hasVisibleAvatar;
-                        revealAvatar(preferredAvatarUrl, shouldAnimate);
-                    };
-                    probe.onerror = () => {
-                        if (/googleusercontent\.com/i.test(preferredAvatarUrl)) {
-                            if (!hasVisibleAvatar && defaultIcon) defaultIcon.style.display = 'inline';
-                            return;
-                        }
-                        if (hasVisibleAvatar) return;
-                        const shouldAnimate = animateAvatar && !hasVisibleAvatar;
-                        revealAvatar(fallbackUrl, shouldAnimate);
-                    };
-                    probe.src = preferredAvatarUrl;
 
-                    // If there is no current avatar shown, keep default icon visible while loading.
-                    if (!hasVisibleAvatar && defaultIcon) {
-                        defaultIcon.style.display = 'inline';
+                    if (animateAvatar) {
+                        navAvatar.classList.remove('animate-in');
+                        void navAvatar.offsetWidth; // Force reflow
+                        navAvatar.classList.add('animate-in');
                     }
-                }
+                };
+                preloader.onerror = () => {
+                    console.warn(`⚠️ Failed to load avatar from: ${preferredAvatarUrl}, falling back to generator.`);
+                    // Only fallback to generator if it's not a google URL failure, or we must
+                    if (!/googleusercontent\.com/i.test(preferredAvatarUrl) || !hasVisibleAvatar) {
+                        navAvatar.src = fallbackUrl;
+                        navAvatar.style.display = 'inline-block';
+                        navAvatar.style.visibility = 'visible';
+                        navAvatar.style.opacity = '1';
+                        navAvatar.classList.add('show');
+                        if (defaultIcon) defaultIcon.style.display = 'none';
+                    }
+                };
+                preloader.src = preferredAvatarUrl;
             }
         } else if (defaultIcon) {
             defaultIcon.style.display = 'none';
@@ -1114,51 +1132,7 @@ function clearInlineGoogleFallbackButtons() {
     });
 }
 
-function showInlineGoogleFallbackButtons() {
-    if (!window.google?.accounts?.id?.renderButton) return;
-
-    const visibleButtons = Array.from(document.querySelectorAll('.google-login-btn'))
-        .filter((btn) => btn.offsetParent !== null);
-
-    visibleButtons.forEach((btn) => {
-        if (btn.dataset.googleBusy === '1') return;
-        if (btn.nextElementSibling?.matches('.gsi-btn-container[data-inline-fallback="1"]')) return;
-
-        const container = document.createElement('div');
-        container.className = 'gsi-btn-container';
-        container.dataset.inlineFallback = '1';
-        container.style.marginTop = '0';
-        container.style.marginBottom = '24px';
-
-        const inner = document.createElement('div');
-        container.appendChild(inner);
-        btn.insertAdjacentElement('afterend', container);
-        btn.classList.add('gsi-hidden');
-        btn.setAttribute('aria-hidden', 'true');
-        btn.setAttribute('tabindex', '-1');
-
-        const rectWidth = Math.round(btn.getBoundingClientRect().width || btn.offsetWidth || 300);
-        const width = Math.min(300, Math.max(220, rectWidth));
-
-        try {
-            window.google.accounts.id.renderButton(inner, {
-                type: 'standard',
-                theme: 'outline',
-                text: 'signin_with',
-                shape: 'pill',
-                size: 'large',
-                width,
-                logo_alignment: 'left'
-            });
-        } catch (err) {
-            console.warn('⚠️ render Google fallback button failed:', err);
-            container.remove();
-            btn.classList.remove('gsi-hidden');
-            btn.removeAttribute('aria-hidden');
-            btn.removeAttribute('tabindex');
-        }
-    });
-}
+// showInlineGoogleFallbackButtons removed - single custom button in inject-auth.js
 
 // Nonce generation removed: Chrome FedCM breaks nonce sync with Supabase
 
@@ -1219,39 +1193,11 @@ async function loadGoogleIdentityServices() {
 async function initGoogleIdTokenFlow() {
     if (googleIdentityInitialized && window.google?.accounts?.id) return;
 
-    // VERY IMPORTANT: Clear any stuck PKCE/nonce state from cookies, localStorage, and sessionStorage
-    // to prevent Supabase from expecting a nonce that we aren't sending.
-    try {
-        const wipeStorage = (storage) => {
-            const keysToRemove = [];
-            for (let i = 0; i < storage.length; i++) {
-                const key = storage.key(i);
-                if (key && (key.includes('-auth-token') || key.includes('supabase.auth') || key.startsWith('sb-'))) {
-                    keysToRemove.push(key);
-                }
-            }
-            keysToRemove.forEach(k => storage.removeItem(k));
-        };
-        wipeStorage(localStorage);
-        wipeStorage(sessionStorage);
+    // We used to wipe storage here to clear stuck PKCE nonces, but that is no longer needed
+    // since we use a custom popup flow, and it was violently destroying the user's session!
 
-        // Also wipe any supabase cookies
-        document.cookie.split(";").forEach(function (c) {
-            const cookieName = c.trim().split("=")[0];
-            if (cookieName.includes('-auth-token') || cookieName.includes('supabase.auth') || cookieName.startsWith('sb-')) {
-                document.cookie = cookieName + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/";
-                document.cookie = cookieName + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=" + window.location.hostname;
-            }
-        });
-
-        // Explicitly clear our own tracking
-        delete window.currentGoogleNonce;
-        delete window.currentGoogleNonceHash;
-    } catch (e) {
-        console.warn('⚠️ Failed to wipe stale auth state:', e);
-    }
-
-    // Complete removal of nonce. It is optional for signInWithIdToken.
+    // Initialize the Google Accounts script manually in case FedCM fallback is ever needed
+    // or to keep the Google object initialized properly.
     google.accounts.id.initialize({
         client_id: GOOGLE_CLIENT_ID,
         callback: (response) => {
@@ -1272,13 +1218,10 @@ async function initGoogleIdTokenFlow() {
 }
 
 async function ensureGoogleInlineButtonReady(options = {}) {
-    const { renderFallbackButton = false } = options;
     const loaded = await loadGoogleIdentityServices();
     if (!loaded || !window.google?.accounts?.id) return false;
     await initGoogleIdTokenFlow();
-    if (renderFallbackButton) {
-        showInlineGoogleFallbackButtons();
-    }
+    console.log('✅ Google Identity Services ready');
     return true;
 }
 window.ensureGoogleInlineButtonReady = ensureGoogleInlineButtonReady;
@@ -1326,39 +1269,80 @@ async function triggerGoogleOAuthRedirectFallback() {
     if (data?.url) window.location.assign(data.url);
 }
 
-// triggerGoogleLogin is used by login modal and admin modal.
+// triggerGoogleLogin - Triggered when the user clicks the custom "Sign in with Google" button.
+// Uses a pure client-side OAuth popup flow to get the id_token directly from Google.
+// This bypasses BOTH the FedCM cooldown issues AND the Supabase server-side PKCE failure
+// on the custom domain (auth.zaoyoe.com).
 window.triggerGoogleLogin = async () => {
-    console.log('🔵 triggerGoogleLogin called');
+    console.log('🔵 triggerGoogleLogin called (Client-side Popup mode)');
 
     if (window.isGoogleLoginLoading) return;
-    console.log('🔵 triggerGoogleLogin called (Switched to direct Supabase OAuth)');
-
-    googleCredentialReceived = false;
-    const currentAttemptId = ++googleLoginAttemptId;
-    setGoogleButtonsLoading(true, '正在登录...');
+    setGoogleButtonsLoading(true, '正在打开授权窗口...');
 
     try {
-        // Bypass the problematic Google One Tap / FedCM client library entirely.
-        // Direct Supabase OAuth flow handles all nonces and origin checks securely on the backend.
-        const { data, error } = await window.supabaseClient.auth.signInWithOAuth({
-            provider: 'google',
-            options: {
-                redirectTo: window.location.origin + window.location.pathname,
-                queryParams: {
-                    access_type: 'offline',
-                    prompt: 'consent',
-                }
-            }
-        });
-
-        if (error) throw error;
-        // The page will immediately redirect if successful
+        openGooglePopupFallback();
+        // Loading state will be cleared by the popup polling logic or after redirect
     } catch (error) {
-        console.error('❌ Google OAuth direct login failed:', error);
+        console.error('❌ Google login failed:', error);
         setGoogleButtonsLoading(false);
-        alert('Google 登录启动失败: ' + (error.message || '请检查网络后重试'));
+        alert('打开授权窗口失败: ' + (error.message || '请检查浏览器拦截设置'));
     }
 };
+
+// Fallback: Open Google OAuth in a popup window when One Tap is blocked
+function openGooglePopupFallback() {
+    const clientId = '1017068787594-ep4bj8cdirkllqlpbmlfk436br0vbifp.apps.googleusercontent.com';
+    const redirectUri = window.location.origin;
+    const scope = 'openid email profile';
+    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+        `client_id=${encodeURIComponent(clientId)}` +
+        `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+        `&response_type=id_token` +
+        `&scope=${encodeURIComponent(scope)}` +
+        `&nonce=${Date.now()}` +
+        `&prompt=select_account`;
+
+    const width = 500, height = 600;
+    // Calculate center relative to the entire browser window (including its toolbars)
+    const browserWidth = window.outerWidth || window.innerWidth;
+    const browserHeight = window.outerHeight || window.innerHeight;
+    const left = window.screenX + (browserWidth - width) / 2;
+    // Add a slight downward offset (+ 40px) to account for the browser's thick top toolbar
+    const top = window.screenY + (browserHeight - height) / 2 + 40;
+
+    const popup = window.open(authUrl, 'google_login',
+        `width=${width},height=${height},top=${top},left=${left},toolbar=no,menubar=no`);
+
+    if (!popup) {
+        alert('弹窗被浏览器拦截，请允许弹窗后重试');
+        return;
+    }
+
+    // Poll for the popup redirect
+    const pollTimer = setInterval(() => {
+        try {
+            if (popup.closed) {
+                clearInterval(pollTimer);
+                return;
+            }
+            const popupUrl = popup.location.href;
+            if (popupUrl.startsWith(redirectUri)) {
+                clearInterval(pollTimer);
+                const hash = popup.location.hash;
+                popup.close();
+                if (hash) {
+                    const params = new URLSearchParams(hash.substring(1));
+                    const idToken = params.get('id_token');
+                    if (idToken) {
+                        handleGoogleCredentialResponse({ credential: idToken });
+                    }
+                }
+            }
+        } catch (e) {
+            // Cross-origin - popup hasn't redirected yet, keep polling
+        }
+    }, 500);
+}
 
 async function handleGoogleCredentialResponse(response) {
     try {
@@ -1383,6 +1367,12 @@ async function handleGoogleCredentialResponse(response) {
             }
             throw error;
         }
+
+        // 🔍 Debug: Check if session was persisted to localStorage
+        console.log('🔍 Session debug - signInWithIdToken result:', data?.session ? 'HAS SESSION' : 'NO SESSION');
+
+
+
         if (!data?.session) {
             const { data: sessionData } = await window.supabaseClient.auth.getSession();
             if (!sessionData?.session) {
@@ -1628,10 +1618,30 @@ async function forceLogout(event) {
     stopSessionTimeoutMonitor();
 
     try {
+        // Force unlock the storage guard before intentional logout
+        // otherwise if user logs out within 3s of loading, it gets blocked!
+        if (typeof guardStorage !== 'undefined') {
+            guardStorage._locked = false;
+        }
         await window.supabaseClient.auth.signOut();
     } catch (e) {
         console.error('Supabase signOut error:', e);
     }
+
+    // 🔴 CRITICAL FIX: Manually delete the token because signOut() will abort 
+    // and fail to delete it if the network request is blocked by CORS!
+    const wipeStorage = (storage) => {
+        const keysToRemove = [];
+        for (let i = 0; i < storage.length; i++) {
+            const key = storage.key(i);
+            if (key && (key.includes('-auth-token') || key.includes('supabase.auth') || key.startsWith('sb-'))) {
+                keysToRemove.push(key);
+            }
+        }
+        keysToRemove.forEach(k => storage.removeItem(k));
+    };
+    wipeStorage(localStorage);
+    wipeStorage(sessionStorage);
 
     localStorage.removeItem('remembered_credentials');
     localStorage.removeItem('cached_user_profile');
@@ -1642,83 +1652,6 @@ async function forceLogout(event) {
 
 window.forceLogout = forceLogout;
 
-async function resolveOAuthCallbackSession() {
-    if (!window.supabaseClient?.auth) return false;
-
-    const url = new URL(window.location.href);
-    const hash = window.location.hash || '';
-    let hasResolvedSession = false;
-    let shouldCleanUrl = false;
-
-    // PKCE callback path: ?code=...
-    const code = url.searchParams.get('code');
-    if (code) {
-        console.log('🔐 Detected OAuth code callback, exchanging session...');
-        try {
-            const { data, error } = await window.supabaseClient.auth.exchangeCodeForSession(code);
-            if (error) {
-                console.warn('⚠️ exchangeCodeForSession failed:', error.message);
-            } else if (data?.session) {
-                hasResolvedSession = true;
-                console.log('✅ OAuth code exchanged successfully');
-            }
-        } catch (err) {
-            console.warn('⚠️ OAuth code exchange error:', err.message);
-        }
-
-        // Remove callback-only params to keep URL clean.
-        url.searchParams.delete('code');
-        url.searchParams.delete('state');
-        shouldCleanUrl = true;
-    }
-
-    // Implicit callback path: #access_token=...&refresh_token=...
-    if (!hasResolvedSession && /access_token=/.test(hash) && /refresh_token=/.test(hash)) {
-        console.log('🔐 Detected OAuth hash callback, restoring session...');
-        try {
-            const hashParams = new URLSearchParams(hash.replace(/^#/, ''));
-            const access_token = hashParams.get('access_token');
-            const refresh_token = hashParams.get('refresh_token');
-            if (access_token && refresh_token) {
-                const { data, error } = await window.supabaseClient.auth.setSession({
-                    access_token,
-                    refresh_token
-                });
-                if (error) {
-                    console.warn('⚠️ setSession from hash failed:', error.message);
-                } else if (data?.session) {
-                    hasResolvedSession = true;
-                    console.log('✅ OAuth hash session restored');
-                }
-            }
-        } catch (err) {
-            console.warn('⚠️ OAuth hash restore error:', err.message);
-        }
-        shouldCleanUrl = true;
-    }
-
-    // If provider returned an auth error in hash, log it for diagnosis and clean hash.
-    if (/error=/.test(hash)) {
-        const hashParams = new URLSearchParams(hash.replace(/^#/, ''));
-        const authError = hashParams.get('error_description') || hashParams.get('error');
-        if (authError) {
-            console.warn('⚠️ OAuth callback error:', decodeURIComponent(authError));
-        }
-        shouldCleanUrl = true;
-    }
-
-    // Fix malformed URLs like ##access_token...
-    if (window.location.href.includes('##') || (window.location.href.match(/#/g) || []).length > 1) {
-        shouldCleanUrl = true;
-    }
-
-    if (shouldCleanUrl) {
-        const cleanUrl = `${url.pathname}${url.search}`;
-        window.history.replaceState({}, document.title, cleanUrl || '/');
-    }
-
-    return hasResolvedSession;
-}
 
 // ==================== 页面加载时检查登录状态 ====================
 async function initializeAuthPageBoot() {
@@ -1749,8 +1682,50 @@ async function initializeAuthPageBoot() {
         console.warn('⚠️ Google identity preload failed:', err?.message || err);
     }
 
-    // OAuth callback兜底：确保从Google回跳后能拿到session
-    await resolveOAuthCallbackSession();
+    // 🆕 OAuth Callback Handler:
+    // Handle BOTH PKCE flow (?code=XXXX) and Implicit flow (#access_token=...)
+    const urlParams = new URLSearchParams(window.location.search);
+    const oauthCode = urlParams.get('code');
+    const hashHasToken = window.location.hash && window.location.hash.includes('access_token=');
+
+    if (oauthCode) {
+        // ===== PKCE Flow (default for signInWithOAuth) =====
+        // Google returned ?code=XXXX which we must exchange for a session
+        console.log('🔐 Detected PKCE OAuth code in URL, exchanging for session...');
+        try {
+            const { data, error } = await window.supabaseClient.auth.exchangeCodeForSession(oauthCode);
+            if (error) {
+                console.error('❌ exchangeCodeForSession failed:', error.message);
+            } else if (data?.session) {
+                console.log('✅ PKCE code exchanged successfully! User logged in.');
+            }
+        } catch (err) {
+            console.error('❌ PKCE exchange exception:', err.message);
+        }
+        // Clean URL regardless of success/failure
+        const url = new URL(window.location.href);
+        url.searchParams.delete('code');
+        url.searchParams.delete('state');
+        window.history.replaceState({}, document.title, `${url.pathname}${url.search}` || '/');
+    } else if (hashHasToken) {
+        // ===== Implicit Flow (#access_token=...) =====
+        console.log('🔐 Detected implicit OAuth token in URL hash. Waiting for Supabase...');
+        let sessionGrabbed = false;
+        for (let i = 0; i < 15; i++) {
+            const { data } = await window.supabaseClient.auth.getSession();
+            if (data?.session) {
+                console.log('✅ Session extracted from URL hash after', i * 200, 'ms');
+                sessionGrabbed = true;
+                const url = new URL(window.location.href);
+                window.history.replaceState({}, document.title, `${url.pathname}${url.search}` || '/');
+                break;
+            }
+            await new Promise(resolve => setTimeout(resolve, 200));
+        }
+        if (!sessionGrabbed) {
+            console.warn('⚠️ Timed out waiting for implicit OAuth session from URL hash.');
+        }
+    }
 
     // 检查登录状态 (will update UI again with fresh data)
     await checkAuthState();
@@ -1831,6 +1806,8 @@ async function initializeAuthPageBoot() {
             if (session) {
                 console.log('🔔 INITIAL_SESSION has session, updating UI...');
                 checkAuthState();
+            } else if (window._localJwtRestored) {
+                console.log('🔔 INITIAL_SESSION is null, but local JWT already restored. Ignored.');
             }
             return;
         }
@@ -1849,6 +1826,14 @@ async function initializeAuthPageBoot() {
                     recordLoginIP(session.user.id);
                 }
             } else if (event === 'SIGNED_OUT') {
+                // 🛡️ Guard: Suppress SIGNED_OUT during initialization period.
+                // Supabase fires SIGNED_OUT when _getUser() fails on custom domain (CORS),
+                // but the session is still valid in localStorage (protected by guard storage).
+                const pageAge = Date.now() - window._pageLoadTime;
+                if (pageAge < 5000) {
+                    console.log('🛡️ Suppressed SIGNED_OUT during init (page age: ' + pageAge + 'ms)');
+                    return;
+                }
                 updateUserUI(null, { clearCacheOnLogout: true });
             }
             authStateInitialized = true;

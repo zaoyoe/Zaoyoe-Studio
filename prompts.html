@@ -185,9 +185,10 @@
                     <i class="fas fa-chevron-down"></i>
                 </button>
                 <div class="mobile-submenu" id="support-mobile">
-                    <a href="https://t.me/zaoyoe" target="_blank" rel="noopener noreferrer" class="mobile-menu-link">TG</a>
-                    <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank" rel="noopener noreferrer" class="mobile-menu-link"><span
-                            data-i18n="nav.tgGroup">TG群组</span></a>
+                    <a href="https://t.me/zaoyoe" target="_blank" rel="noopener noreferrer"
+                        class="mobile-menu-link">TG</a>
+                    <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank" rel="noopener noreferrer"
+                        class="mobile-menu-link"><span data-i18n="nav.tgGroup">TG群组</span></a>
                 </div>
             </div>
         </div>
@@ -196,193 +197,196 @@
     <main id="main-content" role="main">
         <h1 class="visually-hidden-h1">Banana Pro Gallery 提示词图库</h1>
 
-    <!-- User Header injected by inject-auth.js -->
+        <!-- User Header injected by inject-auth.js -->
 
-    <!-- Navigation / Categories -->
-    <div class="poetry-nav-container">
-        <div class="spotlight-overlay"></div>
+        <!-- Navigation / Categories -->
+        <div class="poetry-nav-container">
+            <div class="spotlight-overlay"></div>
 
-        <!-- Search Bar (Pinterest-style) -->
-        <div class="nav-search-wrapper">
-            <div class="nav-search">
-                <i class="fas fa-search"></i>
-                <input type="text" id="gallerySearch" placeholder="Search prompts..."
-                    data-i18n-placeholder="gallery.searchPlaceholder" autocomplete="off">
-            </div>
+            <!-- Search Bar (Pinterest-style) -->
+            <div class="nav-search-wrapper">
+                <div class="nav-search">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="gallerySearch" placeholder="Search prompts..."
+                        data-i18n-placeholder="gallery.searchPlaceholder" autocomplete="off">
+                </div>
 
-            <!-- Search Dropdown -->
-            <div class="search-dropdown" id="searchDropdown">
-                <!-- Hot Tags (shown when empty) -->
-                <div class="search-hot-tags" id="searchHotTags">
-                    <div class="dropdown-section-label" data-i18n="gallery.hotSearch">热门搜索</div>
-                    <div class="hot-tags-list" id="hotTagsList">
+                <!-- Search Dropdown -->
+                <div class="search-dropdown" id="searchDropdown">
+                    <!-- Hot Tags (shown when empty) -->
+                    <div class="search-hot-tags" id="searchHotTags">
+                        <div class="dropdown-section-label" data-i18n="gallery.hotSearch">热门搜索</div>
+                        <div class="hot-tags-list" id="hotTagsList">
+                            <!-- Dynamically generated -->
+                        </div>
+                    </div>
+
+                    <!-- Autocomplete Suggestions (shown when typing) -->
+                    <div class="search-suggestions" id="searchSuggestions" style="display: none;">
                         <!-- Dynamically generated -->
                     </div>
                 </div>
+            </div>
 
-                <!-- Autocomplete Suggestions (shown when typing) -->
-                <div class="search-suggestions" id="searchSuggestions" style="display: none;">
-                    <!-- Dynamically generated -->
-                </div>
+            <div class="nav-items" id="navItems">
+                <!-- Dynamically generated from PROMPTS data -->
             </div>
         </div>
 
-        <div class="nav-items" id="navItems">
-            <!-- Dynamically generated from PROMPTS data -->
-        </div>
-    </div>
 
 
-
-    <!-- Featured Banner -->
-    <section class="featured-banner" id="featuredBanner">
-        <div class="featured-image-container">
-            <img id="featuredImage" src="" alt="Featured Artwork" loading="eager">
-            <div class="featured-overlay"></div>
-        </div>
-        <div class="featured-content">
-            <span class="featured-label" data-i18n="gallery.featured">✦ FEATURED</span>
-            <h2 class="featured-title" id="featuredTitle"></h2>
-            <p class="featured-description" id="featuredDescription"></p>
-        </div>
-    </section>
-
-    <!-- Gallery Grid -->
-    <div class="gallery-container">
-        <!-- Content injected by JS -->
-    </div>
-
-    <!-- Detail Modal -->
-    <div id="promptModal" class="poetry-modal">
-        <div class="modal-inner">
-            <button class="close-modal-btn" onclick="closePromptModal()">
-                <i class="fas fa-times"></i>
-            </button>
-            <div class="modal-image-col">
-                <img id="modalImg" src="" alt="Prompt Visual">
-
-                <!-- Image Navigation -->
-                <button id="modalImgNavLeft" class="modal-img-nav left" onclick="navigateModalImage('prev')">
-                    <i class="fas fa-chevron-left"></i>
-                </button>
-                <button id="modalImgNavRight" class="modal-img-nav right" onclick="navigateModalImage('next')">
-                    <i class="fas fa-chevron-right"></i>
-                </button>
-                <div id="modalImgCounter" class="modal-img-counter">1 / 1</div>
-
-                <!-- Target Area for Prompt Docking (FLIP Animation Destination) -->
-                <div id="promptDockTarget" class="prompt-dock-target"></div>
+        <!-- Featured Banner -->
+        <section class="featured-banner" id="featuredBanner">
+            <div class="featured-image-container">
+                <img id="featuredImage" src="" alt="Featured Artwork" loading="eager">
+                <div class="featured-overlay"></div>
             </div>
+            <div class="featured-content">
+                <span class="featured-label" data-i18n="gallery.featured">✦ FEATURED</span>
+                <h2 class="featured-title" id="featuredTitle"></h2>
+                <p class="featured-description" id="featuredDescription"></p>
+            </div>
+        </section>
 
-            <div class="modal-content-col">
-                <div class="modal-header">
-                    <div id="modalTitle" class="modal-title-large">Title</div>
-                    <div id="modalTags" class="modal-meta">
-                        <!-- Tags injected here -->
-                    </div>
+        <!-- Gallery Grid -->
+        <div class="gallery-container">
+            <!-- Content injected by JS -->
+        </div>
+
+        <!-- Detail Modal -->
+        <div id="promptModal" class="poetry-modal">
+            <div class="modal-inner">
+                <button class="close-modal-btn" onclick="closePromptModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+                <div class="modal-image-col">
+                    <img id="modalImg" src="" alt="Prompt Visual">
+
+                    <!-- Image Navigation -->
+                    <button id="modalImgNavLeft" class="modal-img-nav left" onclick="navigateModalImage('prev')">
+                        <i class="fas fa-chevron-left"></i>
+                    </button>
+                    <button id="modalImgNavRight" class="modal-img-nav right" onclick="navigateModalImage('next')">
+                        <i class="fas fa-chevron-right"></i>
+                    </button>
+                    <div id="modalImgCounter" class="modal-img-counter">1 / 1</div>
+
+                    <!-- Target Area for Prompt Docking (FLIP Animation Destination) -->
+                    <div id="promptDockTarget" class="prompt-dock-target"></div>
                 </div>
 
-                <p id="modalDesc" class="modal-description">
-                    Description goes here...
-                </p>
-
-                <!-- Prompt Area (FLIP Animation Source) -->
-                <div id="promptArea" class="prompt-area">
-                    <div class="prompt-content-wrapper">
-                        <span class="prompt-label" data-i18n="gallery.prompt">Prompt</span>
-                        <div id="modalPromptText" class="prompt-text blur-masked">
-                            Loading prompt...
+                <div class="modal-content-col">
+                    <div class="modal-header">
+                        <div id="modalTitle" class="modal-title-large">Title</div>
+                        <div id="modalTags" class="modal-meta">
+                            <!-- Tags injected here -->
                         </div>
                     </div>
 
-                    <!-- Action Bar: Unlock & Comment Trigger -->
-                    <div class="prompt-action-bar">
-                        <div class="action-left">
-                            <button id="unlockPromptBtn" class="unlock-btn">
-                                <i class="fas fa-gem"></i> 10
-                            </button>
-                        </div>
-                        <div class="action-right">
-                            <button id="commentTriggerBtn" class="comment-trigger-btn" onclick="toggleCommentMode()">
-                                <i class="fas fa-comment-dots"></i>
-                                <span id="commentCountBadge" class="comment-count">0</span>
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                    <p id="modalDesc" class="modal-description">
+                        Description goes here...
+                    </p>
 
-                <!-- Comment Section (Initially Hidden) -->
-                <div id="commentSection" class="comment-section">
-                    <!-- Comment Header: Title + Sorting -->
-                    <div class="comment-header">
-                        <div class="comment-header-title" id="commentSectionTitle">
-                            <span data-i18n="gallery.viewAll">View all</span>
+                    <!-- Prompt Area (FLIP Animation Source) -->
+                    <div id="promptArea" class="prompt-area">
+                        <div class="prompt-content-wrapper">
+                            <span class="prompt-label" data-i18n="gallery.prompt">Prompt</span>
+                            <div id="modalPromptText" class="prompt-text blur-masked">
+                                Loading prompt...
+                            </div>
                         </div>
-                        <div class="comment-sort-wrapper">
-                            <button class="comment-sort-btn" id="commentSortBtn">
-                                <span id="currentSortLabel" data-i18n="gallery.top">🔥 Top</span>
-                                <i class="fas fa-chevron-down"></i>
-                            </button>
-                            <div class="comment-sort-dropdown" id="commentSortDropdown">
-                                <div class="sort-option active" data-sort="top" data-i18n="gallery.top">🔥 Top</div>
-                                <div class="sort-option" data-sort="newest" data-i18n="gallery.newest">Newest</div>
-                                <div class="sort-option" data-sort="oldest" data-i18n="gallery.oldest">Oldest</div>
+
+                        <!-- Action Bar: Unlock & Comment Trigger -->
+                        <div class="prompt-action-bar">
+                            <div class="action-left">
+                                <button id="unlockPromptBtn" class="unlock-btn">
+                                    <i class="fas fa-gem"></i> 10
+                                </button>
+                            </div>
+                            <div class="action-right">
+                                <button id="commentTriggerBtn" class="comment-trigger-btn"
+                                    onclick="toggleCommentMode()">
+                                    <i class="fas fa-comment-dots"></i>
+                                    <span id="commentCountBadge" class="comment-count">0</span>
+                                </button>
                             </div>
                         </div>
                     </div>
 
-                    <div class="comment-list" id="commentList">
-                        <!-- Comments injected here -->
-                    </div>
+                    <!-- Comment Section (Initially Hidden) -->
+                    <div id="commentSection" class="comment-section">
+                        <!-- Comment Header: Title + Sorting -->
+                        <div class="comment-header">
+                            <div class="comment-header-title" id="commentSectionTitle">
+                                <span data-i18n="gallery.viewAll">View all</span>
+                            </div>
+                            <div class="comment-sort-wrapper">
+                                <button class="comment-sort-btn" id="commentSortBtn">
+                                    <span id="currentSortLabel" data-i18n="gallery.top">🔥 Top</span>
+                                    <i class="fas fa-chevron-down"></i>
+                                </button>
+                                <div class="comment-sort-dropdown" id="commentSortDropdown">
+                                    <div class="sort-option active" data-sort="top" data-i18n="gallery.top">🔥 Top</div>
+                                    <div class="sort-option" data-sort="newest" data-i18n="gallery.newest">Newest</div>
+                                    <div class="sort-option" data-sort="oldest" data-i18n="gallery.oldest">Oldest</div>
+                                </div>
+                            </div>
+                        </div>
 
-                    <div class="comment-input-area">
-                        <textarea id="commentInput" placeholder="Add a comment..."
-                            data-i18n-placeholder="gallery.addComment" rows="1" onkeydown="handleCommentKeydown(event)"
-                            oninput="autoExpandTextarea(this)"></textarea>
+                        <div class="comment-list" id="commentList">
+                            <!-- Comments injected here -->
+                        </div>
 
-                        <!-- Hidden file input -->
-                        <input type="file" id="commentImageUpload" accept="image/*" style="display: none;">
+                        <div class="comment-input-area">
+                            <textarea id="commentInput" placeholder="Add a comment..."
+                                data-i18n-placeholder="gallery.addComment" rows="1"
+                                onkeydown="handleCommentKeydown(event)" oninput="autoExpandTextarea(this)"></textarea>
 
-                        <!-- Upload button -->
-                        <button id="commentUploadBtn" class="comment-upload-btn" title="Attach image"
-                            data-i18n-title="gallery.attachImage">
-                            <i class="fas fa-image"></i>
-                        </button>
+                            <!-- Hidden file input -->
+                            <input type="file" id="commentImageUpload" accept="image/*" style="display: none;">
+
+                            <!-- Upload button -->
+                            <button id="commentUploadBtn" class="comment-upload-btn" title="Attach image"
+                                data-i18n-title="gallery.attachImage">
+                                <i class="fas fa-image"></i>
+                            </button>
 
 
 
-                        <!-- 发送按钮 -->
-                        <!-- 发送按钮 (小飞机图标) -->
-                        <button id="sendCommentBtn" class="send-comment-btn" onclick="submitComment()" title="Send"
-                            data-i18n-title="gallery.send">
-                            <i class="fas fa-paper-plane"></i>
-                        </button>
+                            <!-- 发送按钮 -->
+                            <!-- 发送按钮 (小飞机图标) -->
+                            <button id="sendCommentBtn" class="send-comment-btn" onclick="submitComment()" title="Send"
+                                data-i18n-title="gallery.send">
+                                <i class="fas fa-paper-plane"></i>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
-    </div>
 
-    <!-- Disclaimer Footer -->
-    <footer class="disclaimer-footer">
-        <div class="disclaimer-content">
-            <p class="disclaimer-title" data-i18n="gallery.disclaimerTitle">✦ 免责声明</p>
-            <p class="disclaimer-text" data-i18n="gallery.disclaimer">
-                本页面展示的图片及提示词部分来源于互联网公开分享，仅供学习和参考使用
-            </p>
-            <p class="disclaimer-text" data-i18n="gallery.disclaimerCopyright">
-                如有侵权，请联系删除，所有内容版权归原作者所有
-            </p>
-            <p class="support-link" style="margin-top: 12px; font-size: 12px; opacity: 0.6;">
-                <span data-i18n="gallery.supportUs">支持我们</span>: <a href="https://afdian.com/a/zaoyoe" target="_blank" rel="noopener noreferrer"
-                    style="color: inherit; text-decoration: none; border-bottom: 1px dashed rgba(255,255,255,0.4);">afdian.com/a/zaoyoe</a>
-                <span style="margin: 0 10px; opacity: 0.4;">|</span>
-                <span data-i18n="gallery.joinGroup">交流群</span>: <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank" rel="noopener noreferrer"
-                    style="color: inherit; text-decoration: none; border-bottom: 1px dashed rgba(255,255,255,0.4);"
-                    data-i18n="common.clickToJoin">点击加入</a>
-            </p>
-        </div>
-    </footer>
+        <!-- Disclaimer Footer -->
+        <footer class="disclaimer-footer">
+            <div class="disclaimer-content">
+                <p class="disclaimer-title" data-i18n="gallery.disclaimerTitle">✦ 免责声明</p>
+                <p class="disclaimer-text" data-i18n="gallery.disclaimer">
+                    本页面展示的图片及提示词部分来源于互联网公开分享，仅供学习和参考使用
+                </p>
+                <p class="disclaimer-text" data-i18n="gallery.disclaimerCopyright">
+                    如有侵权，请联系删除，所有内容版权归原作者所有
+                </p>
+                <p class="support-link" style="margin-top: 12px; font-size: 12px; opacity: 0.6;">
+                    <span data-i18n="gallery.supportUs">支持我们</span>: <a href="https://afdian.com/a/zaoyoe"
+                        target="_blank" rel="noopener noreferrer"
+                        style="color: inherit; text-decoration: none; border-bottom: 1px dashed rgba(255,255,255,0.4);">afdian.com/a/zaoyoe</a>
+                    <span style="margin: 0 10px; opacity: 0.4;">|</span>
+                    <span data-i18n="gallery.joinGroup">交流群</span>: <a href="https://t.me/+I86eX5sPF1c0OTc1"
+                        target="_blank" rel="noopener noreferrer"
+                        style="color: inherit; text-decoration: none; border-bottom: 1px dashed rgba(255,255,255,0.4);"
+                        data-i18n="common.clickToJoin">点击加入</a>
+                </p>
+            </div>
+        </footer>
     </main>
 
     <!-- Admin Login Modal -->
@@ -550,19 +554,10 @@
     <script src="https://cdn.jsdelivr.net/npm/dayjs@1/locale/zh-cn.js"></script>
 
     <script>
-        // Initialize Supabase client for browser
-        const SUPABASE_URL = 'https://auth.zaoyoe.com';
-        const SUPABASE_KEY = 'sb_publishable_lwkiF-sQ80z8e9oMcejFPQ_j7oezjcF';
-        window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
-            auth: {
-                persistSession: true,
-                autoRefreshToken: true,
-                detectSessionInUrl: true,
-                flowType: 'pkce'
-            }
-        });
-        console.log('Supabase browser client initialized');
-
+        // Initialize Supabase client via shared config
+    </script>
+    <script src="./supabase-client.js"></script>
+    <script>
         // Initialize Day.js
         dayjs.extend(dayjs_plugin_relativeTime);
         dayjs.locale('zh-cn');
@@ -578,9 +573,9 @@
     <script src="js/services/PointsService.js?v=20260302_G_AUTH"></script>
     <script src="js/components/WalletModal.js?v=20260302_G_AUTH"></script>
     <script src="./js/avatar-uploader.js" defer></script>
-    <script src="supabase-auth-functions.js?v=20260303_GOOGLE_OAUTH_FIX24" defer></script>
+    <script src="supabase-auth-functions.js?v=20260304_CLEAN_OAUTH" defer></script>
     <script src="js/i18n.js?v=1" defer></script>
-    <script src="inject-auth.js?v=20260303_GOOGLE_OAUTH_FIX24" defer></script>
+    <script src="inject-auth.js?v=20260304_CLEAN_OAUTH" defer></script>
     <script src="notification-client.js"></script>
     <script src="js/heartbeat.js"></script>
     <script src="js/framer_home.js?v=NAV_UNIFIED"></script>
