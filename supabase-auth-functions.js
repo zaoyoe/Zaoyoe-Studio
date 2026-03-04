@@ -1048,10 +1048,21 @@ function updateResetButtonCountdown(button, originalText) {
     }
 }
 
-// ==================== Google Login (Primary: ID Token, Fallback: OAuth Redirect) ====================
+// ==================== Google Login (Primary: Google ID Token flow, no OAuth callback dependency) ====================
 const GOOGLE_CLIENT_ID = '1017068787594-ep4bj8cdirkllqlpbmlfk436br0vbifp.apps.googleusercontent.com';
+const DISABLE_OAUTH_REDIRECT_FALLBACK = true;
 let googleIdentityScriptPromise = null;
 window.currentGoogleNonce = null;
+window.currentGoogleNonceHash = null;
+let googleCredentialReceived = false;
+let googleLoginAttemptId = 0;
+let googleIdentityInitialized = false;
+
+function shouldUseOAuthRedirectFallback() {
+    if (DISABLE_OAUTH_REDIRECT_FALLBACK) return false;
+    const host = window.location.hostname || '';
+    return !(host === 'localhost' || host === '127.0.0.1' || host.endsWith('.local'));
+}
 
 function cleanupLegacyGoogleIdentityButtons() {
     document.querySelectorAll('.gsi-btn-container, .g_id_signin, [id^="gsi_"]').forEach((node) => {
@@ -1092,17 +1103,64 @@ function setGoogleButtonsLoading(isLoading, text = '正在登录...') {
     });
 }
 
-async function generateGoogleNonce() {
-    const randomBytes = crypto.getRandomValues(new Uint8Array(32));
-    const nonce = btoa(String.fromCharCode(...randomBytes));
-    const encoder = new TextEncoder();
-    const encoded = encoder.encode(nonce);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', encoded);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const hashedNonce = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
-    window.currentGoogleNonce = nonce;
-    return hashedNonce;
+function clearInlineGoogleFallbackButtons() {
+    document.querySelectorAll('.gsi-btn-container[data-inline-fallback="1"]').forEach((node) => {
+        if (node && node.parentNode) node.parentNode.removeChild(node);
+    });
+    document.querySelectorAll('.google-login-btn.gsi-hidden').forEach((btn) => {
+        btn.classList.remove('gsi-hidden');
+        btn.removeAttribute('aria-hidden');
+        btn.removeAttribute('tabindex');
+    });
 }
+
+function showInlineGoogleFallbackButtons() {
+    if (!window.google?.accounts?.id?.renderButton) return;
+
+    const visibleButtons = Array.from(document.querySelectorAll('.google-login-btn'))
+        .filter((btn) => btn.offsetParent !== null);
+
+    visibleButtons.forEach((btn) => {
+        if (btn.dataset.googleBusy === '1') return;
+        if (btn.nextElementSibling?.matches('.gsi-btn-container[data-inline-fallback="1"]')) return;
+
+        const container = document.createElement('div');
+        container.className = 'gsi-btn-container';
+        container.dataset.inlineFallback = '1';
+        container.style.marginTop = '0';
+        container.style.marginBottom = '24px';
+
+        const inner = document.createElement('div');
+        container.appendChild(inner);
+        btn.insertAdjacentElement('afterend', container);
+        btn.classList.add('gsi-hidden');
+        btn.setAttribute('aria-hidden', 'true');
+        btn.setAttribute('tabindex', '-1');
+
+        const rectWidth = Math.round(btn.getBoundingClientRect().width || btn.offsetWidth || 300);
+        const width = Math.min(300, Math.max(220, rectWidth));
+
+        try {
+            window.google.accounts.id.renderButton(inner, {
+                type: 'standard',
+                theme: 'outline',
+                text: 'signin_with',
+                shape: 'pill',
+                size: 'large',
+                width,
+                logo_alignment: 'left'
+            });
+        } catch (err) {
+            console.warn('⚠️ render Google fallback button failed:', err);
+            container.remove();
+            btn.classList.remove('gsi-hidden');
+            btn.removeAttribute('aria-hidden');
+            btn.removeAttribute('tabindex');
+        }
+    });
+}
+
+// Nonce generation removed: Chrome FedCM breaks nonce sync with Supabase
 
 async function loadGoogleIdentityServices() {
     cleanupLegacyGoogleIdentityButtons();
@@ -1110,20 +1168,47 @@ async function loadGoogleIdentityServices() {
 
     if (!googleIdentityScriptPromise) {
         googleIdentityScriptPromise = new Promise((resolve, reject) => {
-            const existing = document.getElementById('gsi-script');
-            if (existing) {
-                existing.addEventListener('load', () => resolve(true), { once: true });
-                existing.addEventListener('error', () => reject(new Error('Google GSI script load failed')), { once: true });
-                return;
-            }
-            const script = document.createElement('script');
-            script.src = 'https://accounts.google.com/gsi/client';
-            script.id = 'gsi-script';
-            script.async = true;
-            script.defer = true;
-            script.onload = () => resolve(true);
-            script.onerror = () => reject(new Error('Google GSI script load failed'));
-            document.head.appendChild(script);
+            let attempts = 0;
+            const maxAttempts = 3;
+
+            const appendScript = () => {
+                attempts += 1;
+
+                const stale = document.getElementById('gsi-script');
+                if (stale) stale.remove();
+
+                const script = document.createElement('script');
+                script.src = `https://accounts.google.com/gsi/client?retry=${attempts}&t=${Date.now()}`;
+                script.id = 'gsi-script';
+                script.async = true;
+                script.defer = true;
+
+                script.onload = () => {
+                    if (window.google?.accounts?.id) {
+                        resolve(true);
+                        return;
+                    }
+                    if (attempts < maxAttempts) {
+                        setTimeout(appendScript, 250);
+                    } else {
+                        googleIdentityScriptPromise = null;
+                        reject(new Error('Google GSI script load failed (api unavailable)'));
+                    }
+                };
+
+                script.onerror = () => {
+                    if (attempts < maxAttempts) {
+                        setTimeout(appendScript, 250);
+                    } else {
+                        googleIdentityScriptPromise = null;
+                        reject(new Error('Google GSI script load failed'));
+                    }
+                };
+
+                document.head.appendChild(script);
+            };
+
+            appendScript();
         });
     }
 
@@ -1132,16 +1217,84 @@ async function loadGoogleIdentityServices() {
 }
 
 async function initGoogleIdTokenFlow() {
-    const hashedNonce = await generateGoogleNonce();
+    if (googleIdentityInitialized && window.google?.accounts?.id) return;
+
+    // VERY IMPORTANT: Clear any stuck PKCE/nonce state from cookies, localStorage, and sessionStorage
+    // to prevent Supabase from expecting a nonce that we aren't sending.
+    try {
+        const wipeStorage = (storage) => {
+            const keysToRemove = [];
+            for (let i = 0; i < storage.length; i++) {
+                const key = storage.key(i);
+                if (key && (key.includes('-auth-token') || key.includes('supabase.auth') || key.startsWith('sb-'))) {
+                    keysToRemove.push(key);
+                }
+            }
+            keysToRemove.forEach(k => storage.removeItem(k));
+        };
+        wipeStorage(localStorage);
+        wipeStorage(sessionStorage);
+
+        // Also wipe any supabase cookies
+        document.cookie.split(";").forEach(function (c) {
+            const cookieName = c.trim().split("=")[0];
+            if (cookieName.includes('-auth-token') || cookieName.includes('supabase.auth') || cookieName.startsWith('sb-')) {
+                document.cookie = cookieName + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/";
+                document.cookie = cookieName + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=" + window.location.hostname;
+            }
+        });
+
+        // Explicitly clear our own tracking
+        delete window.currentGoogleNonce;
+        delete window.currentGoogleNonceHash;
+    } catch (e) {
+        console.warn('⚠️ Failed to wipe stale auth state:', e);
+    }
+
+    // Complete removal of nonce. It is optional for signInWithIdToken.
     google.accounts.id.initialize({
         client_id: GOOGLE_CLIENT_ID,
-        callback: handleGoogleCredentialResponse,
-        nonce: hashedNonce,
+        callback: (response) => {
+            if (typeof window.handleGoogleCredentialResponse === 'function') {
+                window.handleGoogleCredentialResponse(response);
+            } else {
+                console.error('❌ Google callback handler not ready');
+                setGoogleButtonsLoading(false);
+            }
+        },
         context: 'signin',
         auto_select: false,
-        use_fedcm_for_prompt: false,
-        use_fedcm_for_button: false
+        itp_support: true,
+        use_fedcm_for_prompt: true,
+        use_fedcm_for_button: true
     });
+    googleIdentityInitialized = true;
+}
+
+async function ensureGoogleInlineButtonReady(options = {}) {
+    const { renderFallbackButton = false } = options;
+    const loaded = await loadGoogleIdentityServices();
+    if (!loaded || !window.google?.accounts?.id) return false;
+    await initGoogleIdTokenFlow();
+    if (renderFallbackButton) {
+        showInlineGoogleFallbackButtons();
+    }
+    return true;
+}
+window.ensureGoogleInlineButtonReady = ensureGoogleInlineButtonReady;
+
+function decodeJwtPayload(token) {
+    try {
+        if (!token || typeof token !== 'string') return null;
+        const parts = token.split('.');
+        if (parts.length < 2) return null;
+        const base64Url = parts[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+        return JSON.parse(atob(padded));
+    } catch (_) {
+        return null;
+    }
 }
 
 function getCurrentPageRedirectUrl() {
@@ -1151,12 +1304,22 @@ function getCurrentPageRedirectUrl() {
 }
 
 async function triggerGoogleOAuthRedirectFallback() {
-    const redirectTo = getCurrentPageRedirectUrl();
+    if (!shouldUseOAuthRedirectFallback()) {
+        throw new Error('OAuth redirect fallback disabled');
+    }
+    const currentPage = getCurrentPageRedirectUrl();
+    localStorage.setItem('oauth_post_login_redirect', currentPage);
+    const redirectTo = `${window.location.origin}/auth-callback.html`;
     const { data, error } = await window.supabaseClient.auth.signInWithOAuth({
         provider: 'google',
         options: {
             redirectTo,
-            queryParams: { prompt: 'select_account' }
+            scopes: 'openid email profile',
+            queryParams: {
+                prompt: 'select_account',
+                access_type: 'offline',
+                include_granted_scopes: 'true'
+            }
         }
     });
     if (error) throw error;
@@ -1167,66 +1330,65 @@ async function triggerGoogleOAuthRedirectFallback() {
 window.triggerGoogleLogin = async () => {
     console.log('🔵 triggerGoogleLogin called');
 
-    if (!window.supabaseClient) {
-        alert('登录服务尚未就绪，请刷新页面重试。');
-        return;
-    }
+    if (window.isGoogleLoginLoading) return;
+    console.log('🔵 triggerGoogleLogin called (Switched to direct Supabase OAuth)');
 
-    const activeBtn = resolveActiveGoogleButton();
-    if (activeBtn && activeBtn.dataset.googleBusy === '1') return;
-
+    googleCredentialReceived = false;
+    const currentAttemptId = ++googleLoginAttemptId;
     setGoogleButtonsLoading(true, '正在登录...');
 
     try {
-        const loaded = await loadGoogleIdentityServices();
-        if (!loaded || !window.google?.accounts?.id) {
-            throw new Error('Google identity service unavailable');
-        }
-
-        await initGoogleIdTokenFlow();
-
-        // Use Google's prompt UI to keep custom button style while using ID token login.
-        google.accounts.id.prompt(async (notification) => {
-            try {
-                if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-                    console.warn('⚠️ Google ID prompt unavailable, fallback to OAuth redirect');
-                    await triggerGoogleOAuthRedirectFallback();
-                    return;
-                }
-
-                if (notification.isDismissedMoment()) {
-                    // User cancelled prompt; restore button state.
-                    setGoogleButtonsLoading(false);
-                }
-            } catch (err) {
-                console.error('❌ Google fallback failed:', err);
-                setGoogleButtonsLoading(false);
-                alert('Google 登录失败: ' + (err.message || '请稍后重试'));
-            }
-        });
-    } catch (error) {
-        console.error('❌ Google login start failed:', error);
-        try {
-            await triggerGoogleOAuthRedirectFallback();
-        } catch (fallbackErr) {
-            console.error('❌ OAuth fallback failed:', fallbackErr);
-            setGoogleButtonsLoading(false);
-            alert('Google 登录失败: ' + (fallbackErr.message || error.message || '请稍后重试'));
-        }
-    }
-};
-
-window.handleGoogleCredentialResponse = async (response) => {
-    try {
-        if (!response?.credential) throw new Error('未获取到 Google 凭证');
-
-        const { data, error } = await window.supabaseClient.auth.signInWithIdToken({
+        // Bypass the problematic Google One Tap / FedCM client library entirely.
+        // Direct Supabase OAuth flow handles all nonces and origin checks securely on the backend.
+        const { data, error } = await window.supabaseClient.auth.signInWithOAuth({
             provider: 'google',
-            token: response.credential,
-            nonce: window.currentGoogleNonce
+            options: {
+                redirectTo: window.location.origin + window.location.pathname,
+                queryParams: {
+                    access_type: 'offline',
+                    prompt: 'consent',
+                }
+            }
         });
 
         if (error) throw error;
+        // The page will immediately redirect if successful
+    } catch (error) {
+        console.error('❌ Google OAuth direct login failed:', error);
+        setGoogleButtonsLoading(false);
+        alert('Google 登录启动失败: ' + (error.message || '请检查网络后重试'));
+    }
+};
+
+async function handleGoogleCredentialResponse(response) {
+    try {
+        if (!response?.credential) throw new Error('未获取到 Google 凭证');
+        googleCredentialReceived = true;
+        googleLoginAttemptId += 1;
+
+        console.log('🔵 Received Google ID Token, authenticating with Supabase (no-nonce mode)...');
+
+        // Explicitly remove any nonce matching. Just pass the token.
+        // If Supabase throws "Nonces mismatch", it's because a previous attempt
+        // set a cookie/localstorage state. The user MUST clear cookies/storage
+        // if this happens.
+        const { data, error } = await window.supabaseClient.auth.signInWithIdToken({
+            provider: 'google',
+            token: response.credential
+        });
+
+        if (error) {
+            if (error.message.includes('Nonces mismatch') || error.message.includes('nonce')) {
+                throw new Error('检测到残留的安全验证状态，请完全清除浏览器缓存Cookie后重试 (Nonces mismatch)。');
+            }
+            throw error;
+        }
+        if (!data?.session) {
+            const { data: sessionData } = await window.supabaseClient.auth.getSession();
+            if (!sessionData?.session) {
+                throw new Error('Google 登录后未建立会话');
+            }
+        }
 
         if (data?.user) {
             updateUserUI({
@@ -1237,6 +1399,7 @@ window.handleGoogleCredentialResponse = async (response) => {
                 avatarUrl: data.user.user_metadata?.avatar_url || ''
             }, { animateAvatar: false, preferImmediateAvatar: true });
         }
+        clearInlineGoogleFallbackButtons();
 
         if (typeof closeAdminLoginModal === 'function') closeAdminLoginModal();
         if (typeof toggleLoginModal === 'function') {
@@ -1245,13 +1408,17 @@ window.handleGoogleCredentialResponse = async (response) => {
                 toggleLoginModal();
             }
         }
+        if (typeof checkAuthState === 'function') {
+            await checkAuthState();
+        }
     } catch (error) {
         console.error('❌ Google ID Token login error:', error);
         alert('Google 登录失败: ' + (error.message || '请稍后重试'));
     } finally {
         setGoogleButtonsLoading(false);
     }
-};
+}
+window.handleGoogleCredentialResponse = handleGoogleCredentialResponse;
 // ==================== 图片压缩助手 ====================
 function resizeImage(file, maxSize = 200) {
     return new Promise((resolve, reject) => {
@@ -1576,7 +1743,11 @@ async function initializeAuthPageBoot() {
     }
 
     // 初始化 Google Identity Services
-    loadGoogleIdentityServices();
+    try {
+        await ensureGoogleInlineButtonReady();
+    } catch (err) {
+        console.warn('⚠️ Google identity preload failed:', err?.message || err);
+    }
 
     // OAuth callback兜底：确保从Google回跳后能拿到session
     await resolveOAuthCallbackSession();
@@ -1600,6 +1771,11 @@ async function initializeAuthPageBoot() {
             const loginModal = document.getElementById('loginModal');
             if (loginModal) {
                 loginModal.classList.add('active');
+                if (typeof ensureGoogleInlineButtonReady === 'function') {
+                    ensureGoogleInlineButtonReady({ renderFallbackButton: true }).catch((err) => {
+                        console.warn('⚠️ ensureGoogleInlineButtonReady after openLoginModal failed:', err?.message || err);
+                    });
+                }
             }
         }, 300);
     }

@@ -298,13 +298,19 @@
     filter: brightness(0.9);
 }
 
+.google-login-btn.gsi-hidden {
+    display: none !important;
+    visibility: hidden !important;
+}
+
 /* Canonical login modal Google button (keep slim and consistent across pages) */
 .login-overlay .login-card .google-login-btn {
+    width: min(100%, 300px) !important;
     height: 40px !important;
     min-height: 40px !important;
     max-height: 40px !important;
     padding: 0 14px !important;
-    margin: 0 0 24px 0 !important;
+    margin: 0 auto 24px auto !important;
     border-radius: 14px !important;
     border: 1px solid #dadce0 !important;
     background: #ffffff !important;
@@ -320,13 +326,13 @@
 
 /* ==================== Google Official Button Container ==================== */
 .gsi-btn-container {
-    width: 100% !important;
+    width: min(100%, 300px) !important;
     display: flex !important;
     justify-content: center !important;
     align-items: center !important;
     height: 40px !important;
     /* Force match with glass-input */
-    margin-bottom: 24px !important;
+    margin: 0 auto 24px auto !important;
 }
 
 .gsi-btn-container:hover {

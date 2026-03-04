@@ -692,11 +692,12 @@
             /* Google Button - Full width within card */
             #loginModal .google-login-btn,
             #loginModal .login-card .google-login-btn {
-                width: 100% !important;
+                width: min(100%, 300px) !important;
                 height: 40px !important;
                 min-height: 40px !important;
                 max-height: 40px !important;
                 padding: 0 14px !important;
+                margin: 0 auto 24px auto !important;
                 border-radius: 14px !important;
                 background: #ffffff !important;
                 border: 1px solid #dadce0 !important;
@@ -948,7 +949,7 @@
     const slimGoogleBtnStyle = `
         #loginModal .google-login-btn,
         .login-overlay .login-card .google-login-btn {
-            width: 100% !important;
+            width: min(100%, 300px) !important;
             box-sizing: border-box !important;
             display: flex !important;
             align-items: center !important;
@@ -959,7 +960,7 @@
             min-height: 40px !important;
             max-height: 40px !important;
             padding: 0 14px !important;
-            margin: 0 0 24px 0 !important;
+            margin: 0 auto 24px auto !important;
 
             border-radius: 14px !important;
             border: 1px solid #dadce0 !important;
@@ -1034,11 +1035,11 @@
                     console.log(`🎨 Injected CSS: ${href}`);
                 }
             }
-            loadCSS(`login_styles.css?v=20260303_GOOGLE_SLIM_FIX4`);
-            loadCSS(`login_dual_mode.css?v=20260303_GOOGLE_SLIM_FIX4`);
+            loadCSS(`login_styles.css?v=20260303_G_AUTH_FIX15`);
+            loadCSS(`login_dual_mode.css?v=20260303_G_AUTH_FIX15`);
 
             // Supabase Auth
-            await loadScript('./supabase-auth-functions.js?v=20260303_GOOGLE_OAUTH_FIX8');
+            await loadScript('./supabase-auth-functions.js?v=20260303_GOOGLE_OAUTH_FIX24');
 
             // ✅ 加载 script.js (包含 sendVerificationCode 函数)
             await loadScript('./script.js?v=20260302_G_AUTH');
@@ -1080,6 +1081,11 @@
                             card.style.display = 'block';
                             card.style.opacity = '1';
                             card.style.visibility = 'visible';
+                        }
+                        if (typeof window.ensureGoogleInlineButtonReady === 'function') {
+                            window.ensureGoogleInlineButtonReady({ renderFallbackButton: true }).catch((err) => {
+                                console.warn('⚠️ ensureGoogleInlineButtonReady on modal open failed:', err?.message || err);
+                            });
                         }
                     } else {
                         modal.style.display = 'none';
