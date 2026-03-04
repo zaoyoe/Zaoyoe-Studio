@@ -80,7 +80,7 @@
             --bg-nav: #000000;
         }
 
-        /* Force background color to override style.css #000000 !important */
+        /* Force background color to match shop container to hide overscroll black block */
         html,
         body {
             background-color: var(--bg-color) !important;
@@ -200,6 +200,7 @@
             overflow: hidden;
             display: -webkit-box;
             -webkit-line-clamp: 2;
+            line-clamp: 2;
             -webkit-box-orient: vertical;
         }
 
@@ -623,14 +624,16 @@
         /* Background Canvas Styles */
         #ambientCanvas {
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+            top: -50vh;
+            bottom: -50vh;
+            left: -50vw;
+            right: -50vw;
+            width: 200vw;
+            height: 200vh;
             z-index: -1;
-            opacity: 0.6;
             pointer-events: none;
-            transition: opacity 0.5s ease;
+            opacity: 1;
+            transition: opacity 2s ease-in-out;
         }
 
         [data-theme="dark"] #ambientCanvas {
@@ -639,14 +642,17 @@
 
         #starryCanvas {
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
+            top: -50vh;
+            bottom: -50vh;
+            left: -50vw;
+            right: -50vw;
+            width: 200vw;
+            height: 200vh;
             z-index: 0;
             pointer-events: none;
             opacity: 0;
-            transition: opacity 1.5s ease;
+            /* Hidden by default, shown via JS in Dark Mode */
+            transition: opacity 4s ease-in-out;
         }
 
         [data-theme="dark"] #starryCanvas {
