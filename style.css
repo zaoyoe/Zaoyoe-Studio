@@ -6866,6 +6866,21 @@ body {
     .modal-overlay {
         transform: none !important;
         will-change: auto !important;
+    }
+
+    /* Keep login overlay visual state stable on mobile (no blur-state switching) */
+    .login-overlay,
+    .login-overlay.active,
+    .login-overlay.closing,
+    .login-overlay:not(.active):not(.closing) {
+        background: rgba(0, 0, 0, 0.6) !important;
+        backdrop-filter: blur(8px) !important;
+        -webkit-backdrop-filter: blur(8px) !important;
+        transition: none !important;
+    }
+
+    /* Profile/security modal keeps simpler composition for iOS focus stability */
+    .modal-overlay {
         backdrop-filter: none !important;
         -webkit-backdrop-filter: none !important;
     }
@@ -6886,6 +6901,11 @@ body {
         transform: none !important;
         animation: none !important;
         transition: none !important;
+    }
+
+    .login-overlay .login-card {
+        max-height: none !important;
+        overflow-y: visible !important;
     }
 
     .login-overlay .login-card .form-view>*,

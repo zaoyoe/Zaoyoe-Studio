@@ -766,8 +766,10 @@
                 #loginModal {
                     transform: none !important;
                     will-change: auto !important;
-                    backdrop-filter: none !important;
-                    -webkit-backdrop-filter: none !important;
+                    background: rgba(0, 0, 0, 0.6) !important;
+                    backdrop-filter: blur(8px) !important;
+                    -webkit-backdrop-filter: blur(8px) !important;
+                    transition: none !important;
                 }
 
                 .login-overlay .glass-input,
@@ -792,6 +794,8 @@
                     transform: none !important;
                     animation: none !important;
                     transition: none !important;
+                    max-height: none !important;
+                    overflow-y: visible !important;
                 }
 
                 .login-overlay .form-view {
