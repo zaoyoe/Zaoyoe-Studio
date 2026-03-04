@@ -77,15 +77,6 @@
     display: flex;
     min-height: 100vh;
     position: relative;
-    /* Prevent mobile horizontal shift/bounce when sidebar opens */
-    overflow-x: hidden;
-    width: 100%;
-    max-width: 100vw;
-}
-
-body,
-html {
-    overflow-x: hidden;
 }
 
 /* Sidebar Styles */
@@ -303,16 +294,8 @@ html {
 /* Responsive */
 @media (max-width: 768px) {
     .admin-sidebar {
-        width: 260px;
-        /* Use fixed width and only animate transform to avoid reflow overflow */
+        width: 0;
         transform: translateX(-100%);
-        /* Extend vertically to prevent iOS toolbar gaps/rubber-banding */
-        top: -10vh;
-        bottom: -10vh;
-        height: auto;
-        /* Override any fixed height */
-        padding-top: calc(10vh + env(safe-area-inset-top, 0px));
-        padding-bottom: calc(10vh + env(safe-area-inset-bottom, 0px));
     }
 
     .admin-sidebar.open {
