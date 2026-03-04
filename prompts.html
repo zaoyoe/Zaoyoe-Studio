@@ -3,7 +3,8 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-visual">
     <meta name="description" content="Banana Pro Gallery 提示词图库，精选高质量 AI 提示词与作品灵感，支持分类筛选与快速检索。">
     <title>Banana Pro Gallery | Zaoyoe</title>
     <link rel="canonical" href="https://zaoyoe.com/prompts.html">
@@ -90,6 +91,24 @@
             clip: rect(0, 0, 0, 0);
             white-space: nowrap;
             border: 0;
+        }
+
+        @media (max-width: 768px) {
+            html {
+                -webkit-text-size-adjust: 100%;
+            }
+
+            input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]),
+            textarea,
+            select {
+                font-size: 16px !important;
+                line-height: 1.35 !important;
+            }
+
+            .login-overlay.active:focus-within .login-card,
+            .modal-overlay.active:focus-within .modal-content {
+                transform: none !important;
+            }
         }
     </style>
 </head>

@@ -6849,3 +6849,29 @@ body {
 .profile-front.animate-in .profile-member-since-section {
     animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.3s backwards;
 }
+
+/* =========================================
+   Unified Mobile Input Zoom Fix (iOS Safari)
+   ========================================= */
+@media (max-width: 768px) {
+    html {
+        -webkit-text-size-adjust: 100%;
+    }
+
+    /* iOS Safari zooms when focused input font size is below 16px */
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]),
+    textarea,
+    select {
+        font-size: 16px !important;
+        line-height: 1.35 !important;
+    }
+
+    /*
+      Keep modal/card at scale(1) while any field is focused.
+      This avoids iOS caret offset on first focus when keyboard opens.
+    */
+    .login-overlay.active:focus-within .login-card,
+    .modal-overlay.active:focus-within .modal-content {
+        transform: none !important;
+    }
+}
