@@ -762,6 +762,14 @@
 
             /* Mobile iOS: avoid caret offset and focus zoom glitches */
             @media (max-width: 768px) {
+                .login-overlay,
+                #loginModal {
+                    transform: none !important;
+                    will-change: auto !important;
+                    backdrop-filter: none !important;
+                    -webkit-backdrop-filter: none !important;
+                }
+
                 .login-overlay .glass-input,
                 .login-card .glass-input,
                 #loginModal .glass-input,
@@ -770,6 +778,12 @@
                 #resetView .glass-input {
                     font-size: 16px !important;
                     line-height: 1.35 !important;
+                    backdrop-filter: none !important;
+                    -webkit-backdrop-filter: none !important;
+                    background: rgba(0, 0, 0, 0.55) !important;
+                    -webkit-transform: translateZ(0) !important;
+                    transform: translateZ(0) !important;
+                    caret-color: #ffffff !important;
                 }
 
                 .login-overlay .login-card,

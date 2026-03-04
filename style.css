@@ -6858,6 +6858,18 @@ body {
         -webkit-text-size-adjust: 100%;
     }
 
+    /*
+      iOS Safari caret misplacement hardening:
+      avoid transformed/filter-backed overlay composition while keyboard is opening.
+    */
+    .login-overlay,
+    .modal-overlay {
+        transform: none !important;
+        will-change: auto !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+    }
+
     /* iOS Safari zooms when focused input font size is below 16px */
     input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]),
     textarea,
@@ -6887,6 +6899,19 @@ body {
 
     .login-overlay .login-card .form-view {
         animation: none !important;
+    }
+
+    .login-overlay .glass-input,
+    .modal-overlay .glass-input,
+    .modal-overlay .security-input,
+    .modal-overlay input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]),
+    .modal-overlay textarea,
+    .modal-overlay select {
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+        -webkit-transform: translateZ(0) !important;
+        transform: translateZ(0) !important;
+        caret-color: #ffffff !important;
     }
 
     .login-overlay.active .login-card .form-view>*,
