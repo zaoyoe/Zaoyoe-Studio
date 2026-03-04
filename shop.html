@@ -80,10 +80,10 @@
             --bg-nav: #000000;
         }
 
-        /* Force background color to match shop container to hide overscroll black block */
+        /* Force background color to match verify page to hide overscroll black block */
         html,
         body {
-            background-color: var(--bg-color) !important;
+            background-color: #000000 !important;
         }
 
         /* Shop Card Styles (Prompt Card Style) */
@@ -612,14 +612,11 @@
     <!-- Dropdown Blur Overlay -->
     <div class="dropdown-overlay" id="dropdownOverlay"></div>
 
-    <!-- Ambient Light Canvas (Living Background) -->
-    <canvas id="ambientCanvas"></canvas>
     <!-- Starry Sky Canvas (Dark Mode Only) -->
     <canvas id="starryCanvas"></canvas>
 
     <style>
-        /* Background Canvas Styles */
-        #ambientCanvas {
+        #starryCanvas {
             position: fixed;
             top: -10vh;
             left: 0;
@@ -627,28 +624,6 @@
             height: 120vh;
             z-index: -1;
             pointer-events: none;
-            opacity: 1;
-            transition: opacity 2s ease-in-out;
-        }
-
-        [data-theme="dark"] #ambientCanvas {
-            opacity: 0.4;
-        }
-
-        #starryCanvas {
-            position: fixed;
-            top: -10vh;
-            left: 0;
-            width: 100vw;
-            height: 120vh;
-            z-index: 0;
-            pointer-events: none;
-            opacity: 0;
-            /* Hidden by default, shown via JS in Dark Mode */
-            transition: opacity 4s ease-in-out;
-        }
-
-        [data-theme="dark"] #starryCanvas {
             opacity: 1;
         }
 
@@ -1235,7 +1210,6 @@
 
     <!-- Background Animations -->
     <script src="starry-sky.js"></script>
-    <script src="js/ambient-light.js"></script>
 
     <!-- System Announcement Loader -->
     <script src="announcement-loader.js?v=8"></script>
