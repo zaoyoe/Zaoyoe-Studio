@@ -809,6 +809,14 @@
                     transition: none !important;
                     transition-delay: 0s !important;
                 }
+
+                .login-overlay.ios-focus-lock,
+                .login-overlay.ios-focus-lock .login-card,
+                .login-overlay.ios-focus-lock .form-view,
+                .login-overlay.ios-focus-lock .form-view > * {
+                    transition: none !important;
+                    animation: none !important;
+                }
             }
             
             /* Force avatar hover animation */
@@ -1184,6 +1192,50 @@
                     mouseDownOnOverlay = false;
                 }
             };
+
+            // iOS Safari: suppress rapid re-taps on the same focused input to avoid caret jump-reflow.
+            function setupIOSLoginInputStabilizer() {
+                const modal = document.getElementById('loginModal');
+                if (!modal) return;
+
+                const isIOSDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+                    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+                if (!isIOSDevice) return;
+
+                let lastTapTs = 0;
+                let lastTapInput = null;
+
+                modal.querySelectorAll('input.glass-input').forEach((inputEl) => {
+                    inputEl.addEventListener('touchstart', (ev) => {
+                        const now = Date.now();
+                        const isSameFocusedInput = document.activeElement === inputEl;
+                        const rapidRetap = lastTapInput === inputEl && (now - lastTapTs) < 360;
+
+                        if (isSameFocusedInput && rapidRetap) {
+                            // Prevent iOS from re-running caret placement + viewport correction on repeated taps.
+                            ev.preventDefault();
+                            modal.classList.add('ios-focus-lock');
+                            return;
+                        }
+
+                        lastTapInput = inputEl;
+                        lastTapTs = now;
+                    }, { passive: false });
+
+                    inputEl.addEventListener('focus', () => {
+                        modal.classList.add('ios-focus-lock');
+                    });
+
+                    inputEl.addEventListener('blur', () => {
+                        setTimeout(() => {
+                            if (!modal.contains(document.activeElement)) {
+                                modal.classList.remove('ios-focus-lock');
+                            }
+                        }, 0);
+                    });
+                });
+            }
+            setupIOSLoginInputStabilizer();
 
         } catch (error) {
             console.error('Failed to initialize auth:', error);
