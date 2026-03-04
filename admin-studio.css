@@ -16859,3 +16859,19 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 .custom-scrollbar::-webkit-scrollbar {
     width: 6px;
 }
+
+/* =========================================
+   Mobile Input Zoom/Caret Fix (iOS Safari)
+   ========================================= */
+@media (max-width: 768px) {
+    html {
+        -webkit-text-size-adjust: 100%;
+    }
+
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]),
+    textarea,
+    select {
+        font-size: 16px !important;
+        line-height: 1.35 !important;
+    }
+}

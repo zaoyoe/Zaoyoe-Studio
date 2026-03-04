@@ -6866,6 +6866,20 @@ body {
         line-height: 1.35 !important;
     }
 
+    /* Disable transform-based modal entrance on mobile to stabilize caret rendering */
+    .login-overlay .login-card,
+    .login-overlay.active .login-card,
+    div.modal-overlay .modal-content,
+    div.modal-overlay.active .modal-content {
+        transform: none !important;
+    }
+
+    .login-overlay .login-card .form-view>*,
+    .modal-overlay .modal-content:not(.guestbook-content)>*:not(.window-controls):not(.modal-close) {
+        transform: none !important;
+        transition: opacity 0.2s ease !important;
+    }
+
     /*
       Keep modal/card at scale(1) while any field is focused.
       This avoids iOS caret offset on first focus when keyboard opens.

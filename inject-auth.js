@@ -120,12 +120,12 @@
                     <span data-i18n="auth.or">或者</span>
                 </div>
 
-                <form id="loginForm" onsubmit="handleLogin(event)" autocomplete="off">
+                <form id="loginForm" onsubmit="handleLogin(event)" autocomplete="on">
                     <div class="input-group">
-                        <input type="email" id="login-email" class="glass-input" placeholder="邮箱地址" data-i18n-placeholder="auth.emailPlaceholder" required>
+                        <input type="email" id="login-email" class="glass-input" placeholder="邮箱地址" data-i18n-placeholder="auth.emailPlaceholder" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" required>
                     </div>
                     <div class="input-group">
-                        <input type="password" id="login-password" class="glass-input" placeholder="密码" data-i18n-placeholder="auth.passwordPlaceholder" autocomplete="new-password" data-form-type="other" required>
+                        <input type="password" id="login-password" class="glass-input" placeholder="密码" data-i18n-placeholder="auth.passwordPlaceholder" autocomplete="current-password" data-form-type="other" required>
                     </div>
 
                     <!-- Forgot Password Link -->
@@ -736,7 +736,8 @@
                 backdrop-filter: blur(20px) !important;
                 -webkit-backdrop-filter: blur(20px) !important;
                 color: white !important;
-                font-size: 14px !important;
+                font-size: 16px !important;
+                line-height: 1.35 !important;
                 padding: 10px 16px !important;
                 border-radius: 12px !important;
             }
@@ -757,6 +758,31 @@
                 background: rgba(0, 0, 0, 0.4) !important;
                 border-color: rgba(155, 93, 229, 0.7) !important;
                 box-shadow: 0 0 0 3px rgba(155, 93, 229, 0.15), 0 0 20px rgba(168, 85, 247, 0.12) !important;
+            }
+
+            /* Mobile iOS: avoid caret offset and focus zoom glitches */
+            @media (max-width: 768px) {
+                .login-overlay .glass-input,
+                .login-card .glass-input,
+                #loginModal .glass-input,
+                #loginView .glass-input,
+                #registerView .glass-input,
+                #resetView .glass-input {
+                    font-size: 16px !important;
+                    line-height: 1.35 !important;
+                }
+
+                .login-overlay .login-card,
+                .login-overlay.active .login-card,
+                #loginModal .login-card {
+                    transform: none !important;
+                    transition: opacity 0.2s ease !important;
+                }
+
+                .login-overlay .form-view > * {
+                    transform: none !important;
+                    transition: opacity 0.2s ease !important;
+                }
             }
             
             /* Force avatar hover animation */
