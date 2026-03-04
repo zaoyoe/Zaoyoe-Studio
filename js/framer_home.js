@@ -1256,18 +1256,15 @@ const FramerHome = {
         <p class="section-subtitle">${this.getLocalizedField(config, 'section_subtitle') || window.i18n?.t('home.guestbook.subtitle') || '用户的声音'}</p>
       </div>
       
-      <div style="display: flex; flex-direction: column; gap: 24px; max-width: 800px; margin: 0 auto;">
+      <div style="display: flex; flex-direction: column; gap: 24px; max-width: 800px; margin: 0 auto; padding: 0 20px; align-items: center;">
         ${messages.map(msg => `
-          <div class="glass-card fade-in-up" style="display: flex; gap: 16px;">
+          <div class="glass-card fade-in-up" style="display: flex; gap: 16px; width: 100%; max-width: 600px;">
             <img src="${msg.profiles?.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(msg.profiles?.username || 'U')}&backgroundColor=6b9ece`}" 
                  onerror="this.onerror=null;this.src='https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(msg.profiles?.username || 'U')}&backgroundColor=6b9ece'"
                  style="width: 48px; height: 48px; border-radius: 50%; border: 2px solid var(--border-subtle); object-fit: cover;">
             <div style="flex: 1;">
               <div style="font-weight: 600; margin-bottom: 4px;">${msg.profiles?.username || '匿名用户'}</div>
               <p style="color: var(--text-secondary); font-size: 14px; line-height: 1.6;">${msg.content}</p>
-              <div style="font-size: 12px; color: var(--text-tertiary); margin-top: 8px;">
-                ${new Date(msg.created_at).toLocaleDateString('zh-CN')}
-              </div>
             </div>
           </div>
         `).join('')}
