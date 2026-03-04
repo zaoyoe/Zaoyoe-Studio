@@ -2977,17 +2977,24 @@ button.upload-icon-btn {
 
 .glass-input {
     width: 100%;
-    padding: 10px 16px;
+    /* Increase padding to ensure caret does not hit the border */
+    padding: 12px 16px;
     border-radius: 12px;
     background: rgba(0, 0, 0, 0.4);
     backdrop-filter: blur(20px);
     border: 1px solid rgba(155, 93, 229, 0.5);
     color: white;
-    font-size: 14px;
+    /* CRITICAL FIX: iOS zoom occurs if input font-size is less than 16px */
+    font-size: 16px !important;
     outline: none;
     box-sizing: border-box;
     transition: all 0.3s ease;
     letter-spacing: 0.3px;
+    /* Fix for iOS caret jumping */
+    text-indent: 0;
+    text-align: left;
+    -webkit-appearance: none;
+    appearance: none;
 }
 
 .glass-input::placeholder {
