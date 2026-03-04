@@ -374,8 +374,8 @@
         border-radius: 10px;
         padding: 10px 12px;
         color: #fff;
-        font-size: 14px !important;
-        /* Slightly smaller text */
+        font-size: 16px !important;
+        line-height: 1.35 !important;
         transition: all 0.3s ease;
         height: 42px;
         /* Fixed height */
@@ -443,22 +443,23 @@
         height: 40px;
     }
 
-    /* Staggered Rise Animation for Mobile Security Sections */
-    /* Triggered when parent .profile-back has .animate-in class */
+    /* iOS Safari: disable staged section animation on mobile to avoid focus/caret drift */
     .profile-back.animate-in .mobile-security-section {
-        animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) backwards;
+        animation: none !important;
+        opacity: 1 !important;
+        transform: none !important;
     }
 
     .profile-back.animate-in .mobile-security-section:nth-child(1) {
-        animation-delay: 0.1s;
+        animation-delay: 0s !important;
     }
 
     .profile-back.animate-in .mobile-security-section:nth-child(2) {
-        animation-delay: 0.2s;
+        animation-delay: 0s !important;
     }
 
     .profile-back.animate-in .mobile-security-section:nth-child(3) {
-        animation-delay: 0.3s;
+        animation-delay: 0s !important;
     }
 }
 

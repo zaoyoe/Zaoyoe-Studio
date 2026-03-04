@@ -776,12 +776,20 @@
                 .login-overlay.active .login-card,
                 #loginModal .login-card {
                     transform: none !important;
-                    transition: opacity 0.2s ease !important;
+                    animation: none !important;
+                    transition: none !important;
+                }
+
+                .login-overlay .form-view {
+                    animation: none !important;
                 }
 
                 .login-overlay .form-view > * {
                     transform: none !important;
-                    transition: opacity 0.2s ease !important;
+                    opacity: 1 !important;
+                    animation: none !important;
+                    transition: none !important;
+                    transition-delay: 0s !important;
                 }
             }
             

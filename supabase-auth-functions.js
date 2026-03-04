@@ -2037,6 +2037,7 @@ window.handleSwitchAccount = handleSwitchAccount;
 // ==================== Tab 切换功能 ====================
 function switchProfileTab(tabName) {
     console.log('🔄 Switching profile tab to:', tabName);
+    const isMobileView = window.innerWidth <= 768;
 
     const profileModal = document.querySelector('.profile-modal');
     const flipInner = document.querySelector('.profile-flip-inner');
@@ -2056,7 +2057,7 @@ function switchProfileTab(tabName) {
         if (profileFront) profileFront.style.pointerEvents = 'auto';
         if (profileBack) profileBack.style.pointerEvents = 'none';
 
-        if (profileFront) {
+        if (profileFront && !isMobileView) {
             profileFront.classList.remove('animate-in');
             void profileFront.offsetWidth;
             profileFront.classList.add('animate-in');
@@ -2075,7 +2076,7 @@ function switchProfileTab(tabName) {
             resetSecurityCards();
         }
 
-        if (profileBack) {
+        if (profileBack && !isMobileView) {
             profileBack.classList.remove('animate-in');
             void profileBack.offsetWidth;
             profileBack.classList.add('animate-in');

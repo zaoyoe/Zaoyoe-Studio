@@ -6872,12 +6872,26 @@ body {
     div.modal-overlay .modal-content,
     div.modal-overlay.active .modal-content {
         transform: none !important;
+        animation: none !important;
+        transition: none !important;
     }
 
     .login-overlay .login-card .form-view>*,
     .modal-overlay .modal-content:not(.guestbook-content)>*:not(.window-controls):not(.modal-close) {
         transform: none !important;
-        transition: opacity 0.2s ease !important;
+        opacity: 1 !important;
+        animation: none !important;
+        transition: none !important;
+        transition-delay: 0s !important;
+    }
+
+    .login-overlay .login-card .form-view {
+        animation: none !important;
+    }
+
+    .login-overlay.active .login-card .form-view>*,
+    .modal-overlay.active .modal-content:not(.guestbook-content)>*:not(.window-controls):not(.modal-close) {
+        transition-delay: 0s !important;
     }
 
     /*
