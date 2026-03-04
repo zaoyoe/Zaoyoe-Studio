@@ -77,6 +77,15 @@
     display: flex;
     min-height: 100vh;
     position: relative;
+    /* Prevent mobile horizontal shift/bounce when sidebar opens */
+    overflow-x: hidden;
+    width: 100%;
+    max-width: 100vw;
+}
+
+body,
+html {
+    overflow-x: hidden;
 }
 
 /* Sidebar Styles */
