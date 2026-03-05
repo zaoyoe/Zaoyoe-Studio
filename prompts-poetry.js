@@ -4465,10 +4465,9 @@ function openPromptModal(id) {
     // Initialize image upload functionality
     initCommentImageUpload();
 
-    // 清除上次关闭时设置的 JS style，让 CSS 的 backdrop-filter 生效
-    modal.style.backdropFilter = '';
-    modal.style.webkitBackdropFilter = '';
-
+    // 显示弹窗：先 display:flex（进入渲染树），再 active（触发 opacity 过渡）
+    modal.style.display = 'flex';
+    void modal.offsetHeight; // 强制 reflow，确保 display:flex 先生效
     modal.classList.add('active');
     if (window.iOSScrollLock) window.iOSScrollLock.lockLight(modal);
     document.body.classList.add('prompt-modal-open'); // Hide header behind modal
@@ -6241,19 +6240,19 @@ function closePromptModal() {
         modal.classList.remove('active');
     }
 
-    // Re-enable body scroll
-    if (window.iOSScrollLock) window.iOSScrollLock.unlock();
+    // 先移除 body class（立即），z-index 让导航回来
     document.body.classList.remove('prompt-modal-open');
 
-    // iOS Safari fix: 关闭过渡完成后，通过 JS 移除 backdrop-filter。
-    // 此时 modal 已经 opacity:0（不可见），移除 backdrop-filter 不会产生视觉变化，
-    // 但会让 Safari 合成器丢弃"污染"的模糊层，恢复地址栏通透。
-    // 下次 openPromptModal 时清除 JS style，让 CSS 接管。
+    // iOS Safari fix: 等 opacity 过渡结束后，将全屏层彻底设为 display:none
+    // 让合成器完全销毁该层，恢复地址栏通透。之后再解锁滚动。
     if (modal) {
         setTimeout(() => {
-            modal.style.backdropFilter = 'none';
-            modal.style.webkitBackdropFilter = 'none';
+            modal.style.display = 'none';
+            // 滚动解锁放在层销毁之后，避免 Safari 在"仍有全屏层"时重算工具栏
+            if (window.iOSScrollLock) window.iOSScrollLock.unlock();
         }, 550);
+    } else {
+        if (window.iOSScrollLock) window.iOSScrollLock.unlock();
     }
 }
 

@@ -2137,6 +2137,13 @@ body.prompt-modal-open .top-right-nav {
     }
 }
 
+/* Prevent page scroll when modal is open (not loaded from style.css) */
+html.no-scroll,
+body.no-scroll {
+    overflow: hidden !important;
+    overscroll-behavior: none !important;
+}
+
 .poetry-modal {
     position: fixed;
     top: 0;
@@ -2144,14 +2151,13 @@ body.prompt-modal-open .top-right-nav {
     width: 100%;
     height: 100%;
     background: var(--modal-overlay);
-    backdrop-filter: blur(20px);
+    /* backdrop-filter 移到 .modal-inner，避免全屏 blur 层污染 iOS Safari 合成器 */
     z-index: 1000;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.5s ease;
-    display: flex;
+    display: none;
     justify-content: center;
     align-items: center;
+    opacity: 0;
+    transition: opacity 0.5s ease;
 }
 
 .poetry-modal.active {
@@ -2164,6 +2170,8 @@ body.prompt-modal-open .top-right-nav {
     max-width: 1000px;
     height: 85vh;
     background: var(--modal-bg);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
     border: 1px solid var(--card-border);
     border-radius: 24px;
     display: flex;
