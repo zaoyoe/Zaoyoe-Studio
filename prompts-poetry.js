@@ -4465,7 +4465,7 @@ function openPromptModal(id) {
     // Initialize image upload functionality
     initCommentImageUpload();
 
-        modal.classList.add('active');
+    modal.classList.add('active');
     if (window.iOSScrollLock) window.iOSScrollLock.lockLight(modal);
     document.body.classList.add('prompt-modal-open'); // Hide header behind modal
 }
@@ -6240,7 +6240,7 @@ function closePromptModal() {
     // 先移除 body class（立即），z-index 让导航回来
     document.body.classList.remove('prompt-modal-open');
 
-        // Re-enable body scroll
+    // Re-enable body scroll
     if (window.iOSScrollLock) window.iOSScrollLock.unlock();
 }
 
