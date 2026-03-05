@@ -1782,7 +1782,8 @@ body.no-scroll {
         padding: 10px 12px !important;
         padding-right: 50px !important;
         /* Prevent text overlap with camera icon */
-        font-size: 0.85rem !important;
+        font-size: 16px !important;
+        /* CRITICAL: iOS Safari zooms if < 16px */
         border-radius: 12px !important;
         background: rgba(0, 0, 0, 0.2) !important;
         border: 1px solid rgba(255, 255, 255, 0.1) !important;
@@ -5739,7 +5740,8 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     background: rgba(0, 0, 0, 0.2);
     border: 1px solid rgba(255, 255, 255, 0.1);
     color: white;
-    font-size: 14px;
+    /* CRITICAL: iOS Safari zooms if font-size < 16px */
+    font-size: 16px !important;
     outline: none;
     box-sizing: border-box;
     transition: 0.3s;
@@ -6235,7 +6237,8 @@ input[type="submit"],
     background: rgba(0, 0, 0, 0.2);
     border: 1px solid rgba(255, 255, 255, 0.1);
     color: white;
-    font-size: 14px;
+    /* CRITICAL: iOS Safari zooms if font-size < 16px */
+    font-size: 16px !important;
     outline: none;
     box-sizing: border-box;
     transition: 0.3s;
@@ -6517,10 +6520,15 @@ input[type="submit"],
 
 .guestbook-form input::placeholder,
 .guestbook-form textarea::placeholder,
+.guestbook-form input::-webkit-input-placeholder,
+.guestbook-form textarea::-webkit-input-placeholder,
 .modal-content input:not(.security-input)::placeholder,
 .modal-content textarea::placeholder,
 .login-card input::placeholder {
-    color: rgba(255, 255, 255, 0.5) !important;
+    color: rgba(255, 255, 255, 0.4) !important;
+    font-size: 13px !important;
+    font-weight: 300 !important;
+    letter-spacing: 0.5px !important;
 }
 
 /* ==================== Fixes for Modal Interaction Issues ==================== */
