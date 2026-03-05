@@ -665,11 +665,11 @@
                 max-width: 90vw !important;
                 padding: 40px !important;
                 border-radius: 24px !important;
-                background: rgba(0, 0, 0, 0.65) !important;
+                background: rgba(255, 255, 255, 0.03) !important;
                 border: 1px solid rgba(255, 255, 255, 0.1) !important;
-                border-top: 1px solid rgba(255, 255, 255, 0.16) !important;
-                backdrop-filter: blur(10px) !important;
-                -webkit-backdrop-filter: blur(10px) !important;
+                border-top: 1px solid rgba(255, 255, 255, 0.2) !important;
+                backdrop-filter: blur(20px) saturate(150%) !important;
+                -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
                 box-sizing: border-box !important;
             }
             
@@ -1124,50 +1124,43 @@
                 return isIOS && window.matchMedia('(max-width: 768px)').matches;
             }
 
-            let iosLoginLockY = 0;
-            let iosLoginLockAttached = false;
-            let iosLoginLockRaf = null;
-            let iosLoginViewport = null;
+            let iosLoginBaselineY = 0;
+            let iosLoginViewportCleanup = null;
 
-            function enforceIOSLoginBackgroundLock() {
-                if (!iosLoginLockAttached) return;
-                const modal = document.getElementById('loginModal');
-                if (!modal || !modal.classList.contains('active')) return;
-                if (iosLoginLockRaf) return;
-
-                iosLoginLockRaf = requestAnimationFrame(() => {
-                    iosLoginLockRaf = null;
-                    const currentY = window.scrollY || window.pageYOffset || 0;
-                    if (Math.abs(currentY - iosLoginLockY) > 0.5) {
-                        window.scrollTo(0, iosLoginLockY);
-                    }
+            function restoreIOSLoginBaselineScroll() {
+                if (!isIOSMobileWebKit()) return;
+                requestAnimationFrame(() => {
+                    window.scrollTo(0, iosLoginBaselineY);
                 });
             }
 
-            function attachIOSLoginBackgroundLock() {
-                if (!isIOSMobileWebKit() || iosLoginLockAttached) return;
-                iosLoginLockY = window.scrollY || window.pageYOffset || 0;
-                iosLoginLockAttached = true;
-                window.addEventListener('scroll', enforceIOSLoginBackgroundLock, { passive: true });
-                if (window.visualViewport) {
-                    iosLoginViewport = window.visualViewport;
-                    iosLoginViewport.addEventListener('resize', enforceIOSLoginBackgroundLock, { passive: true });
-                    iosLoginViewport.addEventListener('scroll', enforceIOSLoginBackgroundLock, { passive: true });
-                }
+            function attachIOSKeyboardCloseRecenter(modal) {
+                if (!isIOSMobileWebKit() || !window.visualViewport || !modal) return;
+                const baseViewportHeight = window.visualViewport.height;
+
+                const handleViewportChange = () => {
+                    if (!modal.classList.contains('active')) return;
+                    const active = document.activeElement;
+                    const inField = !!(active && modal.contains(active) &&
+                        /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName));
+
+                    if (!inField && window.visualViewport.height >= baseViewportHeight - 2) {
+                        restoreIOSLoginBaselineScroll();
+                    }
+                };
+
+                window.visualViewport.addEventListener('resize', handleViewportChange, { passive: true });
+                window.visualViewport.addEventListener('scroll', handleViewportChange, { passive: true });
+                iosLoginViewportCleanup = () => {
+                    window.visualViewport.removeEventListener('resize', handleViewportChange);
+                    window.visualViewport.removeEventListener('scroll', handleViewportChange);
+                    iosLoginViewportCleanup = null;
+                };
             }
 
-            function detachIOSLoginBackgroundLock() {
-                if (!iosLoginLockAttached) return;
-                iosLoginLockAttached = false;
-                window.removeEventListener('scroll', enforceIOSLoginBackgroundLock);
-                if (iosLoginViewport) {
-                    iosLoginViewport.removeEventListener('resize', enforceIOSLoginBackgroundLock);
-                    iosLoginViewport.removeEventListener('scroll', enforceIOSLoginBackgroundLock);
-                    iosLoginViewport = null;
-                }
-                if (iosLoginLockRaf) {
-                    cancelAnimationFrame(iosLoginLockRaf);
-                    iosLoginLockRaf = null;
+            function detachIOSKeyboardCloseRecenter() {
+                if (typeof iosLoginViewportCleanup === 'function') {
+                    iosLoginViewportCleanup();
                 }
             }
 
@@ -1175,12 +1168,11 @@
                 if (!isIOSMobileWebKit()) return;
                 if (document.body.dataset.loginScrollLock === '1') return;
                 const scrollY = window.scrollY || window.pageYOffset || 0;
+                iosLoginBaselineY = scrollY;
                 document.body.dataset.loginScrollLock = '1';
                 document.body.dataset.loginScrollTop = String(scrollY);
                 document.documentElement.classList.add('no-scroll');
                 document.body.classList.add('no-scroll');
-                attachIOSLoginBackgroundLock();
-                enforceIOSLoginBackgroundLock();
             }
 
             function unlockBodyForIOSLoginModal() {
@@ -1190,7 +1182,8 @@
                 delete document.body.dataset.loginScrollTop;
                 document.documentElement.classList.remove('no-scroll');
                 document.body.classList.remove('no-scroll');
-                detachIOSLoginBackgroundLock();
+                detachIOSKeyboardCloseRecenter();
+                iosLoginBaselineY = top;
                 window.scrollTo(0, top);
             }
 
@@ -1211,7 +1204,7 @@
                 }
 
                 lockBodyForIOSLoginModal();
-                enforceIOSLoginBackgroundLock();
+                attachIOSKeyboardCloseRecenter(modal);
 
                 if (typeof window.ensureGoogleInlineButtonReady === 'function') {
                     window.ensureGoogleInlineButtonReady({ renderFallbackButton: true }).catch((err) => {
@@ -1317,7 +1310,6 @@
                     };
 
                     inputEl.addEventListener('touchstart', (ev) => {
-                        enforceIOSLoginBackgroundLock();
                         if (shouldSuppressRetap()) {
                             ev.preventDefault();
                             ev.stopPropagation();
@@ -1338,17 +1330,15 @@
 
                     inputEl.addEventListener('focus', () => {
                         modal.classList.add('ios-focus-lock');
-                        enforceIOSLoginBackgroundLock();
-                        setTimeout(enforceIOSLoginBackgroundLock, 0);
-                        setTimeout(enforceIOSLoginBackgroundLock, 80);
                     });
 
                     inputEl.addEventListener('blur', () => {
                         setTimeout(() => {
                             if (!modal.contains(document.activeElement)) {
                                 modal.classList.remove('ios-focus-lock');
+                                restoreIOSLoginBaselineScroll();
                             }
-                        }, 0);
+                        }, 120);
                     });
                 });
             }
