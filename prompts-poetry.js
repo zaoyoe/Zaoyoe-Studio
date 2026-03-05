@@ -6240,17 +6240,6 @@ function closePromptModal() {
     // Re-enable body scroll
     if (window.iOSScrollLock) window.iOSScrollLock.unlock();
     document.body.classList.remove('prompt-modal-open');
-
-    // iOS Safari compositor fix: 
-    // backdrop-filter 在经历 opacity 0→1→0 过渡后，合成器内部状态可能"污染"，
-    // 导致地址栏无法恢复半透明渲染。通过 display:none 强制销毁并重建合成层。
-    if (modal) {
-        setTimeout(() => {
-            modal.style.display = 'none';
-            void modal.offsetHeight; // 强制 reflow
-            modal.style.display = '';
-        }, 550); // 等 0.5s opacity 过渡结束
-    }
 }
 
 // Click outside modal to close
