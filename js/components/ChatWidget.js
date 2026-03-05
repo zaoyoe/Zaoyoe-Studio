@@ -1716,9 +1716,8 @@ class ChatWidget {
             // Show overlay (for admin mode)
             if (this.overlay) this.overlay.classList.add('visible');
 
-            // LOCK SCROLL - CSS only approach (no JS event blocking for performance)
-            document.body.classList.add('no-scroll');
-            document.documentElement.classList.add('no-scroll');
+            // LOCK SCROLL - unified iOS-safe approach
+            if (window.iOSScrollLock) window.iOSScrollLock.lock(this.chatWindow);
 
         } else {
             this.chatWindow.classList.remove('active');
@@ -1728,8 +1727,7 @@ class ChatWidget {
             if (this.overlay) this.overlay.classList.remove('visible');
 
             // UNLOCK SCROLL
-            document.body.classList.remove('no-scroll');
-            document.documentElement.classList.remove('no-scroll');
+            if (window.iOSScrollLock) window.iOSScrollLock.unlock();
         }
     }
 

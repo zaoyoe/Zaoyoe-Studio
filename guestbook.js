@@ -907,6 +907,7 @@ window.openCommentModal = async function (messageId, parentCommentId = null) {
 
         // Add body class
         document.body.classList.add('modal-active');
+        if (window.iOSScrollLock) window.iOSScrollLock.lock(modal);
 
         // Add active class to trigger CSS animation
         modal.classList.add('active');
@@ -935,6 +936,7 @@ window.closeCommentModal = function (event) {
         if (modal) {
             // Remove body.modal-active class
             document.body.classList.remove('modal-active');
+            if (window.iOSScrollLock) window.iOSScrollLock.unlock();
 
             // Removed Restore Scroll
             // document.body.style.position = '';
@@ -1049,7 +1051,7 @@ function openImageModal(src) {
     // image-zoom.js会处理缩放、拖动和点击重置
 
     modal.classList.add('active');
-    document.body.style.overflow = 'hidden'; // Lock background scrolling
+    if (window.iOSScrollLock) window.iOSScrollLock.lock(modal); // Lock background scrolling
 
 }
 
@@ -1057,7 +1059,7 @@ function closeImageModal() {
     const modal = document.getElementById('imageModal');
     if (modal) {
         modal.classList.remove('active');
-        document.body.style.overflow = '';
+        if (window.iOSScrollLock) window.iOSScrollLock.unlock();
     }
 }
 

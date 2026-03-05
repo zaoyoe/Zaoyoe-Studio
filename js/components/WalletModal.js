@@ -81,7 +81,7 @@
 
             this.isOpen = true;
             this.ordersLoaded = false; // Reset loaded flag for new session
-            document.body.style.overflow = 'hidden'; // Lock body scroll
+            if (window.iOSScrollLock) window.iOSScrollLock.lock(this.modalEl); // Lock body scroll
 
             // Render UI immediately so there's zero delay for the user
             this.render();
@@ -123,7 +123,7 @@
                 this.modalEl.style.display = 'none';
                 this.modalEl.classList.remove('active');
             }
-            document.body.style.overflow = ''; // Unlock body scroll
+            if (window.iOSScrollLock) window.iOSScrollLock.unlock(); // Unlock body scroll
             this.isOpen = false;
             this.ordersLoaded = false;
             this._prefetched = false; // Allow prefetch on next dropdown open

@@ -1124,68 +1124,7 @@
                 return isIOS && window.matchMedia('(max-width: 768px)').matches;
             }
 
-            let iosLoginBaselineY = 0;
-            let iosLoginViewportCleanup = null;
-
-            function restoreIOSLoginBaselineScroll() {
-                if (!isIOSMobileWebKit()) return;
-                requestAnimationFrame(() => {
-                    window.scrollTo(0, iosLoginBaselineY);
-                });
-            }
-
-            function attachIOSKeyboardCloseRecenter(modal) {
-                if (!isIOSMobileWebKit() || !window.visualViewport || !modal) return;
-                const baseViewportHeight = window.visualViewport.height;
-
-                const handleViewportChange = () => {
-                    if (!modal.classList.contains('active')) return;
-                    const active = document.activeElement;
-                    const inField = !!(active && modal.contains(active) &&
-                        /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName));
-
-                    if (!inField && window.visualViewport.height >= baseViewportHeight - 2) {
-                        restoreIOSLoginBaselineScroll();
-                    }
-                };
-
-                window.visualViewport.addEventListener('resize', handleViewportChange, { passive: true });
-                window.visualViewport.addEventListener('scroll', handleViewportChange, { passive: true });
-                iosLoginViewportCleanup = () => {
-                    window.visualViewport.removeEventListener('resize', handleViewportChange);
-                    window.visualViewport.removeEventListener('scroll', handleViewportChange);
-                    iosLoginViewportCleanup = null;
-                };
-            }
-
-            function detachIOSKeyboardCloseRecenter() {
-                if (typeof iosLoginViewportCleanup === 'function') {
-                    iosLoginViewportCleanup();
-                }
-            }
-
-            function lockBodyForIOSLoginModal() {
-                if (!isIOSMobileWebKit()) return;
-                if (document.body.dataset.loginScrollLock === '1') return;
-                const scrollY = window.scrollY || window.pageYOffset || 0;
-                iosLoginBaselineY = scrollY;
-                document.body.dataset.loginScrollLock = '1';
-                document.body.dataset.loginScrollTop = String(scrollY);
-                document.documentElement.classList.add('no-scroll');
-                document.body.classList.add('no-scroll');
-            }
-
-            function unlockBodyForIOSLoginModal() {
-                if (document.body.dataset.loginScrollLock !== '1') return;
-                const top = parseInt(document.body.dataset.loginScrollTop || '0', 10) || 0;
-                delete document.body.dataset.loginScrollLock;
-                delete document.body.dataset.loginScrollTop;
-                document.documentElement.classList.remove('no-scroll');
-                document.body.classList.remove('no-scroll');
-                detachIOSKeyboardCloseRecenter();
-                iosLoginBaselineY = top;
-                window.scrollTo(0, top);
-            }
+            // iOS scroll lock now uses unified window.iOSScrollLock module
 
             function openLoginModal() {
                 const modal = document.getElementById('loginModal');
@@ -1203,8 +1142,7 @@
                     card.style.visibility = 'visible';
                 }
 
-                lockBodyForIOSLoginModal();
-                attachIOSKeyboardCloseRecenter(modal);
+                if (window.iOSScrollLock) window.iOSScrollLock.lock(modal);
 
                 if (typeof window.ensureGoogleInlineButtonReady === 'function') {
                     window.ensureGoogleInlineButtonReady({ renderFallbackButton: true }).catch((err) => {
@@ -1221,7 +1159,7 @@
                 modal.style.display = 'none';
                 modal.style.visibility = 'hidden';
                 modal.style.opacity = '0';
-                unlockBodyForIOSLoginModal();
+                if (window.iOSScrollLock) window.iOSScrollLock.unlock();
             }
 
             // Add global handlers if needed
@@ -1336,7 +1274,7 @@
                         setTimeout(() => {
                             if (!modal.contains(document.activeElement)) {
                                 modal.classList.remove('ios-focus-lock');
-                                restoreIOSLoginBaselineScroll();
+                                // Scroll restore handled by iOSScrollLock on unlock
                             }
                         }, 120);
                     });

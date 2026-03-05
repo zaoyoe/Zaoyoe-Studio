@@ -105,7 +105,7 @@ function openAuthModal(view = 'login') {
 
         // 添加 active 类以显示模态框
         modal.classList.add('active');
-        document.body.classList.add('no-scroll'); // Lock body scroll
+        if (window.iOSScrollLock) window.iOSScrollLock.lock(modal); // Lock body scroll
         switchAuthView(view);
     }
 }
@@ -128,7 +128,7 @@ function toggleLoginModal() {
                 modal.style.background = 'transparent';
                 // 移除 closing 类
                 modal.classList.remove('closing');
-                document.body.classList.remove('no-scroll'); // Unlock body scroll
+                if (window.iOSScrollLock) window.iOSScrollLock.unlock(); // Unlock body scroll
             }
         }, 350); // 等待过渡动画完成（0.3s）+ 额外缓冲时间
     }
@@ -181,7 +181,7 @@ function openModal(modalId) {
     const modal = document.getElementById(modalId);
     if (modal) {
         modal.classList.add('active');
-        document.body.classList.add('no-scroll'); // Lock body scroll
+        if (window.iOSScrollLock) window.iOSScrollLock.lock(modal); // Lock body scroll
         console.log('✅ Modal opened:', modalId);
     } else {
         console.error('❌ Modal not found:', modalId);
@@ -225,7 +225,7 @@ function closeAllModals() {
     });
 
     // Restore Scroll
-    document.body.classList.remove('no-scroll');
+    if (window.iOSScrollLock) window.iOSScrollLock.unlock();
 
 }
 
@@ -602,7 +602,7 @@ window.addEventListener('pageshow', (event) => {
         });
 
         // Unlock body scroll
-        document.body.classList.remove('no-scroll');
+        if (window.iOSScrollLock) window.iOSScrollLock.unlock();
 
         console.log('✅ All modals closed, homepage is clean');
     }

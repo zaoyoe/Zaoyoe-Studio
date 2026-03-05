@@ -4466,7 +4466,7 @@ function openPromptModal(id) {
     initCommentImageUpload();
 
     modal.classList.add('active');
-    document.body.style.overflow = 'hidden';
+    if (window.iOSScrollLock) window.iOSScrollLock.lock(modal);
     document.body.classList.add('prompt-modal-open'); // Hide header behind modal
 }
 
@@ -6238,7 +6238,7 @@ function closePromptModal() {
     }
 
     // Re-enable body scroll
-    document.body.style.overflow = '';
+    if (window.iOSScrollLock) window.iOSScrollLock.unlock();
     document.body.classList.remove('prompt-modal-open');
 }
 
