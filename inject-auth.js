@@ -804,10 +804,6 @@
                     animation: none !important;
                 }
 
-                .login-overlay.ios-focus-lock .glass-input {
-                    -webkit-transform: translateZ(0) !important;
-                    transform: translateZ(0) !important;
-                }
             }
             
             /* Force avatar hover animation */

@@ -4029,15 +4029,22 @@ input.login-submit-btn {
 
 /* Initial State: Hidden and Offset (only when overlay is NOT active) */
 .modal-overlay:not(.active) .modal-content:not(.guestbook-content)>*:not(.window-controls):not(.modal-close),
-.login-overlay:not(.active) .login-card .form-view>*,
+.login-overlay:not(.active) .login-card .form-view>*:not(form),
 .login-overlay:not(.active) .login-card .form-view>form>* {
     opacity: 0;
     transform: translateY(20px);
 }
 
+/* The <form> element is a transparent container — always visible,
+   only its children animate individually */
+.login-card .form-view>form {
+    opacity: 1 !important;
+    transform: none !important;
+}
+
 /* Add transition to all content elements */
 .modal-content:not(.guestbook-content)>*:not(.window-controls):not(.modal-close),
-.login-card .form-view>*,
+.login-card .form-view>*:not(form),
 .login-card .form-view>form>* {
     transition: all 0.5s ease-out;
 }
@@ -4066,7 +4073,7 @@ button *,
 
 /* Active State: Visible and Reset */
 .modal-overlay.active .modal-content:not(.guestbook-content)>*:not(.window-controls):not(.modal-close),
-.login-overlay.active .login-card .form-view>*,
+.login-overlay.active .login-card .form-view>*:not(form),
 .login-overlay.active .login-card .form-view>form>* {
     opacity: 1 !important;
     transform: translateY(0) !important;
@@ -4130,13 +4137,12 @@ label[for],
     transition-delay: 0.3s;
 }
 
-.modal-overlay.active .modal-content>*:nth-child(n+6),
-.login-overlay.active .login-card .form-view>*:nth-child(n+6) {
+.modal-overlay.active .modal-content>*:nth-child(n+6) {
     transition-delay: 0.35s;
 }
 
 /* Staggered Delays for form children inside form-view
-   (the <form> wraps inputs/buttons, so they need separate stagger) */
+   (the <form> is transparent, only its children animate individually) */
 .login-overlay.active .login-card .form-view>form>*:nth-child(1) {
     transition-delay: 0.3s;
 }
@@ -4155,6 +4161,11 @@ label[for],
 
 .login-overlay.active .login-card .form-view>form>*:nth-child(n+5) {
     transition-delay: 0.5s;
+}
+
+/* switch-text ("立即注册") appears AFTER form children finish */
+.login-overlay.active .login-card .form-view>.switch-text {
+    transition-delay: 0.55s;
 }
 
 /* Elastic Press State */
@@ -6964,19 +6975,10 @@ body {
         transition-delay: 0s !important;
     }
 
-    /* Stabilize inputs with translateZ(0) only when focused */
-    .login-overlay.active:focus-within .glass-input,
-    .modal-overlay.active:focus-within .glass-input,
-    .modal-overlay.active:focus-within .security-input,
-    .modal-overlay.active:focus-within input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]),
-    .modal-overlay.active:focus-within textarea,
-    .modal-overlay.active:focus-within select,
-    .modal-overlay.ios-focus-lock .glass-input,
-    .modal-overlay.ios-focus-lock .security-input,
-    .modal-overlay.ios-focus-lock input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]),
-    .modal-overlay.ios-focus-lock textarea,
-    .modal-overlay.ios-focus-lock select {
-        -webkit-transform: translateZ(0) !important;
-        transform: translateZ(0) !important;
-    }
+    /*
+      ⚠️ DO NOT apply translateZ(0) to inputs.
+      Even translateZ(0) creates a compositing layer on iOS that
+      causes the caret position to be miscalculated on repeated taps.
+      The parent's transform:none + will-change:auto is sufficient.
+    */
 }
