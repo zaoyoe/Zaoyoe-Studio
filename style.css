@@ -21,8 +21,8 @@
 
 /* Base Styles */
 html {
-    background-color: #000000 !important;
-    /* Pure black as requested */
+    background-color: var(--bg-color, #ffffff) !important;
+    /* Changed from pure black to avoid iOS Safari black block issue */
     /* Fix for over-scroll background */
     position: relative;
     /* Create positioning context */
