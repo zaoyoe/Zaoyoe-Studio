@@ -302,8 +302,12 @@
     box-shadow: 0 0 0 3px rgba(107, 158, 206, 0.15) !important;
 }
 
-.verify-input::placeholder {
-    color: rgba(255, 255, 255, 0.4);
+.verify-input::placeholder,
+.verify-input::-webkit-input-placeholder {
+    color: rgba(255, 255, 255, 0.4) !important;
+    font-size: 13px !important;
+    font-weight: 300 !important;
+    letter-spacing: 0.5px !important;
 }
 
 /* Submit Button */
@@ -581,8 +585,12 @@
     box-shadow: 0 0 0 3px rgba(107, 158, 206, 0.15) !important;
 }
 
-.verify-textarea::placeholder {
-    color: rgba(255, 255, 255, 0.4);
+.verify-textarea::placeholder,
+.verify-textarea::-webkit-input-placeholder {
+    color: rgba(255, 255, 255, 0.4) !important;
+    font-size: 13px !important;
+    font-weight: 300 !important;
+    letter-spacing: 0.5px !important;
 }
 
 /* Batch Info */

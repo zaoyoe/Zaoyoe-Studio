@@ -1100,7 +1100,7 @@
 
         <!-- Success Modal (Re-used structure) -->
         <div class="modal-overlay" id="shopSuccessModal" style="z-index: 99999;"
-            onclick="if(event.target === this) document.getElementById('shopSuccessModal').classList.remove('active')">
+            onclick="if(event.target === this) { document.getElementById('shopSuccessModal').classList.remove('active'); if(window.iOSScrollLock) window.iOSScrollLock.unlock(); }">
             <div class="modal-content premium-modal" onclick="event.stopPropagation()" style="text-align: center;">
                 <div
                     style="width: 60px; height: 60px; background: rgba(56, 158, 13, 0.2); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px;">

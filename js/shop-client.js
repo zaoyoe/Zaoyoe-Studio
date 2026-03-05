@@ -436,11 +436,17 @@ const ShopClient = {
         }
 
         // Show Modal
-        document.getElementById('shopPurchaseModal').classList.add('active');
+        const modal = document.getElementById('shopPurchaseModal');
+        modal.classList.add('active');
+        // Lock background scroll on mobile Safari
+        if (window.iOSScrollLock) window.iOSScrollLock.lock(modal);
     },
 
     closePurchaseModal: function () {
-        document.getElementById('shopPurchaseModal').classList.remove('active');
+        const modal = document.getElementById('shopPurchaseModal');
+        modal.classList.remove('active');
+        // Unlock background scroll on mobile Safari
+        if (window.iOSScrollLock) window.iOSScrollLock.unlock();
     },
 
     updatePriceForQuantity: function (qty) {
@@ -815,6 +821,8 @@ const ShopClient = {
 
             setTimeout(() => {
                 modal.classList.add('active');
+                // Lock background scroll on mobile Safari
+                if (window.iOSScrollLock) window.iOSScrollLock.lock(modal);
             }, 50);
         }
 
