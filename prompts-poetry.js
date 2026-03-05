@@ -4467,7 +4467,8 @@ function openPromptModal(id) {
 
     modal.classList.add('active');
     if (window.iOSScrollLock) window.iOSScrollLock.lockLight(modal);
-    document.body.classList.add('prompt-modal-open'); // Hide header behind modal
+    // [iOS Safari 黑块测试] 暂时禁用 prompt-modal-open body class
+    // document.body.classList.add('prompt-modal-open');
 }
 
 // --- Spatial Flow & Comment Logic ---
@@ -6239,14 +6240,8 @@ function closePromptModal() {
 
     // Re-enable body scroll
     if (window.iOSScrollLock) window.iOSScrollLock.unlock();
-    document.body.classList.remove('prompt-modal-open');
-
-    // iOS Safari fix: 弹窗关闭后，地址栏的半透明渲染可能不会自动恢复。
-    // 在过渡动画结束后强制触发一次微量滚动（肉眼不可见），迫使 Safari 重新计算工具栏背景。
-    setTimeout(() => {
-        window.scrollBy(0, 1);
-        requestAnimationFrame(() => window.scrollBy(0, -1));
-    }, 550);
+    // [iOS Safari 黑块测试] 暂时禁用 prompt-modal-open body class
+    // document.body.classList.remove('prompt-modal-open');
 }
 
 // Click outside modal to close
