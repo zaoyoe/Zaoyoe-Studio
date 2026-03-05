@@ -6,7 +6,8 @@
  * 原理：
  *   - 仅 overflow:hidden 在 iOS Safari 上不足以阻止 body 滚动
  *   - 必须使用 position:fixed + top 偏移来完全锁定 body
- *   - 同时监听 visualViewport 变化来检测键盘收起，并在键盘收起时自动回位
+ *   - 同时拦截 touchmove 事件，防止弹窗内可滚动区域到达边界后"穿透"到背景
+ *   - 监听 visualViewport 变化来检测键盘收起，并在键盘收起时自动回位
  * 
  * 用法：
  *   window.iOSScrollLock.lock(modalElement)   // 打开弹窗时调用
@@ -19,6 +20,7 @@
     let isLocked = false;
     let viewportCleanup = null;
     let currentModal = null;
+    let touchStartY = 0;
 
     /**
      * 检测是否为 iOS 移动端 WebKit
@@ -27,6 +29,91 @@
         const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
             (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
         return isIOS;
+    }
+
+    /**
+     * 查找触摸点所在的最近可滚动祖先元素（在 modal 内部）
+     */
+    function findScrollableParent(el) {
+        if (!el || !currentModal) return null;
+        let node = el;
+        while (node && node !== document.body) {
+            const style = window.getComputedStyle(node);
+            const overflowY = style.overflowY;
+            // 元素可滚动 且 内容超出容器
+            if ((overflowY === 'auto' || overflowY === 'scroll') &&
+                node.scrollHeight > node.clientHeight) {
+                return node;
+            }
+            // Stop at modal boundary
+            if (node === currentModal) break;
+            node = node.parentElement;
+        }
+        return null;
+    }
+
+    /**
+     * touchstart 记录起始位置
+     */
+    function handleTouchStart(e) {
+        if (!isLocked) return;
+        touchStartY = e.touches[0].clientY;
+    }
+
+    /**
+     * touchmove 核心：阻止滚动穿透
+     * - 如果触摸点不在 modal 内 → 阻止
+     * - 如果触摸点在 modal 内但没有可滚动容器 → 阻止
+     * - 如果触摸点在可滚动容器内，但已到达滚动边界 → 阻止
+     * - 否则 → 允许（让弹窗内容正常滚动）
+     */
+    function handleTouchMove(e) {
+        if (!isLocked) return;
+
+        // 如果没有设置 modal 元素，阻止所有滚动
+        if (!currentModal) {
+            e.preventDefault();
+            return;
+        }
+
+        const target = e.target;
+
+        // 触摸点不在弹窗内 → 阻止
+        if (!currentModal.contains(target)) {
+            e.preventDefault();
+            return;
+        }
+
+        // 在弹窗内，寻找最近的可滚动容器
+        const scrollable = findScrollableParent(target);
+
+        // 没有可滚动容器 → 阻止（弹窗本身不可滚动的区域）
+        if (!scrollable) {
+            e.preventDefault();
+            return;
+        }
+
+        // 有可滚动容器，检查是否到达滚动边界
+        const touchY = e.touches[0].clientY;
+        const deltaY = touchStartY - touchY; // 正 = 向上滚, 负 = 向下滚
+        const { scrollTop, scrollHeight, clientHeight } = scrollable;
+
+        const atTop = scrollTop <= 0;
+        const atBottom = scrollTop + clientHeight >= scrollHeight - 1; // 1px 容差
+
+        // 到达顶部还想向下拉 → 阻止
+        if (atTop && deltaY < 0) {
+            e.preventDefault();
+            return;
+        }
+
+        // 到达底部还想向上推 → 阻止
+        if (atBottom && deltaY > 0) {
+            e.preventDefault();
+            return;
+        }
+
+        // 正常滚动 → 允许
     }
 
     /**
@@ -53,7 +140,11 @@
         isLocked = true;
         currentModal = modalElement || null;
 
-        // 4. iOS 专属：监听 visualViewport 变化，检测键盘收起后回位
+        // 4. 添加 touchmove 拦截，防止滚动穿透（scroll chaining）
+        document.addEventListener('touchstart', handleTouchStart, { passive: true });
+        document.addEventListener('touchmove', handleTouchMove, { passive: false });
+
+        // 5. iOS 专属：监听 visualViewport 变化，检测键盘收起后回位
         if (isIOSMobile() && currentModal) {
             attachViewportListener();
         }
@@ -68,24 +159,28 @@
         // 1. 清理 viewport 监听器
         detachViewportListener();
 
-        // 2. 读取保存的位置
+        // 2. 移除 touchmove 拦截
+        document.removeEventListener('touchstart', handleTouchStart);
+        document.removeEventListener('touchmove', handleTouchMove);
+
+        // 3. 读取保存的位置
         const scrollY = savedScrollY;
 
-        // 3. 移除 body 上的锁定样式
+        // 4. 移除 body 上的锁定样式
         document.body.style.position = '';
         document.body.style.top = '';
         document.body.style.left = '';
         document.body.style.right = '';
         document.body.style.width = '';
 
-        // 4. 移除 no-scroll class
+        // 5. 移除 no-scroll class
         document.documentElement.classList.remove('no-scroll');
         document.body.classList.remove('no-scroll');
 
         isLocked = false;
         currentModal = null;
 
-        // 5. 恢复滚动位置
+        // 6. 恢复滚动位置
         window.scrollTo(0, scrollY);
     }
 
