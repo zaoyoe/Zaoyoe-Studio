@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>iOS Safari 黑块测试 v3</title>
+    <title>iOS Safari 黑块测试 v4</title>
     <style>
         * {
             margin: 0;
@@ -13,7 +13,7 @@
         }
 
         html {
-            background-color: #000000;
+            background-color: #000000 !important;
             min-height: 100%;
             overflow-x: hidden;
         }
@@ -28,7 +28,7 @@
         }
 
         body {
-            background-color: transparent;
+            background-color: inherit;
             font-family: -apple-system, sans-serif;
             color: white;
         }
@@ -39,7 +39,7 @@
             overscroll-behavior: none !important;
         }
 
-        /* 背景 blobs */
+        /* 背景 blobs - 与 prompts 页完全一致 */
         .background-blobs {
             position: fixed;
             top: 0;
@@ -116,10 +116,22 @@
             text-align: center;
         }
 
+        .close-btn {
+            padding: 12px 30px;
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 10px;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 15px;
+        }
+
         .controls {
             position: relative;
             z-index: 1;
-            padding: 60px 20px 40px;
+            padding: 100px 20px 40px;
+            /* 更多顶部间距，确保向下滚动后 blobs 覆盖工具栏 */
         }
 
         h1 {
@@ -131,6 +143,7 @@
             opacity: 0.6;
             font-size: 13px;
             margin-bottom: 15px;
+            line-height: 1.5;
         }
 
         .section {
@@ -145,8 +158,8 @@
         .btn {
             display: block;
             width: 100%;
-            padding: 13px 14px;
-            margin: 6px 0;
+            padding: 14px;
+            margin: 8px 0;
             border: 1px solid rgba(255, 255, 255, 0.25);
             border-radius: 10px;
             background: rgba(255, 255, 255, 0.08);
@@ -160,30 +173,14 @@
             background: rgba(255, 255, 255, 0.2);
         }
 
-        .btn.on {
-            border-color: #4ade80;
-            background: rgba(74, 222, 128, 0.15);
-        }
-
-        .status-bar {
+        .result {
             margin-top: 12px;
-            padding: 10px 14px;
+            padding: 12px;
             background: rgba(0, 0, 0, 0.4);
             border-radius: 10px;
             font-family: monospace;
             font-size: 12px;
             line-height: 1.6;
-        }
-
-        .close-btn {
-            padding: 12px 30px;
-            background: rgba(255, 255, 255, 0.2);
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            border-radius: 10px;
-            color: white;
-            font-size: 16px;
-            cursor: pointer;
-            margin-top: 15px;
         }
 
         .filler {
@@ -199,6 +196,11 @@
             padding: 15px;
             margin-bottom: 10px;
         }
+
+        .emoji {
+            font-size: 20px;
+            margin-right: 8px;
+        }
     </style>
 </head>
 
@@ -211,33 +213,50 @@
 
     <div class="test-modal" id="modal">
         <div class="modal-box">
-            <h2>测试弹窗</h2>
-            <p style="margin:15px 0;opacity:0.7" id="modalInfo">标准模式</p>
-            <button class="close-btn" onclick="closeModal()">关闭弹窗</button>
+            <h2 id="modalTitle">测试弹窗</h2>
+            <p style="margin:15px 0;opacity:0.7" id="modalInfo"></p>
+            <button class="close-btn" id="closeBtn">关闭弹窗</button>
         </div>
     </div>
 
     <div class="controls">
-        <h1>🔬 黑块诊断 v3</h1>
-        <p class="hint">实时切换，无需刷新。观察底部地址栏变化。</p>
+        <h1>🔬 黑块诊断 v4 - 终极测试</h1>
+        <p class="hint">
+            请先向下滚动一点（让 blobs 出现在地址栏后面），<br>
+            然后确认此时地址栏是否通透（有颜色），<br>
+            再点击下方按钮测试。
+        </p>
 
-        <div class="section">html 背景色（关键！）</div>
-        <button class="btn on" id="h1" onclick="setHtml('#000000')">⚫ html: #000000（当前）</button>
-        <button class="btn" id="h2" onclick="setHtml('transparent')">🔵 html: transparent</button>
-        <button class="btn" id="h3" onclick="setHtml('#0f172a')">🟣 html: #0f172a（深蓝灰）</button>
+        <div class="section">核心对比测试</div>
 
-        <div class="section">body 背景色</div>
-        <button class="btn on" id="b1" onclick="setBody('transparent')">🔵 body: transparent（当前）</button>
-        <button class="btn" id="b2" onclick="setBody('inherit')">⚫ body: inherit</button>
+        <button class="btn" id="btnA" onclick="testA()">
+            <span class="emoji">🔴</span> 弹窗 A：有 overflow:hidden（当前行为）
+        </button>
 
-        <div class="section">弹窗测试</div>
-        <button class="btn" onclick="openModal()">打开弹窗（标准：overflow:hidden + blur）</button>
+        <button class="btn" id="btnB" onclick="testB()">
+            <span class="emoji">🟢</span> 弹窗 B：无 overflow:hidden（纯 touch 拦截）
+        </button>
 
-        <div class="status-bar" id="log">等待操作...</div>
+        <button class="btn" id="btnC" onclick="testC()">
+            <span class="emoji">🔵</span> 弹窗 C：无 overflow:hidden + 无 backdrop-filter
+        </button>
+
+        <div class="result" id="log">
+            ⬆️ 请先滚动到地址栏变通透后再测试！
+
+            每个测试步骤：
+            1. 刷新页面
+            2. 稍微向下滚动直到地址栏通透
+            3. 点击测试按钮
+            4. 关闭弹窗
+            5. 观察地址栏是否恢复通透
+
+            重点关注：🔴A 和 🟢B 的区别！
+        </div>
     </div>
 
     <div class="filler">
-        <div class="filler-card">卡片 1</div>
+        <div class="filler-card">卡片 1 - 向下滚动让 blobs 覆盖地址栏</div>
         <div class="filler-card">卡片 2</div>
         <div class="filler-card">卡片 3</div>
         <div class="filler-card">卡片 4</div>
@@ -245,47 +264,78 @@
         <div class="filler-card">卡片 6</div>
         <div class="filler-card">卡片 7</div>
         <div class="filler-card">卡片 8</div>
+        <div class="filler-card">卡片 9</div>
+        <div class="filler-card">卡片 10</div>
+        <div class="filler-card">卡片 11</div>
+        <div class="filler-card">卡片 12</div>
+        <div class="filler-card">卡片 13</div>
+        <div class="filler-card">卡片 14</div>
+        <div class="filler-card">卡片 15</div>
     </div>
 
     <script>
         const modal = document.getElementById('modal');
         const logEl = document.getElementById('log');
+        const closeBtn = document.getElementById('closeBtn');
+        let currentMode = '';
+        let touchStartY = 0;
 
         function log(msg) { logEl.textContent = msg; }
 
-        function clearBtns(prefix) {
-            document.querySelectorAll('[id^="' + prefix + '"]').forEach(b => b.classList.remove('on'));
+        // Touch 拦截（不用 overflow:hidden 的替代方案）
+        function preventScroll(e) {
+            // 允许弹窗内容滚动
+            const box = document.querySelector('.modal-box');
+            if (box && box.contains(e.target)) return;
+            e.preventDefault();
         }
 
-        function setHtml(color) {
-            document.documentElement.style.setProperty('background-color', color, 'important');
-            clearBtns('h');
-            if (color === '#000000') document.getElementById('h1').classList.add('on');
-            else if (color === 'transparent') document.getElementById('h2').classList.add('on');
-            else document.getElementById('h3').classList.add('on');
-            log('html 背景 → ' + color + ' | 看地址栏是否变化');
-        }
+        closeBtn.addEventListener('click', function () {
+            modal.classList.remove('active');
 
-        function setBody(color) {
-            document.body.style.backgroundColor = color;
-            clearBtns('b');
-            if (color === 'transparent') document.getElementById('b1').classList.add('on');
-            else document.getElementById('b2').classList.add('on');
-            log('body 背景 → ' + color);
-        }
+            // 移除 overflow:hidden（如果加了的话）
+            document.documentElement.classList.remove('no-scroll');
+            document.body.classList.remove('no-scroll');
 
-        function openModal() {
+            // 移除 touch 拦截（如果加了的话）
+            document.removeEventListener('touchmove', preventScroll);
+
+            // 恢复 backdrop-filter（如果移除了的话）
+            modal.style.backdropFilter = '';
+            modal.style.webkitBackdropFilter = '';
+
+            log('弹窗已关闭 ← 请看地址栏！\n\n' + currentMode + '\n\n是否恢复通透？');
+        });
+
+        // 🔴 测试 A：有 overflow:hidden（当前 prompts 页行为）
+        function testA() {
+            currentMode = '🔴 模式 A：overflow:hidden + backdrop-filter';
             modal.classList.add('active');
             document.documentElement.classList.add('no-scroll');
             document.body.classList.add('no-scroll');
-            log('弹窗已打开');
+            document.getElementById('modalInfo').textContent = '有 overflow:hidden\n有 backdrop-filter';
+            log('弹窗 A 已打开');
         }
 
-        function closeModal() {
-            modal.classList.remove('active');
-            document.documentElement.classList.remove('no-scroll');
-            document.body.classList.remove('no-scroll');
-            log('弹窗已关闭 ← 看地址栏是否恢复');
+        // 🟢 测试 B：无 overflow:hidden（只用 touch 拦截）
+        function testB() {
+            currentMode = '🟢 模式 B：纯 touch 拦截 + backdrop-filter';
+            modal.classList.add('active');
+            // 不加 overflow:hidden，改用 touch 拦截
+            document.addEventListener('touchmove', preventScroll, { passive: false });
+            document.getElementById('modalInfo').textContent = '无 overflow:hidden\n有 backdrop-filter\n（用 touch 拦截代替）';
+            log('弹窗 B 已打开（无 overflow:hidden）');
+        }
+
+        // 🔵 测试 C：都不要
+        function testC() {
+            currentMode = '🔵 模式 C：纯 touch 拦截 + 无 backdrop-filter';
+            modal.classList.add('active');
+            modal.style.backdropFilter = 'none';
+            modal.style.webkitBackdropFilter = 'none';
+            document.addEventListener('touchmove', preventScroll, { passive: false });
+            document.getElementById('modalInfo').textContent = '无 overflow:hidden\n无 backdrop-filter';
+            log('弹窗 C 已打开（无 overflow:hidden + 无 blur）');
         }
     </script>
 </body>
