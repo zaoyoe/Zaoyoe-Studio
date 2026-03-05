@@ -4029,14 +4029,16 @@ input.login-submit-btn {
 
 /* Initial State: Hidden and Offset (only when overlay is NOT active) */
 .modal-overlay:not(.active) .modal-content:not(.guestbook-content)>*:not(.window-controls):not(.modal-close),
-.login-overlay:not(.active) .login-card .form-view>* {
+.login-overlay:not(.active) .login-card .form-view>*,
+.login-overlay:not(.active) .login-card .form-view>form>* {
     opacity: 0;
     transform: translateY(20px);
 }
 
 /* Add transition to all content elements */
 .modal-content:not(.guestbook-content)>*:not(.window-controls):not(.modal-close),
-.login-card .form-view>* {
+.login-card .form-view>*,
+.login-card .form-view>form>* {
     transition: all 0.5s ease-out;
 }
 
@@ -4064,7 +4066,8 @@ button *,
 
 /* Active State: Visible and Reset */
 .modal-overlay.active .modal-content:not(.guestbook-content)>*:not(.window-controls):not(.modal-close),
-.login-overlay.active .login-card .form-view>* {
+.login-overlay.active .login-card .form-view>*,
+.login-overlay.active .login-card .form-view>form>* {
     opacity: 1 !important;
     transform: translateY(0) !important;
     pointer-events: auto !important;
@@ -4130,6 +4133,28 @@ label[for],
 .modal-overlay.active .modal-content>*:nth-child(n+6),
 .login-overlay.active .login-card .form-view>*:nth-child(n+6) {
     transition-delay: 0.35s;
+}
+
+/* Staggered Delays for form children inside form-view
+   (the <form> wraps inputs/buttons, so they need separate stagger) */
+.login-overlay.active .login-card .form-view>form>*:nth-child(1) {
+    transition-delay: 0.3s;
+}
+
+.login-overlay.active .login-card .form-view>form>*:nth-child(2) {
+    transition-delay: 0.35s;
+}
+
+.login-overlay.active .login-card .form-view>form>*:nth-child(3) {
+    transition-delay: 0.4s;
+}
+
+.login-overlay.active .login-card .form-view>form>*:nth-child(4) {
+    transition-delay: 0.45s;
+}
+
+.login-overlay.active .login-card .form-view>form>*:nth-child(n+5) {
+    transition-delay: 0.5s;
 }
 
 /* Elastic Press State */
@@ -6911,7 +6936,8 @@ body {
         transition: none !important;
     }
 
-    .login-overlay.active:focus-within .login-card .form-view>* {
+    .login-overlay.active:focus-within .login-card .form-view>*,
+    .login-overlay.active:focus-within .login-card .form-view>form>* {
         transform: none !important;
         transition: none !important;
         transition-delay: 0s !important;

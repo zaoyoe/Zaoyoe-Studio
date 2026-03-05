@@ -796,7 +796,8 @@
                 }
 
                 .login-overlay.ios-focus-lock .form-view,
-                .login-overlay.ios-focus-lock .form-view > * {
+                .login-overlay.ios-focus-lock .form-view > *,
+                .login-overlay.ios-focus-lock .form-view > form > * {
                     transform: none !important;
                     transition: none !important;
                     transition-delay: 0s !important;
@@ -1224,29 +1225,24 @@
                 let lastTapInput = null;
 
                 modal.querySelectorAll('input.glass-input').forEach((inputEl) => {
-                    const shouldSuppressRetap = () => {
-                        const now = Date.now();
-                        const isSameFocusedInput = document.activeElement === inputEl;
-                        const rapidRetap = lastTapInput === inputEl && (now - lastTapTs) < 420;
-                        if (isSameFocusedInput && rapidRetap) {
-                            lastTapTs = now;
-                            return true;
-                        }
-                        lastTapInput = inputEl;
-                        lastTapTs = now;
-                        return false;
-                    };
+                    /**
+                     * Suppress touchstart/pointer/mouse/click on an ALREADY focused input.
+                     * On iOS Safari, re-tapping a focused input triggers a caret
+                     * re-calculation cycle that makes it jump briefly to the wrong position.
+                     * By preventing the event when the input is already focused,
+                     * we keep the caret stable without affecting initial focus behavior.
+                     */
+                    const isAlreadyFocused = () => document.activeElement === inputEl;
 
                     inputEl.addEventListener('touchstart', (ev) => {
-                        if (shouldSuppressRetap()) {
+                        if (isAlreadyFocused()) {
                             ev.preventDefault();
-                            ev.stopPropagation();
                             modal.classList.add('ios-focus-lock');
                         }
                     }, { passive: false });
 
                     const retapGuardHandler = (ev) => {
-                        if (shouldSuppressRetap()) {
+                        if (isAlreadyFocused()) {
                             ev.preventDefault();
                             ev.stopPropagation();
                             modal.classList.add('ios-focus-lock');
@@ -1264,7 +1260,6 @@
                         setTimeout(() => {
                             if (!modal.contains(document.activeElement)) {
                                 modal.classList.remove('ios-focus-lock');
-                                // Scroll restore handled by iOSScrollLock on unlock
                             }
                         }, 120);
                     });
