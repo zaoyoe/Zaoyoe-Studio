@@ -4465,6 +4465,10 @@ function openPromptModal(id) {
     // Initialize image upload functionality
     initCommentImageUpload();
 
+    // 清除上次关闭时设置的 JS style，让 CSS 的 backdrop-filter 生效
+    modal.style.backdropFilter = '';
+    modal.style.webkitBackdropFilter = '';
+
     modal.classList.add('active');
     if (window.iOSScrollLock) window.iOSScrollLock.lockLight(modal);
     document.body.classList.add('prompt-modal-open'); // Hide header behind modal
@@ -6241,20 +6245,14 @@ function closePromptModal() {
     if (window.iOSScrollLock) window.iOSScrollLock.unlock();
     document.body.classList.remove('prompt-modal-open');
 
-    // iOS Safari fix: backdrop-filter 层经历 opacity 0→1→0 后，
-    // 合成器内部状态被"污染"，导致地址栏无法恢复半透明。
-    // 通过 DOM 移除再插入，强制合成器重建全新的 backdrop-filter 层。
+    // iOS Safari fix: 关闭过渡完成后，通过 JS 移除 backdrop-filter。
+    // 此时 modal 已经 opacity:0（不可见），移除 backdrop-filter 不会产生视觉变化，
+    // 但会让 Safari 合成器丢弃"污染"的模糊层，恢复地址栏通透。
+    // 下次 openPromptModal 时清除 JS style，让 CSS 接管。
     if (modal) {
         setTimeout(() => {
-            const parent = modal.parentNode;
-            const next = modal.nextSibling;
-            parent.removeChild(modal);
-            void document.documentElement.offsetHeight; // 强制 reflow
-            if (next) {
-                parent.insertBefore(modal, next);
-            } else {
-                parent.appendChild(modal);
-            }
+            modal.style.backdropFilter = 'none';
+            modal.style.webkitBackdropFilter = 'none';
         }, 550);
     }
 }
