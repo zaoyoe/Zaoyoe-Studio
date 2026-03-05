@@ -46,9 +46,6 @@ body {
     background-color: transparent;
     line-height: 1.6;
     position: relative;
-    /* iOS Safari Fixes */
-    padding-bottom: env(safe-area-inset-bottom);
-    padding-top: env(safe-area-inset-top);
 }
 
 /* main-wrapper简化 */
