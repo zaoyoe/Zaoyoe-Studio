@@ -162,9 +162,12 @@
 
         savedScrollY = window.scrollY || window.pageYOffset || 0;
 
-        // 只用 overflow:hidden + overscroll-behavior，不用 position:fixed
-        document.documentElement.classList.add('no-scroll');
-        document.body.classList.add('no-scroll');
+        // iOS Safari: overflow:hidden 会破坏地址栏的半透明合成模式，
+        // 导致关闭弹窗后地址栏无法恢复通透。仅依赖 touch 拦截。
+        if (!isIOSMobile()) {
+            document.documentElement.classList.add('no-scroll');
+            document.body.classList.add('no-scroll');
+        }
 
         isLocked = true;
         isLightLock = true;
@@ -208,9 +211,11 @@
             // 恢复滚动位置
             window.scrollTo(0, scrollY);
         } else {
-            // Light lock: 只移除 overflow hidden
-            document.documentElement.classList.remove('no-scroll');
-            document.body.classList.remove('no-scroll');
+            // Light lock: 只移除 overflow hidden（iOS 上未添加则无需移除）
+            if (!isIOSMobile()) {
+                document.documentElement.classList.remove('no-scroll');
+                document.body.classList.remove('no-scroll');
+            }
 
             isLocked = false;
             isLightLock = false;
