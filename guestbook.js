@@ -1051,7 +1051,7 @@ function openImageModal(src) {
     // image-zoom.js会处理缩放、拖动和点击重置
 
     modal.classList.add('active');
-    if (window.iOSScrollLock) window.iOSScrollLock.lock(modal); // Lock background scrolling
+    if (window.iOSScrollLock) window.iOSScrollLock.lockLight(modal); // Lock background scrolling (light mode to preserve transparency)
 
 }
 

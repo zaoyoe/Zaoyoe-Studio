@@ -181,7 +181,7 @@ function openModal(modalId) {
     const modal = document.getElementById(modalId);
     if (modal) {
         modal.classList.add('active');
-        if (window.iOSScrollLock) window.iOSScrollLock.lock(modal); // Lock body scroll
+        if (window.iOSScrollLock) window.iOSScrollLock.lockLight(modal); // Lock body scroll (light mode to preserve transparency)
         console.log('✅ Modal opened:', modalId);
     } else {
         console.error('❌ Modal not found:', modalId);

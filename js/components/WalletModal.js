@@ -81,7 +81,7 @@
 
             this.isOpen = true;
             this.ordersLoaded = false; // Reset loaded flag for new session
-            if (window.iOSScrollLock) window.iOSScrollLock.lock(this.modalEl); // Lock body scroll
+            if (window.iOSScrollLock) window.iOSScrollLock.lockLight(this.modalEl); // Lock body scroll (light mode to preserve transparency)
 
             // Render UI immediately so there's zero delay for the user
             this.render();

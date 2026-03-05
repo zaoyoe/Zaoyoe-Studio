@@ -60,6 +60,8 @@
     /**
      * Get translation by key (dot notation)
      * Example: t('shop.redeem') returns '兑换' or 'Redeem'
+     * Returns null if translation not found and no fallback given,
+     * so `i18n.t('key') || '默认值'` pattern works during loading.
      */
     function t(key, fallback) {
         const keys = key.split('.');
@@ -69,11 +71,11 @@
             if (value && typeof value === 'object' && k in value) {
                 value = value[k];
             } else {
-                return fallback || key;
+                return fallback || null;
             }
         }
 
-        return value || fallback || key;
+        return value || fallback || null;
     }
 
     /**
@@ -85,6 +87,7 @@
         elements.forEach(el => {
             const key = el.getAttribute('data-i18n');
             const translation = t(key);
+            if (translation === null) return; // Translation not loaded, keep HTML default
 
             // Check for special attributes
             const attr = el.getAttribute('data-i18n-attr');
@@ -99,14 +102,16 @@
         const placeholders = document.querySelectorAll('[data-i18n-placeholder]');
         placeholders.forEach(el => {
             const key = el.getAttribute('data-i18n-placeholder');
-            el.placeholder = t(key);
+            const translation = t(key);
+            if (translation !== null) el.placeholder = translation;
         });
 
         // Handle titles
         const titles = document.querySelectorAll('[data-i18n-title]');
         titles.forEach(el => {
             const key = el.getAttribute('data-i18n-title');
-            el.title = t(key);
+            const translation = t(key);
+            if (translation !== null) el.title = translation;
         });
     }
 

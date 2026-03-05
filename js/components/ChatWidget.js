@@ -1717,7 +1717,7 @@ class ChatWidget {
             if (this.overlay) this.overlay.classList.add('visible');
 
             // LOCK SCROLL - unified iOS-safe approach
-            if (window.iOSScrollLock) window.iOSScrollLock.lock(this.chatWindow);
+            if (window.iOSScrollLock) window.iOSScrollLock.lockLight(this.chatWindow);
 
         } else {
             this.chatWindow.classList.remove('active');

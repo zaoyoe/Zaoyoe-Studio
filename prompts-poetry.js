@@ -4466,7 +4466,7 @@ function openPromptModal(id) {
     initCommentImageUpload();
 
     modal.classList.add('active');
-    if (window.iOSScrollLock) window.iOSScrollLock.lock(modal);
+    if (window.iOSScrollLock) window.iOSScrollLock.lockLight(modal);
     document.body.classList.add('prompt-modal-open'); // Hide header behind modal
 }
 
