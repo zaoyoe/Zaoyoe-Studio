@@ -234,4 +234,38 @@
         /** 检查当前是否处于锁定状态 */
         get isLocked() { return isLocked; }
     };
+
+    /**
+     * ⚡ Universal iOS Focus Lock for ALL modals
+     * Adds 'ios-focus-lock' class to modal overlays when an input inside
+     * gains focus, which flattens transforms to prevent caret misplacement.
+     * Works via event delegation so dynamically injected modals are covered.
+     */
+    if (isIOSMobile()) {
+        document.addEventListener('focusin', (e) => {
+            const target = e.target;
+            if (!target || !/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+
+            const modal = target.closest('.modal-overlay, .login-overlay');
+            if (modal) {
+                modal.classList.add('ios-focus-lock');
+            }
+        }, true);
+
+        document.addEventListener('focusout', (e) => {
+            const target = e.target;
+            if (!target || !/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+
+            const modal = target.closest('.modal-overlay, .login-overlay');
+            if (modal) {
+                // Delay removal to avoid flickering when focus moves between inputs
+                setTimeout(() => {
+                    if (!modal.contains(document.activeElement) ||
+                        !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '')) {
+                        modal.classList.remove('ios-focus-lock');
+                    }
+                }, 150);
+            }
+        }, true);
+    }
 })();

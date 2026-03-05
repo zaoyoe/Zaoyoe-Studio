@@ -6896,6 +6896,14 @@ body {
       flatten transforms and kill transitions to prevent caret offset.
       This fires AFTER the entrance animation has already played.
     */
+
+    /* Clear transform on BOTH overlay and content when focused */
+    .login-overlay.active:focus-within,
+    .modal-overlay.active:focus-within {
+        transform: none !important;
+        will-change: auto !important;
+    }
+
     .login-overlay.active:focus-within .login-card,
     .modal-overlay.active:focus-within .modal-content {
         transform: none !important;
@@ -6915,20 +6923,34 @@ body {
         transition-delay: 0s !important;
     }
 
+    /* JS-based ios-focus-lock class (for ALL modal types) */
+    .modal-overlay.ios-focus-lock,
+    .modal-overlay.ios-focus-lock .modal-content {
+        transform: none !important;
+        will-change: auto !important;
+        animation: none !important;
+        transition: none !important;
+    }
+
+    .modal-overlay.ios-focus-lock .modal-content:not(.guestbook-content)>*:not(.window-controls):not(.modal-close) {
+        transform: none !important;
+        transition: none !important;
+        transition-delay: 0s !important;
+    }
+
     /* Stabilize inputs with translateZ(0) only when focused */
     .login-overlay.active:focus-within .glass-input,
     .modal-overlay.active:focus-within .glass-input,
     .modal-overlay.active:focus-within .security-input,
     .modal-overlay.active:focus-within input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]),
     .modal-overlay.active:focus-within textarea,
-    .modal-overlay.active:focus-within select {
+    .modal-overlay.active:focus-within select,
+    .modal-overlay.ios-focus-lock .glass-input,
+    .modal-overlay.ios-focus-lock .security-input,
+    .modal-overlay.ios-focus-lock input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]),
+    .modal-overlay.ios-focus-lock textarea,
+    .modal-overlay.ios-focus-lock select {
         -webkit-transform: translateZ(0) !important;
         transform: translateZ(0) !important;
-    }
-
-    /* When focused, also simplify overlay composition for iOS stability */
-    .login-overlay.active:focus-within,
-    .modal-overlay.active:focus-within {
-        will-change: auto !important;
     }
 }

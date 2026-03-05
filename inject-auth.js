@@ -762,18 +762,10 @@
                 box-shadow: 0 0 0 3px rgba(155, 93, 229, 0.15), 0 0 20px rgba(168, 85, 247, 0.12) !important;
             }
 
-            /* Mobile iOS: avoid caret offset and focus zoom glitches */
+            /* Mobile iOS: avoid caret offset and focus zoom glitches
+               ⚡ PRESERVED: staggered rise animation on modal open.
+               Only disable transforms when input is focused (ios-focus-lock). */
             @media (max-width: 768px) {
-                .login-overlay,
-                #loginModal {
-                    transform: none !important;
-                    will-change: auto !important;
-                    background: rgba(0, 0, 0, 0.6) !important;
-                    backdrop-filter: blur(8px) !important;
-                    -webkit-backdrop-filter: blur(8px) !important;
-                    transition: none !important;
-                }
-
                 .login-overlay .glass-input,
                 .login-card .glass-input,
                 #loginModal .glass-input,
@@ -785,39 +777,35 @@
                     backdrop-filter: none !important;
                     -webkit-backdrop-filter: none !important;
                     background: rgba(0, 0, 0, 0.55) !important;
-                    -webkit-transform: translateZ(0) !important;
-                    transform: translateZ(0) !important;
                     caret-color: #ffffff !important;
                 }
 
                 .login-overlay .login-card,
-                .login-overlay.active .login-card,
                 #loginModal .login-card {
-                    transform: none !important;
-                    animation: none !important;
-                    transition: none !important;
                     max-height: none !important;
                     overflow-y: visible !important;
                 }
 
-                .login-overlay .form-view {
-                    animation: none !important;
-                }
-
-                .login-overlay .form-view > * {
+                /* ⚡ iOS CARET FIX: only flatten transforms when input is focused */
+                .login-overlay.ios-focus-lock,
+                .login-overlay.ios-focus-lock .login-card {
                     transform: none !important;
-                    opacity: 1 !important;
+                    will-change: auto !important;
                     animation: none !important;
                     transition: none !important;
-                    transition-delay: 0s !important;
                 }
 
-                .login-overlay.ios-focus-lock,
-                .login-overlay.ios-focus-lock .login-card,
                 .login-overlay.ios-focus-lock .form-view,
                 .login-overlay.ios-focus-lock .form-view > * {
+                    transform: none !important;
                     transition: none !important;
+                    transition-delay: 0s !important;
                     animation: none !important;
+                }
+
+                .login-overlay.ios-focus-lock .glass-input {
+                    -webkit-transform: translateZ(0) !important;
+                    transform: translateZ(0) !important;
                 }
             }
             
@@ -1130,17 +1118,19 @@
                 const modal = document.getElementById('loginModal');
                 if (!modal) return;
 
-                modal.classList.add('active');
+                // Step 1: Make modal visible in DOM but NOT yet active.
+                // Remove leftover inline styles first so CSS classes can work.
                 modal.style.display = 'flex';
-                modal.style.visibility = 'visible';
-                modal.style.opacity = '1';
+                modal.style.removeProperty('visibility');
+                modal.style.removeProperty('opacity');
 
-                const card = modal.querySelector('.login-card');
-                if (card) {
-                    card.style.display = 'block';
-                    card.style.opacity = '1';
-                    card.style.visibility = 'visible';
-                }
+                // Step 2: Force a reflow so the browser paints the non-active state
+                // (opacity:0 from CSS .login-overlay) before we trigger .active
+                void modal.offsetHeight;
+
+                // Step 3: Add .active — CSS transitions handle opacity/visibility
+                // and staggered rise animation for form-view children
+                modal.classList.add('active');
 
                 if (window.iOSScrollLock) window.iOSScrollLock.lock(modal);
 
