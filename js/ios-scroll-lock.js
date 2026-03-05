@@ -153,8 +153,13 @@
     }
 
     /**
-     * 轻量锁定（不使用 position:fixed，保留 backdrop-filter 透明效果）
-     * 适用于不需要键盘输入的弹窗（如商城兑换弹窗）
+     * 轻量锁定（不修改任何 CSS 属性，仅通过触摸事件拦截来阻止背景滚动）
+     * 适用于不需要键盘输入的弹窗（如商城兑换弹窗、提示词详情弹窗等）
+     * 
+     * 为什么不能用 overflow:hidden？
+     * → iOS Safari 上，给 body 加 overflow:hidden 会导致地址栏区域
+     *   不再显示页面内容，暴露出黑色 body 背景（即用户看到的"黑块"）。
+     * 
      * @param {HTMLElement} [modalElement] - 弹窗元素
      */
     function lockLight(modalElement) {
@@ -162,17 +167,19 @@
 
         savedScrollY = window.scrollY || window.pageYOffset || 0;
 
-        // 只用 overflow:hidden + overscroll-behavior，不用 position:fixed
-        document.documentElement.classList.add('no-scroll');
-        document.body.classList.add('no-scroll');
-
         isLocked = true;
         isLightLock = true;
         currentModal = modalElement || null;
 
-        // 添加 touchmove 拦截
+        // 仅通过 touch 事件拦截阻止背景滚动，不修改任何 CSS
         document.addEventListener('touchstart', handleTouchStart, { passive: true });
         document.addEventListener('touchmove', handleTouchMove, { passive: false });
+
+        // 非 iOS 浏览器仍使用 overflow:hidden（它们没有黑块问题）
+        if (!isIOSMobile()) {
+            document.documentElement.classList.add('no-scroll');
+            document.body.classList.add('no-scroll');
+        }
     }
 
     /**
@@ -208,9 +215,11 @@
             // 恢复滚动位置
             window.scrollTo(0, scrollY);
         } else {
-            // Light lock: 只移除 overflow hidden
-            document.documentElement.classList.remove('no-scroll');
-            document.body.classList.remove('no-scroll');
+            // Light lock: 只移除非 iOS 上添加的 overflow hidden
+            if (!isIOSMobile()) {
+                document.documentElement.classList.remove('no-scroll');
+                document.body.classList.remove('no-scroll');
+            }
 
             isLocked = false;
             isLightLock = false;
