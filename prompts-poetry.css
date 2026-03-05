@@ -2144,11 +2144,13 @@ body.prompt-modal-open .top-right-nav {
     width: 100%;
     height: 100%;
     background: var(--modal-overlay);
-    backdrop-filter: blur(20px);
+    /* backdrop-filter 仅在 .active 时生效，避免 opacity:0 时不可见的模糊层
+       残留在 iOS Safari 合成器中，阻断地址栏的半透明渲染 */
     z-index: 1000;
     opacity: 0;
+    visibility: hidden;
     pointer-events: none;
-    transition: opacity 0.5s ease;
+    transition: opacity 0.5s ease, visibility 0.5s;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -2156,7 +2158,10 @@ body.prompt-modal-open .top-right-nav {
 
 .poetry-modal.active {
     opacity: 1;
+    visibility: visible;
     pointer-events: auto;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
 }
 
 .modal-inner {
