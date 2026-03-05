@@ -439,7 +439,7 @@ const ShopClient = {
         const modal = document.getElementById('shopPurchaseModal');
         modal.classList.add('active');
         // Lock background scroll on mobile Safari
-        if (window.iOSScrollLock) window.iOSScrollLock.lock(modal);
+        if (window.iOSScrollLock) window.iOSScrollLock.lockLight(modal);
     },
 
     closePurchaseModal: function () {
@@ -822,7 +822,7 @@ const ShopClient = {
             setTimeout(() => {
                 modal.classList.add('active');
                 // Lock background scroll on mobile Safari
-                if (window.iOSScrollLock) window.iOSScrollLock.lock(modal);
+                if (window.iOSScrollLock) window.iOSScrollLock.lockLight(modal);
             }, 50);
         }
 
