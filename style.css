@@ -4042,11 +4042,11 @@ input.login-submit-btn {
     transform: none !important;
 }
 
-/* Add transition to all content elements */
+/* Add transition to stagger-animated elements (only opacity + transform for GPU performance) */
 .modal-content:not(.guestbook-content)>*:not(.window-controls):not(.modal-close),
 .login-card .form-view>*:not(form),
 .login-card .form-view>form>* {
-    transition: all 0.5s ease-out;
+    transition: opacity 0.5s ease-out, transform 0.5s ease-out;
 }
 
 /* 确保按钮内的图标不干扰点击 */
