@@ -4465,10 +4465,7 @@ function openPromptModal(id) {
     // Initialize image upload functionality
     initCommentImageUpload();
 
-    // 显示弹窗：先 display:flex（进入渲染树），再 active（触发 opacity 过渡）
-    modal.style.display = 'flex';
-    void modal.offsetHeight; // 强制 reflow，确保 display:flex 先生效
-    modal.classList.add('active');
+        modal.classList.add('active');
     if (window.iOSScrollLock) window.iOSScrollLock.lockLight(modal);
     document.body.classList.add('prompt-modal-open'); // Hide header behind modal
 }
@@ -6243,17 +6240,8 @@ function closePromptModal() {
     // 先移除 body class（立即），z-index 让导航回来
     document.body.classList.remove('prompt-modal-open');
 
-    // iOS Safari fix: 等 opacity 过渡结束后，将全屏层彻底设为 display:none
-    // 让合成器完全销毁该层，恢复地址栏通透。之后再解锁滚动。
-    if (modal) {
-        setTimeout(() => {
-            modal.style.display = 'none';
-            // 滚动解锁放在层销毁之后，避免 Safari 在"仍有全屏层"时重算工具栏
-            if (window.iOSScrollLock) window.iOSScrollLock.unlock();
-        }, 550);
-    } else {
-        if (window.iOSScrollLock) window.iOSScrollLock.unlock();
-    }
+        // Re-enable body scroll
+    if (window.iOSScrollLock) window.iOSScrollLock.unlock();
 }
 
 // Click outside modal to close

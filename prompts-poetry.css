@@ -2151,13 +2151,14 @@ body.no-scroll {
     width: 100%;
     height: 100%;
     background: var(--modal-overlay);
-    /* backdrop-filter 移到 .modal-inner，避免全屏 blur 层污染 iOS Safari 合成器 */
+    backdrop-filter: blur(20px);
     z-index: 1000;
-    display: none;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.5s ease;
+    display: flex;
     justify-content: center;
     align-items: center;
-    opacity: 0;
-    transition: opacity 0.5s ease;
 }
 
 .poetry-modal.active {
@@ -2170,8 +2171,6 @@ body.no-scroll {
     max-width: 1000px;
     height: 85vh;
     background: var(--modal-bg);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
     border: 1px solid var(--card-border);
     border-radius: 24px;
     display: flex;
