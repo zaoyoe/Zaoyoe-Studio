@@ -162,12 +162,9 @@
 
         savedScrollY = window.scrollY || window.pageYOffset || 0;
 
-        // On iOS Safari, overflow:hidden on body/html breaks the translucent toolbar rendering
-        // causing a black block at the bottom. We rely purely on touch interception for iOS.
-        if (!isIOSMobile()) {
-            document.documentElement.classList.add('no-scroll');
-            document.body.classList.add('no-scroll');
-        }
+        // 只用 overflow:hidden + overscroll-behavior，不用 position:fixed
+        document.documentElement.classList.add('no-scroll');
+        document.body.classList.add('no-scroll');
 
         isLocked = true;
         isLightLock = true;
@@ -211,11 +208,9 @@
             // 恢复滚动位置
             window.scrollTo(0, scrollY);
         } else {
-            // Light lock: 只移除非 iOS 上添加的 overflow hidden
-            if (!isIOSMobile()) {
-                document.documentElement.classList.remove('no-scroll');
-                document.body.classList.remove('no-scroll');
-            }
+            // Light lock: 只移除 overflow hidden
+            document.documentElement.classList.remove('no-scroll');
+            document.body.classList.remove('no-scroll');
 
             isLocked = false;
             isLightLock = false;

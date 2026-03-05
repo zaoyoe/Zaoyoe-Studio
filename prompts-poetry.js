@@ -6240,18 +6240,6 @@ function closePromptModal() {
     // Re-enable body scroll
     if (window.iOSScrollLock) window.iOSScrollLock.unlock();
     document.body.classList.remove('prompt-modal-open');
-
-    // iOS Safari fix: force compositor to recalculate layers after backdrop-filter removal
-    // Without this, the translucent toolbar may retain stale rendering from the blur layer
-    if (modal) {
-        setTimeout(() => {
-            // Trigger a layout recalculation by toggling a harmless style
-            document.documentElement.style.transform = 'translateZ(0)';
-            requestAnimationFrame(() => {
-                document.documentElement.style.transform = '';
-            });
-        }, 550); // After the 0.5s opacity transition completes
-    }
 }
 
 // Click outside modal to close
