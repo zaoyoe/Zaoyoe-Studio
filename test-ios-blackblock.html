@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>iOS Safari 黑块测试</title>
+    <style>
+        /* === 完全复制 prompts 页面的基础样式 === */
+        :root {
+            --bg-color: #0f172a;
+            --text-color: #f8fafc;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html {
+            background-color: #000000 !important;
+            position: relative;
+            min-height: 100%;
+            overflow-x: hidden;
+        }
+
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* prompts.html 内联写法：inherit → 继承 html 的 #000 */
+        body {
+            background-color: inherit;
+            font-family: -apple-system, sans-serif;
+            color: white;
+        }
+
+        html.no-scroll,
+        body.no-scroll {
+            overflow: hidden !important;
+            overscroll-behavior: none !important;
+        }
+
+        /* === 背景 blobs（复刻 prompts 页） === */
+        .background-blobs {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
+            overflow: hidden;
+        }
+
+        .blob {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(100px);
+            opacity: 0.6;
+        }
+
+        .blob-1 {
+            top: -10%;
+            right: -10%;
+            width: 60vw;
+            height: 80vh;
+            background: linear-gradient(135deg, #7c3aed, #2563eb);
+            animation: float1 15s ease-in-out infinite;
+        }
+
+        .blob-2 {
+            bottom: -15%;
+            left: -10%;
+            width: 55vw;
+            height: 75vh;
+            background: linear-gradient(135deg, #2563eb, #06b6d4);
+            animation: float2 18s ease-in-out infinite;
+        }
+
+        .blob-3 {
+            top: 35%;
+            left: 30%;
+            width: 50vw;
+            height: 70vh;
+            background: linear-gradient(225deg, #db2777, #f59e0b);
+            animation: float3 20s ease-in-out infinite;
+        }
+
+        @keyframes float1 {
+
+            0%,
+            100% {
+                transform: translate(0, 0);
+            }
+
+            50% {
+                transform: translate(50px, -50px);
+            }
+        }
+
+        @keyframes float2 {
+
+            0%,
+            100% {
+                transform: translate(0, 0);
+            }
+
+            50% {
+                transform: translate(-50px, 50px);
+            }
+        }
+
+        @keyframes float3 {
+
+            0%,
+            100% {
+                transform: translate(0, 0);
+            }
+
+            50% {
+                transform: translate(30px, -30px);
+            }
+        }
+
+        /* === 模态框（复刻 .poetry-modal） === */
+        .test-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            z-index: 1000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.5s ease;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .test-modal.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .modal-box {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 20px;
+            padding: 30px;
+            width: 85%;
+            max-width: 400px;
+            text-align: center;
+        }
+
+        /* === 测试控制面板 === */
+        .controls {
+            position: relative;
+            z-index: 1;
+            padding: 60px 20px 200px;
+        }
+
+        .controls h1 {
+            font-size: 20px;
+            margin-bottom: 20px;
+        }
+
+        .btn {
+            display: block;
+            width: 100%;
+            padding: 16px;
+            margin: 10px 0;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            text-align: left;
+        }
+
+        .btn:active {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 12px;
+            font-family: monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+        }
+
+        .close-btn {
+            padding: 12px 30px;
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 10px;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 15px;
+        }
+
+        /* 填充内容让页面可滚动 */
+        .filler {
+            position: relative;
+            z-index: 1;
+            padding: 20px;
+        }
+
+        .filler-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="background-blobs">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+    </div>
+
+    <!-- 测试模态框 -->
+    <div class="test-modal" id="testModal">
+        <div class="modal-box">
+            <h2>测试弹窗</h2>
+            <p style="margin:15px 0; opacity:0.7;">这是一个模拟提示词详情弹窗。</p>
+            <button class="close-btn" onclick="closeModal()">关闭弹窗</button>
+        </div>
+    </div>
+
+    <div class="controls">
+        <h1>🔬 iOS Safari 黑块诊断</h1>
+
+        <button class="btn" onclick="openModal()">
+            🟢 测试 1：标准弹窗（lockLight + backdrop-filter）
+        </button>
+
+        <button class="btn" onclick="openModalNoBlur()">
+            🔵 测试 2：弹窗无 backdrop-filter
+        </button>
+
+        <button class="btn" onclick="openModalNoScroll()">
+            🟡 测试 3：弹窗无 overflow:hidden
+        </button>
+
+        <button class="btn" onclick="openModalBoth()">
+            🟣 测试 4：无 backdrop-filter + 无 overflow:hidden
+        </button>
+
+        <button class="btn" onclick="openModalVisibility()">
+            🔴 测试 5：用 visibility:hidden 代替 opacity:0
+        </button>
+
+        <div class="status" id="status">状态：等待测试...\n\n请点击上方按钮打开弹窗，\n然后关闭弹窗，\n观察地址栏是否恢复通透。\n\n每次测试前请刷新页面！</div>
+    </div>
+
+    <!-- 填充内容让页面可滚动 -->
+    <div class="filler">
+        <div class="filler-card">
+            <p>卡片 1 - 用于产生滚动</p>
+        </div>
+        <div class="filler-card">
+            <p>卡片 2 - 用于产生滚动</p>
+        </div>
+        <div class="filler-card">
+            <p>卡片 3 - 用于产生滚动</p>
+        </div>
+        <div class="filler-card">
+            <p>卡片 4 - 用于产生滚动</p>
+        </div>
+        <div class="filler-card">
+            <p>卡片 5 - 用于产生滚动</p>
+        </div>
+        <div class="filler-card">
+            <p>卡片 6 - 用于产生滚动</p>
+        </div>
+        <div class="filler-card">
+            <p>卡片 7 - 用于产生滚动</p>
+        </div>
+        <div class="filler-card">
+            <p>卡片 8 - 用于产生滚动</p>
+        </div>
+    </div>
+
+    <script>
+        const modal = document.getElementById('testModal');
+        const status = document.getElementById('status');
+        let currentTest = '';
+        let useOverflowHidden = true;
+        let useBackdropFilter = true;
+        let useVisibilityMode = false;
+
+        function log(msg) {
+            status.textContent += '\n' + msg;
+            status.scrollTop = status.scrollHeight;
+        }
+
+        function resetModal() {
+            modal.style.backdropFilter = '';
+            modal.style.webkitBackdropFilter = '';
+            modal.style.visibility = '';
+            modal.style.opacity = '';
+            modal.classList.remove('active');
+        }
+
+        // === 测试 1：标准（完全复刻 prompts 页面行为） ===
+        function openModal() {
+            currentTest = '测试 1：标准弹窗';
+            useOverflowHidden = true;
+            useBackdropFilter = true;
+            useVisibilityMode = false;
+            resetModal();
+            status.textContent = currentTest + ' - 打开';
+            doOpen();
+        }
+
+        // === 测试 2：无 backdrop-filter ===
+        function openModalNoBlur() {
+            currentTest = '测试 2：无 backdrop-filter';
+            useOverflowHidden = true;
+            useBackdropFilter = false;
+            useVisibilityMode = false;
+            resetModal();
+            modal.style.backdropFilter = 'none';
+            modal.style.webkitBackdropFilter = 'none';
+            status.textContent = currentTest + ' - 打开';
+            doOpen();
+        }
+
+        // === 测试 3：无 overflow:hidden ===
+        function openModalNoScroll() {
+            currentTest = '测试 3：无 overflow:hidden';
+            useOverflowHidden = false;
+            useBackdropFilter = true;
+            useVisibilityMode = false;
+            resetModal();
+            status.textContent = currentTest + ' - 打开';
+            doOpen();
+        }
+
+        // === 测试 4：两者都无 ===
+        function openModalBoth() {
+            currentTest = '测试 4：无 blur + 无 overflow';
+            useOverflowHidden = false;
+            useBackdropFilter = false;
+            useVisibilityMode = false;
+            resetModal();
+            modal.style.backdropFilter = 'none';
+            modal.style.webkitBackdropFilter = 'none';
+            status.textContent = currentTest + ' - 打开';
+            doOpen();
+        }
+
+        // === 测试 5：visibility 模式 ===
+        function openModalVisibility() {
+            currentTest = '测试 5：visibility 模式';
+            useOverflowHidden = true;
+            useBackdropFilter = true;
+            useVisibilityMode = true;
+            resetModal();
+            // 初始为 visibility:hidden 而不是 opacity:0
+            modal.style.visibility = 'hidden';
+            modal.style.opacity = '0';
+            status.textContent = currentTest + ' - 打开';
+
+            // 打开时切换 visibility
+            modal.style.visibility = 'visible';
+            modal.style.opacity = '1';
+            modal.style.pointerEvents = 'auto';
+
+            if (useOverflowHidden) {
+                document.documentElement.classList.add('no-scroll');
+                document.body.classList.add('no-scroll');
+            }
+            log('已打开（visibility 模式）');
+        }
+
+        function doOpen() {
+            modal.classList.add('active');
+            if (useOverflowHidden) {
+                document.documentElement.classList.add('no-scroll');
+                document.body.classList.add('no-scroll');
+            }
+            log('已打开');
+            log('overflow:hidden = ' + useOverflowHidden);
+            log('backdrop-filter = ' + useBackdropFilter);
+        }
+
+        function closeModal() {
+            if (useVisibilityMode) {
+                modal.style.opacity = '0';
+                modal.style.pointerEvents = 'none';
+                setTimeout(() => {
+                    modal.style.visibility = 'hidden';
+                }, 500);
+            } else {
+                modal.classList.remove('active');
+            }
+
+            // 移除 overflow:hidden
+            document.documentElement.classList.remove('no-scroll');
+            document.body.classList.remove('no-scroll');
+
+            log('已关闭 - 请观察地址栏是否恢复通透');
+            log('⬇️ 如果黑块消失 → 此方案有效');
+            log('⬇️ 如果黑块仍在 → 此方案无效');
+        }
+    </script>
+</body>
+
+</html>
