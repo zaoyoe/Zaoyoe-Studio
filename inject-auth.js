@@ -749,7 +749,7 @@
             .login-card .glass-input::placeholder,
             .login-overlay .glass-input::-webkit-input-placeholder,
             .login-card .glass-input::-webkit-input-placeholder {
-                color: rgba(255, 255, 255, 0.25) !important;
+                color: rgba(255, 255, 255, 0.4) !important;
                 font-size: 13px !important;
                 font-weight: 300 !important;
                 letter-spacing: 0.5px !important;

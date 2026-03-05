@@ -2999,14 +2999,14 @@ button.upload-icon-btn {
 }
 
 .glass-input::placeholder {
-    color: rgba(255, 255, 255, 0.25) !important;
+    color: rgba(255, 255, 255, 0.4) !important;
     font-size: 13px !important;
     font-weight: 300 !important;
     letter-spacing: 0.5px !important;
 }
 
 .glass-input::-webkit-input-placeholder {
-    color: rgba(255, 255, 255, 0.25) !important;
+    color: rgba(255, 255, 255, 0.4) !important;
     font-size: 13px !important;
     font-weight: 300 !important;
     letter-spacing: 0.5px !important;
@@ -5251,7 +5251,7 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
 }
 
 .security-input::placeholder {
-    color: rgba(255, 255, 255, 0.25) !important;
+    color: rgba(255, 255, 255, 0.4) !important;
     font-size: 13px !important;
     font-weight: 300 !important;
     letter-spacing: 0.5px !important;
@@ -5259,7 +5259,7 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
 }
 
 .security-input::-webkit-input-placeholder {
-    color: rgba(255, 255, 255, 0.25) !important;
+    color: rgba(255, 255, 255, 0.4) !important;
     font-size: 13px !important;
     font-weight: 300 !important;
     letter-spacing: 0.5px !important;
