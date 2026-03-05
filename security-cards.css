@@ -232,7 +232,10 @@
 }
 
 .security-input::placeholder {
-    color: rgba(255, 255, 255, 0.3);
+    color: rgba(255, 255, 255, 0.35);
+    font-size: 14px;
+    font-weight: 300;
+    letter-spacing: 0.5px;
 }
 
 .input-group.input-with-action {

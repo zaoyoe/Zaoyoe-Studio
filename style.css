@@ -2999,7 +2999,10 @@ button.upload-icon-btn {
 }
 
 .glass-input::placeholder {
-    color: rgba(255, 255, 255, 0.6);
+    color: rgba(255, 255, 255, 0.35);
+    font-size: 14px;
+    font-weight: 300;
+    letter-spacing: 0.5px;
 }
 
 .glass-input:focus {
@@ -5241,7 +5244,10 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
 }
 
 .security-input::placeholder {
-    color: rgba(255, 255, 255, 0.6);
+    color: rgba(255, 255, 255, 0.35);
+    font-size: 14px;
+    font-weight: 300;
+    letter-spacing: 0.5px;
     text-shadow: none;
 }
 

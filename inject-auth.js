@@ -747,7 +747,10 @@
             /* Placeholder color matching */
             .login-overlay .glass-input::placeholder,
             .login-card .glass-input::placeholder {
-                color: rgba(255, 255, 255, 0.6) !important;
+                color: rgba(255, 255, 255, 0.35) !important;
+                font-size: 14px !important;
+                font-weight: 300 !important;
+                letter-spacing: 0.5px !important;
             }
             
             /* Focus state - EXACT match from style.css line 2831-2834 */
