@@ -21,8 +21,8 @@
 
 /* Base Styles */
 html {
-    background-color: var(--bg-color, #ffffff) !important;
-    /* Changed from pure black to avoid iOS Safari black block issue */
+    background-color: #000000 !important;
+    /* Pure black as requested */
     /* Fix for over-scroll background */
     position: relative;
     /* Create positioning context */
@@ -46,6 +46,9 @@ body {
     background-color: transparent;
     line-height: 1.6;
     position: relative;
+    /* iOS Safari Fixes */
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-top: env(safe-area-inset-top);
 }
 
 /* main-wrapper简化 */

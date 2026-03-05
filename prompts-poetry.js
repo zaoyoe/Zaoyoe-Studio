@@ -4467,6 +4467,7 @@ function openPromptModal(id) {
 
     modal.classList.add('active');
     if (window.iOSScrollLock) window.iOSScrollLock.lockLight(modal);
+    document.body.classList.add('prompt-modal-open'); // Hide header behind modal
 }
 
 // --- Spatial Flow & Comment Logic ---
@@ -6238,6 +6239,7 @@ function closePromptModal() {
 
     // Re-enable body scroll
     if (window.iOSScrollLock) window.iOSScrollLock.unlock();
+    document.body.classList.remove('prompt-modal-open');
 }
 
 // Click outside modal to close
