@@ -6853,37 +6853,15 @@ body {
 
 /* =========================================
    Unified Mobile Input Zoom Fix (iOS Safari)
+   =========================================
+   Strategy: Preserve all modal entrance animations (staggered rise,
+   backdrop blur transition, scale entrance). Only flatten transforms
+   and kill transitions when an input is focused (:focus-within),
+   which prevents iOS Safari caret misplacement.
    ========================================= */
 @media (max-width: 768px) {
     html {
         -webkit-text-size-adjust: 100%;
-    }
-
-    /*
-      iOS Safari caret misplacement hardening:
-      avoid transformed/filter-backed overlay composition while keyboard is opening.
-    */
-    .login-overlay,
-    .modal-overlay {
-        transform: none !important;
-        will-change: auto !important;
-    }
-
-    /* Keep login overlay visual state stable on mobile (no blur-state switching) */
-    .login-overlay,
-    .login-overlay.active,
-    .login-overlay.closing,
-    .login-overlay:not(.active):not(.closing) {
-        background: rgba(0, 0, 0, 0.6) !important;
-        backdrop-filter: blur(8px) !important;
-        -webkit-backdrop-filter: blur(8px) !important;
-        transition: none !important;
-    }
-
-    /* Profile/security modal keeps simpler composition for iOS focus stability */
-    .modal-overlay {
-        backdrop-filter: none !important;
-        -webkit-backdrop-filter: none !important;
     }
 
     /* iOS Safari zooms when focused input font size is below 16px */
@@ -6894,46 +6872,13 @@ body {
         line-height: 1.35 !important;
     }
 
-    /*
-      Login card: skip the scale(0.95)->scale(1) entrance on mobile
-      to avoid iOS caret offset, but keep it lightweight.
-      Modal-overlay content keeps the same treatment.
-    */
-    .login-overlay .login-card,
-    .login-overlay.active .login-card,
-    div.modal-overlay .modal-content,
-    div.modal-overlay.active .modal-content {
-        transform: none !important;
-        animation: none !important;
-        transition: none !important;
-    }
-
+    /* Login card: skip ONLY max-height constraint on mobile */
     .login-overlay .login-card {
         max-height: none !important;
         overflow-y: visible !important;
     }
 
-    /*
-      ⚡ STAGGERED RISE ANIMATION PRESERVED:
-      Do NOT blanket-disable opacity/transform/transition on form-view children.
-      The staggered entrance (translateY + opacity + transition-delay) must play.
-      Only flatten transforms AFTER user focuses an input (see :focus-within below).
-    */
-
-    /* Modal content children (non-login) still skip animation */
-    .modal-overlay .modal-content:not(.guestbook-content)>*:not(.window-controls):not(.modal-close) {
-        transform: none !important;
-        opacity: 1 !important;
-        animation: none !important;
-        transition: none !important;
-        transition-delay: 0s !important;
-    }
-
-    .login-overlay .login-card .form-view {
-        animation: none !important;
-    }
-
-    /* Input-level: remove backdrop-filter & stabilize for caret rendering */
+    /* Input-level: remove heavy backdrop-filter for iOS perf & stabilize caret */
     .login-overlay .glass-input,
     .modal-overlay .glass-input,
     .modal-overlay .security-input,
@@ -6947,16 +6892,24 @@ body {
 
     /*
       ⚡ iOS CARET FIX (focus-within only):
-      Once any input inside the login modal gains focus, flatten ALL child
-      transforms and kill transitions so the iOS caret renders correctly.
-      This fires AFTER the staggered entrance has already completed.
+      When ANY input inside the modal gains focus (keyboard opens),
+      flatten transforms and kill transitions to prevent caret offset.
+      This fires AFTER the entrance animation has already played.
     */
     .login-overlay.active:focus-within .login-card,
     .modal-overlay.active:focus-within .modal-content {
         transform: none !important;
+        animation: none !important;
+        transition: none !important;
     }
 
     .login-overlay.active:focus-within .login-card .form-view>* {
+        transform: none !important;
+        transition: none !important;
+        transition-delay: 0s !important;
+    }
+
+    .modal-overlay.active:focus-within .modal-content:not(.guestbook-content)>*:not(.window-controls):not(.modal-close) {
         transform: none !important;
         transition: none !important;
         transition-delay: 0s !important;
@@ -6971,5 +6924,11 @@ body {
     .modal-overlay.active:focus-within select {
         -webkit-transform: translateZ(0) !important;
         transform: translateZ(0) !important;
+    }
+
+    /* When focused, also simplify overlay composition for iOS stability */
+    .login-overlay.active:focus-within,
+    .modal-overlay.active:focus-within {
+        will-change: auto !important;
     }
 }
