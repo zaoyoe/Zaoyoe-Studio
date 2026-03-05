@@ -746,9 +746,11 @@
             
             /* Placeholder color matching */
             .login-overlay .glass-input::placeholder,
-            .login-card .glass-input::placeholder {
-                color: rgba(255, 255, 255, 0.35) !important;
-                font-size: 14px !important;
+            .login-card .glass-input::placeholder,
+            .login-overlay .glass-input::-webkit-input-placeholder,
+            .login-card .glass-input::-webkit-input-placeholder {
+                color: rgba(255, 255, 255, 0.25) !important;
+                font-size: 13px !important;
                 font-weight: 300 !important;
                 letter-spacing: 0.5px !important;
             }

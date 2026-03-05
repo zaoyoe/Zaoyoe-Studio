@@ -231,11 +231,12 @@
     border-color: rgba(155, 93, 229, 0.7) !important;
 }
 
-.security-input::placeholder {
-    color: rgba(255, 255, 255, 0.35);
-    font-size: 14px;
-    font-weight: 300;
-    letter-spacing: 0.5px;
+.security-input::placeholder,
+.security-input::-webkit-input-placeholder {
+    color: rgba(255, 255, 255, 0.25) !important;
+    font-size: 13px !important;
+    font-weight: 300 !important;
+    letter-spacing: 0.5px !important;
 }
 
 .input-group.input-with-action {

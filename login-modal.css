@@ -200,11 +200,12 @@
     transition: all 0.3s ease;
 }
 
-.login-card .glass-input::placeholder {
-    color: rgba(255, 255, 255, 0.35);
-    font-size: 14px;
-    font-weight: 300;
-    letter-spacing: 0.5px;
+.login-card .glass-input::placeholder,
+.login-card .glass-input::-webkit-input-placeholder {
+    color: rgba(255, 255, 255, 0.25) !important;
+    font-size: 13px !important;
+    font-weight: 300 !important;
+    letter-spacing: 0.5px !important;
 }
 
 .login-card .glass-input:focus {
