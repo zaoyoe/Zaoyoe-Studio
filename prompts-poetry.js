@@ -6240,6 +6240,23 @@ function closePromptModal() {
     // Re-enable body scroll
     if (window.iOSScrollLock) window.iOSScrollLock.unlock();
     document.body.classList.remove('prompt-modal-open');
+
+    // iOS Safari fix: backdrop-filter 层经历 opacity 0→1→0 后，
+    // 合成器内部状态被"污染"，导致地址栏无法恢复半透明。
+    // 通过 DOM 移除再插入，强制合成器重建全新的 backdrop-filter 层。
+    if (modal) {
+        setTimeout(() => {
+            const parent = modal.parentNode;
+            const next = modal.nextSibling;
+            parent.removeChild(modal);
+            void document.documentElement.offsetHeight; // 强制 reflow
+            if (next) {
+                parent.insertBefore(modal, next);
+            } else {
+                parent.appendChild(modal);
+            }
+        }, 550);
+    }
 }
 
 // Click outside modal to close
