@@ -6894,7 +6894,11 @@ body {
         line-height: 1.35 !important;
     }
 
-    /* Disable transform-based modal entrance on mobile to stabilize caret rendering */
+    /*
+      Login card: skip the scale(0.95)->scale(1) entrance on mobile
+      to avoid iOS caret offset, but keep it lightweight.
+      Modal-overlay content keeps the same treatment.
+    */
     .login-overlay .login-card,
     .login-overlay.active .login-card,
     div.modal-overlay .modal-content,
@@ -6909,7 +6913,14 @@ body {
         overflow-y: visible !important;
     }
 
-    .login-overlay .login-card .form-view>*,
+    /*
+      ⚡ STAGGERED RISE ANIMATION PRESERVED:
+      Do NOT blanket-disable opacity/transform/transition on form-view children.
+      The staggered entrance (translateY + opacity + transition-delay) must play.
+      Only flatten transforms AFTER user focuses an input (see :focus-within below).
+    */
+
+    /* Modal content children (non-login) still skip animation */
     .modal-overlay .modal-content:not(.guestbook-content)>*:not(.window-controls):not(.modal-close) {
         transform: none !important;
         opacity: 1 !important;
@@ -6922,6 +6933,7 @@ body {
         animation: none !important;
     }
 
+    /* Input-level: remove backdrop-filter & stabilize for caret rendering */
     .login-overlay .glass-input,
     .modal-overlay .glass-input,
     .modal-overlay .security-input,
@@ -6930,22 +6942,34 @@ body {
     .modal-overlay select {
         backdrop-filter: none !important;
         -webkit-backdrop-filter: none !important;
-        -webkit-transform: translateZ(0) !important;
-        transform: translateZ(0) !important;
         caret-color: #ffffff !important;
     }
 
-    .login-overlay.active .login-card .form-view>*,
-    .modal-overlay.active .modal-content:not(.guestbook-content)>*:not(.window-controls):not(.modal-close) {
-        transition-delay: 0s !important;
-    }
-
     /*
-      Keep modal/card at scale(1) while any field is focused.
-      This avoids iOS caret offset on first focus when keyboard opens.
+      ⚡ iOS CARET FIX (focus-within only):
+      Once any input inside the login modal gains focus, flatten ALL child
+      transforms and kill transitions so the iOS caret renders correctly.
+      This fires AFTER the staggered entrance has already completed.
     */
     .login-overlay.active:focus-within .login-card,
     .modal-overlay.active:focus-within .modal-content {
         transform: none !important;
+    }
+
+    .login-overlay.active:focus-within .login-card .form-view>* {
+        transform: none !important;
+        transition: none !important;
+        transition-delay: 0s !important;
+    }
+
+    /* Stabilize inputs with translateZ(0) only when focused */
+    .login-overlay.active:focus-within .glass-input,
+    .modal-overlay.active:focus-within .glass-input,
+    .modal-overlay.active:focus-within .security-input,
+    .modal-overlay.active:focus-within input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]),
+    .modal-overlay.active:focus-within textarea,
+    .modal-overlay.active:focus-within select {
+        -webkit-transform: translateZ(0) !important;
+        transform: translateZ(0) !important;
     }
 }
