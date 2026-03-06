@@ -1794,11 +1794,9 @@ class ChatWidget {
             const bottomInset = Math.max(insetFromLayout, insetFromViewportDelta);
             const isFocusedInChat = this._isChatInputFocused();
             const isIOS = this._isIOSMobile();
-            const keyboardLikelyOpen = bottomInset > 60;
-            const withinIOSDockGrace = Date.now() < (this._iosDockGraceUntil || 0);
             const shouldDock = this._isNarrowViewport() && (
-                isFocusedInChat &&
-                (isIOS ? (keyboardLikelyOpen || withinIOSDockGrace) : keyboardLikelyOpen)
+                isFocusedInChat ||
+                (!isIOS && bottomInset > 60)
             );
 
             if (shouldDock) {
@@ -1820,11 +1818,10 @@ class ChatWidget {
         window.visualViewport.addEventListener('scroll', this._onViewportResize, { passive: true });
 
         this._onChatFocusIn = () => {
-            if (this._isIOSMobile()) {
-                this._iosDockGraceUntil = Date.now() + 700;
-                if (this._isNarrowViewport()) {
-                    this._applyKeyboardDock(window.visualViewport?.height || window.innerHeight || 0, 0);
-                }
+            if (window.visualViewport) {
+                const vv = window.visualViewport;
+                this._viewportBaseHeight = Math.max(window.innerHeight, vv.height + vv.offsetTop);
+                this._viewportBaseVisualHeight = Math.max(vv.height || 0, 0);
             }
             setTimeout(() => this._onViewportResize?.(), 30);
             setTimeout(() => this._onViewportResize?.(), 120);
@@ -1833,7 +1830,6 @@ class ChatWidget {
         this._onChatFocusOut = () => {
             // iOS 上在 blur 后立即回到居中，避免跟随键盘消失动画下移
             if (this._isIOSMobile()) {
-                this._iosDockGraceUntil = 0;
                 this._clearPendingUndockTimer();
                 this._resetKeyboardViewportStyles();
             }
@@ -1861,7 +1857,6 @@ class ChatWidget {
         }
         this._viewportBaseHeight = null;
         this._viewportBaseVisualHeight = null;
-        this._iosDockGraceUntil = 0;
         this._clearPendingUndockTimer();
     }
 
@@ -1948,33 +1943,16 @@ class ChatWidget {
         this.chatWindow.style.setProperty('transition', 'none', 'important');
 
         const isIOS = this._isIOSMobile();
-        if (isIOS) {
-            // iOS: 使用 absolute + 计算 top，规避 fixed 元素在第二次键盘唤起时被额外上推
-            const vv = window.visualViewport;
-            const scrollTop = window.scrollY || window.pageYOffset || 0;
-            const visualTop = vv ? (vv.offsetTop || 0) : 0;
-            const visibleHeight = vv ? (vv.height || window.innerHeight || 0) : (window.innerHeight || 0);
-            const currentHeight = this.chatWindow.offsetHeight || Math.min((window.innerHeight || 0) * 0.7, 620);
-            const dockTop = Math.max(
-                scrollTop + 8,
-                scrollTop + visualTop + visibleHeight - currentHeight - 12
-            );
-
-            this.chatWindow.style.setProperty('position', 'absolute', 'important');
-            this.chatWindow.style.setProperty('top', `${dockTop}px`, 'important');
-            this.chatWindow.style.setProperty('left', '50%', 'important');
-            this.chatWindow.style.setProperty('right', 'auto', 'important');
-            this.chatWindow.style.setProperty('bottom', 'auto', 'important');
-            this.chatWindow.style.setProperty('transform', 'translateX(-50%) scale(1)', 'important');
-        } else {
-            const dockBottom = Math.max(0, bottomInset);
-            // 覆盖移动端居中定位，改为贴近键盘上沿
-            this.chatWindow.style.setProperty('top', 'auto', 'important');
-            this.chatWindow.style.setProperty('left', '50%', 'important');
-            this.chatWindow.style.setProperty('right', 'auto', 'important');
-            this.chatWindow.style.setProperty('bottom', `${dockBottom}px`, 'important');
-            this.chatWindow.style.setProperty('transform', 'translateX(-50%) scale(1)', 'important');
-        }
+        // iOS Safari 已经会随键盘上推 fixed 元素，这里只给一个小底距避免“二次上推”
+        const dockBottom = isIOS
+            ? 12
+            : Math.max(0, bottomInset);
+        // 覆盖移动端居中定位，改为贴近键盘上沿
+        this.chatWindow.style.setProperty('top', 'auto', 'important');
+        this.chatWindow.style.setProperty('left', '50%', 'important');
+        this.chatWindow.style.setProperty('right', 'auto', 'important');
+        this.chatWindow.style.setProperty('bottom', `${dockBottom}px`, 'important');
+        this.chatWindow.style.setProperty('transform', 'translateX(-50%) scale(1)', 'important');
 
         // 不再在键盘期间改高度，避免“上下压缩后弹开”
         this.chatWindow.style.removeProperty('height');
@@ -2010,7 +1988,6 @@ class ChatWidget {
             this.chatWindow.style.removeProperty('left');
             this.chatWindow.style.removeProperty('right');
             this.chatWindow.style.removeProperty('bottom');
-            this.chatWindow.style.removeProperty('position');
             this.chatWindow.style.removeProperty('transform');
             this.chatWindow.style.removeProperty('height');
             this.chatWindow.style.removeProperty('max-height');
