@@ -2091,14 +2091,25 @@ class ChatWidget {
         if (this.chatWindow) {
             this.chatWindow.classList.remove('keyboard-docked');
             this.chatWindow.style.setProperty('transition', 'none', 'important');
-            this.chatWindow.style.removeProperty('top');
-            this.chatWindow.style.removeProperty('left');
-            this.chatWindow.style.removeProperty('right');
-            this.chatWindow.style.removeProperty('bottom');
-            this.chatWindow.style.removeProperty('position');
-            this.chatWindow.style.removeProperty('transform');
             this.chatWindow.style.removeProperty('height');
             this.chatWindow.style.removeProperty('max-height');
+
+            if (this.isOpen && this._isNarrowViewport()) {
+                this.chatWindow.style.setProperty('position', 'fixed', 'important');
+                this.chatWindow.style.setProperty('top', '50%', 'important');
+                this.chatWindow.style.setProperty('left', '50%', 'important');
+                this.chatWindow.style.setProperty('right', 'auto', 'important');
+                this.chatWindow.style.setProperty('bottom', 'auto', 'important');
+                this.chatWindow.style.setProperty('transform', 'translate(-50%, -50%) scale(1)', 'important');
+            } else {
+                this.chatWindow.style.removeProperty('top');
+                this.chatWindow.style.removeProperty('left');
+                this.chatWindow.style.removeProperty('right');
+                this.chatWindow.style.removeProperty('bottom');
+                this.chatWindow.style.removeProperty('position');
+                this.chatWindow.style.removeProperty('transform');
+            }
+
             requestAnimationFrame(() => {
                 if (this.chatWindow && !this.chatWindow.classList.contains('keyboard-docked')) {
                     this.chatWindow.style.removeProperty('transition');
