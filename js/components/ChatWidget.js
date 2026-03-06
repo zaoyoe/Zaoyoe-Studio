@@ -24,6 +24,7 @@ class ChatWidget {
         this._viewportRafId = null;
         this._keyboardSettleTimer = null;
         this._transitionCleanupTimer = null;
+        this._keyboardBlurUndocking = false;
 
         this.init();
     }
@@ -1829,9 +1830,16 @@ class ChatWidget {
             const isIOS = this._isIOSMobile();
             const shouldDock = this._isNarrowViewport() && (
                 isIOS
-                    ? (this._keyboardDocked ? bottomInset > 8 : bottomInset > 24)
+                    ? (
+                        !this._keyboardBlurUndocking &&
+                        (this._keyboardDocked ? bottomInset > 8 : bottomInset > 24)
+                    )
                     : (isFocusedInChat || bottomInset > 60)
             );
+
+            if (isIOS && !isFocusedInChat && bottomInset <= 8) {
+                this._keyboardBlurUndocking = false;
+            }
 
             if (shouldDock) {
                 this._clearPendingUndockTimer();
@@ -1863,6 +1871,7 @@ class ChatWidget {
         window.visualViewport.addEventListener('scroll', this._onViewportChange, { passive: true });
 
         this._onChatFocusIn = () => {
+            this._keyboardBlurUndocking = false;
             if (window.visualViewport) {
                 const vv = window.visualViewport;
                 this._viewportBaseHeight = Math.max(
@@ -1884,10 +1893,14 @@ class ChatWidget {
         this._onChatFocusOut = () => {
             this._clearPendingUndockTimer();
             this._clearKeyboardSettleTimer();
-            this._keyboardSettleTimer = setTimeout(() => {
-                this._keyboardSettleTimer = null;
+            requestAnimationFrame(() => {
+                if (this._isChatInputFocused()) return;
+                this._keyboardBlurUndocking = true;
+                if (this._keyboardDocked) {
+                    this._resetKeyboardViewportStyles(true);
+                }
                 this._requestViewportSync();
-            }, 140);
+            });
         };
         this.chatWindow?.addEventListener('focusin', this._onChatFocusIn, true);
         this.chatWindow?.addEventListener('focusout', this._onChatFocusOut, true);
@@ -1921,6 +1934,7 @@ class ChatWidget {
         this._stableDockHeight = null;
         this._keyboardDocked = false;
         this._lastKeyboardInset = 0;
+        this._keyboardBlurUndocking = false;
         this._clearKeyboardSettleTimer();
         this._clearTransitionCleanupTimer();
         this._clearPendingUndockTimer();
