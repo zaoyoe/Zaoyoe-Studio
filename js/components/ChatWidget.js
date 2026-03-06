@@ -1945,25 +1945,13 @@ class ChatWidget {
 
         const isIOS = this._isIOSMobile();
         if (isIOS && this.isVerifyPage) {
-            // Verify 页面专用：改为 absolute+top，规避第二次键盘唤起时 iOS 对 fixed 元素的额外上推
-            const vv = window.visualViewport;
-            const scrollTop = window.scrollY || window.pageYOffset || 0;
-            const visibleHeight = vv ? (vv.height || window.innerHeight || 0) : (window.innerHeight || 0);
-            const viewportPageTop = vv
-                ? (Number.isFinite(vv.pageTop) ? vv.pageTop : (scrollTop + (vv.offsetTop || 0)))
-                : scrollTop;
-            const viewportBottom = viewportPageTop + visibleHeight;
-            const currentHeight = this.chatWindow.offsetHeight || Math.min((window.innerHeight || 0) * 0.7, 620);
-            const dockTop = Math.max(
-                scrollTop + 8,
-                viewportBottom - currentHeight - 12
-            );
-
-            this.chatWindow.style.setProperty('position', 'absolute', 'important');
-            this.chatWindow.style.setProperty('top', `${dockTop}px`, 'important');
+            // Verify 页面专用：保持 fixed，按 bottomInset 做反向补偿，抵消 iOS 键盘对 fixed 元素的自动上推
+            const compensatedBottom = 12 - Math.max(0, bottomInset);
+            this.chatWindow.style.setProperty('position', 'fixed', 'important');
+            this.chatWindow.style.setProperty('top', 'auto', 'important');
             this.chatWindow.style.setProperty('left', '50%', 'important');
             this.chatWindow.style.setProperty('right', 'auto', 'important');
-            this.chatWindow.style.setProperty('bottom', 'auto', 'important');
+            this.chatWindow.style.setProperty('bottom', `${compensatedBottom}px`, 'important');
             this.chatWindow.style.setProperty('transform', 'translateX(-50%) scale(1)', 'important');
             this.chatWindow.style.removeProperty('height');
             this.chatWindow.style.removeProperty('max-height');
