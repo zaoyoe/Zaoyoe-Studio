@@ -2,9 +2,9 @@
 // SERVICE WORKER - Performance Optimization
 // ========================================
 
-const CACHE_NAME = 'prompts-gallery-v3';
-const STATIC_CACHE = 'static-v3';
-const IMAGE_CACHE = 'images-v3';
+const CACHE_NAME = 'prompts-gallery-v4';
+const STATIC_CACHE = 'static-v4';
+const IMAGE_CACHE = 'images-v4';
 
 // Static assets to cache immediately
 const STATIC_ASSETS = [
@@ -61,6 +61,26 @@ self.addEventListener('fetch', (event) => {
         url.hostname.includes('fonts.gstatic.com');
     const isSupabaseStorage = url.hostname.includes('supabase.co') &&
         url.pathname.includes('/storage/');
+    const isDocumentRequest = event.request.mode === 'navigate' ||
+        event.request.destination === 'document';
+
+    // HTML 文档使用 network-first，避免 stale cache 导致页面长期加载旧脚本版本
+    if (isDocumentRequest && isSameOrigin) {
+        event.respondWith(
+            fetch(event.request)
+                .then(networkResponse => {
+                    if (networkResponse && networkResponse.ok) {
+                        const responseClone = networkResponse.clone();
+                        caches.open(STATIC_CACHE).then(cache => {
+                            cache.put(event.request, responseClone);
+                        });
+                    }
+                    return networkResponse;
+                })
+                .catch(() => caches.match(event.request))
+        );
+        return;
+    }
 
     // Handle image requests (cache-first with network fallback)
     if (isImageRequest || isSupabaseStorage) {

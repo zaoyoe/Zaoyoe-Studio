@@ -1716,13 +1716,9 @@ class ChatWidget {
             // Show overlay (for admin mode)
             if (this.overlay) this.overlay.classList.add('visible');
 
-            // LOCK SCROLL - iOS 输入场景使用 full lock，确保背景模糊层不被键盘推移
+            // LOCK SCROLL - 轻锁足够阻止背景滚动穿透，避免 full lock 干扰 iOS 键盘视口行为
             if (window.iOSScrollLock) {
-                if (this._isIOSMobile()) {
-                    window.iOSScrollLock.lock(this.chatWindow);
-                } else {
-                    window.iOSScrollLock.lockLight(this.chatWindow);
-                }
+                window.iOSScrollLock.lockLight(this.chatWindow);
             }
 
             // iOS 键盘适配：监听 visualViewport 变化，动态调整聊天窗口大小
@@ -1750,7 +1746,20 @@ class ChatWidget {
      * 只在键盘弹出时给聊天窗口加 bottom 偏移，让输入框露在键盘上方
      */
     _attachKeyboardListener() {
-        if (!window.visualViewport) return;
+        if (!window.visualViewport) {
+            this._onChatFocusIn = () => {
+                if (this._isNarrowViewport()) {
+                    this._clearPendingUndockTimer();
+                    this._applyKeyboardDock(window.innerHeight || 0, 0);
+                }
+            };
+            this._onChatFocusOut = () => {
+                this._scheduleUndock();
+            };
+            this.chatWindow?.addEventListener('focusin', this._onChatFocusIn, true);
+            this.chatWindow?.addEventListener('focusout', this._onChatFocusOut, true);
+            return;
+        }
 
         const vv = window.visualViewport;
         this._viewportBaseHeight = Math.max(window.innerHeight, vv.height + vv.offsetTop);
@@ -1847,12 +1856,11 @@ class ChatWidget {
         // 键盘联动期间关闭过渡，避免 iOS 收键盘时的回弹动画
         this.chatWindow.style.setProperty('transition', 'none', 'important');
 
-        const currentHeight = this.chatWindow.offsetHeight || 0;
-        const maxDockedHeight = Math.max(320, visualHeight - 12);
-        const dockedHeight = currentHeight > 0
-            ? Math.min(currentHeight, maxDockedHeight)
-            : maxDockedHeight;
-        const dockBottom = Math.max(0, bottomInset - this._getIOSBrowserBarCompensation(bottomInset));
+        const isIOS = this._isIOSMobile();
+        // iOS Safari 已经会随键盘上推 fixed 元素，这里只给一个小底距避免“二次上推”
+        const dockBottom = isIOS
+            ? 12
+            : Math.max(0, bottomInset);
 
         // 覆盖移动端居中定位，改为贴近键盘上沿
         this.chatWindow.style.setProperty('top', 'auto', 'important');
@@ -1860,8 +1868,9 @@ class ChatWidget {
         this.chatWindow.style.setProperty('right', 'auto', 'important');
         this.chatWindow.style.setProperty('bottom', `${dockBottom}px`, 'important');
         this.chatWindow.style.setProperty('transform', 'translateX(-50%) scale(1)', 'important');
-        this.chatWindow.style.setProperty('height', `${dockedHeight}px`, 'important');
-        this.chatWindow.style.setProperty('max-height', `${maxDockedHeight}px`, 'important');
+        // 不再在键盘期间改高度，避免“上下压缩后弹开”
+        this.chatWindow.style.removeProperty('height');
+        this.chatWindow.style.removeProperty('max-height');
     }
 
     _scheduleUndock() {
@@ -1883,17 +1892,6 @@ class ChatWidget {
             clearTimeout(this._pendingUndockTimer);
             this._pendingUndockTimer = null;
         }
-    }
-
-    _getIOSBrowserBarCompensation(bottomInset) {
-        if (!this._isNarrowViewport()) return 0;
-        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-            (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-        if (!isIOS) return 0;
-        // iOS Safari 键盘+底栏场景下，固定元素通常会额外上移一段浏览器 UI 高度；
-        // 这里增加补偿把弹窗下压，目标是贴近 "zaoyoe.com" 条上边缘。
-        if (bottomInset < 140) return 0;
-        return 108;
     }
 
     _resetKeyboardViewportStyles() {
