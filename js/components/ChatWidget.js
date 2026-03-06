@@ -1873,19 +1873,38 @@ class ChatWidget {
 
     _freezeOverlay() {
         if (!this.overlay) return;
-        const scrollTop = window.scrollY || window.pageYOffset || 0;
         // 锁定在布局视口坐标，避免 iOS 键盘把 fixed overlay 一起推移
         this.overlay.style.setProperty('position', 'absolute', 'important');
-        this.overlay.style.setProperty('top', `${scrollTop}px`, 'important');
         this.overlay.style.setProperty('left', '0', 'important');
         this.overlay.style.setProperty('right', '0', 'important');
         this.overlay.style.setProperty('bottom', 'auto', 'important');
         this.overlay.style.setProperty('width', '100%', 'important');
-        this.overlay.style.setProperty('height', `${window.innerHeight}px`, 'important');
+        this._syncOverlayFrame = () => {
+            if (!this.overlay) return;
+            const scrollTop = window.scrollY || window.pageYOffset || 0;
+            const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+            this.overlay.style.setProperty('top', `${scrollTop}px`, 'important');
+            this.overlay.style.setProperty('height', `${viewportHeight}px`, 'important');
+        };
+        this._syncOverlayFrame();
+
+        window.addEventListener('scroll', this._syncOverlayFrame, { passive: true });
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', this._syncOverlayFrame, { passive: true });
+            window.visualViewport.addEventListener('scroll', this._syncOverlayFrame, { passive: true });
+        }
     }
 
     _restoreOverlay() {
         if (!this.overlay) return;
+        if (this._syncOverlayFrame) {
+            window.removeEventListener('scroll', this._syncOverlayFrame);
+            if (window.visualViewport) {
+                window.visualViewport.removeEventListener('resize', this._syncOverlayFrame);
+                window.visualViewport.removeEventListener('scroll', this._syncOverlayFrame);
+            }
+            this._syncOverlayFrame = null;
+        }
         this.overlay.style.removeProperty('position');
         this.overlay.style.removeProperty('top');
         this.overlay.style.removeProperty('left');
