@@ -1844,6 +1844,8 @@ class ChatWidget {
         if (!this.chatWindow) return;
 
         this.chatWindow.classList.add('keyboard-docked');
+        // 键盘联动期间关闭过渡，避免 iOS 收键盘时的回弹动画
+        this.chatWindow.style.setProperty('transition', 'none', 'important');
 
         const currentHeight = this.chatWindow.offsetHeight || 0;
         const maxDockedHeight = Math.max(320, visualHeight - 12);
@@ -1888,14 +1890,16 @@ class ChatWidget {
         const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
             (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
         if (!isIOS) return 0;
-        // iOS Safari 键盘上方浏览器工具条通常约 44~56px，减去这段可让弹窗更贴近 zaoyoe.com 条上沿
+        // iOS Safari 键盘+底栏场景下，固定元素通常会额外上移一段浏览器 UI 高度；
+        // 这里增加补偿把弹窗下压，目标是贴近 "zaoyoe.com" 条上边缘。
         if (bottomInset < 140) return 0;
-        return 52;
+        return 108;
     }
 
     _resetKeyboardViewportStyles() {
         if (this.chatWindow) {
             this.chatWindow.classList.remove('keyboard-docked');
+            this.chatWindow.style.setProperty('transition', 'none', 'important');
             this.chatWindow.style.removeProperty('top');
             this.chatWindow.style.removeProperty('left');
             this.chatWindow.style.removeProperty('right');
@@ -1903,6 +1907,11 @@ class ChatWidget {
             this.chatWindow.style.removeProperty('transform');
             this.chatWindow.style.removeProperty('height');
             this.chatWindow.style.removeProperty('max-height');
+            requestAnimationFrame(() => {
+                if (this.chatWindow && !this.chatWindow.classList.contains('keyboard-docked')) {
+                    this.chatWindow.style.removeProperty('transition');
+                }
+            });
         }
 
         if (this.overlay) {
