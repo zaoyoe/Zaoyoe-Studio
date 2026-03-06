@@ -26,6 +26,7 @@ class ChatWidget {
         this._transitionCleanupTimer = null;
         this._keyboardBlurUndocking = false;
         this._keyboardPreLiftActive = false;
+        this._motionVisualLockTimer = null;
 
         this.init();
     }
@@ -1945,6 +1946,7 @@ class ChatWidget {
         this._clearKeyboardSettleTimer();
         this._clearTransitionCleanupTimer();
         this._clearPendingUndockTimer();
+        this._restoreMotionVisuals();
     }
 
     _captureStableDockHeight() {
@@ -2074,6 +2076,7 @@ class ChatWidget {
         this.chatWindow.classList.add('keyboard-docked');
         this._clearTransitionCleanupTimer();
         if (animate) {
+            this._applyMotionVisualLock(190);
             this.chatWindow.style.setProperty(
                 'transition',
                 'transform 140ms cubic-bezier(0.22, 1, 0.36, 1), bottom 140ms cubic-bezier(0.22, 1, 0.36, 1)',
@@ -2176,10 +2179,48 @@ class ChatWidget {
         }
     }
 
+    _clearMotionVisualLockTimer() {
+        if (this._motionVisualLockTimer) {
+            clearTimeout(this._motionVisualLockTimer);
+            this._motionVisualLockTimer = null;
+        }
+    }
+
+    _restoreMotionVisuals() {
+        this._clearMotionVisualLockTimer();
+        if (!this.chatWindow) return;
+        this.chatWindow.style.removeProperty('backdrop-filter');
+        this.chatWindow.style.removeProperty('-webkit-backdrop-filter');
+        this.chatWindow.style.removeProperty('background');
+        this.chatWindow.style.removeProperty('will-change');
+        this.chatWindow.style.removeProperty('backface-visibility');
+        this.chatWindow.style.removeProperty('-webkit-backface-visibility');
+        this.chatWindow.style.removeProperty('transform-style');
+    }
+
+    _applyMotionVisualLock(duration = 180) {
+        if (!this.chatWindow) return;
+        if (!this._isIOSMobile() || !this._isNarrowViewport()) return;
+        this._clearMotionVisualLockTimer();
+        // iOS 移动 backdrop-filter 图层时会偶发重采样闪烁，动画期临时关闭磨砂层。
+        this.chatWindow.style.setProperty('will-change', 'transform', 'important');
+        this.chatWindow.style.setProperty('backface-visibility', 'hidden', 'important');
+        this.chatWindow.style.setProperty('-webkit-backface-visibility', 'hidden', 'important');
+        this.chatWindow.style.setProperty('transform-style', 'preserve-3d', 'important');
+        this.chatWindow.style.setProperty('backdrop-filter', 'none', 'important');
+        this.chatWindow.style.setProperty('-webkit-backdrop-filter', 'none', 'important');
+        this.chatWindow.style.setProperty('background', 'rgba(20, 20, 30, 0.92)', 'important');
+        this._motionVisualLockTimer = setTimeout(() => {
+            this._motionVisualLockTimer = null;
+            this._restoreMotionVisuals();
+        }, Math.max(130, duration));
+    }
+
     _applyKeyboardPreLift() {
         if (!this.chatWindow || this._keyboardPreLiftActive) return;
         this._keyboardPreLiftActive = true;
         this._clearTransitionCleanupTimer();
+        this._applyMotionVisualLock(160);
         this.chatWindow.style.setProperty('position', 'fixed', 'important');
         this.chatWindow.style.setProperty('top', '50%', 'important');
         this.chatWindow.style.setProperty('left', '50%', 'important');
@@ -2203,6 +2244,7 @@ class ChatWidget {
             this.chatWindow.classList.remove('keyboard-docked');
             this._clearTransitionCleanupTimer();
             if (animate) {
+                this._applyMotionVisualLock(210);
                 this.chatWindow.style.setProperty(
                     'transition',
                     'transform 160ms cubic-bezier(0.22, 1, 0.36, 1), bottom 160ms cubic-bezier(0.22, 1, 0.36, 1)',
@@ -2210,6 +2252,7 @@ class ChatWidget {
                 );
             } else {
                 this.chatWindow.style.setProperty('transition', 'none', 'important');
+                this._restoreMotionVisuals();
             }
             this.chatWindow.style.removeProperty('height');
             this.chatWindow.style.removeProperty('max-height');
