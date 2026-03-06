@@ -1335,6 +1335,7 @@ class ChatWidget {
         this.input.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') this.sendAdminMessage();
         });
+        this._bindInputFocusStabilizer(this.input);
 
         // Emoji Picker
         const emojiBtn = this.chatWindow.querySelector('#chatEmojiBtn');
@@ -1346,7 +1347,7 @@ class ChatWidget {
         this.emojiPicker.addEventListener('click', (e) => {
             if (e.target.classList.contains('emoji-item')) {
                 this.input.value += e.target.textContent;
-                this.input.focus();
+                this._focusInputWithoutScroll(this.input);
             }
         });
 
@@ -1674,6 +1675,7 @@ class ChatWidget {
         this.input.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') this.sendMessage();
         });
+        this._bindInputFocusStabilizer(this.input);
 
         // Emoji Picker
         const emojiBtn = this.chatWindow.querySelector('#chatEmojiBtn');
@@ -1687,7 +1689,7 @@ class ChatWidget {
             item.addEventListener('click', (e) => {
                 this.input.value += e.target.textContent;
                 this.emojiPicker.classList.remove('active');
-                this.input.focus();
+                this._focusInputWithoutScroll(this.input);
             });
         });
 
@@ -1927,6 +1929,28 @@ class ChatWidget {
         if (!active || !this.chatWindow) return false;
         if (!this.chatWindow.contains(active)) return false;
         return /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName);
+    }
+
+    _focusInputWithoutScroll(inputEl) {
+        if (!inputEl) return;
+        try {
+            inputEl.focus({ preventScroll: true });
+        } catch (err) {
+            inputEl.focus();
+        }
+    }
+
+    _bindInputFocusStabilizer(inputEl) {
+        if (!inputEl || inputEl.dataset.preventScrollBind === '1') return;
+
+        const handleTouchFocus = (e) => {
+            if (!this.isOpen || !this._isIOSMobile() || !this._isNarrowViewport()) return;
+            if (e.cancelable) e.preventDefault();
+            this._focusInputWithoutScroll(inputEl);
+        };
+
+        inputEl.addEventListener('touchstart', handleTouchFocus, { passive: false });
+        inputEl.dataset.preventScrollBind = '1';
     }
 
     _freezeOverlay() {

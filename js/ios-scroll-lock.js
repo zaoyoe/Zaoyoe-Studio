@@ -20,8 +20,23 @@
     let isLocked = false;
     let isLightLock = false;
     let viewportCleanup = null;
+    let scrollCleanup = null;
     let currentModal = null;
     let touchStartY = 0;
+
+    function stabilizeLockedViewport() {
+        if (!isLocked || isLightLock) return;
+
+        // Keep body anchored at the original page position while lock is active.
+        document.body.style.top = `-${savedScrollY}px`;
+
+        // iOS may still mutate the root scroll offset when keyboard opens; pin it back.
+        if ((window.scrollY || window.pageYOffset || 0) !== 0) {
+            window.scrollTo(0, 0);
+        }
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+    }
 
     /**
      * 检测是否为 iOS 移动端 WebKit
@@ -142,9 +157,21 @@
         isLightLock = false;
         currentModal = modalElement || null;
 
+        stabilizeLockedViewport();
+
         // 4. 添加 touchmove 拦截，防止滚动穿透（scroll chaining）
         document.addEventListener('touchstart', handleTouchStart, { passive: true });
         document.addEventListener('touchmove', handleTouchMove, { passive: false });
+
+        const handleRootScroll = () => {
+            if (!isLocked || isLightLock) return;
+            stabilizeLockedViewport();
+        };
+        window.addEventListener('scroll', handleRootScroll, { passive: true });
+        scrollCleanup = () => {
+            window.removeEventListener('scroll', handleRootScroll);
+            scrollCleanup = null;
+        };
 
         // 5. iOS 专属：监听 visualViewport 变化，检测键盘收起后回位
         if (isIOSMobile() && currentModal) {
@@ -183,6 +210,9 @@
 
         // 1. 清理 viewport 监听器
         detachViewportListener();
+        if (typeof scrollCleanup === 'function') {
+            scrollCleanup();
+        }
 
         // 2. 移除 touchmove 拦截
         document.removeEventListener('touchstart', handleTouchStart);
@@ -229,6 +259,8 @@
 
         const handleViewportChange = () => {
             if (!isLocked || !currentModal) return;
+
+            stabilizeLockedViewport();
 
             // 检查当前是否有输入框正在聚焦
             const active = document.activeElement;
