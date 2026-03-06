@@ -722,7 +722,6 @@ class ChatWidget {
             
             /* Overlay for clicking outside to close */
             .chat-overlay {
-                display: none;
                 position: fixed;
                 top: 0;
                 left: 0;
@@ -731,9 +730,16 @@ class ChatWidget {
                 background: rgba(0, 0, 0, 0.25);
                 z-index: 9998;
                 backdrop-filter: blur(3px);
+                opacity: 0;
+                visibility: hidden;
+                pointer-events: none;
+                transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+                    visibility 0.4s;
             }
             .chat-overlay.visible {
-                display: block;
+                opacity: 1;
+                visibility: visible;
+                pointer-events: auto;
             }
             
             /* Shake hint animation for input */
@@ -1602,7 +1608,6 @@ class ChatWidget {
             
             /* Overlay for user mode (same as admin) */
             .chat-overlay {
-                display: none;
                 position: fixed;
                 top: 0;
                 left: 0;
@@ -1611,9 +1616,16 @@ class ChatWidget {
                 background: rgba(0, 0, 0, 0.25);
                 z-index: 9997;
                 backdrop-filter: blur(3px);
+                opacity: 0;
+                visibility: hidden;
+                pointer-events: none;
+                transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+                    visibility 0.4s;
             }
             .chat-overlay.visible {
-                display: block;
+                opacity: 1;
+                visibility: visible;
+                pointer-events: auto;
             }
             
             /* Mobile: Center the chat window */
