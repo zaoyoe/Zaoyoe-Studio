@@ -1826,10 +1826,10 @@ class ChatWidget {
             }
             const isFocusedInChat = this._isChatInputFocused();
             const isIOS = this._isIOSMobile();
+            const iosKeyboardVisible = bottomInset > 12;
             const shouldDock = this._isNarrowViewport() && (
-                isFocusedInChat ||
-                (isIOS && bottomInset > 60) ||
-                (!isIOS && bottomInset > 60)
+                (isIOS && (iosKeyboardVisible || (this._keyboardDocked && isFocusedInChat))) ||
+                (!isIOS && (isFocusedInChat || bottomInset > 60))
             );
 
             if (shouldDock) {
@@ -2045,8 +2045,11 @@ class ChatWidget {
         if (!this.chatWindow) return;
 
         this.chatWindow.classList.add('keyboard-docked');
-        // 键盘联动期间关闭过渡，避免 iOS 收键盘时的回弹动画
-        this.chatWindow.style.setProperty('transition', 'none', 'important');
+        this.chatWindow.style.setProperty(
+            'transition',
+            'transform 180ms cubic-bezier(0.22, 1, 0.36, 1), bottom 180ms cubic-bezier(0.22, 1, 0.36, 1)',
+            'important'
+        );
 
         const isIOS = this._isIOSMobile();
         if (isIOS && this.isVerifyPage) {
@@ -2135,7 +2138,11 @@ class ChatWidget {
         this._lastKeyboardInset = 0;
         if (this.chatWindow) {
             this.chatWindow.classList.remove('keyboard-docked');
-            this.chatWindow.style.setProperty('transition', 'none', 'important');
+            this.chatWindow.style.setProperty(
+                'transition',
+                'transform 200ms cubic-bezier(0.22, 1, 0.36, 1), bottom 200ms cubic-bezier(0.22, 1, 0.36, 1)',
+                'important'
+            );
             this.chatWindow.style.removeProperty('height');
             this.chatWindow.style.removeProperty('max-height');
 
@@ -2155,11 +2162,11 @@ class ChatWidget {
                 this.chatWindow.style.removeProperty('transform');
             }
 
-            requestAnimationFrame(() => {
+            setTimeout(() => {
                 if (this.chatWindow && !this.chatWindow.classList.contains('keyboard-docked')) {
                     this.chatWindow.style.removeProperty('transition');
                 }
-            });
+            }, 220);
         }
 
         if (this.overlay) {
