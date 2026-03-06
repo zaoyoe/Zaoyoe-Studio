@@ -1715,6 +1715,7 @@ class ChatWidget {
             this.fab.style.pointerEvents = 'none';
             // Show overlay (for admin mode)
             if (this.overlay) this.overlay.classList.add('visible');
+            this._freezeOverlay();
 
             // LOCK SCROLL - 轻锁足够阻止背景滚动穿透，避免 full lock 干扰 iOS 键盘视口行为
             if (window.iOSScrollLock) {
@@ -1735,6 +1736,7 @@ class ChatWidget {
             this._detachKeyboardListener();
             this._resetKeyboardViewportStyles();
             this._clearPendingUndockTimer();
+            this._restoreOverlay();
 
             // UNLOCK SCROLL
             if (window.iOSScrollLock) window.iOSScrollLock.unlock();
@@ -1754,7 +1756,12 @@ class ChatWidget {
                 }
             };
             this._onChatFocusOut = () => {
-                this._scheduleUndock();
+                if (this._isIOSMobile()) {
+                    this._clearPendingUndockTimer();
+                    this._resetKeyboardViewportStyles();
+                } else {
+                    this._scheduleUndock();
+                }
             };
             this.chatWindow?.addEventListener('focusin', this._onChatFocusIn, true);
             this.chatWindow?.addEventListener('focusout', this._onChatFocusOut, true);
@@ -1786,14 +1793,24 @@ class ChatWidget {
             const insetFromViewportDelta = Math.max(0, (this._viewportBaseVisualHeight || visualHeight) - visualHeight);
             const bottomInset = Math.max(insetFromLayout, insetFromViewportDelta);
             const isFocusedInChat = this._isChatInputFocused();
-            const shouldDock = this._isNarrowViewport() && (bottomInset > 60 || isFocusedInChat);
+            const isIOS = this._isIOSMobile();
+            const shouldDock = this._isNarrowViewport() && (
+                isFocusedInChat ||
+                (!isIOS && bottomInset > 60)
+            );
 
             if (shouldDock) {
                 this._clearPendingUndockTimer();
                 this._applyKeyboardDock(visualHeight, bottomInset);
             } else {
-                // 键盘收起时等待系统动画稳定后再回到默认定位，避免“弹一下”
-                this._scheduleUndock();
+                if (isIOS) {
+                    // iOS：失焦后立即回到居中，避免“先下移触底再居中”
+                    this._clearPendingUndockTimer();
+                    this._resetKeyboardViewportStyles();
+                } else {
+                    // 非 iOS 保留平滑过渡
+                    this._scheduleUndock();
+                }
             }
         };
 
@@ -1806,7 +1823,12 @@ class ChatWidget {
             setTimeout(() => this._onViewportResize?.(), 260);
         };
         this._onChatFocusOut = () => {
-            setTimeout(() => this._onViewportResize?.(), 220);
+            // iOS 上在 blur 后立即回到居中，避免跟随键盘消失动画下移
+            if (this._isIOSMobile()) {
+                this._clearPendingUndockTimer();
+                this._resetKeyboardViewportStyles();
+            }
+            setTimeout(() => this._onViewportResize?.(), 80);
         };
         this.chatWindow?.addEventListener('focusin', this._onChatFocusIn, true);
         this.chatWindow?.addEventListener('focusout', this._onChatFocusOut, true);
@@ -1847,6 +1869,30 @@ class ChatWidget {
         if (!active || !this.chatWindow) return false;
         if (!this.chatWindow.contains(active)) return false;
         return /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName);
+    }
+
+    _freezeOverlay() {
+        if (!this.overlay) return;
+        const scrollTop = window.scrollY || window.pageYOffset || 0;
+        // 锁定在布局视口坐标，避免 iOS 键盘把 fixed overlay 一起推移
+        this.overlay.style.setProperty('position', 'absolute', 'important');
+        this.overlay.style.setProperty('top', `${scrollTop}px`, 'important');
+        this.overlay.style.setProperty('left', '0', 'important');
+        this.overlay.style.setProperty('right', '0', 'important');
+        this.overlay.style.setProperty('bottom', 'auto', 'important');
+        this.overlay.style.setProperty('width', '100%', 'important');
+        this.overlay.style.setProperty('height', `${window.innerHeight}px`, 'important');
+    }
+
+    _restoreOverlay() {
+        if (!this.overlay) return;
+        this.overlay.style.removeProperty('position');
+        this.overlay.style.removeProperty('top');
+        this.overlay.style.removeProperty('left');
+        this.overlay.style.removeProperty('right');
+        this.overlay.style.removeProperty('bottom');
+        this.overlay.style.removeProperty('width');
+        this.overlay.style.removeProperty('height');
     }
 
     _applyKeyboardDock(visualHeight, bottomInset) {
@@ -1913,9 +1959,7 @@ class ChatWidget {
         }
 
         if (this.overlay) {
-            this.overlay.style.removeProperty('top');
-            this.overlay.style.removeProperty('height');
-            this.overlay.style.removeProperty('bottom');
+            // overlay 由 _freezeOverlay/_restoreOverlay 负责生命周期管理
         }
     }
 
