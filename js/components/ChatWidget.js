@@ -1760,10 +1760,12 @@ class ChatWidget {
                 this.chatWindow.style.bottom = 'auto';
                 this.chatWindow.style.height = vv.height + 'px';
             } else {
-                // 键盘已收起：恢复 CSS 默认
+                // 键盘已收起：恢复 CSS 默认，并更新基准高度
                 this.chatWindow.style.top = '';
                 this.chatWindow.style.bottom = '';
                 this.chatWindow.style.height = '';
+                // 关键：更新基准，防止第二次打开键盘时计算错误
+                this._baseViewportHeight = vv.height;
             }
         };
 
