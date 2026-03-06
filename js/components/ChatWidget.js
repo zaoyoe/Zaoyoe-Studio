@@ -1721,9 +1721,13 @@ class ChatWidget {
             if (this.overlay) this.overlay.classList.add('visible');
             this._freezeOverlay();
 
-            // LOCK SCROLL - 轻锁足够阻止背景滚动穿透，避免 full lock 干扰 iOS 键盘视口行为
+            // iOS 窄屏聊天需要强锁滚动，否则 Safari 会在输入聚焦时把背景页面继续向上推。
             if (window.iOSScrollLock) {
-                window.iOSScrollLock.lockLight(this.chatWindow);
+                if (this._isIOSMobile() && this._isNarrowViewport()) {
+                    window.iOSScrollLock.lock(this.chatWindow);
+                } else {
+                    window.iOSScrollLock.lockLight(this.chatWindow);
+                }
             }
 
             // iOS 键盘适配：监听 visualViewport 变化，动态调整聊天窗口大小
