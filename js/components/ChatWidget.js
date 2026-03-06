@@ -1835,8 +1835,12 @@ class ChatWidget {
 
             if (shouldDock) {
                 this._clearPendingUndockTimer();
-                if (!this._keyboardDocked || Math.abs(bottomInset - this._lastKeyboardInset) > 1) {
+                if (!this._keyboardDocked) {
+                    // Only animate on the edge transition into keyboard-docked state.
                     this._applyKeyboardDock(visualHeight, bottomInset, true);
+                } else if (Math.abs(bottomInset - this._lastKeyboardInset) > 1) {
+                    // Follow keyboard without animation to avoid repeated transition restarts.
+                    this._applyKeyboardDock(visualHeight, bottomInset, false);
                 }
                 this._keyboardDocked = true;
                 this._lastKeyboardInset = bottomInset;
