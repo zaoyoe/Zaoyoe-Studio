@@ -1731,9 +1731,7 @@ class ChatWidget {
 
             // 清理键盘监听 & 还原样式
             this._detachKeyboardListener();
-            this.chatWindow.style.height = '';
-            this.chatWindow.style.bottom = '';
-            this.chatWindow.style.top = '';
+            this._resetKeyboardViewportStyles();
 
             // UNLOCK SCROLL
             if (window.iOSScrollLock) window.iOSScrollLock.unlock();
@@ -1747,29 +1745,91 @@ class ChatWidget {
     _attachKeyboardListener() {
         if (!window.visualViewport) return;
 
+        const vv = window.visualViewport;
+        this._viewportBaseHeight = Math.max(window.innerHeight, vv.height + vv.offsetTop);
+
         this._onViewportResize = () => {
             const vv = window.visualViewport;
-            // 键盘高度 = 布局视口高度 - 可视视口高度
-            const keyboardHeight = window.innerHeight - vv.height;
+            const visualTop = Math.max(0, vv.offsetTop || 0);
+            const visualHeight = Math.max(0, vv.height || 0);
+            const visualBottom = visualTop + visualHeight;
 
-            if (keyboardHeight > 100) {
-                // 键盘已弹出：聊天窗口上移，让输入框在键盘上方
-                this.chatWindow.style.bottom = keyboardHeight + 'px';
-                this.chatWindow.style.height = vv.height + 'px';
+            this._viewportBaseHeight = Math.max(
+                this._viewportBaseHeight || 0,
+                window.innerHeight,
+                visualBottom
+            );
+
+            const bottomInset = Math.max(0, this._viewportBaseHeight - visualBottom);
+
+            if (bottomInset > 100 && this._isNarrowViewport()) {
+                this._applyKeyboardDock(visualTop, visualHeight, bottomInset);
             } else {
-                // 键盘已收起：恢复 CSS 默认
-                this.chatWindow.style.bottom = '';
-                this.chatWindow.style.height = '';
+                this._resetKeyboardViewportStyles();
             }
         };
 
-        window.visualViewport.addEventListener('resize', this._onViewportResize);
+        window.visualViewport.addEventListener('resize', this._onViewportResize, { passive: true });
+        window.visualViewport.addEventListener('scroll', this._onViewportResize, { passive: true });
+        this._onViewportResize();
     }
 
     _detachKeyboardListener() {
         if (window.visualViewport && this._onViewportResize) {
             window.visualViewport.removeEventListener('resize', this._onViewportResize);
+            window.visualViewport.removeEventListener('scroll', this._onViewportResize);
             this._onViewportResize = null;
+        }
+        this._viewportBaseHeight = null;
+    }
+
+    _isNarrowViewport() {
+        return window.matchMedia('(max-width: 700px)').matches;
+    }
+
+    _applyKeyboardDock(visualTop, visualHeight, bottomInset) {
+        if (!this.chatWindow) return;
+
+        this.chatWindow.classList.add('keyboard-docked');
+
+        const currentHeight = this.chatWindow.offsetHeight || 0;
+        const maxDockedHeight = Math.max(320, visualHeight - 12);
+        const dockedHeight = currentHeight > 0
+            ? Math.min(currentHeight, maxDockedHeight)
+            : maxDockedHeight;
+
+        // 覆盖移动端居中定位，改为贴近键盘上沿
+        this.chatWindow.style.setProperty('top', 'auto', 'important');
+        this.chatWindow.style.setProperty('left', '50%', 'important');
+        this.chatWindow.style.setProperty('right', 'auto', 'important');
+        this.chatWindow.style.setProperty('bottom', `${bottomInset}px`, 'important');
+        this.chatWindow.style.setProperty('transform', 'translateX(-50%) scale(1)', 'important');
+        this.chatWindow.style.setProperty('height', `${dockedHeight}px`, 'important');
+        this.chatWindow.style.setProperty('max-height', `${maxDockedHeight}px`, 'important');
+
+        if (this.overlay) {
+            this.overlay.style.setProperty('top', `${visualTop}px`, 'important');
+            this.overlay.style.setProperty('height', `${visualHeight}px`, 'important');
+            this.overlay.style.setProperty('bottom', 'auto', 'important');
+        }
+    }
+
+    _resetKeyboardViewportStyles() {
+        if (this.chatWindow) {
+            this.chatWindow.classList.remove('keyboard-docked');
+            this.chatWindow.style.removeProperty('top');
+            this.chatWindow.style.removeProperty('left');
+            this.chatWindow.style.removeProperty('right');
+            this.chatWindow.style.removeProperty('bottom');
+            this.chatWindow.style.removeProperty('transform');
+            this.chatWindow.style.removeProperty('height');
+            this.chatWindow.style.removeProperty('max-height');
+        }
+
+        if (this.overlay) {
+            this.overlay.style.removeProperty('top');
+            this.overlay.style.removeProperty('height');
+            this.overlay.style.removeProperty('bottom');
         }
     }
 
