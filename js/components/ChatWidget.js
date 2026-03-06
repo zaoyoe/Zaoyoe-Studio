@@ -19,6 +19,10 @@ class ChatWidget {
         // Define common emojis
         this.emojis = ['😀', '😂', '😍', '🤔', '😭', '😡', '👍', '👎', '🎉', '🔥', '❤️', '👀', '🚀', '💯', '👋', '✨', '🤖', '👻'];
         this._stableDockHeight = null;
+        this._keyboardDocked = false;
+        this._lastKeyboardInset = 0;
+        this._viewportRafId = null;
+        this._keyboardSettleTimer = null;
 
         this.init();
     }
@@ -1764,12 +1768,16 @@ class ChatWidget {
                 if (this._isNarrowViewport()) {
                     this._clearPendingUndockTimer();
                     this._applyKeyboardDock(window.innerHeight || 0, 0);
+                    this._keyboardDocked = true;
+                    this._lastKeyboardInset = 0;
                 }
             };
             this._onChatFocusOut = () => {
                 if (this._isIOSMobile() && this.isVerifyPage) {
                     this._clearPendingUndockTimer();
                     this._resetKeyboardViewportStyles();
+                    this._keyboardDocked = false;
+                    this._lastKeyboardInset = 0;
                 } else {
                     this._scheduleUndock();
                 }
@@ -1826,20 +1834,28 @@ class ChatWidget {
 
             if (shouldDock) {
                 this._clearPendingUndockTimer();
-                this._applyKeyboardDock(visualHeight, bottomInset);
+                if (!this._keyboardDocked || Math.abs(bottomInset - this._lastKeyboardInset) > 1) {
+                    this._applyKeyboardDock(visualHeight, bottomInset);
+                }
+                this._keyboardDocked = true;
+                this._lastKeyboardInset = bottomInset;
             } else {
                 if (!isIOS) {
                     // 非 iOS 保留平滑过渡
                     this._scheduleUndock();
                 } else {
                     this._clearPendingUndockTimer();
-                    this._resetKeyboardViewportStyles();
+                    if (this._keyboardDocked) {
+                        this._resetKeyboardViewportStyles();
+                    }
+                    this._keyboardDocked = false;
+                    this._lastKeyboardInset = 0;
                 }
             }
         };
-
-        window.visualViewport.addEventListener('resize', this._onViewportResize, { passive: true });
-        window.visualViewport.addEventListener('scroll', this._onViewportResize, { passive: true });
+        this._onViewportChange = () => this._requestViewportSync();
+        window.visualViewport.addEventListener('resize', this._onViewportChange, { passive: true });
+        window.visualViewport.addEventListener('scroll', this._onViewportChange, { passive: true });
 
         this._onChatFocusIn = () => {
             if (window.visualViewport) {
@@ -1856,26 +1872,35 @@ class ChatWidget {
                 );
             }
             this._captureStableDockHeight();
-            setTimeout(() => this._onViewportResize?.(), 30);
-            setTimeout(() => this._onViewportResize?.(), 120);
-            setTimeout(() => this._onViewportResize?.(), 260);
+            this._clearKeyboardSettleTimer();
+            this._requestViewportSync();
+            setTimeout(() => this._requestViewportSync(), 160);
         };
         this._onChatFocusOut = () => {
             this._clearPendingUndockTimer();
-            setTimeout(() => this._onViewportResize?.(), 30);
-            setTimeout(() => this._onViewportResize?.(), 80);
-            setTimeout(() => this._onViewportResize?.(), 180);
+            this._clearKeyboardSettleTimer();
+            this._keyboardSettleTimer = setTimeout(() => {
+                this._keyboardSettleTimer = null;
+                this._requestViewportSync();
+            }, 140);
         };
         this.chatWindow?.addEventListener('focusin', this._onChatFocusIn, true);
         this.chatWindow?.addEventListener('focusout', this._onChatFocusOut, true);
 
-        this._onViewportResize();
+        this._requestViewportSync();
     }
 
     _detachKeyboardListener() {
-        if (window.visualViewport && this._onViewportResize) {
-            window.visualViewport.removeEventListener('resize', this._onViewportResize);
-            window.visualViewport.removeEventListener('scroll', this._onViewportResize);
+        if (window.visualViewport && this._onViewportChange) {
+            window.visualViewport.removeEventListener('resize', this._onViewportChange);
+            window.visualViewport.removeEventListener('scroll', this._onViewportChange);
+            this._onViewportChange = null;
+        }
+        if (this._viewportRafId) {
+            cancelAnimationFrame(this._viewportRafId);
+            this._viewportRafId = null;
+        }
+        if (this._onViewportResize) {
             this._onViewportResize = null;
         }
         if (this.chatWindow && this._onChatFocusIn) {
@@ -1889,6 +1914,9 @@ class ChatWidget {
         this._viewportBaseHeight = null;
         this._viewportBaseVisualHeight = null;
         this._stableDockHeight = null;
+        this._keyboardDocked = false;
+        this._lastKeyboardInset = 0;
+        this._clearKeyboardSettleTimer();
         this._clearPendingUndockTimer();
     }
 
@@ -2086,7 +2114,25 @@ class ChatWidget {
         }
     }
 
+    _requestViewportSync() {
+        if (!this._onViewportResize) return;
+        if (this._viewportRafId) return;
+        this._viewportRafId = requestAnimationFrame(() => {
+            this._viewportRafId = null;
+            this._onViewportResize?.();
+        });
+    }
+
+    _clearKeyboardSettleTimer() {
+        if (this._keyboardSettleTimer) {
+            clearTimeout(this._keyboardSettleTimer);
+            this._keyboardSettleTimer = null;
+        }
+    }
+
     _resetKeyboardViewportStyles() {
+        this._keyboardDocked = false;
+        this._lastKeyboardInset = 0;
         if (this.chatWindow) {
             this.chatWindow.classList.remove('keyboard-docked');
             this.chatWindow.style.setProperty('transition', 'none', 'important');
