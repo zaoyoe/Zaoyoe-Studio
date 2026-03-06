@@ -1723,9 +1723,9 @@ class ChatWidget {
             if (this.overlay) this.overlay.classList.add('visible');
             this._freezeOverlay();
 
-            // 仅 verify 页使用强锁滚动，其它页面保留 Safari 自身的键盘推升行为。
+            // iOS 窄屏统一强锁背景，弹窗位移完全交给键盘监听逻辑处理。
             if (window.iOSScrollLock) {
-                if (this._isIOSMobile() && this._isNarrowViewport() && this.isVerifyPage) {
+                if (this._isIOSMobile() && this._isNarrowViewport()) {
                     window.iOSScrollLock.lock(this.chatWindow);
                 } else {
                     window.iOSScrollLock.lockLight(this.chatWindow);
@@ -1767,7 +1767,7 @@ class ChatWidget {
                 }
             };
             this._onChatFocusOut = () => {
-                if (this._isIOSMobile()) {
+                if (this._isIOSMobile() && this.isVerifyPage) {
                     this._clearPendingUndockTimer();
                     this._resetKeyboardViewportStyles();
                 } else {
@@ -1820,7 +1820,7 @@ class ChatWidget {
             const isIOS = this._isIOSMobile();
             const shouldDock = this._isNarrowViewport() && (
                 isFocusedInChat ||
-                (isIOS && this.isVerifyPage && bottomInset > 60) ||
+                (isIOS && bottomInset > 60) ||
                 (!isIOS && bottomInset > 60)
             );
 
@@ -1828,13 +1828,12 @@ class ChatWidget {
                 this._clearPendingUndockTimer();
                 this._applyKeyboardDock(visualHeight, bottomInset);
             } else {
-                if (isIOS) {
-                    // iOS：失焦后立即回到居中，避免“先下移触底再居中”
-                    this._clearPendingUndockTimer();
-                    this._resetKeyboardViewportStyles();
-                } else {
+                if (!isIOS) {
                     // 非 iOS 保留平滑过渡
                     this._scheduleUndock();
+                } else {
+                    this._clearPendingUndockTimer();
+                    this._resetKeyboardViewportStyles();
                 }
             }
         };
@@ -1862,12 +1861,10 @@ class ChatWidget {
             setTimeout(() => this._onViewportResize?.(), 260);
         };
         this._onChatFocusOut = () => {
-            // iOS 上在 blur 后立即回到居中，避免跟随键盘消失动画下移
-            if (this._isIOSMobile()) {
-                this._clearPendingUndockTimer();
-                this._resetKeyboardViewportStyles();
-            }
+            this._clearPendingUndockTimer();
+            setTimeout(() => this._onViewportResize?.(), 30);
             setTimeout(() => this._onViewportResize?.(), 80);
+            setTimeout(() => this._onViewportResize?.(), 180);
         };
         this.chatWindow?.addEventListener('focusin', this._onChatFocusIn, true);
         this.chatWindow?.addEventListener('focusout', this._onChatFocusOut, true);
@@ -1933,7 +1930,7 @@ class ChatWidget {
 
     _focusInputWithoutScroll(inputEl) {
         if (!inputEl) return;
-        if (!this.isVerifyPage || !this._isIOSMobile() || !this._isNarrowViewport()) {
+        if (!this._isIOSMobile() || !this._isNarrowViewport()) {
             inputEl.focus();
             return;
         }
@@ -1948,7 +1945,7 @@ class ChatWidget {
         if (!inputEl || inputEl.dataset.preventScrollBind === '1') return;
 
         const handleTouchFocus = (e) => {
-            if (!this.isOpen || !this.isVerifyPage || !this._isIOSMobile() || !this._isNarrowViewport()) return;
+            if (!this.isOpen || !this._isIOSMobile() || !this._isNarrowViewport()) return;
             if (e.cancelable) e.preventDefault();
             this._focusInputWithoutScroll(inputEl);
         };
@@ -2054,9 +2051,8 @@ class ChatWidget {
             );
             return;
         }
-        // iOS Safari 已经会随键盘上推 fixed 元素，这里只给一个小底距避免“二次上推”
         const dockBottom = isIOS
-            ? 12
+            ? Math.max(12, Math.round(bottomInset + 12))
             : Math.max(0, bottomInset);
         // 覆盖移动端居中定位，改为贴近键盘上沿
         this.chatWindow.style.setProperty('top', 'auto', 'important');
