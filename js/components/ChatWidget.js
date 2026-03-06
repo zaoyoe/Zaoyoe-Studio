@@ -450,10 +450,10 @@ class ChatWidget {
                 flex-direction: row;
                 border-radius: 20px;
                 overflow: hidden;
-                /* Glassmorphism effect - balanced transparency */
-                background: rgba(20, 20, 30, 0.7) !important;
-                backdrop-filter: blur(20px) saturate(150%) !important;
-                -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
+                /* TEMP TEST: fully opaque */
+                background: rgb(20, 20, 30) !important;
+                backdrop-filter: none !important;
+                -webkit-backdrop-filter: none !important;
                 border: 1px solid rgba(255, 255, 255, 0.08) !important;
                 box-shadow: 
                     0 25px 50px -12px rgba(0, 0, 0, 0.6) !important;
@@ -1595,10 +1595,10 @@ class ChatWidget {
         style.textContent = `
             /* User Mode Glassmorphism Enhancement */
             .chat-window:not(.admin-mode-layout) {
-                /* Glassmorphism effect - same as admin mode */
-                background: rgba(20, 20, 30, 0.7) !important;
-                backdrop-filter: blur(20px) saturate(150%) !important;
-                -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
+                /* TEMP TEST: fully opaque */
+                background: rgb(20, 20, 30) !important;
+                backdrop-filter: none !important;
+                -webkit-backdrop-filter: none !important;
                 border: 1px solid rgba(255, 255, 255, 0.2) !important;
                 box-shadow: 
                     0 25px 50px -12px rgba(0, 0, 0, 0.6),

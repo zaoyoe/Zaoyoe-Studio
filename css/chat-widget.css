@@ -373,11 +373,11 @@
     width: 380px;
     height: 600px;
     max-height: 80vh;
-    /* Static glass effect - NO backdrop-filter for 240Hz monitors */
+    /* TEMP TEST: fully opaque to diagnose flicker */
     background: linear-gradient(135deg,
-            rgba(20, 20, 30, 0.92) 0%,
-            rgba(15, 15, 25, 0.94) 50%,
-            rgba(18, 18, 28, 0.92) 100%);
+            rgb(20, 20, 30) 0%,
+            rgb(15, 15, 25) 50%,
+            rgb(18, 18, 28) 100%);
     /* Clean shadow only - no border effects */
     box-shadow: 0 20px 60px -10px rgba(0, 0, 0, 0.5);
     border: none;
