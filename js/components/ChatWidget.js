@@ -23,6 +23,7 @@ class ChatWidget {
         this._lastKeyboardInset = 0;
         this._viewportRafId = null;
         this._keyboardSettleTimer = null;
+        this._transitionCleanupTimer = null;
 
         this.init();
     }
@@ -1826,10 +1827,10 @@ class ChatWidget {
             }
             const isFocusedInChat = this._isChatInputFocused();
             const isIOS = this._isIOSMobile();
-            const iosKeyboardVisible = bottomInset > 12;
             const shouldDock = this._isNarrowViewport() && (
-                (isIOS && (iosKeyboardVisible || (this._keyboardDocked && isFocusedInChat))) ||
-                (!isIOS && (isFocusedInChat || bottomInset > 60))
+                isIOS
+                    ? (this._keyboardDocked ? bottomInset > 8 : bottomInset > 24)
+                    : (isFocusedInChat || bottomInset > 60)
             );
 
             if (shouldDock) {
@@ -1917,6 +1918,7 @@ class ChatWidget {
         this._keyboardDocked = false;
         this._lastKeyboardInset = 0;
         this._clearKeyboardSettleTimer();
+        this._clearTransitionCleanupTimer();
         this._clearPendingUndockTimer();
     }
 
@@ -2045,7 +2047,12 @@ class ChatWidget {
         if (!this.chatWindow) return;
 
         this.chatWindow.classList.add('keyboard-docked');
-        this.chatWindow.style.setProperty('transition', 'none', 'important');
+        this._clearTransitionCleanupTimer();
+        this.chatWindow.style.setProperty(
+            'transition',
+            'transform 160ms cubic-bezier(0.22, 1, 0.36, 1), bottom 160ms cubic-bezier(0.22, 1, 0.36, 1)',
+            'important'
+        );
 
         const isIOS = this._isIOSMobile();
         if (isIOS && this.isVerifyPage) {
@@ -2129,12 +2136,24 @@ class ChatWidget {
         }
     }
 
+    _clearTransitionCleanupTimer() {
+        if (this._transitionCleanupTimer) {
+            clearTimeout(this._transitionCleanupTimer);
+            this._transitionCleanupTimer = null;
+        }
+    }
+
     _resetKeyboardViewportStyles() {
         this._keyboardDocked = false;
         this._lastKeyboardInset = 0;
         if (this.chatWindow) {
             this.chatWindow.classList.remove('keyboard-docked');
-            this.chatWindow.style.setProperty('transition', 'none', 'important');
+            this._clearTransitionCleanupTimer();
+            this.chatWindow.style.setProperty(
+                'transition',
+                'transform 180ms cubic-bezier(0.22, 1, 0.36, 1), bottom 180ms cubic-bezier(0.22, 1, 0.36, 1)',
+                'important'
+            );
             this.chatWindow.style.removeProperty('height');
             this.chatWindow.style.removeProperty('max-height');
 
@@ -2154,11 +2173,12 @@ class ChatWidget {
                 this.chatWindow.style.removeProperty('transform');
             }
 
-            requestAnimationFrame(() => {
+            this._transitionCleanupTimer = setTimeout(() => {
+                this._transitionCleanupTimer = null;
                 if (this.chatWindow && !this.chatWindow.classList.contains('keyboard-docked')) {
                     this.chatWindow.style.removeProperty('transition');
                 }
-            });
+            }, 220);
         }
 
         if (this.overlay) {
