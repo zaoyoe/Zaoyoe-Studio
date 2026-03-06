@@ -1716,8 +1716,14 @@ class ChatWidget {
             // Show overlay (for admin mode)
             if (this.overlay) this.overlay.classList.add('visible');
 
-            // LOCK SCROLL - lockLight 防穿透，键盘适配由 visualViewport 监听处理
-            if (window.iOSScrollLock) window.iOSScrollLock.lockLight(this.chatWindow);
+            // LOCK SCROLL - iOS 输入场景使用 full lock，确保背景模糊层不被键盘推移
+            if (window.iOSScrollLock) {
+                if (this._isIOSMobile()) {
+                    window.iOSScrollLock.lock(this.chatWindow);
+                } else {
+                    window.iOSScrollLock.lockLight(this.chatWindow);
+                }
+            }
 
             // iOS 键盘适配：监听 visualViewport 变化，动态调整聊天窗口大小
             this._attachKeyboardListener();
@@ -1732,6 +1738,7 @@ class ChatWidget {
             // 清理键盘监听 & 还原样式
             this._detachKeyboardListener();
             this._resetKeyboardViewportStyles();
+            this._clearPendingUndockTimer();
 
             // UNLOCK SCROLL
             if (window.iOSScrollLock) window.iOSScrollLock.unlock();
@@ -1769,11 +1776,15 @@ class ChatWidget {
             const insetFromLayout = Math.max(0, this._viewportBaseHeight - visualBottom);
             const insetFromViewportDelta = Math.max(0, (this._viewportBaseVisualHeight || visualHeight) - visualHeight);
             const bottomInset = Math.max(insetFromLayout, insetFromViewportDelta);
+            const isFocusedInChat = this._isChatInputFocused();
+            const shouldDock = this._isNarrowViewport() && (bottomInset > 60 || isFocusedInChat);
 
-            if (bottomInset > 100 && this._isNarrowViewport()) {
+            if (shouldDock) {
+                this._clearPendingUndockTimer();
                 this._applyKeyboardDock(visualHeight, bottomInset);
             } else {
-                this._resetKeyboardViewportStyles();
+                // 键盘收起时等待系统动画稳定后再回到默认定位，避免“弹一下”
+                this._scheduleUndock();
             }
         };
 
@@ -1786,7 +1797,7 @@ class ChatWidget {
             setTimeout(() => this._onViewportResize?.(), 260);
         };
         this._onChatFocusOut = () => {
-            setTimeout(() => this._onViewportResize?.(), 180);
+            setTimeout(() => this._onViewportResize?.(), 220);
         };
         this.chatWindow?.addEventListener('focusin', this._onChatFocusIn, true);
         this.chatWindow?.addEventListener('focusout', this._onChatFocusOut, true);
@@ -1810,10 +1821,23 @@ class ChatWidget {
         }
         this._viewportBaseHeight = null;
         this._viewportBaseVisualHeight = null;
+        this._clearPendingUndockTimer();
     }
 
     _isNarrowViewport() {
         return window.matchMedia('(max-width: 700px)').matches;
+    }
+
+    _isIOSMobile() {
+        return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+            (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    }
+
+    _isChatInputFocused() {
+        const active = document.activeElement;
+        if (!active || !this.chatWindow) return false;
+        if (!this.chatWindow.contains(active)) return false;
+        return /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName);
     }
 
     _applyKeyboardDock(visualHeight, bottomInset) {
@@ -1836,6 +1860,27 @@ class ChatWidget {
         this.chatWindow.style.setProperty('transform', 'translateX(-50%) scale(1)', 'important');
         this.chatWindow.style.setProperty('height', `${dockedHeight}px`, 'important');
         this.chatWindow.style.setProperty('max-height', `${maxDockedHeight}px`, 'important');
+    }
+
+    _scheduleUndock() {
+        if (!this._isNarrowViewport()) {
+            this._resetKeyboardViewportStyles();
+            return;
+        }
+        this._clearPendingUndockTimer();
+        this._pendingUndockTimer = setTimeout(() => {
+            if (!this._isChatInputFocused()) {
+                this._resetKeyboardViewportStyles();
+            }
+            this._pendingUndockTimer = null;
+        }, 260);
+    }
+
+    _clearPendingUndockTimer() {
+        if (this._pendingUndockTimer) {
+            clearTimeout(this._pendingUndockTimer);
+            this._pendingUndockTimer = null;
+        }
     }
 
     _getIOSBrowserBarCompensation(bottomInset) {
