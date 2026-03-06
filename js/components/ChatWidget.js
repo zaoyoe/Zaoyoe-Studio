@@ -1818,10 +1818,10 @@ class ChatWidget {
             }
             const isFocusedInChat = this._isChatInputFocused();
             const isIOS = this._isIOSMobile();
+            const keyboardVisibleThreshold = isIOS ? 8 : 60;
             const shouldDock = this._isNarrowViewport() && (
-                isFocusedInChat ||
-                (isIOS && bottomInset > 60) ||
-                (!isIOS && bottomInset > 60)
+                (isIOS && bottomInset > keyboardVisibleThreshold) ||
+                (!isIOS && (isFocusedInChat || bottomInset > keyboardVisibleThreshold))
             );
 
             if (shouldDock) {
@@ -2017,28 +2017,33 @@ class ChatWidget {
         if (!this.chatWindow) return;
 
         this.chatWindow.classList.add('keyboard-docked');
-        // 键盘联动期间关闭过渡，避免 iOS 收键盘时的回弹动画
-        this.chatWindow.style.setProperty('transition', 'none', 'important');
+        this.chatWindow.style.setProperty('transition', 'transform 180ms cubic-bezier(0.22, 1, 0.36, 1)', 'important');
 
         const isIOS = this._isIOSMobile();
-        if (isIOS && this.isVerifyPage) {
-            // Verify 页面专用：锁定弹窗高度，按当前几何关系对齐到键盘上沿，避免二次调用累计位移
+        if (isIOS) {
             const baseViewportHeight = Math.max(
                 this._viewportBaseHeight || 0,
                 window.innerHeight || 0,
                 document.documentElement.clientHeight || 0,
                 visualHeight + Math.max(0, bottomInset)
             );
-            const fallbackHeight = Math.min(600, Math.max(420, Math.round(baseViewportHeight * 0.7)));
-            const dockHeight = Math.max(320, Math.round(this._stableDockHeight || fallbackHeight));
 
             this.chatWindow.style.setProperty('position', 'fixed', 'important');
             this.chatWindow.style.setProperty('top', '50%', 'important');
             this.chatWindow.style.setProperty('left', '50%', 'important');
             this.chatWindow.style.setProperty('right', 'auto', 'important');
             this.chatWindow.style.setProperty('bottom', 'auto', 'important');
-            this.chatWindow.style.setProperty('height', `${dockHeight}px`, 'important');
-            this.chatWindow.style.setProperty('max-height', `${dockHeight}px`, 'important');
+
+            if (this.isVerifyPage) {
+                const fallbackHeight = Math.min(600, Math.max(420, Math.round(baseViewportHeight * 0.7)));
+                const dockHeight = Math.max(320, Math.round(this._stableDockHeight || fallbackHeight));
+                this.chatWindow.style.setProperty('height', `${dockHeight}px`, 'important');
+                this.chatWindow.style.setProperty('max-height', `${dockHeight}px`, 'important');
+            } else {
+                this.chatWindow.style.removeProperty('height');
+                this.chatWindow.style.removeProperty('max-height');
+            }
+
             this.chatWindow.style.setProperty('transform', 'translate(-50%, -50%) scale(1)', 'important');
 
             const rect = this.chatWindow.getBoundingClientRect();
@@ -2051,9 +2056,7 @@ class ChatWidget {
             );
             return;
         }
-        const dockBottom = isIOS
-            ? Math.max(12, Math.round(bottomInset + 12))
-            : Math.max(0, bottomInset);
+        const dockBottom = Math.max(0, bottomInset);
         // 覆盖移动端居中定位，改为贴近键盘上沿
         this.chatWindow.style.setProperty('top', 'auto', 'important');
         this.chatWindow.style.setProperty('left', '50%', 'important');
@@ -2090,7 +2093,7 @@ class ChatWidget {
     _resetKeyboardViewportStyles() {
         if (this.chatWindow) {
             this.chatWindow.classList.remove('keyboard-docked');
-            this.chatWindow.style.setProperty('transition', 'none', 'important');
+            this.chatWindow.style.setProperty('transition', 'transform 200ms cubic-bezier(0.22, 1, 0.36, 1)', 'important');
             this.chatWindow.style.removeProperty('height');
             this.chatWindow.style.removeProperty('max-height');
 
@@ -2110,11 +2113,11 @@ class ChatWidget {
                 this.chatWindow.style.removeProperty('transform');
             }
 
-            requestAnimationFrame(() => {
+            setTimeout(() => {
                 if (this.chatWindow && !this.chatWindow.classList.contains('keyboard-docked')) {
                     this.chatWindow.style.removeProperty('transition');
                 }
-            });
+            }, 220);
         }
 
         if (this.overlay) {
