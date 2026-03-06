@@ -1716,8 +1716,8 @@ class ChatWidget {
             // Show overlay (for admin mode)
             if (this.overlay) this.overlay.classList.add('visible');
 
-            // LOCK SCROLL - unified iOS-safe approach
-            if (window.iOSScrollLock) window.iOSScrollLock.lockLight(this.chatWindow);
+            // LOCK SCROLL - 使用 full lock（同登录弹窗），防止 iOS 键盘弹出时推动页面
+            if (window.iOSScrollLock) window.iOSScrollLock.lock(this.chatWindow);
 
         } else {
             this.chatWindow.classList.remove('active');
