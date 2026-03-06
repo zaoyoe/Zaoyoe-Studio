@@ -27,6 +27,7 @@ class ChatWidget {
         this._keyboardBlurUndocking = false;
         this._keyboardPreLiftActive = false;
         this._motionVisualLockTimer = null;
+        this._sessionVisualLocked = false;
 
         this.init();
     }
@@ -1739,6 +1740,7 @@ class ChatWidget {
                     window.iOSScrollLock.lockLight(this.chatWindow);
                 }
             }
+            this._enableSessionVisualLock();
 
             // iOS 键盘适配：监听 visualViewport 变化，动态调整聊天窗口大小
             this._attachKeyboardListener();
@@ -1751,6 +1753,7 @@ class ChatWidget {
             if (this.overlay) this.overlay.classList.remove('visible');
 
             // 清理键盘监听 & 还原样式
+            this._disableSessionVisualLock();
             this._detachKeyboardListener();
             this._resetKeyboardViewportStyles();
             this._clearPendingUndockTimer();
@@ -2186,9 +2189,39 @@ class ChatWidget {
         }
     }
 
+    _applyStableVisualStyles() {
+        if (!this.chatWindow) return;
+        this.chatWindow.style.setProperty('will-change', 'transform', 'important');
+        this.chatWindow.style.setProperty('backface-visibility', 'hidden', 'important');
+        this.chatWindow.style.setProperty('-webkit-backface-visibility', 'hidden', 'important');
+        this.chatWindow.style.setProperty('transform-style', 'preserve-3d', 'important');
+        this.chatWindow.style.setProperty('backdrop-filter', 'none', 'important');
+        this.chatWindow.style.setProperty('-webkit-backdrop-filter', 'none', 'important');
+        this.chatWindow.style.setProperty('background', 'rgba(20, 20, 30, 0.92)', 'important');
+    }
+
+    _enableSessionVisualLock() {
+        if (!this.chatWindow) return;
+        if (!(this._isIOSMobile() && this._isNarrowViewport())) {
+            this._sessionVisualLocked = false;
+            return;
+        }
+        this._sessionVisualLocked = true;
+        this._applyStableVisualStyles();
+    }
+
+    _disableSessionVisualLock() {
+        this._sessionVisualLocked = false;
+        this._restoreMotionVisuals();
+    }
+
     _restoreMotionVisuals() {
         this._clearMotionVisualLockTimer();
         if (!this.chatWindow) return;
+        if (this._sessionVisualLocked) {
+            this._applyStableVisualStyles();
+            return;
+        }
         this.chatWindow.style.removeProperty('backdrop-filter');
         this.chatWindow.style.removeProperty('-webkit-backdrop-filter');
         this.chatWindow.style.removeProperty('background');
@@ -2201,15 +2234,13 @@ class ChatWidget {
     _applyMotionVisualLock(duration = 180) {
         if (!this.chatWindow) return;
         if (!this._isIOSMobile() || !this._isNarrowViewport()) return;
+        if (this._sessionVisualLocked) {
+            this._applyStableVisualStyles();
+            return;
+        }
         this._clearMotionVisualLockTimer();
         // iOS 移动 backdrop-filter 图层时会偶发重采样闪烁，动画期临时关闭磨砂层。
-        this.chatWindow.style.setProperty('will-change', 'transform', 'important');
-        this.chatWindow.style.setProperty('backface-visibility', 'hidden', 'important');
-        this.chatWindow.style.setProperty('-webkit-backface-visibility', 'hidden', 'important');
-        this.chatWindow.style.setProperty('transform-style', 'preserve-3d', 'important');
-        this.chatWindow.style.setProperty('backdrop-filter', 'none', 'important');
-        this.chatWindow.style.setProperty('-webkit-backdrop-filter', 'none', 'important');
-        this.chatWindow.style.setProperty('background', 'rgba(20, 20, 30, 0.92)', 'important');
+        this._applyStableVisualStyles();
         this._motionVisualLockTimer = setTimeout(() => {
             this._motionVisualLockTimer = null;
             this._restoreMotionVisuals();
