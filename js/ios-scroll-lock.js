@@ -22,7 +22,6 @@
     let viewportCleanup = null;
     let currentModal = null;
     let touchStartY = 0;
-    let lockCount = 0;
 
     /**
      * 检测是否为 iOS 移动端 WebKit
@@ -123,39 +122,34 @@
      * @param {HTMLElement} [modalElement] - 可选，弹窗元素，用于 iOS 键盘检测
      */
     function lock(modalElement) {
-        if (lockCount === 0) {
-            // 1. 保存当前滚动位置
-            savedScrollY = window.scrollY || window.pageYOffset || 0;
+        if (isLocked) return;
 
-            // 2. 给 body 设置 position:fixed 并偏移 top 来「冻结」页面
-            document.body.style.position = 'fixed';
-            document.body.style.top = `-${savedScrollY}px`;
-            document.body.style.left = '0';
-            document.body.style.right = '0';
-            document.body.style.width = '100%';
+        // 1. 保存当前滚动位置
+        savedScrollY = window.scrollY || window.pageYOffset || 0;
 
-            // 3. 添加 no-scroll class 作为辅助（overflow:hidden + overscroll-behavior）
-            document.documentElement.classList.add('no-scroll');
-            document.body.classList.add('no-scroll');
+        // 2. 给 body 设置 position:fixed 并偏移 top 来「冻结」页面
+        document.body.style.position = 'fixed';
+        document.body.style.top = `-${savedScrollY}px`;
+        document.body.style.left = '0';
+        document.body.style.right = '0';
+        document.body.style.width = '100%';
 
-            isLocked = true;
-            isLightLock = false;
-            currentModal = modalElement || null;
+        // 3. 添加 no-scroll class 作为辅助（overflow:hidden + overscroll-behavior）
+        document.documentElement.classList.add('no-scroll');
+        document.body.classList.add('no-scroll');
 
-            // 4. 添加 touchmove 拦截，防止滚动穿透（scroll chaining）
-            document.addEventListener('touchstart', handleTouchStart, { passive: true });
-            document.addEventListener('touchmove', handleTouchMove, { passive: false });
+        isLocked = true;
+        isLightLock = false;
+        currentModal = modalElement || null;
 
-            // 5. iOS 专属：监听 visualViewport 变化，检测键盘收起后回位
-            if (isIOSMobile() && currentModal) {
-                attachViewportListener();
-            }
-        } else {
-            // 更新当前弹层，以便 touch 拦截工作在最上层弹窗
-            if (modalElement) currentModal = modalElement;
+        // 4. 添加 touchmove 拦截，防止滚动穿透（scroll chaining）
+        document.addEventListener('touchstart', handleTouchStart, { passive: true });
+        document.addEventListener('touchmove', handleTouchMove, { passive: false });
+
+        // 5. iOS 专属：监听 visualViewport 变化，检测键盘收起后回位
+        if (isIOSMobile() && currentModal) {
+            attachViewportListener();
         }
-
-        lockCount++;
     }
 
     /**
@@ -164,77 +158,63 @@
      * @param {HTMLElement} [modalElement] - 弹窗元素
      */
     function lockLight(modalElement) {
-        if (lockCount === 0) {
-            savedScrollY = window.scrollY || window.pageYOffset || 0;
+        if (isLocked) return;
 
-            // iOS Safari 视觉优先路径：不加 no-scroll (overflow:hidden)，
-            // 因为 overflow:hidden 会破坏合成器的半透明混合上下文（这是个我们在利用的 Bug）。
-            // 其他浏览器工程优先路径：标准 overflow:hidden
-            if (!isIOSMobile()) {
-                document.documentElement.classList.add('no-scroll');
-                document.body.classList.add('no-scroll');
-            }
+        savedScrollY = window.scrollY || window.pageYOffset || 0;
 
-            isLocked = true;
-            isLightLock = true;
-            currentModal = modalElement || null;
+        // 只用 overflow:hidden + overscroll-behavior，不用 position:fixed
+        document.documentElement.classList.add('no-scroll');
+        document.body.classList.add('no-scroll');
 
-            // 添加 touchmove 拦截
-            document.addEventListener('touchstart', handleTouchStart, { passive: true });
-            document.addEventListener('touchmove', handleTouchMove, { passive: false });
-        } else {
-            if (modalElement) currentModal = modalElement;
-        }
+        isLocked = true;
+        isLightLock = true;
+        currentModal = modalElement || null;
 
-        lockCount++;
+        // 添加 touchmove 拦截
+        document.addEventListener('touchstart', handleTouchStart, { passive: true });
+        document.addEventListener('touchmove', handleTouchMove, { passive: false });
     }
 
     /**
      * 解锁背景滚动，恢复到原始位置
      */
     function unlock() {
-        if (lockCount <= 0) return;
+        if (!isLocked) return;
 
-        lockCount--;
+        // 1. 清理 viewport 监听器
+        detachViewportListener();
 
-        if (lockCount === 0) {
-            // 1. 清理 viewport 监听器
-            detachViewportListener();
+        // 2. 移除 touchmove 拦截
+        document.removeEventListener('touchstart', handleTouchStart);
+        document.removeEventListener('touchmove', handleTouchMove);
 
-            // 2. 移除 touchmove 拦截
-            document.removeEventListener('touchstart', handleTouchStart);
-            document.removeEventListener('touchmove', handleTouchMove);
+        // 3. 移除 body 上的锁定样式（仅 full lock 模式下需要）
+        if (!isLightLock) {
+            const scrollY = savedScrollY;
+            document.body.style.position = '';
+            document.body.style.top = '';
+            document.body.style.left = '';
+            document.body.style.right = '';
+            document.body.style.width = '';
 
-            // 3. 移除锁定样式
-            if (!isLightLock) {
-                const scrollY = savedScrollY;
-                document.body.style.position = '';
-                document.body.style.top = '';
-                document.body.style.left = '';
-                document.body.style.right = '';
-                document.body.style.width = '';
+            // 移除 no-scroll class
+            document.documentElement.classList.remove('no-scroll');
+            document.body.classList.remove('no-scroll');
 
-                // 移除 no-scroll class
-                document.documentElement.classList.remove('no-scroll');
-                document.body.classList.remove('no-scroll');
+            isLocked = false;
+            isLightLock = false;
+            currentModal = null;
 
-                isLocked = false;
-                isLightLock = false;
-                currentModal = null;
+            // 恢复滚动位置
+            window.scrollTo(0, scrollY);
+        } else {
+            // Light lock: 只移除 overflow hidden
+            document.documentElement.classList.remove('no-scroll');
+            document.body.classList.remove('no-scroll');
 
-                // 恢复滚动位置
-                window.scrollTo(0, scrollY);
-            } else {
-                // Light lock: 只有在非 iOS 时才加过 no-scroll，所以对应移除
-                if (!isIOSMobile()) {
-                    document.documentElement.classList.remove('no-scroll');
-                    document.body.classList.remove('no-scroll');
-                }
-
-                isLocked = false;
-                isLightLock = false;
-                currentModal = null;
-            }
+            isLocked = false;
+            isLightLock = false;
+            currentModal = null;
         }
     }
 

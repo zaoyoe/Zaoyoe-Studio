@@ -4465,13 +4465,9 @@ function openPromptModal(id) {
     // Initialize image upload functionality
     initCommentImageUpload();
 
-    // 清除上次硬切关闭时设置的 inline styles，恢复为 CSS 控制
-    modal.style.display = '';
-    modal.style.visibility = '';
-    modal.style.opacity = '';
-
     modal.classList.add('active');
-    if (window.iOSScrollLock) window.iOSScrollLock.lockLight(modal);
+    if (window.iOSScrollLock) window.iOSScrollLock.lock(modal);
+    document.body.classList.add('prompt-modal-open'); // Hide header behind modal
 }
 
 // --- Spatial Flow & Comment Logic ---
@@ -6236,17 +6232,14 @@ function closePromptModal() {
         }
     }
 
-    // Hide modal — 使用和登录弹窗完全相同的"硬切"关闭方式：
-    // 立即 display:none + visibility:hidden + opacity:0
-    // 不做淡出动画，让 Safari 合成器瞬间销毁该层，恢复地址栏通透
+    // Hide modal
     if (modal) {
         modal.classList.remove('active');
-        modal.style.display = 'none';
-        modal.style.visibility = 'hidden';
-        modal.style.opacity = '0';
     }
 
+    // Re-enable body scroll
     if (window.iOSScrollLock) window.iOSScrollLock.unlock();
+    document.body.classList.remove('prompt-modal-open');
 }
 
 // Click outside modal to close
