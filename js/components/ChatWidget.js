@@ -1747,6 +1747,7 @@ class ChatWidget {
 
         const vv = window.visualViewport;
         this._viewportBaseHeight = Math.max(window.innerHeight, vv.height + vv.offsetTop);
+        this._viewportBaseVisualHeight = Math.max(vv.height || 0, 0);
 
         this._onViewportResize = () => {
             const vv = window.visualViewport;
@@ -1760,7 +1761,14 @@ class ChatWidget {
                 visualBottom
             );
 
-            const bottomInset = Math.max(0, this._viewportBaseHeight - visualBottom);
+            this._viewportBaseVisualHeight = Math.max(
+                this._viewportBaseVisualHeight || 0,
+                visualHeight
+            );
+
+            const insetFromLayout = Math.max(0, this._viewportBaseHeight - visualBottom);
+            const insetFromViewportDelta = Math.max(0, (this._viewportBaseVisualHeight || visualHeight) - visualHeight);
+            const bottomInset = Math.max(insetFromLayout, insetFromViewportDelta);
 
             if (bottomInset > 100 && this._isNarrowViewport()) {
                 this._applyKeyboardDock(visualHeight, bottomInset);
@@ -1771,6 +1779,18 @@ class ChatWidget {
 
         window.visualViewport.addEventListener('resize', this._onViewportResize, { passive: true });
         window.visualViewport.addEventListener('scroll', this._onViewportResize, { passive: true });
+
+        this._onChatFocusIn = () => {
+            setTimeout(() => this._onViewportResize?.(), 30);
+            setTimeout(() => this._onViewportResize?.(), 120);
+            setTimeout(() => this._onViewportResize?.(), 260);
+        };
+        this._onChatFocusOut = () => {
+            setTimeout(() => this._onViewportResize?.(), 180);
+        };
+        this.chatWindow?.addEventListener('focusin', this._onChatFocusIn, true);
+        this.chatWindow?.addEventListener('focusout', this._onChatFocusOut, true);
+
         this._onViewportResize();
     }
 
@@ -1780,7 +1800,16 @@ class ChatWidget {
             window.visualViewport.removeEventListener('scroll', this._onViewportResize);
             this._onViewportResize = null;
         }
+        if (this.chatWindow && this._onChatFocusIn) {
+            this.chatWindow.removeEventListener('focusin', this._onChatFocusIn, true);
+            this._onChatFocusIn = null;
+        }
+        if (this.chatWindow && this._onChatFocusOut) {
+            this.chatWindow.removeEventListener('focusout', this._onChatFocusOut, true);
+            this._onChatFocusOut = null;
+        }
         this._viewportBaseHeight = null;
+        this._viewportBaseVisualHeight = null;
     }
 
     _isNarrowViewport() {
