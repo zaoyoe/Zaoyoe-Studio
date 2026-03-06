@@ -1723,9 +1723,9 @@ class ChatWidget {
             if (this.overlay) this.overlay.classList.add('visible');
             this._freezeOverlay();
 
-            // iOS 窄屏聊天需要强锁滚动，否则 Safari 会在输入聚焦时把背景页面继续向上推。
+            // 仅 verify 页使用强锁滚动，其它页面保留 Safari 自身的键盘推升行为。
             if (window.iOSScrollLock) {
-                if (this._isIOSMobile() && this._isNarrowViewport()) {
+                if (this._isIOSMobile() && this._isNarrowViewport() && this.isVerifyPage) {
                     window.iOSScrollLock.lock(this.chatWindow);
                 } else {
                     window.iOSScrollLock.lockLight(this.chatWindow);
@@ -1933,6 +1933,10 @@ class ChatWidget {
 
     _focusInputWithoutScroll(inputEl) {
         if (!inputEl) return;
+        if (!this.isVerifyPage || !this._isIOSMobile() || !this._isNarrowViewport()) {
+            inputEl.focus();
+            return;
+        }
         try {
             inputEl.focus({ preventScroll: true });
         } catch (err) {
@@ -1944,7 +1948,7 @@ class ChatWidget {
         if (!inputEl || inputEl.dataset.preventScrollBind === '1') return;
 
         const handleTouchFocus = (e) => {
-            if (!this.isOpen || !this._isIOSMobile() || !this._isNarrowViewport()) return;
+            if (!this.isOpen || !this.isVerifyPage || !this._isIOSMobile() || !this._isNarrowViewport()) return;
             if (e.cancelable) e.preventDefault();
             this._focusInputWithoutScroll(inputEl);
         };
