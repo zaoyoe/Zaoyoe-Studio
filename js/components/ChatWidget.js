@@ -1877,12 +1877,13 @@ class ChatWidget {
         const initialViewportHeight = Math.max(
             window.innerHeight || 0,
             document.documentElement.clientHeight || 0,
-            vv ? ((vv.height || 0) + (vv.offsetTop || 0)) : 0
+            vv ? ((vv.height || 0) + (vv.offsetTop || 0)) : 0,
+            window.screen?.height || 0
         );
-        this._overlayBaseHeight = initialViewportHeight;
+        this._overlayBaseHeight = initialViewportHeight + 64;
 
-        // 绝对定位到整页坐标系：始终从页面顶部覆盖整页，避免键盘联动导致底部漏层
-        this.overlay.style.setProperty('position', 'absolute', 'important');
+        // 固定定位 + 高度基线，避免 body.no-scroll 裁切导致底部漏层
+        this.overlay.style.setProperty('position', 'fixed', 'important');
         this.overlay.style.setProperty('top', '0', 'important');
         this.overlay.style.setProperty('left', '0', 'important');
         this.overlay.style.setProperty('right', '0', 'important');
@@ -1890,24 +1891,18 @@ class ChatWidget {
         this.overlay.style.setProperty('width', '100%', 'important');
         this._syncOverlayFrame = () => {
             if (!this.overlay) return;
-            const scrollTop = window.scrollY || window.pageYOffset || 0;
             const vv = window.visualViewport;
-            const viewportHeight = Math.max(
+            const overlayHeight = Math.max(
                 this._overlayBaseHeight || 0,
                 window.innerHeight || 0,
                 document.documentElement.clientHeight || 0,
-                vv ? ((vv.height || 0) + (vv.offsetTop || 0)) : 0
+                vv ? ((vv.height || 0) + (vv.offsetTop || 0) + 64) : 0,
+                window.screen?.height || 0
             );
-            const docHeight = Math.max(
-                document.documentElement.scrollHeight || 0,
-                document.body?.scrollHeight || 0,
-                scrollTop + viewportHeight + 64 // 额外冗余，覆盖 iOS 底栏动态区域
-            );
-            this.overlay.style.setProperty('height', `${docHeight}px`, 'important');
+            this.overlay.style.setProperty('height', `${overlayHeight}px`, 'important');
         };
         this._syncOverlayFrame();
 
-        window.addEventListener('scroll', this._syncOverlayFrame, { passive: true });
         window.addEventListener('resize', this._syncOverlayFrame, { passive: true });
         if (window.visualViewport) {
             window.visualViewport.addEventListener('resize', this._syncOverlayFrame, { passive: true });
@@ -1918,7 +1913,6 @@ class ChatWidget {
     _restoreOverlay() {
         if (!this.overlay) return;
         if (this._syncOverlayFrame) {
-            window.removeEventListener('scroll', this._syncOverlayFrame);
             window.removeEventListener('resize', this._syncOverlayFrame);
             if (window.visualViewport) {
                 window.visualViewport.removeEventListener('resize', this._syncOverlayFrame);
