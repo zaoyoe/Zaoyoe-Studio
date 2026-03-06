@@ -2122,21 +2122,6 @@ html[lang="en"] .nav-item .en {
 
 /* --- Modal --- */
 
-/* When prompt modal is open, push header behind the modal backdrop */
-body.prompt-modal-open .top-right-nav {
-    z-index: 500 !important;
-}
-
-/* 移动端：弹窗打开时将导航栏压到弹窗下层，避免闪烁 */
-@media (max-width: 768px) {
-
-    body.prompt-modal-open .framer-nav,
-    body.prompt-modal-open .mobile-menu {
-        z-index: 999 !important;
-        /* Modal is z-index 1000, so navbar goes behind it instantly — no flash */
-    }
-}
-
 /* Prevent page scroll when modal is open (not loaded from style.css) */
 html.no-scroll,
 body.no-scroll {
@@ -2154,7 +2139,7 @@ body.no-scroll {
     /* 默认态：无滤镜（同 login-overlay 的 :not(.active) 规则） */
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
-    z-index: 1000;
+    z-index: 3000;
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.5s ease;
