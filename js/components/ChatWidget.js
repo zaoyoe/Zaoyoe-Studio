@@ -1774,7 +1774,7 @@ class ChatWidget {
                 }
             };
             this._onChatFocusOut = () => {
-                if (this._isIOSMobile() && this.isVerifyPage) {
+                if (this._isIOSMobile()) {
                     this._clearPendingUndockTimer();
                     this._resetKeyboardViewportStyles(true);
                     this._keyboardDocked = false;
@@ -2069,7 +2069,7 @@ class ChatWidget {
         }
 
         const isIOS = this._isIOSMobile();
-        if (isIOS && this.isVerifyPage) {
+        if (isIOS) {
             const baseViewportHeight = Math.max(
                 this._viewportBaseHeight || 0,
                 window.innerHeight || 0,
@@ -2098,9 +2098,7 @@ class ChatWidget {
             );
             return;
         }
-        const dockBottom = isIOS
-            ? Math.max(12, Math.round(bottomInset + 12))
-            : Math.max(0, bottomInset);
+        const dockBottom = Math.max(0, bottomInset);
         // 覆盖移动端居中定位，改为贴近键盘上沿
         this.chatWindow.style.setProperty('top', 'auto', 'important');
         this.chatWindow.style.setProperty('left', '50%', 'important');
