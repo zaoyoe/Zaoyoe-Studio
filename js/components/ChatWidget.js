@@ -2,7 +2,7 @@
 class ChatWidget {
     constructor() {
         this.isOpen = false;
-        this.isVerifyPage = /(^|\/)verify\.html$/i.test(window.location.pathname || '');
+        this.isVerifyPage = /(^|\/)verify(?:\.html)?\/?$/i.test(window.location.pathname || '');
         this.sessionId = this.getSessionId();
         this.supabase = window.supabaseClient; // Assuming global supabase client
         this.unreadCount = 0; // Track unread messages
@@ -1948,12 +1948,15 @@ class ChatWidget {
             // Verify 页面专用：改为 absolute+top，规避第二次键盘唤起时 iOS 对 fixed 元素的额外上推
             const vv = window.visualViewport;
             const scrollTop = window.scrollY || window.pageYOffset || 0;
-            const visualTop = vv ? (vv.offsetTop || 0) : 0;
             const visibleHeight = vv ? (vv.height || window.innerHeight || 0) : (window.innerHeight || 0);
+            const viewportPageTop = vv
+                ? (Number.isFinite(vv.pageTop) ? vv.pageTop : (scrollTop + (vv.offsetTop || 0)))
+                : scrollTop;
+            const viewportBottom = viewportPageTop + visibleHeight;
             const currentHeight = this.chatWindow.offsetHeight || Math.min((window.innerHeight || 0) * 0.7, 620);
             const dockTop = Math.max(
-                scrollTop + visualTop + 8,
-                scrollTop + visualTop + visibleHeight - currentHeight - 12
+                scrollTop + 8,
+                viewportBottom - currentHeight - 12
             );
 
             this.chatWindow.style.setProperty('position', 'absolute', 'important');
