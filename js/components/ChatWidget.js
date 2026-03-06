@@ -2113,14 +2113,14 @@ class ChatWidget {
             this.chatWindow.style.setProperty('bottom', 'auto', 'important');
             this.chatWindow.style.setProperty('height', `${dockHeight}px`, 'important');
             this.chatWindow.style.setProperty('max-height', `${dockHeight}px`, 'important');
-            this.chatWindow.style.setProperty('transform', 'translate(-50%, -50%) scale(1)', 'important');
+            this.chatWindow.style.setProperty('transform', 'translate3d(-50%, -50%, 0) scale(1)', 'important');
 
             const rect = this.chatWindow.getBoundingClientRect();
             const targetBottom = Math.max(40, visualHeight - 12);
             const deltaY = Math.max(-520, Math.min(520, targetBottom - rect.bottom));
             this.chatWindow.style.setProperty(
                 'transform',
-                `translate(-50%, calc(-50% + ${deltaY}px)) scale(1)`,
+                `translate3d(-50%, calc(-50% + ${Math.round(deltaY)}px), 0) scale(1)`,
                 'important'
             );
             return;
@@ -2131,7 +2131,7 @@ class ChatWidget {
         this.chatWindow.style.setProperty('left', '50%', 'important');
         this.chatWindow.style.setProperty('right', 'auto', 'important');
         this.chatWindow.style.setProperty('bottom', `${dockBottom}px`, 'important');
-        this.chatWindow.style.setProperty('transform', 'translateX(-50%) scale(1)', 'important');
+        this.chatWindow.style.setProperty('transform', 'translate3d(-50%, 0, 0) scale(1)', 'important');
 
         // 不再在键盘期间改高度，避免“上下压缩后弹开”
         this.chatWindow.style.removeProperty('height');
@@ -2195,9 +2195,12 @@ class ChatWidget {
         this.chatWindow.style.setProperty('backface-visibility', 'hidden', 'important');
         this.chatWindow.style.setProperty('-webkit-backface-visibility', 'hidden', 'important');
         this.chatWindow.style.setProperty('transform-style', 'preserve-3d', 'important');
+        this.chatWindow.style.setProperty('contain', 'layout paint style', 'important');
+        this.chatWindow.style.setProperty('isolation', 'isolate', 'important');
+        this.chatWindow.style.setProperty('-webkit-mask-image', '-webkit-radial-gradient(white, black)', 'important');
         this.chatWindow.style.setProperty('backdrop-filter', 'none', 'important');
         this.chatWindow.style.setProperty('-webkit-backdrop-filter', 'none', 'important');
-        this.chatWindow.style.setProperty('background', 'rgba(20, 20, 30, 0.92)', 'important');
+        this.chatWindow.style.setProperty('background', 'rgb(20, 20, 30)', 'important');
     }
 
     _enableSessionVisualLock() {
@@ -2208,10 +2211,20 @@ class ChatWidget {
         }
         this._sessionVisualLocked = true;
         this._applyStableVisualStyles();
+        if (this.overlay) {
+            this.overlay.style.setProperty('backdrop-filter', 'none', 'important');
+            this.overlay.style.setProperty('-webkit-backdrop-filter', 'none', 'important');
+            this.overlay.style.setProperty('background', 'rgba(0, 0, 0, 0.36)', 'important');
+        }
     }
 
     _disableSessionVisualLock() {
         this._sessionVisualLocked = false;
+        if (this.overlay) {
+            this.overlay.style.removeProperty('backdrop-filter');
+            this.overlay.style.removeProperty('-webkit-backdrop-filter');
+            this.overlay.style.removeProperty('background');
+        }
         this._restoreMotionVisuals();
     }
 
@@ -2229,6 +2242,9 @@ class ChatWidget {
         this.chatWindow.style.removeProperty('backface-visibility');
         this.chatWindow.style.removeProperty('-webkit-backface-visibility');
         this.chatWindow.style.removeProperty('transform-style');
+        this.chatWindow.style.removeProperty('contain');
+        this.chatWindow.style.removeProperty('isolation');
+        this.chatWindow.style.removeProperty('-webkit-mask-image');
     }
 
     _applyMotionVisualLock(duration = 180) {
@@ -2258,7 +2274,7 @@ class ChatWidget {
         this.chatWindow.style.setProperty('right', 'auto', 'important');
         this.chatWindow.style.setProperty('bottom', 'auto', 'important');
         this.chatWindow.style.setProperty('transition', 'transform 120ms cubic-bezier(0.22, 1, 0.36, 1)', 'important');
-        this.chatWindow.style.setProperty('transform', 'translate(-50%, calc(-50% - 24px)) scale(1)', 'important');
+        this.chatWindow.style.setProperty('transform', 'translate3d(-50%, calc(-50% - 24px), 0) scale(1)', 'important');
         this._transitionCleanupTimer = setTimeout(() => {
             this._transitionCleanupTimer = null;
             if (this.chatWindow && !this.chatWindow.classList.contains('keyboard-docked')) {
@@ -2294,7 +2310,7 @@ class ChatWidget {
                 this.chatWindow.style.setProperty('left', '50%', 'important');
                 this.chatWindow.style.setProperty('right', 'auto', 'important');
                 this.chatWindow.style.setProperty('bottom', 'auto', 'important');
-                this.chatWindow.style.setProperty('transform', 'translate(-50%, -50%) scale(1)', 'important');
+                this.chatWindow.style.setProperty('transform', 'translate3d(-50%, -50%, 0) scale(1)', 'important');
             } else {
                 this.chatWindow.style.removeProperty('top');
                 this.chatWindow.style.removeProperty('left');
