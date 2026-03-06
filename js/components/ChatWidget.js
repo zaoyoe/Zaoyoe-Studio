@@ -2,6 +2,7 @@
 class ChatWidget {
     constructor() {
         this.isOpen = false;
+        this.isVerifyPage = /(^|\/)verify\.html$/i.test(window.location.pathname || '');
         this.sessionId = this.getSessionId();
         this.supabase = window.supabaseClient; // Assuming global supabase client
         this.unreadCount = 0; // Track unread messages
@@ -1943,6 +1944,28 @@ class ChatWidget {
         this.chatWindow.style.setProperty('transition', 'none', 'important');
 
         const isIOS = this._isIOSMobile();
+        if (isIOS && this.isVerifyPage) {
+            // Verify 页面专用：改为 absolute+top，规避第二次键盘唤起时 iOS 对 fixed 元素的额外上推
+            const vv = window.visualViewport;
+            const scrollTop = window.scrollY || window.pageYOffset || 0;
+            const visualTop = vv ? (vv.offsetTop || 0) : 0;
+            const visibleHeight = vv ? (vv.height || window.innerHeight || 0) : (window.innerHeight || 0);
+            const currentHeight = this.chatWindow.offsetHeight || Math.min((window.innerHeight || 0) * 0.7, 620);
+            const dockTop = Math.max(
+                scrollTop + visualTop + 8,
+                scrollTop + visualTop + visibleHeight - currentHeight - 12
+            );
+
+            this.chatWindow.style.setProperty('position', 'absolute', 'important');
+            this.chatWindow.style.setProperty('top', `${dockTop}px`, 'important');
+            this.chatWindow.style.setProperty('left', '50%', 'important');
+            this.chatWindow.style.setProperty('right', 'auto', 'important');
+            this.chatWindow.style.setProperty('bottom', 'auto', 'important');
+            this.chatWindow.style.setProperty('transform', 'translateX(-50%) scale(1)', 'important');
+            this.chatWindow.style.removeProperty('height');
+            this.chatWindow.style.removeProperty('max-height');
+            return;
+        }
         // iOS Safari 已经会随键盘上推 fixed 元素，这里只给一个小底距避免“二次上推”
         const dockBottom = isIOS
             ? 12
@@ -1988,6 +2011,7 @@ class ChatWidget {
             this.chatWindow.style.removeProperty('left');
             this.chatWindow.style.removeProperty('right');
             this.chatWindow.style.removeProperty('bottom');
+            this.chatWindow.style.removeProperty('position');
             this.chatWindow.style.removeProperty('transform');
             this.chatWindow.style.removeProperty('height');
             this.chatWindow.style.removeProperty('max-height');
