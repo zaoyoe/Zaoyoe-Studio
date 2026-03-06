@@ -1763,7 +1763,7 @@ class ChatWidget {
             const bottomInset = Math.max(0, this._viewportBaseHeight - visualBottom);
 
             if (bottomInset > 100 && this._isNarrowViewport()) {
-                this._applyKeyboardDock(visualTop, visualHeight, bottomInset);
+                this._applyKeyboardDock(visualHeight, bottomInset);
             } else {
                 this._resetKeyboardViewportStyles();
             }
@@ -1787,7 +1787,7 @@ class ChatWidget {
         return window.matchMedia('(max-width: 700px)').matches;
     }
 
-    _applyKeyboardDock(visualTop, visualHeight, bottomInset) {
+    _applyKeyboardDock(visualHeight, bottomInset) {
         if (!this.chatWindow) return;
 
         this.chatWindow.classList.add('keyboard-docked');
@@ -1797,21 +1797,26 @@ class ChatWidget {
         const dockedHeight = currentHeight > 0
             ? Math.min(currentHeight, maxDockedHeight)
             : maxDockedHeight;
+        const dockBottom = Math.max(0, bottomInset - this._getIOSBrowserBarCompensation(bottomInset));
 
         // 覆盖移动端居中定位，改为贴近键盘上沿
         this.chatWindow.style.setProperty('top', 'auto', 'important');
         this.chatWindow.style.setProperty('left', '50%', 'important');
         this.chatWindow.style.setProperty('right', 'auto', 'important');
-        this.chatWindow.style.setProperty('bottom', `${bottomInset}px`, 'important');
+        this.chatWindow.style.setProperty('bottom', `${dockBottom}px`, 'important');
         this.chatWindow.style.setProperty('transform', 'translateX(-50%) scale(1)', 'important');
         this.chatWindow.style.setProperty('height', `${dockedHeight}px`, 'important');
         this.chatWindow.style.setProperty('max-height', `${maxDockedHeight}px`, 'important');
+    }
 
-        if (this.overlay) {
-            this.overlay.style.setProperty('top', `${visualTop}px`, 'important');
-            this.overlay.style.setProperty('height', `${visualHeight}px`, 'important');
-            this.overlay.style.setProperty('bottom', 'auto', 'important');
-        }
+    _getIOSBrowserBarCompensation(bottomInset) {
+        if (!this._isNarrowViewport()) return 0;
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+            (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        if (!isIOS) return 0;
+        // iOS Safari 键盘上方浏览器工具条通常约 44~56px，减去这段可让弹窗更贴近 zaoyoe.com 条上沿
+        if (bottomInset < 140) return 0;
+        return 52;
     }
 
     _resetKeyboardViewportStyles() {
