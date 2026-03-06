@@ -1716,8 +1716,11 @@ class ChatWidget {
             // Show overlay (for admin mode)
             if (this.overlay) this.overlay.classList.add('visible');
 
-            // LOCK SCROLL - 使用 full lock（同登录弹窗），防止 iOS 键盘弹出时推动页面
-            if (window.iOSScrollLock) window.iOSScrollLock.lock(this.chatWindow);
+            // LOCK SCROLL - lockLight 防穿透，键盘适配由 visualViewport 监听处理
+            if (window.iOSScrollLock) window.iOSScrollLock.lockLight(this.chatWindow);
+
+            // iOS 键盘适配：监听 visualViewport 变化，动态调整聊天窗口大小
+            this._attachKeyboardListener();
 
         } else {
             this.chatWindow.classList.remove('active');
@@ -1726,9 +1729,53 @@ class ChatWidget {
             // Hide overlay
             if (this.overlay) this.overlay.classList.remove('visible');
 
+            // 清理键盘监听 & 还原样式
+            this._detachKeyboardListener();
+            this.chatWindow.style.height = '';
+            this.chatWindow.style.bottom = '';
+            this.chatWindow.style.top = '';
+
             // UNLOCK SCROLL
             if (window.iOSScrollLock) window.iOSScrollLock.unlock();
         }
+    }
+
+    /**
+     * 监听 visualViewport，当 iOS 键盘弹出时动态缩小聊天窗口
+     * 使窗口精确卡在键盘上方，不推动背景页面
+     */
+    _attachKeyboardListener() {
+        if (!window.visualViewport) return;
+
+        this._baseViewportHeight = window.visualViewport.height;
+
+        this._onViewportResize = () => {
+            const vv = window.visualViewport;
+            const keyboardHeight = this._baseViewportHeight - vv.height;
+
+            if (keyboardHeight > 100) {
+                // 键盘已弹出：聊天窗口填满键盘上方的可见区域
+                this.chatWindow.style.position = 'fixed';
+                this.chatWindow.style.top = vv.offsetTop + 'px';
+                this.chatWindow.style.bottom = 'auto';
+                this.chatWindow.style.height = vv.height + 'px';
+            } else {
+                // 键盘已收起：恢复 CSS 默认
+                this.chatWindow.style.top = '';
+                this.chatWindow.style.bottom = '';
+                this.chatWindow.style.height = '';
+            }
+        };
+
+        window.visualViewport.addEventListener('resize', this._onViewportResize);
+        window.visualViewport.addEventListener('scroll', this._onViewportResize);
+    }
+
+    _detachKeyboardListener() {
+        if (!window.visualViewport || !this._onViewportResize) return;
+        window.visualViewport.removeEventListener('resize', this._onViewportResize);
+        window.visualViewport.removeEventListener('scroll', this._onViewportResize);
+        this._onViewportResize = null;
     }
 
     async sendMessage() {
