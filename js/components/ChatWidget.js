@@ -1741,30 +1741,57 @@ class ChatWidget {
     }
 
     /**
-     * 监听 visualViewport，当 iOS 键盘弹出时动态缩小聊天窗口
-     * 使窗口精确卡在键盘上方，不推动背景页面
+     * 监听 visualViewport + 拦截 input focus 滚动
+     * iOS Safari 在聚焦 fixed 元素内的 input 时会自动滚动页面，
+     * 我们需要同时：1) 阻止页面滚动  2) 缩小聊天窗口到键盘上方
      */
     _attachKeyboardListener() {
         if (!window.visualViewport) return;
 
         this._baseViewportHeight = window.visualViewport.height;
+        this._savedScrollForKeyboard = window.scrollY || 0;
+        this._keyboardOpen = false;
 
+        // 1. 阻止 iOS Safari 在 focus 时自动滚动页面
+        this._preventPageScroll = () => {
+            if (this._keyboardOpen) {
+                window.scrollTo(0, this._savedScrollForKeyboard);
+            }
+        };
+        window.addEventListener('scroll', this._preventPageScroll, { passive: true });
+
+        // 2. 聚焦输入框时记录当前滚动位置，并强制回位
+        this._onInputFocus = () => {
+            this._savedScrollForKeyboard = window.scrollY || 0;
+            // 延迟一帧强制回位，抵消 Safari 的自动滚动
+            requestAnimationFrame(() => {
+                window.scrollTo(0, this._savedScrollForKeyboard);
+            });
+        };
+        if (this.input) {
+            this.input.addEventListener('focus', this._onInputFocus, { passive: true });
+        }
+
+        // 3. visualViewport 变化：调整聊天窗口大小
         this._onViewportResize = () => {
             const vv = window.visualViewport;
             const keyboardHeight = this._baseViewportHeight - vv.height;
 
             if (keyboardHeight > 100) {
-                // 键盘已弹出：聊天窗口填满键盘上方的可见区域
+                this._keyboardOpen = true;
+                // 聊天窗口填满键盘上方的可见区域
                 this.chatWindow.style.position = 'fixed';
-                this.chatWindow.style.top = vv.offsetTop + 'px';
+                this.chatWindow.style.top = '0';
                 this.chatWindow.style.bottom = 'auto';
                 this.chatWindow.style.height = vv.height + 'px';
+                // 强制页面回位
+                window.scrollTo(0, this._savedScrollForKeyboard);
             } else {
-                // 键盘已收起：恢复 CSS 默认，并更新基准高度
+                this._keyboardOpen = false;
+                // 键盘已收起：恢复 CSS 默认
                 this.chatWindow.style.top = '';
                 this.chatWindow.style.bottom = '';
                 this.chatWindow.style.height = '';
-                // 关键：更新基准，防止第二次打开键盘时计算错误
                 this._baseViewportHeight = vv.height;
             }
         };
@@ -1774,10 +1801,20 @@ class ChatWidget {
     }
 
     _detachKeyboardListener() {
-        if (!window.visualViewport || !this._onViewportResize) return;
-        window.visualViewport.removeEventListener('resize', this._onViewportResize);
-        window.visualViewport.removeEventListener('scroll', this._onViewportResize);
-        this._onViewportResize = null;
+        if (this._preventPageScroll) {
+            window.removeEventListener('scroll', this._preventPageScroll);
+            this._preventPageScroll = null;
+        }
+        if (this._onInputFocus && this.input) {
+            this.input.removeEventListener('focus', this._onInputFocus);
+            this._onInputFocus = null;
+        }
+        if (window.visualViewport && this._onViewportResize) {
+            window.visualViewport.removeEventListener('resize', this._onViewportResize);
+            window.visualViewport.removeEventListener('scroll', this._onViewportResize);
+            this._onViewportResize = null;
+        }
+        this._keyboardOpen = false;
     }
 
     async sendMessage() {
