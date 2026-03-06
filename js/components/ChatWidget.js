@@ -1873,6 +1873,14 @@ class ChatWidget {
 
     _freezeOverlay() {
         if (!this.overlay) return;
+        const vv = window.visualViewport;
+        const initialViewportHeight = Math.max(
+            window.innerHeight || 0,
+            document.documentElement.clientHeight || 0,
+            vv ? ((vv.height || 0) + (vv.offsetTop || 0)) : 0
+        );
+        this._overlayBaseHeight = initialViewportHeight;
+
         // 锁定在布局视口坐标，避免 iOS 键盘把 fixed overlay 一起推移
         this.overlay.style.setProperty('position', 'absolute', 'important');
         this.overlay.style.setProperty('left', '0', 'important');
@@ -1882,7 +1890,13 @@ class ChatWidget {
         this._syncOverlayFrame = () => {
             if (!this.overlay) return;
             const scrollTop = window.scrollY || window.pageYOffset || 0;
-            const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+            const vv = window.visualViewport;
+            const viewportHeight = Math.max(
+                this._overlayBaseHeight || 0,
+                window.innerHeight || 0,
+                document.documentElement.clientHeight || 0,
+                vv ? ((vv.height || 0) + (vv.offsetTop || 0)) : 0
+            );
             this.overlay.style.setProperty('top', `${scrollTop}px`, 'important');
             this.overlay.style.setProperty('height', `${viewportHeight}px`, 'important');
         };
@@ -1912,6 +1926,7 @@ class ChatWidget {
         this.overlay.style.removeProperty('bottom');
         this.overlay.style.removeProperty('width');
         this.overlay.style.removeProperty('height');
+        this._overlayBaseHeight = null;
     }
 
     _applyKeyboardDock(visualHeight, bottomInset) {
