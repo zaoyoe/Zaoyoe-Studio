@@ -1753,7 +1753,7 @@ class ChatWidget {
                     --chat-open-offset-x: 0px;
                     --chat-open-offset-y: 0px;
                     --chat-open-scale: 1;
-                    --chat-close-scale: 0.16;
+                    --chat-close-scale: 0.11;
                     position: fixed !important;
                     top: 50% !important;
                     left: 50% !important;
@@ -1813,7 +1813,7 @@ class ChatWidget {
                         calc(-50% + var(--chat-open-offset-x, 0px)),
                         calc(var(--chat-base-translate-y, -50%) + var(--chat-shift-y, 0px) + var(--chat-open-offset-y, 0px)),
                         0
-                    ) scale(var(--chat-close-scale, 0.16)) !important;
+                    ) scale(var(--chat-close-scale, 0.11)) !important;
                     transition:
                         opacity 120ms linear 140ms,
                         transform 280ms cubic-bezier(0.18, 0.88, 0.24, 1) !important;
@@ -2467,7 +2467,7 @@ class ChatWidget {
         const scaleX = fabRect.width / chatRect.width;
         const scaleY = fabRect.height / chatRect.height;
         const startScale = Math.max(0.16, Math.min(0.28, Math.min(scaleX, scaleY) * 1.15));
-        const closeScale = Math.max(0.12, Math.min(0.18, Math.min(scaleX, scaleY) * 0.96));
+        const closeScale = Math.max(0.08, Math.min(0.13, Math.min(scaleX, scaleY) * 0.82));
 
         return { offsetX, offsetY, startScale, closeScale, chatRect, fabRect };
     }
@@ -2478,7 +2478,7 @@ class ChatWidget {
             this.chatWindow?.style.setProperty('--chat-open-offset-x', '0px');
             this.chatWindow?.style.setProperty('--chat-open-offset-y', '0px');
             this.chatWindow?.style.setProperty('--chat-open-scale', '0.2');
-            this.chatWindow?.style.setProperty('--chat-close-scale', '0.16');
+            this.chatWindow?.style.setProperty('--chat-close-scale', '0.11');
             return;
         }
 
@@ -2506,8 +2506,6 @@ class ChatWidget {
         this.chatWindow.style.setProperty('transition', 'none', 'important');
         this.chatWindow.style.setProperty('opacity', '0', 'important');
         this.chatWindow.style.setProperty('visibility', 'hidden', 'important');
-        this.fab.style.opacity = '0';
-        this.fab.style.visibility = 'hidden';
         this.fab.style.pointerEvents = 'none';
         if (this.overlay) {
             this.overlay.classList.remove('visible');
@@ -2558,6 +2556,10 @@ class ChatWidget {
         if (this.overlay) {
             this.overlay.classList.remove('closing');
         }
+        this.fab.style.transition = 'none';
+        this.fab.style.visibility = 'visible';
+        this.fab.style.opacity = '1';
+        this.fab.style.pointerEvents = 'none';
         this._detachKeyboardListener();
 
         const activeInput = document.activeElement;
