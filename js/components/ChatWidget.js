@@ -29,7 +29,6 @@ class ChatWidget {
         this._motionVisualLockTimer = null;
         this._sessionVisualLocked = false;
 
-        this._ensureVisualLockStyles();
         this.init();
     }
 
@@ -39,43 +38,6 @@ class ChatWidget {
             return window.i18n.t(key);
         }
         return fallback || key;
-    }
-
-    _ensureVisualLockStyles() {
-        if (document.getElementById('chat-widget-visual-lock-styles')) return;
-        const style = document.createElement('style');
-        style.id = 'chat-widget-visual-lock-styles';
-        style.textContent = `
-            .chat-window.visual-solid {
-                background: rgb(20, 20, 30) !important;
-                border-color: rgba(86, 90, 108, 0.98) !important;
-                box-shadow: 0 24px 56px rgba(0, 0, 0, 0.62) !important;
-            }
-            .chat-window.visual-solid,
-            .chat-window.visual-solid * {
-                backdrop-filter: none !important;
-                -webkit-backdrop-filter: none !important;
-            }
-            .chat-window.visual-solid .chat-header,
-            .chat-window.visual-solid .chat-input-area,
-            .chat-window.visual-solid .admin-sidebar,
-            .chat-window.visual-solid .admin-chat-header,
-            .chat-window.visual-solid .admin-chat-area {
-                background: rgb(24, 24, 36) !important;
-            }
-            .chat-window.visual-solid .chat-messages {
-                background: rgb(16, 16, 28) !important;
-            }
-            .chat-window.visual-solid .emoji-picker-popover {
-                background: rgb(28, 28, 40) !important;
-            }
-            .chat-overlay.visual-solid {
-                backdrop-filter: none !important;
-                -webkit-backdrop-filter: none !important;
-                background: rgba(0, 0, 0, 0.38) !important;
-            }
-        `;
-        document.head.appendChild(style);
     }
 
     getSessionId() {
@@ -2268,10 +2230,8 @@ class ChatWidget {
             return;
         }
         this._sessionVisualLocked = true;
-        this.chatWindow.classList.add('visual-solid');
         this._applyStableVisualStyles();
         if (this.overlay) {
-            this.overlay.classList.add('visual-solid');
             this.overlay.style.setProperty('backdrop-filter', 'none', 'important');
             this.overlay.style.setProperty('-webkit-backdrop-filter', 'none', 'important');
             this.overlay.style.setProperty('background', 'rgba(0, 0, 0, 0.36)', 'important');
@@ -2280,11 +2240,7 @@ class ChatWidget {
 
     _disableSessionVisualLock() {
         this._sessionVisualLocked = false;
-        if (this.chatWindow) {
-            this.chatWindow.classList.remove('visual-solid');
-        }
         if (this.overlay) {
-            this.overlay.classList.remove('visual-solid');
             this.overlay.style.removeProperty('backdrop-filter');
             this.overlay.style.removeProperty('-webkit-backdrop-filter');
             this.overlay.style.removeProperty('background');
