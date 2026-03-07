@@ -1924,9 +1924,7 @@ class ChatWidget {
 
         this._onChatFocusIn = () => {
             this._keyboardBlurUndocking = false;
-            if (this._isIOSMobile() && this._isNarrowViewport() && !this._keyboardDocked) {
-                this._applyKeyboardPreLift();
-            }
+            this._keyboardPreLiftActive = false;
             if (window.visualViewport) {
                 const vv = window.visualViewport;
                 this._viewportBaseHeight = Math.max(
