@@ -1706,44 +1706,48 @@ class ChatWidget {
             /* User Mode Glassmorphism Enhancement */
             .chat-window:not(.admin-mode-layout) {
                 /* Match user dropdown glass thickness */
-                background: linear-gradient(180deg, rgba(0, 0, 0, 0.44) 0%, rgba(0, 0, 0, 0.38) 100%) !important;
-                backdrop-filter: blur(20px) saturate(150%) !important;
-                -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
-                border: 1px solid rgba(255, 255, 255, 0.1) !important;
-                border-top: 1px solid rgba(255, 255, 255, 0.2) !important;
-                box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5) !important;
+                background: linear-gradient(180deg, rgba(0, 0, 0, 0.58) 0%, rgba(0, 0, 0, 0.5) 100%) !important;
+                backdrop-filter: blur(24px) saturate(165%) !important;
+                -webkit-backdrop-filter: blur(24px) saturate(165%) !important;
+                border: 1px solid rgba(255, 255, 255, 0.14) !important;
+                border-top: 1px solid rgba(255, 255, 255, 0.24) !important;
+                box-shadow:
+                    0 32px 72px -18px rgba(0, 0, 0, 0.62),
+                    0 0 0 1px rgba(255, 255, 255, 0.06),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+                    inset 0 -28px 56px rgba(0, 0, 0, 0.3) !important;
             }
 
             .chat-window:not(.admin-mode-layout) .chat-header {
-                background: rgba(255, 255, 255, 0.06) !important;
-                border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+                background: rgba(255, 255, 255, 0.075) !important;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.12) !important;
             }
 
             .chat-window:not(.admin-mode-layout) .chat-messages {
                 background:
-                    linear-gradient(180deg, rgba(0, 0, 0, 0.16) 0%, rgba(0, 0, 0, 0.26) 100%) !important;
+                    linear-gradient(180deg, rgba(0, 0, 0, 0.22) 0%, rgba(0, 0, 0, 0.34) 100%) !important;
             }
 
             .chat-window:not(.admin-mode-layout) .chat-input-area {
-                background: rgba(255, 255, 255, 0.06) !important;
-                border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
+                background: rgba(255, 255, 255, 0.075) !important;
+                border-top: 1px solid rgba(255, 255, 255, 0.12) !important;
             }
 
             .chat-window:not(.admin-mode-layout) .chat-input,
             .chat-window:not(.admin-mode-layout) .chat-action-btn {
-                background: rgba(255, 255, 255, 0.1) !important;
-                border: 1px solid rgba(255, 255, 255, 0.1) !important;
+                background: rgba(255, 255, 255, 0.12) !important;
+                border: 1px solid rgba(255, 255, 255, 0.14) !important;
             }
 
             .chat-window:not(.admin-mode-layout) .chat-input:focus {
-                background: rgba(255, 255, 255, 0.14) !important;
-                border-color: rgba(255, 255, 255, 0.18) !important;
-                box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.05) !important;
+                background: rgba(255, 255, 255, 0.16) !important;
+                border-color: rgba(255, 255, 255, 0.22) !important;
+                box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.07) !important;
             }
 
             .chat-window:not(.admin-mode-layout) .message.admin {
-                background: rgba(255, 255, 255, 0.14) !important;
-                border: 1px solid rgba(255, 255, 255, 0.08) !important;
+                background: rgba(255, 255, 255, 0.16) !important;
+                border: 1px solid rgba(255, 255, 255, 0.1) !important;
             }
             
             /* Overlay for user mode (same as admin) */
