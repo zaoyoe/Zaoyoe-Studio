@@ -1598,8 +1598,8 @@ class ChatWidget {
                     left: 50% !important;
                     right: auto !important;
                     bottom: auto !important;
-                    /* scale(0.9) gives a visible animation instead of relying on opacity alone */
-                    transform: translate(-50%, -50%) scale(0.9) !important;
+                    /* Mobile position must stay stable; keyboard movement is controlled by JS only. */
+                    transform: translate3d(-50%, -50%, 0) scale(1) !important;
                     width: 90vw !important;
                     max-width: 400px !important;
                     height: 70vh !important;
@@ -1612,7 +1612,6 @@ class ChatWidget {
                 }
                 
                 .chat-window:not(.admin-mode-layout).active {
-                    transform: translate(-50%, -50%) scale(1) !important;
                     backdrop-filter: blur(20px) saturate(150%) !important;
                     -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
                 }
