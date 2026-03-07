@@ -2537,9 +2537,11 @@ class ChatWidget {
         this.chatWindow.classList.remove('chat-opening');
         this.chatWindow.classList.add('chat-closing');
         this._primeOpeningAnimationFromFab();
+        this.chatWindow.style.removeProperty('transition');
+        this.chatWindow.style.removeProperty('opacity');
+        this.chatWindow.style.removeProperty('visibility');
         if (this.overlay) {
-            this.overlay.classList.add('closing');
-            this.overlay.classList.remove('visible');
+            this.overlay.classList.remove('closing');
         }
         this._detachKeyboardListener();
 
@@ -2548,9 +2550,17 @@ class ChatWidget {
             activeInput.blur();
         }
 
+        // Force Safari to commit the fully-visible closing start state before flipping to the end state.
+        void this.chatWindow.offsetWidth;
         requestAnimationFrame(() => {
-            if (this.isOpen || !this.chatWindow) return;
-            this.chatWindow.classList.remove('active');
+            requestAnimationFrame(() => {
+                if (this.isOpen || !this.chatWindow) return;
+                if (this.overlay) {
+                    this.overlay.classList.add('closing');
+                    this.overlay.classList.remove('visible');
+                }
+                this.chatWindow.classList.remove('active');
+            });
         });
 
         this._closingAnimationTimer = setTimeout(() => {
