@@ -1715,25 +1715,35 @@ class ChatWidget {
             }
 
             .chat-window:not(.admin-mode-layout) .chat-header {
-                background: rgba(255, 255, 255, 0.045) !important;
+                background: rgba(255, 255, 255, 0.06) !important;
                 border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
             }
 
+            .chat-window:not(.admin-mode-layout) .chat-messages {
+                background:
+                    linear-gradient(180deg, rgba(10, 14, 24, 0.22) 0%, rgba(7, 10, 18, 0.32) 100%) !important;
+            }
+
             .chat-window:not(.admin-mode-layout) .chat-input-area {
-                background: rgba(255, 255, 255, 0.045) !important;
+                background: rgba(255, 255, 255, 0.06) !important;
                 border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
             }
 
             .chat-window:not(.admin-mode-layout) .chat-input,
             .chat-window:not(.admin-mode-layout) .chat-action-btn {
-                background: rgba(255, 255, 255, 0.08) !important;
+                background: rgba(255, 255, 255, 0.1) !important;
                 border: 1px solid rgba(255, 255, 255, 0.1) !important;
             }
 
             .chat-window:not(.admin-mode-layout) .chat-input:focus {
-                background: rgba(255, 255, 255, 0.12) !important;
+                background: rgba(255, 255, 255, 0.14) !important;
                 border-color: rgba(255, 255, 255, 0.18) !important;
                 box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.05) !important;
+            }
+
+            .chat-window:not(.admin-mode-layout) .message.admin {
+                background: rgba(255, 255, 255, 0.14) !important;
+                border: 1px solid rgba(255, 255, 255, 0.08) !important;
             }
             
             /* Overlay for user mode (same as admin) */
