@@ -2412,6 +2412,7 @@ class ChatWidget {
     }
 
     _scheduleInitialKeyboardDock(visualHeight, bottomInset) {
+        const requiresFirstKeyboardWarmup = this._isIOSMobile() && this._lastStableKeyboardInset <= 40;
         let predictedInset = bottomInset;
         if (this._isIOSMobile() && this._lastStableKeyboardInset > 40) {
             if (bottomInset < 24) {
@@ -2420,18 +2421,27 @@ class ChatWidget {
                 predictedInset = Math.min(bottomInset, this._lastStableKeyboardInset + 12);
             }
         }
-        this._pendingFirstDockParams = { visualHeight, bottomInset: predictedInset };
+        this._pendingFirstDockParams = {
+            visualHeight,
+            bottomInset: predictedInset,
+            animate: !requiresFirstKeyboardWarmup
+        };
         if (this._pendingFirstDockTimer) return;
-        const delay = this._isHighRefreshDisplay ? 50 : 34;
+        const delay = requiresFirstKeyboardWarmup
+            ? (this._isHighRefreshDisplay ? 120 : 88)
+            : (this._isHighRefreshDisplay ? 50 : 34);
         this._pendingFirstDockTimer = setTimeout(() => {
             const params = this._pendingFirstDockParams;
             this._pendingFirstDockTimer = null;
             this._pendingFirstDockParams = null;
             if (!params || !this.isOpen || !this.chatWindow || this._keyboardDocked) return;
             if (!this._isChatInputFocused()) return;
-            this._applyKeyboardDock(params.visualHeight, params.bottomInset, true);
+            this._applyKeyboardDock(params.visualHeight, params.bottomInset, params.animate !== false);
             this._keyboardDocked = true;
             this._lastKeyboardInset = params.bottomInset;
+            if (params.bottomInset > 40) {
+                this._lastStableKeyboardInset = params.bottomInset;
+            }
         }, delay);
     }
 
