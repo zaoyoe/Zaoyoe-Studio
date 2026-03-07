@@ -2595,7 +2595,8 @@ class ChatWidget {
         this.chatWindow.style.removeProperty('opacity');
         this.chatWindow.style.removeProperty('visibility');
         if (this.overlay) {
-            this.overlay.classList.remove('closing');
+            this.overlay.classList.add('closing');
+            this.overlay.classList.remove('visible');
         }
         this.fab.style.transition = 'none';
         this.fab.style.visibility = 'visible';
@@ -2613,10 +2614,6 @@ class ChatWidget {
         requestAnimationFrame(() => {
             requestAnimationFrame(() => {
                 if (this.isOpen || !this.chatWindow) return;
-                if (this.overlay) {
-                    this.overlay.classList.add('closing');
-                    this.overlay.classList.remove('visible');
-                }
                 this.chatWindow.classList.add('chat-closing-end');
             });
         });
