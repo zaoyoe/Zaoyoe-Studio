@@ -798,7 +798,16 @@ class ChatWidget {
                     left: 50% !important;
                     right: auto !important;
                     bottom: auto !important;
-                    transform: translate(-50%, -50%) !important;
+                    /* scale(0.9) gives a visible animation instead of relying on opacity alone */
+                    transform: translate(-50%, -50%) scale(0.9) !important;
+                    /* Disable backdrop-filter during animation to avoid Chromium flash bug */
+                    backdrop-filter: none !important;
+                    -webkit-backdrop-filter: none !important;
+                }
+                .chat-window.admin-mode-layout.active {
+                    transform: translate(-50%, -50%) scale(1) !important;
+                    backdrop-filter: blur(20px) saturate(150%) !important;
+                    -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
                 }
                 
                 /* Mobile: Side by side sliding panels */
@@ -1624,15 +1633,21 @@ class ChatWidget {
                     left: 50% !important;
                     right: auto !important;
                     bottom: auto !important;
-                    transform: translate(-50%, -50%) !important;
+                    /* scale(0.9) gives a visible animation instead of relying on opacity alone */
+                    transform: translate(-50%, -50%) scale(0.9) !important;
                     width: 90vw !important;
                     max-width: 400px !important;
                     height: 70vh !important;
                     max-height: 600px !important;
+                    /* Disable backdrop-filter during animation to avoid Chromium flash bug */
+                    backdrop-filter: none !important;
+                    -webkit-backdrop-filter: none !important;
                 }
                 
                 .chat-window:not(.admin-mode-layout).active {
                     transform: translate(-50%, -50%) scale(1) !important;
+                    backdrop-filter: blur(20px) saturate(150%) !important;
+                    -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
                 }
             }
             
