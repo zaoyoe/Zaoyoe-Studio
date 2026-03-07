@@ -2686,10 +2686,18 @@ class ChatWidget {
         this.chatWindow.style.setProperty('-webkit-mask-image', '-webkit-radial-gradient(white, black)', 'important');
         this.chatWindow.style.setProperty('backdrop-filter', 'none', 'important');
         this.chatWindow.style.setProperty('-webkit-backdrop-filter', 'none', 'important');
-        this.chatWindow.style.setProperty('background', 'rgba(0, 0, 0, 0.4)', 'important');
-        this.chatWindow.style.setProperty('border', '1px solid rgba(255, 255, 255, 0.1)', 'important');
-        this.chatWindow.style.setProperty('border-top', '1px solid rgba(255, 255, 255, 0.2)', 'important');
-        this.chatWindow.style.setProperty('box-shadow', '0 25px 50px -12px rgba(0, 0, 0, 0.5)', 'important');
+        this.chatWindow.style.setProperty(
+            'background',
+            'linear-gradient(135deg, rgba(6, 10, 18, 0.82) 0%, rgba(12, 18, 28, 0.74) 42%, rgba(8, 12, 22, 0.84) 100%)',
+            'important'
+        );
+        this.chatWindow.style.setProperty('border', '1px solid rgba(255, 255, 255, 0.12)', 'important');
+        this.chatWindow.style.setProperty('border-top', '1px solid rgba(255, 255, 255, 0.22)', 'important');
+        this.chatWindow.style.setProperty(
+            'box-shadow',
+            '0 25px 50px -12px rgba(0, 0, 0, 0.52), 0 0 0 1px rgba(255, 255, 255, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.16), inset 0 -24px 40px rgba(4, 8, 16, 0.34)',
+            'important'
+        );
     }
 
     _enableSessionVisualLock() {
