@@ -365,7 +365,7 @@
 
 
 /* Chat Window Container */
-/* Chat Window Container - No opacity transition to avoid Chromium compositor flash */
+/* Chat Window Container - Premium Glass (NO backdrop-filter for 240Hz performance) */
 .chat-window {
     position: fixed;
     bottom: 100px;
@@ -373,10 +373,11 @@
     width: 380px;
     height: 600px;
     max-height: 80vh;
+    /* TEMP TEST: fully opaque to diagnose flicker */
     background: linear-gradient(135deg,
-            rgba(20, 20, 30, 0.92) 0%,
-            rgba(15, 15, 25, 0.94) 50%,
-            rgba(18, 18, 28, 0.92) 100%);
+            rgb(20, 20, 30) 0%,
+            rgb(15, 15, 25) 50%,
+            rgb(18, 18, 28) 100%);
     /* Clean shadow only - no border effects */
     box-shadow: 0 20px 60px -10px rgba(0, 0, 0, 0.5);
     border: none;
@@ -385,21 +386,22 @@
     flex-direction: column;
     overflow: hidden;
     z-index: 9998;
-    /* No opacity transition — prevents Chromium backdrop-filter flash bug */
+    opacity: 0;
     visibility: hidden;
+
     transform: translateY(20px) scale(0.95);
     pointer-events: none;
-    transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
-        visibility 0s linear 0.4s;
+    transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+        transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+        visibility 0.4s;
     transform-origin: bottom right;
 }
 
 .chat-window.active {
+    opacity: 1;
     visibility: visible;
     transform: translateY(0) scale(1);
     pointer-events: all;
-    transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
-        visibility 0s;
 }
 
 /* Header */
