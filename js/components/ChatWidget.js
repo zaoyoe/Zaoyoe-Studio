@@ -1729,7 +1729,7 @@ class ChatWidget {
                 backdrop-filter: blur(3px) saturate(35%) brightness(0.68);
                 -webkit-backdrop-filter: blur(3px) saturate(35%) brightness(0.68);
                 opacity: 0;
-                transition: opacity 180ms cubic-bezier(0.4, 0, 0.2, 1);
+                transition: opacity 220ms cubic-bezier(0.32, 0.72, 0, 1);
             }
             .chat-overlay.visible {
                 display: block;
@@ -1813,8 +1813,8 @@ class ChatWidget {
                         0
                     ) scale(var(--chat-open-scale, 0.2)) !important;
                     transition:
-                        opacity 150ms cubic-bezier(0.4, 0, 0.2, 1),
-                        transform 185ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+                        opacity 180ms cubic-bezier(0.32, 0.72, 0, 1),
+                        transform 220ms cubic-bezier(0.32, 0.72, 0, 1) !important;
                 }
             }
             
@@ -2556,7 +2556,7 @@ class ChatWidget {
             this._closingAnimationTimer = null;
             if (this.isOpen) return;
             this._finalizeChatClose();
-        }, 200);
+        }, 230);
 
         return true;
     }
