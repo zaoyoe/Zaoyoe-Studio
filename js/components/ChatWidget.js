@@ -1743,16 +1743,12 @@ class ChatWidget {
     toggleChat() {
         this.isOpen = !this.isOpen;
         if (this.isOpen) {
-            this.chatWindow.classList.add('active');
-            this._captureStableDockHeight();
-            requestAnimationFrame(() => this._captureStableDockHeight());
+            // 1. 先执行所有会触发布局突变的操作（弹窗此刻仍然 opacity:0, visibility:hidden）
             this.fab.style.opacity = '0';
             this.fab.style.pointerEvents = 'none';
-            // Show overlay (for admin mode)
             if (this.overlay) this.overlay.classList.add('visible');
             this._freezeOverlay();
 
-            // iOS 窄屏统一强锁背景，弹窗位移完全交给键盘监听逻辑处理。
             if (window.iOSScrollLock) {
                 if (this._isIOSMobile() && this._isNarrowViewport()) {
                     window.iOSScrollLock.lock(this.chatWindow);
@@ -1761,9 +1757,16 @@ class ChatWidget {
                 }
             }
             this._enableSessionVisualLock();
-
-            // iOS 键盘适配：监听 visualViewport 变化，动态调整聊天窗口大小
             this._attachKeyboardListener();
+
+            // 2. 等布局稳定后，再启动动画（double-rAF 确保浏览器已完成一次渲染）
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    if (!this.isOpen) return; // 用户可能在等待期间关闭了
+                    this.chatWindow.classList.add('active');
+                    this._captureStableDockHeight();
+                });
+            });
 
         } else {
             this.chatWindow.classList.remove('active');
