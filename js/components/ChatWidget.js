@@ -1728,9 +1728,16 @@ class ChatWidget {
                 z-index: 9997;
                 backdrop-filter: blur(3px) saturate(35%) brightness(0.68);
                 -webkit-backdrop-filter: blur(3px) saturate(35%) brightness(0.68);
+                opacity: 0;
+                transition: opacity 180ms cubic-bezier(0.4, 0, 0.2, 1);
             }
             .chat-overlay.visible {
                 display: block;
+                opacity: 1;
+            }
+            .chat-overlay.closing {
+                display: block;
+                opacity: 0;
             }
             
             /* Mobile: Center the chat window */
@@ -1806,8 +1813,8 @@ class ChatWidget {
                         0
                     ) scale(var(--chat-open-scale, 0.2)) !important;
                     transition:
-                        opacity 170ms cubic-bezier(0.4, 0, 0.2, 1),
-                        transform 250ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+                        opacity 150ms cubic-bezier(0.4, 0, 0.2, 1),
+                        transform 185ms cubic-bezier(0.4, 0, 0.2, 1) !important;
                 }
             }
             
@@ -1945,7 +1952,10 @@ class ChatWidget {
             this.fab.style.opacity = '0';
             this.fab.style.visibility = 'hidden';
             this.fab.style.pointerEvents = 'none';
-            if (this.overlay) this.overlay.classList.add('visible');
+            if (this.overlay) {
+                this.overlay.classList.remove('closing');
+                this.overlay.classList.add('visible');
+            }
             this._freezeOverlay();
 
             if (window.iOSScrollLock) {
@@ -2484,7 +2494,10 @@ class ChatWidget {
         this.fab.style.opacity = '0';
         this.fab.style.visibility = 'hidden';
         this.fab.style.pointerEvents = 'none';
-        if (this.overlay) this.overlay.classList.remove('visible');
+        if (this.overlay) {
+            this.overlay.classList.remove('visible');
+            this.overlay.classList.remove('closing');
+        }
 
         this._disableSessionVisualLock();
         this._detachKeyboardListener();
@@ -2523,6 +2536,10 @@ class ChatWidget {
         this.chatWindow.classList.remove('chat-opening');
         this.chatWindow.classList.add('chat-closing');
         this._primeOpeningAnimationFromFab();
+        if (this.overlay) {
+            this.overlay.classList.add('closing');
+            this.overlay.classList.remove('visible');
+        }
         this._detachKeyboardListener();
 
         const activeInput = document.activeElement;
@@ -2539,7 +2556,7 @@ class ChatWidget {
             this._closingAnimationTimer = null;
             if (this.isOpen) return;
             this._finalizeChatClose();
-        }, 280);
+        }, 200);
 
         return true;
     }
