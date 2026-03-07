@@ -726,10 +726,10 @@ class ChatWidget {
                 left: 0;
                 width: 100%;
                 height: 100%;
-                background: rgba(0, 0, 0, 0.38);
+                background: rgba(0, 0, 0, 0.48);
                 z-index: 9998;
-                backdrop-filter: blur(3px) saturate(70%) brightness(0.78);
-                -webkit-backdrop-filter: blur(3px) saturate(70%) brightness(0.78);
+                backdrop-filter: blur(3px) saturate(35%) brightness(0.68);
+                -webkit-backdrop-filter: blur(3px) saturate(35%) brightness(0.68);
             }
             .chat-overlay.visible {
                 display: block;
@@ -1619,10 +1619,10 @@ class ChatWidget {
                 left: 0;
                 width: 100%;
                 height: 100%;
-                background: rgba(0, 0, 0, 0.38);
+                background: rgba(0, 0, 0, 0.48);
                 z-index: 9997;
-                backdrop-filter: blur(3px) saturate(70%) brightness(0.78);
-                -webkit-backdrop-filter: blur(3px) saturate(70%) brightness(0.78);
+                backdrop-filter: blur(3px) saturate(35%) brightness(0.68);
+                -webkit-backdrop-filter: blur(3px) saturate(35%) brightness(0.68);
             }
             .chat-overlay.visible {
                 display: block;
@@ -2208,7 +2208,8 @@ class ChatWidget {
             this.chatWindow.style.setProperty('max-height', `${dockHeight}px`, 'important');
             // Compute the docked offset directly so Safari never paints an intermediate centered state.
             const centeredBottom = (baseViewportHeight * 0.5) + (dockHeight * 0.5);
-            const targetBottom = Math.max(40, visualHeight - 12);
+            const keyboardTop = Math.max(0, baseViewportHeight - Math.max(0, bottomInset));
+            const targetBottom = Math.max(40, keyboardTop - 12);
             const deltaY = Math.max(-520, Math.min(520, targetBottom - centeredBottom));
             this.chatWindow.style.setProperty(
                 'transform',
@@ -2331,7 +2332,8 @@ class ChatWidget {
         this.chatWindow.style.setProperty('-webkit-mask-image', '-webkit-radial-gradient(white, black)', 'important');
         this.chatWindow.style.setProperty('backdrop-filter', 'none', 'important');
         this.chatWindow.style.setProperty('-webkit-backdrop-filter', 'none', 'important');
-        this.chatWindow.style.setProperty('background', 'rgb(20, 20, 30)', 'important');
+        this.chatWindow.style.setProperty('background', 'rgb(18, 18, 24)', 'important');
+        this.chatWindow.style.setProperty('box-shadow', '0 12px 28px rgba(0, 0, 0, 0.28)', 'important');
     }
 
     _enableSessionVisualLock() {
@@ -2359,6 +2361,7 @@ class ChatWidget {
         this.chatWindow.style.removeProperty('backdrop-filter');
         this.chatWindow.style.removeProperty('-webkit-backdrop-filter');
         this.chatWindow.style.removeProperty('background');
+        this.chatWindow.style.removeProperty('box-shadow');
         this.chatWindow.style.removeProperty('will-change');
         this.chatWindow.style.removeProperty('backface-visibility');
         this.chatWindow.style.removeProperty('-webkit-backface-visibility');
