@@ -1703,53 +1703,56 @@ class ChatWidget {
         const style = document.createElement('style');
         style.id = 'user-chat-styles';
         style.textContent = `
-            /* User Mode Solid Surface Theme */
+            /* User Mode Glassmorphism Enhancement */
             .chat-window:not(.admin-mode-layout) {
-                background: linear-gradient(180deg, #060606 0%, #0b0b0b 100%) !important;
-                backdrop-filter: none !important;
-                -webkit-backdrop-filter: none !important;
-                border: 1px solid rgba(255, 255, 255, 0.08) !important;
-                border-top: 1px solid rgba(255, 255, 255, 0.12) !important;
+                background: linear-gradient(180deg, rgba(0, 0, 0, 0.68) 0%, rgba(0, 0, 0, 0.6) 100%) !important;
+                backdrop-filter: blur(18px) saturate(108%) brightness(0.74) !important;
+                -webkit-backdrop-filter: blur(18px) saturate(108%) brightness(0.74) !important;
+                border: 1px solid rgba(255, 255, 255, 0.14) !important;
+                border-top: 1px solid rgba(255, 255, 255, 0.24) !important;
                 box-shadow:
-                    0 32px 72px -18px rgba(0, 0, 0, 0.68),
-                    0 0 0 1px rgba(255, 255, 255, 0.04),
-                    inset 0 1px 0 rgba(255, 255, 255, 0.08),
-                    inset 0 -28px 56px rgba(0, 0, 0, 0.42) !important;
+                    0 32px 72px -18px rgba(0, 0, 0, 0.62),
+                    0 0 0 1px rgba(255, 255, 255, 0.06),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+                    inset 0 -28px 56px rgba(0, 0, 0, 0.3) !important;
             }
 
             .chat-window:not(.admin-mode-layout) .chat-header {
-                background: #101010 !important;
-                border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+                background: rgba(255, 255, 255, 0.075) !important;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.12) !important;
             }
 
             .chat-window:not(.admin-mode-layout) .chat-messages {
-                background: #090909 !important;
+                background:
+                    linear-gradient(180deg, rgba(0, 0, 0, 0.22) 0%, rgba(0, 0, 0, 0.34) 100%) !important;
             }
 
             .chat-window:not(.admin-mode-layout) .chat-input-area {
-                background: #101010 !important;
-                border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
+                background: rgba(255, 255, 255, 0.075) !important;
+                border-top: 1px solid rgba(255, 255, 255, 0.12) !important;
             }
 
             .chat-window:not(.admin-mode-layout) .chat-input,
             .chat-window:not(.admin-mode-layout) .chat-action-btn {
-                background: #181818 !important;
-                border: 1px solid rgba(255, 255, 255, 0.1) !important;
+                background: rgba(255, 255, 255, 0.12) !important;
+                border: 1px solid rgba(255, 255, 255, 0.14) !important;
             }
 
             .chat-window:not(.admin-mode-layout) .chat-input:focus {
-                background: #1d1d1d !important;
-                border-color: rgba(255, 255, 255, 0.14) !important;
-                box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.04) !important;
+                background: rgba(255, 255, 255, 0.16) !important;
+                border-color: rgba(255, 255, 255, 0.22) !important;
+                box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.07) !important;
             }
 
             .chat-window:not(.admin-mode-layout) .message.admin {
-                background: #1a1a1a !important;
-                border: 1px solid rgba(255, 255, 255, 0.08) !important;
+                background: rgba(255, 255, 255, 0.16) !important;
+                border: 1px solid rgba(255, 255, 255, 0.1) !important;
             }
 
             body.chat-spotlight-suspended .spotlight-overlay,
-            body.chat-spotlight-suspended .poetry-nav-container:hover .spotlight-overlay {
+            body.chat-spotlight-suspended .poetry-nav-container:hover .spotlight-overlay,
+            body.chat-spotlight-suspended #ambientCanvas,
+            body.chat-spotlight-suspended #starryCanvas {
                 opacity: 0 !important;
                 visibility: hidden !important;
                 transition: none !important;
@@ -1763,10 +1766,10 @@ class ChatWidget {
                 left: 0;
                 width: 100%;
                 height: 100%;
-                background: rgba(0, 0, 0, 0.62);
+                background: rgba(0, 0, 0, 0.48);
                 z-index: 9997;
-                backdrop-filter: none;
-                -webkit-backdrop-filter: none;
+                backdrop-filter: blur(3px) saturate(35%) brightness(0.68);
+                -webkit-backdrop-filter: blur(3px) saturate(35%) brightness(0.68);
                 opacity: 0;
                 transition: opacity 190ms cubic-bezier(0.22, 1, 0.36, 1);
             }
@@ -1827,8 +1830,8 @@ class ChatWidget {
                 }
                 
                 .chat-window:not(.admin-mode-layout).active {
-                    backdrop-filter: none !important;
-                    -webkit-backdrop-filter: none !important;
+                    backdrop-filter: blur(18px) saturate(108%) brightness(0.74) !important;
+                    -webkit-backdrop-filter: blur(18px) saturate(108%) brightness(0.74) !important;
                 }
 
                 .chat-window:not(.admin-mode-layout).chat-opening.active {
