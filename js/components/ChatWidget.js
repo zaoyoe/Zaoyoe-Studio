@@ -1705,8 +1705,8 @@ class ChatWidget {
         style.textContent = `
             /* User Mode Glassmorphism Enhancement */
             .chat-window:not(.admin-mode-layout) {
-                /* Match profile modal glass treatment */
-                background: rgba(0, 0, 0, 0.1) !important;
+                /* Match user dropdown glass thickness */
+                background: rgba(0, 0, 0, 0.4) !important;
                 backdrop-filter: blur(20px) saturate(150%) !important;
                 -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
                 border: 1px solid rgba(255, 255, 255, 0.1) !important;
@@ -1715,23 +1715,23 @@ class ChatWidget {
             }
 
             .chat-window:not(.admin-mode-layout) .chat-header {
-                background: rgba(255, 255, 255, 0.03) !important;
-                border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+                background: rgba(255, 255, 255, 0.045) !important;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
             }
 
             .chat-window:not(.admin-mode-layout) .chat-input-area {
-                background: rgba(255, 255, 255, 0.03) !important;
-                border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
+                background: rgba(255, 255, 255, 0.045) !important;
+                border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
             }
 
             .chat-window:not(.admin-mode-layout) .chat-input,
             .chat-window:not(.admin-mode-layout) .chat-action-btn {
-                background: rgba(255, 255, 255, 0.06) !important;
+                background: rgba(255, 255, 255, 0.08) !important;
                 border: 1px solid rgba(255, 255, 255, 0.1) !important;
             }
 
             .chat-window:not(.admin-mode-layout) .chat-input:focus {
-                background: rgba(255, 255, 255, 0.09) !important;
+                background: rgba(255, 255, 255, 0.12) !important;
                 border-color: rgba(255, 255, 255, 0.18) !important;
                 box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.05) !important;
             }
@@ -2676,7 +2676,7 @@ class ChatWidget {
         this.chatWindow.style.setProperty('-webkit-mask-image', '-webkit-radial-gradient(white, black)', 'important');
         this.chatWindow.style.setProperty('backdrop-filter', 'none', 'important');
         this.chatWindow.style.setProperty('-webkit-backdrop-filter', 'none', 'important');
-        this.chatWindow.style.setProperty('background', 'rgba(0, 0, 0, 0.16)', 'important');
+        this.chatWindow.style.setProperty('background', 'rgba(0, 0, 0, 0.4)', 'important');
         this.chatWindow.style.setProperty('border', '1px solid rgba(255, 255, 255, 0.1)', 'important');
         this.chatWindow.style.setProperty('border-top', '1px solid rgba(255, 255, 255, 0.2)', 'important');
         this.chatWindow.style.setProperty('box-shadow', '0 25px 50px -12px rgba(0, 0, 0, 0.5)', 'important');
