@@ -24,11 +24,34 @@
     let currentModal = null;
     let touchStartY = 0;
 
+    function isFocusedFieldInsideCurrentModal() {
+        const active = document.activeElement;
+        return !!(
+            active &&
+            currentModal &&
+            currentModal.contains(active) &&
+            /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName)
+        );
+    }
+
+    function shouldSkipLockedViewportStabilization() {
+        return !!(
+            currentModal &&
+            currentModal.classList &&
+            currentModal.classList.contains('poetry-modal') &&
+            isFocusedFieldInsideCurrentModal()
+        );
+    }
+
     function stabilizeLockedViewport() {
         if (!isLocked || isLightLock) return;
 
         // Keep body anchored at the original page position while lock is active.
         document.body.style.top = `-${savedScrollY}px`;
+
+        if (shouldSkipLockedViewportStabilization()) {
+            return;
+        }
 
         // iOS may still mutate the root scroll offset when keyboard opens; pin it back.
         if ((window.scrollY || window.pageYOffset || 0) !== 0) {
@@ -263,9 +286,7 @@
             stabilizeLockedViewport();
 
             // 检查当前是否有输入框正在聚焦
-            const active = document.activeElement;
-            const inField = !!(active && currentModal.contains(active) &&
-                /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName));
+            const inField = isFocusedFieldInsideCurrentModal();
 
             // 键盘已收起（viewport 恢复到接近原始高度）且没有输入框聚焦
             if (!inField && window.visualViewport.height >= baseHeight - 2) {
@@ -313,7 +334,7 @@
             const target = e.target;
             if (!target || !/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
 
-            const modal = target.closest('.modal-overlay, .login-overlay');
+            const modal = target.closest('.modal-overlay, .login-overlay, .poetry-modal');
             if (modal) {
                 modal.classList.add('ios-focus-lock');
             }
@@ -323,7 +344,7 @@
             const target = e.target;
             if (!target || !/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
 
-            const modal = target.closest('.modal-overlay, .login-overlay');
+            const modal = target.closest('.modal-overlay, .login-overlay, .poetry-modal');
             if (modal) {
                 // Delay removal to avoid flickering when focus moves between inputs
                 setTimeout(() => {

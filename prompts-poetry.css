@@ -2127,6 +2127,12 @@ body.prompt-modal-open .top-right-nav {
     z-index: 500 !important;
 }
 
+body.prompt-modal-open .chat-widget-fab {
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+
 /* 移动端：弹窗打开时将导航栏压到弹窗下层，避免闪烁 */
 @media (max-width: 768px) {
     body.prompt-modal-open .framer-nav {
@@ -2170,11 +2176,22 @@ body.prompt-modal-open .top-right-nav {
     box-shadow: 0 50px 100px rgba(0, 0, 0, 0.1);
     /* Softer shadow */
     transform: scale(0.92);
-    transition: transform 0.6s cubic-bezier(0.19, 1, 0.22, 1);
+    transition: none;
 }
 
 .poetry-modal.active .modal-inner {
     transform: scale(1);
+}
+
+.poetry-modal.modal-opening .modal-inner {
+    transition: transform 0.6s cubic-bezier(0.19, 1, 0.22, 1);
+}
+
+.poetry-modal.active:focus-within .modal-inner,
+.poetry-modal.ios-focus-lock .modal-inner {
+    animation: none !important;
+    transition: none !important;
+    will-change: auto !important;
 }
 
 .modal-image-col {
@@ -2715,6 +2732,7 @@ body.prompt-modal-open .top-right-nav {
     margin-top: 20px;
     padding-right: 12px;
     /* Room for dropdown shadow */
+    background: var(--modal-bg);
     opacity: 0;
     transform: translateY(10px);
     transition: opacity 0.4s ease, transform 0.4s ease;
@@ -2745,12 +2763,14 @@ body.prompt-modal-open .top-right-nav {
     min-height: 0;
     /* Critical: allows flex child to scroll properly */
     overflow-y: auto;
+    position: relative;
+    z-index: 1;
     padding-left: 8px;
     /* Room for avatar shadow (8px spread) */
     padding-right: 8px;
     /* Room for scrollbar */
-    margin-bottom: 60px;
-    /* Space for input bar */
+    padding-bottom: 104px;
+    box-sizing: border-box;
 }
 
 /* Custom Scrollbar for comments */
@@ -2957,6 +2977,8 @@ body.prompt-modal-open .top-right-nav {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    position: relative;
+    z-index: 1;
     padding: 0 4px 8px 4px;
     margin-bottom: 8px;
     overflow: visible;
@@ -3094,6 +3116,20 @@ body.prompt-modal-open .top-right-nav {
     /* Align to bottom for expanding textarea */
     /* Add subtle top border for separation */
     border-top: 1px solid rgba(128, 128, 128, 0.1);
+    z-index: 30;
+    isolation: isolate;
+}
+
+[data-theme="dark"] .comment-section,
+[data-theme="dark"] .comment-input-area,
+.modal-inner.keyboard-docked .comment-section,
+.modal-inner.keyboard-docked .comment-input-area {
+    background: #0f172a;
+}
+
+[data-theme="dark"] .comment-input-area,
+.modal-inner.keyboard-docked .comment-input-area {
+    box-shadow: 0 -18px 32px rgba(15, 23, 42, 0.96);
 }
 
 #commentInput {
