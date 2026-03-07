@@ -28,6 +28,8 @@ class ChatWidget {
         this._keyboardPreLiftActive = false;
         this._motionVisualLockTimer = null;
         this._sessionVisualLocked = false;
+        this._deferScrollLockTimer = null;
+        this._deferScrollLockTransitionHandler = null;
 
         this._ensureVisualLockStyles();
         this.init();
@@ -1782,14 +1784,9 @@ class ChatWidget {
             if (this.overlay) this.overlay.classList.add('visible');
             this._freezeOverlay();
 
-            // iOS 窄屏统一强锁背景，弹窗位移完全交给键盘监听逻辑处理。
-            if (window.iOSScrollLock) {
-                if (this._isIOSMobile() && this._isNarrowViewport()) {
-                    window.iOSScrollLock.lock(this.chatWindow);
-                } else {
-                    window.iOSScrollLock.lockLight(this.chatWindow);
-                }
-            }
+            // 延迟锁定 body 滚动：先 lockLight 防手动滚动，等弹窗动画结束后再 lock
+            // 避免 body position:fixed 突变与弹窗 opacity 过渡叠加导致移动端闪烁
+            this._deferScrollLock();
             this._enableSessionVisualLock();
 
             // iOS 键盘适配：监听 visualViewport 变化，动态调整聊天窗口大小
@@ -1801,6 +1798,9 @@ class ChatWidget {
             this.fab.style.pointerEvents = 'all';
             // Hide overlay
             if (this.overlay) this.overlay.classList.remove('visible');
+
+            // 清理延迟锁定定时器
+            this._cancelDeferredScrollLock();
 
             // 清理键盘监听 & 还原样式
             this._disableSessionVisualLock();
@@ -2019,6 +2019,63 @@ class ChatWidget {
         const height = Math.round(rect.height || 0);
         if (height > 220) {
             this._stableDockHeight = height;
+        }
+    }
+
+    /**
+     * 延迟 body 锁定：
+     * 1. 立即 lockLight（overflow:hidden，不改 body position，不触发布局突变）
+     * 2. 等弹窗动画完成后（transitionend / 450ms 超时），再升级为 lock（position:fixed）
+     *
+     * 目的：避免 body position:fixed 突变与弹窗 opacity 过渡叠加，导致移动端闪烁。
+     */
+    _deferScrollLock() {
+        if (!window.iOSScrollLock) return;
+
+        const needsFullLock = this._isIOSMobile() && this._isNarrowViewport();
+
+        // 第 1 步：立即用轻量锁防止用户在动画期间滚动
+        window.iOSScrollLock.lockLight(this.chatWindow);
+
+        if (!needsFullLock) {
+            // 非 iOS 窄屏只需要 lockLight，无需升级
+            return;
+        }
+
+        // 第 2 步：等动画结束后升级为 full lock
+        const upgradeToFullLock = () => {
+            this._cancelDeferredScrollLock();
+            if (!this.isOpen || !window.iOSScrollLock) return;
+            // 先 unlock 轻量锁，再加 full lock
+            window.iOSScrollLock.unlock();
+            window.iOSScrollLock.lock(this.chatWindow);
+        };
+
+        // 监听 transitionend（transform 完成即可）
+        const onTransitionEnd = (e) => {
+            if (e.propertyName === 'transform' && e.target === this.chatWindow) {
+                upgradeToFullLock();
+            }
+        };
+        this.chatWindow.addEventListener('transitionend', onTransitionEnd);
+
+        // 450ms 超时兜底（动画 400ms + 50ms 余量）
+        this._deferScrollLockTimer = setTimeout(() => {
+            upgradeToFullLock();
+        }, 450);
+
+        // 保存引用以便清理
+        this._deferScrollLockTransitionHandler = onTransitionEnd;
+    }
+
+    _cancelDeferredScrollLock() {
+        if (this._deferScrollLockTimer) {
+            clearTimeout(this._deferScrollLockTimer);
+            this._deferScrollLockTimer = null;
+        }
+        if (this._deferScrollLockTransitionHandler && this.chatWindow) {
+            this.chatWindow.removeEventListener('transitionend', this._deferScrollLockTransitionHandler);
+            this._deferScrollLockTransitionHandler = null;
         }
     }
 
