@@ -25,6 +25,8 @@ class ChatWidget {
         this._viewportThrottleTimer = null;
         this._lastViewportSyncAt = 0;
         this._keyboardSettleTimer = null;
+        this._pendingStableKeyboardInset = 0;
+        this._lastStableKeyboardInset = 0;
         this._transitionCleanupTimer = null;
         this._pendingFirstDockTimer = null;
         this._pendingFirstDockParams = null;
@@ -36,6 +38,8 @@ class ChatWidget {
         this._estimatedRefreshHz = 60;
         this._isHighRefreshDisplay = false;
         this._statusBarShield = null;
+        this._themeColorMeta = null;
+        this._themeColorRestoreContent = '';
 
         this._detectRefreshRate();
         this.init();
@@ -84,6 +88,47 @@ class ChatWidget {
         return Math.max(minMs, Math.min(maxMs, ms));
     }
 
+    _setChatTranslateVars(baseTranslateY = '-50%', shiftY = 0) {
+        if (!this.chatWindow) return;
+        const normalizedBase = typeof baseTranslateY === 'number' ? `${Math.round(baseTranslateY)}px` : String(baseTranslateY);
+        const normalizedShift = typeof shiftY === 'number' ? `${Math.round(shiftY)}px` : String(shiftY);
+        this.chatWindow.style.setProperty('--chat-base-translate-y', normalizedBase);
+        this.chatWindow.style.setProperty('--chat-shift-y', normalizedShift);
+    }
+
+    _ensureThemeColorMeta() {
+        if (this._themeColorMeta?.isConnected) return this._themeColorMeta;
+        let meta = document.querySelector('meta[name="theme-color"]');
+        if (!meta) {
+            meta = document.createElement('meta');
+            meta.setAttribute('name', 'theme-color');
+            document.head.appendChild(meta);
+        }
+        this._themeColorMeta = meta;
+        return meta;
+    }
+
+    _lockThemeColor() {
+        if (!(this._isIOSMobile() && this._isNarrowViewport())) return;
+        const meta = this._ensureThemeColorMeta();
+        if (!meta) return;
+        if (!meta.hasAttribute('data-chat-theme-restore')) {
+            meta.setAttribute('data-chat-theme-restore', meta.getAttribute('content') || '');
+        }
+        this._themeColorRestoreContent = meta.getAttribute('data-chat-theme-restore') || '';
+        meta.setAttribute('content', '#000000');
+    }
+
+    _unlockThemeColor() {
+        const meta = this._themeColorMeta || document.querySelector('meta[name="theme-color"]');
+        if (!meta) return;
+        const restoreContent = meta.getAttribute('data-chat-theme-restore');
+        if (restoreContent === null) return;
+        meta.setAttribute('content', restoreContent || '#000000');
+        meta.removeAttribute('data-chat-theme-restore');
+        this._themeColorRestoreContent = '';
+    }
+
     _ensureStatusBarShield() {
         if (this._statusBarShield) return;
         const shield = document.createElement('div');
@@ -111,6 +156,7 @@ class ChatWidget {
         if (!this._statusBarShield) return;
         this._statusBarShield.style.visibility = 'visible';
         this._statusBarShield.style.opacity = '1';
+        this._lockThemeColor();
     }
 
     _hideStatusBarShield() {
@@ -120,6 +166,17 @@ class ChatWidget {
             if (!this._statusBarShield || this.isOpen) return;
             this._statusBarShield.style.visibility = 'hidden';
         }, 90);
+        this._unlockThemeColor();
+    }
+
+    _scheduleStableKeyboardInset(bottomInset) {
+        if (!Number.isFinite(bottomInset) || bottomInset < 40) return;
+        this._pendingStableKeyboardInset = bottomInset;
+        this._clearKeyboardSettleTimer();
+        this._keyboardSettleTimer = setTimeout(() => {
+            this._keyboardSettleTimer = null;
+            this._lastStableKeyboardInset = this._pendingStableKeyboardInset;
+        }, this._isHighRefreshDisplay ? 110 : 80);
     }
 
     getSessionId() {
@@ -1677,13 +1734,15 @@ class ChatWidget {
             /* Mobile: Center the chat window */
             @media (max-width: 700px) {
                 .chat-window:not(.admin-mode-layout) {
+                    --chat-base-translate-y: -50%;
+                    --chat-shift-y: 0px;
                     position: fixed !important;
                     top: 50% !important;
                     left: 50% !important;
                     right: auto !important;
                     bottom: auto !important;
                     /* Mobile position must stay stable; keyboard movement is controlled by JS only. */
-                    transform: translate3d(-50%, -50%, 0) scale(1) !important;
+                    transform: translate3d(-50%, calc(var(--chat-base-translate-y, -50%) + var(--chat-shift-y, 0px)), 0) scale(1) !important;
                     width: 90vw !important;
                     max-width: 400px !important;
                     height: 70vh !important;
@@ -1962,6 +2021,8 @@ class ChatWidget {
             const bottomInset = Math.max(insetFromLayout, insetFromViewportDelta);
             if (bottomInset < 40) {
                 this._captureStableDockHeight();
+            } else {
+                this._scheduleStableKeyboardInset(bottomInset);
             }
             const isFocusedInChat = this._isChatInputFocused();
             const isIOS = this._isIOSMobile();
@@ -1976,6 +2037,8 @@ class ChatWidget {
 
             if (isIOS && !isFocusedInChat && bottomInset <= 8) {
                 this._keyboardBlurUndocking = false;
+                this._pendingStableKeyboardInset = 0;
+                this._clearKeyboardSettleTimer();
             }
 
             if (shouldDock) {
@@ -2265,11 +2328,7 @@ class ChatWidget {
             const keyboardTop = Math.max(0, baseViewportHeight - Math.max(0, bottomInset));
             const targetBottom = Math.max(40, keyboardTop - 12);
             const deltaY = Math.max(-520, Math.min(520, targetBottom - centeredBottom));
-            this.chatWindow.style.setProperty(
-                'transform',
-                `translate3d(-50%, calc(-50% + ${Math.round(deltaY)}px), 0) scale(1)`,
-                'important'
-            );
+            this._setChatTranslateVars('-50%', deltaY);
             return;
         }
         const dockBottom = Math.max(0, bottomInset);
@@ -2278,7 +2337,7 @@ class ChatWidget {
         this.chatWindow.style.setProperty('left', '50%', 'important');
         this.chatWindow.style.setProperty('right', 'auto', 'important');
         this.chatWindow.style.setProperty('bottom', `${dockBottom}px`, 'important');
-        this.chatWindow.style.setProperty('transform', 'translate3d(-50%, 0, 0) scale(1)', 'important');
+        this._setChatTranslateVars('0px', 0);
 
         // 不再在键盘期间改高度，避免“上下压缩后弹开”
         this.chatWindow.style.removeProperty('height');
@@ -2353,7 +2412,15 @@ class ChatWidget {
     }
 
     _scheduleInitialKeyboardDock(visualHeight, bottomInset) {
-        this._pendingFirstDockParams = { visualHeight, bottomInset };
+        let predictedInset = bottomInset;
+        if (this._isIOSMobile() && this._lastStableKeyboardInset > 40) {
+            if (bottomInset < 24) {
+                predictedInset = this._lastStableKeyboardInset;
+            } else {
+                predictedInset = Math.min(bottomInset, this._lastStableKeyboardInset + 12);
+            }
+        }
+        this._pendingFirstDockParams = { visualHeight, bottomInset: predictedInset };
         if (this._pendingFirstDockTimer) return;
         const delay = this._isHighRefreshDisplay ? 50 : 34;
         this._pendingFirstDockTimer = setTimeout(() => {
@@ -2452,7 +2519,7 @@ class ChatWidget {
         this.chatWindow.style.setProperty('right', 'auto', 'important');
         this.chatWindow.style.setProperty('bottom', 'auto', 'important');
         this.chatWindow.style.setProperty('transition', 'transform 120ms cubic-bezier(0.22, 1, 0.36, 1)', 'important');
-        this.chatWindow.style.setProperty('transform', 'translate3d(-50%, calc(-50% - 24px), 0) scale(1)', 'important');
+        this._setChatTranslateVars('-50%', -24);
         this._transitionCleanupTimer = setTimeout(() => {
             this._transitionCleanupTimer = null;
             if (this.chatWindow && !this.chatWindow.classList.contains('keyboard-docked')) {
@@ -2490,13 +2557,15 @@ class ChatWidget {
                 this.chatWindow.style.setProperty('left', '50%', 'important');
                 this.chatWindow.style.setProperty('right', 'auto', 'important');
                 this.chatWindow.style.setProperty('bottom', 'auto', 'important');
-                this.chatWindow.style.setProperty('transform', 'translate3d(-50%, -50%, 0) scale(1)', 'important');
+                this._setChatTranslateVars('-50%', 0);
             } else {
                 this.chatWindow.style.removeProperty('top');
                 this.chatWindow.style.removeProperty('left');
                 this.chatWindow.style.removeProperty('right');
                 this.chatWindow.style.removeProperty('bottom');
                 this.chatWindow.style.removeProperty('position');
+                this.chatWindow.style.removeProperty('--chat-base-translate-y');
+                this.chatWindow.style.removeProperty('--chat-shift-y');
                 this.chatWindow.style.removeProperty('transform');
             }
 
