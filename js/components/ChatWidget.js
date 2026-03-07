@@ -2234,20 +2234,10 @@ class ChatWidget {
         }
         this._sessionVisualLocked = true;
         this._applyStableVisualStyles();
-        if (this.overlay) {
-            this.overlay.style.setProperty('backdrop-filter', 'none', 'important');
-            this.overlay.style.setProperty('-webkit-backdrop-filter', 'none', 'important');
-            this.overlay.style.setProperty('background', 'rgba(0, 0, 0, 0.36)', 'important');
-        }
     }
 
     _disableSessionVisualLock() {
         this._sessionVisualLocked = false;
-        if (this.overlay) {
-            this.overlay.style.removeProperty('backdrop-filter');
-            this.overlay.style.removeProperty('-webkit-backdrop-filter');
-            this.overlay.style.removeProperty('background');
-        }
         this._restoreMotionVisuals();
     }
 
