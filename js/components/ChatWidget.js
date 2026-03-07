@@ -1737,6 +1737,9 @@ class ChatWidget {
                 .chat-window:not(.admin-mode-layout) {
                     --chat-base-translate-y: -50%;
                     --chat-shift-y: 0px;
+                    --chat-open-offset-x: 0px;
+                    --chat-open-offset-y: 0px;
+                    --chat-open-scale: 1;
                     position: fixed !important;
                     top: 50% !important;
                     left: 50% !important;
@@ -1759,7 +1762,12 @@ class ChatWidget {
                     visibility: visible !important;
                     pointer-events: none !important;
                     opacity: 0 !important;
-                    transform: translate3d(-50%, calc(var(--chat-base-translate-y, -50%) + var(--chat-shift-y, 0px)), 0) scale(0.965) !important;
+                    transform: translate3d(
+                        calc(-50% + var(--chat-open-offset-x, 0px)),
+                        calc(var(--chat-base-translate-y, -50%) + var(--chat-shift-y, 0px) + var(--chat-open-offset-y, 0px)),
+                        0
+                    ) scale(var(--chat-open-scale, 0.2)) !important;
+                    transform-origin: center center !important;
                 }
                 
                 .chat-window:not(.admin-mode-layout).active {
@@ -1773,8 +1781,8 @@ class ChatWidget {
                     opacity: 1 !important;
                     transform: translate3d(-50%, calc(var(--chat-base-translate-y, -50%) + var(--chat-shift-y, 0px)), 0) scale(1) !important;
                     transition:
-                        opacity 180ms cubic-bezier(0.22, 1, 0.36, 1),
-                        transform 240ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+                        opacity 190ms cubic-bezier(0.22, 1, 0.36, 1),
+                        transform 280ms cubic-bezier(0.18, 0.88, 0.24, 1) !important;
                 }
             }
             
@@ -1905,6 +1913,7 @@ class ChatWidget {
         if (this.isOpen) {
             this._clearOpeningAnimationTimer();
             this.chatWindow.classList.add('chat-opening');
+            this._primeOpeningAnimationFromFab();
             this.chatWindow.style.removeProperty('transition');
             this.chatWindow.style.removeProperty('opacity');
             this.chatWindow.style.removeProperty('visibility');
@@ -1936,6 +1945,7 @@ class ChatWidget {
                         this._openingAnimationTimer = null;
                         if (this.isOpen && this.chatWindow) {
                             this.chatWindow.classList.remove('chat-opening');
+                            this._clearOpeningAnimationState();
                             if (!this.chatWindow.classList.contains('keyboard-docked')) {
                                 this.chatWindow.style.removeProperty('transition');
                             }
@@ -1947,6 +1957,7 @@ class ChatWidget {
         } else {
             this._clearOpeningAnimationTimer();
             this.chatWindow.classList.remove('chat-opening');
+            this._clearOpeningAnimationState();
             this.chatWindow.classList.remove('active');
             this.chatWindow.style.setProperty('transition', 'none', 'important');
             this.chatWindow.style.setProperty('opacity', '0', 'important');
@@ -2432,6 +2443,41 @@ class ChatWidget {
             clearTimeout(this._openingAnimationTimer);
             this._openingAnimationTimer = null;
         }
+    }
+
+    _primeOpeningAnimationFromFab() {
+        if (!this.chatWindow || !this.fab || this.chatWindow.classList.contains('admin-mode-layout')) return;
+        if (!this._isNarrowViewport()) return;
+
+        const chatRect = this.chatWindow.getBoundingClientRect();
+        const fabRect = this.fab.getBoundingClientRect();
+        if (!chatRect.width || !chatRect.height || !fabRect.width || !fabRect.height) {
+            this.chatWindow.style.setProperty('--chat-open-offset-x', '0px');
+            this.chatWindow.style.setProperty('--chat-open-offset-y', '0px');
+            this.chatWindow.style.setProperty('--chat-open-scale', '0.2');
+            return;
+        }
+
+        const chatCenterX = chatRect.left + (chatRect.width / 2);
+        const chatCenterY = chatRect.top + (chatRect.height / 2);
+        const fabCenterX = fabRect.left + (fabRect.width / 2);
+        const fabCenterY = fabRect.top + (fabRect.height / 2);
+        const offsetX = Math.round(fabCenterX - chatCenterX);
+        const offsetY = Math.round(fabCenterY - chatCenterY);
+        const scaleX = fabRect.width / chatRect.width;
+        const scaleY = fabRect.height / chatRect.height;
+        const startScale = Math.max(0.16, Math.min(0.28, Math.min(scaleX, scaleY) * 1.15));
+
+        this.chatWindow.style.setProperty('--chat-open-offset-x', `${offsetX}px`);
+        this.chatWindow.style.setProperty('--chat-open-offset-y', `${offsetY}px`);
+        this.chatWindow.style.setProperty('--chat-open-scale', startScale.toFixed(3));
+    }
+
+    _clearOpeningAnimationState() {
+        if (!this.chatWindow) return;
+        this.chatWindow.style.removeProperty('--chat-open-offset-x');
+        this.chatWindow.style.removeProperty('--chat-open-offset-y');
+        this.chatWindow.style.removeProperty('--chat-open-scale');
     }
 
     _clearTransitionCleanupTimer() {
