@@ -1770,8 +1770,8 @@ class ChatWidget {
 
         } else {
             this.chatWindow.classList.remove('active');
-            this.fab.style.opacity = '1';
-            this.fab.style.pointerEvents = 'all';
+            this.fab.style.opacity = '0';
+            this.fab.style.pointerEvents = 'none';
             // Hide overlay
             if (this.overlay) this.overlay.classList.remove('visible');
 
@@ -1785,6 +1785,14 @@ class ChatWidget {
 
             // UNLOCK SCROLL
             if (window.iOSScrollLock) window.iOSScrollLock.unlock();
+
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    if (this.isOpen) return;
+                    this.fab.style.opacity = '1';
+                    this.fab.style.pointerEvents = 'all';
+                });
+            });
         }
     }
 
