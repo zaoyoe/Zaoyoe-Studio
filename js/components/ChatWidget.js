@@ -1706,7 +1706,7 @@ class ChatWidget {
             /* User Mode Glassmorphism Enhancement */
             .chat-window:not(.admin-mode-layout) {
                 /* Match user dropdown glass thickness */
-                background: rgba(0, 0, 0, 0.4) !important;
+                background: linear-gradient(180deg, rgba(0, 0, 0, 0.44) 0%, rgba(0, 0, 0, 0.38) 100%) !important;
                 backdrop-filter: blur(20px) saturate(150%) !important;
                 -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
                 border: 1px solid rgba(255, 255, 255, 0.1) !important;
@@ -1721,7 +1721,7 @@ class ChatWidget {
 
             .chat-window:not(.admin-mode-layout) .chat-messages {
                 background:
-                    linear-gradient(180deg, rgba(10, 14, 24, 0.22) 0%, rgba(7, 10, 18, 0.32) 100%) !important;
+                    linear-gradient(180deg, rgba(0, 0, 0, 0.16) 0%, rgba(0, 0, 0, 0.26) 100%) !important;
             }
 
             .chat-window:not(.admin-mode-layout) .chat-input-area {
@@ -2688,14 +2688,14 @@ class ChatWidget {
         this.chatWindow.style.setProperty('-webkit-backdrop-filter', 'none', 'important');
         this.chatWindow.style.setProperty(
             'background',
-            'linear-gradient(135deg, rgba(6, 10, 18, 0.82) 0%, rgba(12, 18, 28, 0.74) 42%, rgba(8, 12, 22, 0.84) 100%)',
+            'linear-gradient(180deg, rgba(0, 0, 0, 0.46) 0%, rgba(0, 0, 0, 0.38) 100%)',
             'important'
         );
         this.chatWindow.style.setProperty('border', '1px solid rgba(255, 255, 255, 0.12)', 'important');
         this.chatWindow.style.setProperty('border-top', '1px solid rgba(255, 255, 255, 0.22)', 'important');
         this.chatWindow.style.setProperty(
             'box-shadow',
-            '0 25px 50px -12px rgba(0, 0, 0, 0.52), 0 0 0 1px rgba(255, 255, 255, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.16), inset 0 -24px 40px rgba(4, 8, 16, 0.34)',
+            '0 25px 50px -12px rgba(0, 0, 0, 0.52), 0 0 0 1px rgba(255, 255, 255, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.16), inset 0 -24px 40px rgba(0, 0, 0, 0.28)',
             'important'
         );
     }
