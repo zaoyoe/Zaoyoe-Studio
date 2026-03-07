@@ -450,10 +450,10 @@ class ChatWidget {
                 flex-direction: row;
                 border-radius: 20px;
                 overflow: hidden;
-                /* TEMP TEST: fully opaque */
-                background: rgb(20, 20, 30) !important;
-                backdrop-filter: none !important;
-                -webkit-backdrop-filter: none !important;
+                /* Glassmorphism effect - balanced transparency */
+                background: rgba(20, 20, 30, 0.7) !important;
+                backdrop-filter: blur(20px) saturate(150%) !important;
+                -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
                 border: 1px solid rgba(255, 255, 255, 0.08) !important;
                 box-shadow: 
                     0 25px 50px -12px rgba(0, 0, 0, 0.6) !important;
@@ -722,6 +722,7 @@ class ChatWidget {
             
             /* Overlay for clicking outside to close */
             .chat-overlay {
+                display: none;
                 position: fixed;
                 top: 0;
                 left: 0;
@@ -730,16 +731,9 @@ class ChatWidget {
                 background: rgba(0, 0, 0, 0.25);
                 z-index: 9998;
                 backdrop-filter: blur(3px);
-                opacity: 0;
-                visibility: hidden;
-                pointer-events: none;
-                transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1),
-                    visibility 0.4s;
             }
             .chat-overlay.visible {
-                opacity: 1;
-                visibility: visible;
-                pointer-events: auto;
+                display: block;
             }
             
             /* Shake hint animation for input */
@@ -1595,10 +1589,10 @@ class ChatWidget {
         style.textContent = `
             /* User Mode Glassmorphism Enhancement */
             .chat-window:not(.admin-mode-layout) {
-                /* TEMP TEST: fully opaque */
-                background: rgb(20, 20, 30) !important;
-                backdrop-filter: none !important;
-                -webkit-backdrop-filter: none !important;
+                /* Glassmorphism effect - same as admin mode */
+                background: rgba(20, 20, 30, 0.7) !important;
+                backdrop-filter: blur(20px) saturate(150%) !important;
+                -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
                 border: 1px solid rgba(255, 255, 255, 0.2) !important;
                 box-shadow: 
                     0 25px 50px -12px rgba(0, 0, 0, 0.6),
@@ -1608,6 +1602,7 @@ class ChatWidget {
             
             /* Overlay for user mode (same as admin) */
             .chat-overlay {
+                display: none;
                 position: fixed;
                 top: 0;
                 left: 0;
@@ -1616,16 +1611,9 @@ class ChatWidget {
                 background: rgba(0, 0, 0, 0.25);
                 z-index: 9997;
                 backdrop-filter: blur(3px);
-                opacity: 0;
-                visibility: hidden;
-                pointer-events: none;
-                transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1),
-                    visibility 0.4s;
             }
             .chat-overlay.visible {
-                opacity: 1;
-                visibility: visible;
-                pointer-events: auto;
+                display: block;
             }
             
             /* Mobile: Center the chat window */
