@@ -28,6 +28,7 @@ class ChatWidget {
         this._pendingStableKeyboardInset = 0;
         this._lastStableKeyboardInset = 0;
         this._transitionCleanupTimer = null;
+        this._openingAnimationTimer = null;
         this._pendingFirstDockTimer = null;
         this._pendingFirstDockParams = null;
         this._keyboardDockAnimatingUntil = 0;
@@ -1753,10 +1754,27 @@ class ChatWidget {
                     backdrop-filter: none !important;
                     -webkit-backdrop-filter: none !important;
                 }
+
+                .chat-window:not(.admin-mode-layout).chat-opening {
+                    visibility: visible !important;
+                    pointer-events: none !important;
+                    opacity: 0 !important;
+                    transform: translate3d(-50%, calc(var(--chat-base-translate-y, -50%) + var(--chat-shift-y, 0px)), 0) scale(0.965) !important;
+                }
                 
                 .chat-window:not(.admin-mode-layout).active {
                     backdrop-filter: blur(20px) saturate(150%) !important;
                     -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
+                }
+
+                .chat-window:not(.admin-mode-layout).chat-opening.active {
+                    visibility: visible !important;
+                    pointer-events: all !important;
+                    opacity: 1 !important;
+                    transform: translate3d(-50%, calc(var(--chat-base-translate-y, -50%) + var(--chat-shift-y, 0px)), 0) scale(1) !important;
+                    transition:
+                        opacity 180ms cubic-bezier(0.22, 1, 0.36, 1),
+                        transform 240ms cubic-bezier(0.22, 1, 0.36, 1) !important;
                 }
             }
             
@@ -1885,6 +1903,8 @@ class ChatWidget {
     toggleChat() {
         this.isOpen = !this.isOpen;
         if (this.isOpen) {
+            this._clearOpeningAnimationTimer();
+            this.chatWindow.classList.add('chat-opening');
             this.chatWindow.style.removeProperty('transition');
             this.chatWindow.style.removeProperty('opacity');
             this.chatWindow.style.removeProperty('visibility');
@@ -1912,10 +1932,21 @@ class ChatWidget {
                     if (!this.isOpen) return; // 用户可能在等待期间关闭了
                     this.chatWindow.classList.add('active');
                     this._captureStableDockHeight();
+                    this._openingAnimationTimer = setTimeout(() => {
+                        this._openingAnimationTimer = null;
+                        if (this.isOpen && this.chatWindow) {
+                            this.chatWindow.classList.remove('chat-opening');
+                            if (!this.chatWindow.classList.contains('keyboard-docked')) {
+                                this.chatWindow.style.removeProperty('transition');
+                            }
+                        }
+                    }, 280);
                 });
             });
 
         } else {
+            this._clearOpeningAnimationTimer();
+            this.chatWindow.classList.remove('chat-opening');
             this.chatWindow.classList.remove('active');
             this.chatWindow.style.setProperty('transition', 'none', 'important');
             this.chatWindow.style.setProperty('opacity', '0', 'important');
@@ -2393,6 +2424,13 @@ class ChatWidget {
         if (this._keyboardSettleTimer) {
             clearTimeout(this._keyboardSettleTimer);
             this._keyboardSettleTimer = null;
+        }
+    }
+
+    _clearOpeningAnimationTimer() {
+        if (this._openingAnimationTimer) {
+            clearTimeout(this._openingAnimationTimer);
+            this._openingAnimationTimer = null;
         }
     }
 
