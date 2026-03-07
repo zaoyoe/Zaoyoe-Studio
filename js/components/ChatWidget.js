@@ -1738,6 +1738,7 @@ class ChatWidget {
             .chat-overlay.closing {
                 display: block;
                 opacity: 0;
+                transition: opacity 95ms linear 95ms;
             }
             
             /* Mobile: Center the chat window */
@@ -1752,6 +1753,9 @@ class ChatWidget {
                     --chat-open-offset-x: 0px;
                     --chat-open-offset-y: 0px;
                     --chat-open-scale: 1;
+                    --chat-close-offset-x: 0px;
+                    --chat-close-offset-y: 0px;
+                    --chat-close-scale: 0.333;
                     position: fixed !important;
                     top: 50% !important;
                     left: 50% !important;
@@ -1808,10 +1812,10 @@ class ChatWidget {
                 .chat-window:not(.admin-mode-layout).chat-closing:not(.active) {
                     opacity: 0 !important;
                     transform: translate3d(
-                        calc(-50% + var(--chat-open-offset-x, 0px)),
-                        calc(var(--chat-base-translate-y, -50%) + var(--chat-shift-y, 0px) + var(--chat-open-offset-y, 0px)),
+                        calc(-50% + var(--chat-close-offset-x, 0px)),
+                        calc(var(--chat-base-translate-y, -50%) + var(--chat-shift-y, 0px) + var(--chat-close-offset-y, 0px)),
                         0
-                    ) scale(var(--chat-open-scale, 0.2)) !important;
+                    ) scale(var(--chat-close-scale, 0.333)) !important;
                     transition:
                         opacity 95ms linear 95ms,
                         transform 190ms cubic-bezier(0.22, 1, 0.36, 1) !important;
@@ -2457,6 +2461,9 @@ class ChatWidget {
             this.chatWindow.style.setProperty('--chat-open-offset-x', '0px');
             this.chatWindow.style.setProperty('--chat-open-offset-y', '0px');
             this.chatWindow.style.setProperty('--chat-open-scale', '0.2');
+            this.chatWindow.style.setProperty('--chat-close-offset-x', '0px');
+            this.chatWindow.style.setProperty('--chat-close-offset-y', '0px');
+            this.chatWindow.style.setProperty('--chat-close-scale', '0.333');
             return;
         }
 
@@ -2469,10 +2476,16 @@ class ChatWidget {
         const scaleX = fabRect.width / chatRect.width;
         const scaleY = fabRect.height / chatRect.height;
         const startScale = Math.max(0.16, Math.min(0.28, Math.min(scaleX, scaleY) * 1.15));
+        const closeTravelRatio = 0.58;
+        const closeOffsetX = Math.round(offsetX * closeTravelRatio);
+        const closeOffsetY = Math.round(offsetY * closeTravelRatio);
 
         this.chatWindow.style.setProperty('--chat-open-offset-x', `${offsetX}px`);
         this.chatWindow.style.setProperty('--chat-open-offset-y', `${offsetY}px`);
         this.chatWindow.style.setProperty('--chat-open-scale', startScale.toFixed(3));
+        this.chatWindow.style.setProperty('--chat-close-offset-x', `${closeOffsetX}px`);
+        this.chatWindow.style.setProperty('--chat-close-offset-y', `${closeOffsetY}px`);
+        this.chatWindow.style.setProperty('--chat-close-scale', '0.333');
     }
 
     _clearOpeningAnimationState() {
@@ -2480,6 +2493,9 @@ class ChatWidget {
         this.chatWindow.style.removeProperty('--chat-open-offset-x');
         this.chatWindow.style.removeProperty('--chat-open-offset-y');
         this.chatWindow.style.removeProperty('--chat-open-scale');
+        this.chatWindow.style.removeProperty('--chat-close-offset-x');
+        this.chatWindow.style.removeProperty('--chat-close-offset-y');
+        this.chatWindow.style.removeProperty('--chat-close-scale');
     }
 
     _finalizeChatClose() {
