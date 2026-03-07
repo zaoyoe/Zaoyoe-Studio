@@ -1813,7 +1813,7 @@ class ChatWidget {
                         0
                     ) scale(var(--chat-open-scale, 0.2)) !important;
                     transition:
-                        opacity 180ms cubic-bezier(0.32, 0.72, 0, 1),
+                        opacity 110ms linear 110ms,
                         transform 220ms cubic-bezier(0.32, 0.72, 0, 1) !important;
                 }
             }
