@@ -800,6 +800,9 @@ class ChatWidget {
                     bottom: auto !important;
                     /* scale(0.9) gives a visible animation instead of relying on opacity alone */
                     transform: translate(-50%, -50%) scale(0.9) !important;
+                    /* Force opaque — rely on visibility:hidden + scale for animation, not opacity.
+                       opacity transition + backdrop-filter = Chromium compositor flash bug */
+                    opacity: 1 !important;
                     /* Disable backdrop-filter during animation to avoid Chromium flash bug */
                     backdrop-filter: none !important;
                     -webkit-backdrop-filter: none !important;
@@ -1639,6 +1642,8 @@ class ChatWidget {
                     max-width: 400px !important;
                     height: 70vh !important;
                     max-height: 600px !important;
+                    /* Force opaque — rely on visibility:hidden + scale for animation, not opacity */
+                    opacity: 1 !important;
                     /* Disable backdrop-filter during animation to avoid Chromium flash bug */
                     backdrop-filter: none !important;
                     -webkit-backdrop-filter: none !important;
