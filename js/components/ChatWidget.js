@@ -1749,6 +1749,13 @@ class ChatWidget {
                 background: rgba(255, 255, 255, 0.16) !important;
                 border: 1px solid rgba(255, 255, 255, 0.1) !important;
             }
+
+            body.chat-spotlight-suspended .spotlight-overlay,
+            body.chat-spotlight-suspended .poetry-nav-container:hover .spotlight-overlay {
+                opacity: 0 !important;
+                visibility: hidden !important;
+                transition: none !important;
+            }
             
             /* Overlay for user mode (same as admin) */
             .chat-overlay {
@@ -2627,6 +2634,25 @@ class ChatWidget {
         return true;
     }
 
+    _setPromptSpotlightSuspended(suspended) {
+        const path = window.location.pathname || '';
+        if (!/\/prompts(?:\.html)?$/i.test(path)) return;
+        if (!document.body) return;
+
+        document.body.classList.toggle('chat-spotlight-suspended', suspended);
+
+        const container = document.querySelector('.poetry-nav-container');
+        if (!container) return;
+
+        if (suspended) {
+            container.style.setProperty('--cursor-x', '50%');
+            container.style.setProperty('--cursor-y', '0px');
+        } else {
+            container.style.removeProperty('--cursor-x');
+            container.style.removeProperty('--cursor-y');
+        }
+    }
+
     _clearTransitionCleanupTimer() {
         if (this._transitionCleanupTimer) {
             clearTimeout(this._transitionCleanupTimer);
@@ -2710,6 +2736,7 @@ class ChatWidget {
 
     _enableSessionVisualLock() {
         if (!this.chatWindow) return;
+        this._setPromptSpotlightSuspended(true);
         if (!(this._isIOSMobile() && this._isNarrowViewport())) {
             this._sessionVisualLocked = false;
             return;
@@ -2719,6 +2746,7 @@ class ChatWidget {
     }
 
     _disableSessionVisualLock() {
+        this._setPromptSpotlightSuspended(false);
         this._sessionVisualLocked = false;
         this._restoreMotionVisuals();
     }
