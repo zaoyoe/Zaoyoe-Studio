@@ -2157,11 +2157,10 @@ class ChatWidget {
             this.chatWindow.style.setProperty('bottom', 'auto', 'important');
             this.chatWindow.style.setProperty('height', `${dockHeight}px`, 'important');
             this.chatWindow.style.setProperty('max-height', `${dockHeight}px`, 'important');
-            this.chatWindow.style.setProperty('transform', 'translate3d(-50%, -50%, 0) scale(1)', 'important');
-
-            const rect = this.chatWindow.getBoundingClientRect();
+            // Compute the docked offset directly so Safari never paints an intermediate centered state.
+            const centeredBottom = (baseViewportHeight * 0.5) + (dockHeight * 0.5);
             const targetBottom = Math.max(40, visualHeight - 12);
-            const deltaY = Math.max(-520, Math.min(520, targetBottom - rect.bottom));
+            const deltaY = Math.max(-520, Math.min(520, targetBottom - centeredBottom));
             this.chatWindow.style.setProperty(
                 'transform',
                 `translate3d(-50%, calc(-50% + ${Math.round(deltaY)}px), 0) scale(1)`,
