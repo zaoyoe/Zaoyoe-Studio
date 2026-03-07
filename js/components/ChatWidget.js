@@ -1706,9 +1706,9 @@ class ChatWidget {
             /* User Mode Glassmorphism Enhancement */
             .chat-window:not(.admin-mode-layout) {
                 /* Match user dropdown glass thickness */
-                background: linear-gradient(180deg, rgba(0, 0, 0, 0.58) 0%, rgba(0, 0, 0, 0.5) 100%) !important;
-                backdrop-filter: blur(24px) saturate(165%) !important;
-                -webkit-backdrop-filter: blur(24px) saturate(165%) !important;
+                background: linear-gradient(180deg, rgba(0, 0, 0, 0.68) 0%, rgba(0, 0, 0, 0.6) 100%) !important;
+                backdrop-filter: blur(18px) saturate(108%) brightness(0.74) !important;
+                -webkit-backdrop-filter: blur(18px) saturate(108%) brightness(0.74) !important;
                 border: 1px solid rgba(255, 255, 255, 0.14) !important;
                 border-top: 1px solid rgba(255, 255, 255, 0.24) !important;
                 box-shadow:
@@ -1819,8 +1819,8 @@ class ChatWidget {
                 }
                 
                 .chat-window:not(.admin-mode-layout).active {
-                    backdrop-filter: blur(20px) saturate(150%) !important;
-                    -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
+                    backdrop-filter: blur(18px) saturate(108%) brightness(0.74) !important;
+                    -webkit-backdrop-filter: blur(18px) saturate(108%) brightness(0.74) !important;
                 }
 
                 .chat-window:not(.admin-mode-layout).chat-opening.active {
@@ -1837,12 +1837,16 @@ class ChatWidget {
                     visibility: visible !important;
                     pointer-events: none !important;
                     opacity: 1 !important;
+                    backdrop-filter: none !important;
+                    -webkit-backdrop-filter: none !important;
                     transform: translate3d(-50%, calc(var(--chat-base-translate-y, -50%) + var(--chat-shift-y, 0px)), 0) scale(1) !important;
                     transform-origin: center center !important;
                 }
 
                 .chat-window:not(.admin-mode-layout).chat-closing.chat-closing-end {
                     opacity: 0 !important;
+                    backdrop-filter: none !important;
+                    -webkit-backdrop-filter: none !important;
                     transform: translate3d(
                         calc(-50% + var(--chat-open-offset-x, 0px)),
                         calc(var(--chat-base-translate-y, -50%) + var(--chat-shift-y, 0px) + var(--chat-open-offset-y, 0px)),
