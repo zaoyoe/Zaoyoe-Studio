@@ -30,7 +30,6 @@ class ChatWidget {
         this._transitionCleanupTimer = null;
         this._openingAnimationTimer = null;
         this._closingAnimationTimer = null;
-        this._closingProxy = null;
         this._pendingFirstDockTimer = null;
         this._pendingFirstDockParams = null;
         this._keyboardDockAnimatingUntil = 0;
@@ -1943,7 +1942,6 @@ class ChatWidget {
         if (this.isOpen) {
             this._clearOpeningAnimationTimer();
             this._clearClosingAnimationTimer();
-            this._removeClosingProxy();
             this.chatWindow.classList.remove('chat-closing');
             this.chatWindow.classList.remove('chat-closing-end');
             this.chatWindow.classList.add('chat-opening');
@@ -2449,7 +2447,6 @@ class ChatWidget {
             clearTimeout(this._closingAnimationTimer);
             this._closingAnimationTimer = null;
         }
-        this._removeClosingProxy();
     }
 
     _getFabMotionMetrics() {
@@ -2492,13 +2489,6 @@ class ChatWidget {
         this.chatWindow.style.removeProperty('--chat-open-offset-x');
         this.chatWindow.style.removeProperty('--chat-open-offset-y');
         this.chatWindow.style.removeProperty('--chat-open-scale');
-    }
-
-    _removeClosingProxy() {
-        if (this._closingProxy && this._closingProxy.isConnected) {
-            this._closingProxy.remove();
-        }
-        this._closingProxy = null;
     }
 
     _finalizeChatClose() {
@@ -2551,10 +2541,6 @@ class ChatWidget {
         if (this.chatWindow.classList.contains('admin-mode-layout')) return false;
         if (!this._isNarrowViewport()) return false;
 
-        const motion = this._getFabMotionMetrics();
-        const chatRect = this.chatWindow.getBoundingClientRect();
-        if (!motion || !chatRect.width || !chatRect.height) return false;
-
         this._clearOpeningAnimationTimer();
         this._clearClosingAnimationTimer();
         this.chatWindow.classList.remove('chat-opening');
@@ -2567,35 +2553,6 @@ class ChatWidget {
         if (this.overlay) {
             this.overlay.classList.remove('closing');
         }
-
-        const proxy = this.chatWindow.cloneNode(true);
-        proxy.querySelectorAll('[id]').forEach((el) => el.removeAttribute('id'));
-        proxy.classList.remove('chat-opening');
-        proxy.classList.remove('chat-closing');
-        proxy.classList.remove('chat-closing-end');
-        proxy.style.position = 'fixed';
-        proxy.style.left = `${Math.round(chatRect.left)}px`;
-        proxy.style.top = `${Math.round(chatRect.top)}px`;
-        proxy.style.width = `${Math.round(chatRect.width)}px`;
-        proxy.style.height = `${Math.round(chatRect.height)}px`;
-        proxy.style.maxWidth = `${Math.round(chatRect.width)}px`;
-        proxy.style.maxHeight = `${Math.round(chatRect.height)}px`;
-        proxy.style.margin = '0';
-        proxy.style.transform = 'translate3d(0, 0, 0) scale(1)';
-        proxy.style.transformOrigin = 'center center';
-        proxy.style.transition = 'transform 280ms cubic-bezier(0.18, 0.88, 0.24, 1), opacity 190ms cubic-bezier(0.22, 1, 0.36, 1)';
-        proxy.style.pointerEvents = 'none';
-        proxy.style.zIndex = '10000';
-        proxy.style.opacity = '1';
-        proxy.style.visibility = 'visible';
-        proxy.style.willChange = 'transform, opacity';
-        document.body.appendChild(proxy);
-        this._closingProxy = proxy;
-
-        this.chatWindow.style.setProperty('transition', 'none', 'important');
-        this.chatWindow.style.setProperty('opacity', '0', 'important');
-        this.chatWindow.style.setProperty('visibility', 'hidden', 'important');
-
         this._detachKeyboardListener();
 
         const activeInput = document.activeElement;
@@ -2603,16 +2560,16 @@ class ChatWidget {
             activeInput.blur();
         }
 
-        void proxy.offsetWidth;
+        // Force Safari to commit the fully-visible closing start state before flipping to the end state.
+        void this.chatWindow.offsetWidth;
         requestAnimationFrame(() => {
             requestAnimationFrame(() => {
-                if (this.isOpen || !this.chatWindow || !this._closingProxy) return;
+                if (this.isOpen || !this.chatWindow) return;
                 if (this.overlay) {
                     this.overlay.classList.add('closing');
                     this.overlay.classList.remove('visible');
                 }
-                this._closingProxy.style.transform = `translate3d(${motion.offsetX}px, ${motion.offsetY}px, 0) scale(${motion.startScale.toFixed(3)})`;
-                this._closingProxy.style.opacity = '0';
+                this.chatWindow.classList.add('chat-closing-end');
             });
         });
 
