@@ -22,6 +22,8 @@ class ChatWidget {
         this._keyboardDocked = false;
         this._lastKeyboardInset = 0;
         this._viewportRafId = null;
+        this._viewportThrottleTimer = null;
+        this._lastViewportSyncAt = 0;
         this._keyboardSettleTimer = null;
         this._transitionCleanupTimer = null;
         this._pendingFirstDockTimer = null;
@@ -30,7 +32,10 @@ class ChatWidget {
         this._keyboardPreLiftActive = false;
         this._motionVisualLockTimer = null;
         this._sessionVisualLocked = false;
+        this._estimatedRefreshHz = 60;
+        this._isHighRefreshDisplay = false;
 
+        this._detectRefreshRate();
         this.init();
     }
 
@@ -40,6 +45,35 @@ class ChatWidget {
             return window.i18n.t(key);
         }
         return fallback || key;
+    }
+
+    _detectRefreshRate() {
+        if (typeof window === 'undefined' || typeof requestAnimationFrame !== 'function') return;
+        const samples = [];
+        let lastTs = 0;
+        let remaining = 8;
+
+        const step = (ts) => {
+            if (lastTs) {
+                samples.push(ts - lastTs);
+                remaining -= 1;
+            }
+            lastTs = ts;
+            if (remaining > 0) {
+                requestAnimationFrame(step);
+                return;
+            }
+            const sorted = samples.filter((v) => v > 0).sort((a, b) => a - b);
+            if (!sorted.length) return;
+            const median = sorted[Math.floor(sorted.length / 2)];
+            const hz = Math.round(1000 / median);
+            if (Number.isFinite(hz) && hz >= 50) {
+                this._estimatedRefreshHz = hz;
+                this._isHighRefreshDisplay = hz >= 90;
+            }
+        };
+
+        requestAnimationFrame(step);
     }
 
     getSessionId() {
@@ -692,9 +726,10 @@ class ChatWidget {
                 left: 0;
                 width: 100%;
                 height: 100%;
-                background: rgba(0, 0, 0, 0.25);
+                background: rgba(0, 0, 0, 0.38);
                 z-index: 9998;
-                backdrop-filter: blur(3px);
+                backdrop-filter: blur(3px) saturate(70%) brightness(0.78);
+                -webkit-backdrop-filter: blur(3px) saturate(70%) brightness(0.78);
             }
             .chat-overlay.visible {
                 display: block;
@@ -1584,9 +1619,10 @@ class ChatWidget {
                 left: 0;
                 width: 100%;
                 height: 100%;
-                background: rgba(0, 0, 0, 0.25);
+                background: rgba(0, 0, 0, 0.38);
                 z-index: 9997;
-                backdrop-filter: blur(3px);
+                backdrop-filter: blur(3px) saturate(70%) brightness(0.78);
+                -webkit-backdrop-filter: blur(3px) saturate(70%) brightness(0.78);
             }
             .chat-overlay.visible {
                 display: block;
@@ -1976,6 +2012,10 @@ class ChatWidget {
             window.visualViewport.removeEventListener('scroll', this._onViewportChange);
             this._onViewportChange = null;
         }
+        if (this._viewportThrottleTimer) {
+            clearTimeout(this._viewportThrottleTimer);
+            this._viewportThrottleTimer = null;
+        }
         if (this._viewportRafId) {
             cancelAnimationFrame(this._viewportRafId);
             this._viewportRafId = null;
@@ -2213,9 +2253,24 @@ class ChatWidget {
 
     _requestViewportSync() {
         if (!this._onViewportResize) return;
+        const useHighRefreshGuard = this._isIOSMobile() && this._isNarrowViewport() && this._isHighRefreshDisplay;
+        if (useHighRefreshGuard) {
+            const now = performance.now();
+            const minInterval = 1000 / 60;
+            const elapsed = now - this._lastViewportSyncAt;
+            if (elapsed < minInterval) {
+                if (this._viewportThrottleTimer) return;
+                this._viewportThrottleTimer = setTimeout(() => {
+                    this._viewportThrottleTimer = null;
+                    this._requestViewportSync();
+                }, Math.max(0, Math.round(minInterval - elapsed)));
+                return;
+            }
+        }
         if (this._viewportRafId) return;
         this._viewportRafId = requestAnimationFrame(() => {
             this._viewportRafId = null;
+            this._lastViewportSyncAt = performance.now();
             this._onViewportResize?.();
         });
     }
@@ -2245,6 +2300,7 @@ class ChatWidget {
     _scheduleInitialKeyboardDock(visualHeight, bottomInset) {
         this._pendingFirstDockParams = { visualHeight, bottomInset };
         if (this._pendingFirstDockTimer) return;
+        const delay = this._isHighRefreshDisplay ? 50 : 34;
         this._pendingFirstDockTimer = setTimeout(() => {
             const params = this._pendingFirstDockParams;
             this._pendingFirstDockTimer = null;
@@ -2254,7 +2310,7 @@ class ChatWidget {
             this._applyKeyboardDock(params.visualHeight, params.bottomInset, true);
             this._keyboardDocked = true;
             this._lastKeyboardInset = params.bottomInset;
-        }, 34);
+        }, delay);
     }
 
     _clearMotionVisualLockTimer() {
