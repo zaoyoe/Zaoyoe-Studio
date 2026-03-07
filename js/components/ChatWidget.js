@@ -1745,6 +1745,7 @@ class ChatWidget {
         if (this.isOpen) {
             // 1. 先执行所有会触发布局突变的操作（弹窗此刻仍然 opacity:0, visibility:hidden）
             this.fab.style.opacity = '0';
+            this.fab.style.visibility = 'hidden';
             this.fab.style.pointerEvents = 'none';
             if (this.overlay) this.overlay.classList.add('visible');
             this._freezeOverlay();
@@ -1771,6 +1772,7 @@ class ChatWidget {
         } else {
             this.chatWindow.classList.remove('active');
             this.fab.style.opacity = '0';
+            this.fab.style.visibility = 'hidden';
             this.fab.style.pointerEvents = 'none';
             // Hide overlay
             if (this.overlay) this.overlay.classList.remove('visible');
@@ -1789,8 +1791,15 @@ class ChatWidget {
             requestAnimationFrame(() => {
                 requestAnimationFrame(() => {
                     if (this.isOpen) return;
+                    this.fab.style.transition = 'none';
+                    this.fab.style.visibility = 'visible';
                     this.fab.style.opacity = '1';
                     this.fab.style.pointerEvents = 'all';
+                    requestAnimationFrame(() => {
+                        if (!this.isOpen) {
+                            this.fab.style.removeProperty('transition');
+                        }
+                    });
                 });
             });
         }
