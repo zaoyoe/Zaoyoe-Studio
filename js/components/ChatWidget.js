@@ -24,6 +24,8 @@ class ChatWidget {
         this._viewportRafId = null;
         this._keyboardSettleTimer = null;
         this._transitionCleanupTimer = null;
+        this._pendingFirstDockTimer = null;
+        this._pendingFirstDockParams = null;
         this._keyboardBlurUndocking = false;
         this._keyboardPreLiftActive = false;
         this._motionVisualLockTimer = null;
@@ -1896,15 +1898,21 @@ class ChatWidget {
                 this._clearPendingUndockTimer();
                 this._keyboardPreLiftActive = false;
                 if (!this._keyboardDocked) {
-                    // Only animate on the edge transition into keyboard-docked state.
-                    this._applyKeyboardDock(visualHeight, bottomInset, true);
+                    if (isIOS) {
+                        this._scheduleInitialKeyboardDock(visualHeight, bottomInset);
+                    } else {
+                        // Only animate on the edge transition into keyboard-docked state.
+                        this._applyKeyboardDock(visualHeight, bottomInset, true);
+                        this._keyboardDocked = true;
+                        this._lastKeyboardInset = bottomInset;
+                    }
                 } else if (Math.abs(bottomInset - this._lastKeyboardInset) > 1) {
                     // Follow keyboard without animation to avoid repeated transition restarts.
                     this._applyKeyboardDock(visualHeight, bottomInset, false);
+                    this._lastKeyboardInset = bottomInset;
                 }
-                this._keyboardDocked = true;
-                this._lastKeyboardInset = bottomInset;
             } else {
+                this._clearPendingFirstDock();
                 if (!isIOS) {
                     // 非 iOS 保留平滑过渡
                     this._scheduleUndock();
@@ -1992,6 +2000,7 @@ class ChatWidget {
         this._keyboardPreLiftActive = false;
         this._clearKeyboardSettleTimer();
         this._clearTransitionCleanupTimer();
+        this._clearPendingFirstDock();
         this._clearPendingUndockTimer();
         this._restoreMotionVisuals();
     }
@@ -2223,6 +2232,29 @@ class ChatWidget {
             clearTimeout(this._transitionCleanupTimer);
             this._transitionCleanupTimer = null;
         }
+    }
+
+    _clearPendingFirstDock() {
+        if (this._pendingFirstDockTimer) {
+            clearTimeout(this._pendingFirstDockTimer);
+            this._pendingFirstDockTimer = null;
+        }
+        this._pendingFirstDockParams = null;
+    }
+
+    _scheduleInitialKeyboardDock(visualHeight, bottomInset) {
+        this._pendingFirstDockParams = { visualHeight, bottomInset };
+        if (this._pendingFirstDockTimer) return;
+        this._pendingFirstDockTimer = setTimeout(() => {
+            const params = this._pendingFirstDockParams;
+            this._pendingFirstDockTimer = null;
+            this._pendingFirstDockParams = null;
+            if (!params || !this.isOpen || !this.chatWindow || this._keyboardDocked) return;
+            if (!this._isChatInputFocused()) return;
+            this._applyKeyboardDock(params.visualHeight, params.bottomInset, true);
+            this._keyboardDocked = true;
+            this._lastKeyboardInset = params.bottomInset;
+        }, 34);
     }
 
     _clearMotionVisualLockTimer() {
