@@ -29,6 +29,7 @@ class ChatWidget {
         this._lastStableKeyboardInset = 0;
         this._transitionCleanupTimer = null;
         this._openingAnimationTimer = null;
+        this._closingAnimationTimer = null;
         this._pendingFirstDockTimer = null;
         this._pendingFirstDockParams = null;
         this._keyboardDockAnimatingUntil = 0;
@@ -1734,6 +1735,10 @@ class ChatWidget {
             
             /* Mobile: Center the chat window */
             @media (max-width: 700px) {
+                .chat-window:not(.admin-mode-layout) .chat-header {
+                    justify-content: flex-start !important;
+                }
+
                 .chat-window:not(.admin-mode-layout) {
                     --chat-base-translate-y: -50%;
                     --chat-shift-y: 0px;
@@ -1784,6 +1789,26 @@ class ChatWidget {
                         opacity 190ms cubic-bezier(0.22, 1, 0.36, 1),
                         transform 280ms cubic-bezier(0.18, 0.88, 0.24, 1) !important;
                 }
+
+                .chat-window:not(.admin-mode-layout).chat-closing {
+                    visibility: visible !important;
+                    pointer-events: none !important;
+                    opacity: 1 !important;
+                    transform: translate3d(-50%, calc(var(--chat-base-translate-y, -50%) + var(--chat-shift-y, 0px)), 0) scale(1) !important;
+                    transform-origin: center center !important;
+                }
+
+                .chat-window:not(.admin-mode-layout).chat-closing:not(.active) {
+                    opacity: 0 !important;
+                    transform: translate3d(
+                        calc(-50% + var(--chat-open-offset-x, 0px)),
+                        calc(var(--chat-base-translate-y, -50%) + var(--chat-shift-y, 0px) + var(--chat-open-offset-y, 0px)),
+                        0
+                    ) scale(var(--chat-open-scale, 0.2)) !important;
+                    transition:
+                        opacity 170ms cubic-bezier(0.4, 0, 0.2, 1),
+                        transform 250ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+                }
             }
             
             /* Enforce instant scrolling for user mode too */
@@ -1824,7 +1849,6 @@ class ChatWidget {
                         </div>
                     </div>
                 </div>
-                <button class="chat-close"><i class="fas fa-times"></i></button>
             </div>
             <div class="chat-messages" id="chatMessages">
                 <!-- Welcome Message -->
@@ -1859,9 +1883,6 @@ class ChatWidget {
     }
 
     bindUserEvents() {
-        // Toggle Chat (Close button inside header)
-        this.chatWindow.querySelector('.chat-close').addEventListener('click', () => this.toggleChat());
-
         // Overlay click to close (same as admin mode)
         if (this.overlay) {
             this.overlay.addEventListener('click', () => this.toggleChat());
@@ -1912,6 +1933,8 @@ class ChatWidget {
         this.isOpen = !this.isOpen;
         if (this.isOpen) {
             this._clearOpeningAnimationTimer();
+            this._clearClosingAnimationTimer();
+            this.chatWindow.classList.remove('chat-closing');
             this.chatWindow.classList.add('chat-opening');
             this._primeOpeningAnimationFromFab();
             this.chatWindow.style.removeProperty('transition');
@@ -1955,46 +1978,8 @@ class ChatWidget {
             });
 
         } else {
-            this._clearOpeningAnimationTimer();
-            this.chatWindow.classList.remove('chat-opening');
-            this._clearOpeningAnimationState();
-            this.chatWindow.classList.remove('active');
-            this.chatWindow.style.setProperty('transition', 'none', 'important');
-            this.chatWindow.style.setProperty('opacity', '0', 'important');
-            this.chatWindow.style.setProperty('visibility', 'hidden', 'important');
-            this.fab.style.opacity = '0';
-            this.fab.style.visibility = 'hidden';
-            this.fab.style.pointerEvents = 'none';
-            // Hide overlay
-            if (this.overlay) this.overlay.classList.remove('visible');
-
-            // 清理键盘监听 & 还原样式
-            this._disableSessionVisualLock();
-            this._detachKeyboardListener();
-            this._resetKeyboardViewportStyles();
-            this._clearPendingUndockTimer();
-            this._restoreOverlay();
-            this._stableDockHeight = null;
-
-            // UNLOCK SCROLL
-            if (window.iOSScrollLock) window.iOSScrollLock.unlock();
-            this._hideStatusBarShield();
-
-            requestAnimationFrame(() => {
-                requestAnimationFrame(() => {
-                    if (this.isOpen) return;
-                    this.fab.style.transition = 'none';
-                    this.fab.style.visibility = 'visible';
-                    this.fab.style.opacity = '1';
-                    this.fab.style.pointerEvents = 'all';
-                    requestAnimationFrame(() => {
-                        if (!this.isOpen) {
-                            this.fab.style.removeProperty('transition');
-                            this.chatWindow.style.removeProperty('transition');
-                        }
-                    });
-                });
-            });
+            if (this._startClosingAnimation()) return;
+            this._finalizeChatClose();
         }
     }
 
@@ -2445,6 +2430,13 @@ class ChatWidget {
         }
     }
 
+    _clearClosingAnimationTimer() {
+        if (this._closingAnimationTimer) {
+            clearTimeout(this._closingAnimationTimer);
+            this._closingAnimationTimer = null;
+        }
+    }
+
     _primeOpeningAnimationFromFab() {
         if (!this.chatWindow || !this.fab || this.chatWindow.classList.contains('admin-mode-layout')) return;
         if (!this._isNarrowViewport()) return;
@@ -2478,6 +2470,78 @@ class ChatWidget {
         this.chatWindow.style.removeProperty('--chat-open-offset-x');
         this.chatWindow.style.removeProperty('--chat-open-offset-y');
         this.chatWindow.style.removeProperty('--chat-open-scale');
+    }
+
+    _finalizeChatClose() {
+        if (!this.chatWindow) return;
+        this.chatWindow.classList.remove('chat-opening');
+        this.chatWindow.classList.remove('chat-closing');
+        this.chatWindow.classList.remove('active');
+        this._clearOpeningAnimationState();
+        this.chatWindow.style.setProperty('transition', 'none', 'important');
+        this.chatWindow.style.setProperty('opacity', '0', 'important');
+        this.chatWindow.style.setProperty('visibility', 'hidden', 'important');
+        this.fab.style.opacity = '0';
+        this.fab.style.visibility = 'hidden';
+        this.fab.style.pointerEvents = 'none';
+        if (this.overlay) this.overlay.classList.remove('visible');
+
+        this._disableSessionVisualLock();
+        this._detachKeyboardListener();
+        this._resetKeyboardViewportStyles();
+        this._clearPendingUndockTimer();
+        this._restoreOverlay();
+        this._stableDockHeight = null;
+
+        if (window.iOSScrollLock) window.iOSScrollLock.unlock();
+        this._hideStatusBarShield();
+
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                if (this.isOpen) return;
+                this.fab.style.transition = 'none';
+                this.fab.style.visibility = 'visible';
+                this.fab.style.opacity = '1';
+                this.fab.style.pointerEvents = 'all';
+                requestAnimationFrame(() => {
+                    if (!this.isOpen) {
+                        this.fab.style.removeProperty('transition');
+                        this.chatWindow.style.removeProperty('transition');
+                    }
+                });
+            });
+        });
+    }
+
+    _startClosingAnimation() {
+        if (!this.chatWindow) return false;
+        if (this.chatWindow.classList.contains('admin-mode-layout')) return false;
+        if (!this._isNarrowViewport()) return false;
+
+        this._clearOpeningAnimationTimer();
+        this._clearClosingAnimationTimer();
+        this.chatWindow.classList.remove('chat-opening');
+        this.chatWindow.classList.add('chat-closing');
+        this._primeOpeningAnimationFromFab();
+        this._detachKeyboardListener();
+
+        const activeInput = document.activeElement;
+        if (activeInput && this.chatWindow.contains(activeInput) && typeof activeInput.blur === 'function') {
+            activeInput.blur();
+        }
+
+        requestAnimationFrame(() => {
+            if (this.isOpen || !this.chatWindow) return;
+            this.chatWindow.classList.remove('active');
+        });
+
+        this._closingAnimationTimer = setTimeout(() => {
+            this._closingAnimationTimer = null;
+            if (this.isOpen) return;
+            this._finalizeChatClose();
+        }, 280);
+
+        return true;
     }
 
     _clearTransitionCleanupTimer() {
