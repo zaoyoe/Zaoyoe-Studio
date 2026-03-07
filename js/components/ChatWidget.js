@@ -1806,7 +1806,7 @@ class ChatWidget {
                     transform-origin: center center !important;
                 }
 
-                .chat-window:not(.admin-mode-layout).chat-closing:not(.active) {
+                .chat-window:not(.admin-mode-layout).chat-closing.chat-closing-end {
                     opacity: 0 !important;
                     transform: translate3d(
                         calc(-50% + var(--chat-open-offset-x, 0px)),
@@ -1943,6 +1943,7 @@ class ChatWidget {
             this._clearOpeningAnimationTimer();
             this._clearClosingAnimationTimer();
             this.chatWindow.classList.remove('chat-closing');
+            this.chatWindow.classList.remove('chat-closing-end');
             this.chatWindow.classList.add('chat-opening');
             this._primeOpeningAnimationFromFab();
             this.chatWindow.style.removeProperty('transition');
@@ -2487,6 +2488,7 @@ class ChatWidget {
         if (!this.chatWindow) return;
         this.chatWindow.classList.remove('chat-opening');
         this.chatWindow.classList.remove('chat-closing');
+        this.chatWindow.classList.remove('chat-closing-end');
         this.chatWindow.classList.remove('active');
         this._clearOpeningAnimationState();
         this.chatWindow.style.setProperty('transition', 'none', 'important');
@@ -2536,6 +2538,7 @@ class ChatWidget {
         this._clearClosingAnimationTimer();
         this.chatWindow.classList.remove('chat-opening');
         this.chatWindow.classList.add('chat-closing');
+        this.chatWindow.classList.remove('chat-closing-end');
         this._primeOpeningAnimationFromFab();
         this.chatWindow.style.removeProperty('transition');
         this.chatWindow.style.removeProperty('opacity');
@@ -2559,7 +2562,7 @@ class ChatWidget {
                     this.overlay.classList.add('closing');
                     this.overlay.classList.remove('visible');
                 }
-                this.chatWindow.classList.remove('active');
+                this.chatWindow.classList.add('chat-closing-end');
             });
         });
 
