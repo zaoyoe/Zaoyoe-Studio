@@ -1772,6 +1772,9 @@ class ChatWidget {
             .chat-overlay.closing {
                 display: block;
                 opacity: 0;
+                background: rgba(0, 0, 0, 0.56);
+                backdrop-filter: none;
+                -webkit-backdrop-filter: none;
                 transition: opacity 120ms linear 140ms;
             }
             
