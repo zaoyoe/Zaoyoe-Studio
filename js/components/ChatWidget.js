@@ -28,12 +28,14 @@ class ChatWidget {
         this._transitionCleanupTimer = null;
         this._pendingFirstDockTimer = null;
         this._pendingFirstDockParams = null;
+        this._keyboardDockAnimatingUntil = 0;
         this._keyboardBlurUndocking = false;
         this._keyboardPreLiftActive = false;
         this._motionVisualLockTimer = null;
         this._sessionVisualLocked = false;
         this._estimatedRefreshHz = 60;
         this._isHighRefreshDisplay = false;
+        this._statusBarShield = null;
 
         this._detectRefreshRate();
         this.init();
@@ -74,6 +76,50 @@ class ChatWidget {
         };
 
         requestAnimationFrame(step);
+    }
+
+    _getAdaptiveKeyboardDuration(frames, minMs, maxMs) {
+        const hz = Math.max(50, this._estimatedRefreshHz || 60);
+        const ms = Math.round((frames * 1000) / hz);
+        return Math.max(minMs, Math.min(maxMs, ms));
+    }
+
+    _ensureStatusBarShield() {
+        if (this._statusBarShield) return;
+        const shield = document.createElement('div');
+        shield.className = 'chat-status-bar-shield';
+        shield.style.cssText = [
+            'position: fixed',
+            'top: 0',
+            'left: 0',
+            'right: 0',
+            'height: calc(env(safe-area-inset-top, 0px) + 18px)',
+            'background: #000',
+            'opacity: 0',
+            'visibility: hidden',
+            'pointer-events: none',
+            'z-index: 10001',
+            'transition: opacity 80ms linear'
+        ].join('; ');
+        document.body.appendChild(shield);
+        this._statusBarShield = shield;
+    }
+
+    _showStatusBarShield() {
+        if (!(this._isIOSMobile() && this._isNarrowViewport())) return;
+        this._ensureStatusBarShield();
+        if (!this._statusBarShield) return;
+        this._statusBarShield.style.visibility = 'visible';
+        this._statusBarShield.style.opacity = '1';
+    }
+
+    _hideStatusBarShield() {
+        if (!this._statusBarShield) return;
+        this._statusBarShield.style.opacity = '0';
+        setTimeout(() => {
+            if (!this._statusBarShield || this.isOpen) return;
+            this._statusBarShield.style.visibility = 'hidden';
+        }, 90);
     }
 
     getSessionId() {
@@ -1783,6 +1829,7 @@ class ChatWidget {
             this.chatWindow.style.removeProperty('transition');
             this.chatWindow.style.removeProperty('opacity');
             this.chatWindow.style.removeProperty('visibility');
+            this._showStatusBarShield();
             // 1. 先执行所有会触发布局突变的操作（弹窗此刻仍然 opacity:0, visibility:hidden）
             this.fab.style.opacity = '0';
             this.fab.style.visibility = 'hidden';
@@ -1830,6 +1877,7 @@ class ChatWidget {
 
             // UNLOCK SCROLL
             if (window.iOSScrollLock) window.iOSScrollLock.unlock();
+            this._hideStatusBarShield();
 
             requestAnimationFrame(() => {
                 requestAnimationFrame(() => {
@@ -1943,6 +1991,10 @@ class ChatWidget {
                         this._lastKeyboardInset = bottomInset;
                     }
                 } else if (Math.abs(bottomInset - this._lastKeyboardInset) > 1) {
+                    if (this._isHighRefreshDisplay && performance.now() < this._keyboardDockAnimatingUntil) {
+                        this._lastKeyboardInset = bottomInset;
+                        return;
+                    }
                     // Follow keyboard without animation to avoid repeated transition restarts.
                     this._applyKeyboardDock(visualHeight, bottomInset, false);
                     this._lastKeyboardInset = bottomInset;
@@ -2171,11 +2223,13 @@ class ChatWidget {
 
         this.chatWindow.classList.add('keyboard-docked');
         this._clearTransitionCleanupTimer();
+        const dockDuration = this._getAdaptiveKeyboardDuration(9, 70, 150);
         if (animate) {
-            this._applyMotionVisualLock(190);
+            this._applyMotionVisualLock(dockDuration + 40);
+            this._keyboardDockAnimatingUntil = performance.now() + dockDuration + 24;
             this.chatWindow.style.setProperty(
                 'transition',
-                'transform 140ms cubic-bezier(0.22, 1, 0.36, 1), bottom 140ms cubic-bezier(0.22, 1, 0.36, 1)',
+                `transform ${dockDuration}ms cubic-bezier(0.22, 1, 0.36, 1), bottom ${dockDuration}ms cubic-bezier(0.22, 1, 0.36, 1)`,
                 'important'
             );
             this._transitionCleanupTimer = setTimeout(() => {
@@ -2183,7 +2237,7 @@ class ChatWidget {
                 if (this.chatWindow && this.chatWindow.classList.contains('keyboard-docked')) {
                     this.chatWindow.style.removeProperty('transition');
                 }
-            }, 180);
+            }, dockDuration + 40);
         } else {
             this.chatWindow.style.setProperty('transition', 'none', 'important');
         }
@@ -2414,11 +2468,13 @@ class ChatWidget {
         if (this.chatWindow) {
             this.chatWindow.classList.remove('keyboard-docked');
             this._clearTransitionCleanupTimer();
+            const resetDuration = this._getAdaptiveKeyboardDuration(10, 80, 170);
             if (animate) {
-                this._applyMotionVisualLock(210);
+                this._applyMotionVisualLock(resetDuration + 40);
+                this._keyboardDockAnimatingUntil = performance.now() + resetDuration + 24;
                 this.chatWindow.style.setProperty(
                     'transition',
-                    'transform 160ms cubic-bezier(0.22, 1, 0.36, 1), bottom 160ms cubic-bezier(0.22, 1, 0.36, 1)',
+                    `transform ${resetDuration}ms cubic-bezier(0.22, 1, 0.36, 1), bottom ${resetDuration}ms cubic-bezier(0.22, 1, 0.36, 1)`,
                     'important'
                 );
             } else {
@@ -2450,7 +2506,7 @@ class ChatWidget {
                     if (this.chatWindow && !this.chatWindow.classList.contains('keyboard-docked')) {
                         this.chatWindow.style.removeProperty('transition');
                     }
-                }, 200);
+                }, resetDuration + 40);
             } else {
                 requestAnimationFrame(() => {
                     if (this.chatWindow && !this.chatWindow.classList.contains('keyboard-docked')) {
