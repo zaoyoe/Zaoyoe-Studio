@@ -2148,18 +2148,22 @@ body.prompt-modal-open .chat-widget-fab {
         right: 0;
         background: #000;
         pointer-events: none;
-        z-index: 999;
         transition: height 0.18s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.18s linear;
     }
 
+    /* Top bar: z-index 1001 — same as modal, but paints below it (earlier in DOM order).
+       Covers the backdrop blur (z-index 1000) with solid black in the status bar area. */
     body.prompt-modal-open::before {
         top: 0;
         height: calc(env(safe-area-inset-top, 0px) + 72px);
+        z-index: 1001;
     }
 
+    /* Bottom bar: z-index 999 — below backdrop and modal, won't clip the card. */
     body.prompt-modal-open::after {
         bottom: 0;
         height: calc(env(safe-area-inset-bottom, 0px) + 112px);
+        z-index: 999;
     }
 
     body.prompt-modal-open.prompt-modal-keyboard-docked::after {
