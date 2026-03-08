@@ -3221,6 +3221,12 @@ body.prompt-modal-open .chat-widget-fab {
 
 /* Mobile Fallback: Bottom Sheet (Optional override) */
 @media (max-width: 768px) {
+    .poetry-modal {
+        box-sizing: border-box;
+        padding-top: max(env(safe-area-inset-top, 0px), 12px);
+        padding-bottom: 112px;
+    }
+
     .modal-inner {
         flex-direction: column;
         overflow-y: auto;
@@ -3331,7 +3337,8 @@ body.prompt-modal-open .chat-widget-fab {
 
     .modal-inner {
         flex-direction: column;
-        height: 90vh;
+        height: calc(100dvh - 140px);
+        max-height: calc(100dvh - 140px);
         width: 95%;
     }
 
