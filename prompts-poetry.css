@@ -2139,6 +2139,7 @@ body.prompt-modal-open .chat-widget-fab {
 
 /* 移动端：弹窗打开时将导航栏压到弹窗下层，避免闪烁 */
 @media (max-width: 768px) {
+
     body.prompt-modal-open::before,
     body.prompt-modal-open::after {
         content: '';
@@ -2147,7 +2148,7 @@ body.prompt-modal-open .chat-widget-fab {
         right: 0;
         background: #000;
         pointer-events: none;
-        z-index: 1002;
+        z-index: 999;
         transition: height 0.18s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.18s linear;
     }
 
@@ -2193,34 +2194,7 @@ body.prompt-modal-open .chat-widget-fab {
     transition: opacity 0.5s ease;
 }
 
-.poetry-modal-backdrop::before,
-.poetry-modal-backdrop::after {
-    content: '';
-    position: fixed;
-    left: 0;
-    right: 0;
-    background: #000;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.5s ease;
-}
-
-.poetry-modal-backdrop::before {
-    top: 0;
-    height: calc(env(safe-area-inset-top, 0px) + 72px);
-}
-
-.poetry-modal-backdrop::after {
-    bottom: 0;
-    height: 128px;
-}
-
 .poetry-modal-backdrop.visible {
-    opacity: 1;
-}
-
-.poetry-modal-backdrop.visible::before,
-.poetry-modal-backdrop.visible::after {
     opacity: 1;
 }
 
