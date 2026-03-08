@@ -3374,8 +3374,8 @@ body.prompt-modal-open .chat-widget-fab {
 
     .modal-inner {
         flex-direction: column;
-        height: min(86svh, calc(100% - 160px));
-        max-height: min(86svh, calc(100% - 160px));
+        height: min(90svh, calc(100% - 128px));
+        max-height: min(90svh, calc(100% - 128px));
         width: 95%;
         margin: 0 auto;
     }
@@ -3386,7 +3386,7 @@ body.prompt-modal-open .chat-widget-fab {
 
     .modal-content-col {
         height: 60%;
-        padding: 24px;
+        padding: 24px 24px 40px;
     }
 
     .modal-title-large {
