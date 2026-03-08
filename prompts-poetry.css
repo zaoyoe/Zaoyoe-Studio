@@ -2127,6 +2127,10 @@ body.prompt-modal-open .top-right-nav {
     z-index: 500 !important;
 }
 
+body.prompt-modal-open {
+    background: #000 !important;
+}
+
 body.prompt-modal-open .chat-widget-fab {
     opacity: 0 !important;
     visibility: hidden !important;
@@ -2135,9 +2139,42 @@ body.prompt-modal-open .chat-widget-fab {
 
 /* 移动端：弹窗打开时将导航栏压到弹窗下层，避免闪烁 */
 @media (max-width: 768px) {
+    body.prompt-modal-open::before,
+    body.prompt-modal-open::after {
+        content: '';
+        position: fixed;
+        left: 0;
+        right: 0;
+        background: #000;
+        pointer-events: none;
+        z-index: 1002;
+        transition: height 0.18s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.18s linear;
+    }
+
+    body.prompt-modal-open::before {
+        top: 0;
+        height: calc(env(safe-area-inset-top, 0px) + 72px);
+    }
+
+    body.prompt-modal-open::after {
+        bottom: 0;
+        height: calc(env(safe-area-inset-bottom, 0px) + 112px);
+    }
+
+    body.prompt-modal-open.prompt-modal-keyboard-docked::after {
+        height: calc(env(safe-area-inset-bottom, 0px) + 64px);
+    }
+
     body.prompt-modal-open .framer-nav {
         z-index: 999 !important;
-        /* Modal is z-index 1000, so navbar goes behind it instantly — no flash */
+    }
+
+    body.prompt-modal-open .framer-nav,
+    body.prompt-modal-open .top-right-nav {
+        background: #000 !important;
+        box-shadow: none !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
     }
 }
 
