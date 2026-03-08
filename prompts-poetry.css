@@ -2160,7 +2160,7 @@ body.prompt-modal-open .chat-widget-fab {
        Covers the backdrop blur (z-index 1000) with solid black in the status bar area. */
     body.prompt-modal-open::before {
         top: 0;
-        height: calc(env(safe-area-inset-top, 0px) + 96px);
+        height: env(safe-area-inset-top, 0px);
         z-index: 1003;
     }
 
