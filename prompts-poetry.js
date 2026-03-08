@@ -4564,11 +4564,11 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
         0,
         Math.round(bottomInsetOverride ?? Math.max(insetFromLayout, insetFromViewportDelta))
     );
-    if (bottomInset < 80) return;
+    if (bottomInset < 60) return;
 
     promptModalKeyboardDock.lastStableInset = bottomInset;
 
-    const keyboardTop = composedHeight;
+    const keyboardTop = Math.max(0, baseViewportHeight - bottomInset);
     const cardHeight = Math.round(
         promptModalKeyboardDock.baseHeight || modalInner.getBoundingClientRect().height || 0
     );
@@ -4578,7 +4578,7 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
     const baseBottom = Math.round(
         promptModalKeyboardDock.baseBottom || modalInner.getBoundingClientRect().bottom || 0
     );
-    const targetBottom = Math.max(40, Math.round(keyboardTop - 16));
+    const targetBottom = Math.max(40, Math.round(keyboardTop - 12));
     const shiftY = Math.max(-520, Math.min(520, Math.round(targetBottom - baseBottom)));
     const duration = animate ? 120 : 0;
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
@@ -4766,7 +4766,7 @@ function attachPromptModalKeyboardDock() {
             schedulePromptModalStableKeyboardInset(bottomInset);
         }
 
-        if (inputFocused && bottomInset > 80) {
+        if (inputFocused && bottomInset > 60) {
             clearPromptModalUndockTimer();
             if (!promptModalKeyboardDock.docked) {
                 applyPromptModalKeyboardDock(visualHeight, bottomInset, false);

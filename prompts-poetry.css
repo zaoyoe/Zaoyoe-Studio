@@ -2156,7 +2156,34 @@ body.prompt-modal-open .chat-widget-fab {
     transition: opacity 0.5s ease;
 }
 
+.poetry-modal-backdrop::before,
+.poetry-modal-backdrop::after {
+    content: '';
+    position: fixed;
+    left: 0;
+    right: 0;
+    background: #000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.5s ease;
+}
+
+.poetry-modal-backdrop::before {
+    top: 0;
+    height: calc(env(safe-area-inset-top, 0px) + 72px);
+}
+
+.poetry-modal-backdrop::after {
+    bottom: 0;
+    height: 128px;
+}
+
 .poetry-modal-backdrop.visible {
+    opacity: 1;
+}
+
+.poetry-modal-backdrop.visible::before,
+.poetry-modal-backdrop.visible::after {
     opacity: 1;
 }
 
@@ -3223,8 +3250,7 @@ body.prompt-modal-open .chat-widget-fab {
 @media (max-width: 768px) {
     .poetry-modal {
         box-sizing: border-box;
-        padding-top: max(env(safe-area-inset-top, 0px), 12px);
-        padding-bottom: 112px;
+        padding: 0;
     }
 
     .modal-inner {
@@ -3337,9 +3363,10 @@ body.prompt-modal-open .chat-widget-fab {
 
     .modal-inner {
         flex-direction: column;
-        height: calc(100dvh - 140px);
-        max-height: calc(100dvh - 140px);
+        height: min(90svh, calc(100% - 128px));
+        max-height: min(90svh, calc(100% - 128px));
         width: 95%;
+        margin: 0 auto;
     }
 
     .modal-image-col {
