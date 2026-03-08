@@ -613,33 +613,6 @@ body {
     background-color: #000;
 }
 
-@media (max-width: 768px) {
-    html[data-theme="dark"]::before,
-    html[data-theme="dark"]::after,
-    html[data-theme="dark"] body::before,
-    html[data-theme="dark"] body::after {
-        content: '';
-        position: fixed;
-        left: 0;
-        right: 0;
-        background: #000;
-        pointer-events: none;
-        z-index: 998;
-    }
-
-    html[data-theme="dark"]::before,
-    html[data-theme="dark"] body::before {
-        top: 0;
-        height: calc(env(safe-area-inset-top, 0px) + 96px);
-    }
-
-    html[data-theme="dark"]::after,
-    html[data-theme="dark"] body::after {
-        bottom: 0;
-        height: calc(env(safe-area-inset-bottom, 0px) + 112px);
-    }
-}
-
 /* --- Spotlight Navigation --- */
 .poetry-nav-container {
     position: relative;
