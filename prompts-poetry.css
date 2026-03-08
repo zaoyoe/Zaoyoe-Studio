@@ -2141,7 +2141,7 @@ body.prompt-modal-open .chat-widget-fab {
     }
 }
 
-.poetry-modal {
+.poetry-modal-backdrop {
     position: fixed;
     top: 0;
     left: 0;
@@ -2149,7 +2149,27 @@ body.prompt-modal-open .chat-widget-fab {
     height: 100%;
     background: var(--modal-overlay);
     backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
     z-index: 1000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.5s ease;
+}
+
+.poetry-modal-backdrop.visible {
+    opacity: 1;
+}
+
+.poetry-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    z-index: 1001;
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.5s ease;
