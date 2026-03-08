@@ -2161,7 +2161,11 @@ body.prompt-modal-open .chat-widget-fab {
     body.prompt-modal-open::before {
         top: 0;
         height: calc(env(safe-area-inset-top, 0px) + 96px);
-        z-index: 1001;
+        z-index: 1003;
+    }
+
+    body.prompt-modal-open.prompt-modal-keyboard-docked::before {
+        height: calc(env(safe-area-inset-top, 0px) + 120px);
     }
 
     /* Bottom bar: z-index 999 — below backdrop and modal, won't clip the card. */
