@@ -4370,6 +4370,7 @@ const promptModalKeyboardDock = {
 
 let promptModalOpeningTimer = null;
 let promptModalThemeColorMeta = null;
+let promptModalStatusBarShield = null;
 
 function isPromptModalIOSMobile() {
     const ua = navigator.userAgent || '';
@@ -4410,6 +4411,56 @@ function unlockPromptModalThemeColor() {
     if (restoreContent === null) return;
     meta.setAttribute('content', restoreContent || '#000000');
     meta.removeAttribute('data-prompt-theme-restore');
+}
+
+function ensurePromptModalStatusBarShield() {
+    if (promptModalStatusBarShield?.isConnected) return promptModalStatusBarShield;
+    const shield = document.createElement('div');
+    shield.className = 'prompt-status-bar-shield';
+    shield.style.cssText = [
+        'position: fixed',
+        'top: 0',
+        'left: 0',
+        'right: 0',
+        'height: env(safe-area-inset-top, 0px)',
+        'background: #000',
+        'opacity: 0',
+        'visibility: hidden',
+        'pointer-events: none',
+        'z-index: 1004',
+        'transition: height 170ms cubic-bezier(0.22, 1, 0.36, 1), opacity 80ms linear'
+    ].join('; ');
+    document.body.appendChild(shield);
+    promptModalStatusBarShield = shield;
+    return shield;
+}
+
+function setPromptModalStatusBarShieldExpanded(expanded) {
+    if (!isPromptModalIOSMobile()) return;
+    const shield = ensurePromptModalStatusBarShield();
+    if (!shield) return;
+    shield.style.height = expanded
+        ? 'calc(env(safe-area-inset-top, 0px) + 120px)'
+        : 'env(safe-area-inset-top, 0px)';
+}
+
+function showPromptModalStatusBarShield() {
+    if (!isPromptModalIOSMobile()) return;
+    const shield = ensurePromptModalStatusBarShield();
+    if (!shield) return;
+    setPromptModalStatusBarShieldExpanded(false);
+    shield.style.visibility = 'visible';
+    shield.style.opacity = '1';
+}
+
+function hidePromptModalStatusBarShield() {
+    if (!promptModalStatusBarShield) return;
+    promptModalStatusBarShield.style.opacity = '0';
+    setPromptModalStatusBarShieldExpanded(false);
+    setTimeout(() => {
+        if (!promptModalStatusBarShield || document.body.classList.contains('prompt-modal-open')) return;
+        promptModalStatusBarShield.style.visibility = 'hidden';
+    }, 90);
 }
 
 function getPromptModalDockNodes() {
@@ -4628,6 +4679,7 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
     clearPromptModalUndockTimer();
     clearPromptModalFirstDockTimer();
     document.body.classList.add('prompt-modal-keyboard-docked');
+    setPromptModalStatusBarShieldExpanded(true);
     modal.classList.add('keyboard-docked');
     modalInner.classList.add('keyboard-docked');
     modalInner.style.transition = duration
@@ -4668,6 +4720,7 @@ function resetPromptModalKeyboardDock(animate = false) {
     clearPromptModalDockTimers();
     const duration = animate ? 170 : 0;
     document.body.classList.remove('prompt-modal-keyboard-docked');
+    setPromptModalStatusBarShieldExpanded(false);
     modalInner.style.position = 'fixed';
     modalInner.style.top = '50%';
     modalInner.style.left = '50%';
@@ -5008,6 +5061,7 @@ function openPromptModal(id) {
     if (window.iOSScrollLock && modalInner) window.iOSScrollLock.lock(modalInner);
     document.body.classList.add('prompt-modal-open'); // Hide header behind modal
     lockPromptModalThemeColor();
+    showPromptModalStatusBarShield();
     resetPromptModalKeyboardDock(false);
     clearPromptModalOpeningTimer();
     promptModalOpeningTimer = setTimeout(() => {
@@ -6822,6 +6876,7 @@ function closePromptModal() {
     document.body.classList.remove('prompt-modal-keyboard-docked');
     document.body.classList.remove('prompt-modal-open');
     unlockPromptModalThemeColor();
+    hidePromptModalStatusBarShield();
 }
 
 // Click outside modal to close
