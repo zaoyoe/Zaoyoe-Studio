@@ -4360,7 +4360,7 @@ const promptModalKeyboardDock = {
     baseViewportHeight: 0,
     baseVisualHeight: 0,
     baseHeight: 0,
-    preferredDockHeight: 0,
+    baseWidth: 0,
     lastStableInset: 0,
     lastKeyboardInset: 0,
     animatingUntil: 0,
@@ -4467,7 +4467,7 @@ function freezePromptModalOverlay() {
         promptModalKeyboardDock.baseViewportHeight || 0,
         window.innerHeight || 0,
         document.documentElement.clientHeight || 0,
-        window.screen?.height || 0
+        (window.visualViewport ? ((window.visualViewport.height || 0) + (window.visualViewport.offsetTop || 0)) : 0)
     );
     promptModalKeyboardDock.overlayBaseHeight = baseHeight + 64;
 
@@ -4498,9 +4498,10 @@ function restorePromptModalOverlay() {
 
 function capturePromptModalDockMetrics(force = false) {
     if (!isPromptModalDockEnabledOrActive()) return;
-    const { modalInner } = getPromptModalDockNodes();
+    const { modal, modalInner } = getPromptModalDockNodes();
     const vv = window.visualViewport;
-    if (!modalInner || !vv) return;
+    if (!modal || !modalInner || !vv) return;
+    if (modal.classList.contains('keyboard-docked')) return;
 
     const rect = modalInner.getBoundingClientRect();
     const viewportHeight = Math.max(
@@ -4515,13 +4516,10 @@ function capturePromptModalDockMetrics(force = false) {
         }
     }
 
-    if (force || !promptModalKeyboardDock.docked || !promptModalKeyboardDock.preferredDockHeight) {
-        const viewportBasedHeight = Math.round(viewportHeight * 0.54);
-        const rectBasedHeight = rect.height > 0 ? Math.round(rect.height * 0.6) : 0;
-        promptModalKeyboardDock.preferredDockHeight = Math.max(
-            360,
-            Math.min(560, viewportBasedHeight, rectBasedHeight || viewportBasedHeight)
-        );
+    if (force || !promptModalKeyboardDock.docked || !promptModalKeyboardDock.baseWidth) {
+        if (rect.width > 0) {
+            promptModalKeyboardDock.baseWidth = Math.round(rect.width);
+        }
     }
 
     if (force || !promptModalKeyboardDock.docked || !promptModalKeyboardDock.baseViewportHeight) {
@@ -4568,21 +4566,16 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
 
     promptModalKeyboardDock.lastStableInset = bottomInset;
 
-    const topMargin = Math.max(12, Math.round(visualTop + 12));
     const keyboardTop = baseViewportHeight - bottomInset;
-    const availableHeight = Math.max(320, Math.round(keyboardTop - topMargin - 12));
-    const baseHeight = Math.round(promptModalKeyboardDock.baseHeight || modalInner.getBoundingClientRect().height || 0);
-    const preferredDockHeight = Math.round(
-        promptModalKeyboardDock.preferredDockHeight ||
-        Math.max(360, Math.min(560, Math.round(baseViewportHeight * 0.54)))
+    const cardHeight = Math.round(
+        promptModalKeyboardDock.baseHeight || modalInner.getBoundingClientRect().height || 0
     );
-    const dockHeight = Math.min(
-        availableHeight,
-        preferredDockHeight,
-        baseHeight || preferredDockHeight
+    const cardWidth = Math.round(
+        promptModalKeyboardDock.baseWidth || modalInner.getBoundingClientRect().width || 0
     );
-    const centeredBottom = Math.round((baseViewportHeight * 0.5) + (dockHeight * 0.5));
-    const shiftY = Math.min(0, Math.round(keyboardTop - 8 - centeredBottom));
+    const centeredBottom = Math.round((baseViewportHeight * 0.5) + (cardHeight * 0.5));
+    const targetBottom = Math.max(40, Math.round(keyboardTop - 12));
+    const shiftY = Math.max(-520, Math.min(520, Math.round(targetBottom - centeredBottom)));
     const duration = animate ? 150 : 0;
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
 
@@ -4603,10 +4596,15 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
     modalInner.style.right = 'auto';
     modalInner.style.bottom = 'auto';
     modalInner.style.margin = '0';
+    if (cardWidth > 0) {
+        modalInner.style.width = `${cardWidth}px`;
+        modalInner.style.maxWidth = `${cardWidth}px`;
+    }
+    if (cardHeight > 0) {
+        modalInner.style.height = `${cardHeight}px`;
+        modalInner.style.maxHeight = `${cardHeight}px`;
+    }
     modalInner.style.transform = `translate(-50%, calc(-50% + ${shiftY}px)) scale(1)`;
-    modalInner.style.height = `${dockHeight}px`;
-    modalInner.style.maxHeight = `${dockHeight}px`;
-    modalInner.style.width = '95%';
     promptModalKeyboardDock.docked = true;
     promptModalKeyboardDock.lastKeyboardInset = bottomInset;
     promptModalKeyboardDock.animatingUntil = duration ? now + duration + 36 : 0;
@@ -4626,19 +4624,24 @@ function resetPromptModalKeyboardDock(animate = false) {
 
     clearPromptModalDockTimers();
     const duration = animate ? 180 : 0;
+    modalInner.style.position = 'fixed';
+    modalInner.style.top = '50%';
+    modalInner.style.left = '50%';
+    modalInner.style.right = 'auto';
+    modalInner.style.bottom = 'auto';
+    modalInner.style.margin = '0';
+    if (promptModalKeyboardDock.baseWidth > 0) {
+        modalInner.style.width = `${promptModalKeyboardDock.baseWidth}px`;
+        modalInner.style.maxWidth = `${promptModalKeyboardDock.baseWidth}px`;
+    }
+    if (promptModalKeyboardDock.baseHeight > 0) {
+        modalInner.style.height = `${promptModalKeyboardDock.baseHeight}px`;
+        modalInner.style.maxHeight = `${promptModalKeyboardDock.baseHeight}px`;
+    }
     modalInner.style.transition = duration
-        ? `transform ${duration}ms cubic-bezier(0.22, 1, 0.36, 1), height ${duration}ms cubic-bezier(0.22, 1, 0.36, 1), max-height ${duration}ms cubic-bezier(0.22, 1, 0.36, 1)`
+        ? `transform ${duration}ms cubic-bezier(0.22, 1, 0.36, 1)`
         : 'none';
-    modalInner.style.removeProperty('transform');
-    modalInner.style.removeProperty('height');
-    modalInner.style.removeProperty('max-height');
-    modalInner.style.removeProperty('position');
-    modalInner.style.removeProperty('top');
-    modalInner.style.removeProperty('left');
-    modalInner.style.removeProperty('right');
-    modalInner.style.removeProperty('bottom');
-    modalInner.style.removeProperty('margin');
-    modalInner.style.removeProperty('width');
+    modalInner.style.transform = 'translate(-50%, -50%) scale(1)';
     modal.classList.remove('keyboard-docked');
     modalInner.classList.remove('keyboard-docked');
     promptModalKeyboardDock.docked = false;
@@ -4649,10 +4652,34 @@ function resetPromptModalKeyboardDock(animate = false) {
         setTimeout(() => {
             const { modalInner: activeInner } = getPromptModalDockNodes();
             if (!activeInner) return;
+            activeInner.style.removeProperty('position');
+            activeInner.style.removeProperty('top');
+            activeInner.style.removeProperty('left');
+            activeInner.style.removeProperty('right');
+            activeInner.style.removeProperty('bottom');
+            activeInner.style.removeProperty('margin');
+            activeInner.style.removeProperty('transform');
+            activeInner.style.removeProperty('width');
+            activeInner.style.removeProperty('max-width');
+            activeInner.style.removeProperty('height');
+            activeInner.style.removeProperty('max-height');
             activeInner.style.transition = '';
+            requestAnimationFrame(() => capturePromptModalDockMetrics(true));
         }, duration + 40);
     } else {
+        modalInner.style.removeProperty('position');
+        modalInner.style.removeProperty('top');
+        modalInner.style.removeProperty('left');
+        modalInner.style.removeProperty('right');
+        modalInner.style.removeProperty('bottom');
+        modalInner.style.removeProperty('margin');
+        modalInner.style.removeProperty('transform');
+        modalInner.style.removeProperty('width');
+        modalInner.style.removeProperty('max-width');
+        modalInner.style.removeProperty('height');
+        modalInner.style.removeProperty('max-height');
         modalInner.style.transition = '';
+        requestAnimationFrame(() => capturePromptModalDockMetrics(true));
     }
 }
 
@@ -4737,7 +4764,9 @@ function attachPromptModalKeyboardDock() {
         const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
 
         if (bottomInset < 40) {
-            capturePromptModalDockMetrics(true);
+            if (!promptModalKeyboardDock.docked) {
+                capturePromptModalDockMetrics(true);
+            }
             promptModalKeyboardDock.pendingStableKeyboardInset = 0;
             clearPromptModalKeyboardSettleTimer();
         } else {
@@ -4791,7 +4820,7 @@ function detachPromptModalKeyboardDock() {
     promptModalKeyboardDock.baseViewportHeight = 0;
     promptModalKeyboardDock.baseVisualHeight = 0;
     promptModalKeyboardDock.baseHeight = 0;
-    promptModalKeyboardDock.preferredDockHeight = 0;
+    promptModalKeyboardDock.baseWidth = 0;
     promptModalKeyboardDock.lastStableInset = 0;
     promptModalKeyboardDock.lastKeyboardInset = 0;
     promptModalKeyboardDock.pendingStableKeyboardInset = 0;
@@ -4831,8 +4860,7 @@ function openPromptModal(id) {
     const initialViewportHeight = Math.max(
         window.innerHeight || 0,
         document.documentElement.clientHeight || 0,
-        vv ? ((vv.height || 0) + (vv.offsetTop || 0)) : 0,
-        window.screen?.height || 0
+        vv ? ((vv.height || 0) + (vv.offsetTop || 0)) : 0
     );
     promptModalKeyboardDock.baseViewportHeight = initialViewportHeight;
     promptModalKeyboardDock.baseVisualHeight = Math.max(
