@@ -4354,6 +4354,8 @@ const promptModalKeyboardDock = {
     pendingUndockTimer: null,
     pendingFirstDockTimer: null,
     pendingFirstDockParams: null,
+    keyboardSettleTimer: null,
+    pendingStableKeyboardInset: 0,
     docked: false,
     baseViewportHeight: 0,
     baseVisualHeight: 0,
@@ -4361,7 +4363,9 @@ const promptModalKeyboardDock = {
     preferredDockHeight: 0,
     lastStableInset: 0,
     lastKeyboardInset: 0,
-    animatingUntil: 0
+    animatingUntil: 0,
+    overlayBaseHeight: 0,
+    overlaySyncHandler: null
 };
 
 let promptModalOpeningTimer = null;
@@ -4420,6 +4424,98 @@ function clearPromptModalFirstDockTimer() {
 function clearPromptModalDockTimers() {
     clearPromptModalUndockTimer();
     clearPromptModalFirstDockTimer();
+}
+
+function clearPromptModalKeyboardSettleTimer() {
+    if (promptModalKeyboardDock.keyboardSettleTimer) {
+        clearTimeout(promptModalKeyboardDock.keyboardSettleTimer);
+        promptModalKeyboardDock.keyboardSettleTimer = null;
+    }
+}
+
+function schedulePromptModalStableKeyboardInset(bottomInset) {
+    promptModalKeyboardDock.pendingStableKeyboardInset = bottomInset;
+    clearPromptModalKeyboardSettleTimer();
+    promptModalKeyboardDock.keyboardSettleTimer = setTimeout(() => {
+        promptModalKeyboardDock.keyboardSettleTimer = null;
+        promptModalKeyboardDock.lastStableInset = promptModalKeyboardDock.pendingStableKeyboardInset;
+        if (!promptModalKeyboardDock.docked || !isPromptModalDockEnabledOrActive()) return;
+        if (!isPromptModalDockInputFocused()) return;
+        const vv = window.visualViewport;
+        if (!vv) return;
+        applyPromptModalKeyboardDock(vv.height || 0, promptModalKeyboardDock.lastStableInset, false);
+    }, 120);
+}
+
+function freezePromptModalOverlay() {
+    const { modal } = getPromptModalDockNodes();
+    if (!modal) return;
+
+    const vv = window.visualViewport;
+    const baseHeight = Math.max(
+        promptModalKeyboardDock.overlayBaseHeight || 0,
+        window.innerHeight || 0,
+        document.documentElement.clientHeight || 0,
+        vv ? ((vv.height || 0) + (vv.offsetTop || 0) + 64) : 0,
+        window.screen?.height || 0
+    );
+    promptModalKeyboardDock.overlayBaseHeight = baseHeight;
+
+    const syncOverlayFrame = () => {
+        const currentModal = getPromptModalDockNodes().modal;
+        if (!currentModal) return;
+        const viewport = window.visualViewport;
+        const overlayHeight = Math.max(
+            promptModalKeyboardDock.overlayBaseHeight || 0,
+            window.innerHeight || 0,
+            document.documentElement.clientHeight || 0,
+            viewport ? ((viewport.height || 0) + (viewport.offsetTop || 0) + 64) : 0,
+            window.screen?.height || 0
+        );
+        currentModal.style.setProperty('position', 'fixed');
+        currentModal.style.setProperty('top', '0');
+        currentModal.style.setProperty('left', '0');
+        currentModal.style.setProperty('right', '0');
+        currentModal.style.setProperty('bottom', 'auto');
+        currentModal.style.setProperty('width', '100%');
+        currentModal.style.setProperty('height', `${overlayHeight}px`);
+        currentModal.style.setProperty('max-height', `${overlayHeight}px`);
+    };
+
+    if (!promptModalKeyboardDock.overlaySyncHandler) {
+        promptModalKeyboardDock.overlaySyncHandler = syncOverlayFrame;
+        window.addEventListener('resize', syncOverlayFrame, { passive: true });
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', syncOverlayFrame, { passive: true });
+            window.visualViewport.addEventListener('scroll', syncOverlayFrame, { passive: true });
+        }
+    }
+
+    syncOverlayFrame();
+}
+
+function restorePromptModalOverlay() {
+    const { modal } = getPromptModalDockNodes();
+    const syncOverlayFrame = promptModalKeyboardDock.overlaySyncHandler;
+    if (syncOverlayFrame) {
+        window.removeEventListener('resize', syncOverlayFrame);
+        if (window.visualViewport) {
+            window.visualViewport.removeEventListener('resize', syncOverlayFrame);
+            window.visualViewport.removeEventListener('scroll', syncOverlayFrame);
+        }
+    }
+    promptModalKeyboardDock.overlaySyncHandler = null;
+    promptModalKeyboardDock.overlayBaseHeight = 0;
+
+    if (!modal) return;
+    modal.style.removeProperty('position');
+    modal.style.removeProperty('top');
+    modal.style.removeProperty('left');
+    modal.style.removeProperty('right');
+    modal.style.removeProperty('bottom');
+    modal.style.removeProperty('width');
+    modal.style.removeProperty('height');
+    modal.style.removeProperty('max-height');
 }
 
 function capturePromptModalDockMetrics(force = false) {
@@ -4520,8 +4616,7 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
     clearPromptModalFirstDockTimer();
     modal.classList.add('keyboard-docked');
     modalInner.classList.add('keyboard-docked');
-    modal.style.height = `${baseViewportHeight}px`;
-    modal.style.maxHeight = `${baseViewportHeight}px`;
+    freezePromptModalOverlay();
     modal.style.setProperty('align-items', 'flex-start');
     modal.style.setProperty('justify-content', 'center');
     modalInner.style.transition = duration
@@ -4569,8 +4664,7 @@ function resetPromptModalKeyboardDock(animate = false) {
     modalInner.style.removeProperty('bottom');
     modalInner.style.removeProperty('margin');
     modalInner.style.removeProperty('width');
-    modal.style.removeProperty('height');
-    modal.style.removeProperty('max-height');
+    restorePromptModalOverlay();
     modal.style.removeProperty('align-items');
     modal.style.removeProperty('justify-content');
     modal.classList.remove('keyboard-docked');
@@ -4672,6 +4766,10 @@ function attachPromptModalKeyboardDock() {
 
         if (bottomInset < 40) {
             capturePromptModalDockMetrics(true);
+            promptModalKeyboardDock.pendingStableKeyboardInset = 0;
+            clearPromptModalKeyboardSettleTimer();
+        } else {
+            schedulePromptModalStableKeyboardInset(bottomInset);
         }
 
         if (inputFocused && bottomInset > 80) {
@@ -4724,7 +4822,9 @@ function detachPromptModalKeyboardDock() {
     promptModalKeyboardDock.preferredDockHeight = 0;
     promptModalKeyboardDock.lastStableInset = 0;
     promptModalKeyboardDock.lastKeyboardInset = 0;
+    promptModalKeyboardDock.pendingStableKeyboardInset = 0;
     promptModalKeyboardDock.animatingUntil = 0;
+    clearPromptModalKeyboardSettleTimer();
     clearPromptModalDockTimers();
     resetPromptModalKeyboardDock(false);
 }
