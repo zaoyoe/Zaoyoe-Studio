@@ -4379,7 +4379,19 @@ function getPromptModalDockNodes() {
     const modal = document.getElementById('promptModal');
     const modalInner = modal?.querySelector('.modal-inner');
     const commentInput = document.getElementById('commentInput');
-    return { modal, modalInner, commentInput };
+    const backdrop = document.getElementById('promptModalBackdrop');
+    return { modal, modalInner, commentInput, backdrop };
+}
+
+function ensurePromptModalBackdrop() {
+    let backdrop = document.getElementById('promptModalBackdrop');
+    if (backdrop) return backdrop;
+
+    backdrop = document.createElement('div');
+    backdrop.id = 'promptModalBackdrop';
+    backdrop.className = 'poetry-modal-backdrop';
+    document.body.appendChild(backdrop);
+    return backdrop;
 }
 
 function clearPromptModalOpeningTimer() {
@@ -4447,8 +4459,8 @@ function schedulePromptModalStableKeyboardInset(bottomInset) {
 }
 
 function freezePromptModalOverlay() {
-    const { modal } = getPromptModalDockNodes();
-    if (!modal) return;
+    const backdrop = ensurePromptModalBackdrop();
+    if (!backdrop) return;
 
     const baseHeight = Math.max(
         promptModalKeyboardDock.overlayBaseHeight || 0,
@@ -4459,29 +4471,29 @@ function freezePromptModalOverlay() {
     );
     promptModalKeyboardDock.overlayBaseHeight = baseHeight + 64;
 
-    modal.style.setProperty('position', 'fixed');
-    modal.style.setProperty('top', '0');
-    modal.style.setProperty('left', '0');
-    modal.style.setProperty('right', '0');
-    modal.style.setProperty('bottom', 'auto');
-    modal.style.setProperty('width', '100%');
-    modal.style.setProperty('height', `${promptModalKeyboardDock.overlayBaseHeight}px`);
-    modal.style.setProperty('max-height', `${promptModalKeyboardDock.overlayBaseHeight}px`);
+    backdrop.style.setProperty('position', 'fixed');
+    backdrop.style.setProperty('top', '0');
+    backdrop.style.setProperty('left', '0');
+    backdrop.style.setProperty('right', '0');
+    backdrop.style.setProperty('bottom', 'auto');
+    backdrop.style.setProperty('width', '100%');
+    backdrop.style.setProperty('height', `${promptModalKeyboardDock.overlayBaseHeight}px`);
+    backdrop.style.setProperty('max-height', `${promptModalKeyboardDock.overlayBaseHeight}px`);
 }
 
 function restorePromptModalOverlay() {
-    const { modal } = getPromptModalDockNodes();
+    const { backdrop } = getPromptModalDockNodes();
     promptModalKeyboardDock.overlayBaseHeight = 0;
 
-    if (!modal) return;
-    modal.style.removeProperty('position');
-    modal.style.removeProperty('top');
-    modal.style.removeProperty('left');
-    modal.style.removeProperty('right');
-    modal.style.removeProperty('bottom');
-    modal.style.removeProperty('width');
-    modal.style.removeProperty('height');
-    modal.style.removeProperty('max-height');
+    if (!backdrop) return;
+    backdrop.style.removeProperty('position');
+    backdrop.style.removeProperty('top');
+    backdrop.style.removeProperty('left');
+    backdrop.style.removeProperty('right');
+    backdrop.style.removeProperty('bottom');
+    backdrop.style.removeProperty('width');
+    backdrop.style.removeProperty('height');
+    backdrop.style.removeProperty('max-height');
 }
 
 function capturePromptModalDockMetrics(force = false) {
@@ -4582,9 +4594,6 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
     clearPromptModalFirstDockTimer();
     modal.classList.add('keyboard-docked');
     modalInner.classList.add('keyboard-docked');
-    freezePromptModalOverlay();
-    modal.style.setProperty('align-items', 'flex-start');
-    modal.style.setProperty('justify-content', 'center');
     modalInner.style.transition = duration
         ? `transform ${duration}ms cubic-bezier(0.22, 1, 0.36, 1), height ${duration}ms cubic-bezier(0.22, 1, 0.36, 1), max-height ${duration}ms cubic-bezier(0.22, 1, 0.36, 1)`
         : 'none';
@@ -4630,9 +4639,6 @@ function resetPromptModalKeyboardDock(animate = false) {
     modalInner.style.removeProperty('bottom');
     modalInner.style.removeProperty('margin');
     modalInner.style.removeProperty('width');
-    restorePromptModalOverlay();
-    modal.style.removeProperty('align-items');
-    modal.style.removeProperty('justify-content');
     modal.classList.remove('keyboard-docked');
     modalInner.classList.remove('keyboard-docked');
     promptModalKeyboardDock.docked = false;
@@ -4819,6 +4825,8 @@ function openPromptModal(id) {
     });
 
     const modal = document.getElementById('promptModal');
+    const modalInner = modal?.querySelector('.modal-inner');
+    const backdrop = ensurePromptModalBackdrop();
     const vv = window.visualViewport;
     const initialViewportHeight = Math.max(
         window.innerHeight || 0,
@@ -4832,10 +4840,12 @@ function openPromptModal(id) {
         vv?.height || 0
     );
     promptModalKeyboardDock.overlayBaseHeight = initialViewportHeight + 160;
+    freezePromptModalOverlay();
 
     // Reset State
     isCommentMode = false;
     modal.querySelector('.modal-inner').classList.remove('comment-mode');
+    backdrop?.classList.add('visible');
 
     // Reset comment button state to match
     const triggerBtn = document.getElementById('commentTriggerBtn');
@@ -4938,7 +4948,7 @@ function openPromptModal(id) {
 
     modal.classList.add('active');
     modal.classList.add('modal-opening');
-    if (window.iOSScrollLock) window.iOSScrollLock.lock(modal);
+    if (window.iOSScrollLock && modalInner) window.iOSScrollLock.lock(modalInner);
     document.body.classList.add('prompt-modal-open'); // Hide header behind modal
     resetPromptModalKeyboardDock(false);
     clearPromptModalOpeningTimer();
@@ -6743,8 +6753,11 @@ function closePromptModal() {
         modal.classList.remove('modal-opening');
         modal.classList.remove('active');
     }
+    const { backdrop } = getPromptModalDockNodes();
+    backdrop?.classList.remove('visible');
 
     detachPromptModalKeyboardDock();
+    restorePromptModalOverlay();
 
     // Re-enable body scroll
     if (window.iOSScrollLock) window.iOSScrollLock.unlock();
