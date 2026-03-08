@@ -599,16 +599,8 @@ body.has-banner .home-btn {
     background: rgba(255, 255, 255, 0.1);
 }
 
-html {
-    background-color: var(--bg-color);
-}
-
-html[data-theme="dark"] {
-    background-color: #000;
-}
-
 body {
-    background-color: var(--bg-color);
+    background-color: inherit;
     color: var(--text-main);
     font-family: var(--font-sans);
     margin: 0;
