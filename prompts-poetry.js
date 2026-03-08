@@ -4428,7 +4428,7 @@ function ensurePromptModalStatusBarShield() {
         'visibility: hidden',
         'pointer-events: none',
         'z-index: 1004',
-        'transition: height 170ms cubic-bezier(0.22, 1, 0.36, 1), opacity 80ms linear'
+        'transition: opacity 80ms linear'
     ].join('; ');
     document.body.appendChild(shield);
     promptModalStatusBarShield = shield;
@@ -4440,7 +4440,7 @@ function setPromptModalStatusBarShieldExpanded(expanded) {
     const shield = ensurePromptModalStatusBarShield();
     if (!shield) return;
     shield.style.height = expanded
-        ? 'calc(env(safe-area-inset-top, 0px) + 120px)'
+        ? 'calc(env(safe-area-inset-top, 0px) + 78px)'
         : 'env(safe-area-inset-top, 0px)';
 }
 
@@ -4919,6 +4919,7 @@ function primePromptModalKeyboardDock() {
         clearPromptModalOpeningTimer();
         modal.classList.remove('modal-opening');
     }
+    setPromptModalStatusBarShieldExpanded(true);
     attachPromptModalKeyboardDock();
     capturePromptModalDockMetrics(true);
 }
