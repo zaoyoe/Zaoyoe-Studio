@@ -4361,6 +4361,7 @@ const promptModalKeyboardDock = {
     baseVisualHeight: 0,
     baseHeight: 0,
     baseWidth: 0,
+    currentShiftY: 0,
     lastStableInset: 0,
     lastKeyboardInset: 0,
     animatingUntil: 0,
@@ -4566,16 +4567,21 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
 
     promptModalKeyboardDock.lastStableInset = bottomInset;
 
-    const keyboardTop = baseViewportHeight - bottomInset;
+    const keyboardTop = composedHeight;
     const cardHeight = Math.round(
         promptModalKeyboardDock.baseHeight || modalInner.getBoundingClientRect().height || 0
     );
     const cardWidth = Math.round(
         promptModalKeyboardDock.baseWidth || modalInner.getBoundingClientRect().width || 0
     );
-    const centeredBottom = Math.round((baseViewportHeight * 0.5) + (cardHeight * 0.5));
-    const targetBottom = Math.max(40, Math.round(keyboardTop - 12));
-    const shiftY = Math.max(-520, Math.min(520, Math.round(targetBottom - centeredBottom)));
+    const currentRect = modalInner.getBoundingClientRect();
+    const currentBottom = Math.round(currentRect.bottom || 0);
+    const browserChromeAllowance = Math.max(56, Math.min(92, Math.round(bottomInset * 0.18)));
+    const targetBottom = Math.max(40, Math.round(keyboardTop + browserChromeAllowance - 12));
+    const nextShift = promptModalKeyboardDock.docked
+        ? (promptModalKeyboardDock.currentShiftY || 0) + (targetBottom - currentBottom)
+        : (targetBottom - currentBottom);
+    const shiftY = Math.max(-520, Math.min(520, Math.round(nextShift)));
     const duration = animate ? 150 : 0;
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
 
@@ -4606,6 +4612,7 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
     }
     modalInner.style.transform = `translate(-50%, calc(-50% + ${shiftY}px)) scale(1)`;
     promptModalKeyboardDock.docked = true;
+    promptModalKeyboardDock.currentShiftY = shiftY;
     promptModalKeyboardDock.lastKeyboardInset = bottomInset;
     promptModalKeyboardDock.animatingUntil = duration ? now + duration + 36 : 0;
 
@@ -4645,6 +4652,7 @@ function resetPromptModalKeyboardDock(animate = false) {
     modal.classList.remove('keyboard-docked');
     modalInner.classList.remove('keyboard-docked');
     promptModalKeyboardDock.docked = false;
+    promptModalKeyboardDock.currentShiftY = 0;
     promptModalKeyboardDock.animatingUntil = 0;
     promptModalKeyboardDock.lastKeyboardInset = 0;
 
@@ -4687,8 +4695,8 @@ function schedulePromptModalUndock() {
     if (promptModalKeyboardDock.pendingUndockTimer) return;
     promptModalKeyboardDock.pendingUndockTimer = setTimeout(() => {
         promptModalKeyboardDock.pendingUndockTimer = null;
-        resetPromptModalKeyboardDock(true);
-    }, 60);
+        resetPromptModalKeyboardDock(false);
+    }, 40);
 }
 
 function scheduleInitialPromptModalKeyboardDock(visualHeight, bottomInset) {
@@ -4821,6 +4829,7 @@ function detachPromptModalKeyboardDock() {
     promptModalKeyboardDock.baseVisualHeight = 0;
     promptModalKeyboardDock.baseHeight = 0;
     promptModalKeyboardDock.baseWidth = 0;
+    promptModalKeyboardDock.currentShiftY = 0;
     promptModalKeyboardDock.lastStableInset = 0;
     promptModalKeyboardDock.lastKeyboardInset = 0;
     promptModalKeyboardDock.pendingStableKeyboardInset = 0;
