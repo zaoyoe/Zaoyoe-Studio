@@ -4819,6 +4819,19 @@ function openPromptModal(id) {
     });
 
     const modal = document.getElementById('promptModal');
+    const vv = window.visualViewport;
+    const initialViewportHeight = Math.max(
+        window.innerHeight || 0,
+        document.documentElement.clientHeight || 0,
+        vv ? ((vv.height || 0) + (vv.offsetTop || 0)) : 0,
+        window.screen?.height || 0
+    );
+    promptModalKeyboardDock.baseViewportHeight = initialViewportHeight;
+    promptModalKeyboardDock.baseVisualHeight = Math.max(
+        promptModalKeyboardDock.baseVisualHeight || 0,
+        vv?.height || 0
+    );
+    promptModalKeyboardDock.overlayBaseHeight = initialViewportHeight + 160;
 
     // Reset State
     isCommentMode = false;
