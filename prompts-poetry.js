@@ -4364,8 +4364,7 @@ const promptModalKeyboardDock = {
     lastStableInset: 0,
     lastKeyboardInset: 0,
     animatingUntil: 0,
-    overlayBaseHeight: 0,
-    overlaySyncHandler: null
+    overlayBaseHeight: 0
 };
 
 let promptModalOpeningTimer = null;
@@ -4451,60 +4450,27 @@ function freezePromptModalOverlay() {
     const { modal } = getPromptModalDockNodes();
     if (!modal) return;
 
-    const vv = window.visualViewport;
     const baseHeight = Math.max(
         promptModalKeyboardDock.overlayBaseHeight || 0,
+        promptModalKeyboardDock.baseViewportHeight || 0,
         window.innerHeight || 0,
         document.documentElement.clientHeight || 0,
-        vv ? ((vv.height || 0) + (vv.offsetTop || 0) + 64) : 0,
         window.screen?.height || 0
     );
-    promptModalKeyboardDock.overlayBaseHeight = baseHeight;
+    promptModalKeyboardDock.overlayBaseHeight = baseHeight + 64;
 
-    const syncOverlayFrame = () => {
-        const currentModal = getPromptModalDockNodes().modal;
-        if (!currentModal) return;
-        const viewport = window.visualViewport;
-        const overlayHeight = Math.max(
-            promptModalKeyboardDock.overlayBaseHeight || 0,
-            window.innerHeight || 0,
-            document.documentElement.clientHeight || 0,
-            viewport ? ((viewport.height || 0) + (viewport.offsetTop || 0) + 64) : 0,
-            window.screen?.height || 0
-        );
-        currentModal.style.setProperty('position', 'fixed');
-        currentModal.style.setProperty('top', '0');
-        currentModal.style.setProperty('left', '0');
-        currentModal.style.setProperty('right', '0');
-        currentModal.style.setProperty('bottom', 'auto');
-        currentModal.style.setProperty('width', '100%');
-        currentModal.style.setProperty('height', `${overlayHeight}px`);
-        currentModal.style.setProperty('max-height', `${overlayHeight}px`);
-    };
-
-    if (!promptModalKeyboardDock.overlaySyncHandler) {
-        promptModalKeyboardDock.overlaySyncHandler = syncOverlayFrame;
-        window.addEventListener('resize', syncOverlayFrame, { passive: true });
-        if (window.visualViewport) {
-            window.visualViewport.addEventListener('resize', syncOverlayFrame, { passive: true });
-            window.visualViewport.addEventListener('scroll', syncOverlayFrame, { passive: true });
-        }
-    }
-
-    syncOverlayFrame();
+    modal.style.setProperty('position', 'fixed');
+    modal.style.setProperty('top', '0');
+    modal.style.setProperty('left', '0');
+    modal.style.setProperty('right', '0');
+    modal.style.setProperty('bottom', 'auto');
+    modal.style.setProperty('width', '100%');
+    modal.style.setProperty('height', `${promptModalKeyboardDock.overlayBaseHeight}px`);
+    modal.style.setProperty('max-height', `${promptModalKeyboardDock.overlayBaseHeight}px`);
 }
 
 function restorePromptModalOverlay() {
     const { modal } = getPromptModalDockNodes();
-    const syncOverlayFrame = promptModalKeyboardDock.overlaySyncHandler;
-    if (syncOverlayFrame) {
-        window.removeEventListener('resize', syncOverlayFrame);
-        if (window.visualViewport) {
-            window.visualViewport.removeEventListener('resize', syncOverlayFrame);
-            window.visualViewport.removeEventListener('scroll', syncOverlayFrame);
-        }
-    }
-    promptModalKeyboardDock.overlaySyncHandler = null;
     promptModalKeyboardDock.overlayBaseHeight = 0;
 
     if (!modal) return;
