@@ -6948,13 +6948,18 @@ function closePromptModal() {
     detachPromptModalKeyboardDock();
     restorePromptModalOverlay();
 
-    // Re-enable body scroll
-    if (window.iOSScrollLock) window.iOSScrollLock.unlock();
-    document.body.classList.remove('prompt-modal-keyboard-docked');
+    // 1. Instantly remove HTML black mask to prime Safari's background color cache
     document.documentElement.classList.remove('prompt-modal-open');
     document.body.classList.remove('prompt-modal-open');
-    unlockPromptModalThemeColor();
-    hidePromptModalStatusBarShield();
+
+    // 2. Wait for modal fade animation (mostly) before releasing position:fixed and theme-color
+    // This exact split-timing perfectly mimics Chat Widget and prevents Safari 15+ compositor thrashing.
+    setTimeout(() => {
+        if (window.iOSScrollLock) window.iOSScrollLock.unlock();
+        document.body.classList.remove('prompt-modal-keyboard-docked');
+        unlockPromptModalThemeColor();
+        hidePromptModalStatusBarShield();
+    }, 400);
 }
 
 // Click outside modal to close
