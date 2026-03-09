@@ -5125,9 +5125,11 @@ function openPromptModal(id) {
     modal.classList.add('active');
     modal.classList.add('modal-opening');
     if (window.iOSScrollLock && modalInner) window.iOSScrollLock.lock(modalInner);
-    document.documentElement.classList.add('prompt-modal-open');
-    document.body.classList.add('prompt-modal-open'); // Hide header behind modal
-    lockPromptModalThemeColor();
+
+    // We intentionally DO NOT manipulate document.documentElement or <meta theme-color> here.
+    // The Login Modal architecture proves that simply using iOSScrollLock and a stable 
+    // opacity backdrop-filter flawlessly bridges the Safari address bar without freezing.
+
     showPromptModalStatusBarShield();
     resetPromptModalKeyboardDock(false);
     clearPromptModalOpeningTimer();
@@ -6899,8 +6901,6 @@ function navigateModalImage(direction) {
 })();
 
 function closePromptModal() {
-    const modal = document.getElementById('promptModal');
-
     // If closing while in comment mode, revert DOM first to prevent glitches next time
     if (isCommentMode) {
         // Simple revert without animation
@@ -6914,7 +6914,7 @@ function closePromptModal() {
 
         // Reset comment mode state
         isCommentMode = false;
-        const modalInner = modal.querySelector('.modal-inner');
+        const modalInner = document.querySelector('#promptModal .modal-inner');
         if (modalInner) modalInner.classList.remove('comment-mode');
 
         // Reset comment button
@@ -6926,43 +6926,34 @@ function closePromptModal() {
         }
     }
 
+    const modal = document.getElementById('promptModal');
     if (modal) {
         clearPromptModalOpeningTimer();
         modal.classList.remove('modal-opening');
         modal.classList.remove('active');
-        // Force instant removal of the compositor layer
-        modal.style.display = 'none';
-        // Give browser 1 frame to clear, then restore flex (so next open works)
-        requestAnimationFrame(() => {
-            modal.style.display = '';
-        });
     }
 
     const { backdrop } = getPromptModalDockNodes();
     if (backdrop) {
-        // INSTANT DOM DESTRUCTION: Skips the 500ms opacity fade entirely!
-        // This is the proven Login Modal method that flawlessly bypasses Safari 15+ Safe Area compositor bugs.
-        backdrop.style.display = 'none';
+        // Restore smooth exit animation by fading out the background over 500ms.
+        // We removed the HTML background hacks, so Safari will safely composite the stable 
+        // 0.6 opacity backdrop against the normal page without freezing the address bar.
+        backdrop.classList.add('closing');
         backdrop.classList.remove('visible');
-        backdrop.classList.remove('closing');
-
-        requestAnimationFrame(() => {
-            backdrop.style.display = '';
-        });
     }
 
     detachPromptModalKeyboardDock();
     restorePromptModalOverlay();
 
-    // Instantly restore HTML/Body layouts to un-glitch the address bar
-    document.documentElement.classList.remove('prompt-modal-open');
-    document.body.classList.remove('prompt-modal-open');
+    // Give CSS 500ms to fade out, then clean up the DOM and unlock scroll
+    setTimeout(() => {
+        if (backdrop) backdrop.classList.remove('closing');
 
-    if (window.iOSScrollLock) window.iOSScrollLock.unlock();
-    document.body.classList.remove('prompt-modal-keyboard-docked');
+        if (window.iOSScrollLock) window.iOSScrollLock.unlock();
+        document.body.classList.remove('prompt-modal-keyboard-docked');
 
-    unlockPromptModalThemeColor();
-    hidePromptModalStatusBarShield();
+        hidePromptModalStatusBarShield();
+    }, 550);
 }
 
 // Click outside modal to close

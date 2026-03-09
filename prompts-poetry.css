@@ -2148,14 +2148,7 @@ body.prompt-modal-open .chat-widget-fab {
 
 /* 移动端：弹窗打开时将导航栏隐藏，避免闪烁以及产生影响毛玻璃的黑色渐变底部 */
 @media (max-width: 768px) {
-
-    body.prompt-modal-open .framer-nav,
-    body.prompt-modal-open .top-right-nav {
-        opacity: 0 !important;
-        pointer-events: none !important;
-        transform: translateY(10px) scale(0.98);
-        transition: opacity 0.3s ease, transform 0.3s ease;
-    }
+    /* Removed buggy nav hiding rules here */
 }
 
 .poetry-modal-backdrop {
@@ -2164,8 +2157,8 @@ body.prompt-modal-open .chat-widget-fab {
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.01);
-    /* Pure transparent glass (0.01 bypasses iOS Safari drop bugs) */
+    background: rgba(0, 0, 0, 0.5);
+    /* Stable solid glass to prevent Safari compositor freeze */
     backdrop-filter: blur(20px) saturate(150%);
     -webkit-backdrop-filter: blur(20px) saturate(150%);
     transform: translateZ(0);
@@ -2179,21 +2172,17 @@ body.prompt-modal-open .chat-widget-fab {
 
 
 
-body.prompt-modal-open .framer-nav {
-    filter: blur(12px);
-    -webkit-filter: blur(12px);
-    opacity: 0.4;
-    transition: filter 0.5s ease, opacity 0.5s ease;
-}
+/* Removed buggy nav blurring rules */
 
 .poetry-modal-backdrop.visible {
     opacity: 1;
 }
 
 .poetry-modal-backdrop.closing {
+    /* Prevent Safari freeze during exit animation by making glass solid early */
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
-    background: rgba(0, 0, 0, 0.4) !important;
+    background: rgba(0, 0, 0, 0.6) !important;
     transition: opacity 0.5s ease;
 }
 
@@ -3831,6 +3820,4 @@ body.prompt-modal-open .framer-nav {
         transform: translateY(450px);
         opacity: 0;
     }
-}
-
 }
