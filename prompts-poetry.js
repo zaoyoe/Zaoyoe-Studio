@@ -6947,24 +6947,28 @@ function closePromptModal() {
         // Essential for iOS Safari: remove backdrop-filter immediately to prevent freeze during opacity fade
         backdrop.classList.add('closing');
         backdrop.classList.remove('visible');
-        setTimeout(() => backdrop.classList.remove('closing'), 500);
     }
 
     detachPromptModalKeyboardDock();
     restorePromptModalOverlay();
 
-    // 1. Instantly remove HTML black mask to prime Safari's background color cache
-    document.documentElement.classList.remove('prompt-modal-open');
-    document.body.classList.remove('prompt-modal-open');
-
-    // 2. Wait for modal fade animation (mostly) before releasing position:fixed and theme-color
-    // This exact split-timing perfectly mimics Chat Widget and prevents Safari 15+ compositor thrashing.
+    // 🔴 THE ULTIMATE SAFARI IOS FIX:
+    // We MUST wait for the CSS opacity transition (500ms) to completely finish BEFORE we touch
+    // position:fixed, HTML background, or theme-color. If we alter layout while a compositor 
+    // layer is animating, Safari permanently freezes the bottom Safe Area color.
     setTimeout(() => {
+        if (backdrop) backdrop.classList.remove('closing');
+
+        // Batch all layout/paint mutations precisely when the DOM is at rest
+        document.documentElement.classList.remove('prompt-modal-open');
+        document.body.classList.remove('prompt-modal-open');
+
         if (window.iOSScrollLock) window.iOSScrollLock.unlock();
         document.body.classList.remove('prompt-modal-keyboard-docked');
+
         unlockPromptModalThemeColor();
         hidePromptModalStatusBarShield();
-    }, 400);
+    }, 550); // 50ms buffer past the 500ms CSS transition
 }
 
 // Click outside modal to close
