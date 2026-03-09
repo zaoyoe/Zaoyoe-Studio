@@ -1,6 +1,8 @@
 /* Added to force GPU isolation for the background canvas, preventing iOS backdrop-filter from corrupting it with 'purple noise flashes' */
 canvas#starryCanvas,
 .starry-sky-canvas {
+    transform: translateZ(0);
+    -webkit-transform: translateZ(0);
     will-change: transform;
 }
 
@@ -2184,12 +2186,7 @@ body.prompt-modal-open .chat-widget-fab {
 }
 
 .poetry-modal-backdrop.closing {
-    background: rgba(0, 0, 0, 0) !important;
-    backdrop-filter: blur(0px) !important;
-    -webkit-backdrop-filter: blur(0px) !important;
-    clip-path: none !important;
-    -webkit-clip-path: none !important;
-    transition: all 0.15s linear !important;
+    background: rgba(0, 0, 0, 0.45) !important;
 }
 
 body.modal-open .prompt-card {
@@ -2237,9 +2234,8 @@ body.modal-open .prompt-card {
     border-radius: 24px;
     display: flex;
     overflow: hidden;
-    /* CRITICAL FIX: Force WebKit to respect border-radius clipping during GPU transform */
-    -webkit-mask-image: -webkit-radial-gradient(white, black);
-    mask-image: radial-gradient(white, black);
+    /* CRITICAL FIX: Force hardware GPU masking to clip child layers */
+    transform: translateZ(0);
     position: relative;
     box-shadow: 0 50px 100px rgba(0, 0, 0, 0.1);
     /* Softer shadow */
@@ -2268,6 +2264,8 @@ body.modal-open .prompt-card {
     background: var(--modal-img-bg, #f1f5f9);
     position: relative;
     overflow: hidden;
+    transform: translateZ(0);
+    /* Clip children */
     display: flex;
     align-items: center;
     justify-content: center;
