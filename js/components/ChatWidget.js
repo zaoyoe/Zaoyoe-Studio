@@ -1762,8 +1762,11 @@ class ChatWidget {
             }
             
             /* Hide site navigation smoothly and prevent WebKit texture limit bugs when chat opens */
+            html.chat-widget-open {
+                background-color: #000 !important;
+            }
             body.chat-widget-open {
-                background: transparent !important;
+                background-color: transparent !important;
             }
             
             @media (max-width: 768px) {
@@ -2011,6 +2014,7 @@ class ChatWidget {
     toggleChat() {
         this.isOpen = !this.isOpen;
         if (this.isOpen) {
+            document.documentElement.classList.add('chat-widget-open');
             document.body.classList.add('chat-widget-open');
             this._clearOpeningAnimationTimer();
             this._clearClosingAnimationTimer();
@@ -2062,6 +2066,7 @@ class ChatWidget {
             });
 
         } else {
+            document.documentElement.classList.remove('chat-widget-open');
             document.body.classList.remove('chat-widget-open');
             if (this._startClosingAnimation()) return;
             this._finalizeChatClose();
