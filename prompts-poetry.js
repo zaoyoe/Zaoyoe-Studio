@@ -4409,7 +4409,13 @@ function unlockPromptModalThemeColor() {
     if (!meta) return;
     const restoreContent = meta.getAttribute('data-prompt-theme-restore');
     if (restoreContent === null) return;
-    meta.setAttribute('content', restoreContent || '#000000');
+
+    if (restoreContent === '') {
+        // If originally empty, remove the content attribute so Safari falls back to html background natively
+        meta.setAttribute('content', 'null');
+    } else {
+        meta.setAttribute('content', restoreContent);
+    }
     meta.removeAttribute('data-prompt-theme-restore');
 }
 
