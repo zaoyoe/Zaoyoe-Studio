@@ -4440,7 +4440,7 @@ function setPromptModalStatusBarShieldExpanded(expanded) {
     const shield = ensurePromptModalStatusBarShield();
     if (!shield) return;
     shield.style.height = expanded
-        ? 'calc(env(safe-area-inset-top, 0px) + 78px)'
+        ? 'calc(env(safe-area-inset-top, 0px) + 52px)'
         : 'env(safe-area-inset-top, 0px)';
 }
 
