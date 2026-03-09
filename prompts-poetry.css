@@ -2197,12 +2197,11 @@ body.prompt-modal-open .chat-widget-fab {
 body.prompt-modal-open #main-content {
     filter: blur(12px) brightness(0.85);
     -webkit-filter: blur(12px) brightness(0.85);
-    transform: scale(0.96) translateY(env(safe-area-inset-top, 0));
-    transform-origin: top center;
+    transform: scale(0.96);
+    /* Scale from the exact center of the current viewport */
+    transform-origin: 50% calc(var(--modal-scroll-y, 0px) + 50vh);
     border-radius: 24px;
     /* Soften edges when scaled down */
-    overflow: hidden;
-    /* Ensure rounded corners clip content */
 }
 
 /* Base transition for smooth enter/exit */
