@@ -2157,9 +2157,8 @@ body.prompt-modal-open .chat-widget-fab {
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.45);
-    backdrop-filter: blur(25px);
-    -webkit-backdrop-filter: blur(25px);
+    background: rgba(0, 0, 0, 0.75);
+    /* Solid dark overlay, NO backdrop-filter to prevent purple Safari WebGL bug */
     /* Force independent GPU compositor layer to prevent Safari purple star tearing */
     transform: translate3d(0, 0, 0);
     -webkit-transform: translate3d(0, 0, 0);
@@ -2169,8 +2168,6 @@ body.prompt-modal-open .chat-widget-fab {
     pointer-events: none;
     transition: opacity 0.15s ease-out;
 }
-
-
 
 /* Removed buggy nav blurring rules */
 
@@ -2184,6 +2181,10 @@ body.prompt-modal-open .chat-widget-fab {
        Without this, the dark overlay alone keeps the address bar dark during fadeout. */
     clip-path: inset(0 0 env(safe-area-inset-bottom) 0) !important;
     -webkit-clip-path: inset(0 0 env(safe-area-inset-bottom) 0) !important;
+}
+
+body.modal-open .prompt-card {
+    animation-play-state: paused !important;
 }
 
 .poetry-modal {

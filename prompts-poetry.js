@@ -4403,44 +4403,7 @@ function forceSafariSafeAreaJiggle() {
     }, 50);
 }
 
-// On initial page load, Safari samples the viewport BEFORE the canvas has rendered,
-// so it sees the html background (#000000) and makes the bar opaque black.
-// After the canvas paints (~300ms), we force Safari to re-evaluate via Safe Area DOM mutation.
-if (typeof document !== 'undefined') {
-    document.addEventListener('DOMContentLoaded', function () {
-        setTimeout(function () {
-            // Bypass isPromptModalIOSMobile guard — this needs to run on all iOS devices
-            var ua = navigator.userAgent || '';
-            var isiOS = /iPad|iPhone|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-            if (!isiOS) return;
-
-            // Technique 1: DOM Mutation in the Safe Area
-            // Inject a transparent fixed element directly into the bottom safe area zone.
-            var trigger = document.createElement('div');
-            trigger.style.cssText = 'position:fixed; bottom:0; left:0; width:100%; height:env(safe-area-inset-bottom, 34px); background:rgba(0,0,0,0.001); z-index:999999; pointer-events:none;';
-            document.body.appendChild(trigger);
-
-            // Technique 2: Meta tag jiggle as backup
-            var meta = document.querySelector('meta[name="theme-color"]');
-            var hadMeta = !!meta;
-            if (!meta) {
-                meta = document.createElement('meta');
-                meta.setAttribute('name', 'theme-color');
-                document.head.appendChild(meta);
-            }
-            meta.setAttribute('content', '#000001');
-
-            setTimeout(function () {
-                trigger.remove();
-                if (!hadMeta) {
-                    meta.remove();
-                } else {
-                    meta.removeAttribute('content');
-                }
-            }, 60);
-        }, 600); // Wait 600ms to ensure starry canvas is fully painted
-    });
-}
+// Jiggle intentionally removed - causes more issues than it solves on iOS 15+ 
 
 function ensurePromptModalStatusBarShield() {
     if (promptModalStatusBarShield?.isConnected) return promptModalStatusBarShield;
@@ -5125,7 +5088,8 @@ function openPromptModal(id) {
     // Initialize image upload functionality
     initCommentImageUpload();
 
-    // Physically mount modal into isolated render tree
+    // Physical modal mounting
+    document.body.classList.add('modal-open');
     modal.style.display = 'flex';
     // Clear any stale closing state (clip-path, etc.) from previous close
     modal.classList.remove('closing');
@@ -6961,6 +6925,7 @@ function closePromptModal() {
 
         if (window.iOSScrollLock) window.iOSScrollLock.unlock();
         document.body.classList.remove('prompt-modal-keyboard-docked');
+        document.body.classList.remove('modal-open');
 
         hidePromptModalStatusBarShield();
 
