@@ -2157,8 +2157,6 @@ body.prompt-modal-open .chat-widget-fab {
     left: 0;
     width: 100%;
     height: 100%;
-    height: 100dvh;
-    /* Natively reacts to iOS keyboard */
     background: rgba(0, 0, 0, 0.45);
     backdrop-filter: blur(25px);
     -webkit-backdrop-filter: blur(25px);
@@ -2193,8 +2191,6 @@ body.modal-open .prompt-card {
     left: 0;
     width: 100%;
     height: 100%;
-    height: 100dvh;
-    /* Natively reacts to iOS keyboard */
     background: transparent;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
@@ -2205,10 +2201,7 @@ body.modal-open .prompt-card {
     /* Hidden to forcefully remove from Safari DOM Intersection algorithm when closed */
     display: none;
     justify-content: center;
-    align-items: flex-start;
-    /* Changed from center to fix Safari flexbox dvh bounce */
-    padding-top: calc(env(safe-area-inset-top, 40px) + 12px);
-    /* Anchor tightly below the zaoyoe.com bar without huge gaps */
+    align-items: center;
 }
 
 .poetry-modal.active {
@@ -2228,8 +2221,6 @@ body.modal-open .prompt-card {
     width: 90%;
     max-width: 1000px;
     height: 85vh;
-    height: 85dvh;
-    /* Natively shrinks when iOS keyboard opens */
     background: var(--modal-bg);
     border: 1px solid var(--card-border);
     border-radius: 24px;
