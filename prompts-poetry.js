@@ -4379,7 +4379,9 @@ function isPromptModalIOSMobile() {
 }
 
 function isPromptModalKeyboardDockEnabled() {
-    return isPromptModalIOSMobile() && !!window.visualViewport;
+    // Disabled custom docking to allow Safari's native smooth scroll-into-view
+    // which eliminates the jitter/bounce when the keyboard pops up.
+    return false;
 }
 
 function forceSafariSafeAreaJiggle() {
