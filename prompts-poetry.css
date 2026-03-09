@@ -2132,6 +2132,10 @@ body.prompt-modal-open .top-right-nav {
     z-index: 500 !important;
 }
 
+html.prompt-modal-open {
+    background-color: #000 !important;
+}
+
 body.prompt-modal-open {
     background: transparent !important;
 }

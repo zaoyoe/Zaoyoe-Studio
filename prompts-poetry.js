@@ -5099,6 +5099,7 @@ function openPromptModal(id) {
     modal.classList.add('active');
     modal.classList.add('modal-opening');
     if (window.iOSScrollLock && modalInner) window.iOSScrollLock.lock(modalInner);
+    document.documentElement.classList.add('prompt-modal-open');
     document.body.classList.add('prompt-modal-open'); // Hide header behind modal
     lockPromptModalThemeColor();
     showPromptModalStatusBarShield();
@@ -6914,6 +6915,7 @@ function closePromptModal() {
     // Re-enable body scroll
     if (window.iOSScrollLock) window.iOSScrollLock.unlock();
     document.body.classList.remove('prompt-modal-keyboard-docked');
+    document.documentElement.classList.remove('prompt-modal-open');
     document.body.classList.remove('prompt-modal-open');
     unlockPromptModalThemeColor();
     hidePromptModalStatusBarShield();
