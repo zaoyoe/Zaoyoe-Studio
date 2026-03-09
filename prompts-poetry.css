@@ -2205,7 +2205,10 @@ body.modal-open .prompt-card {
     /* Hidden to forcefully remove from Safari DOM Intersection algorithm when closed */
     display: none;
     justify-content: center;
-    align-items: center;
+    align-items: flex-start;
+    /* Changed from center to fix Safari flexbox dvh bounce */
+    padding-top: calc(env(safe-area-inset-top, 40px) + 12px);
+    /* Anchor tightly below the zaoyoe.com bar without huge gaps */
 }
 
 .poetry-modal.active {
