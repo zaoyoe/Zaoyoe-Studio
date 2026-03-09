@@ -2179,10 +2179,6 @@ body.prompt-modal-open .chat-widget-fab {
 
 .poetry-modal-backdrop.closing {
     background: rgba(0, 0, 0, 0.45) !important;
-    /* CRITICAL: Also clip the backdrop from Safari's bottom sampling zone.
-       Without this, the dark overlay alone keeps the address bar dark during fadeout. */
-    clip-path: inset(0 0 env(safe-area-inset-bottom) 0) !important;
-    -webkit-clip-path: inset(0 0 env(safe-area-inset-bottom) 0) !important;
 }
 
 body.modal-open .prompt-card {

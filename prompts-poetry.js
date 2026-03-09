@@ -5101,7 +5101,14 @@ function openPromptModal(id) {
     modal.classList.add('active');
     modal.classList.add('modal-opening');
     if (window.iOSScrollLock && modalInner) {
-        window.iOSScrollLock.lock(modalInner, !isPromptModalIOSMobile());
+        // Use lockLight instead of lock on iOS to avoid position:fixed
+        // This prevents Safari from constantly triggering visualViewport stabilization
+        // which causes violent bouncing when the comment keyboard pops up!
+        if (isPromptModalIOSMobile()) {
+            window.iOSScrollLock.lockLight(modalInner);
+        } else {
+            window.iOSScrollLock.lock(modalInner);
+        }
     }
 
     showPromptModalStatusBarShield();
