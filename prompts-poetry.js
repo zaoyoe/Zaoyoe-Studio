@@ -4440,7 +4440,7 @@ function setPromptModalStatusBarShieldExpanded(expanded) {
     const shield = ensurePromptModalStatusBarShield();
     if (!shield) return;
     shield.style.height = expanded
-        ? 'calc(env(safe-area-inset-top, 0px) + 1px)'
+        ? 'calc(env(safe-area-inset-top, 0px) + 8px)'
         : 'env(safe-area-inset-top, 0px)';
 }
 
@@ -4662,11 +4662,17 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
     const cardWidth = Math.round(
         promptModalKeyboardDock.baseWidth || modalInner.getBoundingClientRect().width || 0
     );
-    const baseBottom = Math.round(
-        promptModalKeyboardDock.baseBottom || modalInner.getBoundingClientRect().bottom || 0
-    );
+    const nav = document.querySelector('.framer-nav');
+    const navBottom = nav ? Math.round(nav.getBoundingClientRect().bottom || 0) : 0;
     const targetBottom = Math.max(40, Math.round(keyboardTop - 12));
-    const shiftY = Math.max(-520, Math.min(520, Math.round(targetBottom - baseBottom)));
+    const minTop = Math.max(
+        Math.round((window.visualViewport?.offsetTop || 0) + 8),
+        navBottom + 8
+    );
+    const availableHeight = Math.max(320, Math.round(targetBottom - minTop));
+    const dockHeight = Math.min(cardHeight, availableHeight);
+    const centeredBottom = Math.round((baseViewportHeight * 0.5) + (dockHeight * 0.5));
+    const shiftY = Math.max(-520, Math.min(520, Math.round(targetBottom - centeredBottom)));
     const duration = animate ? 120 : 0;
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
 
@@ -4695,9 +4701,9 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
         modalInner.style.width = `${cardWidth}px`;
         modalInner.style.maxWidth = `${cardWidth}px`;
     }
-    if (cardHeight > 0) {
-        modalInner.style.height = `${cardHeight}px`;
-        modalInner.style.maxHeight = `${cardHeight}px`;
+    if (dockHeight > 0) {
+        modalInner.style.height = `${dockHeight}px`;
+        modalInner.style.maxHeight = `${dockHeight}px`;
     }
     modalInner.style.transform = `translate(-50%, calc(-50% + ${shiftY}px)) scale(1)`;
     promptModalKeyboardDock.docked = true;
