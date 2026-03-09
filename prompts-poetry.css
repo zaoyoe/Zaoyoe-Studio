@@ -616,9 +616,13 @@ body {
     min-height: 100vh;
 }
 
-/* iOS Safari: 暗色模式下 body 背景强制为纯黑，防止 #0f172a 暗蓝色泄漏到橡皮筋回弹区域和状态栏 */
-[data-theme="dark"] body {
+/* iOS Safari: html 背景为纯黑防止橡皮筋回弹泄漏暗蓝色，但 body 必须透明让 Safari 穿透采样到星空 Canvas */
+[data-theme="dark"] html {
     background-color: #000;
+}
+
+[data-theme="dark"] body {
+    background-color: transparent;
 }
 
 /* --- Spotlight Navigation --- */
