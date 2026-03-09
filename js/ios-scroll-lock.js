@@ -212,9 +212,11 @@
 
         savedScrollY = window.scrollY || window.pageYOffset || 0;
 
-        // 只用 overflow:hidden + overscroll-behavior，不用 position:fixed
-        document.documentElement.classList.add('no-scroll');
-        document.body.classList.add('no-scroll');
+        // 只对非 iOS 设备应用 overflow:hidden，iOS 下使用这招会导致页面被强行裁切并在底部留下巨大黑块
+        if (!isIOSMobile()) {
+            document.documentElement.classList.add('no-scroll');
+            document.body.classList.add('no-scroll');
+        }
 
         isLocked = true;
         isLightLock = true;
