@@ -4430,22 +4430,12 @@ function unlockPromptModalThemeColor() {
     const restoreContent = meta.getAttribute('data-prompt-theme-restore');
     if (restoreContent === null) return;
 
-    // IMPORTANT SAFARI IOS 15+ REPAINT HACK (Upgraded to Node Nuke):
-    // Instead of merely modifying the attribute or setting to null (which causes random blue flashes),
-    // physically annihilating the DOM Node guarantees WebKit throws away its Theme Color cache.
-    // 50ms later, we clone and re-insert a pristine node with the correct original color.
-    const parent = meta.parentNode;
-    if (parent) parent.removeChild(meta);
-    promptModalThemeColorMeta = null;
-
+    // Chat Widget Standard Repaint Hack: 
+    // Just remove the attribute and restore it 50ms later. Now that our 550ms timing
+    // is fixed, we do NOT need to nuke the entire node (which actually bugs out Safari 15).
+    meta.removeAttribute('content');
     setTimeout(() => {
-        const newMeta = document.createElement('meta');
-        newMeta.setAttribute('name', 'theme-color');
-        if (restoreContent !== '') {
-            newMeta.setAttribute('content', restoreContent);
-        }
-        document.head.appendChild(newMeta);
-        promptModalThemeColorMeta = newMeta;
+        meta.setAttribute('content', restoreContent);
     }, 50);
 }
 
