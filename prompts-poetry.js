@@ -5096,12 +5096,9 @@ function openPromptModal(id) {
     // Initialize image upload functionality
     initCommentImageUpload();
 
-    // Set CSS variable for current scroll position to center the scale effect
-    document.documentElement.style.setProperty('--modal-scroll-y', `${window.scrollY}px`);
-
     modal.classList.add('active');
     modal.classList.add('modal-opening');
-    if (window.iOSScrollLock && modalInner) window.iOSScrollLock.lock(modalInner);
+    if (window.iOSScrollLock && modalInner) window.iOSScrollLock.lockLight(modalInner);
     document.body.classList.add('prompt-modal-open'); // Hide header behind modal
     lockPromptModalThemeColor();
     showPromptModalStatusBarShield();

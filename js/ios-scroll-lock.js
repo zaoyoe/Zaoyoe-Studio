@@ -223,6 +223,11 @@
         // 添加 touchmove 拦截
         document.addEventListener('touchstart', handleTouchStart, { passive: true });
         document.addEventListener('touchmove', handleTouchMove, { passive: false });
+
+        // iOS 专属：监听 visualViewport 变化，暴露键盘事件
+        if (isIOSMobile() && currentModal) {
+            attachViewportListener();
+        }
     }
 
     /**
