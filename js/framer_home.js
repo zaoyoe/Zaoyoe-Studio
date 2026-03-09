@@ -4,6 +4,31 @@
  * ==========================================
  */
 
+// Utility: Force Safari address bar to solid black when mobile menu is open
+window.toggleMobileThemeColor = function (isActive) {
+  let metaTheme = document.querySelector('meta[name="theme-color"]');
+  if (isActive) {
+    if (!metaTheme) {
+      metaTheme = document.createElement('meta');
+      metaTheme.name = 'theme-color';
+      metaTheme.setAttribute('data-injected-by-menu', 'true');
+      document.head.appendChild(metaTheme);
+    } else if (!metaTheme.hasAttribute('data-original-content')) {
+      metaTheme.setAttribute('data-original-content', metaTheme.content);
+    }
+    metaTheme.content = '#000000';
+  } else {
+    if (metaTheme) {
+      if (metaTheme.hasAttribute('data-injected-by-menu')) {
+        metaTheme.remove();
+      } else if (metaTheme.hasAttribute('data-original-content')) {
+        metaTheme.content = metaTheme.getAttribute('data-original-content');
+        metaTheme.removeAttribute('data-original-content'); // cleanup
+      }
+    }
+  }
+};
+
 const FramerHome = {
   // Cached data
   cachedData: null,
@@ -1566,7 +1591,8 @@ const FramerHome = {
       // Toggle mobile menu on hamburger click
       hamburger.addEventListener('click', () => {
         hamburger.classList.toggle('active');
-        mobileMenu.classList.toggle('active');
+        const isActive = mobileMenu.classList.toggle('active');
+        window.toggleMobileThemeColor(isActive);
       });
       hamburger._navInitialized = true;
     }
@@ -1652,8 +1678,10 @@ const FramerHome = {
       // Close mobile menu on link click
       mobileMenu.querySelectorAll('a').forEach(link => {
         link.addEventListener('click', () => {
+          // Close mobile menu on link click
           hamburger.classList.remove('active');
           mobileMenu.classList.remove('active');
+          window.toggleMobileThemeColor(false);
 
           // Also close all open submenus
           mobileMenu.querySelectorAll('.mobile-submenu.active').forEach(submenu => {
@@ -1668,8 +1696,10 @@ const FramerHome = {
       // Close mobile menu when clicking on blank area (outside menu items)
       mobileMenu.addEventListener('click', (e) => {
         if (e.target === mobileMenu) {
+          // Close mobile menu when clicking on blank area
           hamburger.classList.remove('active');
           mobileMenu.classList.remove('active');
+          window.toggleMobileThemeColor(false);
 
           // Also close all open submenus
           mobileMenu.querySelectorAll('.mobile-submenu.active').forEach(submenu => {
@@ -1832,7 +1862,8 @@ document.addEventListener('DOMContentLoaded', function initNavBar() {
     hamburger.addEventListener('click', () => {
       console.log('🍔 Hamburger clicked');
       hamburger.classList.toggle('active');
-      mobileMenu.classList.toggle('active');
+      const isActive = mobileMenu.classList.toggle('active');
+      window.toggleMobileThemeColor(isActive);
     });
     hamburger._navInitialized = true;
   }
@@ -1843,6 +1874,7 @@ document.addEventListener('DOMContentLoaded', function initNavBar() {
       link.addEventListener('click', () => {
         hamburger?.classList.remove('active');
         mobileMenu.classList.remove('active');
+        window.toggleMobileThemeColor(false);
 
         // Also close all open submenus
         mobileMenu.querySelectorAll('.mobile-submenu.active').forEach(submenu => {
@@ -1873,6 +1905,7 @@ document.addEventListener('DOMContentLoaded', function initNavBar() {
       if (e.target === mobileMenu) {
         hamburger?.classList.remove('active');
         mobileMenu.classList.remove('active');
+        window.toggleMobileThemeColor(false);
 
         // Also close all open submenus
         mobileMenu.querySelectorAll('.mobile-submenu.active').forEach(submenu => {

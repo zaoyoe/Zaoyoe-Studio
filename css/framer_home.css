@@ -449,13 +449,15 @@ a.nav-trigger.active {
     transform: rotate(-45deg);
 }
 
-/* Mobile Menu Overlay */
+/* Mobile Menu Overlay - Solid Black */
 .mobile-menu {
     position: fixed;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
+    background-color: #000000;
+    /* Force solid black as requested */
     z-index: var(--z-mobile-menu);
     padding: 100px var(--spacing-lg) calc(var(--spacing-xl) + env(safe-area-inset-bottom, 50px));
     overflow-y: auto;
@@ -463,26 +465,6 @@ a.nav-trigger.active {
     visibility: hidden;
     pointer-events: none;
     transition: opacity 0.3s ease, visibility 0.3s ease;
-}
-
-/* 
- * Safari iOS 15+ Compositor Bug Fix:
- * When the address bar expands/shrinks, Safari fails to update the bounding box 
- * for backdrop-filter on the main element, causing the bottom to turn black.
- * Pushing the blur to a massively oversized ::before layer permanently solves this.
- */
-.mobile-menu::before {
-    content: '';
-    position: fixed;
-    top: -25vh;
-    bottom: -25vh;
-    left: -25vw;
-    right: -25vw;
-    background-color: var(--bg-mobile-menu);
-    backdrop-filter: var(--glass-blur-heavy);
-    -webkit-backdrop-filter: var(--glass-blur-heavy);
-    z-index: -1;
-    pointer-events: none;
 }
 
 .mobile-menu.active {
