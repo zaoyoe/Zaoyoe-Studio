@@ -5099,20 +5099,6 @@ function openPromptModal(id) {
     modal.classList.add('active');
     modal.classList.add('modal-opening');
     if (window.iOSScrollLock && modalInner) window.iOSScrollLock.lock(modalInner);
-    // Workaround: WebKit drops backdrop-filter when body becomes position:fixed.
-    // Force recomposite by toggling the filter after one frame.
-    if (backdrop && isPromptModalIOSMobile()) {
-        requestAnimationFrame(() => {
-            if (!backdrop) return;
-            backdrop.style.webkitBackdropFilter = 'none';
-            backdrop.style.backdropFilter = 'none';
-            requestAnimationFrame(() => {
-                if (!backdrop) return;
-                backdrop.style.webkitBackdropFilter = '';
-                backdrop.style.backdropFilter = '';
-            });
-        });
-    }
     document.body.classList.add('prompt-modal-open'); // Hide header behind modal
     lockPromptModalThemeColor();
     showPromptModalStatusBarShield();
