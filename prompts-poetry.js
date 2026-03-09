@@ -4720,6 +4720,8 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
     document.body.classList.add('prompt-modal-keyboard-docked');
     setPromptModalStatusBarShieldExpanded(true);
     modal.classList.add('keyboard-docked');
+    // ── Fix: Freeze outer modal layout height to prevent native iOS 15 viewport shrinking ──
+    modal.style.setProperty('height', `${baseViewportHeight}px`, 'important');
     modalInner.classList.add('keyboard-docked');
     // ── Fix: Always use transition:none to prevent any spring animation ──
     modalInner.style.transition = 'none';
@@ -4778,6 +4780,7 @@ function resetPromptModalKeyboardDock(animate = false) {
             const { modal: activeModal, modalInner: activeInner } = getPromptModalDockNodes();
             if (!activeInner || !activeModal) return;
             activeModal.classList.remove('keyboard-docked');
+            activeModal.style.removeProperty('height');
             activeInner.classList.remove('keyboard-docked');
             activeInner.style.removeProperty('position');
             activeInner.style.removeProperty('top');
@@ -4795,6 +4798,7 @@ function resetPromptModalKeyboardDock(animate = false) {
         }, duration + 40);
     } else {
         modal.classList.remove('keyboard-docked');
+        modal.style.removeProperty('height');
         modalInner.classList.remove('keyboard-docked');
         modalInner.style.removeProperty('position');
         modalInner.style.removeProperty('top');
@@ -6753,8 +6757,21 @@ function setupCommentSorting() {
 document.addEventListener('DOMContentLoaded', () => {
     setupCommentSorting();
 
+    // Setup comment input listeners including iOS scroll stabiliser
     const commentInput = document.getElementById('commentInput');
     if (commentInput) {
+        const handleTouchFocus = (e) => {
+            if (isPromptModalIOSMobile()) {
+                if (e.cancelable) e.preventDefault();
+                try {
+                    commentInput.focus({ preventScroll: true });
+                } catch (err) {
+                    commentInput.focus();
+                }
+            }
+        };
+        commentInput.addEventListener('touchstart', handleTouchFocus, { passive: false });
+
         commentInput.addEventListener('focus', () => {
             primePromptModalKeyboardDock();
         });
