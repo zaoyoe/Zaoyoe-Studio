@@ -4630,6 +4630,12 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
     const vv = window.visualViewport;
     if (!modal || !modalInner || !vv) return;
 
+    // ── Fix: Remove .modal-opening immediately to prevent CSS spring transition ──
+    if (modal.classList.contains('modal-opening')) {
+        clearPromptModalOpeningTimer();
+        modal.classList.remove('modal-opening');
+    }
+
     capturePromptModalDockMetrics();
 
     const visualTop = Math.max(0, vv.offsetTop || 0);
@@ -4662,15 +4668,13 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
     const cardWidth = Math.round(
         promptModalKeyboardDock.baseWidth || modalInner.getBoundingClientRect().width || 0
     );
-    const nav = document.querySelector('.framer-nav');
-    const navBottom = nav ? Math.round(nav.getBoundingClientRect().bottom || 0) : 0;
-    const targetBottom = Math.max(40, Math.round(keyboardTop - 12));
-    const minTop = Math.max(
-        Math.round((window.visualViewport?.offsetTop || 0) + 8),
-        navBottom + 8
-    );
-    const availableHeight = Math.max(320, Math.round(targetBottom - minTop));
-    const dockHeight = Math.min(cardHeight, availableHeight);
+    // ── Fix: Allow modal to overlap nav area to preserve more height ──
+    const safeTop = Math.round((window.visualViewport?.offsetTop || 0) + 4);
+    const targetBottom = Math.max(40, Math.round(keyboardTop - 8));
+    const availableHeight = Math.max(320, Math.round(targetBottom - safeTop));
+    // Ensure modal keeps at least 65% of its original height
+    const minDockHeight = Math.round(cardHeight * 0.65);
+    const dockHeight = Math.max(minDockHeight, Math.min(cardHeight, availableHeight));
     const centeredBottom = Math.round((baseViewportHeight * 0.5) + (dockHeight * 0.5));
     const shiftY = Math.max(-520, Math.min(520, Math.round(targetBottom - centeredBottom)));
     const duration = animate ? 120 : 0;
@@ -4688,9 +4692,8 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
     setPromptModalStatusBarShieldExpanded(true);
     modal.classList.add('keyboard-docked');
     modalInner.classList.add('keyboard-docked');
-    modalInner.style.transition = duration
-        ? `transform ${duration}ms cubic-bezier(0.22, 1, 0.36, 1), height ${duration}ms cubic-bezier(0.22, 1, 0.36, 1), max-height ${duration}ms cubic-bezier(0.22, 1, 0.36, 1)`
-        : 'none';
+    // ── Fix: Always use transition:none to prevent any spring animation ──
+    modalInner.style.transition = 'none';
     modalInner.style.position = 'fixed';
     modalInner.style.top = '50%';
     modalInner.style.left = '50%';
@@ -4708,15 +4711,7 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
     modalInner.style.transform = `translate(-50%, calc(-50% + ${shiftY}px)) scale(1)`;
     promptModalKeyboardDock.docked = true;
     promptModalKeyboardDock.lastKeyboardInset = bottomInset;
-    promptModalKeyboardDock.animatingUntil = duration ? now + duration + 36 : 0;
-
-    if (duration) {
-        setTimeout(() => {
-            const { modal: activeModal, modalInner: activeInner } = getPromptModalDockNodes();
-            if (!activeModal || !activeInner || !activeModal.classList.contains('keyboard-docked')) return;
-            activeInner.style.transition = '';
-        }, duration + 40);
-    }
+    promptModalKeyboardDock.animatingUntil = 0;
 }
 
 function resetPromptModalKeyboardDock(animate = false) {
@@ -4836,6 +4831,10 @@ function attachPromptModalKeyboardDock() {
     const vv = window.visualViewport;
     if (!vv) return;
 
+    // ── Fix: Debounce viewport changes to prevent staircase effect during keyboard rise ──
+    let viewportSettleTimer = null;
+    let lastViewportBottomInset = 0;
+
     promptModalKeyboardDock.onViewportChange = () => {
         if (!isPromptModalDockEnabledOrActive()) return;
         const inputFocused = isPromptModalDockInputFocused();
@@ -4861,25 +4860,59 @@ function attachPromptModalKeyboardDock() {
             }
             promptModalKeyboardDock.pendingStableKeyboardInset = 0;
             clearPromptModalKeyboardSettleTimer();
+            if (viewportSettleTimer) { clearTimeout(viewportSettleTimer); viewportSettleTimer = null; }
         } else {
             schedulePromptModalStableKeyboardInset(bottomInset);
         }
 
         if (inputFocused && bottomInset > 60) {
             clearPromptModalUndockTimer();
-            if (!promptModalKeyboardDock.docked) {
-                applyPromptModalKeyboardDock(visualHeight, bottomInset, false);
+
+            // If already docked and inset changed significantly, update immediately
+            if (promptModalKeyboardDock.docked) {
+                if (Math.abs(bottomInset - promptModalKeyboardDock.lastKeyboardInset) > 30) {
+                    applyPromptModalKeyboardDock(visualHeight, bottomInset, false);
+                }
                 return;
             }
 
-            if (Math.abs(bottomInset - promptModalKeyboardDock.lastKeyboardInset) > 8) {
-                applyPromptModalKeyboardDock(visualHeight, bottomInset, false);
-            }
+            // First dock: debounce to wait for keyboard to settle (~80ms)
+            // This prevents the staircase effect from multi-frame viewport resize
+            lastViewportBottomInset = bottomInset;
+            if (viewportSettleTimer) clearTimeout(viewportSettleTimer);
+            viewportSettleTimer = setTimeout(() => {
+                viewportSettleTimer = null;
+                if (!isPromptModalDockEnabledOrActive()) return;
+                if (!isPromptModalDockInputFocused()) return;
+                if (promptModalKeyboardDock.docked) return;
+                // Use latest viewport values at settle time
+                const settleVH = Math.max(0, vv.height || 0);
+                const settleTop = Math.max(0, vv.offsetTop || 0);
+                const settleComposed = settleVH + settleTop;
+                const settleBVH = Math.max(
+                    promptModalKeyboardDock.baseViewportHeight || 0,
+                    window.innerHeight || 0,
+                    document.documentElement.clientHeight || 0,
+                    settleComposed
+                );
+                const settleBVisual = Math.max(
+                    promptModalKeyboardDock.baseVisualHeight || 0,
+                    settleVH
+                );
+                const settleInset = Math.max(
+                    Math.max(0, Math.round(settleBVH - settleComposed)),
+                    Math.max(0, Math.round(settleBVisual - settleVH))
+                );
+                if (settleInset > 60) {
+                    applyPromptModalKeyboardDock(settleVH, settleInset, false);
+                }
+            }, 80);
             return;
         }
 
         if (promptModalKeyboardDock.docked && (!inputFocused || bottomInset <= 40)) {
             clearPromptModalFirstDockTimer();
+            if (viewportSettleTimer) { clearTimeout(viewportSettleTimer); viewportSettleTimer = null; }
             schedulePromptModalUndock();
             return;
         }

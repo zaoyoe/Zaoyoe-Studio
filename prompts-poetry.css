@@ -2246,7 +2246,8 @@ body.prompt-modal-open .chat-widget-fab {
 }
 
 .poetry-modal.active:focus-within .modal-inner,
-.poetry-modal.ios-focus-lock .modal-inner {
+.poetry-modal.ios-focus-lock .modal-inner,
+.poetry-modal.keyboard-docked .modal-inner {
     animation: none !important;
     transition: none !important;
     will-change: auto !important;
