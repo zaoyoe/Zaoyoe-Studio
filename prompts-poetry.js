@@ -5098,7 +5098,7 @@ function openPromptModal(id) {
 
     modal.classList.add('active');
     modal.classList.add('modal-opening');
-    if (window.iOSScrollLock && modalInner) window.iOSScrollLock.lockLight(modalInner);
+    if (window.iOSScrollLock && modalInner) window.iOSScrollLock.lock(modalInner);
     document.body.classList.add('prompt-modal-open'); // Hide header behind modal
     lockPromptModalThemeColor();
     showPromptModalStatusBarShield();
