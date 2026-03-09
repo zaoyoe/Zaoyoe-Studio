@@ -5126,9 +5126,8 @@ function openPromptModal(id) {
     modal.classList.add('modal-opening');
     if (window.iOSScrollLock && modalInner) window.iOSScrollLock.lock(modalInner);
 
-    // We intentionally DO NOT manipulate document.documentElement or <meta theme-color> here.
-    // The Login Modal architecture proves that simply using iOSScrollLock and a stable 
-    // opacity backdrop-filter flawlessly bridges the Safari address bar without freezing.
+    // Explicitly lock the iOS Safari Address Bar color so it doesn't freeze onto the modal blue backdrop
+    lockPromptModalThemeColor();
 
     showPromptModalStatusBarShield();
     resetPromptModalKeyboardDock(false);
@@ -6953,6 +6952,10 @@ function closePromptModal() {
         document.body.classList.remove('prompt-modal-keyboard-docked');
 
         hidePromptModalStatusBarShield();
+
+        // CRITICAL: Unlock theme color ONLY AFTER the modal has fully faded out and the 
+        // DOM has physically detached from the Safe Area layout, precisely mirroring ChatWidget.
+        unlockPromptModalThemeColor();
     }, 550);
 }
 
