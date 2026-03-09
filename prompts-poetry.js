@@ -4666,18 +4666,7 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
         promptModalKeyboardDock.baseBottom || modalInner.getBoundingClientRect().bottom || 0
     );
     const targetBottom = Math.max(40, Math.round(keyboardTop - 12));
-    let shiftY = Math.max(-520, Math.min(520, Math.round(targetBottom - baseBottom)));
-    const baseTop = Math.round(baseBottom - cardHeight);
-    const nav = document.querySelector('.framer-nav');
-    const navBottom = nav ? Math.round(nav.getBoundingClientRect().bottom || 0) : 0;
-    const minTop = Math.max(
-        Math.round((window.visualViewport?.offsetTop || 0) + 8),
-        navBottom
-    );
-    const projectedTop = baseTop + shiftY;
-    if (projectedTop < minTop) {
-        shiftY += (minTop - projectedTop);
-    }
+    const shiftY = Math.max(-520, Math.min(520, Math.round(targetBottom - baseBottom)));
     const duration = animate ? 120 : 0;
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
 
