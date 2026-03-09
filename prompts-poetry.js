@@ -6926,39 +6926,43 @@ function closePromptModal() {
         }
     }
 
-    // Hide modal and backdrop cleanly without freezing Safari compositor
     if (modal) {
         clearPromptModalOpeningTimer();
         modal.classList.remove('modal-opening');
         modal.classList.remove('active');
+        // Force instant removal of the compositor layer
+        modal.style.display = 'none';
+        // Give browser 1 frame to clear, then restore flex (so next open works)
+        requestAnimationFrame(() => {
+            modal.style.display = '';
+        });
     }
+
     const { backdrop } = getPromptModalDockNodes();
     if (backdrop) {
-        // Essential for iOS Safari: remove backdrop-filter immediately to prevent freeze during opacity fade
-        backdrop.classList.add('closing');
+        // INSTANT DOM DESTRUCTION: Skips the 500ms opacity fade entirely!
+        // This is the proven Login Modal method that flawlessly bypasses Safari 15+ Safe Area compositor bugs.
+        backdrop.style.display = 'none';
         backdrop.classList.remove('visible');
+        backdrop.classList.remove('closing');
+
+        requestAnimationFrame(() => {
+            backdrop.style.display = '';
+        });
     }
 
     detachPromptModalKeyboardDock();
     restorePromptModalOverlay();
 
-    // 🔴 THE ULTIMATE SAFARI IOS FIX:
-    // We MUST wait for the CSS opacity transition (500ms) to completely finish BEFORE we touch
-    // position:fixed, HTML background, or theme-color. If we alter layout while a compositor 
-    // layer is animating, Safari permanently freezes the bottom Safe Area color.
-    setTimeout(() => {
-        if (backdrop) backdrop.classList.remove('closing');
+    // Instantly restore HTML/Body layouts to un-glitch the address bar
+    document.documentElement.classList.remove('prompt-modal-open');
+    document.body.classList.remove('prompt-modal-open');
 
-        // Batch all layout/paint mutations precisely when the DOM is at rest
-        document.documentElement.classList.remove('prompt-modal-open');
-        document.body.classList.remove('prompt-modal-open');
+    if (window.iOSScrollLock) window.iOSScrollLock.unlock();
+    document.body.classList.remove('prompt-modal-keyboard-docked');
 
-        if (window.iOSScrollLock) window.iOSScrollLock.unlock();
-        document.body.classList.remove('prompt-modal-keyboard-docked');
-
-        unlockPromptModalThemeColor();
-        hidePromptModalStatusBarShield();
-    }, 550); // 50ms buffer past the 500ms CSS transition
+    unlockPromptModalThemeColor();
+    hidePromptModalStatusBarShield();
 }
 
 // Click outside modal to close
