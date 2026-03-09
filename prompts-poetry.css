@@ -2194,10 +2194,9 @@ body.prompt-modal-open .chat-widget-fab {
     z-index: 10001;
     opacity: 0;
     pointer-events: none;
-    top: -200%;
-    /* Snap offscreen exactly after 0.5s fade completes */
-    transition: opacity 0.5s ease, top 0s 0.55s;
-    display: flex;
+    transition: opacity 0.5s ease;
+    /* Hidden to forcefully remove from Safari DOM Intersection algorithm when closed */
+    display: none;
     justify-content: center;
     align-items: center;
 }
@@ -2205,9 +2204,7 @@ body.prompt-modal-open .chat-widget-fab {
 .poetry-modal.active {
     opacity: 1;
     pointer-events: auto;
-    top: 0;
-    /* Snap onscreen immediately, then fade */
-    transition: opacity 0.5s ease, top 0s 0s;
+    transition: opacity 0.5s ease;
 }
 
 .modal-inner {

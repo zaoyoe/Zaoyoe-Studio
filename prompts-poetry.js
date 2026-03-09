@@ -4382,60 +4382,33 @@ function isPromptModalKeyboardDockEnabled() {
     return isPromptModalIOSMobile() && !!window.visualViewport;
 }
 
-function ensurePromptModalThemeColorMeta() {
-    if (promptModalThemeColorMeta?.isConnected) return promptModalThemeColorMeta;
-    let meta = document.querySelector('meta[name="theme-color"]');
-    if (!meta) {
-        meta = document.createElement('meta');
-        meta.setAttribute('name', 'theme-color');
-        document.head.appendChild(meta);
-    }
-    promptModalThemeColorMeta = meta;
-    return meta;
-}
-
-function lockPromptModalThemeColor() {
+function forceSafariSafeAreaJiggle() {
     if (!isPromptModalIOSMobile()) return;
-
     let meta = document.querySelector('meta[name="theme-color"]');
+    let originalContent = null;
+    let createdMeta = false;
+
     if (!meta) {
-        // If no tag exists, create one and mark it so we can cleanly destroy it later
         meta = document.createElement('meta');
         meta.setAttribute('name', 'theme-color');
-        meta.setAttribute('data-prompt-theme-created', 'true');
         document.head.appendChild(meta);
-        promptModalThemeColorMeta = meta;
+        createdMeta = true;
     } else {
-        promptModalThemeColorMeta = meta;
-        if (!meta.hasAttribute('data-prompt-theme-restore')) {
-            meta.setAttribute('data-prompt-theme-restore', meta.getAttribute('content') || '');
-        }
+        originalContent = meta.getAttribute('content');
     }
 
-    meta.setAttribute('content', '#000000');
-}
+    // Force Safari to repaint the address bar by asserting a microscopic change 
+    // to the meta tag, forcing the Safe Area compositor to wake up.
+    meta.setAttribute('content', '#000001');
 
-function unlockPromptModalThemeColor() {
-    const meta = promptModalThemeColorMeta || document.querySelector('meta[name="theme-color"]');
-    if (!meta) return;
-
-    // Check if we created this meta tag ourselves
-    if (meta.hasAttribute('data-prompt-theme-created')) {
-        // Completely remove the tag from the DOM if we were the ones who injected it
-        if (meta.parentNode) meta.parentNode.removeChild(meta);
-        promptModalThemeColorMeta = null;
-        return;
-    }
-
-    const restoreContent = meta.getAttribute('data-prompt-theme-restore');
-    if (restoreContent === null) return;
-
-    // Chat Widget Standard Repaint Hack: 
-    // Just remove the attribute and restore it 50ms later. Now that our 550ms timing
-    // is fixed, we do NOT need to nuke the entire node (which actually bugs out Safari 15).
-    meta.removeAttribute('content');
     setTimeout(() => {
-        meta.setAttribute('content', restoreContent);
+        if (createdMeta) {
+            meta.remove();
+        } else if (originalContent === null) {
+            meta.removeAttribute('content');
+        } else {
+            meta.setAttribute('content', originalContent);
+        }
     }, 50);
 }
 
@@ -5122,12 +5095,13 @@ function openPromptModal(id) {
     // Initialize image upload functionality
     initCommentImageUpload();
 
+    // Physically mount modal into isolated render tree
+    modal.style.display = 'flex';
+    void modal.offsetWidth; // Force reflow to guarantee CSS transition plays safely
+
     modal.classList.add('active');
     modal.classList.add('modal-opening');
     if (window.iOSScrollLock && modalInner) window.iOSScrollLock.lock(modalInner);
-
-    // Explicitly lock the iOS Safari Address Bar color so it doesn't freeze onto the modal blue backdrop
-    lockPromptModalThemeColor();
 
     showPromptModalStatusBarShield();
     resetPromptModalKeyboardDock(false);
@@ -6953,9 +6927,12 @@ function closePromptModal() {
 
         hidePromptModalStatusBarShield();
 
-        // CRITICAL: Unlock theme color ONLY AFTER the modal has fully faded out and the 
-        // DOM has physically detached from the Safe Area layout, precisely mirroring ChatWidget.
-        unlockPromptModalThemeColor();
+        // Physically detach modal from Safe Area render tree, skipping layout breakage of `visibility`
+        const modal = document.getElementById('promptModal');
+        if (modal) modal.style.display = 'none';
+
+        // Force Safari iOS 15+ to acknowledge the detached modal by micro-tickling the theme color layer
+        forceSafariSafeAreaJiggle();
     }, 600);
 }
 
