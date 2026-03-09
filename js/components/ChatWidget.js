@@ -137,14 +137,19 @@ class ChatWidget {
         const restoreContent = meta.getAttribute('data-chat-theme-restore');
         if (restoreContent === null) return;
 
-        if (restoreContent === '') {
-            meta.removeAttribute('content');
-        } else {
-            meta.setAttribute('content', restoreContent);
-        }
+        // Force Safari iOS 15+ Repaint Hack
+        meta.removeAttribute('content');
 
-        meta.removeAttribute('data-chat-theme-restore');
-        this._themeColorRestoreContent = '';
+        setTimeout(() => {
+            if (!meta.isConnected) return;
+            if (restoreContent === '') {
+                meta.removeAttribute('content');
+            } else {
+                meta.setAttribute('content', restoreContent);
+            }
+            meta.removeAttribute('data-chat-theme-restore');
+            this._themeColorRestoreContent = '';
+        }, 50);
     }
 
     _ensureStatusBarShield() {

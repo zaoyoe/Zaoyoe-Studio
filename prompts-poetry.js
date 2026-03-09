@@ -4430,13 +4430,23 @@ function unlockPromptModalThemeColor() {
     const restoreContent = meta.getAttribute('data-prompt-theme-restore');
     if (restoreContent === null) return;
 
-    if (restoreContent === '') {
-        // Correctly handle natively empty attribute by completely removing it to prevent "null" buggy string cache in Safari
-        meta.removeAttribute('content');
-    } else {
-        meta.setAttribute('content', restoreContent);
-    }
-    meta.removeAttribute('data-prompt-theme-restore');
+    // IMPORTANT SAFARI IOS 15+ REPAINT HACK:
+    // When returning from `position: fixed`, if the original native theme-color (#000000)
+    // is identical to our locked color (#000000), Safari's UI compositor FAILS to detect a mutation,
+    // and stays permanently stuck rendering the solid black tab bar instead of restoring transparent glass.
+    // We forcibly wake it up by momentarily stripping the content attribute, triggering a layout flush,
+    // and asynchronously putting the correct value back 50ms later.
+    meta.removeAttribute('content');
+
+    setTimeout(() => {
+        if (!meta.isConnected) return;
+        if (restoreContent === '') {
+            meta.removeAttribute('content');
+        } else {
+            meta.setAttribute('content', restoreContent);
+        }
+        meta.removeAttribute('data-prompt-theme-restore');
+    }, 50);
 }
 
 function ensurePromptModalStatusBarShield() {
