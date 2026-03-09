@@ -2058,11 +2058,10 @@ class ChatWidget {
             this._freezeOverlay();
 
             if (window.iOSScrollLock) {
-                if (this._isIOSMobile() && this._isNarrowViewport()) {
-                    window.iOSScrollLock.lock(this.chatWindow);
-                } else {
-                    window.iOSScrollLock.lockLight(this.chatWindow);
-                }
+                // Strictly use lockLight across all platforms.
+                // Using hard lock (position: fixed) on iOS violently conflicts with 
+                // native Safari scroll-to-input behaviors during keyboard popup, causing visual jitter.
+                window.iOSScrollLock.lockLight(this.chatWindow);
             }
             this._enableSessionVisualLock();
             this._attachKeyboardListener();
