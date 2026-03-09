@@ -2133,7 +2133,7 @@ body.prompt-modal-open .top-right-nav {
 }
 
 body.prompt-modal-open {
-    background: #000 !important;
+    background: transparent !important;
 }
 
 body.prompt-modal-open .chat-widget-fab {
@@ -3263,7 +3263,7 @@ body.prompt-modal-open .chat-widget-fab {
     .poetry-modal {
         box-sizing: border-box;
         padding: 0;
-        background: #000;
+        background: transparent;
     }
 
     .modal-inner {
