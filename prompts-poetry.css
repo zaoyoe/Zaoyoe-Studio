@@ -2197,10 +2197,7 @@ body.prompt-modal-open .chat-widget-fab {
     transition: opacity 0.5s ease;
 }
 
-/* Base transition for smooth enter/exit (Removed modal-open filters to prevent massive >4096px rendering bugs) */
-#main-content {
-    will-change: transform;
-}
+
 
 body.prompt-modal-open .framer-nav {
     filter: blur(12px);
