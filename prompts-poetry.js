@@ -5136,7 +5136,7 @@ function openPromptModal(id) {
     modal.classList.add('active');
     modal.classList.add('modal-opening');
     if (window.iOSScrollLock && modalInner) {
-        window.iOSScrollLock.lock(modalInner, !isPromptModalIOSMobile());
+        window.iOSScrollLock.lockLight(modalInner);
     }
 
     showPromptModalStatusBarShield();
