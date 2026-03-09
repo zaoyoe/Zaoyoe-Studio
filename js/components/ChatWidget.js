@@ -1761,6 +1761,17 @@ class ChatWidget {
                 transition: none !important;
             }
             
+            /* Hide site navigation smoothly when chat opens (mirrors prompt modal behavior) */
+            @media (max-width: 768px) {
+                body.chat-widget-open .framer-nav,
+                body.chat-widget-open .top-right-nav {
+                    opacity: 0 !important;
+                    pointer-events: none !important;
+                    transform: translateY(-10px) !important;
+                    transition: opacity 0.3s ease, transform 0.3s ease !important;
+                }
+            }
+            
             /* Overlay for user mode (same as admin) */
             .chat-overlay {
                 display: none;
@@ -1996,6 +2007,7 @@ class ChatWidget {
     toggleChat() {
         this.isOpen = !this.isOpen;
         if (this.isOpen) {
+            document.body.classList.add('chat-widget-open');
             this._clearOpeningAnimationTimer();
             this._clearClosingAnimationTimer();
             this.chatWindow.classList.remove('chat-closing');
@@ -2046,6 +2058,7 @@ class ChatWidget {
             });
 
         } else {
+            document.body.classList.remove('chat-widget-open');
             if (this._startClosingAnimation()) return;
             this._finalizeChatClose();
         }
