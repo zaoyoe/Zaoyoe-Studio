@@ -6902,6 +6902,7 @@ function closePromptModal() {
     const modal = document.getElementById('promptModal');
     if (modal) {
         clearPromptModalOpeningTimer();
+        modal.classList.add('closing'); // Instant Clip-Path detachment for Safari
         modal.classList.remove('modal-opening');
         modal.classList.remove('active');
     }
@@ -6933,7 +6934,7 @@ function closePromptModal() {
 
         // Force Safari iOS 15+ to acknowledge the detached modal by micro-tickling the theme color layer
         forceSafariSafeAreaJiggle();
-    }, 250);
+    }, 180);
 }
 
 // Click outside modal to close
