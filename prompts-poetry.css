@@ -2157,16 +2157,16 @@ body.prompt-modal-open .chat-widget-fab {
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.5);
-    /* Stable solid glass to prevent Safari compositor freeze */
-    backdrop-filter: blur(20px) saturate(150%);
-    -webkit-backdrop-filter: blur(20px) saturate(150%);
+    background: rgba(0, 0, 0, 0.75);
+    /* Removed backdrop-filter to prevent Safari hardware compositor from randomly flashing purple pixels on canvas intersection */
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
     transform: translateZ(0);
-    will-change: opacity, backdrop-filter;
+    will-change: opacity;
     z-index: 10000;
     opacity: 0;
     pointer-events: none;
-    transition: opacity 0.5s ease;
+    transition: opacity 0.2s ease;
 }
 
 
@@ -2178,8 +2178,7 @@ body.prompt-modal-open .chat-widget-fab {
 }
 
 .poetry-modal-backdrop.closing {
-    /* Keep blur during fade-out to prevent stark purple light bleeding through. */
-    background: rgba(0, 0, 0, 0.6) !important;
+    background: rgba(0, 0, 0, 0.75) !important;
 }
 
 .poetry-modal {
@@ -2194,7 +2193,7 @@ body.prompt-modal-open .chat-widget-fab {
     z-index: 10001;
     opacity: 0;
     pointer-events: none;
-    transition: opacity 0.5s ease;
+    transition: opacity 0.2s ease;
     /* Hidden to forcefully remove from Safari DOM Intersection algorithm when closed */
     display: none;
     justify-content: center;
@@ -2204,7 +2203,7 @@ body.prompt-modal-open .chat-widget-fab {
 .poetry-modal.active {
     opacity: 1;
     pointer-events: auto;
-    transition: opacity 0.5s ease;
+    transition: opacity 0.2s ease;
 }
 
 .modal-inner {
