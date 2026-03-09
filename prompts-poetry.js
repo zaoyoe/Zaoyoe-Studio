@@ -4430,22 +4430,22 @@ function unlockPromptModalThemeColor() {
     const restoreContent = meta.getAttribute('data-prompt-theme-restore');
     if (restoreContent === null) return;
 
-    // IMPORTANT SAFARI IOS 15+ REPAINT HACK:
-    // When returning from `position: fixed`, if the original native theme-color (#000000)
-    // is identical to our locked color (#000000), Safari's UI compositor FAILS to detect a mutation,
-    // and stays permanently stuck rendering the solid black tab bar instead of restoring transparent glass.
-    // We forcibly wake it up by momentarily stripping the content attribute, triggering a layout flush,
-    // and asynchronously putting the correct value back 50ms later.
-    meta.removeAttribute('content');
+    // IMPORTANT SAFARI IOS 15+ REPAINT HACK (Upgraded to Node Nuke):
+    // Instead of merely modifying the attribute or setting to null (which causes random blue flashes),
+    // physically annihilating the DOM Node guarantees WebKit throws away its Theme Color cache.
+    // 50ms later, we clone and re-insert a pristine node with the correct original color.
+    const parent = meta.parentNode;
+    if (parent) parent.removeChild(meta);
+    promptModalThemeColorMeta = null;
 
     setTimeout(() => {
-        if (!meta.isConnected) return;
-        if (restoreContent === '') {
-            meta.removeAttribute('content');
-        } else {
-            meta.setAttribute('content', restoreContent);
+        const newMeta = document.createElement('meta');
+        newMeta.setAttribute('name', 'theme-color');
+        if (restoreContent !== '') {
+            newMeta.setAttribute('content', restoreContent);
         }
-        meta.removeAttribute('data-prompt-theme-restore');
+        document.head.appendChild(newMeta);
+        promptModalThemeColorMeta = newMeta;
     }, 50);
 }
 
@@ -6936,14 +6936,19 @@ function closePromptModal() {
         }
     }
 
-    // Hide modal
+    // Hide modal and backdrop cleanly without freezing Safari compositor
     if (modal) {
         clearPromptModalOpeningTimer();
         modal.classList.remove('modal-opening');
         modal.classList.remove('active');
     }
     const { backdrop } = getPromptModalDockNodes();
-    backdrop?.classList.remove('visible');
+    if (backdrop) {
+        // Essential for iOS Safari: remove backdrop-filter immediately to prevent freeze during opacity fade
+        backdrop.classList.add('closing');
+        backdrop.classList.remove('visible');
+        setTimeout(() => backdrop.classList.remove('closing'), 500);
+    }
 
     detachPromptModalKeyboardDock();
     restorePromptModalOverlay();
