@@ -275,9 +275,6 @@
             isLocked = false;
             isLightLock = false;
             currentModal = null;
-
-            // Restoring scroll is critical for iOS Safari to fix residual keyboard push offset
-            window.scrollTo(0, savedScrollY);
         }
     }
 
@@ -300,13 +297,8 @@
 
             // 键盘已收起（viewport 恢复到接近原始高度）且没有输入框聚焦
             if (!inField && window.visualViewport.height >= baseHeight - 2) {
-                if (isLightLock) {
-                    // Force reset the residual scroll offset that Safari incorrectly leaves behind
-                    window.scrollTo(0, savedScrollY);
-                } else {
-                    // 重新对齐 body 的 top 值，防止键盘操作后产生的偏移
-                    document.body.style.top = `-${savedScrollY}px`;
-                }
+                // 重新对齐 body 的 top 值，防止键盘操作后产生的偏移
+                document.body.style.top = `-${savedScrollY}px`;
             }
         };
 

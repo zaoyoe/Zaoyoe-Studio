@@ -4379,9 +4379,7 @@ function isPromptModalIOSMobile() {
 }
 
 function isPromptModalKeyboardDockEnabled() {
-    // Disabled custom docking to allow Safari's native smooth scroll-into-view
-    // which eliminates the jitter/bounce when the keyboard pops up.
-    return false;
+    return isPromptModalIOSMobile() && !!window.visualViewport;
 }
 
 function forceSafariSafeAreaJiggle() {
@@ -5101,14 +5099,7 @@ function openPromptModal(id) {
     modal.classList.add('active');
     modal.classList.add('modal-opening');
     if (window.iOSScrollLock && modalInner) {
-        // Use lockLight instead of lock on iOS to avoid position:fixed
-        // This prevents Safari from constantly triggering visualViewport stabilization
-        // which causes violent bouncing when the comment keyboard pops up!
-        if (isPromptModalIOSMobile()) {
-            window.iOSScrollLock.lockLight(modalInner);
-        } else {
-            window.iOSScrollLock.lock(modalInner);
-        }
+        window.iOSScrollLock.lock(modalInner, !isPromptModalIOSMobile());
     }
 
     showPromptModalStatusBarShield();
