@@ -4708,7 +4708,12 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
         modalInner.style.height = `${dockHeight}px`;
         modalInner.style.maxHeight = `${dockHeight}px`;
     }
-    modalInner.style.transform = `translate(-50%, calc(-50% + ${shiftY}px)) scale(1)`;
+    // ── iOS Native Layout Viewport Cancellation ──
+    // Safari organically scrolls the layout viewport to focus the input.
+    // By adding visualTop to our shift, we surgically counteract Safari's scroll
+    // and lock the modal's physical position to the glass screen.
+    const finalShiftY = Math.round(shiftY + visualTop);
+    modalInner.style.transform = `translate(-50%, calc(-50% + ${finalShiftY}px)) scale(1)`;
     promptModalKeyboardDock.docked = true;
     promptModalKeyboardDock.lastKeyboardInset = bottomInset;
     promptModalKeyboardDock.animatingUntil = 0;
@@ -5098,7 +5103,7 @@ function openPromptModal(id) {
 
     modal.classList.add('active');
     modal.classList.add('modal-opening');
-    if (window.iOSScrollLock && modalInner) window.iOSScrollLock.lock(modalInner);
+    if (window.iOSScrollLock && modalInner) window.iOSScrollLock.lockLight(modalInner);
     document.body.classList.add('prompt-modal-open'); // Hide header behind modal
     lockPromptModalThemeColor();
     showPromptModalStatusBarShield();
