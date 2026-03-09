@@ -4385,16 +4385,11 @@ function isPromptModalKeyboardDockEnabled() {
 function forceSafariSafeAreaJiggle() {
     if (!isPromptModalIOSMobile()) return;
     let meta = document.querySelector('meta[name="theme-color"]');
-    let originalContent = null;
-    let createdMeta = false;
 
     if (!meta) {
         meta = document.createElement('meta');
         meta.setAttribute('name', 'theme-color');
         document.head.appendChild(meta);
-        createdMeta = true;
-    } else {
-        originalContent = meta.getAttribute('content');
     }
 
     // Force Safari to repaint the address bar by asserting a microscopic change 
@@ -4402,14 +4397,21 @@ function forceSafariSafeAreaJiggle() {
     meta.setAttribute('content', '#000001');
 
     setTimeout(() => {
-        if (createdMeta) {
-            meta.remove();
-        } else if (originalContent === null) {
-            meta.removeAttribute('content');
-        } else {
-            meta.setAttribute('content', originalContent);
-        }
+        // Always remove the meta tag — prompts.html intentionally has no theme-color
+        // so Safari uses native glass sampling from the canvas.
+        meta.remove();
     }, 50);
+}
+
+// On initial page load, Safari samples the viewport BEFORE the canvas has rendered,
+// so it sees the html background (#000000) and makes the bar opaque black.
+// After the canvas paints (~300ms), we jiggle to force Safari to re-sample and discover the stars.
+if (typeof document !== 'undefined') {
+    document.addEventListener('DOMContentLoaded', function () {
+        setTimeout(function () {
+            forceSafariSafeAreaJiggle();
+        }, 500);
+    });
 }
 
 function ensurePromptModalStatusBarShield() {
