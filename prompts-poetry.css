@@ -2185,26 +2185,21 @@ body.prompt-modal-open .chat-widget-fab {
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.15);
-    /* Very light dark overlay to let colors pop */
+    background: rgba(0, 0, 0, 0.25);
+    backdrop-filter: blur(20px) saturate(120%);
+    -webkit-backdrop-filter: blur(20px) saturate(120%);
+    transform: translateZ(0);
+    -webkit-transform: translateZ(0);
+    will-change: opacity, backdrop-filter;
     z-index: 1000;
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.5s ease;
 }
 
-/* Native iOS App Depth-of-Field Effect (Pure Filter, No Brightness Reduction) */
-body.prompt-modal-open #main-content {
-    filter: blur(18px);
-    -webkit-filter: blur(18px);
-    /* No transform: scale() here because it triggers a WebKit max tile size bug on long pages */
-}
-
-/* Base transition for smooth enter/exit */
+/* Base transition for smooth enter/exit (Removed modal-open filters to prevent massive >4096px rendering bugs) */
 #main-content {
-    transition: filter 0.5s cubic-bezier(0.32, 0.72, 0, 1),
-        -webkit-filter 0.5s cubic-bezier(0.32, 0.72, 0, 1);
-    will-change: filter;
+    will-change: transform;
 }
 
 body.prompt-modal-open .framer-nav {
