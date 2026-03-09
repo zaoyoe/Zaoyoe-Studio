@@ -6918,6 +6918,20 @@ function closePromptModal() {
     detachPromptModalKeyboardDock();
     restorePromptModalOverlay();
 
+    // INSTANT META JIGGLE: Safari takes 0.5s to fade the blue opacity out, exposing the blue address bar
+    // during the entire fade. We bypass this by instantly forcing the address bar to the page's native background (#000000)
+    // the very millisecond the user clicks close, creating the illusion of an instant glassy restore.
+    if (isPromptModalIOSMobile()) {
+        let meta = document.querySelector('meta[name="theme-color"]');
+        if (!meta) {
+            meta = document.createElement('meta');
+            meta.setAttribute('name', 'theme-color');
+            meta.setAttribute('data-prompt-theme-created', 'true');
+            document.head.appendChild(meta);
+        }
+        meta.setAttribute('content', '#000000');
+    }
+
     // Give CSS 500ms to fade out, then clean up the DOM and unlock scroll
     setTimeout(() => {
         if (backdrop) backdrop.classList.remove('closing');
