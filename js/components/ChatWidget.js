@@ -104,6 +104,7 @@ class ChatWidget {
         if (!meta) {
             meta = document.createElement('meta');
             meta.setAttribute('name', 'theme-color');
+            meta.setAttribute('data-chat-theme-created', 'true');
             document.head.appendChild(meta);
         }
         this._themeColorMeta = meta;
@@ -124,9 +125,24 @@ class ChatWidget {
     _unlockThemeColor() {
         const meta = this._themeColorMeta || document.querySelector('meta[name="theme-color"]');
         if (!meta) return;
+
+        // Clean up totally if the chat widget created the tag
+        if (meta.hasAttribute('data-chat-theme-created')) {
+            if (meta.parentNode) meta.parentNode.removeChild(meta);
+            this._themeColorMeta = null;
+            this._themeColorRestoreContent = '';
+            return;
+        }
+
         const restoreContent = meta.getAttribute('data-chat-theme-restore');
         if (restoreContent === null) return;
-        meta.setAttribute('content', restoreContent || '#000000');
+
+        if (restoreContent === '') {
+            meta.removeAttribute('content');
+        } else {
+            meta.setAttribute('content', restoreContent);
+        }
+
         meta.removeAttribute('data-chat-theme-restore');
         this._themeColorRestoreContent = '';
     }

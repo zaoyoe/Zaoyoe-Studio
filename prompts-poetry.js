@@ -4396,23 +4396,43 @@ function ensurePromptModalThemeColorMeta() {
 
 function lockPromptModalThemeColor() {
     if (!isPromptModalIOSMobile()) return;
-    const meta = ensurePromptModalThemeColorMeta();
-    if (!meta) return;
-    if (!meta.hasAttribute('data-prompt-theme-restore')) {
-        meta.setAttribute('data-prompt-theme-restore', meta.getAttribute('content') || '');
+
+    let meta = document.querySelector('meta[name="theme-color"]');
+    if (!meta) {
+        // If no tag exists, create one and mark it so we can cleanly destroy it later
+        meta = document.createElement('meta');
+        meta.setAttribute('name', 'theme-color');
+        meta.setAttribute('data-prompt-theme-created', 'true');
+        document.head.appendChild(meta);
+        promptModalThemeColorMeta = meta;
+    } else {
+        promptModalThemeColorMeta = meta;
+        if (!meta.hasAttribute('data-prompt-theme-restore')) {
+            meta.setAttribute('data-prompt-theme-restore', meta.getAttribute('content') || '');
+        }
     }
+
     meta.setAttribute('content', '#000000');
 }
 
 function unlockPromptModalThemeColor() {
     const meta = promptModalThemeColorMeta || document.querySelector('meta[name="theme-color"]');
     if (!meta) return;
+
+    // Check if we created this meta tag ourselves
+    if (meta.hasAttribute('data-prompt-theme-created')) {
+        // Completely remove the tag from the DOM if we were the ones who injected it
+        if (meta.parentNode) meta.parentNode.removeChild(meta);
+        promptModalThemeColorMeta = null;
+        return;
+    }
+
     const restoreContent = meta.getAttribute('data-prompt-theme-restore');
     if (restoreContent === null) return;
 
     if (restoreContent === '') {
-        // If originally empty, remove the content attribute so Safari falls back to html background natively
-        meta.setAttribute('content', 'null');
+        // Correctly handle natively empty attribute by completely removing it to prevent "null" buggy string cache in Safari
+        meta.removeAttribute('content');
     } else {
         meta.setAttribute('content', restoreContent);
     }
