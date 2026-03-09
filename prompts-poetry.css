@@ -2178,11 +2178,8 @@ body.prompt-modal-open .chat-widget-fab {
 }
 
 .poetry-modal-backdrop.closing {
-    /* Prevent Safari freeze during exit animation by making glass solid early */
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
+    /* Keep blur during fade-out to prevent stark purple light bleeding through. */
     background: rgba(0, 0, 0, 0.6) !important;
-    transition: opacity 0.5s ease;
 }
 
 .poetry-modal {
@@ -2197,7 +2194,9 @@ body.prompt-modal-open .chat-widget-fab {
     z-index: 10001;
     opacity: 0;
     pointer-events: none;
-    transition: opacity 0.5s ease;
+    top: -200%;
+    /* Snap offscreen exactly after 0.5s fade completes */
+    transition: opacity 0.5s ease, top 0s 0.55s;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -2206,6 +2205,9 @@ body.prompt-modal-open .chat-widget-fab {
 .poetry-modal.active {
     opacity: 1;
     pointer-events: auto;
+    top: 0;
+    /* Snap onscreen immediately, then fade */
+    transition: opacity 0.5s ease, top 0s 0s;
 }
 
 .modal-inner {

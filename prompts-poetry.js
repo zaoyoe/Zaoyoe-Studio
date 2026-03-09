@@ -6956,7 +6956,7 @@ function closePromptModal() {
         // CRITICAL: Unlock theme color ONLY AFTER the modal has fully faded out and the 
         // DOM has physically detached from the Safe Area layout, precisely mirroring ChatWidget.
         unlockPromptModalThemeColor();
-    }, 550);
+    }, 600);
 }
 
 // Click outside modal to close
