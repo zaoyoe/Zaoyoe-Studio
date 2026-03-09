@@ -2179,6 +2179,8 @@ body.prompt-modal-open .chat-widget-fab {
 
 .poetry-modal-backdrop.closing {
     background: rgba(0, 0, 0, 0.45) !important;
+    clip-path: inset(0 0 env(safe-area-inset-bottom) 0) !important;
+    -webkit-clip-path: inset(0 0 env(safe-area-inset-bottom) 0) !important;
 }
 
 body.modal-open .prompt-card {
@@ -2226,6 +2228,9 @@ body.modal-open .prompt-card {
     border-radius: 24px;
     display: flex;
     overflow: hidden;
+    /* CRITICAL FIX: Force WebKit to respect border-radius clipping during GPU transform */
+    -webkit-mask-image: -webkit-radial-gradient(white, black);
+    mask-image: radial-gradient(white, black);
     position: relative;
     box-shadow: 0 50px 100px rgba(0, 0, 0, 0.1);
     /* Softer shadow */
