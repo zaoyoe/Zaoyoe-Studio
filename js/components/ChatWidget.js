@@ -1721,8 +1721,8 @@ class ChatWidget {
             }
 
             .chat-window:not(.admin-mode-layout) .chat-header {
-                background: rgba(255, 255, 255, 0.075) !important;
-                border-bottom: 1px solid rgba(255, 255, 255, 0.12) !important;
+                background: transparent !important;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
             }
 
             .chat-window:not(.admin-mode-layout) .chat-messages {
@@ -1761,7 +1761,11 @@ class ChatWidget {
                 transition: none !important;
             }
             
-            /* Hide site navigation smoothly when chat opens (mirrors prompt modal behavior) */
+            /* Hide site navigation smoothly and prevent WebKit texture limit bugs when chat opens */
+            body.chat-widget-open {
+                background: transparent !important;
+            }
+            
             @media (max-width: 768px) {
                 body.chat-widget-open .framer-nav,
                 body.chat-widget-open .top-right-nav {
