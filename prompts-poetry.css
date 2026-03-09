@@ -2192,6 +2192,9 @@ body.prompt-modal-open .chat-widget-fab {
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.5s ease;
+    /* Force GPU compositing to fix WebKit backdrop-filter + position:fixed body bug */
+    -webkit-transform: translate3d(0, 0, 0);
+    transform: translate3d(0, 0, 0);
 }
 
 .poetry-modal-backdrop.visible {
