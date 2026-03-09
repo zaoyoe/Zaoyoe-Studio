@@ -4405,11 +4405,32 @@ function forceSafariSafeAreaJiggle() {
 
 // On initial page load, Safari samples the viewport BEFORE the canvas has rendered,
 // so it sees the html background (#000000) and makes the bar opaque black.
-// After the canvas paints (~300ms), we jiggle to force Safari to re-sample and discover the stars.
+// After the canvas paints (~300ms), we force Safari to re-evaluate via scroll + meta jiggle.
 if (typeof document !== 'undefined') {
     document.addEventListener('DOMContentLoaded', function () {
         setTimeout(function () {
-            forceSafariSafeAreaJiggle();
+            // Bypass isPromptModalIOSMobile guard — this needs to run on ALL iOS devices
+            var ua = navigator.userAgent || '';
+            var isiOS = /iPad|iPhone|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+            if (!isiOS) return;
+
+            // Technique 1: Micro-scroll to force Safari to re-sample the viewport
+            if (window.scrollY === 0) {
+                window.scrollTo(0, 1);
+                requestAnimationFrame(function () {
+                    window.scrollTo(0, 0);
+                });
+            }
+
+            // Technique 2: Meta tag jiggle as backup
+            var meta = document.querySelector('meta[name="theme-color"]');
+            if (!meta) {
+                meta = document.createElement('meta');
+                meta.setAttribute('name', 'theme-color');
+                document.head.appendChild(meta);
+            }
+            meta.setAttribute('content', '#000001');
+            setTimeout(function () { meta.remove(); }, 60);
         }, 500);
     });
 }
@@ -5099,6 +5120,9 @@ function openPromptModal(id) {
 
     // Physically mount modal into isolated render tree
     modal.style.display = 'flex';
+    // Clear any stale closing state (clip-path, etc.) from previous close
+    modal.classList.remove('closing');
+    if (backdrop) backdrop.classList.remove('closing');
     void modal.offsetWidth; // Force reflow to guarantee CSS transition plays safely
 
     modal.classList.add('active');
