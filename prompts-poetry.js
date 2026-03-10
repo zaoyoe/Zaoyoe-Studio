@@ -4613,24 +4613,17 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
 
     capturePromptModalDockMetrics();
 
-    const visualTop = Math.max(0, vv.offsetTop || 0);
-    const visualHeight = Math.max(0, (visualHeightOverride ?? vv.height ?? 0));
-    const composedHeight = visualHeight + visualTop;
-    const baseViewportHeight = Math.max(
-        promptModalKeyboardDock.baseViewportHeight || 0,
-        window.innerHeight || 0,
-        document.documentElement.clientHeight || 0,
-        composedHeight
-    );
-    const baseVisualHeight = Math.max(
-        promptModalKeyboardDock.baseVisualHeight || 0,
-        visualHeight
-    );
-    const insetFromLayout = Math.max(0, Math.round(baseViewportHeight - composedHeight));
-    const insetFromViewportDelta = Math.max(0, Math.round(baseVisualHeight - visualHeight));
+    // ── CRITICAL FIX: Use window.innerHeight as the stable reference.
+    // position:fixed top:50% resolves to 50% of window.innerHeight.
+    // The OLD Math.max accumulator grew monotonically from transient
+    // composedHeight (vv.height+vv.offsetTop) during keyboard/screenshot
+    // events, permanently locking in inflated values that pushed the modal
+    // off-screen. window.innerHeight is stable with interactive-widget. ──
+    const baseViewportHeight = window.innerHeight;
+    const visualHeight = visualHeightOverride ?? vv.height ?? 0;
     const bottomInset = Math.max(
         0,
-        Math.round(bottomInsetOverride ?? Math.max(insetFromLayout, insetFromViewportDelta))
+        Math.round(bottomInsetOverride ?? (baseViewportHeight - visualHeight))
     );
     if (bottomInset < 60) return;
 
@@ -4643,11 +4636,12 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
     const cardWidth = Math.round(
         promptModalKeyboardDock.baseWidth || modalInner.getBoundingClientRect().width || 0
     );
-    // ── Fix: Allow modal to overlap nav area to preserve more height ──
-    const safeTop = Math.round((window.visualViewport?.offsetTop || 0) + 4);
+    // safeTop is a fixed physical constant — position:fixed elements are
+    // anchored to the physical screen, not the document scroll position.
+    // Using vv.offsetTop here was WRONG and caused instability.
+    const safeTop = 4;
     const targetBottom = Math.max(40, Math.round(keyboardTop - 8));
     const availableHeight = Math.max(320, Math.round(targetBottom - safeTop));
-    // Clamp modal height to available space; no minimum enforced so it never overflows above the keyboard
     const dockHeight = Math.max(80, Math.min(cardHeight, availableHeight));
     const centeredBottom = Math.round((baseViewportHeight * 0.5) + (dockHeight * 0.5));
     const shiftY = Math.max(-520, Math.min(520, Math.round(targetBottom - centeredBottom)));
@@ -4816,22 +4810,10 @@ function attachPromptModalKeyboardDock() {
     promptModalKeyboardDock.onViewportChange = () => {
         if (!isPromptModalDockEnabledOrActive()) return;
         const inputFocused = isPromptModalDockInputFocused();
-        const visualTop = Math.max(0, vv.offsetTop || 0);
+        // Stable reference matching position:fixed top:50%
+        const baseViewportHeight = window.innerHeight;
         const visualHeight = Math.max(0, vv.height || 0);
-        const composedHeight = visualHeight + visualTop;
-        const baseViewportHeight = Math.max(
-            promptModalKeyboardDock.baseViewportHeight || 0,
-            window.innerHeight || 0,
-            document.documentElement.clientHeight || 0,
-            composedHeight
-        );
-        const baseVisualHeight = Math.max(
-            promptModalKeyboardDock.baseVisualHeight || 0,
-            visualHeight
-        );
-        const insetFromLayout = Math.max(0, Math.round(baseViewportHeight - composedHeight));
-        const insetFromViewportDelta = Math.max(0, Math.round(baseVisualHeight - visualHeight));
-        const bottomInset = Math.max(insetFromLayout, insetFromViewportDelta);
+        const bottomInset = Math.max(0, Math.round(baseViewportHeight - visualHeight));
         if (bottomInset < 40) {
             if (!promptModalKeyboardDock.docked) {
                 capturePromptModalDockMetrics(true);
@@ -4846,7 +4828,6 @@ function attachPromptModalKeyboardDock() {
         if (inputFocused && bottomInset > 60) {
             clearPromptModalUndockTimer();
 
-            // If already docked and inset changed significantly, update immediately
             if (promptModalKeyboardDock.docked) {
                 if (Math.abs(bottomInset - promptModalKeyboardDock.lastKeyboardInset) > 30) {
                     applyPromptModalKeyboardDock(visualHeight, bottomInset, false);
@@ -4854,8 +4835,7 @@ function attachPromptModalKeyboardDock() {
                 return;
             }
 
-            // First dock: debounce to wait for keyboard to settle (~80ms)
-            // This prevents the staircase effect from multi-frame viewport resize
+            // First dock: debounce to wait for keyboard to settle
             lastViewportBottomInset = bottomInset;
             if (viewportSettleTimer) clearTimeout(viewportSettleTimer);
             viewportSettleTimer = setTimeout(() => {
@@ -4863,24 +4843,8 @@ function attachPromptModalKeyboardDock() {
                 if (!isPromptModalDockEnabledOrActive()) return;
                 if (!isPromptModalDockInputFocused()) return;
                 if (promptModalKeyboardDock.docked) return;
-                // Use latest viewport values at settle time
                 const settleVH = Math.max(0, vv.height || 0);
-                const settleTop = Math.max(0, vv.offsetTop || 0);
-                const settleComposed = settleVH + settleTop;
-                const settleBVH = Math.max(
-                    promptModalKeyboardDock.baseViewportHeight || 0,
-                    window.innerHeight || 0,
-                    document.documentElement.clientHeight || 0,
-                    settleComposed
-                );
-                const settleBVisual = Math.max(
-                    promptModalKeyboardDock.baseVisualHeight || 0,
-                    settleVH
-                );
-                const settleInset = Math.max(
-                    Math.max(0, Math.round(settleBVH - settleComposed)),
-                    Math.max(0, Math.round(settleBVisual - settleVH))
-                );
+                const settleInset = Math.max(0, Math.round(window.innerHeight - settleVH));
                 if (settleInset > 60) {
                     applyPromptModalKeyboardDock(settleVH, settleInset, false);
                 }
