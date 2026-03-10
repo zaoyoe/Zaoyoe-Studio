@@ -4811,6 +4811,19 @@ function resetPromptModalKeyboardDock(animate = false) {
     }
 }
 
+function resetPromptModalKeyboardDockIfNeeded(animate = false) {
+    const { modal, modalInner } = getPromptModalDockNodes();
+    if (!modal || !modalInner) return;
+
+    const hasDockState = promptModalKeyboardDock.docked ||
+        modal.classList.contains('keyboard-docked') ||
+        modalInner.classList.contains('keyboard-docked');
+
+    if (!hasDockState) return;
+
+    resetPromptModalKeyboardDock(animate);
+}
+
 function schedulePromptModalUndock() {
     if (promptModalKeyboardDock.pendingUndockTimer) return;
     promptModalKeyboardDock.pendingUndockTimer = setTimeout(() => {
@@ -5151,7 +5164,7 @@ function toggleCommentMode() {
         // CLOSE COMMENTS (Revert to default)
         isCommentMode = false;
         modalInner.classList.remove('comment-mode');
-        resetPromptModalKeyboardDock(true);
+        resetPromptModalKeyboardDockIfNeeded(true);
         closePromptCommentComposer();
 
         // Update toggle button - revert to comment icon
