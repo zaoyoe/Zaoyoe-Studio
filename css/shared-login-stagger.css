@@ -1,0 +1,142 @@
+/* Shared staggered entrance animation for login and modal content. */
+
+/* Initial State: Hidden and Offset (only when overlay is NOT active) */
+.modal-overlay:not(.active) .modal-content:not(.guestbook-content)>*:not(.window-controls):not(.modal-close),
+.login-overlay:not(.active) .login-card .form-view>*:not(form),
+.login-overlay:not(.active) .login-card .form-view>form>* {
+    opacity: 0;
+    transform: translateY(20px);
+}
+
+/* The <form> element is a transparent container — always visible,
+   only its children animate individually */
+.login-card .form-view>form {
+    opacity: 1 !important;
+    transform: none !important;
+}
+
+/* Add transition to stagger-animated elements (only opacity + transform for GPU performance) */
+.modal-content:not(.guestbook-content)>*:not(.window-controls):not(.modal-close),
+.login-card .form-view>*:not(form),
+.login-card .form-view>form>* {
+    transition: opacity 0.5s ease-out, transform 0.5s ease-out;
+}
+
+/* 确保按钮内的图标不干扰点击 */
+button *,
+.submit-btn *,
+.upload-icon-btn *,
+.login-submit-btn *,
+.google-login-btn *,
+.verify-code-btn *,
+.view-more-btn * {
+    pointer-events: none;
+}
+
+/* 激活状态的弹窗和内容 */
+.login-overlay.active,
+.modal-overlay.active {
+    pointer-events: all !important;
+}
+
+.login-overlay.active .login-card,
+.modal-overlay.active .modal-content {
+    pointer-events: auto !important;
+}
+
+/* Active State: Visible and Reset */
+.modal-overlay.active .modal-content:not(.guestbook-content)>*:not(.window-controls):not(.modal-close),
+.login-overlay.active .login-card .form-view>*:not(form),
+.login-overlay.active .login-card .form-view>form>* {
+    opacity: 1 !important;
+    transform: translateY(0) !important;
+    pointer-events: auto !important;
+}
+
+/* 全局确保所有按钮和链接始终可点击 - 最高优先级 */
+button,
+input[type="button"],
+input[type="submit"],
+input[type="reset"],
+a,
+label[for],
+.submit-btn,
+.upload-icon-btn,
+.login-submit-btn,
+.google-login-btn,
+.verify-code-btn,
+.mac-dot,
+.switch-link,
+.forgot-password-link,
+.view-more-btn,
+[onclick],
+[type="submit"],
+.modal-content button,
+.modal-content a,
+.modal-content .submit-btn,
+.modal-content .upload-icon-btn,
+.modal-content .view-more-btn,
+.login-card button,
+.login-card a,
+.login-card .login-submit-btn,
+.login-card .google-login-btn {
+    pointer-events: auto !important;
+    cursor: pointer !important;
+}
+
+/* Staggered Delays for Cascading Effect */
+.modal-overlay.active .modal-content>*:nth-child(1),
+.login-overlay.active .login-card .form-view>*:nth-child(1) {
+    transition-delay: 0.1s;
+}
+
+.modal-overlay.active .modal-content>*:nth-child(2),
+.login-overlay.active .login-card .form-view>*:nth-child(2) {
+    transition-delay: 0.15s;
+}
+
+.modal-overlay.active .modal-content>*:nth-child(3),
+.login-overlay.active .login-card .form-view>*:nth-child(3) {
+    transition-delay: 0.2s;
+}
+
+.modal-overlay.active .modal-content>*:nth-child(4),
+.login-overlay.active .login-card .form-view>*:nth-child(4) {
+    transition-delay: 0.25s;
+}
+
+.modal-overlay.active .modal-content>*:nth-child(5),
+.login-overlay.active .login-card .form-view>*:nth-child(5) {
+    transition-delay: 0.3s;
+}
+
+.modal-overlay.active .modal-content>*:nth-child(n+6) {
+    transition-delay: 0.35s;
+}
+
+/* Staggered Delays for form children inside form-view
+   (the <form> is transparent, only its children animate individually) */
+.login-overlay.active .login-card .form-view>form>*:nth-child(1) {
+    transition-delay: 0.3s;
+}
+
+.login-overlay.active .login-card .form-view>form>*:nth-child(2) {
+    transition-delay: 0.35s;
+}
+
+.login-overlay.active .login-card .form-view>form>*:nth-child(3) {
+    transition-delay: 0.4s;
+}
+
+.login-overlay.active .login-card .form-view>form>*:nth-child(4) {
+    transition-delay: 0.45s;
+}
+
+.login-overlay.active .login-card .form-view>form>*:nth-child(n+5) {
+    transition-delay: 0.5s;
+}
+
+/* switch-text ("立即注册") appears AFTER form children finish */
+.login-overlay.active .login-card .form-view>.switch-text {
+    transition-delay: 0.55s;
+}
