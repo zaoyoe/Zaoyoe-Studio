@@ -4676,7 +4676,7 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
     modalInner.style.height = `${dockHeight}px`;
     modalInner.style.maxHeight = `${dockHeight}px`;
     // Only horizontal centering needed
-    modalInner.style.transform = 'translateX(-50%) translateZ(0)';
+    modalInner.style.transform = 'translateX(-50%)';
     promptModalKeyboardDock.docked = true;
     promptModalKeyboardDock.lastKeyboardInset = bottomInset;
     promptModalKeyboardDock.animatingUntil = 0;
@@ -4707,7 +4707,7 @@ function resetPromptModalKeyboardDock(animate = false) {
     modalInner.style.transition = duration
         ? `transform ${duration}ms cubic-bezier(0.22, 1, 0.36, 1)`
         : 'none';
-    modalInner.style.transform = 'translate(-50%, -50%) scale(1) translateZ(0)';
+    modalInner.style.transform = 'translate(-50%, -50%) scale(1)';
     promptModalKeyboardDock.docked = false;
     promptModalKeyboardDock.animatingUntil = 0;
     promptModalKeyboardDock.lastKeyboardInset = 0;
