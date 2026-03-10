@@ -4480,25 +4480,12 @@ function showPromptModalStatusBarShield() {
     setPromptModalStatusBarShieldExpanded(false);
     shield.style.visibility = 'visible';
     shield.style.opacity = '1';
-
-    // ── Safe theme-color injection for iOS dark status bar ──
-    let metaTheme = document.querySelector('meta[name="theme-color"]');
-    if (!metaTheme) {
-        metaTheme = document.createElement('meta');
-        metaTheme.name = 'theme-color';
-        document.head.appendChild(metaTheme);
-    }
-    metaTheme.content = '#000000';
 }
 
 function hidePromptModalStatusBarShield() {
     if (!promptModalStatusBarShield) return;
     promptModalStatusBarShield.style.opacity = '0';
     setPromptModalStatusBarShieldExpanded(false);
-
-    // ── Revert theme-color to native transparent sampling ──
-    let metaTheme = document.querySelector('meta[name="theme-color"]');
-    if (metaTheme) metaTheme.remove();
 
     setTimeout(() => {
         if (!promptModalStatusBarShield) return;
@@ -4915,20 +4902,43 @@ function attachPromptModalKeyboardDock() {
         if (inputFocused && bottomInset > 60) {
             clearPromptModalUndockTimer();
 
-            // If already docked and inset changed significantly, update immediately
+            // 已经停靠：使用 2px 的精度平滑跟随键盘的变化，避免出现断层
             if (promptModalKeyboardDock.docked) {
-                if (Math.abs(bottomInset - promptModalKeyboardDock.lastKeyboardInset) > 30) {
+                if (Math.abs(bottomInset - promptModalKeyboardDock.lastKeyboardInset) > 2) {
                     applyPromptModalKeyboardDock(visualHeight, bottomInset, false);
                 }
                 return;
             }
 
-            // First dock: dock immediately to prevent keyboard from obscuring input and triggering Safari native scroll panic
+            // 首次停靠：添加 60ms 预热防抖，避开 iOS 键盘弹起第一帧极其不准确的视口高度报告，防止最初的一帧就把卡片推飞
             lastViewportBottomInset = bottomInset;
-            if (viewportSettleTimer) { clearTimeout(viewportSettleTimer); viewportSettleTimer = null; }
-            if (bottomInset > 60) {
-                applyPromptModalKeyboardDock(visualHeight, bottomInset, false);
-            }
+            if (viewportSettleTimer) return;
+
+            viewportSettleTimer = setTimeout(() => {
+                viewportSettleTimer = null;
+                if (!isPromptModalDockEnabledOrActive() || !isPromptModalDockInputFocused() || promptModalKeyboardDock.docked) return;
+
+                // 重新获取延时后最准确的视口高度
+                const settleVH = Math.max(0, vv.height || 0);
+                const settleTop = Math.max(0, vv.offsetTop || 0);
+                const currentComposed = settleVH + settleTop;
+
+                const settleBVH = Math.max(
+                    promptModalKeyboardDock.baseViewportHeight || 0,
+                    window.innerHeight || 0,
+                    document.documentElement.clientHeight || 0,
+                    currentComposed
+                );
+                const settleBVisual = Math.max(promptModalKeyboardDock.baseVisualHeight || 0, settleVH);
+                const currentInset = Math.max(
+                    Math.max(0, Math.round(settleBVH - currentComposed)),
+                    Math.max(0, Math.round(settleBVisual - settleVH))
+                );
+
+                if (currentInset > 60) {
+                    applyPromptModalKeyboardDock(settleVH, currentInset, true);
+                }
+            }, 60);
             return;
         }
 
