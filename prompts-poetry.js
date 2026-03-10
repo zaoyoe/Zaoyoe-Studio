@@ -4861,35 +4861,10 @@ function attachPromptModalKeyboardDock() {
                 return;
             }
 
-            // 首次停靠：添加 60ms 预热防抖，避开 iOS 键盘弹起第一帧极其不准确的视口高度报告，防止最初的一帧就把卡片推飞
-            lastViewportBottomInset = bottomInset;
-            if (viewportSettleTimer) return;
-
-            viewportSettleTimer = setTimeout(() => {
-                viewportSettleTimer = null;
-                if (!isPromptModalDockEnabledOrActive() || !isPromptModalDockInputFocused() || promptModalKeyboardDock.docked) return;
-
-                // 重新获取延时后最准确的视口高度
-                const settleVH = Math.max(0, vv.height || 0);
-                const settleTop = Math.max(0, vv.offsetTop || 0);
-                const currentComposed = settleVH + settleTop;
-
-                const settleBVH = Math.max(
-                    promptModalKeyboardDock.baseViewportHeight || 0,
-                    window.innerHeight || 0,
-                    document.documentElement.clientHeight || 0,
-                    currentComposed
-                );
-                const settleBVisual = Math.max(promptModalKeyboardDock.baseVisualHeight || 0, settleVH);
-                const currentInset = Math.max(
-                    Math.max(0, Math.round(settleBVH - currentComposed)),
-                    Math.max(0, Math.round(settleBVisual - settleVH))
-                );
-
-                if (currentInset > 60) {
-                    applyPromptModalKeyboardDock(settleVH, currentInset, true);
-                }
-            }, 60);
+            // 首次停靠：移除防抖，由于 V3 采用逐帧跟踪 visualViewport 并禁用过渡动画，
+            // 这里我们必须在第一帧就立刻跟随上来，否则会产生 80ms 的输入框被遮挡并“抖动”跳跃的现象。
+            promptModalKeyboardDock.lastKeyboardInset = bottomInset;
+            applyPromptModalKeyboardDock(visualHeight, bottomInset, false);
             return;
         }
 
@@ -5082,6 +5057,15 @@ function openPromptModal(id) {
     // Physical modal mounting
     document.documentElement.classList.add('modal-open');
     document.body.classList.add('modal-open');
+
+    // Force opaque black theme-color to prevent translucent Safari address/status bars
+    if (isPromptModalIOSMobile()) {
+        const metaTheme = document.querySelector('meta[name="theme-color"]');
+        if (metaTheme) {
+            window._originalThemeColor = metaTheme.getAttribute('content');
+            metaTheme.setAttribute('content', '#000001');
+        }
+    }
 
     modal.style.display = 'flex';
     // Clear any stale closing state (clip-path, etc.) from previous close
@@ -6926,8 +6910,17 @@ function closePromptModal() {
 
         if (window.iOSScrollLock) window.iOSScrollLock.unlock();
         document.body.classList.remove('prompt-modal-keyboard-docked');
+        // Clear modal CSS
         document.documentElement.classList.remove('modal-open');
         document.body.classList.remove('modal-open');
+
+        // Restore original theme-color
+        if (isPromptModalIOSMobile()) {
+            const metaTheme = document.querySelector('meta[name="theme-color"]');
+            if (metaTheme && typeof window._originalThemeColor !== 'undefined') {
+                metaTheme.setAttribute('content', window._originalThemeColor || '#000000');
+            }
+        }
 
         hidePromptModalStatusBarShield();
 
