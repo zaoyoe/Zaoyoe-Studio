@@ -2177,6 +2177,13 @@ body.modal-open .prompt-card {
     animation-play-state: paused !important;
 }
 
+/* ── Fix: Prevent Safari Status Bar Overscan from Bleeding Dark Blue ── */
+/* When Safari pushes Layout Viewport up, the physical screen top becomes overscan space. */
+/* Safari normally paints this overscan with html's base background color (#0d0f1a). */
+html.modal-open {
+    background-color: #000000 !important;
+}
+
 .poetry-modal {
     position: fixed;
     top: 0;

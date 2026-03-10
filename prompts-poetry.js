@@ -5144,6 +5144,7 @@ function openPromptModal(id) {
     initCommentImageUpload();
 
     // Physical modal mounting
+    document.documentElement.classList.add('modal-open');
     document.body.classList.add('modal-open');
     modal.style.display = 'flex';
     // Clear any stale closing state (clip-path, etc.) from previous close
@@ -6993,6 +6994,7 @@ function closePromptModal() {
 
         if (window.iOSScrollLock) window.iOSScrollLock.unlock();
         document.body.classList.remove('prompt-modal-keyboard-docked');
+        document.documentElement.classList.remove('modal-open');
         document.body.classList.remove('modal-open');
 
         hidePromptModalStatusBarShield();
