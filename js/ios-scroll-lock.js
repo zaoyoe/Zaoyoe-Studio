@@ -126,6 +126,12 @@
         // 在弹窗内，寻找最近的可滚动容器
         const scrollable = findScrollableParent(target);
 
+        // Allow native scrolling inside textarea/input fields (they have their
+        // own built-in scroll mechanism not detected by findScrollableParent)
+        if (!scrollable && target.closest('textarea, input')) {
+            return; // Allow native scroll
+        }
+
         // 没有可滚动容器 → 阻止（弹窗本身不可滚动的区域）
         if (!scrollable) {
             e.preventDefault();
