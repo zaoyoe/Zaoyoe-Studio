@@ -3199,7 +3199,7 @@ body.modal-open .prompt-card {
     transition: border-color 0.3s ease;
     /* Textarea auto-expand support */
     resize: none;
-    overflow-y: hidden;
+    overflow-y: auto;
     min-height: 1.5em;
     /* One line height */
     max-height: 120px;
