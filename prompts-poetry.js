@@ -4971,20 +4971,6 @@ function openPromptModal(id) {
     promptModalKeyboardDock.overlayBaseHeight = initialViewportHeight + 160;
     freezePromptModalOverlay();
 
-    // ── Fix: Status Bar Blue WebGL Bug (Force Dark Theme Color) ──
-    if (isPromptModalIOSMobile()) {
-        let metaTheme = document.querySelector('meta[name="theme-color"]');
-        if (!metaTheme) {
-            metaTheme = document.createElement('meta');
-            metaTheme.setAttribute('name', 'theme-color');
-            document.head.appendChild(metaTheme);
-            window._originalThemeColor = 'REMOVE';
-        } else {
-            window._originalThemeColor = metaTheme.getAttribute('content');
-        }
-        metaTheme.setAttribute('content', '#000000');
-    }
-
     // Reset State
     isCommentMode = false;
     modal.querySelector('.modal-inner').classList.remove('comment-mode');
@@ -5093,15 +5079,6 @@ function openPromptModal(id) {
     document.documentElement.classList.add('modal-open');
     document.body.classList.add('modal-open');
 
-    // Force opaque black theme-color to prevent translucent Safari address/status bars
-    if (isPromptModalIOSMobile()) {
-        const metaTheme = document.querySelector('meta[name="theme-color"]');
-        if (metaTheme) {
-            window._originalThemeColor = metaTheme.getAttribute('content');
-            metaTheme.setAttribute('content', '#000001');
-        }
-    }
-
     modal.style.display = 'flex';
     // Clear any stale closing state (clip-path, etc.) from previous close
     modal.classList.remove('closing');
@@ -5111,11 +5088,7 @@ function openPromptModal(id) {
     modal.classList.add('active');
     modal.classList.add('modal-opening');
     if (window.iOSScrollLock && modalInner) {
-        if (isPromptModalIOSMobile()) {
-            window.iOSScrollLock.lock(modalInner);
-        } else {
-            window.iOSScrollLock.lockLight(modalInner);
-        }
+        window.iOSScrollLock.lockLight(modalInner);
     }
 
     showPromptModalStatusBarShield();
@@ -6949,17 +6922,6 @@ function closePromptModal() {
         document.documentElement.classList.remove('modal-open');
         document.body.classList.remove('modal-open');
 
-        // Restore original theme-color
-        if (isPromptModalIOSMobile()) {
-            const metaTheme = document.querySelector('meta[name="theme-color"]');
-            if (metaTheme && typeof window._originalThemeColor !== 'undefined') {
-                if (window._originalThemeColor === 'REMOVE' || window._originalThemeColor === null) {
-                    metaTheme.remove();
-                } else {
-                    metaTheme.setAttribute('content', window._originalThemeColor);
-                }
-            }
-        }
         hidePromptModalStatusBarShield();
 
         // Physically detach modal from Safe Area render tree, skipping layout breakage of `visibility`

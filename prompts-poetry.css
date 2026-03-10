@@ -2144,11 +2144,10 @@ html[lang="en"] .nav-item .en {
 
 .poetry-modal-backdrop {
     position: fixed;
-    /* ── Fix: Over-extend backdrop so native layout shifts never reveal its edges ── */
-    top: -50vh;
+    top: 0;
     left: 0;
     width: 100%;
-    height: 200vh;
+    height: 100%;
     background: rgba(0, 0, 0, 0.45);
     /* Restored translucent dark overlay */
     backdrop-filter: blur(25px) saturate(120%);
