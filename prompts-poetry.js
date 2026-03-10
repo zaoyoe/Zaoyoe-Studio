@@ -4652,8 +4652,7 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
     const dockHeight = Math.max(minDockHeight, Math.min(cardHeight, availableHeight));
     const centeredBottom = Math.round((baseViewportHeight * 0.5) + (dockHeight * 0.5));
     const shiftY = Math.max(-520, Math.min(520, Math.round(targetBottom - centeredBottom)));
-    const duration = animate ? 120 : 0;
-    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const now = Date.now();
 
     if (promptModalKeyboardDock.docked && promptModalKeyboardDock.animatingUntil > now) {
         if (Math.abs(bottomInset - promptModalKeyboardDock.lastKeyboardInset) <= 8) {
@@ -4694,7 +4693,7 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
     promptModalKeyboardDock.docked = true;
     promptModalKeyboardDock.lastKeyboardInset = bottomInset;
     if (animate) {
-        promptModalKeyboardDock.animatingUntil = now + 320;
+        promptModalKeyboardDock.animatingUntil = Date.now() + 320;
     }
 }
 
@@ -6969,6 +6968,10 @@ function closePromptModal() {
 document.addEventListener('click', function (e) {
     const modal = document.getElementById('promptModal');
     if (!modal || !modal.classList.contains('active')) return;
+
+    // ── Fix: Prevent stray clicks from closing modal during keyboard dock animation ──
+    if (window.promptModalKeyboardDock?.animatingUntil > Date.now()) return;
+
     // Only close if clicking the backdrop itself, not the inner content
     if (e.target === modal) {
         closePromptModal();
