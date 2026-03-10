@@ -4659,7 +4659,7 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
     modal.style.setProperty('height', `${baseViewportHeight}px`, 'important');
     modalInner.classList.add('keyboard-docked');
     modalInner.style.transition = 'none';
-    modalInner.style.position = 'fixed';
+    modalInner.style.position = 'absolute';
     // ── Direct pixel coordinates ──
     modalInner.style.top = `${dockTop}px`;
     modalInner.style.left = '50%';
@@ -4687,7 +4687,7 @@ function resetPromptModalKeyboardDock(animate = false) {
     const duration = animate ? 170 : 0;
     document.body.classList.remove('prompt-modal-keyboard-docked');
     setPromptModalStatusBarShieldExpanded(false);
-    modalInner.style.position = 'fixed';
+    modalInner.style.position = 'absolute';
     modalInner.style.top = '50%';
     modalInner.style.left = '50%';
     modalInner.style.right = 'auto';
@@ -4895,7 +4895,7 @@ function primePromptModalKeyboardDock() {
         clearPromptModalOpeningTimer();
         modal.classList.remove('modal-opening');
     }
-    setPromptModalStatusBarShieldExpanded(true);
+    // Shield expansion removed — it caused visible black bar flash at status bar edge
     attachPromptModalKeyboardDock();
     capturePromptModalDockMetrics(true);
 }
