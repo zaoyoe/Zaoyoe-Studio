@@ -4636,16 +4636,14 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
     const cardWidth = Math.round(
         promptModalKeyboardDock.baseWidth || modalInner.getBoundingClientRect().width || 0
     );
-    // safeTop is a fixed physical constant — position:fixed elements are
-    // anchored to the physical screen, not the document scroll position.
-    // Using vv.offsetTop here was WRONG and caused instability.
-    const safeTop = 4;
-    const targetBottom = Math.max(40, Math.round(keyboardTop - 8));
-    const availableHeight = Math.max(320, Math.round(targetBottom - safeTop));
+    // targetBottom = 8px gap above keyboard
+    const targetBottom = Math.max(80, Math.round(keyboardTop - 8));
+    // dockHeight = min(original card height, available space above keyboard)
+    const availableHeight = Math.max(200, targetBottom - 4);
     const dockHeight = Math.max(80, Math.min(cardHeight, availableHeight));
-    const centeredBottom = Math.round((baseViewportHeight * 0.5) + (dockHeight * 0.5));
-    const shiftY = Math.max(-520, Math.min(520, Math.round(targetBottom - centeredBottom)));
-    const duration = animate ? 120 : 0;
+    // ── Direct pixel top: modal top edge = targetBottom - dockHeight ──
+    // No top:50%, no shiftY, no centeredBottom. Just physical pixels.
+    const dockTop = Math.max(4, targetBottom - dockHeight);
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
 
     if (promptModalKeyboardDock.docked && promptModalKeyboardDock.animatingUntil > now) {
@@ -4657,15 +4655,13 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
     clearPromptModalUndockTimer();
     clearPromptModalFirstDockTimer();
     document.body.classList.add('prompt-modal-keyboard-docked');
-    setPromptModalStatusBarShieldExpanded(true);
     modal.classList.add('keyboard-docked');
-    // ── Fix: Freeze outer modal layout height to prevent native iOS 15 viewport shrinking ──
     modal.style.setProperty('height', `${baseViewportHeight}px`, 'important');
     modalInner.classList.add('keyboard-docked');
-    // ── Fix: Always use transition:none to prevent any spring animation ──
     modalInner.style.transition = 'none';
     modalInner.style.position = 'fixed';
-    modalInner.style.top = '50%';
+    // ── Direct pixel coordinates ──
+    modalInner.style.top = `${dockTop}px`;
     modalInner.style.left = '50%';
     modalInner.style.right = 'auto';
     modalInner.style.bottom = 'auto';
@@ -4674,11 +4670,10 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
         modalInner.style.width = `${cardWidth}px`;
         modalInner.style.maxWidth = `${cardWidth}px`;
     }
-    if (dockHeight > 0) {
-        modalInner.style.height = `${dockHeight}px`;
-        modalInner.style.maxHeight = `${dockHeight}px`;
-    }
-    modalInner.style.transform = `translate(-50%, calc(-50% + ${shiftY}px)) scale(1) translateZ(0)`;
+    modalInner.style.height = `${dockHeight}px`;
+    modalInner.style.maxHeight = `${dockHeight}px`;
+    // Only horizontal centering needed
+    modalInner.style.transform = 'translateX(-50%) translateZ(0)';
     promptModalKeyboardDock.docked = true;
     promptModalKeyboardDock.lastKeyboardInset = bottomInset;
     promptModalKeyboardDock.animatingUntil = 0;
