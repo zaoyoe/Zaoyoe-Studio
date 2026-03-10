@@ -4676,7 +4676,7 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
     modalInner.style.height = `${dockHeight}px`;
     modalInner.style.maxHeight = `${dockHeight}px`;
     // Only horizontal centering needed
-    modalInner.style.transform = 'translateX(-50%)';
+    modalInner.style.transform = 'translateX(-50%) translateZ(0)';
     promptModalKeyboardDock.docked = true;
     promptModalKeyboardDock.lastKeyboardInset = bottomInset;
     promptModalKeyboardDock.animatingUntil = 0;
@@ -4707,7 +4707,7 @@ function resetPromptModalKeyboardDock(animate = false) {
     modalInner.style.transition = duration
         ? `transform ${duration}ms cubic-bezier(0.22, 1, 0.36, 1)`
         : 'none';
-    modalInner.style.transform = 'translate(-50%, -50%) scale(1)';
+    modalInner.style.transform = 'translate(-50%, -50%) scale(1) translateZ(0)';
     promptModalKeyboardDock.docked = false;
     promptModalKeyboardDock.animatingUntil = 0;
     promptModalKeyboardDock.lastKeyboardInset = 0;
@@ -6311,9 +6311,7 @@ function handleReplyComment(commentId, authorName) {
             input.focus();
         }
         input.dataset.replyTo = commentId;
-        if (!isPromptModalIOSMobile()) {
-            primePromptModalKeyboardDock();
-        }
+        primePromptModalKeyboardDock();
     }
 }
 
@@ -6404,34 +6402,14 @@ function formatMentions(text) {
     return escaped.replace(/@(\w+)/g, '<span class="mention">@$1</span>');
 }
 
-/**
- * Auto-expand textarea as user types
- * @param {HTMLTextAreaElement} textarea - The textarea element
- */
-function syncPromptCommentInputLayout() {
-    const input = document.getElementById('commentInput');
-    const inputArea = input?.closest('.comment-input-area');
-    const list = document.getElementById('commentList');
-    if (!input || !inputArea || !list) return;
-
-    const areaHeight = Math.ceil(inputArea.getBoundingClientRect().height || 0);
-    const fallbackPadding = 104;
-    const extraSpacing = isPromptModalIOSMobile() ? 24 : 12;
-    list.style.paddingBottom = `${Math.max(fallbackPadding, areaHeight + extraSpacing)}px`;
-}
-
 function autoExpandTextarea(textarea) {
     // Reset height to auto to properly calculate scrollHeight
     textarea.style.height = 'auto';
-
-    const isPromptCommentInput = textarea.id === 'commentInput' && isPromptModalIOSMobile();
-    const maxHeight = isPromptCommentInput ? textarea.scrollHeight : 120;
+    // Set height to scrollHeight (content height)
+    const maxHeight = 120; // Max ~5 lines, matches CSS max-height
     textarea.style.height = Math.min(textarea.scrollHeight, maxHeight) + 'px';
-    textarea.style.overflowY = isPromptCommentInput ? 'hidden' : (textarea.scrollHeight > maxHeight ? 'auto' : 'hidden');
-
-    if (textarea.id === 'commentInput') {
-        syncPromptCommentInputLayout();
-    }
+    // Show scrollbar if content exceeds max height
+    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
 }
 
 function handleCommentKeydown(e) {
@@ -6530,7 +6508,6 @@ async function submitComment() {
     input.style.height = 'auto';
     input.style.overflowY = 'hidden';
     delete input.dataset.replyTo;
-    syncPromptCommentInputLayout();
 
     // Get cached avatar
     const currentUserAvatar = window._cachedUserAvatar;
@@ -6698,23 +6675,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // Setup comment input listeners including iOS scroll stabiliser
     const commentInput = document.getElementById('commentInput');
     if (commentInput) {
-        let commentInputTouchStartY = 0;
-        let commentInputTouchStartScrollTop = 0;
-
         // ── V18 Fix: Prevent iOS Safari from natively scrolling the page when tapping
         // the comment input. Without e.preventDefault() here, Safari fires a layout
         // scroll-to-input that fights the JS keyboard docking and causes visible jitter.
         const handleTouchFocus = (e) => {
-            if (e.touches?.length) {
-                commentInputTouchStartY = e.touches[0].clientY;
-                commentInputTouchStartScrollTop = commentInput.scrollTop;
-            }
-
             if (isPromptModalIOSMobile()) {
-                return;
-            }
-
-            {
                 // Only preventDefault on FIRST tap (when textarea not focused).
                 // If already focused, allow native touch scrolling within textarea.
                 if (document.activeElement !== commentInput) {
@@ -6748,43 +6713,13 @@ document.addEventListener('DOMContentLoaded', () => {
         };
         commentInput.addEventListener('touchstart', handleTouchFocus, { passive: false });
 
-        commentInput.addEventListener('touchmove', (e) => {
-            if (!isPromptModalIOSMobile()) return;
-            if (document.activeElement !== commentInput) return;
-
-            const maxScrollTop = Math.max(0, commentInput.scrollHeight - commentInput.clientHeight);
-            const isScrollable = maxScrollTop > 2;
-            if (!isScrollable) return;
-
-            const touchY = e.touches[0].clientY;
-            const deltaY = commentInputTouchStartY - touchY;
-            const nextScrollTop = Math.max(
-                0,
-                Math.min(maxScrollTop, commentInputTouchStartScrollTop + deltaY)
-            );
-
-            // Drive textarea scrolling ourselves because iOS Safari inside the
-            // prompt modal can swallow native textarea pan gestures.
-            commentInput.scrollTop = nextScrollTop;
-            if (e.cancelable) e.preventDefault();
-            e.stopPropagation();
-        }, { passive: false });
-
         commentInput.addEventListener('focus', () => {
-            if (!isPromptModalIOSMobile()) {
-                primePromptModalKeyboardDock();
-            }
-            syncPromptCommentInputLayout();
+            primePromptModalKeyboardDock();
         });
 
         commentInput.addEventListener('blur', () => {
-            if (!isPromptModalIOSMobile()) {
-                schedulePromptModalUndock();
-            }
-            syncPromptCommentInputLayout();
+            schedulePromptModalUndock();
         });
-
-        syncPromptCommentInputLayout();
     }
 });
 

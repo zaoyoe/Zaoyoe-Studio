@@ -127,22 +127,6 @@
         // We handle inputs directly to prevent Safari scroll chaining (rubberbanding)
         const inputEl = target.closest('textarea, input');
         if (inputEl) {
-            const isPromptCommentInput =
-                inputEl.id === 'commentInput' &&
-                document.activeElement === inputEl &&
-                currentModal &&
-                currentModal.contains(inputEl);
-
-            // Let the prompt comment textarea keep native iOS scroll behavior.
-            // A broader input touch lock is still needed elsewhere, but this one
-            // field needs real internal scrolling once it exceeds max height.
-            if (
-                isPromptCommentInput &&
-                Math.ceil(inputEl.scrollHeight) > Math.ceil(inputEl.clientHeight) + 2
-            ) {
-                return;
-            }
-
             // If it's not vertically scrollable, completely swallow the touchmove
             if (Math.ceil(inputEl.scrollHeight) <= Math.ceil(inputEl.clientHeight) + 2) {
                 e.preventDefault();

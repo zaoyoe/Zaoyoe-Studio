@@ -589,48 +589,17 @@
     <script src="./js/section-visibility.js"></script>
     <script src="prompts-data.js?v=20260302_G_AUTH"></script>
     <script src="starry-sky.js?v=20260302_G_AUTH"></script>
-    <script src="prompts-poetry.js?v=20260310_GLASS_V54"></script>
+    <script src="prompts-poetry.js?v=20260310_GLASS_V49"></script>
     <script src="js/services/PointsService.js?v=20260302_G_AUTH"></script>
     <script src="js/components/WalletModal.js?v=20260302_G_AUTH"></script>
     <script src="./js/avatar-uploader.js" defer></script>
     <script src="supabase-auth-functions.js?v=20260304_CARET_FIX2" defer></script>
     <script src="js/i18n.js?v=1" defer></script>
-    <script src="js/ios-scroll-lock.js?v=20260310_SCROLL_LOCK_7" defer></script>
+    <script src="js/ios-scroll-lock.js?v=20260310_SCROLL_LOCK_6" defer></script>
     <script src="inject-auth.js?v=20260310_IOS_INPUT_FIX11" defer></script>
     <script src="notification-client.js"></script>
     <script src="js/heartbeat.js"></script>
     <script src="js/framer_home.js?v=NAV_UNIFIED_V7"></script>
-    <script>
-        (function cleanupLegacyPromptServiceWorker() {
-            if (!('serviceWorker' in navigator) || !('caches' in window)) return;
-
-            window.addEventListener('load', async () => {
-                try {
-                    const registrations = await navigator.serviceWorker.getRegistrations();
-                    const legacyRegs = registrations.filter(reg => {
-                        const scriptUrl = reg.active?.scriptURL || reg.waiting?.scriptURL || reg.installing?.scriptURL || '';
-                        return scriptUrl.endsWith('/sw.js');
-                    });
-
-                    if (legacyRegs.length === 0) return;
-
-                    await Promise.all(legacyRegs.map(reg => reg.unregister()));
-
-                    const cacheKeys = await caches.keys();
-                    const legacyCacheKeys = cacheKeys.filter(key =>
-                        /^(static|images|prompts-gallery)-v\d+$/i.test(key)
-                    );
-                    await Promise.all(legacyCacheKeys.map(key => caches.delete(key)));
-
-                    if (navigator.serviceWorker.controller) {
-                        location.reload();
-                    }
-                } catch (err) {
-                    console.warn('Failed to clear legacy prompt service worker caches:', err);
-                }
-            }, { once: true });
-        })();
-    </script>
     <script>
         // Reveal page after content is ready
         document.body.classList.add('loaded');
