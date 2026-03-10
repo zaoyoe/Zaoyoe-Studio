@@ -4383,65 +4383,10 @@ function isPromptModalKeyboardDockEnabled() {
 }
 
 function forceSafariSafeAreaJiggle() {
-    if (!isPromptModalIOSMobile()) return;
-    let meta = document.querySelector('meta[name="theme-color"]');
-
-    if (!meta) {
-        meta = document.createElement('meta');
-        meta.setAttribute('name', 'theme-color');
-        document.head.appendChild(meta);
-    }
-
-    // Force Safari to repaint the address bar by asserting a microscopic change 
-    // to the meta tag, forcing the Safe Area compositor to wake up.
-    meta.setAttribute('content', '#000001');
-
-    setTimeout(() => {
-        // Always remove the meta tag — prompts.html intentionally has no theme-color
-        // so Safari uses native glass sampling from the canvas.
-        meta.remove();
-    }, 50);
+    // Deprecated: This caused the theme-color meta tag caching bug.
 }
 
-// On initial page load, Safari samples the viewport BEFORE the canvas has rendered,
-// so it sees the html background (#000000) and makes the bar opaque black.
-// After the canvas paints (~300ms), we force Safari to re-evaluate via Safe Area DOM mutation.
-if (typeof document !== 'undefined') {
-    document.addEventListener('DOMContentLoaded', function () {
-        setTimeout(function () {
-            // Bypass isPromptModalIOSMobile guard — this needs to run on all iOS devices
-            var ua = navigator.userAgent || '';
-            var isiOS = /iPad|iPhone|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-            if (!isiOS) return;
-
-            // Technique 1: DOM Mutation in the Safe Area
-            // Inject a transparent fixed element directly into the bottom safe area zone.
-            var trigger = document.createElement('div');
-            trigger.style.cssText = 'position:fixed; bottom:0; left:0; width:100%; height:env(safe-area-inset-bottom, 34px); background:rgba(0,0,0,0.001); z-index:999999; pointer-events:none;';
-            document.body.appendChild(trigger);
-
-            // Technique 2: Meta tag jiggle as backup
-            var meta = document.querySelector('meta[name="theme-color"]');
-            var hadMeta = !!meta;
-            if (!meta) {
-                meta = document.createElement('meta');
-                meta.setAttribute('name', 'theme-color');
-                document.head.appendChild(meta);
-            }
-            meta.setAttribute('content', '#000001');
-
-            setTimeout(function () {
-                trigger.remove();
-                if (!hadMeta) {
-                    meta.remove();
-                } else {
-                    meta.removeAttribute('content');
-                }
-            }, 60);
-        }, 600); // Wait 600ms to ensure starry canvas is fully painted
-    });
-}
-
+// Safari theme-color jiggle hack removed because it caused the status bar to turn blue permanently.
 function ensurePromptModalStatusBarShield() {
     if (promptModalStatusBarShield?.isConnected) return promptModalStatusBarShield;
     const shield = document.createElement('div');
@@ -4681,39 +4626,31 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
         promptModalKeyboardDock.baseVisualHeight || 0,
         visualHeight
     );
-    const layoutOffsetTopFallback = Math.max(0, Math.round(window.visualViewport?.offsetTop || 0));
     const insetFromLayout = Math.max(0, Math.round(baseViewportHeight - composedHeight));
     const insetFromViewportDelta = Math.max(0, Math.round(baseVisualHeight - visualHeight));
-    // ── CRITICAL FIX: Use offsetTop as a surrogate inset during the 300ms Safari V-Viewport lag ──
     const bottomInset = Math.max(
         0,
-        Math.round(bottomInsetOverride ?? Math.max(layoutOffsetTopFallback, Math.max(insetFromLayout, insetFromViewportDelta)))
+        Math.round(bottomInsetOverride ?? Math.max(insetFromLayout, insetFromViewportDelta))
     );
-
     if (bottomInset < 60) return;
 
     promptModalKeyboardDock.lastStableInset = bottomInset;
 
-    const layoutOffsetTop = Math.max(0, Math.round(vv?.offsetTop || 0));
-    const keyboardTop = Math.max(0, baseViewportHeight - bottomInset) + layoutOffsetTop;
+    const keyboardTop = Math.max(0, baseViewportHeight - bottomInset);
     const cardHeight = Math.round(
         promptModalKeyboardDock.baseHeight || modalInner.getBoundingClientRect().height || 0
     );
     const cardWidth = Math.round(
         promptModalKeyboardDock.baseWidth || modalInner.getBoundingClientRect().width || 0
     );
-
     // ── Fix: Allow modal to overlap nav area to preserve more height ──
-    const safeTop = layoutOffsetTop + 4; // layout coordinate of physical safe top
+    const safeTop = Math.round((window.visualViewport?.offsetTop || 0) + 4);
     const targetBottom = Math.max(40, Math.round(keyboardTop - 8));
     const availableHeight = Math.max(320, Math.round(targetBottom - safeTop));
-
     // Ensure modal keeps at least 65% of its original height
     const minDockHeight = Math.round(cardHeight * 0.65);
     const dockHeight = Math.max(minDockHeight, Math.min(cardHeight, availableHeight));
     const centeredBottom = Math.round((baseViewportHeight * 0.5) + (dockHeight * 0.5));
-
-    // Calculate final shift taking Safari's native layout push into account
     const shiftY = Math.max(-520, Math.min(520, Math.round(targetBottom - centeredBottom)));
     const duration = animate ? 120 : 0;
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
@@ -4729,8 +4666,6 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
     document.body.classList.add('prompt-modal-keyboard-docked');
     setPromptModalStatusBarShieldExpanded(true);
     modal.classList.add('keyboard-docked');
-    // ── Fix: Freeze outer modal layout height to prevent native iOS 15 viewport shrinking ──
-    modal.style.setProperty('height', `${baseViewportHeight}px`, 'important');
     modalInner.classList.add('keyboard-docked');
     // ── Fix: Always use transition:none to prevent any spring animation ──
     modalInner.style.transition = 'none';
@@ -4748,7 +4683,7 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
         modalInner.style.height = `${dockHeight}px`;
         modalInner.style.maxHeight = `${dockHeight}px`;
     }
-    modalInner.style.transform = `translate(-50%, calc(-50% + ${shiftY}px)) scale(1) translateZ(0)`;
+    modalInner.style.transform = `translate(-50%, calc(-50% + ${shiftY}px)) scale(1)`;
     promptModalKeyboardDock.docked = true;
     promptModalKeyboardDock.lastKeyboardInset = bottomInset;
     promptModalKeyboardDock.animatingUntil = 0;
@@ -4779,7 +4714,7 @@ function resetPromptModalKeyboardDock(animate = false) {
     modalInner.style.transition = duration
         ? `transform ${duration}ms cubic-bezier(0.22, 1, 0.36, 1)`
         : 'none';
-    modalInner.style.transform = 'translate(-50%, -50%) scale(1) translateZ(0)';
+    modalInner.style.transform = 'translate(-50%, -50%) scale(1)';
     promptModalKeyboardDock.docked = false;
     promptModalKeyboardDock.animatingUntil = 0;
     promptModalKeyboardDock.lastKeyboardInset = 0;
@@ -4789,7 +4724,6 @@ function resetPromptModalKeyboardDock(animate = false) {
             const { modal: activeModal, modalInner: activeInner } = getPromptModalDockNodes();
             if (!activeInner || !activeModal) return;
             activeModal.classList.remove('keyboard-docked');
-            activeModal.style.removeProperty('height');
             activeInner.classList.remove('keyboard-docked');
             activeInner.style.removeProperty('position');
             activeInner.style.removeProperty('top');
@@ -4807,7 +4741,6 @@ function resetPromptModalKeyboardDock(animate = false) {
         }, duration + 40);
     } else {
         modal.classList.remove('keyboard-docked');
-        modal.style.removeProperty('height');
         modalInner.classList.remove('keyboard-docked');
         modalInner.style.removeProperty('position');
         modalInner.style.removeProperty('top');
@@ -5149,6 +5082,7 @@ function openPromptModal(id) {
     // Physical modal mounting
     document.documentElement.classList.add('modal-open');
     document.body.classList.add('modal-open');
+
     modal.style.display = 'flex';
     // Clear any stale closing state (clip-path, etc.) from previous close
     modal.classList.remove('closing');
@@ -5158,11 +5092,14 @@ function openPromptModal(id) {
     modal.classList.add('active');
     modal.classList.add('modal-opening');
     if (window.iOSScrollLock && modalInner) {
-        window.iOSScrollLock.lockLight(modalInner);
+        if (isPromptModalIOSMobile()) {
+            window.iOSScrollLock.lock(modalInner);
+        } else {
+            window.iOSScrollLock.lockLight(modalInner);
+        }
     }
 
     showPromptModalStatusBarShield();
-    resetPromptModalKeyboardDock(false);
     clearPromptModalOpeningTimer();
     promptModalOpeningTimer = setTimeout(() => {
         modal.classList.remove('modal-opening');
@@ -6404,11 +6341,8 @@ function handleReplyComment(commentId, authorName) {
     const input = document.getElementById('commentInput');
     if (input) {
         input.value = `@${authorName} `;
-        try {
-            input.focus({ preventScroll: true });
-        } catch (_) {
-            input.focus();
-        }
+        try { input.focus(); } catch (_) { }
+
         input.dataset.replyTo = commentId;
         primePromptModalKeyboardDock();
     }
@@ -6784,18 +6718,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 submitComment();
             }
         });
-
-        commentInput.addEventListener('touchstart', (e) => {
-            if (isPromptModalIOSMobile()) {
-                // Focus quietly
-                if (e.cancelable) e.preventDefault(); // Keep preventDefault for touchstart
-                try {
-                    commentInput.focus({ preventScroll: true });
-                } catch (err) {
-                    commentInput.focus();
-                }
-            }
-        }, { passive: false }); // Ensure passive: false for preventDefault
 
         commentInput.addEventListener('focus', () => {
             primePromptModalKeyboardDock();
