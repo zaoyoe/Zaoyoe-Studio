@@ -6680,6 +6680,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const commentInput = document.getElementById('commentInput');
     if (commentInput) {
         let commentInputTouchStartY = 0;
+        let commentInputTouchStartScrollTop = 0;
 
         // ── V18 Fix: Prevent iOS Safari from natively scrolling the page when tapping
         // the comment input. Without e.preventDefault() here, Safari fires a layout
@@ -6687,6 +6688,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const handleTouchFocus = (e) => {
             if (e.touches?.length) {
                 commentInputTouchStartY = e.touches[0].clientY;
+                commentInputTouchStartScrollTop = commentInput.scrollTop;
             }
 
             if (isPromptModalIOSMobile()) {
@@ -6727,20 +6729,21 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!isPromptModalIOSMobile()) return;
             if (document.activeElement !== commentInput) return;
 
-            const isScrollable = Math.ceil(commentInput.scrollHeight) > Math.ceil(commentInput.clientHeight) + 2;
+            const maxScrollTop = Math.max(0, commentInput.scrollHeight - commentInput.clientHeight);
+            const isScrollable = maxScrollTop > 2;
             if (!isScrollable) return;
 
             const touchY = e.touches[0].clientY;
             const deltaY = commentInputTouchStartY - touchY;
-            const atTop = commentInput.scrollTop <= 0;
-            const atBottom =
-                commentInput.scrollTop + commentInput.clientHeight >= commentInput.scrollHeight - 2;
+            const nextScrollTop = Math.max(
+                0,
+                Math.min(maxScrollTop, commentInputTouchStartScrollTop + deltaY)
+            );
 
-            // Let the textarea own its internal scrolling path on iOS, but still
-            // block boundary rubber-banding from leaking into the modal/page.
-            if ((atTop && deltaY < 0) || (atBottom && deltaY > 0)) {
-                if (e.cancelable) e.preventDefault();
-            }
+            // Drive textarea scrolling ourselves because iOS Safari inside the
+            // prompt modal can swallow native textarea pan gestures.
+            commentInput.scrollTop = nextScrollTop;
+            if (e.cancelable) e.preventDefault();
             e.stopPropagation();
         }, { passive: false });
 
