@@ -4933,6 +4933,7 @@ function openPromptModal(id) {
     );
     promptModalKeyboardDock.overlayBaseHeight = initialViewportHeight + 160;
     freezePromptModalOverlay();
+    closePromptCommentComposer({ clearDraft: true });
 
     // Reset State
     isCommentMode = false;
@@ -5091,6 +5092,7 @@ function toggleCommentMode() {
         isCommentMode = false;
         modalInner.classList.remove('comment-mode');
         resetPromptModalKeyboardDock(true);
+        closePromptCommentComposer();
 
         // Update toggle button - revert to comment icon
         const triggerBtn = document.getElementById('commentTriggerBtn');
@@ -5405,101 +5407,418 @@ function formatCommentTime(timestamp) {
 
 // Global state for selected image
 let selectedCommentImage = null;
+let promptCommentComposerMounted = false;
+let promptCommentComposerViewportCleanup = null;
+
+function isPromptCommentComposerEnabled() {
+    return isPromptModalIOSMobile();
+}
+
+function getPromptCommentComposerElements() {
+    return {
+        overlay: document.getElementById('promptCommentComposer'),
+        sheet: document.querySelector('#promptCommentComposer .prompt-comment-composer-sheet'),
+        input: document.getElementById('promptCommentComposerInput'),
+        meta: document.getElementById('promptCommentComposerMeta'),
+        uploadBtn: document.getElementById('promptCommentComposerUploadBtn'),
+        fileInput: document.getElementById('promptCommentComposerImageUpload'),
+        sendBtn: document.getElementById('promptCommentComposerSendBtn')
+    };
+}
+
+function autoExpandPromptCommentComposerInput(input) {
+    if (!input) return;
+    input.style.height = 'auto';
+    const maxHeight = Math.min(Math.round((window.innerHeight || 0) * 0.42), 360);
+    const targetHeight = Math.max(160, Math.min(input.scrollHeight, maxHeight || 360));
+    input.style.height = `${targetHeight}px`;
+    input.style.overflowY = input.scrollHeight > targetHeight ? 'auto' : 'hidden';
+}
+
+function syncPromptCommentComposerMeta() {
+    const { input, meta } = getPromptCommentComposerElements();
+    if (!input || !meta) return;
+
+    const pieces = [];
+    const replyToName = input.dataset.replyToName;
+    if (replyToName) {
+        pieces.push(`${window.i18n?.t('gallery.replyingTo') || 'Replying to'} @${replyToName}`);
+    }
+    if (selectedCommentImage) {
+        pieces.push(window.i18n?.t('gallery.attachImage') || 'Image attached');
+    }
+
+    meta.textContent = pieces.join(' · ');
+    meta.classList.toggle('has-reply', !!replyToName);
+}
+
+function syncPromptCommentComposerTrigger() {
+    const triggerInput = document.getElementById('commentInput');
+    const { input } = getPromptCommentComposerElements();
+    if (!triggerInput || !input) return;
+
+    triggerInput.value = input.value;
+    if (input.dataset.replyTo) {
+        triggerInput.dataset.replyTo = input.dataset.replyTo;
+    } else {
+        delete triggerInput.dataset.replyTo;
+    }
+    if (input.dataset.replyToName) {
+        triggerInput.dataset.replyToName = input.dataset.replyToName;
+    } else {
+        delete triggerInput.dataset.replyToName;
+    }
+    autoExpandTextarea(triggerInput);
+}
+
+function clearCommentDraftFields() {
+    const triggerInput = document.getElementById('commentInput');
+    const { input } = getPromptCommentComposerElements();
+
+    if (triggerInput) {
+        triggerInput.value = '';
+        delete triggerInput.dataset.replyTo;
+        delete triggerInput.dataset.replyToName;
+        triggerInput.style.height = 'auto';
+        triggerInput.style.overflowY = 'hidden';
+    }
+
+    if (input) {
+        input.value = '';
+        delete input.dataset.replyTo;
+        delete input.dataset.replyToName;
+        input.style.height = 'auto';
+        input.style.overflowY = 'hidden';
+    }
+
+    syncPromptCommentComposerMeta();
+}
+
+function detachPromptCommentComposerViewportSync() {
+    if (typeof promptCommentComposerViewportCleanup === 'function') {
+        promptCommentComposerViewportCleanup();
+        promptCommentComposerViewportCleanup = null;
+    }
+}
+
+function syncPromptCommentComposerViewport() {
+    const { overlay, sheet, input } = getPromptCommentComposerElements();
+    if (!overlay) return;
+
+    const vv = window.visualViewport;
+    const modalInner = overlay.parentElement;
+    const basePadding = window.innerWidth <= 768 ? 8 : 16;
+
+    overlay.style.paddingTop = `${basePadding}px`;
+    overlay.style.paddingBottom = `${basePadding}px`;
+    if (sheet) {
+        sheet.style.removeProperty('max-height');
+    }
+    if (input) {
+        input.style.removeProperty('max-height');
+    }
+
+    if (!overlay.classList.contains('active') || !vv || !modalInner) return;
+
+    const modalRect = modalInner.getBoundingClientRect();
+    const keyboardTop = (vv.height || 0) + (vv.offsetTop || 0);
+    const overlap = Math.max(0, Math.ceil(modalRect.bottom - keyboardTop + 12));
+    const availableHeight = Math.max(240, Math.floor(keyboardTop - modalRect.top - 24));
+
+    overlay.style.paddingBottom = `${basePadding + overlap}px`;
+
+    if (sheet) {
+        sheet.style.maxHeight = `${Math.max(240, availableHeight)}px`;
+    }
+    if (input) {
+        const maxInputHeight = Math.min(360, Math.max(180, Math.round(availableHeight * 0.48)));
+        input.style.maxHeight = `${maxInputHeight}px`;
+        autoExpandPromptCommentComposerInput(input);
+    }
+}
+
+function attachPromptCommentComposerViewportSync() {
+    const { input } = getPromptCommentComposerElements();
+    const vv = window.visualViewport;
+
+    detachPromptCommentComposerViewportSync();
+    syncPromptCommentComposerViewport();
+
+    if (!vv) return;
+
+    const handleViewportChange = () => {
+        syncPromptCommentComposerViewport();
+    };
+
+    vv.addEventListener('resize', handleViewportChange, { passive: true });
+    vv.addEventListener('scroll', handleViewportChange, { passive: true });
+    input?.addEventListener('focus', handleViewportChange);
+    input?.addEventListener('blur', handleViewportChange);
+
+    promptCommentComposerViewportCleanup = () => {
+        vv.removeEventListener('resize', handleViewportChange);
+        vv.removeEventListener('scroll', handleViewportChange);
+        input?.removeEventListener('focus', handleViewportChange);
+        input?.removeEventListener('blur', handleViewportChange);
+    };
+}
+
+function ensurePromptCommentComposer() {
+    if (!isPromptCommentComposerEnabled()) return null;
+    if (promptCommentComposerMounted) return getPromptCommentComposerElements();
+
+    const modalInner = document.querySelector('#promptModal .modal-inner');
+    if (!modalInner) return null;
+
+    const overlay = document.createElement('div');
+    overlay.id = 'promptCommentComposer';
+    overlay.className = 'prompt-comment-composer';
+    overlay.innerHTML = `
+        <div class="prompt-comment-composer-sheet">
+            <div class="prompt-comment-composer-header">
+                <div class="prompt-comment-composer-title">${window.i18n?.t('gallery.addComment') || 'Add a comment'}</div>
+                <button type="button" class="prompt-comment-composer-close" id="promptCommentComposerCloseBtn" aria-label="Close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="prompt-comment-composer-meta" id="promptCommentComposerMeta"></div>
+            <textarea id="promptCommentComposerInput" rows="6" placeholder="${window.i18n?.t('gallery.addComment') || 'Add a comment...'}"></textarea>
+            <input type="file" id="promptCommentComposerImageUpload" accept="image/*" style="display:none;">
+            <div class="prompt-comment-composer-actions">
+                <button type="button" class="prompt-comment-composer-upload" id="promptCommentComposerUploadBtn" title="${window.i18n?.t('gallery.attachImage') || 'Attach image'}">
+                    <i class="fas fa-image"></i>
+                </button>
+                <button type="button" class="prompt-comment-composer-send" id="promptCommentComposerSendBtn">
+                    ${window.i18n?.t('gallery.send') || 'Send'}
+                </button>
+            </div>
+        </div>
+    `;
+
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+            closePromptCommentComposer();
+        }
+    });
+
+    modalInner.appendChild(overlay);
+    promptCommentComposerMounted = true;
+
+    const { input, sendBtn } = getPromptCommentComposerElements();
+    const closeBtn = document.getElementById('promptCommentComposerCloseBtn');
+
+    closeBtn?.addEventListener('click', () => closePromptCommentComposer());
+    sendBtn?.addEventListener('click', () => submitComment());
+
+    input?.addEventListener('input', () => {
+        autoExpandPromptCommentComposerInput(input);
+        syncPromptCommentComposerMeta();
+        syncPromptCommentComposerTrigger();
+        syncPromptCommentComposerViewport();
+    });
+    input?.addEventListener('keydown', handleCommentKeydown);
+
+    return getPromptCommentComposerElements();
+}
+
+function openPromptCommentComposer(options = {}) {
+    if (!isPromptCommentComposerEnabled()) return false;
+    const composer = ensurePromptCommentComposer();
+    const triggerInput = document.getElementById('commentInput');
+    if (!composer?.overlay || !composer.input) return false;
+
+    if (options.value !== undefined) {
+        composer.input.value = options.value;
+    } else if (!composer.input.value && triggerInput?.value) {
+        composer.input.value = triggerInput.value;
+    }
+
+    if (options.replyTo !== undefined) {
+        if (options.replyTo) {
+            composer.input.dataset.replyTo = options.replyTo;
+        } else {
+            delete composer.input.dataset.replyTo;
+            delete composer.input.dataset.replyToName;
+        }
+    } else if (triggerInput?.dataset.replyTo && !composer.input.dataset.replyTo) {
+        composer.input.dataset.replyTo = triggerInput.dataset.replyTo;
+        if (triggerInput.dataset.replyToName) {
+            composer.input.dataset.replyToName = triggerInput.dataset.replyToName;
+        }
+    }
+
+    if (options.replyToName !== undefined) {
+        if (options.replyToName) {
+            composer.input.dataset.replyToName = options.replyToName;
+        } else {
+            delete composer.input.dataset.replyToName;
+        }
+    }
+
+    composer.overlay.classList.add('active');
+    autoExpandPromptCommentComposerInput(composer.input);
+    syncPromptCommentComposerMeta();
+    syncPromptCommentComposerTrigger();
+    attachPromptCommentComposerViewportSync();
+    initCommentImageUpload();
+
+    if (options.focus !== false) {
+        requestAnimationFrame(() => {
+            try {
+                composer.input.focus({ preventScroll: true });
+            } catch (_) {
+                composer.input.focus();
+            }
+        });
+    }
+
+    if (options.openFilePicker) {
+        setTimeout(() => composer.fileInput?.click(), 80);
+    }
+
+    return true;
+}
+
+function closePromptCommentComposer(options = {}) {
+    const { overlay, input } = getPromptCommentComposerElements();
+    if (!overlay) return;
+
+    detachPromptCommentComposerViewportSync();
+
+    if (options.clearDraft) {
+        clearCommentDraftFields();
+        clearSelectedCommentImage();
+    } else {
+        syncPromptCommentComposerTrigger();
+        syncPromptCommentComposerMeta();
+    }
+
+    overlay.classList.remove('active');
+    syncPromptCommentComposerViewport();
+    input?.blur();
+}
+
+function getActiveCommentInput() {
+    const { overlay, input } = getPromptCommentComposerElements();
+    if (isPromptCommentComposerEnabled() && overlay?.classList.contains('active') && input) {
+        return input;
+    }
+    return document.getElementById('commentInput');
+}
+
+function getCommentImageUploadBindings() {
+    ensurePromptCommentComposer();
+    return [
+        {
+            button: document.getElementById('commentUploadBtn'),
+            input: document.getElementById('commentImageUpload')
+        },
+        {
+            button: document.getElementById('promptCommentComposerUploadBtn'),
+            input: document.getElementById('promptCommentComposerImageUpload')
+        }
+    ].filter(binding => binding.button && binding.input);
+}
+
+function updateCommentImageUploadButtonsState(title = null) {
+    const bindings = getCommentImageUploadBindings();
+    bindings.forEach(({ button, input }) => {
+        button.disabled = false;
+        button.innerHTML = '<i class="fas fa-image"></i>';
+        button.classList.toggle('has-image', !!selectedCommentImage);
+        button.title = title || (selectedCommentImage
+            ? 'Image selected'
+            : (button.dataset.defaultTitle || button.title || 'Attach image'));
+        if (!selectedCommentImage) {
+            input.value = '';
+        }
+    });
+    syncPromptCommentComposerMeta();
+}
+
+function clearSelectedCommentImage() {
+    selectedCommentImage = null;
+    updateCommentImageUploadButtonsState();
+}
 
 // Initialize upload button
 function initCommentImageUpload() {
-    const uploadBtn = document.getElementById('commentUploadBtn');
-    const fileInput = document.getElementById('commentImageUpload');
+    const bindings = getCommentImageUploadBindings();
+    if (!bindings.length) return;
 
-    if (!uploadBtn || !fileInput) return;
-
-    // Click handler - toggle between select and remove
-    uploadBtn.onclick = () => {
-        // If image already selected, show confirm to remove
-        if (selectedCommentImage) {
-            if (confirm(`Remove selected image?`)) {
-                // Clear selection
-                selectedCommentImage = null;
-                fileInput.value = '';
-                uploadBtn.classList.remove('has-image');
-                uploadBtn.innerHTML = '<i class="fas fa-image"></i>';
-                uploadBtn.title = 'Attach image';
-            }
-        } else {
-            // Open file picker
-            fileInput.click();
-        }
-    };
-
-    // Handle file selection
-    fileInput.onchange = async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-
-        // Validate file type
-        if (!file.type.startsWith('image/')) {
-            alert('Please select an image file');
-            fileInput.value = '';
-            return;
+    bindings.forEach(({ button, input }) => {
+        if (!button.dataset.defaultTitle) {
+            button.dataset.defaultTitle = button.title || 'Attach image';
         }
 
-        // Show compressing feedback
-        uploadBtn.disabled = true;
-        uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-        uploadBtn.title = 'Compressing image...';
-
-        try {
-            // Smart compress the image
-            const compressed = await smartCompress(file);
-
-            if (!compressed) {
-                // User rejected or compression failed
-                fileInput.value = '';
-                uploadBtn.disabled = false;
-                uploadBtn.innerHTML = '<i class="fas fa-image"></i>';
-                uploadBtn.classList.remove('has-image');
-                uploadBtn.title = 'Attach image';
+        button.onclick = () => {
+            if (button.id === 'commentUploadBtn' && isPromptCommentComposerEnabled()) {
+                openPromptCommentComposer({ focus: true, openFilePicker: true });
                 return;
             }
 
-            // Convert Blob to File if needed (for proper upload)
-            let finalFile = compressed;
-            if (compressed instanceof Blob && !(compressed instanceof File)) {
-                // Create a new File from the Blob
-                finalFile = new File([compressed], file.name, {
-                    type: 'image/jpeg',
-                    lastModified: Date.now()
-                });
+            if (selectedCommentImage) {
+                if (confirm('Remove selected image?')) {
+                    clearSelectedCommentImage();
+                }
+                return;
             }
 
-            // Store compressed file
-            selectedCommentImage = finalFile;
+            input.click();
+        };
 
-            // Visual feedback - keep image icon, just highlight it
-            uploadBtn.disabled = false;
-            uploadBtn.innerHTML = '<i class="fas fa-image"></i>';
-            uploadBtn.classList.add('has-image');
+        input.onchange = async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
 
-            const fileName = file.name;
-            const originalSize = (file.size / 1024).toFixed(0);
-            const compressedSize = (finalFile.size / 1024).toFixed(0);
-
-            if (compressed === file) {
-                uploadBtn.title = `已选择: ${fileName} (${originalSize}KB)`;
-            } else {
-                uploadBtn.title = `已压缩: ${fileName} (${originalSize}KB → ${compressedSize}KB, 点击移除)`;
+            if (!file.type.startsWith('image/')) {
+                alert('Please select an image file');
+                input.value = '';
+                return;
             }
 
-        } catch (error) {
-            console.error('Compression error:', error);
-            alert('图片压缩失败，请重试');
-            fileInput.value = '';
-            uploadBtn.disabled = false;
-            uploadBtn.innerHTML = '<i class="fas fa-image"></i>';
-            uploadBtn.classList.remove('has-image');
-            uploadBtn.title = 'Attach image';
-        }
-    };
+            bindings.forEach(({ button: eachButton }) => {
+                eachButton.disabled = true;
+                eachButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                eachButton.title = 'Compressing image...';
+            });
+
+            try {
+                const compressed = await smartCompress(file);
+
+                if (!compressed) {
+                    input.value = '';
+                    updateCommentImageUploadButtonsState();
+                    return;
+                }
+
+                let finalFile = compressed;
+                if (compressed instanceof Blob && !(compressed instanceof File)) {
+                    finalFile = new File([compressed], file.name, {
+                        type: 'image/jpeg',
+                        lastModified: Date.now()
+                    });
+                }
+
+                selectedCommentImage = finalFile;
+
+                const originalSize = (file.size / 1024).toFixed(0);
+                const compressedSize = (finalFile.size / 1024).toFixed(0);
+                const title = compressed === file
+                    ? `已选择: ${file.name} (${originalSize}KB)`
+                    : `已压缩: ${file.name} (${originalSize}KB → ${compressedSize}KB, 点击移除)`;
+
+                updateCommentImageUploadButtonsState(title);
+            } catch (error) {
+                console.error('Compression error:', error);
+                alert('图片压缩失败，请重试');
+                input.value = '';
+                updateCommentImageUploadButtonsState();
+            }
+        };
+    });
+
+    updateCommentImageUploadButtonsState();
 }
 
 // ===========================================
@@ -6302,16 +6621,27 @@ async function handleLikeComment(commentId, button) {
 }
 
 function handleReplyComment(commentId, authorName) {
-    const input = document.getElementById('commentInput');
+    const input = getActiveCommentInput();
     if (input) {
         input.value = `@${authorName} `;
-        try {
-            input.focus({ preventScroll: true });
-        } catch (_) {
-            input.focus();
-        }
         input.dataset.replyTo = commentId;
-        primePromptModalKeyboardDock();
+        input.dataset.replyToName = authorName;
+
+        if (isPromptCommentComposerEnabled()) {
+            openPromptCommentComposer({
+                focus: true,
+                value: input.value,
+                replyTo: commentId,
+                replyToName: authorName
+            });
+        } else {
+            try {
+                input.focus({ preventScroll: true });
+            } catch (_) {
+                input.focus();
+            }
+            primePromptModalKeyboardDock();
+        }
     }
 }
 
@@ -6421,6 +6751,30 @@ function handleCommentKeydown(e) {
     }
 }
 
+function restoreCommentDraft(input, content, parentId = null, replyToName = '') {
+    if (!input) return;
+    input.value = content;
+    if (parentId) {
+        input.dataset.replyTo = parentId;
+    } else {
+        delete input.dataset.replyTo;
+    }
+    if (replyToName) {
+        input.dataset.replyToName = replyToName;
+    } else {
+        delete input.dataset.replyToName;
+    }
+
+    if (input.id === 'promptCommentComposerInput') {
+        autoExpandPromptCommentComposerInput(input);
+        syncPromptCommentComposerMeta();
+        syncPromptCommentComposerTrigger();
+        syncPromptCommentComposerViewport();
+    } else {
+        autoExpandTextarea(input);
+    }
+}
+
 /* ==================== 封禁检查辅助函数 ==================== */
 async function checkUserBlockStatus(userId, scope = 'gallery') {
     if (!window.supabaseClient) return false;
@@ -6456,7 +6810,7 @@ async function checkUserBlockStatus(userId, scope = 'gallery') {
 async function submitComment() {
     if (!window.supabaseClient) return;
 
-    const input = document.getElementById('commentInput');
+    const input = getActiveCommentInput();
     const content = input.value.trim();
 
     // Allow empty content if there's an image attached
@@ -6501,6 +6855,7 @@ async function submitComment() {
     // Store for potential rollback (use original input for rollback UI)
     const originalContent = cleanContent;
     const originalParentId = parentId;
+    const originalReplyToName = input.dataset.replyToName || '';
 
     // Clear input IMMEDIATELY for instant feedback
     input.value = '';
@@ -6508,6 +6863,7 @@ async function submitComment() {
     input.style.height = 'auto';
     input.style.overflowY = 'hidden';
     delete input.dataset.replyTo;
+    delete input.dataset.replyToName;
 
     // Get cached avatar
     const currentUserAvatar = window._cachedUserAvatar;
@@ -6518,8 +6874,7 @@ async function submitComment() {
         imageUrl = await uploadCommentImage(selectedCommentImage);
         if (!imageUrl) {
             alert('Failed to upload image');
-            input.value = originalContent;
-            if (originalParentId) input.dataset.replyTo = originalParentId;
+            restoreCommentDraft(input, originalContent, originalParentId, originalReplyToName);
             return;
         }
     }
@@ -6548,8 +6903,7 @@ async function submitComment() {
 
     if (error) {
         console.error('Failed to post comment:', error);
-        input.value = originalContent;
-        if (originalParentId) input.dataset.replyTo = originalParentId;
+        restoreCommentDraft(input, originalContent, originalParentId, originalReplyToName);
         alert("Failed to post comment");
         return;
     }
@@ -6606,14 +6960,11 @@ async function submitComment() {
 
     // Clear image selection after successful submission
     if (selectedCommentImage) {
-        selectedCommentImage = null;
-        const uploadBtn = document.getElementById('commentUploadBtn');
-        const fileInput = document.getElementById('commentImageUpload');
-        if (uploadBtn) {
-            uploadBtn.classList.remove('has-image');
-            uploadBtn.title = 'Attach image';
-        }
-        if (fileInput) fileInput.value = '';
+        clearSelectedCommentImage();
+    }
+
+    if (isPromptCommentComposerEnabled()) {
+        closePromptCommentComposer({ clearDraft: true });
     }
 
     // Invalidate cache
@@ -6675,6 +7026,38 @@ document.addEventListener('DOMContentLoaded', () => {
     // Setup comment input listeners including iOS scroll stabiliser
     const commentInput = document.getElementById('commentInput');
     if (commentInput) {
+        if (isPromptCommentComposerEnabled()) {
+            const commentInputArea = commentInput.closest('.comment-input-area');
+            const uploadBtn = document.getElementById('commentUploadBtn');
+            const sendBtn = document.getElementById('sendCommentBtn');
+            const launchComposer = (e, options = {}) => {
+                if (e?.cancelable) e.preventDefault();
+                if (e) e.stopPropagation();
+                openPromptCommentComposer({ focus: true, ...options });
+            };
+
+            ensurePromptCommentComposer();
+            initCommentImageUpload();
+
+            commentInputArea?.classList.add('composer-proxy');
+            commentInput.setAttribute('readonly', 'readonly');
+            commentInput.addEventListener('touchstart', (e) => launchComposer(e), { passive: false });
+            commentInput.addEventListener('click', (e) => launchComposer(e));
+            commentInput.addEventListener('focus', () => {
+                commentInput.blur();
+                openPromptCommentComposer({ focus: true });
+            });
+
+            if (uploadBtn) {
+                uploadBtn.onclick = (e) => launchComposer(e, { openFilePicker: true });
+            }
+
+            if (sendBtn) {
+                sendBtn.onclick = (e) => launchComposer(e);
+            }
+            return;
+        }
+
         // ── V18 Fix: Prevent iOS Safari from natively scrolling the page when tapping
         // the comment input. Without e.preventDefault() here, Safari fires a layout
         // scroll-to-input that fights the JS keyboard docking and causes visible jitter.
@@ -6868,6 +7251,8 @@ function navigateModalImage(direction) {
 })();
 
 function closePromptModal() {
+    closePromptCommentComposer({ clearDraft: true });
+
     // If closing while in comment mode, revert DOM first to prevent glitches next time
     if (isCommentMode) {
         // Simple revert without animation
