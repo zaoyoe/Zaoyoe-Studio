@@ -2029,23 +2029,6 @@ body.no-scroll {
     }
 }
 
-/* Safari Bottom Address Bar Color Fix */
-/* When lock() sets body to position: fixed, iOS Safari address bar 
-   samples the lowest element in the viewport (the starry <canvas>).
-   This invisible or tiny black bar ensures it samples black instead. */
-body.modal-open::after {
-    content: '';
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    width: 100%;
-    height: env(safe-area-inset-bottom, 34px);
-    background-color: #000;
-    z-index: -1;
-    /* Behind modal but above canvas */
-    pointer-events: none;
-}
-
 /* Disable touch callout (long-press menu) on all interactive elements */
 .glass-box,
 .modal-link-card,
