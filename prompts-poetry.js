@@ -5050,12 +5050,16 @@ function openPromptModal(id) {
     modal.classList.add('active');
     modal.classList.add('modal-opening');
     if (window.iOSScrollLock && modalInner) {
-        // Use full lock (not lockLight) for the poetry modal.
-        // lockLight skips position:fixed on iOS, leaving the page scrollable.
-        // Safari's scroll-to-input then pushes the page on first focus,
-        // causing visible jolt. Full lock sets body position:fixed.
-        window.scrollTo(0, 0); // Ensure savedScrollY=0, no layout shift
-        window.iOSScrollLock.lock(modalInner);
+        window.iOSScrollLock.lockLight(modalInner);
+    }
+    // Manually add overflow:hidden to html/body on iOS.
+    // lockLight skips this to avoid "black block" issue, but we need it
+    // to prevent Safari's native scroll-to-input from pushing the page.
+    // Unlike full lock(), this does NOT set position:fixed on body,
+    // so Safari's bottom bar keeps sampling black background (not canvas blue).
+    if (isPromptModalIOSMobile()) {
+        document.documentElement.style.overflow = 'hidden';
+        document.body.style.overflow = 'hidden';
     }
 
     showPromptModalStatusBarShield();
@@ -6680,32 +6684,35 @@ document.addEventListener('DOMContentLoaded', () => {
         // scroll-to-input that fights the JS keyboard docking and causes visible jitter.
         const handleTouchFocus = (e) => {
             if (isPromptModalIOSMobile()) {
-                if (e.cancelable) e.preventDefault();
+                // Only preventDefault on FIRST tap (when textarea not focused).
+                // If already focused, allow native touch scrolling within textarea.
+                if (document.activeElement !== commentInput) {
+                    if (e.cancelable) e.preventDefault();
 
-                // ── Continuous scroll clamp: catch every Safari scroll frame ──
-                // Safari's native scroll-to-input fires asynchronously after focus.
-                // Attach a listener that undoes every scroll before the browser paints.
-                const scrollClamp = () => {
-                    if (window.scrollY !== 0 || window.scrollX !== 0) {
-                        window.scrollTo(0, 0);
-                    }
-                };
-                window.addEventListener('scroll', scrollClamp, { passive: true });
-                window.scrollTo(0, 0);
-
-                try {
-                    commentInput.focus({ preventScroll: true });
-                } catch (err) {
-                    commentInput.focus();
-                }
-
-                window.scrollTo(0, 0);
-
-                // Remove clamp after keyboard settles
-                setTimeout(() => {
-                    window.removeEventListener('scroll', scrollClamp);
+                    // Continuous scroll clamp to catch Safari's native scroll-to-input
+                    const scrollClamp = () => {
+                        if (window.scrollY !== 0 || window.scrollX !== 0) {
+                            window.scrollTo(0, 0);
+                        }
+                    };
+                    window.addEventListener('scroll', scrollClamp, { passive: true });
                     window.scrollTo(0, 0);
-                }, 400);
+
+                    try {
+                        commentInput.focus({ preventScroll: true });
+                    } catch (err) {
+                        commentInput.focus();
+                    }
+
+                    window.scrollTo(0, 0);
+
+                    // Remove clamp after keyboard settles
+                    setTimeout(() => {
+                        window.removeEventListener('scroll', scrollClamp);
+                        window.scrollTo(0, 0);
+                    }, 400);
+                }
+                // else: textarea already focused, allow native scroll
             }
         };
         commentInput.addEventListener('touchstart', handleTouchFocus, { passive: false });
@@ -6916,6 +6923,9 @@ function closePromptModal() {
         if (modal) modal.classList.remove('closing');
 
         if (window.iOSScrollLock) window.iOSScrollLock.unlock();
+        // Remove manual overflow:hidden added in openPromptModal for iOS
+        document.documentElement.style.overflow = '';
+        document.body.style.overflow = '';
         document.body.classList.remove('prompt-modal-keyboard-docked');
         document.body.classList.remove('modal-open');
 
