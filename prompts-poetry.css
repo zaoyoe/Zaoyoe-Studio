@@ -3341,8 +3341,10 @@ body.modal-open .prompt-card {
 
     /* Add top margin to avoid overlapping with user avatar */
     .poetry-nav-container {
-        padding-top: calc(8vh + 40px);
-        /* Increased spacing from avatar */
+        padding-top: 96px;
+        /* Fixed pixel value: 64px nav height + 32px breathing gap.
+           Using vh caused inconsistent spacing on iOS Safari because
+           vh equals large viewport height (address bar collapsed). */
         padding-left: 10px;
         padding-right: 10px;
     }
