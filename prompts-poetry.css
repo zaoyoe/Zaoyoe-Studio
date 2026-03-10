@@ -3513,17 +3513,12 @@ body.modal-open .prompt-card {
     z-index: 11050;
     transition: background 0.24s ease, color 0.24s ease, transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.24s ease, opacity 0.24s ease;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
 }
 
 .close-modal-btn i {
     transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.22s ease;
-}
-
-.close-modal-btn:hover {
-    background: #1e293b;
-    color: white;
-    transform: scale(1.06);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
 }
 
 .close-modal-btn.is-back {
@@ -3536,19 +3531,32 @@ body.modal-open .prompt-card {
     transform: translateX(-1px);
 }
 
-.close-modal-btn.is-back:hover {
-    transform: translateY(-1px) scale(1.04);
-}
-
 [data-theme="dark"] .close-modal-btn {
     background: rgba(0, 0, 0, 0.5);
     border-color: rgba(255, 255, 255, 0.1);
     color: rgba(255, 255, 255, 0.8);
 }
 
-[data-theme="dark"] .close-modal-btn:hover {
-    background: white;
-    color: #1e293b;
+.close-modal-btn:active {
+    transform: scale(0.97);
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .close-modal-btn:hover {
+        background: #1e293b;
+        color: white;
+        transform: scale(1.06);
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+    }
+
+    .close-modal-btn.is-back:hover {
+        transform: translateY(-1px) scale(1.04);
+    }
+
+    [data-theme="dark"] .close-modal-btn:hover {
+        background: white;
+        color: #1e293b;
+    }
 }
 
 [data-theme="dark"] {
@@ -3684,13 +3692,18 @@ body.modal-open .prompt-card {
     .modal-inner.comment-mode .modal-description,
     .modal-inner.comment-mode .prompt-area {
         opacity: 0;
-        transform: translateY(14px);
+        transform: none;
         max-height: 0;
         margin: 0;
         padding-top: 0;
         padding-bottom: 0;
         overflow: hidden;
         pointer-events: none;
+    }
+
+    .modal-description,
+    .prompt-area {
+        transition-property: opacity, max-height, margin, padding;
     }
 
     .modal-inner.comment-mode .comment-section {
