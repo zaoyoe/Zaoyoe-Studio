@@ -4655,6 +4655,9 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
     clearPromptModalUndockTimer();
     clearPromptModalFirstDockTimer();
     document.body.classList.add('prompt-modal-keyboard-docked');
+    // Force page scroll to top — Safari's native scroll-to-input may have
+    // scrolled the page, shifting the visual viewport and misaligning dock.
+    window.scrollTo(0, 0);
     modal.classList.add('keyboard-docked');
     modal.style.setProperty('height', `${baseViewportHeight}px`, 'important');
     modalInner.classList.add('keyboard-docked');
@@ -4898,6 +4901,8 @@ function primePromptModalKeyboardDock() {
     // Shield expansion removed — it caused visible black bar flash at status bar edge
     attachPromptModalKeyboardDock();
     capturePromptModalDockMetrics(true);
+    // Undo any native Safari scroll-to-input that fired before our preventDefault
+    window.scrollTo(0, 0);
 }
 
 function openPromptModal(id) {
@@ -6671,11 +6676,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const handleTouchFocus = (e) => {
             if (isPromptModalIOSMobile()) {
                 if (e.cancelable) e.preventDefault();
+                // Force scroll to top in case Safari already queued a scroll
+                window.scrollTo(0, 0);
                 try {
                     commentInput.focus({ preventScroll: true });
                 } catch (err) {
                     commentInput.focus();
                 }
+                // Double-check scroll after focus fires
+                requestAnimationFrame(() => window.scrollTo(0, 0));
             }
         };
         commentInput.addEventListener('touchstart', handleTouchFocus, { passive: false });
