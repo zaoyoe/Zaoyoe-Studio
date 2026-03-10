@@ -10,7 +10,7 @@ const IMAGE_CACHE = 'images-v5';
 const STATIC_ASSETS = [
     '/prompts.html',
     '/prompts-poetry.css?v=20260310_GLASS_V49',
-    '/prompts-poetry.js?v=20260310_GLASS_V52',
+    '/prompts-poetry.js?v=20260310_GLASS_V53',
     '/prompts-data.js?v=20260302_G_AUTH',
     '/supabase-client.js'
 ];

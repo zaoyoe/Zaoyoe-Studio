@@ -6406,14 +6406,30 @@ function formatMentions(text) {
  * Auto-expand textarea as user types
  * @param {HTMLTextAreaElement} textarea - The textarea element
  */
+function syncPromptCommentInputLayout() {
+    const input = document.getElementById('commentInput');
+    const inputArea = input?.closest('.comment-input-area');
+    const list = document.getElementById('commentList');
+    if (!input || !inputArea || !list) return;
+
+    const areaHeight = Math.ceil(inputArea.getBoundingClientRect().height || 0);
+    const fallbackPadding = 104;
+    const extraSpacing = isPromptModalIOSMobile() ? 24 : 12;
+    list.style.paddingBottom = `${Math.max(fallbackPadding, areaHeight + extraSpacing)}px`;
+}
+
 function autoExpandTextarea(textarea) {
     // Reset height to auto to properly calculate scrollHeight
     textarea.style.height = 'auto';
-    // Set height to scrollHeight (content height)
-    const maxHeight = 120; // Max ~5 lines, matches CSS max-height
+
+    const isPromptCommentInput = textarea.id === 'commentInput' && isPromptModalIOSMobile();
+    const maxHeight = isPromptCommentInput ? textarea.scrollHeight : 120;
     textarea.style.height = Math.min(textarea.scrollHeight, maxHeight) + 'px';
-    // Show scrollbar if content exceeds max height
-    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
+    textarea.style.overflowY = isPromptCommentInput ? 'hidden' : (textarea.scrollHeight > maxHeight ? 'auto' : 'hidden');
+
+    if (textarea.id === 'commentInput') {
+        syncPromptCommentInputLayout();
+    }
 }
 
 function handleCommentKeydown(e) {
@@ -6512,6 +6528,7 @@ async function submitComment() {
     input.style.height = 'auto';
     input.style.overflowY = 'hidden';
     delete input.dataset.replyTo;
+    syncPromptCommentInputLayout();
 
     // Get cached avatar
     const currentUserAvatar = window._cachedUserAvatar;
@@ -6749,11 +6766,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
         commentInput.addEventListener('focus', () => {
             primePromptModalKeyboardDock();
+            syncPromptCommentInputLayout();
         });
 
         commentInput.addEventListener('blur', () => {
             schedulePromptModalUndock();
+            syncPromptCommentInputLayout();
         });
+
+        syncPromptCommentInputLayout();
     }
 });
 
