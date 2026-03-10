@@ -4707,14 +4707,9 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
     setPromptModalStatusBarShieldExpanded(true);
     modal.classList.add('keyboard-docked');
     modalInner.classList.add('keyboard-docked');
-    // ── Fix: Make CSS transition actually work for predictive docking ──
-    // If animate is true (during prime), we use a smooth 300ms keyboard-like easing.
-    // Otherwise we use a 50ms quick catch-up or none.
-    if (animate) {
-        modalInner.style.transition = 'transform 320ms cubic-bezier(0.25, 0.8, 0.25, 1)';
-    } else {
-        modalInner.style.transition = 'transform 60ms ease-out';
-    }
+    // ── Fix: Trust Safari native layout updates instead of predicting ──
+    // Safari fires native resize events. We use a short 50ms transition to smooth out frame drops.
+    modalInner.style.transition = 'transform 50ms ease-out';
 
     modalInner.style.position = 'fixed';
     modalInner.style.top = '50%';
@@ -4972,26 +4967,6 @@ function primePromptModalKeyboardDock() {
     setPromptModalStatusBarShieldExpanded(true);
     attachPromptModalKeyboardDock();
     capturePromptModalDockMetrics(true);
-
-    // ── Fix: Predictive Keyboard Docking ──
-    // On iOS, visualViewport resize events lag behind the keyboard animation.
-    // To prevent the keyboard from covering the input before the first resize event,
-    // we predict the keyboard height and immediately start a smooth 320ms CSS transition.
-    if (isPromptModalIOSMobile()) {
-        const vv = window.visualViewport;
-        if (vv) {
-            const anticipatedInset = promptModalKeyboardDock.lastStableInset || 340;
-            const visualTop = Math.max(0, vv.offsetTop || 0);
-            const visualHeight = Math.max(0, vv.height || 0);
-            const predictedVisualHeight = Math.max(0, visualHeight - anticipatedInset);
-
-            if (!promptModalKeyboardDock.docked) {
-                // Ignore transient resize events during the 320ms animation
-                promptModalKeyboardDock.animatingUntil = Date.now() + 320;
-                applyPromptModalKeyboardDock(predictedVisualHeight, anticipatedInset, true);
-            }
-        }
-    }
 }
 
 function openPromptModal(id) {
@@ -6995,8 +6970,8 @@ function closePromptModal() {
                 metaTheme.setAttribute('content', window._originalThemeColor || '#000000');
             }
         }
-
         hidePromptModalStatusBarShield();
+        hidePromptModalBottomBarShield();
 
         // Physically detach modal from Safe Area render tree, skipping layout breakage of `visibility`
         if (modal) modal.style.display = 'none';
