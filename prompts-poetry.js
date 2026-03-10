@@ -6677,22 +6677,15 @@ document.addEventListener('DOMContentLoaded', () => {
             if (isPromptModalIOSMobile()) {
                 if (e.cancelable) e.preventDefault();
 
-                // ── Imperceptible scroll lock: catch every Safari scroll frame ──
+                // ── Continuous scroll clamp: catch every Safari scroll frame ──
                 // Safari's native scroll-to-input fires asynchronously after focus.
-                // A single scrollTo(0,0) arrives too late and causes visible snap-back.
-                // Instead, attach a continuous listener that undoes every scroll
-                // before the browser can paint it. Also hide the modal momentarily
-                // so any sub-frame jitter is invisible.
-                const { modalInner: mi } = getPromptModalDockNodes();
-                if (mi) mi.style.visibility = 'hidden';
-
+                // Attach a listener that undoes every scroll before the browser paints.
                 const scrollClamp = () => {
                     if (window.scrollY !== 0 || window.scrollX !== 0) {
                         window.scrollTo(0, 0);
                     }
                 };
                 window.addEventListener('scroll', scrollClamp, { passive: true });
-                // Also force immediate
                 window.scrollTo(0, 0);
 
                 try {
@@ -6703,11 +6696,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 window.scrollTo(0, 0);
 
-                // Remove lock after keyboard settles, restore visibility
+                // Remove clamp after keyboard settles
                 setTimeout(() => {
                     window.removeEventListener('scroll', scrollClamp);
                     window.scrollTo(0, 0);
-                    if (mi) mi.style.visibility = '';
                 }, 400);
             }
         };
