@@ -123,20 +123,34 @@
             return;
         }
 
-        // 在弹窗内，寻找最近的可滚动容器
-        const scrollable = findScrollableParent(target);
+        // === Explicit Textarea/Input Handling ===
+        // We handle inputs directly to prevent Safari scroll chaining (rubberbanding)
+        const inputEl = target.closest('textarea, input');
+        if (inputEl) {
+            // If it's not vertically scrollable, completely swallow the touchmove
+            if (Math.ceil(inputEl.scrollHeight) <= Math.ceil(inputEl.clientHeight) + 2) {
+                e.preventDefault();
+                return;
+            }
 
-        // Allow native scrolling inside textarea/input fields (they have their
-        // own built-in scroll mechanism not detected by findScrollableParent)
-        if (!scrollable && target.closest('textarea, input')) {
-            return; // Allow native scroll
-        }
+            // If it IS scrollable, check boundaries
+            const touchY = e.touches[0].clientY;
+            const deltaY = touchStartY - touchY;
+            const atTop = inputEl.scrollTop <= 0;
+            const atBottom = inputEl.scrollTop + inputEl.clientHeight >= inputEl.scrollHeight - 2;
 
-        // 没有可滚动容器 → 阻止（弹窗本身不可滚动的区域）
-        if (!scrollable) {
-            e.preventDefault();
+            if (atTop && deltaY < 0) {
+                e.preventDefault(); // Trying to pull down at top
+            } else if (atBottom && deltaY > 0) {
+                e.preventDefault(); // Trying to push up at bottom
+            } else {
+                e.stopPropagation(); // Safe native scrolling area
+            }
             return;
         }
+
+        // 在弹窗内，寻找最近的可滚动容器
+        const scrollable = findScrollableParent(target);
 
         // 没有可滚动容器 → 阻止（弹窗本身不可滚动的区域）
         if (!scrollable) {
