@@ -2177,11 +2177,19 @@ body.modal-open .prompt-card {
     animation-play-state: paused !important;
 }
 
-/* ── Fix: Prevent Safari Status Bar Overscan from Bleeding Dark Blue ── */
+/* ── Fix: Prevent Safari Status Bar Overscan from Bleeding Backgrounds ── */
 /* When Safari pushes Layout Viewport up, the physical screen top becomes overscan space. */
-/* Safari normally paints this overscan with html's base background color (#0d0f1a). */
-html.modal-open {
+/* Hide the decorative canvases instantly so the status bar only samples the pure black background. */
+html.modal-open,
+body.modal-open {
     background-color: #000000 !important;
+}
+
+body.prompt-modal-keyboard-docked #starryCanvas,
+body.prompt-modal-keyboard-docked #ambientCanvas {
+    opacity: 0 !important;
+    transition: none !important;
+    visibility: hidden !important;
 }
 
 .poetry-modal {

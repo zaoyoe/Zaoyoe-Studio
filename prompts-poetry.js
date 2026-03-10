@@ -6775,17 +6775,39 @@ document.addEventListener('DOMContentLoaded', () => {
     // Setup comment input listeners including iOS scroll stabiliser
     const commentInput = document.getElementById('commentInput');
     if (commentInput) {
-        const handleTouchFocus = (e) => {
+        commentInput.addEventListener('keyup', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                submitComment();
+            }
+        });
+
+        commentInput.addEventListener('touchstart', (e) => {
             if (isPromptModalIOSMobile()) {
-                if (e.cancelable) e.preventDefault();
+                const { modalInner } = getPromptModalDockNodes();
+                if (modalInner && !modalInner.classList.contains('keyboard-docked')) {
+                    // ── ULTIMATE IOS FIX: BYPASS NATIVE TEARING ──
+                    // Convert modal from top: 50% to a bottom-anchored layout BEFORE Safari focuses.
+                    // This forces Safari to natively ride the layout viewport up instead of tearing horizontally.
+                    const rect = modalInner.getBoundingClientRect();
+                    const distanceToBottom = window.innerHeight - rect.bottom;
+                    modalInner.style.transition = 'none';
+                    modalInner.style.top = 'auto';
+                    modalInner.style.bottom = `${distanceToBottom}px`;
+                    modalInner.style.transform = `translate(-50%, 0)`;
+                    // Force synchronous reflow to ensure CSS locks before Safari layout panic
+                    void modalInner.offsetWidth;
+                }
+
+                // Focus quietly
+                if (e.cancelable) e.preventDefault(); // Keep preventDefault for touchstart
                 try {
                     commentInput.focus({ preventScroll: true });
                 } catch (err) {
                     commentInput.focus();
                 }
             }
-        };
-        commentInput.addEventListener('touchstart', handleTouchFocus, { passive: false });
+        }, { passive: false }); // Ensure passive: false for preventDefault
 
         commentInput.addEventListener('focus', () => {
             primePromptModalKeyboardDock();
