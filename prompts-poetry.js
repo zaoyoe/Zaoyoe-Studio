@@ -4411,7 +4411,7 @@ function renderCommentEmptyState(list) {
     list.innerHTML = `
         <div class="comment-empty-state">
             <div class="comment-empty-title">${title}</div>
-            <div class="comment-empty-subtitle">${subtitle}</div>
+            ${subtitle ? `<div class="comment-empty-subtitle">${subtitle}</div>` : ''}
         </div>
     `;
 }
