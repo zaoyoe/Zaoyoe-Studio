@@ -353,6 +353,23 @@
                 visibility: visible;
                 transform: translateY(0) scale(1);
             }
+            
+            /* Staggered Entrance Animation for Dropdown Children (Matching Login Modal) */
+            .avatar-dropdown > * {
+                opacity: 0;
+                transform: translateY(10px);
+                transition: opacity 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                            transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            }
+            .avatar-dropdown.active > * {
+                opacity: 1;
+                transform: translateY(0);
+            }
+            .avatar-dropdown.active > *:nth-child(1) { transition-delay: 0.05s; }
+            .avatar-dropdown.active > *:nth-child(2) { transition-delay: 0.10s; }
+            .avatar-dropdown.active > *:nth-child(3) { transition-delay: 0.15s; }
+            .avatar-dropdown.active > *:nth-child(4) { transition-delay: 0.20s; }
+            .avatar-dropdown.active > *:nth-child(n+5) { transition-delay: 0.25s; }
             .dropdown-header {
                 display: flex;
                 align-items: center;
