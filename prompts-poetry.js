@@ -4401,7 +4401,7 @@ function ensurePromptModalStatusBarShield() {
         'opacity: 0',
         'visibility: hidden',
         'pointer-events: none',
-        'z-index: 1004',
+        'z-index: 20000',
         'transition: opacity 80ms linear'
     ].join('; ');
     document.body.appendChild(shield);
@@ -4530,7 +4530,7 @@ function freezePromptModalOverlay() {
     promptModalKeyboardDock.overlayBaseHeight = baseHeight + 64;
 
     backdrop.style.setProperty('position', 'fixed');
-    backdrop.style.setProperty('top', '0');
+    backdrop.style.setProperty('top', 'env(safe-area-inset-top, 0px)');
     backdrop.style.setProperty('left', '0');
     backdrop.style.setProperty('right', '0');
     backdrop.style.setProperty('bottom', 'auto');
@@ -4647,9 +4647,8 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
     const safeTop = Math.round((window.visualViewport?.offsetTop || 0) + 4);
     const targetBottom = Math.max(40, Math.round(keyboardTop - 8));
     const availableHeight = Math.max(320, Math.round(targetBottom - safeTop));
-    // Ensure modal keeps at least 65% of its original height
-    const minDockHeight = Math.round(cardHeight * 0.65);
-    const dockHeight = Math.max(minDockHeight, Math.min(cardHeight, availableHeight));
+    // Clamp modal height to available space; no minimum enforced so it never overflows above the keyboard
+    const dockHeight = Math.max(80, Math.min(cardHeight, availableHeight));
     const centeredBottom = Math.round((baseViewportHeight * 0.5) + (dockHeight * 0.5));
     const shiftY = Math.max(-520, Math.min(520, Math.round(targetBottom - centeredBottom)));
     const duration = animate ? 120 : 0;
