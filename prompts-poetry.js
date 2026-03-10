@@ -6679,10 +6679,16 @@ document.addEventListener('DOMContentLoaded', () => {
     // Setup comment input listeners including iOS scroll stabiliser
     const commentInput = document.getElementById('commentInput');
     if (commentInput) {
+        let commentInputTouchStartY = 0;
+
         // ── V18 Fix: Prevent iOS Safari from natively scrolling the page when tapping
         // the comment input. Without e.preventDefault() here, Safari fires a layout
         // scroll-to-input that fights the JS keyboard docking and causes visible jitter.
         const handleTouchFocus = (e) => {
+            if (e.touches?.length) {
+                commentInputTouchStartY = e.touches[0].clientY;
+            }
+
             if (isPromptModalIOSMobile()) {
                 // Only preventDefault on FIRST tap (when textarea not focused).
                 // If already focused, allow native touch scrolling within textarea.
@@ -6716,6 +6722,27 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         };
         commentInput.addEventListener('touchstart', handleTouchFocus, { passive: false });
+
+        commentInput.addEventListener('touchmove', (e) => {
+            if (!isPromptModalIOSMobile()) return;
+            if (document.activeElement !== commentInput) return;
+
+            const isScrollable = Math.ceil(commentInput.scrollHeight) > Math.ceil(commentInput.clientHeight) + 2;
+            if (!isScrollable) return;
+
+            const touchY = e.touches[0].clientY;
+            const deltaY = commentInputTouchStartY - touchY;
+            const atTop = commentInput.scrollTop <= 0;
+            const atBottom =
+                commentInput.scrollTop + commentInput.clientHeight >= commentInput.scrollHeight - 2;
+
+            // Let the textarea own its internal scrolling path on iOS, but still
+            // block boundary rubber-banding from leaking into the modal/page.
+            if ((atTop && deltaY < 0) || (atBottom && deltaY > 0)) {
+                if (e.cancelable) e.preventDefault();
+            }
+            e.stopPropagation();
+        }, { passive: false });
 
         commentInput.addEventListener('focus', () => {
             primePromptModalKeyboardDock();
