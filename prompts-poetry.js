@@ -4667,8 +4667,15 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
     setPromptModalStatusBarShieldExpanded(true);
     modal.classList.add('keyboard-docked');
     modalInner.classList.add('keyboard-docked');
-    // ── Fix: Always use transition:none to prevent any spring animation ──
-    modalInner.style.transition = 'none';
+    // ── Fix: Make CSS transition actually work for predictive docking ──
+    // If animate is true (during prime), we use a smooth 300ms keyboard-like easing.
+    // Otherwise we use a 50ms quick catch-up or none.
+    if (animate) {
+        modalInner.style.transition = 'transform 320ms cubic-bezier(0.25, 0.8, 0.25, 1)';
+    } else {
+        modalInner.style.transition = 'transform 60ms ease-out';
+    }
+
     modalInner.style.position = 'fixed';
     modalInner.style.top = '50%';
     modalInner.style.left = '50%';
@@ -4686,7 +4693,9 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
     modalInner.style.transform = `translate(-50%, calc(-50% + ${shiftY}px)) scale(1)`;
     promptModalKeyboardDock.docked = true;
     promptModalKeyboardDock.lastKeyboardInset = bottomInset;
-    promptModalKeyboardDock.animatingUntil = 0;
+    if (animate) {
+        promptModalKeyboardDock.animatingUntil = now + 320;
+    }
 }
 
 function resetPromptModalKeyboardDock(animate = false) {
@@ -4850,10 +4859,15 @@ function attachPromptModalKeyboardDock() {
             schedulePromptModalStableKeyboardInset(bottomInset);
         }
 
+        // 动画锁期间，拒绝任何因 resize 或 scroll 引发的重新计算，避免打断平滑上升
+        if (promptModalKeyboardDock.docked && promptModalKeyboardDock.animatingUntil > Date.now()) {
+            return;
+        }
+
         if (inputFocused && bottomInset > 60) {
             clearPromptModalUndockTimer();
 
-            // 已经停靠：使用 2px 的精度平滑跟随键盘的变化，避免出现断层
+            // 既然已经过了解锁期（或者原本就是平滑停靠完后的更新），我们就给予无缝跟进
             if (promptModalKeyboardDock.docked) {
                 if (Math.abs(bottomInset - promptModalKeyboardDock.lastKeyboardInset) > 2) {
                     applyPromptModalKeyboardDock(visualHeight, bottomInset, false);
@@ -4861,8 +4875,7 @@ function attachPromptModalKeyboardDock() {
                 return;
             }
 
-            // 首次停靠：移除防抖，由于 V3 采用逐帧跟踪 visualViewport 并禁用过渡动画，
-            // 这里我们必须在第一帧就立刻跟随上来，否则会产生 80ms 的输入框被遮挡并“抖动”跳跃的现象。
+            // 万一 Focus 没抓到（或者被非预测方式触发），我们也立即跟踪
             promptModalKeyboardDock.lastKeyboardInset = bottomInset;
             applyPromptModalKeyboardDock(visualHeight, bottomInset, false);
             return;
@@ -4919,6 +4932,26 @@ function primePromptModalKeyboardDock() {
     setPromptModalStatusBarShieldExpanded(true);
     attachPromptModalKeyboardDock();
     capturePromptModalDockMetrics(true);
+
+    // ── Fix: Predictive Keyboard Docking ──
+    // On iOS, visualViewport resize events lag behind the keyboard animation.
+    // To prevent the keyboard from covering the input before the first resize event,
+    // we predict the keyboard height and immediately start a smooth 320ms CSS transition.
+    if (isPromptModalIOSMobile()) {
+        const vv = window.visualViewport;
+        if (vv) {
+            const anticipatedInset = promptModalKeyboardDock.lastStableInset || 340;
+            const visualTop = Math.max(0, vv.offsetTop || 0);
+            const visualHeight = Math.max(0, vv.height || 0);
+            const predictedVisualHeight = Math.max(0, visualHeight - anticipatedInset);
+
+            if (!promptModalKeyboardDock.docked) {
+                // Ignore transient resize events during the 320ms animation
+                promptModalKeyboardDock.animatingUntil = Date.now() + 320;
+                applyPromptModalKeyboardDock(predictedVisualHeight, anticipatedInset, true);
+            }
+        }
+    }
 }
 
 function openPromptModal(id) {
