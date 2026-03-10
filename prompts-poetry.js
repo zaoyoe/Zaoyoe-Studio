@@ -5076,7 +5076,6 @@ function openPromptModal(id) {
     initCommentImageUpload();
 
     // Physical modal mounting
-    document.documentElement.classList.add('modal-open');
     document.body.classList.add('modal-open');
 
     modal.style.display = 'flex';
@@ -5092,6 +5091,7 @@ function openPromptModal(id) {
     }
 
     showPromptModalStatusBarShield();
+    resetPromptModalKeyboardDock(false);
     clearPromptModalOpeningTimer();
     promptModalOpeningTimer = setTimeout(() => {
         modal.classList.remove('modal-opening');
@@ -6333,8 +6333,11 @@ function handleReplyComment(commentId, authorName) {
     const input = document.getElementById('commentInput');
     if (input) {
         input.value = `@${authorName} `;
-        try { input.focus(); } catch (_) { }
-
+        try {
+            input.focus({ preventScroll: true });
+        } catch (_) {
+            input.focus();
+        }
         input.dataset.replyTo = commentId;
         primePromptModalKeyboardDock();
     }
@@ -6704,12 +6707,20 @@ document.addEventListener('DOMContentLoaded', () => {
     // Setup comment input listeners including iOS scroll stabiliser
     const commentInput = document.getElementById('commentInput');
     if (commentInput) {
-        commentInput.addEventListener('keyup', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                submitComment();
+        // ── V18 Fix: Prevent iOS Safari from natively scrolling the page when tapping
+        // the comment input. Without e.preventDefault() here, Safari fires a layout
+        // scroll-to-input that fights the JS keyboard docking and causes visible jitter.
+        const handleTouchFocus = (e) => {
+            if (isPromptModalIOSMobile()) {
+                if (e.cancelable) e.preventDefault();
+                try {
+                    commentInput.focus({ preventScroll: true });
+                } catch (err) {
+                    commentInput.focus();
+                }
             }
-        });
+        };
+        commentInput.addEventListener('touchstart', handleTouchFocus, { passive: false });
 
         commentInput.addEventListener('focus', () => {
             primePromptModalKeyboardDock();
@@ -6918,8 +6929,6 @@ function closePromptModal() {
 
         if (window.iOSScrollLock) window.iOSScrollLock.unlock();
         document.body.classList.remove('prompt-modal-keyboard-docked');
-        // Clear modal CSS
-        document.documentElement.classList.remove('modal-open');
         document.body.classList.remove('modal-open');
 
         hidePromptModalStatusBarShield();
