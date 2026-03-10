@@ -4681,12 +4681,15 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
         promptModalKeyboardDock.baseVisualHeight || 0,
         visualHeight
     );
+    const layoutOffsetTopFallback = Math.max(0, Math.round(window.visualViewport?.offsetTop || 0));
     const insetFromLayout = Math.max(0, Math.round(baseViewportHeight - composedHeight));
     const insetFromViewportDelta = Math.max(0, Math.round(baseVisualHeight - visualHeight));
+    // ── CRITICAL FIX: Use offsetTop as a surrogate inset during the 300ms Safari V-Viewport lag ──
     const bottomInset = Math.max(
         0,
-        Math.round(bottomInsetOverride ?? Math.max(insetFromLayout, insetFromViewportDelta))
+        Math.round(bottomInsetOverride ?? Math.max(layoutOffsetTopFallback, Math.max(insetFromLayout, insetFromViewportDelta)))
     );
+
     if (bottomInset < 60) return;
 
     promptModalKeyboardDock.lastStableInset = bottomInset;
@@ -6784,21 +6787,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         commentInput.addEventListener('touchstart', (e) => {
             if (isPromptModalIOSMobile()) {
-                const { modalInner } = getPromptModalDockNodes();
-                if (modalInner && !modalInner.classList.contains('keyboard-docked')) {
-                    // ── ULTIMATE IOS FIX: BYPASS NATIVE TEARING ──
-                    // Convert modal from top: 50% to a bottom-anchored layout BEFORE Safari focuses.
-                    // This forces Safari to natively ride the layout viewport up instead of tearing horizontally.
-                    const rect = modalInner.getBoundingClientRect();
-                    const distanceToBottom = window.innerHeight - rect.bottom;
-                    modalInner.style.transition = 'none';
-                    modalInner.style.top = 'auto';
-                    modalInner.style.bottom = `${distanceToBottom}px`;
-                    modalInner.style.transform = `translate(-50%, 0)`;
-                    // Force synchronous reflow to ensure CSS locks before Safari layout panic
-                    void modalInner.offsetWidth;
-                }
-
                 // Focus quietly
                 if (e.cancelable) e.preventDefault(); // Keep preventDefault for touchstart
                 try {
