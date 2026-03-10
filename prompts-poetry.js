@@ -4691,21 +4691,26 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
 
     promptModalKeyboardDock.lastStableInset = bottomInset;
 
-    const keyboardTop = Math.max(0, baseViewportHeight - bottomInset);
+    const layoutOffsetTop = Math.max(0, Math.round(window.visualViewport?.offsetTop || 0));
+    const keyboardTop = Math.max(0, baseViewportHeight - bottomInset) + layoutOffsetTop;
     const cardHeight = Math.round(
         promptModalKeyboardDock.baseHeight || modalInner.getBoundingClientRect().height || 0
     );
     const cardWidth = Math.round(
         promptModalKeyboardDock.baseWidth || modalInner.getBoundingClientRect().width || 0
     );
+
     // ── Fix: Allow modal to overlap nav area to preserve more height ──
-    const safeTop = Math.round((window.visualViewport?.offsetTop || 0) + 4);
+    const safeTop = layoutOffsetTop + 4; // layout coordinate of physical safe top
     const targetBottom = Math.max(40, Math.round(keyboardTop - 8));
     const availableHeight = Math.max(320, Math.round(targetBottom - safeTop));
+
     // Ensure modal keeps at least 65% of its original height
     const minDockHeight = Math.round(cardHeight * 0.65);
     const dockHeight = Math.max(minDockHeight, Math.min(cardHeight, availableHeight));
     const centeredBottom = Math.round((baseViewportHeight * 0.5) + (dockHeight * 0.5));
+
+    // Calculate final shift taking Safari's native layout push into account
     const shiftY = Math.max(-520, Math.min(520, Math.round(targetBottom - centeredBottom)));
     const duration = animate ? 120 : 0;
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
@@ -4875,6 +4880,14 @@ function attachPromptModalKeyboardDock() {
         const visualTop = Math.max(0, vv.offsetTop || 0);
         const visualHeight = Math.max(0, vv.height || 0);
         const composedHeight = visualHeight + visualTop;
+
+        // ── Fix: Always stick the shield to the *physical* screen top, countering layout push ──
+        const shield = ensurePromptModalStatusBarShield();
+        if (shield && shield.style.visibility === 'visible') {
+            shield.style.setProperty('transform', `translateY(${visualTop}px)`, 'important');
+        } else if (shield) {
+            shield.style.removeProperty('transform');
+        }
         const baseViewportHeight = Math.max(
             promptModalKeyboardDock.baseViewportHeight || 0,
             window.innerHeight || 0,
