@@ -6311,7 +6311,9 @@ function handleReplyComment(commentId, authorName) {
             input.focus();
         }
         input.dataset.replyTo = commentId;
-        primePromptModalKeyboardDock();
+        if (!isPromptModalIOSMobile()) {
+            primePromptModalKeyboardDock();
+        }
     }
 }
 
@@ -6709,6 +6711,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (isPromptModalIOSMobile()) {
+                return;
+            }
+
+            {
                 // Only preventDefault on FIRST tap (when textarea not focused).
                 // If already focused, allow native touch scrolling within textarea.
                 if (document.activeElement !== commentInput) {
@@ -6765,12 +6771,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }, { passive: false });
 
         commentInput.addEventListener('focus', () => {
-            primePromptModalKeyboardDock();
+            if (!isPromptModalIOSMobile()) {
+                primePromptModalKeyboardDock();
+            }
             syncPromptCommentInputLayout();
         });
 
         commentInput.addEventListener('blur', () => {
-            schedulePromptModalUndock();
+            if (!isPromptModalIOSMobile()) {
+                schedulePromptModalUndock();
+            }
             syncPromptCommentInputLayout();
         });
 
