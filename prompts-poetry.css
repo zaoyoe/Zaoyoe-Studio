@@ -3132,15 +3132,15 @@ body.modal-open .prompt-card {
     top: 100%;
     right: 0;
     margin-top: 6px;
-    background: var(--modal-bg);
-    border: 1px solid rgba(128, 128, 128, 0.1);
+    background: rgba(15, 23, 42, 0.82);
+    border: 1px solid rgba(148, 163, 184, 0.16);
     border-radius: 12px;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 18px 38px rgba(2, 6, 23, 0.28);
     padding: 6px;
     min-width: 140px;
     display: none;
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(18px) saturate(1.1);
+    -webkit-backdrop-filter: blur(18px) saturate(1.1);
 }
 
 .comment-sort-dropdown.show {
@@ -3165,13 +3165,13 @@ body.modal-open .prompt-card {
 }
 
 .sort-option:hover {
-    background: rgba(128, 128, 128, 0.08);
-    color: var(--text-primary);
+    background: rgba(148, 163, 184, 0.12);
+    color: #f8fafc;
 }
 
 .sort-option.active {
-    color: var(--text-primary);
-    background: rgba(128, 128, 128, 0.05);
+    color: #f8fafc;
+    background: rgba(59, 130, 246, 0.12);
     font-weight: 500;
     /* Subtle weight for active, not full bold */
 }
@@ -3181,6 +3181,38 @@ body.modal-open .prompt-card {
     background: rgba(255, 255, 255, 0.98);
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
     border: 1px solid rgba(0, 0, 0, 0.04);
+}
+
+.comment-empty-state {
+    min-height: 42%;
+    display: grid;
+    place-items: center;
+    align-content: center;
+    gap: 10px;
+    padding: 48px 20px 80px;
+    text-align: center;
+}
+
+.comment-empty-title {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: rgba(226, 232, 240, 0.92);
+    letter-spacing: 0.01em;
+}
+
+.comment-empty-subtitle {
+    max-width: 22rem;
+    font-size: 0.95rem;
+    line-height: 1.65;
+    color: rgba(148, 163, 184, 0.92);
+}
+
+[data-theme="light"] .comment-empty-title {
+    color: rgba(15, 23, 42, 0.88);
+}
+
+[data-theme="light"] .comment-empty-subtitle {
+    color: rgba(71, 85, 105, 0.86);
 }
 
 @keyframes fadeInScale {
@@ -3735,6 +3767,15 @@ body.modal-open .prompt-card {
         padding: 8px 12px;
         border-radius: 999px;
         background: rgba(148, 163, 184, 0.12);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+    }
+
+    .modal-inner.comment-mode .comment-sort-dropdown {
+        min-width: 156px;
+        background: rgba(9, 18, 34, 0.78);
+        border-color: rgba(148, 163, 184, 0.14);
+        box-shadow: 0 24px 44px rgba(2, 6, 23, 0.34);
     }
 
     .modal-inner.comment-mode .comment-list {
@@ -3753,22 +3794,28 @@ body.modal-open .prompt-card {
     }
 
     .modal-inner.comment-mode .comment-input-area {
-        padding: 12px 0 calc(10px + env(safe-area-inset-bottom));
-        background: linear-gradient(180deg, rgba(7, 15, 30, 0) 0%, rgba(7, 15, 30, 0.96) 28%);
-        border-top: none;
-        box-shadow: none;
+        left: 6px;
+        bottom: 8px;
+        width: calc(100% - 12px);
+        padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+        background: rgba(8, 18, 35, 0.54);
+        border: 1px solid rgba(148, 163, 184, 0.12);
+        border-radius: 28px;
+        backdrop-filter: blur(22px) saturate(1.08);
+        -webkit-backdrop-filter: blur(22px) saturate(1.08);
+        box-shadow: 0 20px 44px rgba(2, 6, 23, 0.32);
     }
 
     .modal-inner.comment-mode .comment-input-area.composer-proxy #commentInput {
         min-height: auto;
         height: 52px !important;
         max-height: 52px;
-        padding: 0 18px;
-        border: 1px solid rgba(148, 163, 184, 0.18);
+        padding: 0 16px;
+        border: 1px solid rgba(148, 163, 184, 0.1);
         border-radius: 999px;
-        background: rgba(15, 23, 42, 0.76);
+        background: linear-gradient(180deg, rgba(5, 13, 28, 0.24) 0%, rgba(5, 13, 28, 0.12) 100%);
         color: rgba(226, 232, 240, 0.92);
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03), 0 12px 30px rgba(2, 6, 23, 0.24);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
     }
 
     .modal-inner.comment-mode .comment-input-area.composer-proxy #commentInput::placeholder {

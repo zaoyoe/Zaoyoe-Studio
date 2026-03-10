@@ -4396,6 +4396,26 @@ function isPromptModalExpandedCommentView() {
     return !!(modal?.classList.contains('active') && isCommentMode && isPromptModalMobileLayout());
 }
 
+function getCommentSortLabels() {
+    return {
+        newest: window.i18n?.t('gallery.newest') || 'Newest',
+        top: window.i18n?.t('gallery.top') || '🔥 Top',
+        oldest: window.i18n?.t('gallery.oldest') || 'Oldest'
+    };
+}
+
+function renderCommentEmptyState(list) {
+    if (!list) return;
+    const title = window.i18n?.t('gallery.commentsEmpty') || 'No comments yet';
+    const subtitle = window.i18n?.t('gallery.commentsEmptySub') || 'Be the first to leave a note.';
+    list.innerHTML = `
+        <div class="comment-empty-state">
+            <div class="comment-empty-title">${title}</div>
+            <div class="comment-empty-subtitle">${subtitle}</div>
+        </div>
+    `;
+}
+
 function updateCommentSectionHeading(totalCount = null) {
     const title = document.getElementById('commentSectionTitle');
     if (!title) return;
@@ -4403,9 +4423,10 @@ function updateCommentSectionHeading(totalCount = null) {
     const explicitCount = typeof totalCount === 'number' ? totalCount : null;
     const badgeCount = parseInt(document.getElementById('commentCountBadge')?.textContent || '0', 10);
     const count = Number.isFinite(explicitCount) ? explicitCount : (Number.isFinite(badgeCount) ? badgeCount : 0);
+    const commentsTitle = window.i18n?.t('gallery.commentsTitle') || 'Comments';
 
     if (isPromptModalExpandedCommentView()) {
-        title.textContent = count > 0 ? `Comments · ${count}` : 'Comments';
+        title.textContent = count > 0 ? `${commentsTitle} · ${count}` : commentsTitle;
         return;
     }
 
@@ -6171,7 +6192,7 @@ function renderCommentsFromCache(cached, list) {
     list.innerHTML = '';
     if (data.length === 0) {
         updateCommentSectionHeading(0);
-        list.innerHTML = '<div style="padding:40px; text-align:center; color:#999; font-style:italic;">No comments yet. Be the first to analyze this art.</div>';
+        renderCommentEmptyState(list);
         return;
     }
 
@@ -6195,8 +6216,8 @@ function renderCommentsFromCache(cached, list) {
     // Update UI Label
     const sortLabel = document.getElementById('currentSortLabel');
     if (sortLabel) {
-        const labels = { 'newest': 'Newest', 'top': 'Top', 'oldest': 'Oldest' };
-        sortLabel.textContent = labels[sortType] || 'Newest';
+        const labels = getCommentSortLabels();
+        sortLabel.textContent = labels[sortType] || labels.newest;
     }
 
     if (sortType === 'newest') {
@@ -6277,7 +6298,7 @@ async function fetchComments(promptId, forceRefresh = false) {
         // Continue to refresh in background (don't return)
     } else {
         // No cache: show loading
-        list.innerHTML = '<div style="padding:20px; text-align:center; color:#999;">Loading...</div>';
+        list.innerHTML = `<div class="comment-empty-state"><div class="comment-empty-subtitle">${window.i18n?.t('common.loading') || 'Loading...'}</div></div>`;
     }
 
     // Get cached user ID if available (avoid re-calling getUser if we have it)
@@ -6327,7 +6348,7 @@ async function fetchComments(promptId, forceRefresh = false) {
 
     if (error) {
         console.error("Comment Load Error:", error);
-        list.innerHTML = '<div style="padding:20px; text-align:center; color:red;">Failed to load comments</div>';
+        list.innerHTML = `<div class="comment-empty-state"><div class="comment-empty-subtitle" style="color:#fca5a5;">${window.i18n?.t('common.error') || 'Failed to load comments'}</div></div>`;
         return;
     }
 
@@ -6363,7 +6384,7 @@ async function fetchComments(promptId, forceRefresh = false) {
     list.innerHTML = '';
     if (data.length === 0) {
         updateCommentSectionHeading(0);
-        list.innerHTML = '<div style="padding:40px; text-align:center; color:#999; font-style:italic;">No comments yet. Be the first to analyze this art.</div>';
+        renderCommentEmptyState(list);
         return;
     }
     updateCommentSectionHeading(data.length);
@@ -7100,6 +7121,22 @@ function setupCommentSorting() {
     });
 }
 
+function refreshCommentLanguageUI() {
+    updateCommentSectionHeading();
+
+    const sortLabel = document.getElementById('currentSortLabel');
+    const sortType = localStorage.getItem('commentSortPreference') || 'newest';
+    if (sortLabel) {
+        const labels = getCommentSortLabels();
+        sortLabel.textContent = labels[sortType] || labels.newest;
+    }
+
+    const list = document.getElementById('commentList');
+    if (list?.querySelector('.comment-empty-state')) {
+        renderCommentEmptyState(list);
+    }
+}
+
 // Initialize sorting on load
 document.addEventListener('DOMContentLoaded', () => {
     setupCommentSorting();
@@ -7186,6 +7223,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 });
+
+window.addEventListener('languageChanged', refreshCommentLanguageUI);
 
 // Animation lock to prevent rapid click issues
 let isModalImageAnimating = false;
