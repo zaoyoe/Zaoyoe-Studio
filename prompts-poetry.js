@@ -5050,16 +5050,8 @@ function openPromptModal(id) {
     modal.classList.add('active');
     modal.classList.add('modal-opening');
     if (window.iOSScrollLock && modalInner) {
-        window.iOSScrollLock.lockLight(modalInner);
-    }
-    // Manually add overflow:hidden to html/body on iOS.
-    // lockLight skips this to avoid "black block" issue, but we need it
-    // to prevent Safari's native scroll-to-input from pushing the page.
-    // Unlike full lock(), this does NOT set position:fixed on body,
-    // so Safari's bottom bar keeps sampling black background (not canvas blue).
-    if (isPromptModalIOSMobile()) {
-        document.documentElement.style.overflow = 'hidden';
-        document.body.style.overflow = 'hidden';
+        window.scrollTo(0, 0); // Prevent layout shift before applying position:fixed
+        window.iOSScrollLock.lock(modalInner);
     }
 
     showPromptModalStatusBarShield();
@@ -6923,9 +6915,6 @@ function closePromptModal() {
         if (modal) modal.classList.remove('closing');
 
         if (window.iOSScrollLock) window.iOSScrollLock.unlock();
-        // Remove manual overflow:hidden added in openPromptModal for iOS
-        document.documentElement.style.overflow = '';
-        document.body.style.overflow = '';
         document.body.classList.remove('prompt-modal-keyboard-docked');
         document.body.classList.remove('modal-open');
 
