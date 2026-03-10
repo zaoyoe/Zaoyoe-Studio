@@ -4691,7 +4691,9 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
 
     promptModalKeyboardDock.lastStableInset = bottomInset;
 
-    const layoutOffsetTop = Math.max(0, Math.round(window.visualViewport?.offsetTop || 0));
+    const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
+    const offsetTop = vv?.offsetTop || 0;
+    const layoutOffsetTop = Math.max(0, Math.round(offsetTop + scrollY));
     const keyboardTop = Math.max(0, baseViewportHeight - bottomInset) + layoutOffsetTop;
     const cardHeight = Math.round(
         promptModalKeyboardDock.baseHeight || modalInner.getBoundingClientRect().height || 0
@@ -4877,7 +4879,12 @@ function attachPromptModalKeyboardDock() {
     promptModalKeyboardDock.onViewportChange = () => {
         if (!isPromptModalDockEnabledOrActive()) return;
         const inputFocused = isPromptModalDockInputFocused();
-        const visualTop = Math.max(0, vv.offsetTop || 0);
+
+        // ── Fix: Safari can use either offsetTop or scrollY to shift the layout viewport natively ──
+        const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
+        const offsetTop = vv.offsetTop || 0;
+        const visualTop = Math.max(0, offsetTop + scrollY);
+
         const visualHeight = Math.max(0, vv.height || 0);
         const composedHeight = visualHeight + visualTop;
 
