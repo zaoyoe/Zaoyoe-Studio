@@ -601,6 +601,37 @@
     <script src="js/heartbeat.js"></script>
     <script src="js/framer_home.js?v=NAV_UNIFIED_V7"></script>
     <script>
+        (function cleanupLegacyPromptServiceWorker() {
+            if (!('serviceWorker' in navigator) || !('caches' in window)) return;
+
+            window.addEventListener('load', async () => {
+                try {
+                    const registrations = await navigator.serviceWorker.getRegistrations();
+                    const legacyRegs = registrations.filter(reg => {
+                        const scriptUrl = reg.active?.scriptURL || reg.waiting?.scriptURL || reg.installing?.scriptURL || '';
+                        return scriptUrl.endsWith('/sw.js');
+                    });
+
+                    if (legacyRegs.length === 0) return;
+
+                    await Promise.all(legacyRegs.map(reg => reg.unregister()));
+
+                    const cacheKeys = await caches.keys();
+                    const legacyCacheKeys = cacheKeys.filter(key =>
+                        /^(static|images|prompts-gallery)-v\d+$/i.test(key)
+                    );
+                    await Promise.all(legacyCacheKeys.map(key => caches.delete(key)));
+
+                    if (navigator.serviceWorker.controller) {
+                        location.reload();
+                    }
+                } catch (err) {
+                    console.warn('Failed to clear legacy prompt service worker caches:', err);
+                }
+            }, { once: true });
+        })();
+    </script>
+    <script>
         // Reveal page after content is ready
         document.body.classList.add('loaded');
     </script>
