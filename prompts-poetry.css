@@ -2198,20 +2198,7 @@ html.modal-open #ambientCanvas {
     display: none !important;
 }
 
-/* ── Fix: Keyboard Status Bar Blue Bug ── */
-/* When Safari pushes the layout viewport up for the keyboard, the entire page moves up.
-   Any active backdrop-filter (on the backdrop, the prompt area, OR the comment area)
-   will be rammed into the iPhone Status Bar Safe Area, causing Safari's WebGL compositor
-   to hallucinate a permanent blue gradient. We indiscriminately nuke all blur in the modal when typing. */
-body.prompt-modal-keyboard-docked .poetry-modal *,
-body.prompt-modal-keyboard-docked .poetry-modal-backdrop {
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-}
 
-body.prompt-modal-keyboard-docked .poetry-modal-backdrop {
-    background: rgba(0, 0, 0, 0.85) !important;
-}
 
 .poetry-modal {
     position: fixed;
