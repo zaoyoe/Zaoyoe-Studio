@@ -4371,7 +4371,6 @@ const promptModalKeyboardDock = {
 let promptModalOpeningTimer = null;
 let promptModalDockTimers = [];
 let promptModalStatusBarShield = null;
-let promptModalBottomBarShield = null;
 
 function isPromptModalIOSMobile() {
     const ua = navigator.userAgent || '';
@@ -4437,46 +4436,6 @@ function hidePromptModalStatusBarShield() {
         if (!promptModalStatusBarShield) return;
         promptModalStatusBarShield.style.visibility = 'hidden';
     }, 90);
-}
-
-// ── Fix: Bottom Bar Shield for Safari 15+ WebGL Bleed ──
-function ensurePromptModalBottomBarShield() {
-    if (promptModalBottomBarShield?.isConnected) return promptModalBottomBarShield;
-    const shield = document.createElement('div');
-    shield.className = 'prompt-bottom-bar-shield';
-    shield.style.cssText = [
-        'position: fixed',
-        'bottom: 0',
-        'left: 0',
-        'right: 0',
-        'height: 130px',
-        'background: #000',
-        'opacity: 0',
-        'visibility: hidden',
-        'pointer-events: none',
-        'z-index: 9999', // Behind backdrop (10000), above canvases
-        'transition: opacity 150ms linear'
-    ].join('; ');
-    document.body.appendChild(shield);
-    promptModalBottomBarShield = shield;
-    return shield;
-}
-
-function showPromptModalBottomBarShield() {
-    if (!isPromptModalIOSMobile()) return;
-    const shield = ensurePromptModalBottomBarShield();
-    if (!shield) return;
-    shield.style.visibility = 'visible';
-    shield.style.opacity = '1';
-}
-
-function hidePromptModalBottomBarShield() {
-    if (!promptModalBottomBarShield) return;
-    promptModalBottomBarShield.style.opacity = '0';
-    setTimeout(() => {
-        if (!promptModalBottomBarShield) return;
-        promptModalBottomBarShield.style.visibility = 'hidden';
-    }, 160);
 }
 
 function getPromptModalDockNodes() {
@@ -4691,8 +4650,11 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
     // Ensure modal keeps at least 65% of its original height
     const minDockHeight = Math.round(cardHeight * 0.65);
     const dockHeight = Math.max(minDockHeight, Math.min(cardHeight, availableHeight));
-    const centeredBottom = Math.round((baseViewportHeight * 0.5) + (dockHeight * 0.5));
-    const shiftY = Math.max(-520, Math.min(520, Math.round(targetBottom - centeredBottom)));
+
+    // ── Fix: Top 0px Positioning ──
+    // Instead of using top: 50%, which gets natively shifted by Safari when the Layout Viewport shrinks,
+    // we firmly attach the modal to the top edge (which stays stable) and manually push it down.
+    const absoluteTop = Math.max(safeTop, targetBottom - dockHeight);
     const now = Date.now();
 
     if (promptModalKeyboardDock.docked && promptModalKeyboardDock.animatingUntil > now) {
@@ -4712,20 +4674,21 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
     modalInner.style.transition = 'transform 50ms ease-out';
 
     modalInner.style.position = 'fixed';
-    modalInner.style.top = '50%';
+    modalInner.style.top = '0px';
     modalInner.style.left = '50%';
     modalInner.style.right = 'auto';
     modalInner.style.bottom = 'auto';
     modalInner.style.margin = '0';
+    modalInner.style.width = '100%';
+    modalInner.style.maxWidth = '100vw';
     if (cardWidth > 0) {
-        modalInner.style.width = `${cardWidth}px`;
         modalInner.style.maxWidth = `${cardWidth}px`;
     }
     if (dockHeight > 0) {
         modalInner.style.height = `${dockHeight}px`;
         modalInner.style.maxHeight = `${dockHeight}px`;
     }
-    modalInner.style.transform = `translate(-50%, calc(-50% + ${shiftY}px)) scale(1)`;
+    modalInner.style.transform = `translate(-50%, ${absoluteTop}px) scale(1)`;
     promptModalKeyboardDock.docked = true;
     promptModalKeyboardDock.lastKeyboardInset = bottomInset;
     if (animate) {
@@ -5132,7 +5095,6 @@ function openPromptModal(id) {
     }
 
     showPromptModalStatusBarShield();
-    showPromptModalBottomBarShield();
     clearPromptModalOpeningTimer();
     promptModalOpeningTimer = setTimeout(() => {
         modal.classList.remove('modal-opening');
@@ -6971,7 +6933,6 @@ function closePromptModal() {
             }
         }
         hidePromptModalStatusBarShield();
-        hidePromptModalBottomBarShield();
 
         // Physically detach modal from Safe Area render tree, skipping layout breakage of `visibility`
         if (modal) modal.style.display = 'none';
