@@ -4382,6 +4382,64 @@ function isPromptModalKeyboardDockEnabled() {
     return isPromptModalIOSMobile() && !!window.visualViewport;
 }
 
+function isPromptModalMobileLayout() {
+    return window.matchMedia('(max-width: 768px)').matches;
+}
+
+function isPromptCommentComposerOpen() {
+    const { overlay } = getPromptCommentComposerElements();
+    return !!overlay?.classList.contains('active');
+}
+
+function isPromptModalExpandedCommentView() {
+    const modal = document.getElementById('promptModal');
+    return !!(modal?.classList.contains('active') && isCommentMode && isPromptModalMobileLayout());
+}
+
+function updateCommentSectionHeading(totalCount = null) {
+    const title = document.getElementById('commentSectionTitle');
+    if (!title) return;
+
+    const explicitCount = typeof totalCount === 'number' ? totalCount : null;
+    const badgeCount = parseInt(document.getElementById('commentCountBadge')?.textContent || '0', 10);
+    const count = Number.isFinite(explicitCount) ? explicitCount : (Number.isFinite(badgeCount) ? badgeCount : 0);
+
+    if (isPromptModalExpandedCommentView()) {
+        title.textContent = count > 0 ? `Comments · ${count}` : 'Comments';
+        return;
+    }
+
+    title.textContent = count > 0
+        ? `View all ${count} comments`
+        : (window.i18n?.t('gallery.viewAll') || 'View all');
+}
+
+function syncPromptModalTopButtonState() {
+    const button = document.getElementById('promptModalTopBtn');
+    const icon = button?.querySelector('i');
+    if (!button || !icon) return;
+
+    const useBackState = isCommentMode || isPromptCommentComposerOpen();
+    button.classList.toggle('is-back', useBackState);
+    button.classList.toggle('is-close', !useBackState);
+    button.setAttribute('aria-label', useBackState ? 'Back' : 'Close');
+    icon.className = useBackState ? 'fas fa-arrow-left' : 'fas fa-times';
+}
+
+function handlePromptModalTopButton() {
+    if (isPromptCommentComposerOpen()) {
+        closePromptCommentComposer();
+        return;
+    }
+
+    if (isCommentMode) {
+        toggleCommentMode();
+        return;
+    }
+
+    closePromptModal();
+}
+
 function forceSafariSafeAreaJiggle() {
     // Deprecated: This caused the theme-color meta tag caching bug.
 }
@@ -4947,6 +5005,7 @@ function openPromptModal(id) {
         const icon = triggerBtn.querySelector('i');
         if (icon) icon.className = 'fas fa-comment-dots';
     }
+    syncPromptModalTopButtonState();
 
     // Reset Prompt Area (in case it was docked/moved)
     const promptArea = document.getElementById('promptArea');
@@ -5085,6 +5144,7 @@ function toggleCommentMode() {
     const promptArea = document.getElementById('promptArea');
     const dockTarget = document.getElementById('promptDockTarget');
     const contentCol = document.querySelector('.modal-content-col');
+    const isMobileLayout = isPromptModalMobileLayout();
 
 
     if (isCommentMode) {
@@ -5100,26 +5160,27 @@ function toggleCommentMode() {
             triggerBtn.classList.remove('active');
             triggerBtn.querySelector('i').className = 'fas fa-comment-dots';
         }
+        updateCommentSectionHeading();
+        syncPromptModalTopButtonState();
 
-        // FLIP: Move Prompt back to Right Column
-        // 1. Move DOM
-        promptArea.classList.remove('docked');
-        const commentSection = document.getElementById('commentSection');
-        contentCol.insertBefore(promptArea, commentSection);
+        if (!isMobileLayout) {
+            // FLIP: Move Prompt back to Right Column
+            promptArea.classList.remove('docked');
+            const commentSection = document.getElementById('commentSection');
+            contentCol.insertBefore(promptArea, commentSection);
 
-        // 2. Apply "Return" Animation (Slide from Left)
-        promptArea.classList.remove('returning');
-        void promptArea.offsetWidth; // Trigger reflow
-        promptArea.classList.add('returning');
-
-        // Motion Blur for Image
-        const img = document.querySelector('.modal-image-col img');
-        if (img) img.classList.add('blur-motion');
-
-        setTimeout(() => {
             promptArea.classList.remove('returning');
-            if (img) img.classList.remove('blur-motion');
-        }, 500);
+            void promptArea.offsetWidth;
+            promptArea.classList.add('returning');
+
+            const img = document.querySelector('.modal-image-col img');
+            if (img) img.classList.add('blur-motion');
+
+            setTimeout(() => {
+                promptArea.classList.remove('returning');
+                if (img) img.classList.remove('blur-motion');
+            }, 500);
+        }
 
     } else {
         // OPEN COMMENTS (Activate Spatial Flow)
@@ -5130,48 +5191,43 @@ function toggleCommentMode() {
         const triggerBtn = document.getElementById('commentTriggerBtn');
         if (triggerBtn) {
             triggerBtn.classList.add('active');
-            triggerBtn.querySelector('i').className = 'fas fa-chevron-right';
+            triggerBtn.querySelector('i').className = 'fas fa-comment-dots';
         }
+        updateCommentSectionHeading();
+        syncPromptModalTopButtonState();
 
         // Fetch comments
 
 
         fetchComments(currentPromptId);
 
-        // FLIP: Move Prompt to Left Column Dock
-        // 1. First: Measure current position
-        const first = promptArea.getBoundingClientRect();
+        if (!isMobileLayout) {
+            const first = promptArea.getBoundingClientRect();
+            dockTarget.appendChild(promptArea);
+            promptArea.classList.add('docked');
 
-        // 2. State: Move DOM to Dock Target
-        // We append it to the dock target container
-        dockTarget.appendChild(promptArea);
-        promptArea.classList.add('docked');
+            const last = promptArea.getBoundingClientRect();
 
-        // 3. Last: Measure new position
-        const last = promptArea.getBoundingClientRect();
+            const dx = first.left - last.left;
+            const dy = first.top - last.top;
+            const wRatio = first.width / last.width;
 
-        // 4. Invert & Play
-        const dx = first.left - last.left;
-        const dy = first.top - last.top;
-        const wRatio = first.width / last.width;
+            promptArea.style.transform = `translate(${dx}px, ${dy}px) scale(${wRatio})`;
+            promptArea.style.transformOrigin = 'top left';
 
-        promptArea.style.transform = `translate(${dx}px, ${dy}px) scale(${wRatio})`;
-        promptArea.style.transformOrigin = 'top left';
+            requestAnimationFrame(() => {
+                promptArea.style.transition = 'transform 0.5s ease-in-out';
+                promptArea.style.transform = '';
 
-        requestAnimationFrame(() => {
-            // Apply transition
-            promptArea.style.transition = 'transform 0.5s ease-in-out';
-            promptArea.style.transform = ''; // Animate to zero
+                const img = document.querySelector('.modal-image-col img');
+                if (img) img.classList.add('blur-motion');
 
-            // Motion Blur for Image
-            const img = document.querySelector('.modal-image-col img');
-            if (img) img.classList.add('blur-motion');
-
-            setTimeout(() => {
-                promptArea.style.transition = '';
-                if (img) img.classList.remove('blur-motion');
-            }, 500);
-        });
+                setTimeout(() => {
+                    promptArea.style.transition = '';
+                    if (img) img.classList.remove('blur-motion');
+                }, 500);
+            });
+        }
 
         if (isPromptModalKeyboardDockEnabled()) {
             requestAnimationFrame(() => capturePromptModalDockMetrics(true));
@@ -5660,6 +5716,7 @@ function openPromptCommentComposer(options = {}) {
     syncPromptCommentComposerMeta();
     syncPromptCommentComposerTrigger();
     attachPromptCommentComposerViewportSync();
+    syncPromptModalTopButtonState();
     initCommentImageUpload();
 
     if (options.focus !== false) {
@@ -5695,6 +5752,7 @@ function closePromptCommentComposer(options = {}) {
 
     overlay.classList.remove('active');
     syncPromptCommentComposerViewport();
+    syncPromptModalTopButtonState();
     input?.blur();
 }
 
@@ -6082,6 +6140,7 @@ async function fetchCommentCount(promptId) {
         .eq('prompt_id', promptId);
 
     document.getElementById('commentCountBadge').textContent = count || 0;
+    updateCommentSectionHeading(count || 0);
 }
 
 // Comment cache to avoid re-fetching
@@ -6094,14 +6153,11 @@ function renderCommentsFromCache(cached, list) {
     const likedSet = new Set(userLikedCommentIds);
     const countMap = new Map(Object.entries(commentLikeCounts));
 
-    // Update Header Title with Count
-    const sectionTitle = document.getElementById('commentSectionTitle');
-    if (sectionTitle) {
-        sectionTitle.textContent = `View all ${data.length} comments`;
-    }
+    updateCommentSectionHeading(data.length);
 
     list.innerHTML = '';
     if (data.length === 0) {
+        updateCommentSectionHeading(0);
         list.innerHTML = '<div style="padding:40px; text-align:center; color:#999; font-style:italic;">No comments yet. Be the first to analyze this art.</div>';
         return;
     }
@@ -6293,9 +6349,11 @@ async function fetchComments(promptId, forceRefresh = false) {
 
     list.innerHTML = '';
     if (data.length === 0) {
+        updateCommentSectionHeading(0);
         list.innerHTML = '<div style="padding:40px; text-align:center; color:#999; font-style:italic;">No comments yet. Be the first to analyze this art.</div>';
         return;
     }
+    updateCommentSectionHeading(data.length);
 
     // Build comment lookup map for finding parent info
     const commentMap = new Map();
@@ -6389,13 +6447,23 @@ function initCommentCollapse() {
 
     console.log('[Collapse] Initializing with', total, 'total,', parentCount, 'parents');
 
-    // Update title text (no count, just action text)
-    title.textContent = window.i18n?.t('gallery.viewAll') || 'View all';
+    if (isPromptModalExpandedCommentView()) {
+        updateCommentSectionHeading(parentCount);
+        title.style.cursor = 'default';
+        title.removeAttribute('data-expandable');
+        title.onclick = null;
+        list.removeAttribute('data-collapsed');
+        allComments.forEach(c => c.style.display = '');
+        return;
+    }
+
+    updateCommentSectionHeading(parentCount);
 
     // If 3 or fewer parent comments, no collapse needed
     if (parentCount <= COLLAPSE_SHOW_COUNT) {
         title.style.cursor = 'default';
         title.removeAttribute('data-expandable');
+        title.onclick = null;
         list.removeAttribute('data-collapsed');
         // Make sure all are visible
         allComments.forEach(c => c.style.display = '');
@@ -6474,7 +6542,7 @@ function handleCollapseToggle() {
         });
 
         list.setAttribute('data-collapsed', 'true');
-        title.textContent = window.i18n?.t('gallery.viewAll') || 'View all';
+        updateCommentSectionHeading(allComments.filter(c => !c.classList.contains('comment-reply')).length);
 
         // Scroll to top when collapsed
         list.scrollTop = 0;
@@ -7277,6 +7345,7 @@ function closePromptModal() {
             if (icon) icon.className = 'fas fa-comment-dots';
         }
     }
+    syncPromptModalTopButtonState();
 
     const modal = document.getElementById('promptModal');
     if (modal) {
