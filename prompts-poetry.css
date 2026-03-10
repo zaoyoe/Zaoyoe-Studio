@@ -3341,8 +3341,8 @@ body.modal-open .prompt-card {
 
     /* Add top margin to avoid overlapping with user avatar */
     .poetry-nav-container {
-        /* Mobile: fixed 60px nav + notch (safe-area) + 3vh breathing room */
-        padding-top: calc(env(safe-area-inset-top, 20px) + 60px + 3vh);
+        padding-top: calc(8vh + 40px);
+        /* Increased spacing from avatar */
         padding-left: 10px;
         padding-right: 10px;
     }
