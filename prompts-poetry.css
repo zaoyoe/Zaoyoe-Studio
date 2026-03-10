@@ -2149,8 +2149,10 @@ html[lang="en"] .nav-item .en {
     left: 0;
     width: 100%;
     height: 200vh;
-    background: rgba(0, 0, 0, 0.85);
-    /* Solid dark overlay, NO backdrop-filter to prevent purple/blue Safari WebGL/Address Bar bug */
+    background: rgba(0, 0, 0, 0.45);
+    /* Restored translucent dark overlay */
+    backdrop-filter: blur(25px) saturate(120%);
+    -webkit-backdrop-filter: blur(25px) saturate(120%);
     /* Force independent GPU compositor layer to prevent Safari purple star tearing */
     transform: translate3d(0, 0, 0);
     -webkit-transform: translate3d(0, 0, 0);
@@ -2183,23 +2185,7 @@ body.modal-open {
     background-color: #000000 !important;
 }
 
-/* ── Fix: Prevent Safari Bottom Address Bar from turning blue ── */
-/* Safari 15+ address bar samples the underlying DOM with saturate(180%). 
-   Even through a 85% black modal backdrop, the bright blue starry canvas bleeds through and turns the address bar blue.
-   We inject a pure black shield at the bottom of the screen (just behind the modal) to force the address bar to sample pure black. */
-html.modal-open::after {
-    content: '';
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    width: 100%;
-    height: 130px;
-    /* Covers both collapsed and expanded Safari address bar */
-    background: #000000;
-    z-index: 10000;
-    /* Just below the modal (10001) */
-    pointer-events: none;
-}
+/* html.modal-open::after removed in favor of JS injected prompt-bottom-bar-shield */
 
 body.prompt-modal-keyboard-docked #starryCanvas,
 body.prompt-modal-keyboard-docked #ambientCanvas {

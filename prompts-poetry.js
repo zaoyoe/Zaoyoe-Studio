@@ -4369,8 +4369,9 @@ const promptModalKeyboardDock = {
 };
 
 let promptModalOpeningTimer = null;
-let promptModalThemeColorMeta = null;
+let promptModalDockTimers = [];
 let promptModalStatusBarShield = null;
+let promptModalBottomBarShield = null;
 
 function isPromptModalIOSMobile() {
     const ua = navigator.userAgent || '';
@@ -4436,6 +4437,46 @@ function hidePromptModalStatusBarShield() {
         if (!promptModalStatusBarShield) return;
         promptModalStatusBarShield.style.visibility = 'hidden';
     }, 90);
+}
+
+// ── Fix: Bottom Bar Shield for Safari 15+ WebGL Bleed ──
+function ensurePromptModalBottomBarShield() {
+    if (promptModalBottomBarShield?.isConnected) return promptModalBottomBarShield;
+    const shield = document.createElement('div');
+    shield.className = 'prompt-bottom-bar-shield';
+    shield.style.cssText = [
+        'position: fixed',
+        'bottom: 0',
+        'left: 0',
+        'right: 0',
+        'height: 130px',
+        'background: #000',
+        'opacity: 0',
+        'visibility: hidden',
+        'pointer-events: none',
+        'z-index: 9999', // Behind backdrop (10000), above canvases
+        'transition: opacity 150ms linear'
+    ].join('; ');
+    document.body.appendChild(shield);
+    promptModalBottomBarShield = shield;
+    return shield;
+}
+
+function showPromptModalBottomBarShield() {
+    if (!isPromptModalIOSMobile()) return;
+    const shield = ensurePromptModalBottomBarShield();
+    if (!shield) return;
+    shield.style.visibility = 'visible';
+    shield.style.opacity = '1';
+}
+
+function hidePromptModalBottomBarShield() {
+    if (!promptModalBottomBarShield) return;
+    promptModalBottomBarShield.style.opacity = '0';
+    setTimeout(() => {
+        if (!promptModalBottomBarShield) return;
+        promptModalBottomBarShield.style.visibility = 'hidden';
+    }, 160);
 }
 
 function getPromptModalDockNodes() {
@@ -5116,6 +5157,7 @@ function openPromptModal(id) {
     }
 
     showPromptModalStatusBarShield();
+    showPromptModalBottomBarShield();
     clearPromptModalOpeningTimer();
     promptModalOpeningTimer = setTimeout(() => {
         modal.classList.remove('modal-opening');
@@ -6970,7 +7012,7 @@ document.addEventListener('click', function (e) {
     if (!modal || !modal.classList.contains('active')) return;
 
     // ── Fix: Prevent stray clicks from closing modal during keyboard dock animation ──
-    if (window.promptModalKeyboardDock?.animatingUntil > Date.now()) return;
+    if (promptModalKeyboardDock?.animatingUntil > Date.now()) return;
 
     // Only close if clicking the backdrop itself, not the inner content
     if (e.target === modal) {
