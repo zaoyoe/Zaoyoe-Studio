@@ -138,6 +138,12 @@
             return;
         }
 
+        // 没有可滚动容器 → 阻止（弹窗本身不可滚动的区域）
+        if (!scrollable) {
+            e.preventDefault();
+            return;
+        }
+
         // 有可滚动容器，检查是否到达滚动边界
         const touchY = e.touches[0].clientY;
         const deltaY = touchStartY - touchY; // 正 = 向上滚, 负 = 向下滚
