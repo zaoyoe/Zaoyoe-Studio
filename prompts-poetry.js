@@ -4480,14 +4480,28 @@ function showPromptModalStatusBarShield() {
     setPromptModalStatusBarShieldExpanded(false);
     shield.style.visibility = 'visible';
     shield.style.opacity = '1';
+
+    // ── Safe theme-color injection for iOS dark status bar ──
+    let metaTheme = document.querySelector('meta[name="theme-color"]');
+    if (!metaTheme) {
+        metaTheme = document.createElement('meta');
+        metaTheme.name = 'theme-color';
+        document.head.appendChild(metaTheme);
+    }
+    metaTheme.content = '#000000';
 }
 
 function hidePromptModalStatusBarShield() {
     if (!promptModalStatusBarShield) return;
     promptModalStatusBarShield.style.opacity = '0';
     setPromptModalStatusBarShieldExpanded(false);
+
+    // ── Revert theme-color to native transparent sampling ──
+    let metaTheme = document.querySelector('meta[name="theme-color"]');
+    if (metaTheme) metaTheme.remove();
+
     setTimeout(() => {
-        if (!promptModalStatusBarShield || document.body.classList.contains('prompt-modal-open')) return;
+        if (!promptModalStatusBarShield) return;
         promptModalStatusBarShield.style.visibility = 'hidden';
     }, 90);
 }
@@ -4909,37 +4923,12 @@ function attachPromptModalKeyboardDock() {
                 return;
             }
 
-            // First dock: debounce to wait for keyboard to settle (~80ms)
-            // This prevents the staircase effect from multi-frame viewport resize
+            // First dock: dock immediately to prevent keyboard from obscuring input and triggering Safari native scroll panic
             lastViewportBottomInset = bottomInset;
-            if (viewportSettleTimer) clearTimeout(viewportSettleTimer);
-            viewportSettleTimer = setTimeout(() => {
-                viewportSettleTimer = null;
-                if (!isPromptModalDockEnabledOrActive()) return;
-                if (!isPromptModalDockInputFocused()) return;
-                if (promptModalKeyboardDock.docked) return;
-                // Use latest viewport values at settle time
-                const settleVH = Math.max(0, vv.height || 0);
-                const settleTop = Math.max(0, vv.offsetTop || 0);
-                const settleComposed = settleVH + settleTop;
-                const settleBVH = Math.max(
-                    promptModalKeyboardDock.baseViewportHeight || 0,
-                    window.innerHeight || 0,
-                    document.documentElement.clientHeight || 0,
-                    settleComposed
-                );
-                const settleBVisual = Math.max(
-                    promptModalKeyboardDock.baseVisualHeight || 0,
-                    settleVH
-                );
-                const settleInset = Math.max(
-                    Math.max(0, Math.round(settleBVH - settleComposed)),
-                    Math.max(0, Math.round(settleBVisual - settleVH))
-                );
-                if (settleInset > 60) {
-                    applyPromptModalKeyboardDock(settleVH, settleInset, false);
-                }
-            }, 80);
+            if (viewportSettleTimer) { clearTimeout(viewportSettleTimer); viewportSettleTimer = null; }
+            if (bottomInset > 60) {
+                applyPromptModalKeyboardDock(visualHeight, bottomInset, false);
+            }
             return;
         }
 

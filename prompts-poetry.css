@@ -2137,24 +2137,6 @@ html[lang="en"] .nav-item .en {
 /* --- Modal --- */
 
 /* When prompt modal is open, push header behind the modal backdrop */
-body.prompt-modal-open .top-right-nav {
-    z-index: 500 !important;
-}
-
-html.prompt-modal-open {
-    background-color: #000 !important;
-}
-
-body.prompt-modal-open {
-    background: transparent !important;
-}
-
-body.prompt-modal-open .chat-widget-fab {
-    opacity: 0 !important;
-    visibility: hidden !important;
-    pointer-events: none !important;
-}
-
 /* 移动端：弹窗打开时将导航栏隐藏，避免闪烁以及产生影响毛玻璃的黑色渐变底部 */
 @media (max-width: 768px) {
     /* Removed buggy nav hiding rules here */
