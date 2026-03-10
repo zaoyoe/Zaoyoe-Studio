@@ -5050,7 +5050,12 @@ function openPromptModal(id) {
     modal.classList.add('active');
     modal.classList.add('modal-opening');
     if (window.iOSScrollLock && modalInner) {
-        window.iOSScrollLock.lockLight(modalInner);
+        // Use full lock (not lockLight) for the poetry modal.
+        // lockLight skips position:fixed on iOS, leaving the page scrollable.
+        // Safari's scroll-to-input then pushes the page on first focus,
+        // causing visible jolt. Full lock sets body position:fixed.
+        window.scrollTo(0, 0); // Ensure savedScrollY=0, no layout shift
+        window.iOSScrollLock.lock(modalInner);
     }
 
     showPromptModalStatusBarShield();
