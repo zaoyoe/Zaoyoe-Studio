@@ -5614,6 +5614,10 @@ let promptCommentComposerMounted = false;
 let promptCommentComposerViewportCleanup = null;
 let promptCommentComposerBaseViewportHeight = 0;
 let promptCommentComposerBaseVisualHeight = 0;
+let promptCommentComposerBaseSheetHeight = 0;
+let promptCommentComposerOverlayCleanup = null;
+let promptCommentComposerOverlayBaseHeight = 0;
+let promptCommentComposerScrollClampCleanup = null;
 
 function isPromptCommentComposerEnabled() {
     return isPromptModalIOSMobile();
@@ -5638,6 +5642,27 @@ function autoExpandPromptCommentComposerInput(input) {
     const targetHeight = Math.max(160, Math.min(input.scrollHeight, maxHeight || 360));
     input.style.height = `${targetHeight}px`;
     input.style.overflowY = input.scrollHeight > targetHeight ? 'auto' : 'hidden';
+}
+
+function focusPromptCommentComposerInputWithoutScroll(input) {
+    if (!input) return;
+    try {
+        input.focus({ preventScroll: true });
+    } catch (_) {
+        input.focus();
+    }
+}
+
+function bindPromptCommentComposerInputFocusStabilizer(input) {
+    if (!input || input.dataset.preventScrollBind === '1') return;
+
+    input.addEventListener('touchstart', (e) => {
+        if (!isPromptCommentComposerEnabled()) return;
+        if (e.cancelable) e.preventDefault();
+        focusPromptCommentComposerInputWithoutScroll(input);
+    }, { passive: false });
+
+    input.dataset.preventScrollBind = '1';
 }
 
 function syncPromptCommentComposerMeta() {
@@ -5706,6 +5731,20 @@ function detachPromptCommentComposerViewportSync() {
     }
 }
 
+function detachPromptCommentComposerOverlaySync() {
+    if (typeof promptCommentComposerOverlayCleanup === 'function') {
+        promptCommentComposerOverlayCleanup();
+        promptCommentComposerOverlayCleanup = null;
+    }
+}
+
+function stopPromptCommentComposerScrollClamp() {
+    if (typeof promptCommentComposerScrollClampCleanup === 'function') {
+        promptCommentComposerScrollClampCleanup();
+        promptCommentComposerScrollClampCleanup = null;
+    }
+}
+
 function resetPromptCommentComposerViewportStyles() {
     const { overlay, sheet, input } = getPromptCommentComposerElements();
     if (!overlay) return;
@@ -5713,11 +5752,20 @@ function resetPromptCommentComposerViewportStyles() {
     const basePadding = window.innerWidth <= 768 ? 12 : 18;
     overlay.style.paddingTop = `${basePadding}px`;
     overlay.style.paddingBottom = `${basePadding}px`;
+    overlay.style.removeProperty('top');
+    overlay.style.removeProperty('left');
+    overlay.style.removeProperty('right');
+    overlay.style.removeProperty('bottom');
+    overlay.style.removeProperty('width');
+    overlay.style.removeProperty('height');
     sheet?.style.removeProperty('max-height');
+    sheet?.style.removeProperty('min-height');
+    sheet?.style.removeProperty('height');
     input?.style.removeProperty('max-height');
 }
 
 function capturePromptCommentComposerViewportBase() {
+    const { sheet } = getPromptCommentComposerElements();
     const vv = window.visualViewport;
     const visualHeight = Math.max(0, vv?.height || 0);
     const visualBottom = Math.max(0, (vv?.offsetTop || 0) + visualHeight);
@@ -5729,6 +5777,16 @@ function capturePromptCommentComposerViewportBase() {
     promptCommentComposerBaseVisualHeight = Math.max(
         promptCommentComposerBaseVisualHeight || 0,
         visualHeight
+    );
+    promptCommentComposerBaseSheetHeight = Math.max(
+        promptCommentComposerBaseSheetHeight || 0,
+        Math.round(sheet?.getBoundingClientRect().height || 0)
+    );
+    promptCommentComposerOverlayBaseHeight = Math.max(
+        promptCommentComposerOverlayBaseHeight || 0,
+        window.innerHeight || 0,
+        document.documentElement.clientHeight || 0,
+        visualBottom
     );
 }
 
@@ -5745,6 +5803,72 @@ function clampPromptModalPageScroll(duration = 420) {
     return () => {
         window.removeEventListener('scroll', scrollClamp);
         window.scrollTo(0, 0);
+    };
+}
+
+function startPromptCommentComposerScrollClamp() {
+    stopPromptCommentComposerScrollClamp();
+
+    const clamp = () => {
+        if (window.scrollY !== 0 || window.scrollX !== 0) {
+            window.scrollTo(0, 0);
+        }
+    };
+
+    window.addEventListener('scroll', clamp, { passive: true });
+    window.visualViewport?.addEventListener('scroll', clamp, { passive: true });
+    window.visualViewport?.addEventListener('resize', clamp, { passive: true });
+    window.scrollTo(0, 0);
+
+    promptCommentComposerScrollClampCleanup = () => {
+        window.removeEventListener('scroll', clamp);
+        window.visualViewport?.removeEventListener('scroll', clamp);
+        window.visualViewport?.removeEventListener('resize', clamp);
+        window.scrollTo(0, 0);
+    };
+}
+
+function syncPromptCommentComposerOverlayFrame() {
+    const { overlay } = getPromptCommentComposerElements();
+    if (!overlay) return;
+
+    const vv = window.visualViewport;
+    const overlayHeight = Math.max(
+        promptCommentComposerOverlayBaseHeight || 0,
+        window.innerHeight || 0,
+        document.documentElement.clientHeight || 0,
+        vv ? ((vv.height || 0) + (vv.offsetTop || 0) + 64) : 0,
+        window.screen?.height || 0
+    );
+
+    overlay.style.setProperty('position', 'fixed');
+    overlay.style.setProperty('top', '0');
+    overlay.style.setProperty('left', '0');
+    overlay.style.setProperty('right', '0');
+    overlay.style.setProperty('bottom', 'auto');
+    overlay.style.setProperty('width', '100%');
+    overlay.style.setProperty('height', `${overlayHeight}px`);
+}
+
+function attachPromptCommentComposerOverlaySync() {
+    const { overlay } = getPromptCommentComposerElements();
+    if (!overlay) return;
+
+    detachPromptCommentComposerOverlaySync();
+    syncPromptCommentComposerOverlayFrame();
+
+    const handleFrameChange = () => {
+        syncPromptCommentComposerOverlayFrame();
+    };
+
+    window.addEventListener('resize', handleFrameChange, { passive: true });
+    window.visualViewport?.addEventListener('resize', handleFrameChange, { passive: true });
+    window.visualViewport?.addEventListener('scroll', handleFrameChange, { passive: true });
+
+    promptCommentComposerOverlayCleanup = () => {
+        window.removeEventListener('resize', handleFrameChange);
+        window.visualViewport?.removeEventListener('resize', handleFrameChange);
+        window.visualViewport?.removeEventListener('scroll', handleFrameChange);
     };
 }
 
@@ -5777,15 +5901,23 @@ function syncPromptCommentComposerViewport() {
         baseViewportHeight - visualBottom,
         baseVisualHeight - visualHeight
     );
-    const availableHeight = Math.max(260, Math.floor(visualHeight - (basePadding * 2) - 28));
+    const availableHeight = Math.max(240, Math.floor(visualHeight - (basePadding * 2) - 24));
+    const baseSheetHeight = Math.max(0, promptCommentComposerBaseSheetHeight || 0);
+    const targetSheetHeight = Math.max(
+        240,
+        Math.min(baseSheetHeight || availableHeight, availableHeight)
+    );
 
     overlay.style.paddingBottom = `${basePadding + bottomInset}px`;
+    window.scrollTo(0, 0);
 
     if (sheet) {
-        sheet.style.maxHeight = `${availableHeight}px`;
+        sheet.style.height = `${targetSheetHeight}px`;
+        sheet.style.minHeight = `${targetSheetHeight}px`;
+        sheet.style.maxHeight = `${targetSheetHeight}px`;
     }
     if (input) {
-        const maxInputHeight = Math.min(360, Math.max(180, Math.round(availableHeight * 0.48)));
+        const maxInputHeight = Math.min(320, Math.max(160, Math.round(targetSheetHeight * 0.42)));
         input.style.maxHeight = `${maxInputHeight}px`;
         autoExpandPromptCommentComposerInput(input);
     }
@@ -5874,6 +6006,7 @@ function ensurePromptCommentComposer() {
         syncPromptCommentComposerTrigger();
     });
     input?.addEventListener('keydown', handleCommentKeydown);
+    bindPromptCommentComposerInputFocusStabilizer(input);
 
     return getPromptCommentComposerElements();
 }
@@ -5917,6 +6050,8 @@ function openPromptCommentComposer(options = {}) {
     autoExpandPromptCommentComposerInput(composer.input);
     syncPromptCommentComposerMeta();
     syncPromptCommentComposerTrigger();
+    startPromptCommentComposerScrollClamp();
+    attachPromptCommentComposerOverlaySync();
     detachPromptCommentComposerViewportSync();
     resetPromptCommentComposerViewportStyles();
     attachPromptCommentComposerViewportSync();
@@ -5927,11 +6062,7 @@ function openPromptCommentComposer(options = {}) {
     if (options.focus !== false) {
         requestAnimationFrame(() => {
             const releaseScrollClamp = clampPromptModalPageScroll();
-            try {
-                composer.input.focus({ preventScroll: true });
-            } catch (_) {
-                composer.input.focus();
-            }
+            focusPromptCommentComposerInputWithoutScroll(composer.input);
             window.scrollTo(0, 0);
             setTimeout(releaseScrollClamp, 420);
         });
@@ -5949,6 +6080,8 @@ function closePromptCommentComposer(options = {}) {
     if (!overlay) return;
 
     detachPromptCommentComposerViewportSync();
+    detachPromptCommentComposerOverlaySync();
+    stopPromptCommentComposerScrollClamp();
     clearPromptModalUndockTimer();
     clearPromptModalKeyboardPreLift();
 
@@ -5964,6 +6097,8 @@ function closePromptCommentComposer(options = {}) {
     resetPromptCommentComposerViewportStyles();
     promptCommentComposerBaseViewportHeight = 0;
     promptCommentComposerBaseVisualHeight = 0;
+    promptCommentComposerBaseSheetHeight = 0;
+    promptCommentComposerOverlayBaseHeight = 0;
     syncPromptModalTopButtonState();
     input?.blur();
     if (options.preserveModalDock) {

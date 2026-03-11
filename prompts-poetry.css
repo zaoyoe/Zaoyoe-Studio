@@ -3324,9 +3324,9 @@ body.modal-open .prompt-card {
     display: none;
     align-items: flex-end;
     justify-content: center;
-    background: rgba(2, 6, 23, 0.34);
-    backdrop-filter: blur(16px) saturate(118%);
-    -webkit-backdrop-filter: blur(16px) saturate(118%);
+    background: rgba(7, 9, 12, 0.28);
+    backdrop-filter: blur(14px) saturate(108%);
+    -webkit-backdrop-filter: blur(14px) saturate(108%);
     z-index: 10030;
     padding: 36px 18px 18px;
     box-sizing: border-box;
@@ -3342,13 +3342,11 @@ body.modal-open .prompt-card {
     width: min(100%, 620px);
     min-height: min(54svh, 500px);
     max-height: min(78svh, 640px);
-    background:
-        radial-gradient(circle at top center, rgba(125, 211, 252, 0.08), transparent 34%),
-        linear-gradient(180deg, rgba(8, 18, 44, 0.96), rgba(4, 14, 35, 0.98));
-    border: 1px solid rgba(148, 163, 184, 0.16);
+    background: rgba(11, 14, 20, 0.94);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 32px;
     box-shadow:
-        0 30px 80px rgba(2, 6, 23, 0.34),
+        0 26px 70px rgba(0, 0, 0, 0.28),
         inset 0 1px 0 rgba(255, 255, 255, 0.06);
     padding: 14px 18px calc(18px + env(safe-area-inset-bottom));
     box-sizing: border-box;
@@ -3360,12 +3358,10 @@ body.modal-open .prompt-card {
 }
 
 [data-theme="dark"] .prompt-comment-composer-sheet {
-    background:
-        radial-gradient(circle at top center, rgba(125, 211, 252, 0.08), transparent 34%),
-        linear-gradient(180deg, rgba(8, 18, 44, 0.96), rgba(4, 14, 35, 0.98));
-    border-color: rgba(148, 163, 184, 0.16);
+    background: rgba(11, 14, 20, 0.94);
+    border-color: rgba(255, 255, 255, 0.08);
     box-shadow:
-        0 30px 80px rgba(2, 6, 23, 0.38),
+        0 26px 70px rgba(0, 0, 0, 0.32),
         inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
@@ -3374,7 +3370,7 @@ body.modal-open .prompt-card {
     height: 4px;
     margin: 0 auto 4px;
     border-radius: 999px;
-    background: rgba(191, 219, 254, 0.22);
+    background: rgba(255, 255, 255, 0.18);
 }
 
 .prompt-comment-composer-kicker {
@@ -3382,7 +3378,7 @@ body.modal-open .prompt-card {
     font-weight: 600;
     letter-spacing: 0.22em;
     text-transform: uppercase;
-    color: rgba(191, 219, 254, 0.52);
+    color: rgba(255, 255, 255, 0.4);
 }
 
 .prompt-comment-composer-header {
@@ -3407,9 +3403,9 @@ body.modal-open .prompt-card {
 
 .prompt-comment-composer-subtitle {
     max-width: 28rem;
-    font-size: 0.9rem;
-    line-height: 1.65;
-    color: rgba(148, 163, 184, 0.86);
+    font-size: 0.88rem;
+    line-height: 1.6;
+    color: rgba(200, 206, 216, 0.68);
 }
 
 .prompt-comment-composer-close {
@@ -3418,8 +3414,8 @@ body.modal-open .prompt-card {
     flex: 0 0 auto;
     border: 1px solid rgba(255, 255, 255, 0.09);
     border-radius: 999px;
-    background: rgba(5, 10, 24, 0.52);
-    color: rgba(226, 232, 240, 0.9);
+    background: rgba(21, 24, 31, 0.74);
+    color: rgba(240, 242, 247, 0.86);
     cursor: pointer;
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
@@ -3430,7 +3426,7 @@ body.modal-open .prompt-card {
     min-height: 0;
     font-size: 0.82rem;
     line-height: 1.5;
-    color: rgba(148, 163, 184, 0.92);
+    color: rgba(200, 206, 216, 0.74);
 }
 
 .prompt-comment-composer-meta:empty {
@@ -3450,13 +3446,12 @@ body.modal-open .prompt-card {
     display: flex;
     min-height: 0;
     padding: 18px 18px 14px;
-    border: 1px solid rgba(148, 163, 184, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 24px;
-    background:
-        linear-gradient(180deg, rgba(10, 23, 54, 0.68), rgba(5, 16, 38, 0.56));
+    background: rgba(255, 255, 255, 0.025);
     box-shadow:
         inset 0 1px 0 rgba(255, 255, 255, 0.04),
-        inset 0 -18px 30px rgba(2, 6, 23, 0.12);
+        inset 0 -12px 24px rgba(0, 0, 0, 0.08);
 }
 
 #promptCommentComposerInput {
@@ -3483,7 +3478,7 @@ body.modal-open .prompt-card {
 }
 
 #promptCommentComposerInput::placeholder {
-    color: rgba(148, 163, 184, 0.72);
+    color: rgba(200, 206, 216, 0.46);
 }
 
 .prompt-comment-composer-actions {
@@ -3493,16 +3488,16 @@ body.modal-open .prompt-card {
     gap: 12px;
     padding-top: 6px;
     margin-top: auto;
-    border-top: 1px solid rgba(148, 163, 184, 0.1);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .prompt-comment-composer-upload {
     width: 48px;
     height: 48px;
-    border: 1px solid rgba(148, 163, 184, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 16px;
-    background: rgba(7, 16, 34, 0.58);
-    color: rgba(191, 219, 254, 0.84);
+    background: rgba(255, 255, 255, 0.03);
+    color: rgba(230, 234, 241, 0.82);
     font-size: 1.02rem;
     cursor: pointer;
     padding: 0;
@@ -3522,17 +3517,17 @@ body.modal-open .prompt-card {
     height: 46px;
     border: none;
     border-radius: 999px;
-    background: rgba(139, 195, 255, 0.9);
-    color: #08111f;
+    background: rgba(224, 230, 240, 0.92);
+    color: #12161d;
     font-weight: 600;
     cursor: pointer;
     letter-spacing: 0.01em;
-    box-shadow: 0 12px 30px rgba(59, 130, 246, 0.18);
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.14);
 }
 
 [data-theme="dark"] .prompt-comment-composer-send {
-    background: rgba(139, 195, 255, 0.9);
-    color: #08111f;
+    background: rgba(224, 230, 240, 0.92);
+    color: #12161d;
 }
 
 @media (max-width: 768px) {
