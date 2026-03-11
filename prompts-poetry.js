@@ -5699,6 +5699,13 @@ function bindPromptCommentComposerInputFocusStabilizer(input) {
     input.dataset.preventScrollBind = '1';
 }
 
+function syncPromptCommentComposerInputState() {
+    const { overlay, input } = getPromptCommentComposerElements();
+    if (!overlay) return;
+
+    overlay.classList.toggle('is-editing', document.activeElement === input);
+}
+
 function getPromptCommentComposerI18n() {
     return {
         commentsTitle: window.i18n?.t('gallery.commentsTitle') || 'Comments',
@@ -6222,8 +6229,14 @@ function ensurePromptCommentComposer() {
         syncPromptCommentComposerTrigger();
     });
     input?.addEventListener('keydown', handleCommentKeydown);
-    input?.addEventListener('focus', () => syncPromptCommentComposerEmptyState());
-    input?.addEventListener('blur', () => syncPromptCommentComposerEmptyState());
+    input?.addEventListener('focus', () => {
+        syncPromptCommentComposerEmptyState();
+        syncPromptCommentComposerInputState();
+    });
+    input?.addEventListener('blur', () => {
+        syncPromptCommentComposerEmptyState();
+        syncPromptCommentComposerInputState();
+    });
     bindPromptCommentComposerInputFocusStabilizer(input);
 
     return getPromptCommentComposerElements();
@@ -6302,6 +6315,7 @@ function openPromptCommentComposer(options = {}) {
     capturePromptCommentComposerViewportBase();
     autoExpandPromptCommentComposerInput(composer.input);
     syncPromptCommentComposerEmptyState();
+    syncPromptCommentComposerInputState();
     syncPromptCommentComposerMeta();
     syncPromptCommentComposerTrigger();
     detachPromptCommentComposerViewportSync();
@@ -6343,12 +6357,14 @@ function closePromptCommentComposer(options = {}) {
 
     overlay.classList.add('composer-closing');
     input?.blur();
+    syncPromptCommentComposerInputState();
 
     setTimeout(() => {
         if (!overlay.classList.contains('composer-closing')) return;
 
         restorePromptCommentComposerOverlay();
         overlay.classList.remove('active', 'composer-closing');
+        overlay.classList.remove('is-editing');
         resetPromptCommentComposerViewportStyles();
         promptCommentComposerBaseViewportHeight = 0;
         promptCommentComposerBaseVisualHeight = 0;
