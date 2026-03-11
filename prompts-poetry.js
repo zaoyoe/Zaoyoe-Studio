@@ -5619,6 +5619,7 @@ let promptCommentComposerViewportRafId = null;
 let promptCommentComposerAnimRafId = null;
 let promptCommentComposerLastDeltaY = 0;
 let promptCommentComposerBlurUndocking = false;
+let promptCommentComposerAnimLock = 0;
 
 function isPromptCommentComposerEnabled() {
     return isPromptModalIOSMobile();
@@ -5803,6 +5804,7 @@ function resetPromptCommentComposerViewportStyles() {
     overlay.style.setProperty('--composer-keyboard-offset', '0px');
     overlay.style.setProperty('--composer-translate-y', '0px');
     promptCommentComposerBlurUndocking = false;
+    promptCommentComposerAnimLock = 0;
     const sheet = overlay.querySelector('.prompt-comment-composer-sheet');
     if (sheet) sheet.classList.remove('composer-animating');
     overlay.classList.remove('keyboard-active');
@@ -5900,14 +5902,12 @@ function syncPromptCommentComposerViewport() {
     const sheet = overlay.querySelector('.prompt-comment-composer-sheet');
     if (sheet) {
         if (bottomInset > 12 && !promptCommentComposerBlurUndocking) {
-            // Track docked state but DO NOT add CSS animation. 
-            // We want to ride the native 60fps iOS visualViewport upward animation synchronously for absolute smoothness.
-            if (!overlay.classList.contains('keyboard-docked-active')) {
-                overlay.classList.add('keyboard-docked-active');
-            }
-
             const height = sheet.offsetHeight;
-            const centeredBottom = (overlayHeight / 2) + (height / 2);
+            const computedStyle = window.getComputedStyle(overlay);
+            const paddingTop = parseFloat(computedStyle.paddingTop) || 0;
+            const paddingBottom = parseFloat(computedStyle.paddingBottom) || 0;
+            const contentHeight = overlayHeight - paddingTop - paddingBottom;
+            const centeredBottom = paddingTop + (contentHeight / 2) + (height / 2);
             // visualBottom is the exact top edge of the keyboard/address bar combo on iOS
             const targetBottom = Math.max(24, visualBottom - 12);
 
@@ -5915,17 +5915,48 @@ function syncPromptCommentComposerViewport() {
             if (targetBottom < centeredBottom) {
                 deltaY = targetBottom - centeredBottom;
             }
+
+            // Edge-trigger the CSS transition only when keyboard state changes significantly
+            if (!overlay.classList.contains('keyboard-docked-active')) {
+                overlay.classList.add('keyboard-docked-active');
+                sheet.classList.add('composer-animating');
+                promptCommentComposerAnimLock = performance.now() + 300; // lock visualViewport updates during 280ms CSS transition
+
+                if (promptCommentComposerAnimRafId) clearTimeout(promptCommentComposerAnimRafId);
+                promptCommentComposerAnimRafId = setTimeout(() => {
+                    sheet.classList.remove('composer-animating');
+                    // Force a re-sync safely without lock to snap to final precise location
+                    requestAnimationFrame(() => syncPromptCommentComposerViewport());
+                }, 310);
+
+                overlay.style.setProperty('--composer-translate-y', `${deltaY}px`);
+                return; // Return so we don't instantly overwrite mid-transition
+            }
+
+            // Ignore mid-flight Safari resize events while hardware transition is playing
+            if (performance.now() < promptCommentComposerAnimLock) {
+                return;
+            }
+
+            // Continuous 60fps tracking after the keyboard has fully stabilized
             overlay.style.setProperty('--composer-translate-y', `${deltaY}px`);
         } else if (!promptCommentComposerBlurUndocking) {
             // Keyboard closed
             if (overlay.classList.contains('keyboard-docked-active')) {
                 overlay.classList.remove('keyboard-docked-active');
                 sheet.classList.add('composer-animating');
+                promptCommentComposerAnimLock = performance.now() + 300;
+
                 if (promptCommentComposerAnimRafId) clearTimeout(promptCommentComposerAnimRafId);
                 promptCommentComposerAnimRafId = setTimeout(() => {
                     sheet.classList.remove('composer-animating');
-                }, 280);
+                }, 310);
+
+                overlay.style.setProperty('--composer-translate-y', `0px`);
+                return;
             }
+
+            if (performance.now() < promptCommentComposerAnimLock) return;
             overlay.style.setProperty('--composer-translate-y', `0px`);
         }
     }
