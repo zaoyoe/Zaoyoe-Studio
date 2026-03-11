@@ -4436,4 +4436,6 @@ body.modal-open .prompt-card {
         transform: translateY(450px);
         opacity: 0;
     }
+}.prompt-comment-composer-sheet.composer-animating {
+    transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
 }

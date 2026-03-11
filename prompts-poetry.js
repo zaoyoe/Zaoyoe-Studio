@@ -5763,8 +5763,16 @@ function lockPromptCommentComposerPage() {
 function resetPromptCommentComposerViewportStyles() {
     const { overlay, input } = getPromptCommentComposerElements();
     if (!overlay) return;
+    if (window.promptCommentComposerAnimRafId) {
+        clearTimeout(window.promptCommentComposerAnimRafId);
+        window.promptCommentComposerAnimRafId = null;
+    }
+    const sheet = overlay.querySelector('.prompt-comment-composer-sheet');
+    if (sheet) sheet.classList.remove('composer-animating');
+
     overlay.style.setProperty('--composer-keyboard-offset', '0px');
     overlay.classList.remove('keyboard-active');
+    overlay.classList.remove('keyboard-docked-active');
     input?.style.removeProperty('max-height');
 }
 
@@ -5934,9 +5942,22 @@ function syncPromptCommentComposerViewport() {
 
     const isActivelyDocked = dockedCy < restingCy;
 
-    // Optional: clear cache once it naturally reaches rest state, allowing dynamic resize
     if (!isActivelyDocked) {
-        promptCommentComposerCachedMetrics = null;
+        if (overlay.classList.contains('keyboard-docked-active')) {
+            // Re-measuring flag
+            promptCommentComposerCachedMetrics = null;
+
+            // Re-apply pure CSS 280ms cubic-bezier transition when dismissing keyboard
+            if (sheet) {
+                sheet.classList.add('composer-animating');
+                if (window.promptCommentComposerAnimRafId) {
+                    clearTimeout(window.promptCommentComposerAnimRafId);
+                }
+                window.promptCommentComposerAnimRafId = setTimeout(() => {
+                    sheet.classList.remove('composer-animating');
+                }, 280);
+            }
+        }
     }
 
     const cyTarget = visualTop + Math.max(0, cyVisual);
