@@ -5185,7 +5185,7 @@ function toggleCommentMode() {
         // CLOSE COMMENTS (Revert to default)
         isCommentMode = false;
         setCommentSortDropdownOpen(false);
-        closePromptCommentComposer();
+        closePromptCommentComposer({ preserveModalDock: true });
         modalInner.classList.remove('comment-mode');
         resetPromptModalKeyboardDockIfNeeded(false);
 
@@ -5604,11 +5604,20 @@ function resetPromptCommentComposerViewportStyles() {
     input?.style.removeProperty('max-height');
 }
 
-function settlePromptCommentComposerPosition() {
-    requestAnimationFrame(() => {
-        syncPromptCommentComposerViewport();
+function clampPromptModalPageScroll(duration = 420) {
+    const scrollClamp = () => {
+        if (window.scrollY !== 0 || window.scrollX !== 0) {
+            window.scrollTo(0, 0);
+        }
+    };
+
+    window.addEventListener('scroll', scrollClamp, { passive: true });
+    window.scrollTo(0, 0);
+
+    return () => {
+        window.removeEventListener('scroll', scrollClamp);
         window.scrollTo(0, 0);
-    });
+    };
 }
 
 function syncPromptCommentComposerViewport() {
@@ -5718,6 +5727,12 @@ function ensurePromptCommentComposer() {
         syncPromptCommentComposerMeta();
         syncPromptCommentComposerTrigger();
     });
+    input?.addEventListener('focus', () => {
+        primePromptModalKeyboardDock();
+    });
+    input?.addEventListener('blur', () => {
+        schedulePromptModalUndock();
+    });
     input?.addEventListener('keydown', handleCommentKeydown);
 
     return getPromptCommentComposerElements();
@@ -5768,16 +5783,15 @@ function openPromptCommentComposer(options = {}) {
 
     if (options.focus !== false) {
         requestAnimationFrame(() => {
+            const releaseScrollClamp = clampPromptModalPageScroll();
+            primePromptModalKeyboardDock();
             try {
                 composer.input.focus({ preventScroll: true });
             } catch (_) {
                 composer.input.focus();
             }
             window.scrollTo(0, 0);
-            setTimeout(() => {
-                if (!composer.overlay.classList.contains('active')) return;
-                settlePromptCommentComposerPosition();
-            }, 120);
+            setTimeout(releaseScrollClamp, 420);
         });
     }
 
@@ -5807,8 +5821,10 @@ function closePromptCommentComposer(options = {}) {
     resetPromptCommentComposerViewportStyles();
     syncPromptModalTopButtonState();
     input?.blur();
-    if (!options.preserveModalDock) {
-        resetPromptModalKeyboardDockIfNeeded(false);
+    if (options.preserveModalDock) {
+        clearPromptModalUndockTimer();
+    } else {
+        schedulePromptModalUndock();
     }
 }
 
@@ -7438,7 +7454,7 @@ function navigateModalImage(direction) {
 })();
 
 function closePromptModal() {
-    closePromptCommentComposer({ clearDraft: true });
+    closePromptCommentComposer({ clearDraft: true, preserveModalDock: true });
     setCommentSortDropdownOpen(false);
 
     // If closing while in comment mode, revert DOM first to prevent glitches next time
