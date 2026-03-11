@@ -5907,51 +5907,47 @@ function syncPromptCommentComposerViewport() {
         baseVisualHeight - visualHeight
     );
     const isFocused = input === document.activeElement;
-    const shouldDock = isFocused && bottomInset > 18;
-
-    overlay.style.setProperty('--composer-keyboard-offset', `${shouldDock ? bottomInset : 0}px`);
-    overlay.classList.toggle('keyboard-active', shouldDock);
 
     const sheet = overlay.querySelector('.prompt-comment-composer-sheet');
-    if (sheet) {
-        if (!promptCommentComposerCachedMetrics) {
-            promptCommentComposerCachedMetrics = {
-                height: sheet.offsetHeight
-            };
-        }
+    if (!sheet) return;
 
-        const metrics = promptCommentComposerCachedMetrics;
-        // The modal's physical center in the overlay due to `top: 50%`
-        const cyOverlay = promptCommentComposerOverlayBaseHeight / 2;
-
-        // Determine where we want the center to be visually inside the window
-        let cyVisual;
-        if (shouldDock) {
-            // Docked to the keyboard top
-            const targetBottomVisual = Math.max(24, visualHeight - 12);
-            cyVisual = targetBottomVisual - (metrics.height / 2);
-
-            if (!overlay.classList.contains('keyboard-docked-active')) {
-                overlay.classList.add('keyboard-docked-active');
-            }
-        } else {
-            // Resting state: perfectly centered in the visual viewport
-            cyVisual = Math.max(0, visualHeight / 2);
-
-            if (overlay.classList.contains('keyboard-docked-active')) {
-                overlay.classList.remove('keyboard-docked-active');
-                // Re-measure on next open in case height changed
-                promptCommentComposerCachedMetrics = null;
-            }
-        }
-
-        // Map visual coordinate back to absolute overlay coordinate (in case visualViewport panned)
-        const cyTarget = visualTop + cyVisual;
-        const deltaY = cyTarget - cyOverlay;
-
-        // Sync frame-by-frame
-        overlay.style.setProperty('--composer-translate-y', `${deltaY}px`);
+    if (!promptCommentComposerCachedMetrics) {
+        promptCommentComposerCachedMetrics = {
+            height: sheet.offsetHeight || 400
+        };
     }
+
+    const metrics = promptCommentComposerCachedMetrics;
+    const cyOverlay = promptCommentComposerOverlayBaseHeight / 2;
+
+    // 1. Where should it be if perfectly centered?
+    const restingCy = visualHeight / 2;
+
+    // 2. Where should it be if docked to the keyboard (or visual bottom)?
+    const targetBottomVisual = Math.max(24, visualHeight - 12);
+    const dockedCy = targetBottomVisual - (metrics.height / 2);
+
+    // 3. Pure Geometry Engine: 
+    // It rests in the center, unless the keyboard physically pushes the valid docked space HIGHER (smaller Y) than the center.
+    // This perfectly bypasses Safari URL bar false-insets, and prevents "jump on close" because the bounds intersect smoothly mid-animation.
+    const cyVisual = Math.min(restingCy, dockedCy);
+
+    const isActivelyDocked = dockedCy < restingCy;
+
+    // Optional: clear cache once it naturally reaches rest state, allowing dynamic resize
+    if (!isActivelyDocked) {
+        promptCommentComposerCachedMetrics = null;
+    }
+
+    const cyTarget = visualTop + Math.max(0, cyVisual);
+    const deltaY = cyTarget - cyOverlay;
+
+    overlay.style.setProperty('--composer-keyboard-offset', `${isActivelyDocked ? bottomInset : 0}px`);
+    overlay.classList.toggle('keyboard-active', isActivelyDocked);
+    overlay.classList.toggle('keyboard-docked-active', isActivelyDocked);
+
+    // Sync frame-by-frame
+    overlay.style.setProperty('--composer-translate-y', `${deltaY}px`);
 }
 
 function attachPromptCommentComposerViewportSync() {
