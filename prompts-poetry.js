@@ -5869,9 +5869,9 @@ function syncPromptCommentComposerViewport() {
     if (sheet) {
         if (bottomInset > 12) {
             const height = sheet.offsetHeight;
-            const centeredBottom = (baseViewportHeight / 2) + (height / 2);
-            const keyboardTop = baseViewportHeight - bottomInset;
-            const targetBottom = Math.max(24, keyboardTop - 16);
+            const centeredBottom = (overlayHeight / 2) + (height / 2);
+            // visualBottom is the exact top edge of the keyboard/address bar combo on iOS
+            const targetBottom = Math.max(24, visualBottom - 12);
 
             let deltaY = 0;
             if (targetBottom < centeredBottom) {
