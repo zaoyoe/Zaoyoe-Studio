@@ -3465,11 +3465,13 @@ body.modal-open .prompt-card {
 
 .prompt-comment-composer-empty-placeholder {
     position: absolute;
-    inset: 0;
+    left: 24px;
+    right: 24px;
+    top: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 24px;
+    min-height: min(220px, 28dvh);
     text-align: center;
     color: rgba(200, 206, 216, 0.46);
     font-size: 17px;
@@ -3477,6 +3479,7 @@ body.modal-open .prompt-card {
     pointer-events: none;
     z-index: 2;
     opacity: 0;
+    transform: translateY(-50%);
     transition: opacity 160ms ease;
 }
 
