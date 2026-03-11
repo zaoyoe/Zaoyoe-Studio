@@ -5621,6 +5621,8 @@ let promptCommentComposerPendingInset = 0;
 let promptCommentComposerDocked = false;
 let promptCommentComposerInitialDockTimer = null;
 let promptCommentComposerBaseSheetHeight = 0;
+let promptCommentComposerOwnsScrollLock = false;
+let promptCommentComposerScrollClampCleanup = null;
 
 function isPromptCommentComposerEnabled() {
     return isPromptModalIOSMobile();
@@ -5759,16 +5761,25 @@ function detachPromptCommentComposerViewportSync() {
 }
 
 function unlockPromptCommentComposerPage() {
-    if (window.iOSScrollLock) {
+    if (typeof promptCommentComposerScrollClampCleanup === 'function') {
+        promptCommentComposerScrollClampCleanup();
+        promptCommentComposerScrollClampCleanup = null;
+    }
+    if (promptCommentComposerOwnsScrollLock && window.iOSScrollLock) {
         window.iOSScrollLock.unlock();
     }
+    promptCommentComposerOwnsScrollLock = false;
 }
 
 function lockPromptCommentComposerPage() {
     const { overlay } = getPromptCommentComposerElements();
     const sheet = overlay?.querySelector('.prompt-comment-composer-sheet');
-    if (window.iOSScrollLock && sheet) {
+    if (typeof promptCommentComposerScrollClampCleanup !== 'function') {
+        promptCommentComposerScrollClampCleanup = clampPromptModalPageScroll();
+    }
+    if (window.iOSScrollLock && sheet && !window.iOSScrollLock.isLocked) {
         window.iOSScrollLock.lockLight(sheet);
+        promptCommentComposerOwnsScrollLock = true;
     }
 }
 
@@ -5792,6 +5803,7 @@ function resetPromptCommentComposerViewportStyles() {
     sheet?.style.removeProperty('max-height');
     promptCommentComposerDocked = false;
     promptCommentComposerLastBottomInset = 0;
+    promptCommentComposerOwnsScrollLock = false;
     if (promptCommentComposerInitialDockTimer) {
         clearTimeout(promptCommentComposerInitialDockTimer);
         promptCommentComposerInitialDockTimer = null;
@@ -5801,6 +5813,10 @@ function resetPromptCommentComposerViewportStyles() {
         promptCommentComposerInsetDropTimer = null;
     }
     promptCommentComposerPendingInset = 0;
+    if (typeof promptCommentComposerScrollClampCleanup === 'function') {
+        promptCommentComposerScrollClampCleanup();
+        promptCommentComposerScrollClampCleanup = null;
+    }
 }
 
 function capturePromptCommentComposerViewportBase() {
