@@ -4352,6 +4352,7 @@ const promptModalKeyboardDock = {
     onViewportChange: null,
     viewportRafId: null,
     transitionCleanupTimer: null,
+    preLiftCleanupTimer: null,
     pendingUndockTimer: null,
     pendingFirstDockTimer: null,
     pendingFirstDockParams: null,
@@ -4366,7 +4367,8 @@ const promptModalKeyboardDock = {
     lastStableInset: 0,
     lastKeyboardInset: 0,
     animatingUntil: 0,
-    overlayBaseHeight: 0
+    overlayBaseHeight: 0,
+    preLiftActive: false
 };
 
 let promptModalOpeningTimer = null;
@@ -4378,6 +4380,45 @@ function clearPromptModalTransitionCleanupTimer() {
         clearTimeout(promptModalKeyboardDock.transitionCleanupTimer);
         promptModalKeyboardDock.transitionCleanupTimer = null;
     }
+}
+
+function clearPromptModalPreLiftCleanupTimer() {
+    if (promptModalKeyboardDock.preLiftCleanupTimer) {
+        clearTimeout(promptModalKeyboardDock.preLiftCleanupTimer);
+        promptModalKeyboardDock.preLiftCleanupTimer = null;
+    }
+}
+
+function clearPromptModalKeyboardPreLift(restoreTransform = true) {
+    const { modalInner } = getPromptModalDockNodes();
+    clearPromptModalPreLiftCleanupTimer();
+    promptModalKeyboardDock.preLiftActive = false;
+    if (!modalInner || modalInner.classList.contains('keyboard-docked')) return;
+    modalInner.style.removeProperty('transition');
+    modalInner.style.removeProperty('will-change');
+    if (restoreTransform) {
+        modalInner.style.removeProperty('transform');
+    }
+}
+
+function applyPromptModalKeyboardPreLift() {
+    if (!isPromptModalDockEnabledOrActive() || promptModalKeyboardDock.docked || promptModalKeyboardDock.preLiftActive) return;
+    const { modalInner } = getPromptModalDockNodes();
+    if (!modalInner) return;
+
+    clearPromptModalPreLiftCleanupTimer();
+    promptModalKeyboardDock.preLiftActive = true;
+    modalInner.style.willChange = 'transform';
+    modalInner.style.transition = 'transform 120ms cubic-bezier(0.22, 1, 0.36, 1)';
+    modalInner.style.transform = 'translateY(-24px) scale(1) translateZ(0)';
+    promptModalKeyboardDock.preLiftCleanupTimer = setTimeout(() => {
+        promptModalKeyboardDock.preLiftCleanupTimer = null;
+        if (!promptModalKeyboardDock.docked) {
+            clearPromptModalKeyboardPreLift(true);
+        } else {
+            promptModalKeyboardDock.preLiftActive = false;
+        }
+    }, 150);
 }
 
 function isPromptModalIOSMobile() {
@@ -4584,6 +4625,7 @@ function clearPromptModalFirstDockTimer() {
 
 function clearPromptModalDockTimers() {
     clearPromptModalTransitionCleanupTimer();
+    clearPromptModalPreLiftCleanupTimer();
     clearPromptModalUndockTimer();
     clearPromptModalFirstDockTimer();
 }
@@ -4743,6 +4785,7 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
     clearPromptModalUndockTimer();
     clearPromptModalFirstDockTimer();
     clearPromptModalTransitionCleanupTimer();
+    clearPromptModalKeyboardPreLift(false);
     document.body.classList.add('prompt-modal-keyboard-docked');
     // Force page scroll to top — Safari's native scroll-to-input may have
     // scrolled the page, shifting the visual viewport and misaligning dock.
@@ -4750,7 +4793,7 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
     modal.classList.add('keyboard-docked');
     modal.style.setProperty('height', `${baseViewportHeight}px`, 'important');
     modalInner.classList.add('keyboard-docked');
-    const duration = animate ? 130 : 0;
+    const duration = 0;
     modalInner.style.willChange = 'top, height, transform';
     modalInner.style.transition = duration
         ? `top ${duration}ms cubic-bezier(0.22, 1, 0.36, 1), height ${duration}ms cubic-bezier(0.22, 1, 0.36, 1), max-height ${duration}ms cubic-bezier(0.22, 1, 0.36, 1), transform ${duration}ms cubic-bezier(0.22, 1, 0.36, 1)`
@@ -4792,6 +4835,7 @@ function resetPromptModalKeyboardDock(animate = false) {
     if (!modal || !modalInner) return;
 
     clearPromptModalDockTimers();
+    promptModalKeyboardDock.preLiftActive = false;
     const duration = animate ? 170 : 0;
     document.body.classList.remove('prompt-modal-keyboard-docked');
     setPromptModalStatusBarShieldExpanded(false);
@@ -4885,7 +4929,7 @@ function scheduleInitialPromptModalKeyboardDock(visualHeight, bottomInset) {
     promptModalKeyboardDock.pendingFirstDockParams = {
         visualHeight,
         bottomInset,
-        animate: true
+        animate: false
     };
 
     if (promptModalKeyboardDock.pendingFirstDockTimer) return;
@@ -5812,14 +5856,17 @@ function openPromptCommentComposer(options = {}) {
     if (options.focus !== false) {
         requestAnimationFrame(() => {
             const releaseScrollClamp = clampPromptModalPageScroll();
-            primePromptModalKeyboardDock();
-            try {
-                composer.input.focus({ preventScroll: true });
-            } catch (_) {
-                composer.input.focus();
-            }
-            window.scrollTo(0, 0);
-            setTimeout(releaseScrollClamp, 420);
+            applyPromptModalKeyboardPreLift();
+            setTimeout(() => {
+                primePromptModalKeyboardDock();
+                try {
+                    composer.input.focus({ preventScroll: true });
+                } catch (_) {
+                    composer.input.focus();
+                }
+                window.scrollTo(0, 0);
+                setTimeout(releaseScrollClamp, 420);
+            }, 24);
         });
     }
 
@@ -5836,6 +5883,7 @@ function closePromptCommentComposer(options = {}) {
 
     detachPromptCommentComposerViewportSync();
     clearPromptModalUndockTimer();
+    clearPromptModalKeyboardPreLift();
 
     if (options.clearDraft) {
         clearCommentDraftFields();
