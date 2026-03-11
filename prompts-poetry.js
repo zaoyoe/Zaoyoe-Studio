@@ -5989,7 +5989,7 @@ function ensurePromptCommentComposer() {
                 </button>
             </div>
             <div class="prompt-comment-composer-meta" id="promptCommentComposerMeta"></div>
-            <div class="prompt-comment-composer-editor">
+            <div class="prompt-comment-composer-editor" data-placeholder="${window.i18n?.t('gallery.commentComposerPlaceholder') || 'Start writing here...'}">
                 <textarea id="promptCommentComposerInput" rows="6" placeholder="${window.i18n?.t('gallery.commentComposerPlaceholder') || 'Start writing here...'}"></textarea>
             </div>
             <input type="file" id="promptCommentComposerImageUpload" accept="image/*" style="display:none;">
