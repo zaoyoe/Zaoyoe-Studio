@@ -5620,6 +5620,7 @@ let promptCommentComposerInsetDropTimer = null;
 let promptCommentComposerPendingInset = 0;
 let promptCommentComposerDocked = false;
 let promptCommentComposerInitialDockTimer = null;
+let promptCommentComposerBaseSheetHeight = 0;
 
 function isPromptCommentComposerEnabled() {
     return isPromptModalIOSMobile();
@@ -5787,6 +5788,8 @@ function resetPromptCommentComposerViewportStyles() {
     overlay.classList.remove('keyboard-active');
     overlay.classList.remove('keyboard-docked-active');
     input?.style.removeProperty('max-height');
+    sheet?.style.removeProperty('height');
+    sheet?.style.removeProperty('max-height');
     promptCommentComposerDocked = false;
     promptCommentComposerLastBottomInset = 0;
     if (promptCommentComposerInitialDockTimer) {
@@ -5874,16 +5877,25 @@ function applyPromptCommentComposerDock(bottomInset, animate = false) {
     if (!overlay || !sheet) return;
 
     const metrics = getPromptCommentComposerViewportMetrics();
-    const sheetRect = sheet.getBoundingClientRect();
-    const sheetHeight = Math.round(sheetRect.height || sheet.offsetHeight || 400);
-    const centeredBottom = (metrics.baseViewportHeight / 2) + (sheetHeight / 2);
+    if (!promptCommentComposerBaseSheetHeight) {
+        const liveHeight = Math.round(sheet.getBoundingClientRect().height || sheet.offsetHeight || 400);
+        promptCommentComposerBaseSheetHeight = liveHeight || 400;
+    }
+
+    const baseSheetHeight = Math.max(320, promptCommentComposerBaseSheetHeight || 400);
     const keyboardTop = Math.max(0, metrics.baseViewportHeight - Math.max(0, bottomInset));
-    const targetBottom = Math.max(24, keyboardTop - 12);
-    const deltaY = Math.min(0, Math.round(targetBottom - centeredBottom));
+    const minTop = Math.max(12, Math.round(metrics.visualTop + 12));
+    const maxAvailableHeight = Math.max(260, Math.round(keyboardTop - minTop - 12));
+    const dockHeight = Math.min(baseSheetHeight, maxAvailableHeight);
+    const centeredTop = (metrics.baseViewportHeight - dockHeight) / 2;
+    const desiredTop = Math.max(minTop, keyboardTop - 12 - dockHeight);
+    const deltaY = Math.round(desiredTop - centeredTop);
 
     overlay.style.setProperty('--composer-keyboard-offset', `${bottomInset}px`);
     overlay.classList.toggle('keyboard-active', bottomInset > 0);
     overlay.classList.toggle('keyboard-docked-active', bottomInset > 0);
+    sheet.style.setProperty('height', `${dockHeight}px`);
+    sheet.style.setProperty('max-height', `${dockHeight}px`);
 
     if (window.promptCommentComposerAnimRafId) {
         clearTimeout(window.promptCommentComposerAnimRafId);
@@ -6002,6 +6014,8 @@ function syncPromptCommentComposerViewport() {
         return;
     }
 
+    sheet.style.removeProperty('height');
+    sheet.style.removeProperty('max-height');
     sheet.style.setProperty('--composer-translate-y', '0px');
     overlay.style.setProperty('--composer-keyboard-offset', '0px');
     overlay.classList.remove('keyboard-active');
@@ -6202,6 +6216,7 @@ function closePromptCommentComposer(options = {}) {
         resetPromptCommentComposerViewportStyles();
         promptCommentComposerBaseViewportHeight = 0;
         promptCommentComposerBaseVisualHeight = 0;
+        promptCommentComposerBaseSheetHeight = 0;
         promptCommentComposerDocked = false;
         promptCommentComposerLastBottomInset = 0;
         syncPromptCommentComposerEmptyState();
