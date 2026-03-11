@@ -5637,6 +5637,7 @@ let promptCommentComposerInitialDockTimer = null;
 let promptCommentComposerBaseSheetHeight = 0;
 let promptCommentComposerOwnsScrollLock = false;
 let promptCommentComposerScrollClampCleanup = null;
+let promptCommentComposerStableViewportProbe = null;
 
 function isPromptCommentComposerEnabled() {
     return isPromptModalIOSMobile();
@@ -5653,6 +5654,34 @@ function getPromptCommentComposerElements() {
         fileInput: document.getElementById('promptCommentComposerImageUpload'),
         sendBtn: document.getElementById('promptCommentComposerSendBtn')
     };
+}
+
+function getPromptCommentComposerStableViewportProbe() {
+    if (promptCommentComposerStableViewportProbe?.isConnected) {
+        return promptCommentComposerStableViewportProbe;
+    }
+
+    const probe = document.createElement('div');
+    probe.setAttribute('aria-hidden', 'true');
+    probe.style.position = 'fixed';
+    probe.style.top = '0';
+    probe.style.left = '0';
+    probe.style.width = '0';
+    probe.style.height = '100svh';
+    probe.style.pointerEvents = 'none';
+    probe.style.visibility = 'hidden';
+    probe.style.opacity = '0';
+    probe.style.zIndex = '-1';
+    document.body.appendChild(probe);
+    promptCommentComposerStableViewportProbe = probe;
+    return probe;
+}
+
+function getPromptCommentComposerStableViewportHeight() {
+    const probe = getPromptCommentComposerStableViewportProbe();
+    if (!probe) return 0;
+    const rectHeight = Math.round(probe.getBoundingClientRect().height || probe.offsetHeight || 0);
+    return Math.max(0, rectHeight);
 }
 
 function autoExpandPromptCommentComposerInput(input) {
@@ -5883,16 +5912,21 @@ function resetPromptCommentComposerViewportStyles() {
 function capturePromptCommentComposerViewportBase() {
     const vv = window.visualViewport;
     const visualHeight = Math.max(0, vv?.height || 0);
-    promptCommentComposerBaseViewportHeight = Math.max(
+    const fallbackBaseHeight = Math.max(
         window.innerHeight || 0,
         document.documentElement.clientHeight || 0,
         visualHeight
     );
-    promptCommentComposerBaseVisualHeight = Math.max(
-        promptCommentComposerBaseVisualHeight || 0,
-        visualHeight,
-        promptCommentComposerBaseViewportHeight
-    );
+    const stableViewportHeight = getPromptCommentComposerStableViewportHeight();
+    const normalizedBaseHeight = (stableViewportHeight > 0 && stableViewportHeight + 24 < fallbackBaseHeight)
+        ? stableViewportHeight
+        : fallbackBaseHeight;
+
+    // When the page is scrolled down on iOS, Safari may collapse the bottom bar
+    // before focus. Using that larger visual viewport as the keyboard baseline
+    // makes the first dock overshoot once the browser chrome expands again.
+    promptCommentComposerBaseViewportHeight = normalizedBaseHeight;
+    promptCommentComposerBaseVisualHeight = normalizedBaseHeight;
     const { sheet } = getPromptCommentComposerElements();
     if (sheet) {
         const staticHeight = Math.round(sheet.offsetHeight || sheet.getBoundingClientRect().height || 420);
@@ -5928,10 +5962,7 @@ function getPromptCommentComposerViewportMetrics() {
     const visualHeight = Math.max(0, vv?.height || 0);
     const baseVisualHeight = Math.max(
         promptCommentComposerBaseVisualHeight || 0,
-        visualHeight,
-        promptCommentComposerBaseViewportHeight || 0,
-        window.innerHeight || 0,
-        document.documentElement.clientHeight || 0
+        promptCommentComposerBaseViewportHeight || 0
     );
     const bottomInset = Math.max(
         0,
