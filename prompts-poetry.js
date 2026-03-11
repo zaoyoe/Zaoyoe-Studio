@@ -5839,7 +5839,7 @@ function lockPromptCommentComposerPage() {
     const { overlay } = getPromptCommentComposerElements();
     const sheet = overlay?.querySelector('.prompt-comment-composer-sheet');
     if (window.iOSScrollLock && sheet) {
-        window.iOSScrollLock.lock(sheet, { freezeScrollY: 0 });
+        window.iOSScrollLock.lock(sheet);
         promptCommentComposerOwnsScrollLock = true;
     }
 }
@@ -5948,6 +5948,10 @@ function getPromptCommentComposerViewportMetrics() {
 function applyPromptCommentComposerDock(bottomInset, animate = false) {
     const { overlay, sheet } = getPromptCommentComposerElements();
     if (!overlay || !sheet) return;
+
+    if (!promptCommentComposerOwnsScrollLock) {
+        lockPromptCommentComposerPage();
+    }
 
     const metrics = getPromptCommentComposerViewportMetrics();
     if (!promptCommentComposerBaseSheetHeight) {
@@ -6291,17 +6295,16 @@ function openPromptCommentComposer(options = {}) {
     }
 
     // If we're reopening while it was still closing, instantly clear the closing state
+    detachPromptCommentComposerViewportSync();
+    resetPromptCommentComposerViewportStyles();
     composer.overlay.classList.remove('composer-closing');
     composer.overlay.classList.add('active');
     freezePromptCommentComposerOverlay();
-    lockPromptCommentComposerPage();
     capturePromptCommentComposerViewportBase();
     autoExpandPromptCommentComposerInput(composer.input);
     syncPromptCommentComposerEmptyState();
     syncPromptCommentComposerMeta();
     syncPromptCommentComposerTrigger();
-    detachPromptCommentComposerViewportSync();
-    resetPromptCommentComposerViewportStyles();
     attachPromptCommentComposerViewportSync();
     resetPromptModalKeyboardDockIfNeeded(false);
     syncPromptModalTopButtonState();
