@@ -4926,15 +4926,25 @@ function schedulePromptModalUndock() {
 }
 
 function scheduleInitialPromptModalKeyboardDock(visualHeight, bottomInset) {
+    const requiresFirstKeyboardWarmup = isPromptModalIOSMobile() && promptModalKeyboardDock.lastStableInset <= 40;
+    let predictedInset = bottomInset;
+    if (isPromptModalIOSMobile() && promptModalKeyboardDock.lastStableInset > 40) {
+        if (bottomInset < 24) {
+            predictedInset = promptModalKeyboardDock.lastStableInset;
+        } else {
+            predictedInset = Math.min(bottomInset, promptModalKeyboardDock.lastStableInset + 12);
+        }
+    }
+
     promptModalKeyboardDock.pendingFirstDockParams = {
         visualHeight,
-        bottomInset,
+        bottomInset: predictedInset,
         animate: false
     };
 
     if (promptModalKeyboardDock.pendingFirstDockTimer) return;
 
-    const delay = 0;
+    const delay = requiresFirstKeyboardWarmup ? 96 : 40;
     promptModalKeyboardDock.pendingFirstDockTimer = setTimeout(() => {
         const params = promptModalKeyboardDock.pendingFirstDockParams;
         promptModalKeyboardDock.pendingFirstDockTimer = null;
@@ -4943,9 +4953,16 @@ function scheduleInitialPromptModalKeyboardDock(visualHeight, bottomInset) {
         if (!params || !isPromptModalDockEnabledOrActive() || promptModalKeyboardDock.docked) return;
         if (!isPromptModalDockInputFocused()) return;
 
-        applyPromptModalKeyboardDock(params.visualHeight, params.bottomInset, params.animate !== false);
-        if (params.bottomInset > 40) {
-            promptModalKeyboardDock.lastStableInset = params.bottomInset;
+        const vv = window.visualViewport;
+        const settleVisualHeight = Math.max(0, vv?.height || params.visualHeight || 0);
+        const settleInsetRaw = Math.max(0, Math.round(window.innerHeight - settleVisualHeight));
+        const settleInset = settleInsetRaw > 40
+            ? Math.min(params.bottomInset, settleInsetRaw)
+            : params.bottomInset;
+
+        applyPromptModalKeyboardDock(settleVisualHeight, settleInset, params.animate !== false);
+        if (settleInset > 40) {
+            promptModalKeyboardDock.lastStableInset = settleInset;
         }
     }, delay);
 }
@@ -5856,17 +5873,14 @@ function openPromptCommentComposer(options = {}) {
     if (options.focus !== false) {
         requestAnimationFrame(() => {
             const releaseScrollClamp = clampPromptModalPageScroll();
-            applyPromptModalKeyboardPreLift();
-            setTimeout(() => {
-                primePromptModalKeyboardDock();
-                try {
-                    composer.input.focus({ preventScroll: true });
-                } catch (_) {
-                    composer.input.focus();
-                }
-                window.scrollTo(0, 0);
-                setTimeout(releaseScrollClamp, 420);
-            }, 24);
+            primePromptModalKeyboardDock();
+            try {
+                composer.input.focus({ preventScroll: true });
+            } catch (_) {
+                composer.input.focus();
+            }
+            window.scrollTo(0, 0);
+            setTimeout(releaseScrollClamp, 420);
         });
     }
 
