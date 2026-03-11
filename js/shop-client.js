@@ -418,6 +418,28 @@ const ShopClient = {
         return /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName) ? active : null;
     },
 
+    focusPurchaseModalInputWithoutScroll: function (input) {
+        if (!input) return;
+        try {
+            input.focus({ preventScroll: true });
+        } catch (_) {
+            input.focus();
+        }
+    },
+
+    bindPurchaseModalInputFocusStabilizer: function (input) {
+        if (!input || input.dataset.shopFocusStabilizerBound === '1') return;
+
+        input.addEventListener('touchstart', (e) => {
+            if (!this.isPurchaseModalKeyboardDockEnabled()) return;
+            this.lockPurchaseModalKeyboardPage();
+            if (e.cancelable) e.preventDefault();
+            this.focusPurchaseModalInputWithoutScroll(input);
+        }, { passive: false });
+
+        input.dataset.shopFocusStabilizerBound = '1';
+    },
+
     getPurchaseModalStableViewportProbe: function () {
         if (this.purchaseModalKeyboardStableViewportProbe?.isConnected) {
             return this.purchaseModalKeyboardStableViewportProbe;
@@ -578,6 +600,9 @@ const ShopClient = {
         }
 
         const activeInput = this.getActivePurchaseModalInput();
+        if (activeInput && !this.purchaseModalOwnsFullScrollLock) {
+            this.lockPurchaseModalKeyboardPage();
+        }
         const metrics = this.getPurchaseModalViewportMetrics();
         const bottomInset = metrics.bottomInset;
         const shouldDock = !!activeInput && (this.purchaseModalKeyboardDocked ? bottomInset > 8 : bottomInset > 24);
@@ -656,6 +681,7 @@ const ShopClient = {
         this.syncPurchaseModalKeyboardDock();
 
         const inputs = Array.from(overlay.querySelectorAll('input, textarea, select'));
+        inputs.forEach((input) => this.bindPurchaseModalInputFocusStabilizer(input));
         const handleViewportChange = () => {
             if (this.purchaseModalKeyboardViewportRafId) return;
             this.purchaseModalKeyboardViewportRafId = requestAnimationFrame(() => {
