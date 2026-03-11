@@ -17,6 +17,8 @@ const ShopClient = {
     purchaseModalKeyboardInsetDropTimer: null,
     purchaseModalKeyboardPendingInset: 0,
     purchaseModalKeyboardStableViewportProbe: null,
+    purchaseModalBaseScrollY: 0,
+    purchaseModalOwnsFullScrollLock: false,
 
     init: async function () {
         console.log('🛍️ Shop Client Initialized');
@@ -443,6 +445,29 @@ const ShopClient = {
         return Math.max(0, Math.round(probe.getBoundingClientRect().height || probe.offsetHeight || 0));
     },
 
+    lockPurchaseModalKeyboardPage: function () {
+        if (this.purchaseModalOwnsFullScrollLock || !window.iOSScrollLock) return;
+        const { card } = this.getPurchaseModalElements();
+        if (!card) return;
+
+        window.iOSScrollLock.lock(card, {
+            freezeScrollY: Math.max(0, Math.round(this.purchaseModalBaseScrollY || window.scrollY || window.pageYOffset || 0))
+        });
+        this.purchaseModalOwnsFullScrollLock = true;
+    },
+
+    unlockPurchaseModalKeyboardPage: function (preserveLightLock = true) {
+        if (!this.purchaseModalOwnsFullScrollLock || !window.iOSScrollLock) return;
+
+        window.iOSScrollLock.unlock();
+        this.purchaseModalOwnsFullScrollLock = false;
+
+        const { overlay } = this.getPurchaseModalElements();
+        if (preserveLightLock && overlay?.classList.contains('active')) {
+            window.iOSScrollLock.lockLight(overlay);
+        }
+    },
+
     clearPurchaseModalKeyboardTimers: function () {
         if (this.purchaseModalKeyboardInitialDockTimer) {
             clearTimeout(this.purchaseModalKeyboardInitialDockTimer);
@@ -524,6 +549,7 @@ const ShopClient = {
         overlay.style.setProperty('--shop-purchase-shift-y', '0px');
         card.style.removeProperty('height');
         card.style.removeProperty('max-height');
+        this.unlockPurchaseModalKeyboardPage(true);
         this.purchaseModalKeyboardDocked = false;
         this.purchaseModalKeyboardLastBottomInset = 0;
     },
@@ -560,6 +586,7 @@ const ShopClient = {
         const isInsetDroppingWhileFocused = this.purchaseModalKeyboardDocked && !!activeInput && nextInset > 24 && nextInset + 24 < previousInset;
 
         if (!this.purchaseModalKeyboardDocked && shouldDock) {
+            this.lockPurchaseModalKeyboardPage();
             this.purchaseModalKeyboardPendingInset = nextInset;
             if (!this.purchaseModalKeyboardInitialDockTimer) {
                 this.purchaseModalKeyboardInitialDockTimer = setTimeout(() => {
@@ -576,6 +603,10 @@ const ShopClient = {
         if (this.purchaseModalKeyboardInitialDockTimer && (this.purchaseModalKeyboardDocked || !shouldDock)) {
             clearTimeout(this.purchaseModalKeyboardInitialDockTimer);
             this.purchaseModalKeyboardInitialDockTimer = null;
+        }
+
+        if (!shouldDock && !this.purchaseModalKeyboardDocked && this.purchaseModalOwnsFullScrollLock) {
+            this.unlockPurchaseModalKeyboardPage(true);
         }
 
         if (this.purchaseModalKeyboardInsetDropTimer && (!isInsetDroppingWhileFocused || nextInset >= previousInset)) {
@@ -682,6 +713,8 @@ const ShopClient = {
 
     openPurchaseModal: function (productId, productName, productNameEn, price, rules) {
         this.currentPurchase = { productId, productName, productNameEn, basePrice: price, unitPrice: price, quantity: 1, rules: rules, discountCode: null, discountAmount: 0 };
+        this.purchaseModalBaseScrollY = Math.max(0, Math.round(window.scrollY || window.pageYOffset || 0));
+        this.purchaseModalOwnsFullScrollLock = false;
 
         // Update UI - show name based on current language
         const currentLang = window.i18n?.getCurrentLanguage() || 'zh';
@@ -723,9 +756,11 @@ const ShopClient = {
         this.detachPurchaseModalKeyboardDock();
         this.resetPurchaseModalKeyboardDockState();
         this.getActivePurchaseModalInput()?.blur();
+        this.unlockPurchaseModalKeyboardPage(false);
         modal.classList.remove('active');
         // Unlock background scroll on mobile Safari
         if (window.iOSScrollLock) window.iOSScrollLock.unlock();
+        this.purchaseModalBaseScrollY = 0;
     },
 
     updatePriceForQuantity: function (qty) {
