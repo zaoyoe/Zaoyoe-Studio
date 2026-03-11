@@ -3357,9 +3357,9 @@ body.modal-open .prompt-card {
     gap: 12px;
     pointer-events: auto;
     overflow: hidden;
-    transform: translate3d(0, calc(-1 * var(--composer-keyboard-offset)), 0);
-    transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1), height 280ms cubic-bezier(0.22, 1, 0.36, 1);
-    will-change: transform, height;
+    margin-bottom: var(--composer-keyboard-offset);
+    transition: margin-bottom 280ms cubic-bezier(0.22, 1, 0.36, 1), height 280ms cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: margin-bottom, height;
 }
 
 [data-theme="dark"] .prompt-comment-composer-sheet {
