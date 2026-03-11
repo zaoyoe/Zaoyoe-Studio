@@ -3429,12 +3429,12 @@ body.modal-open .prompt-card {
     background: rgba(107, 158, 206, 0.34);
 }
 
-.prompt-comment-composer.is-editing .prompt-comment-composer-handle {
+.prompt-comment-composer:focus-within .prompt-comment-composer-handle {
     background: var(--accent-purple);
     box-shadow: 0 0 0 1px rgba(155, 93, 229, 0.08), 0 0 18px rgba(155, 93, 229, 0.18);
 }
 
-[data-theme="dark"] .prompt-comment-composer.is-editing .prompt-comment-composer-handle {
+[data-theme="dark"] .prompt-comment-composer:focus-within .prompt-comment-composer-handle {
     background: var(--accent-starry);
     box-shadow: 0 0 0 1px rgba(107, 158, 206, 0.08), 0 0 18px rgba(107, 158, 206, 0.18);
 }
