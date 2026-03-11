@@ -4374,6 +4374,18 @@ const promptModalKeyboardDock = {
 let promptModalOpeningTimer = null;
 let promptModalDockTimers = [];
 let promptModalStatusBarShield = null;
+let promptModalBaseScrollY = 0;
+
+function getPromptModalBaseScrollY() {
+    return Math.max(0, Math.round(promptModalBaseScrollY || 0));
+}
+
+function scrollPromptModalPageToBase() {
+    const targetY = getPromptModalBaseScrollY();
+    if ((window.scrollY || window.pageYOffset || 0) !== targetY) {
+        window.scrollTo(0, targetY);
+    }
+}
 
 function clearPromptModalTransitionCleanupTimer() {
     if (promptModalKeyboardDock.transitionCleanupTimer) {
@@ -4815,7 +4827,7 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
     clearPromptModalTransitionCleanupTimer();
     clearPromptModalKeyboardPreLift(false);
     document.body.classList.add('prompt-modal-keyboard-docked');
-    window.scrollTo(0, 0);
+    scrollPromptModalPageToBase();
     modal.classList.add('keyboard-docked');
     modal.style.setProperty('height', `${baseViewportHeight}px`, 'important');
     modalInner.classList.add('keyboard-docked');
@@ -5105,12 +5117,14 @@ function primePromptModalKeyboardDock() {
     attachPromptModalKeyboardDock();
     capturePromptModalDockMetrics(true);
     // Undo any native Safari scroll-to-input that fired before our preventDefault
-    window.scrollTo(0, 0);
+    scrollPromptModalPageToBase();
 }
 
 function openPromptModal(id) {
     const item = PROMPTS.find(p => p.id === id);
     if (!item) return;
+
+    promptModalBaseScrollY = window.scrollY || window.pageYOffset || 0;
 
     currentPromptId = item.supabaseId || item.id; // Prefer persistent UUID if available
     console.log('[DEBUG] openPromptModal opening:', {
@@ -5932,19 +5946,48 @@ function applyPromptCommentComposerDock(bottomInset, animate = false) {
 }
 
 function clampPromptModalPageScroll(duration = 420) {
+    const targetY = getPromptModalBaseScrollY();
     const scrollClamp = () => {
-        if (window.scrollY !== 0 || window.scrollX !== 0) {
-            window.scrollTo(0, 0);
+        if ((window.scrollY || window.pageYOffset || 0) !== targetY || window.scrollX !== 0) {
+            window.scrollTo(0, targetY);
         }
     };
 
     window.addEventListener('scroll', scrollClamp, { passive: true });
-    window.scrollTo(0, 0);
+    window.scrollTo(0, targetY);
 
     return () => {
         window.removeEventListener('scroll', scrollClamp);
-        window.scrollTo(0, 0);
+        window.scrollTo(0, targetY);
     };
+}
+
+function releasePromptCommentComposerDock(animate = false) {
+    const { overlay, sheet } = getPromptCommentComposerElements();
+    if (!overlay || !sheet) return;
+
+    overlay.style.setProperty('--composer-keyboard-offset', '0px');
+    overlay.classList.remove('keyboard-active');
+    overlay.classList.remove('keyboard-docked-active');
+    sheet.style.removeProperty('height');
+    sheet.style.removeProperty('max-height');
+
+    if (window.promptCommentComposerAnimRafId) {
+        clearTimeout(window.promptCommentComposerAnimRafId);
+        window.promptCommentComposerAnimRafId = null;
+    }
+
+    sheet.classList.toggle('composer-animating', !!animate);
+    if (animate) {
+        window.promptCommentComposerAnimRafId = setTimeout(() => {
+            sheet.classList.remove('composer-animating');
+            window.promptCommentComposerAnimRafId = null;
+        }, 200);
+    }
+
+    sheet.style.setProperty('--composer-translate-y', '0px');
+    promptCommentComposerDocked = false;
+    promptCommentComposerLastBottomInset = 0;
 }
 
 function syncPromptCommentComposerViewport() {
@@ -6026,7 +6069,7 @@ function syncPromptCommentComposerViewport() {
     }
 
     if (promptCommentComposerDocked) {
-        applyPromptCommentComposerDock(0, !isFocused && previousInset > 0);
+        releasePromptCommentComposerDock(!isFocused && previousInset > 0);
         return;
     }
 
@@ -6193,7 +6236,7 @@ function openPromptCommentComposer(options = {}) {
     if (options.focus !== false) {
         requestAnimationFrame(() => {
             focusPromptCommentComposerInputWithoutScroll(composer.input);
-            window.scrollTo(0, 0);
+            scrollPromptModalPageToBase();
         });
     }
 
@@ -7932,6 +7975,7 @@ function closePromptModal() {
         document.body.style.overflow = '';
         document.body.classList.remove('prompt-modal-keyboard-docked');
         document.body.classList.remove('modal-open');
+        promptModalBaseScrollY = 0;
 
         hidePromptModalStatusBarShield();
 
