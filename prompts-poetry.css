@@ -3462,8 +3462,7 @@ body.modal-open .prompt-card {
     align-items: center;
 }
 
-.prompt-comment-composer-editor.is-empty::before {
-    content: attr(data-placeholder);
+.prompt-comment-composer-empty-placeholder {
     position: absolute;
     inset: 50% 24px auto;
     transform: translateY(-50%);
@@ -3472,6 +3471,12 @@ body.modal-open .prompt-card {
     font-size: 17px;
     line-height: 1.82;
     pointer-events: none;
+    opacity: 0;
+    transition: opacity 160ms ease;
+}
+
+.prompt-comment-composer-editor.is-empty .prompt-comment-composer-empty-placeholder {
+    opacity: 1;
 }
 
 #promptCommentComposerInput {

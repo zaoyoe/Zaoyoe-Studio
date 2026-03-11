@@ -5618,6 +5618,7 @@ let promptCommentComposerBaseSheetHeight = 0;
 let promptCommentComposerOverlayCleanup = null;
 let promptCommentComposerOverlayBaseHeight = 0;
 let promptCommentComposerScrollClampCleanup = null;
+let promptCommentComposerLastBottomInset = 0;
 
 function isPromptCommentComposerEnabled() {
     return isPromptModalIOSMobile();
@@ -5654,10 +5655,9 @@ function syncPromptCommentComposerEmptyState() {
     const { editor, input } = getPromptCommentComposerElements();
     if (!editor || !input) return;
     const isEmpty = !input.value.trim();
-    const isFocused = document.activeElement === input;
 
-    editor.classList.toggle('is-empty', isEmpty && !isFocused);
-    input.classList.toggle('is-empty', isEmpty && !isFocused);
+    editor.classList.toggle('is-empty', isEmpty);
+    input.classList.toggle('is-empty', isEmpty);
 }
 
 function focusPromptCommentComposerInputWithoutScroll(input) {
@@ -5778,6 +5778,7 @@ function resetPromptCommentComposerViewportStyles() {
     sheet?.style.removeProperty('min-height');
     sheet?.style.removeProperty('height');
     sheet?.style.removeProperty('transform');
+    sheet?.style.removeProperty('transition');
     input?.style.removeProperty('max-height');
 }
 
@@ -5924,6 +5925,7 @@ function syncPromptCommentComposerViewport() {
         240,
         Math.min(baseSheetHeight || availableHeight, availableHeight)
     );
+    const movingDown = bottomInset < promptCommentComposerLastBottomInset;
 
     overlay.style.paddingTop = `${basePadding}px`;
     overlay.style.paddingBottom = `${basePadding}px`;
@@ -5933,6 +5935,9 @@ function syncPromptCommentComposerViewport() {
         sheet.style.height = `${targetSheetHeight}px`;
         sheet.style.minHeight = `${targetSheetHeight}px`;
         sheet.style.maxHeight = `${targetSheetHeight}px`;
+        sheet.style.transition = movingDown
+            ? 'none'
+            : 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1)';
         sheet.style.transform = `translate3d(0, -${bottomInset}px, 0)`;
     }
     if (input) {
@@ -5940,6 +5945,8 @@ function syncPromptCommentComposerViewport() {
         input.style.maxHeight = `${maxInputHeight}px`;
         autoExpandPromptCommentComposerInput(input);
     }
+
+    promptCommentComposerLastBottomInset = bottomInset;
 }
 
 function attachPromptCommentComposerViewportSync() {
@@ -5989,7 +5996,8 @@ function ensurePromptCommentComposer() {
                 </button>
             </div>
             <div class="prompt-comment-composer-meta" id="promptCommentComposerMeta"></div>
-            <div class="prompt-comment-composer-editor" data-placeholder="${window.i18n?.t('gallery.commentComposerPlaceholder') || 'Start writing here...'}">
+            <div class="prompt-comment-composer-editor">
+                <div class="prompt-comment-composer-empty-placeholder" aria-hidden="true">${window.i18n?.t('gallery.commentComposerPlaceholder') || 'Start writing here...'}</div>
                 <textarea id="promptCommentComposerInput" rows="6" placeholder="${window.i18n?.t('gallery.commentComposerPlaceholder') || 'Start writing here...'}"></textarea>
             </div>
             <input type="file" id="promptCommentComposerImageUpload" accept="image/*" style="display:none;">
@@ -6122,6 +6130,7 @@ function closePromptCommentComposer(options = {}) {
     promptCommentComposerBaseVisualHeight = 0;
     promptCommentComposerBaseSheetHeight = 0;
     promptCommentComposerOverlayBaseHeight = 0;
+    promptCommentComposerLastBottomInset = 0;
     syncPromptCommentComposerEmptyState();
     syncPromptModalTopButtonState();
     input?.blur();
