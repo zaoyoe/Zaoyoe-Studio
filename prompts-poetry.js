@@ -5618,6 +5618,7 @@ let promptCommentComposerPageLockCleanup = null;
 let promptCommentComposerViewportRafId = null;
 let promptCommentComposerAnimRafId = null;
 let promptCommentComposerLastDeltaY = 0;
+let promptCommentComposerBlurUndocking = false;
 
 function isPromptCommentComposerEnabled() {
     return isPromptModalIOSMobile();
@@ -5801,6 +5802,7 @@ function resetPromptCommentComposerViewportStyles() {
     overlay.style.removeProperty('height');
     overlay.style.setProperty('--composer-keyboard-offset', '0px');
     overlay.style.setProperty('--composer-translate-y', '0px');
+    promptCommentComposerBlurUndocking = false;
     const sheet = overlay.querySelector('.prompt-comment-composer-sheet');
     if (sheet) sheet.classList.remove('composer-animating');
     overlay.classList.remove('keyboard-active');
@@ -5849,6 +5851,21 @@ function syncPromptCommentComposerViewport() {
         return;
     }
 
+    const isFocused = input === document.activeElement;
+    if (isPromptModalIOSMobile() && !isFocused && overlay.classList.contains('keyboard-docked-active')) {
+        promptCommentComposerBlurUndocking = true;
+        overlay.classList.remove('keyboard-docked-active');
+        const sheet = overlay.querySelector('.prompt-comment-composer-sheet');
+        if (sheet) {
+            sheet.classList.add('composer-animating');
+            if (promptCommentComposerAnimRafId) clearTimeout(promptCommentComposerAnimRafId);
+            promptCommentComposerAnimRafId = setTimeout(() => {
+                sheet.classList.remove('composer-animating');
+            }, 280);
+        }
+        overlay.style.setProperty('--composer-translate-y', `0px`);
+    }
+
     const visualTop = Math.max(0, vv.offsetTop || 0);
     const visualHeight = Math.max(0, vv.height || 0);
     const visualBottom = visualTop + visualHeight;
@@ -5872,13 +5889,17 @@ function syncPromptCommentComposerViewport() {
         window.screen?.height || 0
     );
 
+    if (promptCommentComposerBlurUndocking && bottomInset <= 12) {
+        promptCommentComposerBlurUndocking = false;
+    }
+
     overlay.style.height = `${overlayHeight}px`;
     overlay.style.setProperty('--composer-keyboard-offset', `${bottomInset}px`);
     overlay.classList.toggle('keyboard-active', bottomInset > 12);
 
     const sheet = overlay.querySelector('.prompt-comment-composer-sheet');
     if (sheet) {
-        if (bottomInset > 12) {
+        if (bottomInset > 12 && !promptCommentComposerBlurUndocking) {
             // Edge-trigger the CSS transition only when keyboard state changes significantly
             if (!overlay.classList.contains('keyboard-docked-active')) {
                 overlay.classList.add('keyboard-docked-active');
@@ -5890,7 +5911,7 @@ function syncPromptCommentComposerViewport() {
             }
 
             const height = sheet.offsetHeight;
-            const centeredBottom = (overlayHeight / 2) + (height / 2);
+            const centeredBottom = (baseViewportHeight / 2) + (height / 2);
             // visualBottom is the exact top edge of the keyboard/address bar combo on iOS
             const targetBottom = Math.max(24, visualBottom - 12);
 
@@ -5899,7 +5920,7 @@ function syncPromptCommentComposerViewport() {
                 deltaY = targetBottom - centeredBottom;
             }
             overlay.style.setProperty('--composer-translate-y', `${deltaY}px`);
-        } else {
+        } else if (!promptCommentComposerBlurUndocking) {
             // Keyboard closed
             if (overlay.classList.contains('keyboard-docked-active')) {
                 overlay.classList.remove('keyboard-docked-active');
