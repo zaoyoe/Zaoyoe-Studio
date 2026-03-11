@@ -3585,7 +3585,7 @@ body.modal-open .prompt-card {
 @media (max-width: 768px) {
     .prompt-comment-composer {
         align-items: flex-end;
-        justify-content: flex-end;
+        justify-content: center;
         padding: calc(env(safe-area-inset-top, 0px) + 16px) 12px 12px;
     }
 
