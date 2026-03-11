@@ -549,7 +549,7 @@ const ShopClient = {
         const baseViewportHeight = Math.max(metrics.baseVisualHeight || 0, this.purchaseModalKeyboardBaseViewportHeight || 0);
         const keyboardTop = Math.max(0, baseViewportHeight - Math.max(0, bottomInset));
         const minTop = 14;
-        const keyboardClearance = 28;
+        const keyboardClearance = 40;
         const maxAvailableHeight = Math.max(280, Math.round(keyboardTop - minTop - keyboardClearance));
         const dockHeight = Math.min(baseCardHeight, maxAvailableHeight);
         const centeredTop = (baseViewportHeight - dockHeight) / 2;
@@ -572,7 +572,6 @@ const ShopClient = {
         overlay.style.setProperty('--shop-purchase-shift-y', '0px');
         card.style.removeProperty('height');
         card.style.removeProperty('max-height');
-        this.unlockPurchaseModalKeyboardPage(true);
         this.purchaseModalKeyboardDocked = false;
         this.purchaseModalKeyboardLastBottomInset = 0;
     },
@@ -629,10 +628,6 @@ const ShopClient = {
         if (this.purchaseModalKeyboardInitialDockTimer && (this.purchaseModalKeyboardDocked || !shouldDock)) {
             clearTimeout(this.purchaseModalKeyboardInitialDockTimer);
             this.purchaseModalKeyboardInitialDockTimer = null;
-        }
-
-        if (!shouldDock && !this.purchaseModalKeyboardDocked && this.purchaseModalOwnsFullScrollLock) {
-            this.unlockPurchaseModalKeyboardPage(true);
         }
 
         if (this.purchaseModalKeyboardInsetDropTimer && (!isInsetDroppingWhileFocused || nextInset >= previousInset)) {
@@ -780,13 +775,14 @@ const ShopClient = {
 
     closePurchaseModal: function () {
         const modal = document.getElementById('shopPurchaseModal');
+        const activeInput = this.getActivePurchaseModalInput();
+        activeInput?.blur();
         this.detachPurchaseModalKeyboardDock();
         this.resetPurchaseModalKeyboardDockState();
-        this.getActivePurchaseModalInput()?.blur();
-        this.unlockPurchaseModalKeyboardPage(false);
         modal.classList.remove('active');
         // Unlock background scroll on mobile Safari
         if (window.iOSScrollLock) window.iOSScrollLock.unlock();
+        this.purchaseModalOwnsFullScrollLock = false;
         this.purchaseModalBaseScrollY = 0;
     },
 
