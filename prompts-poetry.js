@@ -5942,21 +5942,23 @@ function syncPromptCommentComposerViewport() {
 
     const isActivelyDocked = dockedCy < restingCy;
 
-    if (!isActivelyDocked) {
-        if (overlay.classList.contains('keyboard-docked-active')) {
-            // Re-measuring flag
-            promptCommentComposerCachedMetrics = null;
+    const wasActivelyDocked = overlay.classList.contains('keyboard-docked-active');
 
-            // Re-apply pure CSS 280ms cubic-bezier transition when dismissing keyboard
-            if (sheet) {
-                sheet.classList.add('composer-animating');
-                if (window.promptCommentComposerAnimRafId) {
-                    clearTimeout(window.promptCommentComposerAnimRafId);
-                }
-                window.promptCommentComposerAnimRafId = setTimeout(() => {
-                    sheet.classList.remove('composer-animating');
-                }, 280);
+    if (isActivelyDocked !== wasActivelyDocked) {
+        if (sheet) {
+            // Apply CSS hardware transition to smooth out granular or dropped Safari frames
+            sheet.classList.add('composer-animating');
+            if (window.promptCommentComposerAnimRafId) {
+                clearTimeout(window.promptCommentComposerAnimRafId);
             }
+            window.promptCommentComposerAnimRafId = setTimeout(() => {
+                sheet.classList.remove('composer-animating');
+            }, 320);
+        }
+
+        if (!isActivelyDocked) {
+            // Re-measuring flag when returning to rest state
+            promptCommentComposerCachedMetrics = null;
         }
     }
 
@@ -5984,6 +5986,9 @@ function attachPromptCommentComposerViewportSync() {
         if (promptCommentComposerViewportRafId) return;
         promptCommentComposerViewportRafId = requestAnimationFrame(() => {
             promptCommentComposerViewportRafId = null;
+            // Native Safari keyboard fires many granular resize events.
+            // By applying `.composer-animating` CSS transition to ANY large delta difference, 
+            // the CSS engine automatically lerps the coordinate streams, masking the granular frames.
             syncPromptCommentComposerViewport();
         });
     };
@@ -6105,6 +6110,8 @@ function openPromptCommentComposer(options = {}) {
         }
     }
 
+    // If we're reopening while it was still closing, instantly clear the closing state
+    composer.overlay.classList.remove('composer-closing');
     composer.overlay.classList.add('active');
     freezePromptCommentComposerOverlay();
     lockPromptCommentComposerPage();
@@ -6140,7 +6147,6 @@ function closePromptCommentComposer(options = {}) {
 
     detachPromptCommentComposerViewportSync();
     unlockPromptCommentComposerPage();
-    restorePromptCommentComposerOverlay();
     clearPromptModalUndockTimer();
     clearPromptModalKeyboardPreLift();
 
@@ -6152,18 +6158,26 @@ function closePromptCommentComposer(options = {}) {
         syncPromptCommentComposerMeta();
     }
 
-    overlay.classList.remove('active');
-    resetPromptCommentComposerViewportStyles();
-    promptCommentComposerBaseViewportHeight = 0;
-    promptCommentComposerBaseVisualHeight = 0;
-    syncPromptCommentComposerEmptyState();
-    syncPromptModalTopButtonState();
+    overlay.classList.add('composer-closing');
     input?.blur();
-    if (options.preserveModalDock) {
-        clearPromptModalUndockTimer();
-    } else {
-        resetPromptModalKeyboardDockIfNeeded(false);
-    }
+
+    setTimeout(() => {
+        if (!overlay.classList.contains('composer-closing')) return;
+
+        restorePromptCommentComposerOverlay();
+        overlay.classList.remove('active', 'composer-closing');
+        resetPromptCommentComposerViewportStyles();
+        promptCommentComposerBaseViewportHeight = 0;
+        promptCommentComposerBaseVisualHeight = 0;
+        syncPromptCommentComposerEmptyState();
+        syncPromptModalTopButtonState();
+
+        if (options.preserveModalDock) {
+            clearPromptModalUndockTimer();
+        } else {
+            resetPromptModalKeyboardDockIfNeeded(false);
+        }
+    }, 260);
 }
 
 function getActiveCommentInput() {

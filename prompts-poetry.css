@@ -3333,9 +3333,48 @@ body.modal-open .prompt-card {
     pointer-events: none;
 }
 
+@keyframes composerOverlayFadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes composerSheetFadeIn {
+    from {
+        opacity: 0;
+        transform: translate3d(-50%, calc(-50% + 20px), 0) scale(0.96);
+    }
+
+    to {
+        opacity: 1;
+        transform: translate3d(-50%, calc(-50% + var(--composer-translate-y, 0px)), 0) scale(1);
+    }
+}
+
 .prompt-comment-composer.active {
     display: flex;
     pointer-events: auto;
+    animation: composerOverlayFadeIn 0.3s ease forwards;
+}
+
+.prompt-comment-composer.active .prompt-comment-composer-sheet {
+    animation: composerSheetFadeIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* For closing animation */
+.prompt-comment-composer.composer-closing {
+    opacity: 0 !important;
+    transition: opacity 0.25s ease !important;
+}
+
+.prompt-comment-composer.composer-closing .prompt-comment-composer-sheet {
+    transform: translate3d(-50%, calc(-50% + var(--composer-translate-y, 0px) + 20px), 0) scale(0.96) !important;
+    opacity: 0 !important;
+    transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.2s ease !important;
 }
 
 .prompt-comment-composer-sheet {
@@ -4436,6 +4475,8 @@ body.modal-open .prompt-card {
         transform: translateY(450px);
         opacity: 0;
     }
-}.prompt-comment-composer-sheet.composer-animating {
+}
+
+.prompt-comment-composer-sheet.composer-animating {
     transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
 }
