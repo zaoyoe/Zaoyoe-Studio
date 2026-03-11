@@ -5185,9 +5185,9 @@ function toggleCommentMode() {
         // CLOSE COMMENTS (Revert to default)
         isCommentMode = false;
         setCommentSortDropdownOpen(false);
-        modalInner.classList.remove('comment-mode');
-        resetPromptModalKeyboardDockIfNeeded(true);
         closePromptCommentComposer();
+        modalInner.classList.remove('comment-mode');
+        resetPromptModalKeyboardDockIfNeeded(false);
 
         // Update toggle button - revert to comment icon
         const triggerBtn = document.getElementById('commentTriggerBtn');
@@ -5604,6 +5604,13 @@ function resetPromptCommentComposerViewportStyles() {
     input?.style.removeProperty('max-height');
 }
 
+function settlePromptCommentComposerPosition() {
+    requestAnimationFrame(() => {
+        syncPromptCommentComposerViewport();
+        window.scrollTo(0, 0);
+    });
+}
+
 function syncPromptCommentComposerViewport() {
     const { overlay, sheet, input } = getPromptCommentComposerElements();
     if (!overlay) return;
@@ -5766,7 +5773,11 @@ function openPromptCommentComposer(options = {}) {
             } catch (_) {
                 composer.input.focus();
             }
-            primePromptModalKeyboardDock();
+            window.scrollTo(0, 0);
+            setTimeout(() => {
+                if (!composer.overlay.classList.contains('active')) return;
+                settlePromptCommentComposerPosition();
+            }, 120);
         });
     }
 
@@ -5782,6 +5793,7 @@ function closePromptCommentComposer(options = {}) {
     if (!overlay) return;
 
     detachPromptCommentComposerViewportSync();
+    clearPromptModalUndockTimer();
 
     if (options.clearDraft) {
         clearCommentDraftFields();
@@ -5795,7 +5807,9 @@ function closePromptCommentComposer(options = {}) {
     resetPromptCommentComposerViewportStyles();
     syncPromptModalTopButtonState();
     input?.blur();
-    schedulePromptModalUndock();
+    if (!options.preserveModalDock) {
+        resetPromptModalKeyboardDockIfNeeded(false);
+    }
 }
 
 function getActiveCommentInput() {
