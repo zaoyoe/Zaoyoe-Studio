@@ -613,7 +613,9 @@
         }
 
         #shopPurchaseModal .modal-content {
-            margin-top: var(--shop-purchase-shift-y, 0px);
+            margin: auto !important;
+            position: relative !important;
+            top: var(--shop-purchase-shift-y, 0px) !important;
         }
 
         @media (max-width: 768px) {
@@ -621,12 +623,14 @@
             #shopPurchaseModal.active .modal-content,
             #shopPurchaseModal.active:focus-within .modal-content,
             #shopPurchaseModal.ios-focus-lock .modal-content {
-                margin-top: var(--shop-purchase-shift-y, 0px) !important;
+                margin: auto !important;
+                position: relative !important;
+                top: var(--shop-purchase-shift-y, 0px) !important;
                 transition:
-                    margin-top 180ms cubic-bezier(0.22, 1, 0.36, 1),
+                    top 180ms cubic-bezier(0.22, 1, 0.36, 1),
                     height 180ms cubic-bezier(0.22, 1, 0.36, 1),
                     max-height 180ms cubic-bezier(0.22, 1, 0.36, 1) !important;
-                will-change: margin-top, height !important;
+                will-change: top, height !important;
                 overscroll-behavior: contain;
             }
         }
@@ -1232,7 +1236,7 @@
     <script src="js/components/WalletModal.js?v=20260302_G_AUTH" defer></script>
 
     <!-- Shop Logic -->
-    <script src="js/shop-client.js?v=20260311_SHOP_MODAL_V3" defer></script>
+    <script src="js/shop-client.js?v=20260311_SHOP_MODAL_V4" defer></script>
 
     <!-- Background Animations -->
     <script src="starry-sky.js"></script>
