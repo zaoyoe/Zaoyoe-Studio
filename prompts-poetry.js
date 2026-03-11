@@ -5710,7 +5710,7 @@ function resetPromptCommentComposerViewportStyles() {
     const { overlay, sheet, input } = getPromptCommentComposerElements();
     if (!overlay) return;
 
-    const basePadding = window.innerWidth <= 768 ? 8 : 16;
+    const basePadding = window.innerWidth <= 768 ? 12 : 18;
     overlay.style.paddingTop = `${basePadding}px`;
     overlay.style.paddingBottom = `${basePadding}px`;
     sheet?.style.removeProperty('max-height');
@@ -5753,7 +5753,7 @@ function syncPromptCommentComposerViewport() {
     if (!overlay) return;
 
     const vv = window.visualViewport;
-    const basePadding = window.innerWidth <= 768 ? 8 : 16;
+    const basePadding = window.innerWidth <= 768 ? 12 : 18;
 
     resetPromptCommentComposerViewportStyles();
 
@@ -5777,7 +5777,7 @@ function syncPromptCommentComposerViewport() {
         baseViewportHeight - visualBottom,
         baseVisualHeight - visualHeight
     );
-    const availableHeight = Math.max(260, Math.floor(visualHeight - (basePadding * 2) - 24));
+    const availableHeight = Math.max(260, Math.floor(visualHeight - (basePadding * 2) - 28));
 
     overlay.style.paddingBottom = `${basePadding + bottomInset}px`;
 
@@ -5826,16 +5826,20 @@ function ensurePromptCommentComposer() {
     overlay.className = 'prompt-comment-composer';
     overlay.innerHTML = `
         <div class="prompt-comment-composer-sheet">
-            <div class="prompt-comment-composer-kicker">${window.i18n?.t('gallery.commentsTitle') || 'Comments'}</div>
+            <div class="prompt-comment-composer-handle" aria-hidden="true"></div>
             <div class="prompt-comment-composer-header">
-                <div class="prompt-comment-composer-title">${window.i18n?.t('gallery.addComment') || 'Add a comment'}</div>
-                <button type="button" class="prompt-comment-composer-close" id="promptCommentComposerCloseBtn" aria-label="Close">
+                <div class="prompt-comment-composer-copy">
+                    <div class="prompt-comment-composer-kicker">${window.i18n?.t('gallery.commentsTitle') || 'Comments'}</div>
+                    <div class="prompt-comment-composer-title">${window.i18n?.t('gallery.commentComposerTitle') || 'Leave a note'}</div>
+                    <div class="prompt-comment-composer-subtitle">${window.i18n?.t('gallery.commentComposerSubtitle') || 'Write a quiet observation about the image, mood, or prompt.'}</div>
+                </div>
+                <button type="button" class="prompt-comment-composer-close" id="promptCommentComposerCloseBtn" aria-label="${window.i18n?.t('common.close') || 'Close'}">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
             <div class="prompt-comment-composer-meta" id="promptCommentComposerMeta"></div>
             <div class="prompt-comment-composer-editor">
-                <textarea id="promptCommentComposerInput" rows="6" placeholder="${window.i18n?.t('gallery.addComment') || 'Add a comment...'}"></textarea>
+                <textarea id="promptCommentComposerInput" rows="6" placeholder="${window.i18n?.t('gallery.commentComposerPlaceholder') || 'Start writing here...'}"></textarea>
             </div>
             <input type="file" id="promptCommentComposerImageUpload" accept="image/*" style="display:none;">
             <div class="prompt-comment-composer-actions">
