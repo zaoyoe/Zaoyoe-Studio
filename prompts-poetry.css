@@ -3323,6 +3323,7 @@ body.modal-open .prompt-card {
     inset: 0;
     display: none;
     --composer-keyboard-offset: 0px;
+    --composer-translate-y: 0px;
     background: rgba(7, 9, 12, 0.28);
     backdrop-filter: blur(14px) saturate(108%);
     -webkit-backdrop-filter: blur(14px) saturate(108%);
@@ -3330,8 +3331,6 @@ body.modal-open .prompt-card {
     padding: 24px 18px 18px;
     box-sizing: border-box;
     pointer-events: none;
-    align-items: flex-end;
-    justify-content: center;
 }
 
 .prompt-comment-composer.active {
@@ -3358,8 +3357,11 @@ body.modal-open .prompt-card {
     gap: 12px;
     pointer-events: auto;
     overflow: hidden;
-    margin-bottom: calc(18px + env(safe-area-inset-bottom, 0px) + var(--composer-keyboard-offset));
-    will-change: margin-bottom;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate3d(-50%, calc(-50% + var(--composer-translate-y, 0px)), 0);
+    will-change: transform, height;
 }
 
 [data-theme="dark"] .prompt-comment-composer-sheet {

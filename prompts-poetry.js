@@ -5617,6 +5617,7 @@ let promptCommentComposerBaseVisualHeight = 0;
 let promptCommentComposerViewportRafId = null;
 let promptCommentComposerOverlayCleanup = null;
 let promptCommentComposerOverlayBaseHeight = 0;
+let promptCommentComposerCachedMetrics = null;
 
 function isPromptCommentComposerEnabled() {
     return isPromptModalIOSMobile();
@@ -5875,8 +5876,14 @@ function syncPromptCommentComposerViewport() {
         resetPromptCommentComposerViewportStyles();
         return;
     }
+
+    // Safety check: if overlay freeze hasn't run yet, fall back
+    if (!promptCommentComposerOverlayBaseHeight) {
+        promptCommentComposerOverlayBaseHeight = window.innerHeight;
+    }
     if (!vv) {
         overlay.style.setProperty('--composer-keyboard-offset', '0px');
+        overlay.style.setProperty('--composer-translate-y', '0px');
         overlay.classList.remove('keyboard-active');
         return;
     }
@@ -5904,6 +5911,44 @@ function syncPromptCommentComposerViewport() {
 
     overlay.style.setProperty('--composer-keyboard-offset', `${shouldDock ? bottomInset : 0}px`);
     overlay.classList.toggle('keyboard-active', shouldDock);
+
+    const sheet = overlay.querySelector('.prompt-comment-composer-sheet');
+    if (sheet) {
+        if (shouldDock) {
+            if (!promptCommentComposerCachedMetrics) {
+                promptCommentComposerCachedMetrics = {
+                    height: sheet.offsetHeight
+                };
+            }
+
+            const metrics = promptCommentComposerCachedMetrics;
+            // overlay is fixed at promptCommentComposerOverlayBaseHeight.
+            // Absolute top: 50% places the perfect vertical center at overlayBaseHeight / 2.
+            // The physical bottom of the centered sheet is:
+            const centeredBottom = (promptCommentComposerOverlayBaseHeight / 2) + (metrics.height / 2);
+            // targetBottom is relative to the visual viewport top-left.
+            const targetBottom = Math.max(24, visualBottom - 12);
+
+            let deltaY = 0;
+            if (targetBottom < centeredBottom) {
+                deltaY = targetBottom - centeredBottom;
+            }
+
+            if (!overlay.classList.contains('keyboard-docked-active')) {
+                overlay.classList.add('keyboard-docked-active');
+            }
+
+            // Sync frame-by-frame
+            overlay.style.setProperty('--composer-translate-y', `${deltaY}px`);
+        } else {
+            // Keyboard closed
+            if (overlay.classList.contains('keyboard-docked-active')) {
+                overlay.classList.remove('keyboard-docked-active');
+                promptCommentComposerCachedMetrics = null;
+            }
+            overlay.style.setProperty('--composer-translate-y', `0px`);
+        }
+    }
 }
 
 function attachPromptCommentComposerViewportSync() {
