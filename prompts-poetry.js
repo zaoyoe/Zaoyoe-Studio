@@ -5699,17 +5699,62 @@ function bindPromptCommentComposerInputFocusStabilizer(input) {
     input.dataset.preventScrollBind = '1';
 }
 
+function getPromptCommentComposerI18n() {
+    return {
+        commentsTitle: window.i18n?.t('gallery.commentsTitle') || 'Comments',
+        title: window.i18n?.t('gallery.commentComposerTitle') || 'Leave a note',
+        subtitle: window.i18n?.t('gallery.commentComposerSubtitle') || 'Write a quiet observation about the image, mood, or prompt.',
+        placeholder: window.i18n?.t('gallery.commentComposerPlaceholder') || 'Start writing here...',
+        attachImage: window.i18n?.t('gallery.attachImage') || 'Attach image',
+        imageAttached: window.i18n?.t('gallery.imageAttached') || 'Image attached',
+        imageSelected: window.i18n?.t('gallery.imageSelected') || 'Image selected',
+        imageSelectedLabel: window.i18n?.t('gallery.imageSelectedLabel') || 'Selected',
+        imageCompressedLabel: window.i18n?.t('gallery.imageCompressedLabel') || 'Compressed',
+        tapToRemove: window.i18n?.t('gallery.tapToRemove') || 'tap to remove',
+        send: window.i18n?.t('gallery.send') || 'Send',
+        close: window.i18n?.t('common.close') || 'Close',
+        removeSelectedImageConfirm: window.i18n?.t('gallery.removeSelectedImageConfirm') || 'Remove selected image?',
+        selectImageFileError: window.i18n?.t('gallery.selectImageFileError') || 'Please select an image file',
+        compressingImage: window.i18n?.t('gallery.compressingImage') || 'Compressing image...',
+        imageCompressFailed: window.i18n?.t('gallery.imageCompressFailed') || 'Image compression failed, please try again'
+    };
+}
+
+function buildCommentImageUploadTitle(file, finalFile, compressed) {
+    const copy = getPromptCommentComposerI18n();
+    const originalSize = (file.size / 1024).toFixed(0);
+    const compressedSize = (finalFile.size / 1024).toFixed(0);
+
+    if (compressed === file) {
+        return `${copy.imageSelectedLabel}: ${file.name} (${originalSize}KB)`;
+    }
+
+    return `${copy.imageCompressedLabel}: ${file.name} (${originalSize}KB -> ${compressedSize}KB, ${copy.tapToRemove})`;
+}
+
+function refreshCommentImageUploadLanguageUI() {
+    const copy = getPromptCommentComposerI18n();
+    const bindings = getCommentImageUploadBindings();
+    bindings.forEach(({ button }) => {
+        const title = selectedCommentImage ? copy.imageSelected : copy.attachImage;
+        button.dataset.defaultTitle = copy.attachImage;
+        button.title = title;
+        button.setAttribute('aria-label', title);
+    });
+}
+
 function syncPromptCommentComposerMeta() {
     const { input, meta } = getPromptCommentComposerElements();
     if (!input || !meta) return;
 
+    const copy = getPromptCommentComposerI18n();
     const pieces = [];
     const replyToName = input.dataset.replyToName;
     if (replyToName) {
         pieces.push(`${window.i18n?.t('gallery.replyingTo') || 'Replying to'} @${replyToName}`);
     }
     if (selectedCommentImage) {
-        pieces.push(window.i18n?.t('gallery.attachImage') || 'Image attached');
+        pieces.push(copy.imageAttached);
     }
 
     meta.textContent = pieces.join(' · ');
@@ -6122,6 +6167,8 @@ function ensurePromptCommentComposer() {
     if (!isPromptCommentComposerEnabled()) return null;
     if (promptCommentComposerMounted) return getPromptCommentComposerElements();
 
+    const copy = getPromptCommentComposerI18n();
+
     const overlay = document.createElement('div');
     overlay.id = 'promptCommentComposer';
     overlay.className = 'prompt-comment-composer';
@@ -6130,26 +6177,26 @@ function ensurePromptCommentComposer() {
             <div class="prompt-comment-composer-handle" aria-hidden="true"></div>
             <div class="prompt-comment-composer-header">
                 <div class="prompt-comment-composer-copy">
-                    <div class="prompt-comment-composer-kicker">${window.i18n?.t('gallery.commentsTitle') || 'Comments'}</div>
-                    <div class="prompt-comment-composer-title">${window.i18n?.t('gallery.commentComposerTitle') || 'Leave a note'}</div>
-                    <div class="prompt-comment-composer-subtitle">${window.i18n?.t('gallery.commentComposerSubtitle') || 'Write a quiet observation about the image, mood, or prompt.'}</div>
+                    <div class="prompt-comment-composer-kicker" data-i18n="gallery.commentsTitle">${copy.commentsTitle}</div>
+                    <div class="prompt-comment-composer-title" data-i18n="gallery.commentComposerTitle">${copy.title}</div>
+                    <div class="prompt-comment-composer-subtitle" data-i18n="gallery.commentComposerSubtitle">${copy.subtitle}</div>
                 </div>
-                <button type="button" class="prompt-comment-composer-close" id="promptCommentComposerCloseBtn" aria-label="${window.i18n?.t('common.close') || 'Close'}">
+                <button type="button" class="prompt-comment-composer-close" id="promptCommentComposerCloseBtn" aria-label="${copy.close}" data-i18n="common.close" data-i18n-attr="aria-label">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
             <div class="prompt-comment-composer-meta" id="promptCommentComposerMeta"></div>
             <div class="prompt-comment-composer-editor">
-                <div class="prompt-comment-composer-empty-placeholder" aria-hidden="true">${window.i18n?.t('gallery.commentComposerPlaceholder') || 'Start writing here...'}</div>
-                <textarea id="promptCommentComposerInput" rows="6" placeholder="${window.i18n?.t('gallery.commentComposerPlaceholder') || 'Start writing here...'}"></textarea>
+                <div class="prompt-comment-composer-empty-placeholder" aria-hidden="true" data-i18n="gallery.commentComposerPlaceholder">${copy.placeholder}</div>
+                <textarea id="promptCommentComposerInput" rows="6" placeholder="${copy.placeholder}" data-i18n-placeholder="gallery.commentComposerPlaceholder"></textarea>
             </div>
             <input type="file" id="promptCommentComposerImageUpload" accept="image/*" style="display:none;">
             <div class="prompt-comment-composer-actions">
-                <button type="button" class="prompt-comment-composer-upload" id="promptCommentComposerUploadBtn" title="${window.i18n?.t('gallery.attachImage') || 'Attach image'}">
+                <button type="button" class="prompt-comment-composer-upload" id="promptCommentComposerUploadBtn" title="${copy.attachImage}" aria-label="${copy.attachImage}" data-i18n-title="gallery.attachImage">
                     <i class="fas fa-image"></i>
                 </button>
-                <button type="button" class="prompt-comment-composer-send" id="promptCommentComposerSendBtn">
-                    ${window.i18n?.t('gallery.send') || 'Send'}
+                <button type="button" class="prompt-comment-composer-send" id="promptCommentComposerSendBtn" data-i18n="gallery.send">
+                    ${copy.send}
                 </button>
             </div>
         </div>
@@ -6182,6 +6229,37 @@ function ensurePromptCommentComposer() {
     bindPromptCommentComposerInputFocusStabilizer(input);
 
     return getPromptCommentComposerElements();
+}
+
+function refreshPromptCommentComposerLanguageUI() {
+    const composer = getPromptCommentComposerElements();
+    if (!composer?.overlay) return;
+
+    const copy = getPromptCommentComposerI18n();
+    const closeBtn = document.getElementById('promptCommentComposerCloseBtn');
+    const uploadBtn = document.getElementById('promptCommentComposerUploadBtn');
+    const sendBtn = document.getElementById('promptCommentComposerSendBtn');
+    const placeholder = composer.overlay.querySelector('.prompt-comment-composer-empty-placeholder');
+
+    composer.input?.setAttribute('placeholder', copy.placeholder);
+    closeBtn?.setAttribute('aria-label', copy.close);
+
+    if (placeholder) {
+        placeholder.textContent = copy.placeholder;
+    }
+
+    if (uploadBtn) {
+        const title = selectedCommentImage ? copy.imageSelected : copy.attachImage;
+        uploadBtn.dataset.defaultTitle = copy.attachImage;
+        uploadBtn.title = title;
+        uploadBtn.setAttribute('aria-label', title);
+    }
+
+    if (sendBtn) {
+        sendBtn.textContent = copy.send;
+    }
+
+    syncPromptCommentComposerMeta();
 }
 
 function openPromptCommentComposer(options = {}) {
@@ -6314,13 +6392,16 @@ function getCommentImageUploadBindings() {
 
 function updateCommentImageUploadButtonsState(title = null) {
     const bindings = getCommentImageUploadBindings();
+    const copy = getPromptCommentComposerI18n();
     bindings.forEach(({ button, input }) => {
         button.disabled = false;
         button.innerHTML = '<i class="fas fa-image"></i>';
         button.classList.toggle('has-image', !!selectedCommentImage);
+        button.dataset.defaultTitle = copy.attachImage;
         button.title = title || (selectedCommentImage
-            ? 'Image selected'
-            : (button.dataset.defaultTitle || button.title || 'Attach image'));
+            ? copy.imageSelected
+            : copy.attachImage);
+        button.setAttribute('aria-label', selectedCommentImage ? copy.imageSelected : copy.attachImage);
         if (!selectedCommentImage) {
             input.value = '';
         }
@@ -6340,7 +6421,7 @@ function initCommentImageUpload() {
 
     bindings.forEach(({ button, input }) => {
         if (!button.dataset.defaultTitle) {
-            button.dataset.defaultTitle = button.title || 'Attach image';
+            button.dataset.defaultTitle = getPromptCommentComposerI18n().attachImage;
         }
 
         button.onclick = () => {
@@ -6350,7 +6431,7 @@ function initCommentImageUpload() {
             }
 
             if (selectedCommentImage) {
-                if (confirm('Remove selected image?')) {
+                if (confirm(getPromptCommentComposerI18n().removeSelectedImageConfirm)) {
                     clearSelectedCommentImage();
                 }
                 return;
@@ -6364,7 +6445,7 @@ function initCommentImageUpload() {
             if (!file) return;
 
             if (!file.type.startsWith('image/')) {
-                alert('Please select an image file');
+                alert(getPromptCommentComposerI18n().selectImageFileError);
                 input.value = '';
                 return;
             }
@@ -6372,7 +6453,7 @@ function initCommentImageUpload() {
             bindings.forEach(({ button: eachButton }) => {
                 eachButton.disabled = true;
                 eachButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-                eachButton.title = 'Compressing image...';
+                eachButton.title = getPromptCommentComposerI18n().compressingImage;
             });
 
             try {
@@ -6394,16 +6475,10 @@ function initCommentImageUpload() {
 
                 selectedCommentImage = finalFile;
 
-                const originalSize = (file.size / 1024).toFixed(0);
-                const compressedSize = (finalFile.size / 1024).toFixed(0);
-                const title = compressed === file
-                    ? `已选择: ${file.name} (${originalSize}KB)`
-                    : `已压缩: ${file.name} (${originalSize}KB → ${compressedSize}KB, 点击移除)`;
-
-                updateCommentImageUploadButtonsState(title);
+                updateCommentImageUploadButtonsState(buildCommentImageUploadTitle(file, finalFile, compressed));
             } catch (error) {
                 console.error('Compression error:', error);
-                alert('图片压缩失败，请重试');
+                alert(getPromptCommentComposerI18n().imageCompressFailed);
                 input.value = '';
                 updateCommentImageUploadButtonsState();
             }
@@ -7668,6 +7743,8 @@ function setupCommentSorting() {
 
 function refreshCommentLanguageUI() {
     updateCommentSectionHeading();
+    refreshCommentImageUploadLanguageUI();
+    refreshPromptCommentComposerLanguageUI();
 
     const sortLabel = document.getElementById('currentSortLabel');
     const sortType = localStorage.getItem('commentSortPreference') || 'newest';
@@ -7718,6 +7795,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (sendBtn) {
                 sendBtn.onclick = (e) => launchComposer(e);
             }
+            window.i18n?.ready?.().then(() => refreshCommentLanguageUI());
             return;
         }
 
@@ -7767,6 +7845,8 @@ document.addEventListener('DOMContentLoaded', () => {
             schedulePromptModalUndock();
         });
     }
+
+    window.i18n?.ready?.().then(() => refreshCommentLanguageUI());
 });
 
 window.addEventListener('languageChanged', refreshCommentLanguageUI);

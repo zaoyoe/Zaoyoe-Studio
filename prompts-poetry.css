@@ -3421,7 +3421,11 @@ body.modal-open .prompt-card {
     height: 4px;
     margin: 0 auto 4px;
     border-radius: 999px;
-    background: rgba(255, 255, 255, 0.18);
+    background: var(--accent-purple);
+}
+
+[data-theme="dark"] .prompt-comment-composer-handle {
+    background: var(--accent-starry);
 }
 
 .prompt-comment-composer-kicker {
