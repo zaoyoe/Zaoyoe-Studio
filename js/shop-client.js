@@ -549,10 +549,11 @@ const ShopClient = {
         const baseViewportHeight = Math.max(metrics.baseVisualHeight || 0, this.purchaseModalKeyboardBaseViewportHeight || 0);
         const keyboardTop = Math.max(0, baseViewportHeight - Math.max(0, bottomInset));
         const minTop = 14;
-        const maxAvailableHeight = Math.max(280, Math.round(keyboardTop - minTop - 14));
+        const keyboardClearance = 28;
+        const maxAvailableHeight = Math.max(280, Math.round(keyboardTop - minTop - keyboardClearance));
         const dockHeight = Math.min(baseCardHeight, maxAvailableHeight);
         const centeredTop = (baseViewportHeight - dockHeight) / 2;
-        const desiredTop = Math.max(minTop, keyboardTop - 14 - dockHeight);
+        const desiredTop = Math.max(minTop, keyboardTop - keyboardClearance - dockHeight);
         const shiftY = Math.round(desiredTop - centeredTop);
 
         overlay.classList.add('keyboard-docked');
