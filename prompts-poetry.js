@@ -5846,6 +5846,12 @@ function ensurePromptCommentComposer() {
         </div>
     `;
 
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+            closePromptCommentComposer();
+        }
+    });
+
     document.body.appendChild(overlay);
     promptCommentComposerMounted = true;
 
