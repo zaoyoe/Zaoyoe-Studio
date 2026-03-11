@@ -5612,6 +5612,8 @@ function formatCommentTime(timestamp) {
 let selectedCommentImage = null;
 let promptCommentComposerMounted = false;
 let promptCommentComposerViewportCleanup = null;
+let promptCommentComposerBaseViewportHeight = 0;
+let promptCommentComposerBaseVisualHeight = 0;
 
 function isPromptCommentComposerEnabled() {
     return isPromptModalIOSMobile();
@@ -5715,6 +5717,21 @@ function resetPromptCommentComposerViewportStyles() {
     input?.style.removeProperty('max-height');
 }
 
+function capturePromptCommentComposerViewportBase() {
+    const vv = window.visualViewport;
+    const visualHeight = Math.max(0, vv?.height || 0);
+    const visualBottom = Math.max(0, (vv?.offsetTop || 0) + visualHeight);
+    promptCommentComposerBaseViewportHeight = Math.max(
+        window.innerHeight || 0,
+        document.documentElement.clientHeight || 0,
+        visualBottom
+    );
+    promptCommentComposerBaseVisualHeight = Math.max(
+        promptCommentComposerBaseVisualHeight || 0,
+        visualHeight
+    );
+}
+
 function clampPromptModalPageScroll(duration = 420) {
     const scrollClamp = () => {
         if (window.scrollY !== 0 || window.scrollX !== 0) {
@@ -5736,22 +5753,36 @@ function syncPromptCommentComposerViewport() {
     if (!overlay) return;
 
     const vv = window.visualViewport;
-    const modalInner = overlay.parentElement;
     const basePadding = window.innerWidth <= 768 ? 8 : 16;
 
     resetPromptCommentComposerViewportStyles();
 
-    if (!overlay.classList.contains('active') || !vv || !modalInner) return;
+    if (!overlay.classList.contains('active') || !vv) return;
 
-    const modalRect = modalInner.getBoundingClientRect();
-    const keyboardTop = (vv.height || 0) + (vv.offsetTop || 0);
-    const overlap = Math.max(0, Math.ceil(modalRect.bottom - keyboardTop + 12));
-    const availableHeight = Math.max(240, Math.floor(keyboardTop - modalRect.top - 24));
+    const visualTop = Math.max(0, vv.offsetTop || 0);
+    const visualHeight = Math.max(0, vv.height || 0);
+    const visualBottom = visualTop + visualHeight;
+    const baseViewportHeight = Math.max(
+        promptCommentComposerBaseViewportHeight || 0,
+        window.innerHeight || 0,
+        document.documentElement.clientHeight || 0,
+        visualBottom
+    );
+    const baseVisualHeight = Math.max(
+        promptCommentComposerBaseVisualHeight || 0,
+        visualHeight
+    );
+    const bottomInset = Math.max(
+        0,
+        baseViewportHeight - visualBottom,
+        baseVisualHeight - visualHeight
+    );
+    const availableHeight = Math.max(260, Math.floor(visualHeight - (basePadding * 2) - 24));
 
-    overlay.style.paddingBottom = `${basePadding + overlap}px`;
+    overlay.style.paddingBottom = `${basePadding + bottomInset}px`;
 
     if (sheet) {
-        sheet.style.maxHeight = `${Math.max(240, availableHeight)}px`;
+        sheet.style.maxHeight = `${availableHeight}px`;
     }
     if (input) {
         const maxInputHeight = Math.min(360, Math.max(180, Math.round(availableHeight * 0.48)));
@@ -5790,9 +5821,6 @@ function ensurePromptCommentComposer() {
     if (!isPromptCommentComposerEnabled()) return null;
     if (promptCommentComposerMounted) return getPromptCommentComposerElements();
 
-    const modalInner = document.querySelector('#promptModal .modal-inner');
-    if (!modalInner) return null;
-
     const overlay = document.createElement('div');
     overlay.id = 'promptCommentComposer';
     overlay.className = 'prompt-comment-composer';
@@ -5818,13 +5846,7 @@ function ensurePromptCommentComposer() {
         </div>
     `;
 
-    overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) {
-            closePromptCommentComposer();
-        }
-    });
-
-    modalInner.appendChild(overlay);
+    document.body.appendChild(overlay);
     promptCommentComposerMounted = true;
 
     const { input, sendBtn } = getPromptCommentComposerElements();
@@ -5837,12 +5859,6 @@ function ensurePromptCommentComposer() {
         autoExpandPromptCommentComposerInput(input);
         syncPromptCommentComposerMeta();
         syncPromptCommentComposerTrigger();
-    });
-    input?.addEventListener('focus', () => {
-        primePromptModalKeyboardDock();
-    });
-    input?.addEventListener('blur', () => {
-        schedulePromptModalUndock();
     });
     input?.addEventListener('keydown', handleCommentKeydown);
 
@@ -5884,18 +5900,20 @@ function openPromptCommentComposer(options = {}) {
     }
 
     composer.overlay.classList.add('active');
+    capturePromptCommentComposerViewportBase();
     autoExpandPromptCommentComposerInput(composer.input);
     syncPromptCommentComposerMeta();
     syncPromptCommentComposerTrigger();
     detachPromptCommentComposerViewportSync();
     resetPromptCommentComposerViewportStyles();
+    attachPromptCommentComposerViewportSync();
+    resetPromptModalKeyboardDockIfNeeded(false);
     syncPromptModalTopButtonState();
     initCommentImageUpload();
 
     if (options.focus !== false) {
         requestAnimationFrame(() => {
             const releaseScrollClamp = clampPromptModalPageScroll();
-            primePromptModalKeyboardDock();
             try {
                 composer.input.focus({ preventScroll: true });
             } catch (_) {
@@ -5931,12 +5949,14 @@ function closePromptCommentComposer(options = {}) {
 
     overlay.classList.remove('active');
     resetPromptCommentComposerViewportStyles();
+    promptCommentComposerBaseViewportHeight = 0;
+    promptCommentComposerBaseVisualHeight = 0;
     syncPromptModalTopButtonState();
     input?.blur();
     if (options.preserveModalDock) {
         clearPromptModalUndockTimer();
     } else {
-        schedulePromptModalUndock();
+        resetPromptModalKeyboardDockIfNeeded(false);
     }
 }
 

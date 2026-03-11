@@ -3319,16 +3319,16 @@ body.modal-open .prompt-card {
 }
 
 .prompt-comment-composer {
-    position: absolute;
+    position: fixed;
     inset: 0;
     display: none;
     align-items: flex-end;
     justify-content: center;
-    background: rgba(2, 6, 23, 0.32);
+    background: transparent;
     z-index: 10030;
     padding: 16px;
     box-sizing: border-box;
-    border-radius: inherit;
+    pointer-events: none;
 }
 
 .prompt-comment-composer.active {
@@ -3347,6 +3347,7 @@ body.modal-open .prompt-card {
     display: flex;
     flex-direction: column;
     gap: 14px;
+    pointer-events: auto;
 }
 
 [data-theme="dark"] .prompt-comment-composer-sheet {
@@ -3861,8 +3862,8 @@ body.modal-open .prompt-card {
         display: none;
     }
 
-    .modal-inner.comment-mode .prompt-comment-composer {
-        background: rgba(2, 6, 23, 0.42);
+    .prompt-comment-composer {
+        padding-top: calc(env(safe-area-inset-top, 0px) + 8px);
     }
 }
 
