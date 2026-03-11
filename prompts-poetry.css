@@ -3149,6 +3149,11 @@ body.modal-open .prompt-card {
     animation: fadeInScale 0.15s ease-out;
 }
 
+.comment-sort-dropdown.floating {
+    position: fixed;
+    z-index: 11060;
+}
+
 .sort-option {
     padding: 6px 10px;
     /* Reduced padding */
@@ -3774,7 +3779,7 @@ body.modal-open .prompt-card {
         -webkit-backdrop-filter: blur(16px);
     }
 
-    .modal-inner.comment-mode .comment-sort-dropdown {
+    .comment-sort-dropdown.floating {
         min-width: 156px;
         background: rgba(0, 0, 0, 0.5);
         border: 1px solid rgba(255, 255, 255, 0.1);
@@ -3787,17 +3792,17 @@ body.modal-open .prompt-card {
         overflow: hidden;
     }
 
-    .modal-inner.comment-mode .comment-sort-dropdown .sort-option {
+    .comment-sort-dropdown.floating .sort-option {
         color: rgba(255, 255, 255, 0.82);
         border-radius: 16px;
     }
 
-    .modal-inner.comment-mode .comment-sort-dropdown .sort-option:hover {
+    .comment-sort-dropdown.floating .sort-option:hover {
         background: rgba(255, 255, 255, 0.08);
         color: rgba(255, 255, 255, 0.96);
     }
 
-    .modal-inner.comment-mode .comment-sort-dropdown .sort-option.active {
+    .comment-sort-dropdown.floating .sort-option.active {
         background: rgba(107, 158, 206, 0.22);
         color: #fff;
     }

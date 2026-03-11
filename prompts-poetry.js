@@ -5184,6 +5184,7 @@ function toggleCommentMode() {
     if (isCommentMode) {
         // CLOSE COMMENTS (Revert to default)
         isCommentMode = false;
+        setCommentSortDropdownOpen(false);
         modalInner.classList.remove('comment-mode');
         resetPromptModalKeyboardDockIfNeeded(true);
         closePromptCommentComposer();
@@ -5219,6 +5220,7 @@ function toggleCommentMode() {
     } else {
         // OPEN COMMENTS (Activate Spatial Flow)
         isCommentMode = true;
+        setCommentSortDropdownOpen(false);
         modalInner.classList.add('comment-mode');
 
         // Update toggle button - change to close icon
@@ -7074,6 +7076,43 @@ async function submitComment() {
 }
 
 // --- Sorting UI Logic ---
+function positionCommentSortDropdown() {
+    const btn = document.getElementById('commentSortBtn');
+    const dropdown = document.getElementById('commentSortDropdown');
+    if (!btn || !dropdown || !dropdown.classList.contains('show')) return;
+
+    const rect = btn.getBoundingClientRect();
+    const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+    const dropdownWidth = dropdown.offsetWidth || 156;
+    const top = Math.round(rect.bottom + 8);
+    const left = Math.round(Math.min(
+        Math.max(12, rect.right - dropdownWidth),
+        Math.max(12, viewportWidth - dropdownWidth - 12)
+    ));
+
+    dropdown.style.top = `${top}px`;
+    dropdown.style.left = `${left}px`;
+    dropdown.style.right = 'auto';
+}
+
+function setCommentSortDropdownOpen(open) {
+    const btn = document.getElementById('commentSortBtn');
+    const dropdown = document.getElementById('commentSortDropdown');
+    if (!btn || !dropdown) return;
+
+    if (dropdown.parentElement !== document.body) {
+        document.body.appendChild(dropdown);
+    }
+    dropdown.classList.add('floating');
+
+    dropdown.classList.toggle('show', !!open);
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+
+    if (open) {
+        positionCommentSortDropdown();
+    }
+}
+
 function setupCommentSorting() {
     const btn = document.getElementById('commentSortBtn');
     const dropdown = document.getElementById('commentSortDropdown');
@@ -7081,18 +7120,27 @@ function setupCommentSorting() {
 
     if (!btn || !dropdown) return;
 
+    if (dropdown.parentElement !== document.body) {
+        document.body.appendChild(dropdown);
+    }
+    dropdown.classList.add('floating');
+
     // Toggle Dropdown
     btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        dropdown.classList.toggle('show');
+        setCommentSortDropdownOpen(!dropdown.classList.contains('show'));
     });
 
     // Close when clicking outside
     document.addEventListener('click', (e) => {
         if (!btn.contains(e.target) && !dropdown.contains(e.target)) {
-            dropdown.classList.remove('show');
+            setCommentSortDropdownOpen(false);
         }
     });
+
+    window.addEventListener('resize', () => setCommentSortDropdownOpen(false));
+    window.visualViewport?.addEventListener('resize', () => setCommentSortDropdownOpen(false), { passive: true });
+    window.visualViewport?.addEventListener('scroll', () => setCommentSortDropdownOpen(false), { passive: true });
 
     // Handle Option Click
     options.forEach(opt => {
@@ -7107,7 +7155,7 @@ function setupCommentSorting() {
             opt.classList.add('active');
 
             // Close Dropdown
-            dropdown.classList.remove('show');
+            setCommentSortDropdownOpen(false);
 
             // Trigger Re-render if we have cached data
             const cached = commentCache.get(currentPromptId);
@@ -7372,6 +7420,7 @@ function navigateModalImage(direction) {
 
 function closePromptModal() {
     closePromptCommentComposer({ clearDraft: true });
+    setCommentSortDropdownOpen(false);
 
     // If closing while in comment mode, revert DOM first to prevent glitches next time
     if (isCommentMode) {
