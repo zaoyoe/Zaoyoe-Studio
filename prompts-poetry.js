@@ -4375,6 +4375,7 @@ let promptModalOpeningTimer = null;
 let promptModalDockTimers = [];
 let promptModalStatusBarShield = null;
 let promptModalBaseScrollY = 0;
+let promptModalPageFreezeState = null;
 
 function getPromptModalBaseScrollY() {
     return Math.max(0, Math.round(promptModalBaseScrollY || 0));
@@ -4385,6 +4386,61 @@ function scrollPromptModalPageToBase() {
     if ((window.scrollY || window.pageYOffset || 0) !== targetY) {
         window.scrollTo(0, targetY);
     }
+}
+
+function thawPromptModalBackgroundPage() {
+    if (!promptModalPageFreezeState) return;
+
+    promptModalPageFreezeState.depth -= 1;
+    if (promptModalPageFreezeState.depth > 0) return;
+
+    const state = promptModalPageFreezeState;
+    promptModalPageFreezeState = null;
+
+    document.documentElement.style.overflow = state.htmlOverflow;
+    document.body.style.overflow = state.bodyOverflow;
+    document.body.style.position = state.bodyPosition;
+    document.body.style.top = state.bodyTop;
+    document.body.style.left = state.bodyLeft;
+    document.body.style.right = state.bodyRight;
+    document.body.style.width = state.bodyWidth;
+
+    const targetY = getPromptModalBaseScrollY();
+    requestAnimationFrame(() => window.scrollTo(0, targetY));
+}
+
+function freezePromptModalBackgroundPage() {
+    if (!isPromptModalIOSMobile()) {
+        return () => { };
+    }
+
+    if (promptModalPageFreezeState) {
+        promptModalPageFreezeState.depth += 1;
+        return () => thawPromptModalBackgroundPage();
+    }
+
+    const targetY = getPromptModalBaseScrollY();
+    promptModalPageFreezeState = {
+        depth: 1,
+        htmlOverflow: document.documentElement.style.overflow,
+        bodyOverflow: document.body.style.overflow,
+        bodyPosition: document.body.style.position,
+        bodyTop: document.body.style.top,
+        bodyLeft: document.body.style.left,
+        bodyRight: document.body.style.right,
+        bodyWidth: document.body.style.width
+    };
+
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.overflow = 'hidden';
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${targetY}px`;
+    document.body.style.left = '0';
+    document.body.style.right = '0';
+    document.body.style.width = '100%';
+    window.scrollTo(0, targetY);
+
+    return () => thawPromptModalBackgroundPage();
 }
 
 function clearPromptModalTransitionCleanupTimer() {
@@ -5789,7 +5845,7 @@ function lockPromptCommentComposerPage() {
     const { overlay } = getPromptCommentComposerElements();
     const sheet = overlay?.querySelector('.prompt-comment-composer-sheet');
     if (typeof promptCommentComposerScrollClampCleanup !== 'function') {
-        promptCommentComposerScrollClampCleanup = clampPromptModalPageScroll();
+        promptCommentComposerScrollClampCleanup = freezePromptModalBackgroundPage();
     }
     if (window.iOSScrollLock && sheet && !window.iOSScrollLock.isLocked) {
         window.iOSScrollLock.lockLight(sheet);
@@ -7975,6 +8031,7 @@ function closePromptModal() {
         document.body.style.overflow = '';
         document.body.classList.remove('prompt-modal-keyboard-docked');
         document.body.classList.remove('modal-open');
+        thawPromptModalBackgroundPage();
         promptModalBaseScrollY = 0;
 
         hidePromptModalStatusBarShield();
