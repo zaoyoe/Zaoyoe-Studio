@@ -24,6 +24,41 @@
     let currentModal = null;
     let touchStartY = 0;
 
+    function applyFixedBodyLock() {
+        document.body.style.position = 'fixed';
+        document.body.style.top = `-${savedScrollY}px`;
+        document.body.style.left = '0';
+        document.body.style.right = '0';
+        document.body.style.width = '100%';
+        document.documentElement.classList.add('no-scroll');
+        document.body.classList.add('no-scroll');
+    }
+
+    function clearFixedBodyLock() {
+        document.body.style.position = '';
+        document.body.style.top = '';
+        document.body.style.left = '';
+        document.body.style.right = '';
+        document.body.style.width = '';
+        document.documentElement.classList.remove('no-scroll');
+        document.body.classList.remove('no-scroll');
+    }
+
+    function attachRootScrollGuard() {
+        if (typeof scrollCleanup === 'function') return;
+
+        const handleRootScroll = () => {
+            if (!isLocked || isLightLock) return;
+            stabilizeLockedViewport();
+        };
+
+        window.addEventListener('scroll', handleRootScroll, { passive: true });
+        scrollCleanup = () => {
+            window.removeEventListener('scroll', handleRootScroll);
+            scrollCleanup = null;
+        };
+    }
+
     function isFocusedFieldInsideCurrentModal() {
         const active = document.activeElement;
         return !!(
@@ -186,21 +221,28 @@
      * @param {HTMLElement} [modalElement] - 可选，弹窗元素，用于 iOS 键盘检测
      */
     function lock(modalElement) {
-        if (isLocked) return;
+        if (isLocked) {
+            currentModal = modalElement || currentModal;
+
+            if (isLightLock) {
+                applyFixedBodyLock();
+                isLightLock = false;
+                stabilizeLockedViewport();
+                attachRootScrollGuard();
+            }
+
+            if (isIOSMobile() && currentModal) {
+                detachViewportListener();
+                attachViewportListener();
+            }
+            return;
+        }
 
         // 1. 保存当前滚动位置
         savedScrollY = window.scrollY || window.pageYOffset || 0;
 
         // 2. 给 body 设置 position:fixed 并偏移 top 来「冻结」页面
-        document.body.style.position = 'fixed';
-        document.body.style.top = `-${savedScrollY}px`;
-        document.body.style.left = '0';
-        document.body.style.right = '0';
-        document.body.style.width = '100%';
-
-        // 3. 添加 no-scroll class 作为辅助（overflow:hidden + overscroll-behavior）
-        document.documentElement.classList.add('no-scroll');
-        document.body.classList.add('no-scroll');
+        applyFixedBodyLock();
 
         isLocked = true;
         isLightLock = false;
@@ -212,15 +254,7 @@
         document.addEventListener('touchstart', handleTouchStart, { passive: true });
         document.addEventListener('touchmove', handleTouchMove, { passive: false });
 
-        const handleRootScroll = () => {
-            if (!isLocked || isLightLock) return;
-            stabilizeLockedViewport();
-        };
-        window.addEventListener('scroll', handleRootScroll, { passive: true });
-        scrollCleanup = () => {
-            window.removeEventListener('scroll', handleRootScroll);
-            scrollCleanup = null;
-        };
+        attachRootScrollGuard();
 
         // 5. iOS 专属：监听 visualViewport 变化，检测键盘收起后回位
         if (isIOSMobile() && currentModal) {
@@ -234,7 +268,14 @@
      * @param {HTMLElement} [modalElement] - 弹窗元素
      */
     function lockLight(modalElement) {
-        if (isLocked) return;
+        if (isLocked) {
+            currentModal = modalElement || currentModal;
+            if (isIOSMobile() && currentModal) {
+                detachViewportListener();
+                attachViewportListener();
+            }
+            return;
+        }
 
         savedScrollY = window.scrollY || window.pageYOffset || 0;
 
@@ -277,15 +318,7 @@
         // 3. 移除 body 上的锁定样式（仅 full lock 模式下需要）
         if (!isLightLock) {
             const scrollY = savedScrollY;
-            document.body.style.position = '';
-            document.body.style.top = '';
-            document.body.style.left = '';
-            document.body.style.right = '';
-            document.body.style.width = '';
-
-            // 移除 no-scroll class
-            document.documentElement.classList.remove('no-scroll');
-            document.body.classList.remove('no-scroll');
+            clearFixedBodyLock();
 
             isLocked = false;
             isLightLock = false;
