@@ -5792,6 +5792,7 @@ function resetPromptCommentComposerViewportStyles() {
     if (!overlay) return;
     overlay.style.removeProperty('height');
     overlay.style.setProperty('--composer-keyboard-offset', '0px');
+    overlay.style.setProperty('--composer-translate-y', '0px');
     overlay.classList.remove('keyboard-active');
     input?.style.removeProperty('max-height');
 }
@@ -5863,6 +5864,24 @@ function syncPromptCommentComposerViewport() {
     overlay.style.height = `${overlayHeight}px`;
     overlay.style.setProperty('--composer-keyboard-offset', `${bottomInset}px`);
     overlay.classList.toggle('keyboard-active', bottomInset > 12);
+
+    const sheet = overlay.querySelector('.prompt-comment-composer-sheet');
+    if (sheet) {
+        if (bottomInset > 12) {
+            const height = sheet.offsetHeight;
+            const centeredBottom = (baseViewportHeight / 2) + (height / 2);
+            const keyboardTop = baseViewportHeight - bottomInset;
+            const targetBottom = Math.max(24, keyboardTop - 16);
+
+            let deltaY = 0;
+            if (targetBottom < centeredBottom) {
+                deltaY = targetBottom - centeredBottom;
+            }
+            overlay.style.setProperty('--composer-translate-y', `${deltaY}px`);
+        } else {
+            overlay.style.setProperty('--composer-translate-y', `0px`);
+        }
+    }
 }
 
 function attachPromptCommentComposerViewportSync() {
