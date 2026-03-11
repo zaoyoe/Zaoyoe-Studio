@@ -5615,6 +5615,9 @@ let promptCommentComposerViewportCleanup = null;
 let promptCommentComposerBaseViewportHeight = 0;
 let promptCommentComposerBaseVisualHeight = 0;
 let promptCommentComposerPageLockCleanup = null;
+let promptCommentComposerViewportRafId = null;
+let promptCommentComposerAnimRafId = null;
+let promptCommentComposerLastDeltaY = 0;
 
 function isPromptCommentComposerEnabled() {
     return isPromptModalIOSMobile();
@@ -5789,6 +5792,11 @@ function lockPromptCommentComposerPage() {
 
 function resetPromptCommentComposerViewportStyles() {
     const { overlay, input } = getPromptCommentComposerElements();
+    if (promptCommentComposerAnimRafId) {
+        cancelAnimationFrame(promptCommentComposerAnimRafId);
+        promptCommentComposerAnimRafId = null;
+    }
+    promptCommentComposerLastDeltaY = 0;
     if (!overlay) return;
     overlay.style.removeProperty('height');
     overlay.style.setProperty('--composer-keyboard-offset', '0px');
@@ -5868,6 +5876,10 @@ function syncPromptCommentComposerViewport() {
     const sheet = overlay.querySelector('.prompt-comment-composer-sheet');
     if (sheet) {
         if (bottomInset > 12) {
+            if (promptCommentComposerAnimRafId) {
+                cancelAnimationFrame(promptCommentComposerAnimRafId);
+                promptCommentComposerAnimRafId = null;
+            }
             const height = sheet.offsetHeight;
             const centeredBottom = (overlayHeight / 2) + (height / 2);
             // visualBottom is the exact top edge of the keyboard/address bar combo on iOS
@@ -5877,9 +5889,34 @@ function syncPromptCommentComposerViewport() {
             if (targetBottom < centeredBottom) {
                 deltaY = targetBottom - centeredBottom;
             }
+            promptCommentComposerLastDeltaY = deltaY;
             overlay.style.setProperty('--composer-translate-y', `${deltaY}px`);
         } else {
-            overlay.style.setProperty('--composer-translate-y', `0px`);
+            // Keyboard closed: animate down smoothly instead of snapping, bypassing CSS transition lag
+            if (promptCommentComposerLastDeltaY < 0 && !promptCommentComposerAnimRafId) {
+                const startTime = performance.now();
+                const startY = promptCommentComposerLastDeltaY;
+                const duration = 240; // ms
+
+                const animateToZero = (time) => {
+                    const elapsed = time - startTime;
+                    if (elapsed >= duration) {
+                        overlay.style.setProperty('--composer-translate-y', `0px`);
+                        promptCommentComposerLastDeltaY = 0;
+                        promptCommentComposerAnimRafId = null;
+                        return;
+                    }
+                    // Ease-out cubic
+                    const t = elapsed / duration;
+                    const easeOut = 1 - Math.pow(1 - t, 3);
+                    const currentY = startY * (1 - easeOut);
+                    overlay.style.setProperty('--composer-translate-y', `${currentY}px`);
+                    promptCommentComposerAnimRafId = requestAnimationFrame(animateToZero);
+                };
+                promptCommentComposerAnimRafId = requestAnimationFrame(animateToZero);
+            } else if (promptCommentComposerLastDeltaY === 0) {
+                overlay.style.setProperty('--composer-translate-y', `0px`);
+            }
         }
     }
 }
@@ -5894,7 +5931,11 @@ function attachPromptCommentComposerViewportSync() {
     if (!vv) return;
 
     const handleViewportChange = () => {
-        syncPromptCommentComposerViewport();
+        if (promptCommentComposerViewportRafId) return;
+        promptCommentComposerViewportRafId = requestAnimationFrame(() => {
+            promptCommentComposerViewportRafId = null;
+            syncPromptCommentComposerViewport();
+        });
     };
 
     vv.addEventListener('resize', handleViewportChange, { passive: true });
@@ -5907,6 +5948,10 @@ function attachPromptCommentComposerViewportSync() {
         vv.removeEventListener('scroll', handleViewportChange);
         input?.removeEventListener('focus', handleViewportChange);
         input?.removeEventListener('blur', handleViewportChange);
+        if (promptCommentComposerViewportRafId) {
+            cancelAnimationFrame(promptCommentComposerViewportRafId);
+            promptCommentComposerViewportRafId = null;
+        }
     };
 }
 
