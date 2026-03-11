@@ -5885,6 +5885,11 @@ function syncPromptCommentComposerViewport() {
         return;
     }
 
+    // Once closing has begun, immediately yield all translate control to CSS `composer-closing`
+    if (overlay.classList.contains('composer-closing')) {
+        return;
+    }
+
     // Safety check: if overlay freeze hasn't run yet, fall back
     if (!promptCommentComposerOverlayBaseHeight) {
         promptCommentComposerOverlayBaseHeight = window.innerHeight;
@@ -5946,19 +5951,25 @@ function syncPromptCommentComposerViewport() {
 
     if (isActivelyDocked !== wasActivelyDocked) {
         if (sheet) {
-            // Apply CSS hardware transition to smooth out granular or dropped Safari frames
+            // Re-enable bidirectional low-pass CSS transition filter.
+            // This is absolutely vital for 3rd party engines like WeChat Keyboard which send
+            // chaotic oscillating frame data during ascent. The CSS bezier curve smooths the wobble.
             sheet.classList.add('composer-animating');
             if (window.promptCommentComposerAnimRafId) {
                 clearTimeout(window.promptCommentComposerAnimRafId);
             }
             window.promptCommentComposerAnimRafId = setTimeout(() => {
                 sheet.classList.remove('composer-animating');
-            }, 320);
-        }
+                // Ensure the final frame is painted after the lock lifts
+                syncPromptCommentComposerViewport();
+            }, isActivelyDocked ? 240 : 320);
 
-        if (!isActivelyDocked) {
-            // Re-measuring flag when returning to rest state
-            promptCommentComposerCachedMetrics = null;
+            // Lock out JS frame tracking to prevent intermediate target chasing (Wobble)
+            window.promptCommentComposerMotionLockUntil = performance.now() + (isActivelyDocked ? 240 : 320);
+
+            if (!isActivelyDocked) {
+                promptCommentComposerCachedMetrics = null;
+            }
         }
     }
 
@@ -5986,9 +5997,13 @@ function attachPromptCommentComposerViewportSync() {
         if (promptCommentComposerViewportRafId) return;
         promptCommentComposerViewportRafId = requestAnimationFrame(() => {
             promptCommentComposerViewportRafId = null;
-            // Native Safari keyboard fires many granular resize events.
-            // By applying `.composer-animating` CSS transition to ANY large delta difference, 
-            // the CSS engine automatically lerps the coordinate streams, masking the granular frames.
+
+            // Motion Lock: During active CSS transitions, ignore intermediate high-frequency
+            // 'resize' frames from third party keyboards to prevent target-chasing wobbles.
+            if (performance.now() < (window.promptCommentComposerMotionLockUntil || 0)) {
+                return;
+            }
+
             syncPromptCommentComposerViewport();
         });
     };

@@ -3403,6 +3403,10 @@ body.modal-open .prompt-card {
     will-change: transform, height;
 }
 
+.prompt-comment-composer-sheet.composer-animating {
+    transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+}
+
 [data-theme="dark"] .prompt-comment-composer-sheet {
     background: rgba(11, 14, 20, 0.94);
     border-color: rgba(255, 255, 255, 0.08);
