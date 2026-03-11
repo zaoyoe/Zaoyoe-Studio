@@ -5620,6 +5620,8 @@ let promptCommentComposerAnimRafId = null;
 let promptCommentComposerLastDeltaY = 0;
 let promptCommentComposerBlurUndocking = false;
 let promptCommentComposerAnimLock = 0;
+let promptCommentComposerStableInset = 340; // Default guess for iOS
+let promptCommentComposerPendingDockTimer = null;
 
 function isPromptCommentComposerEnabled() {
     return isPromptModalIOSMobile();
@@ -5805,6 +5807,10 @@ function resetPromptCommentComposerViewportStyles() {
     overlay.style.setProperty('--composer-translate-y', '0px');
     promptCommentComposerBlurUndocking = false;
     promptCommentComposerAnimLock = 0;
+    if (promptCommentComposerPendingDockTimer) {
+        clearTimeout(promptCommentComposerPendingDockTimer);
+        promptCommentComposerPendingDockTimer = null;
+    }
     const sheet = overlay.querySelector('.prompt-comment-composer-sheet');
     if (sheet) sheet.classList.remove('composer-animating');
     overlay.classList.remove('keyboard-active');
@@ -5899,64 +5905,70 @@ function syncPromptCommentComposerViewport() {
     overlay.style.setProperty('--composer-keyboard-offset', `${bottomInset}px`);
     overlay.classList.toggle('keyboard-active', bottomInset > 12);
 
+    if (bottomInset > 40) {
+        promptCommentComposerStableInset = bottomInset;
+    }
+
     const sheet = overlay.querySelector('.prompt-comment-composer-sheet');
     if (sheet) {
         if (bottomInset > 12 && !promptCommentComposerBlurUndocking) {
+            // Ignore mid-flight Safari resize events while hardware transition is playing
+            if (performance.now() < promptCommentComposerAnimLock) return;
+
+            // We predict the target so we can use smooth CSS transition
+            let predictedInset = bottomInset;
+            if (isPromptModalIOSMobile() && bottomInset < 40) {
+                // Keyboard is just starting to rise, predict final height
+                predictedInset = promptCommentComposerStableInset;
+            }
+
             const height = sheet.offsetHeight;
             const computedStyle = window.getComputedStyle(overlay);
             const paddingTop = parseFloat(computedStyle.paddingTop) || 0;
             const paddingBottom = parseFloat(computedStyle.paddingBottom) || 0;
             const contentHeight = overlayHeight - paddingTop - paddingBottom;
             const centeredBottom = paddingTop + (contentHeight / 2) + (height / 2);
-            // visualBottom is the exact top edge of the keyboard/address bar combo on iOS
-            const targetBottom = Math.max(24, visualBottom - 12);
+            // visualBottom uses the PREDICTED inverted inset relative to baseViewportHeight
+            const predictedVisualBottom = Math.max(0, baseViewportHeight - predictedInset);
+            const targetBottom = Math.max(24, predictedVisualBottom - 12);
 
             let deltaY = 0;
             if (targetBottom < centeredBottom) {
                 deltaY = targetBottom - centeredBottom;
             }
 
-            // Edge-trigger the CSS transition only when keyboard state changes significantly
+            // Edge-trigger the CSS transition
             if (!overlay.classList.contains('keyboard-docked-active')) {
                 overlay.classList.add('keyboard-docked-active');
                 sheet.classList.add('composer-animating');
-                promptCommentComposerAnimLock = performance.now() + 300; // lock visualViewport updates during 280ms CSS transition
+                promptCommentComposerAnimLock = performance.now() + 320;
 
                 if (promptCommentComposerAnimRafId) clearTimeout(promptCommentComposerAnimRafId);
                 promptCommentComposerAnimRafId = setTimeout(() => {
                     sheet.classList.remove('composer-animating');
-                    // Force a re-sync safely without lock to snap to final precise location
+                    // Force a re-sync exactly once after transition unlocks
                     requestAnimationFrame(() => syncPromptCommentComposerViewport());
-                }, 310);
-
-                overlay.style.setProperty('--composer-translate-y', `${deltaY}px`);
-                return; // Return so we don't instantly overwrite mid-transition
+                }, 300);
             }
 
-            // Ignore mid-flight Safari resize events while hardware transition is playing
-            if (performance.now() < promptCommentComposerAnimLock) {
-                return;
-            }
-
-            // Continuous 60fps tracking after the keyboard has fully stabilized
             overlay.style.setProperty('--composer-translate-y', `${deltaY}px`);
         } else if (!promptCommentComposerBlurUndocking) {
+            if (performance.now() < promptCommentComposerAnimLock) return;
+
             // Keyboard closed
             if (overlay.classList.contains('keyboard-docked-active')) {
                 overlay.classList.remove('keyboard-docked-active');
                 sheet.classList.add('composer-animating');
-                promptCommentComposerAnimLock = performance.now() + 300;
+                promptCommentComposerAnimLock = performance.now() + 320;
 
                 if (promptCommentComposerAnimRafId) clearTimeout(promptCommentComposerAnimRafId);
                 promptCommentComposerAnimRafId = setTimeout(() => {
                     sheet.classList.remove('composer-animating');
-                }, 310);
-
-                overlay.style.setProperty('--composer-translate-y', `0px`);
-                return;
+                    // Verify actual state when done
+                    requestAnimationFrame(() => syncPromptCommentComposerViewport());
+                }, 300);
             }
 
-            if (performance.now() < promptCommentComposerAnimLock) return;
             overlay.style.setProperty('--composer-translate-y', `0px`);
         }
     }
