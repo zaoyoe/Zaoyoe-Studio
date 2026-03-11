@@ -5825,6 +5825,7 @@ function unlockPromptCommentComposerPage() {
     }
     if (promptCommentComposerOwnsScrollLock && window.iOSScrollLock) {
         window.iOSScrollLock.unlock();
+        scrollPromptModalPageToBase();
         const modalInner = document.querySelector('#promptModal .modal-inner');
         const modal = document.getElementById('promptModal');
         if (modal?.classList.contains('active') && modalInner) {
@@ -5838,7 +5839,7 @@ function lockPromptCommentComposerPage() {
     const { overlay } = getPromptCommentComposerElements();
     const sheet = overlay?.querySelector('.prompt-comment-composer-sheet');
     if (window.iOSScrollLock && sheet) {
-        window.iOSScrollLock.lock(sheet);
+        window.iOSScrollLock.lock(sheet, { freezeScrollY: 0 });
         promptCommentComposerOwnsScrollLock = true;
     }
 }

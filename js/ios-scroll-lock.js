@@ -220,11 +220,18 @@
      * 锁定背景滚动
      * @param {HTMLElement} [modalElement] - 可选，弹窗元素，用于 iOS 键盘检测
      */
-    function lock(modalElement) {
+    function lock(modalElement, options = {}) {
+        const freezeScrollY = Number.isFinite(options?.freezeScrollY)
+            ? Math.max(0, Math.round(options.freezeScrollY))
+            : null;
+
         if (isLocked) {
             currentModal = modalElement || currentModal;
 
             if (isLightLock) {
+                if (freezeScrollY !== null) {
+                    savedScrollY = freezeScrollY;
+                }
                 applyFixedBodyLock();
                 isLightLock = false;
                 stabilizeLockedViewport();
@@ -239,7 +246,9 @@
         }
 
         // 1. 保存当前滚动位置
-        savedScrollY = window.scrollY || window.pageYOffset || 0;
+        savedScrollY = freezeScrollY !== null
+            ? freezeScrollY
+            : (window.scrollY || window.pageYOffset || 0);
 
         // 2. 给 body 设置 position:fixed 并偏移 top 来「冻结」页面
         applyFixedBodyLock();
