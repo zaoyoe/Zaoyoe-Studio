@@ -5751,47 +5751,19 @@ function detachPromptCommentComposerViewportSync() {
 }
 
 function unlockPromptCommentComposerPage() {
-    if (typeof promptCommentComposerPageLockCleanup === 'function') {
-        promptCommentComposerPageLockCleanup();
-        promptCommentComposerPageLockCleanup = null;
+    if (window.iOSScrollLock) {
+        window.iOSScrollLock.unlock();
     }
 }
 
 function lockPromptCommentComposerPage() {
-    unlockPromptCommentComposerPage();
-
-    const html = document.documentElement;
-    const body = document.body;
-    const savedScrollY = window.scrollY || window.pageYOffset || 0;
-    const previousStyles = {
-        htmlOverflow: html.style.overflow,
-        bodyOverflow: body.style.overflow,
-        bodyPosition: body.style.position,
-        bodyTop: body.style.top,
-        bodyLeft: body.style.left,
-        bodyRight: body.style.right,
-        bodyWidth: body.style.width
-    };
-
-    html.style.overflow = 'hidden';
-    body.style.overflow = 'hidden';
-    body.style.position = 'fixed';
-    body.style.top = `-${savedScrollY}px`;
-    body.style.left = '0';
-    body.style.right = '0';
-    body.style.width = '100%';
-
-    promptCommentComposerPageLockCleanup = () => {
-        html.style.overflow = previousStyles.htmlOverflow;
-        body.style.overflow = previousStyles.bodyOverflow;
-        body.style.position = previousStyles.bodyPosition;
-        body.style.top = previousStyles.bodyTop;
-        body.style.left = previousStyles.bodyLeft;
-        body.style.right = previousStyles.bodyRight;
-        body.style.width = previousStyles.bodyWidth;
-        window.scrollTo(0, savedScrollY);
-        promptCommentComposerPageLockCleanup = null;
-    };
+    const { overlay } = getPromptCommentComposerElements();
+    const sheet = overlay?.querySelector('.prompt-comment-composer-sheet');
+    if (window.iOSScrollLock && sheet) {
+        // Strictly use lockLight to prevent violently conflicting with 
+        // native Safari scroll-to-input behaviors during keyboard popup.
+        window.iOSScrollLock.lockLight(sheet);
+    }
 }
 
 function resetPromptCommentComposerViewportStyles() {
