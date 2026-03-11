@@ -73,12 +73,7 @@
         return !!(
             currentModal &&
             currentModal.classList &&
-            (
-                currentModal.classList.contains('poetry-modal') ||
-                currentModal.classList.contains('prompt-comment-composer') ||
-                currentModal.classList.contains('prompt-comment-composer-sheet') ||
-                currentModal.closest?.('#promptCommentComposer')
-            ) &&
+            currentModal.classList.contains('poetry-modal') &&
             isFocusedFieldInsideCurrentModal()
         );
     }

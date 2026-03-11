@@ -5882,16 +5882,21 @@ function resetPromptCommentComposerViewportStyles() {
 function capturePromptCommentComposerViewportBase() {
     const vv = window.visualViewport;
     const visualHeight = Math.max(0, vv?.height || 0);
-    const visualBottom = Math.max(0, (vv?.offsetTop || 0) + visualHeight);
     promptCommentComposerBaseViewportHeight = Math.max(
         window.innerHeight || 0,
         document.documentElement.clientHeight || 0,
-        visualBottom
+        visualHeight
     );
     promptCommentComposerBaseVisualHeight = Math.max(
         promptCommentComposerBaseVisualHeight || 0,
-        visualHeight
+        visualHeight,
+        promptCommentComposerBaseViewportHeight
     );
+    const { sheet } = getPromptCommentComposerElements();
+    if (sheet) {
+        const staticHeight = Math.round(sheet.offsetHeight || sheet.getBoundingClientRect().height || 420);
+        promptCommentComposerBaseSheetHeight = Math.max(320, staticHeight || 420);
+    }
 }
 
 function freezePromptCommentComposerOverlay() {
@@ -5919,30 +5924,21 @@ function restorePromptCommentComposerOverlay() {
 
 function getPromptCommentComposerViewportMetrics() {
     const vv = window.visualViewport;
-    const visualTop = Math.max(0, vv?.offsetTop || 0);
     const visualHeight = Math.max(0, vv?.height || 0);
-    const visualBottom = visualTop + visualHeight;
-    const baseViewportHeight = Math.max(
-        promptCommentComposerBaseViewportHeight || 0,
-        window.innerHeight || 0,
-        document.documentElement.clientHeight || 0,
-        visualBottom
-    );
     const baseVisualHeight = Math.max(
         promptCommentComposerBaseVisualHeight || 0,
-        visualHeight
+        visualHeight,
+        promptCommentComposerBaseViewportHeight || 0,
+        window.innerHeight || 0,
+        document.documentElement.clientHeight || 0
     );
     const bottomInset = Math.max(
         0,
-        baseViewportHeight - visualBottom,
         baseVisualHeight - visualHeight
     );
 
     return {
-        visualTop,
         visualHeight,
-        visualBottom,
-        baseViewportHeight,
         baseVisualHeight,
         bottomInset: Math.max(0, Math.round(bottomInset))
     };
@@ -5954,16 +5950,17 @@ function applyPromptCommentComposerDock(bottomInset, animate = false) {
 
     const metrics = getPromptCommentComposerViewportMetrics();
     if (!promptCommentComposerBaseSheetHeight) {
-        const liveHeight = Math.round(sheet.getBoundingClientRect().height || sheet.offsetHeight || 400);
+        const liveHeight = Math.round(sheet.offsetHeight || sheet.getBoundingClientRect().height || 400);
         promptCommentComposerBaseSheetHeight = liveHeight || 400;
     }
 
     const baseSheetHeight = Math.max(320, promptCommentComposerBaseSheetHeight || 400);
-    const keyboardTop = Math.max(0, metrics.baseViewportHeight - Math.max(0, bottomInset));
-    const minTop = Math.max(12, Math.round(metrics.visualTop + 12));
+    const baseViewportHeight = Math.max(metrics.baseVisualHeight || 0, promptCommentComposerBaseViewportHeight || 0);
+    const keyboardTop = Math.max(0, baseViewportHeight - Math.max(0, bottomInset));
+    const minTop = 12;
     const maxAvailableHeight = Math.max(260, Math.round(keyboardTop - minTop - 12));
     const dockHeight = Math.min(baseSheetHeight, maxAvailableHeight);
-    const centeredTop = (metrics.baseViewportHeight - dockHeight) / 2;
+    const centeredTop = (baseViewportHeight - dockHeight) / 2;
     const desiredTop = Math.max(minTop, keyboardTop - 12 - dockHeight);
     const deltaY = Math.round(desiredTop - centeredTop);
 
@@ -6146,13 +6143,11 @@ function attachPromptCommentComposerViewportSync() {
     };
 
     vv.addEventListener('resize', handleViewportChange, { passive: true });
-    vv.addEventListener('scroll', handleViewportChange, { passive: true });
     input?.addEventListener('focus', handleViewportChange);
     input?.addEventListener('blur', handleViewportChange);
 
     promptCommentComposerViewportCleanup = () => {
         vv.removeEventListener('resize', handleViewportChange);
-        vv.removeEventListener('scroll', handleViewportChange);
         input?.removeEventListener('focus', handleViewportChange);
         input?.removeEventListener('blur', handleViewportChange);
         if (promptCommentComposerViewportRafId) {
