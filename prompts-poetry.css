@@ -3324,11 +3324,12 @@ body.modal-open .prompt-card {
     display: none;
     align-items: flex-end;
     justify-content: center;
+    --composer-keyboard-offset: 0px;
     background: rgba(7, 9, 12, 0.28);
     backdrop-filter: blur(14px) saturate(108%);
     -webkit-backdrop-filter: blur(14px) saturate(108%);
     z-index: 10030;
-    padding: 36px 18px 18px;
+    padding: 24px 18px 18px;
     box-sizing: border-box;
     pointer-events: none;
 }
@@ -3340,8 +3341,9 @@ body.modal-open .prompt-card {
 
 .prompt-comment-composer-sheet {
     width: min(100%, 620px);
-    min-height: min(54svh, 500px);
-    max-height: min(78svh, 640px);
+    height: min(420px, calc(100dvh - 28px - var(--composer-keyboard-offset)));
+    min-height: 320px;
+    max-height: calc(100dvh - 28px - var(--composer-keyboard-offset));
     background: rgba(11, 14, 20, 0.94);
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 32px;
@@ -3355,9 +3357,7 @@ body.modal-open .prompt-card {
     gap: 12px;
     pointer-events: auto;
     overflow: hidden;
-    transform: translate3d(0, 0, 0);
-    will-change: transform;
-    transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+    transform: translate3d(0, calc(-1 * var(--composer-keyboard-offset)), 0);
 }
 
 [data-theme="dark"] .prompt-comment-composer-sheet {
@@ -3447,8 +3447,8 @@ body.modal-open .prompt-card {
 .prompt-comment-composer-editor {
     flex: 1 1 auto;
     position: relative;
-    display: flex;
-    min-height: 0;
+    display: grid;
+    min-height: 140px;
     padding: 18px 18px 14px;
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 24px;
@@ -3459,12 +3459,14 @@ body.modal-open .prompt-card {
 }
 
 .prompt-comment-composer-editor.is-empty {
-    align-items: center;
+    place-items: center;
 }
 
 .prompt-comment-composer-empty-placeholder {
     position: absolute;
-    inset: 50% 24px auto;
+    left: 24px;
+    right: 24px;
+    top: 50%;
     transform: translateY(-50%);
     text-align: center;
     color: rgba(200, 206, 216, 0.46);
@@ -3496,9 +3498,7 @@ body.modal-open .prompt-card {
     overflow-y: auto;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
-    transition:
-        color 180ms ease,
-        opacity 180ms ease;
+    align-self: stretch;
 }
 
 #promptCommentComposerInput:focus {
@@ -3521,6 +3521,10 @@ body.modal-open .prompt-card {
     padding-top: 6px;
     margin-top: auto;
     border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.prompt-comment-composer.keyboard-active .prompt-comment-composer-sheet {
+    transition: none;
 }
 
 .prompt-comment-composer-upload {
@@ -3566,13 +3570,14 @@ body.modal-open .prompt-card {
     .prompt-comment-composer {
         align-items: flex-end;
         justify-content: flex-end;
-        padding: calc(env(safe-area-inset-top, 0px) + 20px) 12px 12px;
+        padding: calc(env(safe-area-inset-top, 0px) + 16px) 12px 12px;
     }
 
     .prompt-comment-composer-sheet {
         width: 100%;
-        min-height: min(56svh, 500px);
-        max-height: min(74svh, 620px);
+        height: min(400px, calc(100dvh - 24px - var(--composer-keyboard-offset)));
+        min-height: 300px;
+        max-height: calc(100dvh - 24px - var(--composer-keyboard-offset));
         border-radius: 30px;
         padding: 14px 16px calc(16px + env(safe-area-inset-bottom));
     }
