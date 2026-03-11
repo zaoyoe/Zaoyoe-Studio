@@ -5826,6 +5826,7 @@ function ensurePromptCommentComposer() {
     overlay.className = 'prompt-comment-composer';
     overlay.innerHTML = `
         <div class="prompt-comment-composer-sheet">
+            <div class="prompt-comment-composer-kicker">${window.i18n?.t('gallery.commentsTitle') || 'Comments'}</div>
             <div class="prompt-comment-composer-header">
                 <div class="prompt-comment-composer-title">${window.i18n?.t('gallery.addComment') || 'Add a comment'}</div>
                 <button type="button" class="prompt-comment-composer-close" id="promptCommentComposerCloseBtn" aria-label="Close">
@@ -5833,7 +5834,9 @@ function ensurePromptCommentComposer() {
                 </button>
             </div>
             <div class="prompt-comment-composer-meta" id="promptCommentComposerMeta"></div>
-            <textarea id="promptCommentComposerInput" rows="6" placeholder="${window.i18n?.t('gallery.addComment') || 'Add a comment...'}"></textarea>
+            <div class="prompt-comment-composer-editor">
+                <textarea id="promptCommentComposerInput" rows="6" placeholder="${window.i18n?.t('gallery.addComment') || 'Add a comment...'}"></textarea>
+            </div>
             <input type="file" id="promptCommentComposerImageUpload" accept="image/*" style="display:none;">
             <div class="prompt-comment-composer-actions">
                 <button type="button" class="prompt-comment-composer-upload" id="promptCommentComposerUploadBtn" title="${window.i18n?.t('gallery.attachImage') || 'Attach image'}">
