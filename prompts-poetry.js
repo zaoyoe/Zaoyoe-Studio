@@ -5622,6 +5622,7 @@ let promptCommentComposerBlurUndocking = false;
 let promptCommentComposerAnimLock = 0;
 let promptCommentComposerStableInset = 340; // Default guess for iOS
 let promptCommentComposerPendingDockTimer = null;
+let promptCommentComposerCachedMetrics = null;
 
 function isPromptCommentComposerEnabled() {
     return isPromptModalIOSMobile();
@@ -5823,7 +5824,7 @@ function clampPromptModalPageScroll(duration = 420) {
 }
 
 function syncPromptCommentComposerViewport() {
-    const { overlay } = getPromptCommentComposerElements();
+    const { overlay, input } = getPromptCommentComposerElements();
     if (!overlay) return;
 
     const vv = window.visualViewport;
