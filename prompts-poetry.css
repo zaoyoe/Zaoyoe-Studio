@@ -3358,6 +3358,7 @@ body.modal-open .prompt-card {
     pointer-events: auto;
     overflow: hidden;
     transform: translate3d(0, calc(-1 * var(--composer-keyboard-offset)), 0);
+    transition: none;
 }
 
 [data-theme="dark"] .prompt-comment-composer-sheet {
@@ -3464,15 +3465,17 @@ body.modal-open .prompt-card {
 
 .prompt-comment-composer-empty-placeholder {
     position: absolute;
-    left: 24px;
-    right: 24px;
-    top: 50%;
-    transform: translateY(-50%);
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
     text-align: center;
     color: rgba(200, 206, 216, 0.46);
     font-size: 17px;
     line-height: 1.82;
     pointer-events: none;
+    z-index: 2;
     opacity: 0;
     transition: opacity 160ms ease;
 }
@@ -3485,7 +3488,7 @@ body.modal-open .prompt-card {
     width: 100%;
     flex: 1 1 auto;
     min-height: 160px;
-    max-height: none;
+    max-height: min(220px, 28dvh);
     padding: 0;
     margin: 0;
     border: none;
@@ -3499,6 +3502,8 @@ body.modal-open .prompt-card {
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
     align-self: stretch;
+    position: relative;
+    z-index: 1;
 }
 
 #promptCommentComposerInput:focus {
@@ -3506,6 +3511,18 @@ body.modal-open .prompt-card {
 }
 
 #promptCommentComposerInput::placeholder {
+    color: transparent;
+}
+
+#promptCommentComposerInput::-webkit-input-placeholder {
+    color: transparent;
+}
+
+#promptCommentComposerInput::-moz-placeholder {
+    color: transparent;
+}
+
+#promptCommentComposerInput:-ms-input-placeholder {
     color: transparent;
 }
 
@@ -3521,10 +3538,6 @@ body.modal-open .prompt-card {
     padding-top: 6px;
     margin-top: auto;
     border-top: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.prompt-comment-composer.keyboard-active .prompt-comment-composer-sheet {
-    transition: none;
 }
 
 .prompt-comment-composer-upload {

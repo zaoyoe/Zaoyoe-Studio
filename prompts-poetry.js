@@ -5828,7 +5828,7 @@ function clampPromptModalPageScroll(duration = 420) {
 }
 
 function syncPromptCommentComposerViewport() {
-    const { overlay, input } = getPromptCommentComposerElements();
+    const { overlay } = getPromptCommentComposerElements();
     if (!overlay) return;
 
     const vv = window.visualViewport;
@@ -5863,12 +5863,6 @@ function syncPromptCommentComposerViewport() {
     overlay.style.height = `${overlayHeight}px`;
     overlay.style.setProperty('--composer-keyboard-offset', `${bottomInset}px`);
     overlay.classList.toggle('keyboard-active', bottomInset > 12);
-    if (input) {
-        const availableEditorHeight = Math.max(120, Math.min(220, Math.round((visualHeight || 0) * 0.28)));
-        const maxInputHeight = Math.max(120, availableEditorHeight);
-        input.style.maxHeight = `${maxInputHeight}px`;
-        autoExpandPromptCommentComposerInput(input);
-    }
 }
 
 function attachPromptCommentComposerViewportSync() {
