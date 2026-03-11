@@ -4351,6 +4351,7 @@ const promptModalKeyboardDock = {
     attached: false,
     onViewportChange: null,
     viewportRafId: null,
+    transitionCleanupTimer: null,
     pendingUndockTimer: null,
     pendingFirstDockTimer: null,
     pendingFirstDockParams: null,
@@ -4371,6 +4372,13 @@ const promptModalKeyboardDock = {
 let promptModalOpeningTimer = null;
 let promptModalDockTimers = [];
 let promptModalStatusBarShield = null;
+
+function clearPromptModalTransitionCleanupTimer() {
+    if (promptModalKeyboardDock.transitionCleanupTimer) {
+        clearTimeout(promptModalKeyboardDock.transitionCleanupTimer);
+        promptModalKeyboardDock.transitionCleanupTimer = null;
+    }
+}
 
 function isPromptModalIOSMobile() {
     const ua = navigator.userAgent || '';
@@ -4575,6 +4583,7 @@ function clearPromptModalFirstDockTimer() {
 }
 
 function clearPromptModalDockTimers() {
+    clearPromptModalTransitionCleanupTimer();
     clearPromptModalUndockTimer();
     clearPromptModalFirstDockTimer();
 }
@@ -4733,6 +4742,7 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
 
     clearPromptModalUndockTimer();
     clearPromptModalFirstDockTimer();
+    clearPromptModalTransitionCleanupTimer();
     document.body.classList.add('prompt-modal-keyboard-docked');
     // Force page scroll to top — Safari's native scroll-to-input may have
     // scrolled the page, shifting the visual viewport and misaligning dock.
@@ -4740,7 +4750,11 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
     modal.classList.add('keyboard-docked');
     modal.style.setProperty('height', `${baseViewportHeight}px`, 'important');
     modalInner.classList.add('keyboard-docked');
-    modalInner.style.transition = 'none';
+    const duration = animate ? 130 : 0;
+    modalInner.style.willChange = 'top, height, transform';
+    modalInner.style.transition = duration
+        ? `top ${duration}ms cubic-bezier(0.22, 1, 0.36, 1), height ${duration}ms cubic-bezier(0.22, 1, 0.36, 1), max-height ${duration}ms cubic-bezier(0.22, 1, 0.36, 1), transform ${duration}ms cubic-bezier(0.22, 1, 0.36, 1)`
+        : 'none';
     modalInner.style.position = 'absolute';
     // ── Direct pixel coordinates ──
     modalInner.style.top = `${dockTop}px`;
@@ -4758,7 +4772,19 @@ function applyPromptModalKeyboardDock(visualHeightOverride = null, bottomInsetOv
     modalInner.style.transform = 'translateX(-50%) translateZ(0)';
     promptModalKeyboardDock.docked = true;
     promptModalKeyboardDock.lastKeyboardInset = bottomInset;
-    promptModalKeyboardDock.animatingUntil = 0;
+    promptModalKeyboardDock.animatingUntil = duration ? (now + duration + 24) : 0;
+
+    if (duration) {
+        promptModalKeyboardDock.transitionCleanupTimer = setTimeout(() => {
+            const { modalInner: activeInner } = getPromptModalDockNodes();
+            promptModalKeyboardDock.transitionCleanupTimer = null;
+            if (!activeInner || !activeInner.classList.contains('keyboard-docked')) return;
+            activeInner.style.transition = 'none';
+            activeInner.style.willChange = 'auto';
+        }, duration + 40);
+    } else {
+        modalInner.style.willChange = 'auto';
+    }
 }
 
 function resetPromptModalKeyboardDock(animate = false) {
@@ -4809,6 +4835,7 @@ function resetPromptModalKeyboardDock(animate = false) {
             activeInner.style.removeProperty('max-width');
             activeInner.style.removeProperty('height');
             activeInner.style.removeProperty('max-height');
+            activeInner.style.removeProperty('will-change');
             activeInner.style.transition = '';
             requestAnimationFrame(() => capturePromptModalDockMetrics(true));
         }, duration + 40);
@@ -4827,6 +4854,7 @@ function resetPromptModalKeyboardDock(animate = false) {
         modalInner.style.removeProperty('max-width');
         modalInner.style.removeProperty('height');
         modalInner.style.removeProperty('max-height');
+        modalInner.style.removeProperty('will-change');
         modalInner.style.transition = '';
         requestAnimationFrame(() => capturePromptModalDockMetrics(true));
     }
@@ -4857,7 +4885,7 @@ function scheduleInitialPromptModalKeyboardDock(visualHeight, bottomInset) {
     promptModalKeyboardDock.pendingFirstDockParams = {
         visualHeight,
         bottomInset,
-        animate: false
+        animate: true
     };
 
     if (promptModalKeyboardDock.pendingFirstDockTimer) return;
