@@ -3456,13 +3456,6 @@ body.modal-open .prompt-card {
     letter-spacing: -0.03em;
 }
 
-.prompt-comment-composer-subtitle {
-    max-width: 28rem;
-    font-size: 0.88rem;
-    line-height: 1.6;
-    color: rgba(200, 206, 216, 0.68);
-}
-
 .prompt-comment-composer-close {
     width: 44px;
     height: 44px;
@@ -3617,6 +3610,7 @@ body.modal-open .prompt-card {
     border-radius: 999px;
     background: rgba(224, 230, 240, 0.92);
     color: #12161d;
+    font-size: 1.05rem;
     font-weight: 600;
     cursor: pointer;
     letter-spacing: 0.01em;
@@ -3641,10 +3635,6 @@ body.modal-open .prompt-card {
         max-height: calc(100svh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px);
         border-radius: 30px;
         padding: 14px 16px calc(16px + env(safe-area-inset-bottom));
-    }
-
-    .prompt-comment-composer-subtitle {
-        font-size: 0.86rem;
     }
 
     #promptCommentComposerInput {

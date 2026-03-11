@@ -5703,7 +5703,6 @@ function getPromptCommentComposerI18n() {
     return {
         commentsTitle: window.i18n?.t('gallery.commentsTitle') || 'Comments',
         title: window.i18n?.t('gallery.commentComposerTitle') || 'Leave a note',
-        subtitle: window.i18n?.t('gallery.commentComposerSubtitle') || 'Write a quiet observation about the image, mood, or prompt.',
         placeholder: window.i18n?.t('gallery.commentComposerPlaceholder') || 'Start writing here...',
         attachImage: window.i18n?.t('gallery.attachImage') || 'Attach image',
         imageAttached: window.i18n?.t('gallery.imageAttached') || 'Image attached',
@@ -6179,7 +6178,6 @@ function ensurePromptCommentComposer() {
                 <div class="prompt-comment-composer-copy">
                     <div class="prompt-comment-composer-kicker" data-i18n="gallery.commentsTitle">${copy.commentsTitle}</div>
                     <div class="prompt-comment-composer-title" data-i18n="gallery.commentComposerTitle">${copy.title}</div>
-                    <div class="prompt-comment-composer-subtitle" data-i18n="gallery.commentComposerSubtitle">${copy.subtitle}</div>
                 </div>
                 <button type="button" class="prompt-comment-composer-close" id="promptCommentComposerCloseBtn" aria-label="${copy.close}" data-i18n="common.close" data-i18n-attr="aria-label">
                     <i class="fas fa-times"></i>
