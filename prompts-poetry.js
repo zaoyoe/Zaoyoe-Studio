@@ -5593,6 +5593,17 @@ function detachPromptCommentComposerViewportSync() {
     }
 }
 
+function resetPromptCommentComposerViewportStyles() {
+    const { overlay, sheet, input } = getPromptCommentComposerElements();
+    if (!overlay) return;
+
+    const basePadding = window.innerWidth <= 768 ? 8 : 16;
+    overlay.style.paddingTop = `${basePadding}px`;
+    overlay.style.paddingBottom = `${basePadding}px`;
+    sheet?.style.removeProperty('max-height');
+    input?.style.removeProperty('max-height');
+}
+
 function syncPromptCommentComposerViewport() {
     const { overlay, sheet, input } = getPromptCommentComposerElements();
     if (!overlay) return;
@@ -5601,14 +5612,7 @@ function syncPromptCommentComposerViewport() {
     const modalInner = overlay.parentElement;
     const basePadding = window.innerWidth <= 768 ? 8 : 16;
 
-    overlay.style.paddingTop = `${basePadding}px`;
-    overlay.style.paddingBottom = `${basePadding}px`;
-    if (sheet) {
-        sheet.style.removeProperty('max-height');
-    }
-    if (input) {
-        input.style.removeProperty('max-height');
-    }
+    resetPromptCommentComposerViewportStyles();
 
     if (!overlay.classList.contains('active') || !vv || !modalInner) return;
 
@@ -5706,7 +5710,6 @@ function ensurePromptCommentComposer() {
         autoExpandPromptCommentComposerInput(input);
         syncPromptCommentComposerMeta();
         syncPromptCommentComposerTrigger();
-        syncPromptCommentComposerViewport();
     });
     input?.addEventListener('keydown', handleCommentKeydown);
 
@@ -5751,7 +5754,8 @@ function openPromptCommentComposer(options = {}) {
     autoExpandPromptCommentComposerInput(composer.input);
     syncPromptCommentComposerMeta();
     syncPromptCommentComposerTrigger();
-    attachPromptCommentComposerViewportSync();
+    detachPromptCommentComposerViewportSync();
+    resetPromptCommentComposerViewportStyles();
     syncPromptModalTopButtonState();
     initCommentImageUpload();
 
@@ -5762,6 +5766,7 @@ function openPromptCommentComposer(options = {}) {
             } catch (_) {
                 composer.input.focus();
             }
+            primePromptModalKeyboardDock();
         });
     }
 
@@ -5787,9 +5792,10 @@ function closePromptCommentComposer(options = {}) {
     }
 
     overlay.classList.remove('active');
-    syncPromptCommentComposerViewport();
+    resetPromptCommentComposerViewportStyles();
     syncPromptModalTopButtonState();
     input?.blur();
+    schedulePromptModalUndock();
 }
 
 function getActiveCommentInput() {
@@ -6873,7 +6879,6 @@ function restoreCommentDraft(input, content, parentId = null, replyToName = '') 
         autoExpandPromptCommentComposerInput(input);
         syncPromptCommentComposerMeta();
         syncPromptCommentComposerTrigger();
-        syncPromptCommentComposerViewport();
     } else {
         autoExpandTextarea(input);
     }
