@@ -5761,14 +5761,16 @@ function lockPromptCommentComposerPage() {
 }
 
 function resetPromptCommentComposerViewportStyles() {
-    const { overlay, input } = getPromptCommentComposerElements();
+    const { overlay, input, sheet } = getPromptCommentComposerElements();
     if (!overlay) return;
     if (window.promptCommentComposerAnimRafId) {
         clearTimeout(window.promptCommentComposerAnimRafId);
         window.promptCommentComposerAnimRafId = null;
     }
-    const sheet = overlay.querySelector('.prompt-comment-composer-sheet');
-    if (sheet) sheet.classList.remove('composer-animating');
+    if (sheet) {
+        sheet.classList.remove('composer-animating');
+        sheet.style.removeProperty('--composer-translate-y');
+    }
 
     overlay.style.setProperty('--composer-keyboard-offset', '0px');
     overlay.classList.remove('keyboard-active');
@@ -5931,40 +5933,39 @@ function syncPromptCommentComposerViewport() {
     }
 
     const metrics = promptCommentComposerCachedMetrics;
-    const cyOverlay = promptCommentComposerOverlayBaseHeight / 2;
+    const overlayCenterY = promptCommentComposerOverlayBaseHeight / 2;
 
-    // 1. Where should it be if perfectly centered?
-    const restingCy = visualHeight / 2;
+    // 1. Where should it be if perfectly centered in the VISIBLE viewport?
+    const absoluteVisibleCenterY = visualTop + (visualHeight / 2);
 
-    // 2. Where should it be if docked to the keyboard (or visual bottom)?
-    const targetBottomVisual = Math.max(24, visualHeight - 12);
-    const dockedCy = targetBottomVisual - (metrics.height / 2);
+    // 2. Where should it be if fully docked to the keyboard?
+    // Anchored to bottomInset which is highly stable, bypassing visualTop/visualHeight oscillation.
+    const keyboardTopAbs = promptCommentComposerOverlayBaseHeight - Math.max(0, bottomInset);
+    const targetDockBottomAbs = Math.max(24, keyboardTopAbs - 12);
+    const dockedCenterYAbs = targetDockBottomAbs - (metrics.height / 2);
 
-    // 3. Pure Geometry Engine: 
-    // It rests in the center, unless the keyboard physically pushes the valid docked space HIGHER (smaller Y) than the center.
-    // This perfectly bypasses Safari URL bar false-insets, and prevents "jump on close" because the bounds intersect smoothly mid-animation.
-    const cyVisual = Math.min(restingCy, dockedCy);
+    // 3. Absolute Geometry Engine
+    const targetAbsY = Math.min(absoluteVisibleCenterY, dockedCenterYAbs);
+    const deltaY = targetAbsY - overlayCenterY;
 
-    const isActivelyDocked = dockedCy < restingCy;
-
+    const isActivelyDocked = dockedCenterYAbs < absoluteVisibleCenterY;
     const wasActivelyDocked = overlay.classList.contains('keyboard-docked-active');
 
     if (isActivelyDocked !== wasActivelyDocked) {
         if (sheet) {
-            // Re-enable bidirectional low-pass CSS transition filter.
-            // This is absolutely vital for 3rd party engines like WeChat Keyboard which send
-            // chaotic oscillating frame data during ascent. The CSS bezier curve smooths the wobble.
+            // Re-enable bidirectional low-pass CSS transition filter to smooth third party keyboards.
             sheet.classList.add('composer-animating');
             if (window.promptCommentComposerAnimRafId) {
                 clearTimeout(window.promptCommentComposerAnimRafId);
             }
             window.promptCommentComposerAnimRafId = setTimeout(() => {
                 sheet.classList.remove('composer-animating');
-                // Ensure the final frame is painted after the lock lifts
                 syncPromptCommentComposerViewport();
             }, isActivelyDocked ? 240 : 320);
 
-            // Lock out JS frame tracking to prevent intermediate target chasing (Wobble)
+            // Lock out JS frame tracking to prevent target chasing.
+            // On exit, Safari's final `bottomInset` jump triggers `isActivelyDocked = false`. The lock
+            // prevents JS from ruining the CSS drop animation to center.
             window.promptCommentComposerMotionLockUntil = performance.now() + (isActivelyDocked ? 240 : 320);
 
             if (!isActivelyDocked) {
@@ -5973,15 +5974,12 @@ function syncPromptCommentComposerViewport() {
         }
     }
 
-    const cyTarget = visualTop + Math.max(0, cyVisual);
-    const deltaY = cyTarget - cyOverlay;
-
     overlay.style.setProperty('--composer-keyboard-offset', `${isActivelyDocked ? bottomInset : 0}px`);
     overlay.classList.toggle('keyboard-active', isActivelyDocked);
     overlay.classList.toggle('keyboard-docked-active', isActivelyDocked);
 
-    // Sync frame-by-frame
-    overlay.style.setProperty('--composer-translate-y', `${deltaY}px`);
+    // Write coordinate directly to the element with the transition to bypass Safari inherit bug
+    if (sheet) sheet.style.setProperty('--composer-translate-y', `${deltaY}px`);
 }
 
 function attachPromptCommentComposerViewportSync() {
