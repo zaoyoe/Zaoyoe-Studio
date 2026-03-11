@@ -5900,18 +5900,14 @@ function syncPromptCommentComposerViewport() {
     const sheet = overlay.querySelector('.prompt-comment-composer-sheet');
     if (sheet) {
         if (bottomInset > 12 && !promptCommentComposerBlurUndocking) {
-            // Edge-trigger the CSS transition only when keyboard state changes significantly
+            // Track docked state but DO NOT add CSS animation. 
+            // We want to ride the native 60fps iOS visualViewport upward animation synchronously for absolute smoothness.
             if (!overlay.classList.contains('keyboard-docked-active')) {
                 overlay.classList.add('keyboard-docked-active');
-                sheet.classList.add('composer-animating');
-                if (promptCommentComposerAnimRafId) clearTimeout(promptCommentComposerAnimRafId);
-                promptCommentComposerAnimRafId = setTimeout(() => {
-                    sheet.classList.remove('composer-animating');
-                }, 280);
             }
 
             const height = sheet.offsetHeight;
-            const centeredBottom = (baseViewportHeight / 2) + (height / 2);
+            const centeredBottom = (overlayHeight / 2) + (height / 2);
             // visualBottom is the exact top edge of the keyboard/address bar combo on iOS
             const targetBottom = Math.max(24, visualBottom - 12);
 
