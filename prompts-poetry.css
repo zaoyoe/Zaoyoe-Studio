@@ -3322,8 +3322,6 @@ body.modal-open .prompt-card {
     position: fixed;
     inset: 0;
     display: none;
-    align-items: center;
-    justify-content: center;
     --composer-keyboard-offset: 0px;
     --composer-translate-y: 0px;
     background: rgba(7, 9, 12, 0.28);
@@ -3358,7 +3356,10 @@ body.modal-open .prompt-card {
     gap: 12px;
     pointer-events: auto;
     overflow: hidden;
-    transform: translate3d(0, var(--composer-translate-y, 0px), 0);
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate3d(-50%, calc(-50% + var(--composer-translate-y, 0px)), 0);
     will-change: transform, height;
 }
 
@@ -3589,8 +3590,7 @@ body.modal-open .prompt-card {
 
 @media (max-width: 768px) {
     .prompt-comment-composer {
-        align-items: center;
-        justify-content: center;
+        /* align-items and justify-content removed for absolute positioning compatibility */
         padding: calc(env(safe-area-inset-top, 0px) + 16px) 12px 12px;
     }
 

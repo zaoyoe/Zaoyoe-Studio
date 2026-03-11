@@ -5887,17 +5887,14 @@ function syncPromptCommentComposerViewport() {
         if (bottomInset > 12 && !promptCommentComposerBlurUndocking) {
             if (!promptCommentComposerCachedMetrics) {
                 const height = sheet.offsetHeight;
-                const computedStyle = window.getComputedStyle(overlay);
                 promptCommentComposerCachedMetrics = {
-                    height: height,
-                    paddingTop: parseFloat(computedStyle.paddingTop) || 0,
-                    paddingBottom: parseFloat(computedStyle.paddingBottom) || 0
+                    height: height
                 };
             }
 
             const metrics = promptCommentComposerCachedMetrics;
-            const contentHeight = overlayHeight - metrics.paddingTop - metrics.paddingBottom;
-            const centeredBottom = metrics.paddingTop + (contentHeight / 2) + (metrics.height / 2);
+            // With absolute top: 50%, the center is mathematically exact
+            const centeredBottom = (overlayHeight / 2) + (metrics.height / 2);
             const targetBottom = Math.max(24, visualBottom - 12);
 
             let deltaY = 0;
