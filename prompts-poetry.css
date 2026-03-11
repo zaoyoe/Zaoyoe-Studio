@@ -3322,7 +3322,7 @@ body.modal-open .prompt-card {
     position: fixed;
     inset: 0;
     display: none;
-    align-items: flex-end;
+    align-items: center;
     justify-content: center;
     --composer-keyboard-offset: 0px;
     --composer-translate-y: 0px;

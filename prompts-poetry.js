@@ -5618,6 +5618,8 @@ let promptCommentComposerViewportRafId = null;
 let promptCommentComposerLastBottomInset = 0;
 let promptCommentComposerInsetDropTimer = null;
 let promptCommentComposerPendingInset = 0;
+let promptCommentComposerDocked = false;
+let promptCommentComposerInitialDockTimer = null;
 
 function isPromptCommentComposerEnabled() {
     return isPromptModalIOSMobile();
@@ -5744,6 +5746,10 @@ function detachPromptCommentComposerViewportSync() {
         promptCommentComposerViewportCleanup();
         promptCommentComposerViewportCleanup = null;
     }
+    if (promptCommentComposerInitialDockTimer) {
+        clearTimeout(promptCommentComposerInitialDockTimer);
+        promptCommentComposerInitialDockTimer = null;
+    }
     if (promptCommentComposerInsetDropTimer) {
         clearTimeout(promptCommentComposerInsetDropTimer);
         promptCommentComposerInsetDropTimer = null;
@@ -5781,7 +5787,12 @@ function resetPromptCommentComposerViewportStyles() {
     overlay.classList.remove('keyboard-active');
     overlay.classList.remove('keyboard-docked-active');
     input?.style.removeProperty('max-height');
+    promptCommentComposerDocked = false;
     promptCommentComposerLastBottomInset = 0;
+    if (promptCommentComposerInitialDockTimer) {
+        clearTimeout(promptCommentComposerInitialDockTimer);
+        promptCommentComposerInitialDockTimer = null;
+    }
     if (promptCommentComposerInsetDropTimer) {
         clearTimeout(promptCommentComposerInsetDropTimer);
         promptCommentComposerInsetDropTimer = null;
@@ -5827,6 +5838,71 @@ function restorePromptCommentComposerOverlay() {
     overlay.style.removeProperty('height');
 }
 
+function getPromptCommentComposerViewportMetrics() {
+    const vv = window.visualViewport;
+    const visualTop = Math.max(0, vv?.offsetTop || 0);
+    const visualHeight = Math.max(0, vv?.height || 0);
+    const visualBottom = visualTop + visualHeight;
+    const baseViewportHeight = Math.max(
+        promptCommentComposerBaseViewportHeight || 0,
+        window.innerHeight || 0,
+        document.documentElement.clientHeight || 0,
+        visualBottom
+    );
+    const baseVisualHeight = Math.max(
+        promptCommentComposerBaseVisualHeight || 0,
+        visualHeight
+    );
+    const bottomInset = Math.max(
+        0,
+        baseViewportHeight - visualBottom,
+        baseVisualHeight - visualHeight
+    );
+
+    return {
+        visualTop,
+        visualHeight,
+        visualBottom,
+        baseViewportHeight,
+        baseVisualHeight,
+        bottomInset: Math.max(0, Math.round(bottomInset))
+    };
+}
+
+function applyPromptCommentComposerDock(bottomInset, animate = false) {
+    const { overlay, sheet } = getPromptCommentComposerElements();
+    if (!overlay || !sheet) return;
+
+    const metrics = getPromptCommentComposerViewportMetrics();
+    const sheetRect = sheet.getBoundingClientRect();
+    const sheetHeight = Math.round(sheetRect.height || sheet.offsetHeight || 400);
+    const centeredBottom = (metrics.baseViewportHeight / 2) + (sheetHeight / 2);
+    const keyboardTop = Math.max(0, metrics.baseViewportHeight - Math.max(0, bottomInset));
+    const targetBottom = Math.max(24, keyboardTop - 12);
+    const deltaY = Math.min(0, Math.round(targetBottom - centeredBottom));
+
+    overlay.style.setProperty('--composer-keyboard-offset', `${bottomInset}px`);
+    overlay.classList.toggle('keyboard-active', bottomInset > 0);
+    overlay.classList.toggle('keyboard-docked-active', bottomInset > 0);
+
+    if (window.promptCommentComposerAnimRafId) {
+        clearTimeout(window.promptCommentComposerAnimRafId);
+        window.promptCommentComposerAnimRafId = null;
+    }
+
+    sheet.classList.toggle('composer-animating', !!animate);
+    if (animate) {
+        window.promptCommentComposerAnimRafId = setTimeout(() => {
+            sheet.classList.remove('composer-animating');
+            window.promptCommentComposerAnimRafId = null;
+        }, 200);
+    }
+
+    sheet.style.setProperty('--composer-translate-y', `${deltaY}px`);
+    promptCommentComposerDocked = bottomInset > 0;
+    promptCommentComposerLastBottomInset = Math.max(0, bottomInset);
+}
+
 function clampPromptModalPageScroll(duration = 420) {
     const scrollClamp = () => {
         if (window.scrollY !== 0 || window.scrollX !== 0) {
@@ -5857,40 +5933,39 @@ function syncPromptCommentComposerViewport() {
 
     const vv = window.visualViewport;
     if (!vv) {
-        overlay.style.setProperty('--composer-keyboard-offset', '0px');
-        overlay.classList.remove('keyboard-active');
-        overlay.classList.remove('keyboard-docked-active');
-        if (sheet) {
-            sheet.style.setProperty('--composer-translate-y', '0px');
-        }
-        promptCommentComposerLastBottomInset = 0;
+        resetPromptCommentComposerViewportStyles();
         return;
     }
 
-    const visualTop = Math.max(0, vv.offsetTop || 0);
-    const visualHeight = Math.max(0, vv.height || 0);
-    const visualBottom = visualTop + visualHeight;
-    const baseViewportHeight = Math.max(
-        promptCommentComposerBaseViewportHeight || 0,
-        window.innerHeight || 0,
-        document.documentElement.clientHeight || 0,
-        visualBottom
-    );
-    const baseVisualHeight = Math.max(
-        promptCommentComposerBaseVisualHeight || 0,
-        visualHeight
-    );
-    const bottomInset = Math.max(
-        0,
-        baseViewportHeight - visualBottom,
-        baseVisualHeight - visualHeight
-    );
+    const metrics = getPromptCommentComposerViewportMetrics();
+    const bottomInset = metrics.bottomInset;
     const isFocused = input === document.activeElement;
     if (!sheet) return;
 
-    const nextInset = (isFocused && bottomInset > 60) ? Math.round(bottomInset) : 0;
+    const shouldDock = isFocused && (promptCommentComposerDocked ? bottomInset > 8 : bottomInset > 24);
+    const nextInset = shouldDock ? bottomInset : 0;
     const previousInset = promptCommentComposerLastBottomInset;
-    const isInsetDroppingWhileFocused = isFocused && nextInset > 0 && nextInset + 24 < previousInset;
+    const isInsetDroppingWhileFocused = promptCommentComposerDocked && isFocused && nextInset > 24 && nextInset + 24 < previousInset;
+
+    if (!promptCommentComposerDocked && shouldDock) {
+        promptCommentComposerPendingInset = nextInset;
+        if (!promptCommentComposerInitialDockTimer) {
+            promptCommentComposerInitialDockTimer = setTimeout(() => {
+                promptCommentComposerInitialDockTimer = null;
+                const liveInput = getPromptCommentComposerElements().input;
+                if (document.activeElement !== liveInput) return;
+                const liveMetrics = getPromptCommentComposerViewportMetrics();
+                if (liveMetrics.bottomInset <= 24) return;
+                applyPromptCommentComposerDock(liveMetrics.bottomInset, false);
+            }, 90);
+        }
+        return;
+    }
+
+    if (promptCommentComposerInitialDockTimer && (promptCommentComposerDocked || !shouldDock)) {
+        clearTimeout(promptCommentComposerInitialDockTimer);
+        promptCommentComposerInitialDockTimer = null;
+    }
 
     if (promptCommentComposerInsetDropTimer && (!isInsetDroppingWhileFocused || nextInset >= previousInset)) {
         clearTimeout(promptCommentComposerInsetDropTimer);
@@ -5905,35 +5980,33 @@ function syncPromptCommentComposerViewport() {
                 promptCommentComposerInsetDropTimer = null;
                 const settledInset = promptCommentComposerPendingInset;
                 promptCommentComposerPendingInset = 0;
-                promptCommentComposerLastBottomInset = settledInset;
-                overlay.style.setProperty('--composer-keyboard-offset', `${settledInset}px`);
-                overlay.classList.toggle('keyboard-active', settledInset > 0);
-                overlay.classList.toggle('keyboard-docked-active', settledInset > 0);
-                sheet.style.setProperty('--composer-translate-y', `${-settledInset}px`);
+                if (settledInset > 24) {
+                    applyPromptCommentComposerDock(settledInset, false);
+                }
             }, 90);
         }
         return;
     }
 
-    promptCommentComposerLastBottomInset = nextInset;
-    overlay.style.setProperty('--composer-keyboard-offset', `${nextInset}px`);
-    overlay.classList.toggle('keyboard-active', nextInset > 0);
-    overlay.classList.toggle('keyboard-docked-active', nextInset > 0);
-
-    const shouldAnimateRelease = !isFocused && previousInset > 0 && nextInset === 0;
-    sheet.classList.toggle('composer-animating', shouldAnimateRelease);
-    if (window.promptCommentComposerAnimRafId) {
-        clearTimeout(window.promptCommentComposerAnimRafId);
-        window.promptCommentComposerAnimRafId = null;
-    }
-    if (shouldAnimateRelease) {
-        window.promptCommentComposerAnimRafId = setTimeout(() => {
-            sheet.classList.remove('composer-animating');
-            window.promptCommentComposerAnimRafId = null;
-        }, 200);
+    if (promptCommentComposerDocked && isFocused && nextInset <= 24) {
+        return;
     }
 
-    sheet.style.setProperty('--composer-translate-y', `${-nextInset}px`);
+    if (nextInset > 24) {
+        applyPromptCommentComposerDock(nextInset, false);
+        return;
+    }
+
+    if (promptCommentComposerDocked) {
+        applyPromptCommentComposerDock(0, !isFocused && previousInset > 0);
+        return;
+    }
+
+    sheet.style.setProperty('--composer-translate-y', '0px');
+    overlay.style.setProperty('--composer-keyboard-offset', '0px');
+    overlay.classList.remove('keyboard-active');
+    overlay.classList.remove('keyboard-docked-active');
+    promptCommentComposerLastBottomInset = 0;
 }
 
 function attachPromptCommentComposerViewportSync() {
@@ -6129,6 +6202,7 @@ function closePromptCommentComposer(options = {}) {
         resetPromptCommentComposerViewportStyles();
         promptCommentComposerBaseViewportHeight = 0;
         promptCommentComposerBaseVisualHeight = 0;
+        promptCommentComposerDocked = false;
         promptCommentComposerLastBottomInset = 0;
         syncPromptCommentComposerEmptyState();
         syncPromptModalTopButtonState();
