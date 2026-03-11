@@ -608,6 +608,13 @@
             color: #fff;
         }
 
+        #shopPurchaseModal .modal-content,
+        #shopSuccessModal .modal-content {
+            width: min(calc(100% - 24px), 620px) !important;
+            max-width: 620px !important;
+            box-sizing: border-box;
+        }
+
         #shopPurchaseModal {
             --shop-purchase-shift-y: 0px;
         }
@@ -619,6 +626,14 @@
         }
 
         @media (max-width: 768px) {
+            #shopPurchaseModal .modal-content,
+            #shopSuccessModal .modal-content {
+                width: calc(100% - 24px) !important;
+                max-width: 620px !important;
+                border-radius: 30px !important;
+                padding: 24px 20px calc(20px + env(safe-area-inset-bottom)) !important;
+            }
+
             #shopPurchaseModal .modal-content,
             #shopPurchaseModal.active .modal-content,
             #shopPurchaseModal.active:focus-within .modal-content,
