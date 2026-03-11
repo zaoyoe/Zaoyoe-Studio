@@ -5914,40 +5914,43 @@ function syncPromptCommentComposerViewport() {
 
     const sheet = overlay.querySelector('.prompt-comment-composer-sheet');
     if (sheet) {
+        if (!promptCommentComposerCachedMetrics) {
+            promptCommentComposerCachedMetrics = {
+                height: sheet.offsetHeight
+            };
+        }
+
+        const metrics = promptCommentComposerCachedMetrics;
+        // The modal's physical center in the overlay due to `top: 50%`
+        const cyOverlay = promptCommentComposerOverlayBaseHeight / 2;
+
+        // Determine where we want the center to be visually inside the window
+        let cyVisual;
         if (shouldDock) {
-            if (!promptCommentComposerCachedMetrics) {
-                promptCommentComposerCachedMetrics = {
-                    height: sheet.offsetHeight
-                };
-            }
-
-            const metrics = promptCommentComposerCachedMetrics;
-            // overlay is fixed at promptCommentComposerOverlayBaseHeight.
-            // Absolute top: 50% places the perfect vertical center at overlayBaseHeight / 2.
-            // The physical bottom of the centered sheet is:
-            const centeredBottom = (promptCommentComposerOverlayBaseHeight / 2) + (metrics.height / 2);
-            // targetBottom is relative to the visual viewport top-left.
-            const targetBottom = Math.max(24, visualBottom - 12);
-
-            let deltaY = 0;
-            if (targetBottom < centeredBottom) {
-                deltaY = targetBottom - centeredBottom;
-            }
+            // Docked to the keyboard top
+            const targetBottomVisual = Math.max(24, visualHeight - 12);
+            cyVisual = targetBottomVisual - (metrics.height / 2);
 
             if (!overlay.classList.contains('keyboard-docked-active')) {
                 overlay.classList.add('keyboard-docked-active');
             }
-
-            // Sync frame-by-frame
-            overlay.style.setProperty('--composer-translate-y', `${deltaY}px`);
         } else {
-            // Keyboard closed
+            // Resting state: perfectly centered in the visual viewport
+            cyVisual = Math.max(0, visualHeight / 2);
+
             if (overlay.classList.contains('keyboard-docked-active')) {
                 overlay.classList.remove('keyboard-docked-active');
+                // Re-measure on next open in case height changed
                 promptCommentComposerCachedMetrics = null;
             }
-            overlay.style.setProperty('--composer-translate-y', `0px`);
         }
+
+        // Map visual coordinate back to absolute overlay coordinate (in case visualViewport panned)
+        const cyTarget = visualTop + cyVisual;
+        const deltaY = cyTarget - cyOverlay;
+
+        // Sync frame-by-frame
+        overlay.style.setProperty('--composer-translate-y', `${deltaY}px`);
     }
 }
 
