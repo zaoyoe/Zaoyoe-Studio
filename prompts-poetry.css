@@ -3781,29 +3781,31 @@ body.modal-open .prompt-card {
 
     .comment-sort-dropdown.floating {
         min-width: 156px;
-        background: rgba(0, 0, 0, 0.5);
-        border: 1px solid rgba(255, 255, 255, 0.1);
+        background:
+            linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.04) 100%),
+            rgba(15, 23, 42, 0.24);
+        border: 1px solid rgba(255, 255, 255, 0.14);
         border-radius: 24px;
-        box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
-        backdrop-filter: blur(8px);
-        -webkit-backdrop-filter: blur(8px);
+        box-shadow: 0 12px 28px rgba(2, 6, 23, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+        backdrop-filter: blur(16px) saturate(1.22);
+        -webkit-backdrop-filter: blur(16px) saturate(1.22);
         isolation: isolate;
         transform: translateZ(0);
         overflow: hidden;
     }
 
     .comment-sort-dropdown.floating .sort-option {
-        color: rgba(255, 255, 255, 0.82);
+        color: rgba(241, 245, 249, 0.88);
         border-radius: 16px;
     }
 
     .comment-sort-dropdown.floating .sort-option:hover {
-        background: rgba(255, 255, 255, 0.08);
-        color: rgba(255, 255, 255, 0.96);
+        background: rgba(255, 255, 255, 0.12);
+        color: #fff;
     }
 
     .comment-sort-dropdown.floating .sort-option.active {
-        background: rgba(107, 158, 206, 0.22);
+        background: rgba(107, 158, 206, 0.28);
         color: #fff;
     }
 
