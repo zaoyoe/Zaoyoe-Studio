@@ -7,6 +7,16 @@
 const ShopClient = {
     currentAgentId: null,
     currentAgentName: null,
+    purchaseModalKeyboardViewportCleanup: null,
+    purchaseModalKeyboardViewportRafId: null,
+    purchaseModalKeyboardBaseViewportHeight: 0,
+    purchaseModalKeyboardBaseCardHeight: 0,
+    purchaseModalKeyboardLastBottomInset: 0,
+    purchaseModalKeyboardDocked: false,
+    purchaseModalKeyboardInitialDockTimer: null,
+    purchaseModalKeyboardInsetDropTimer: null,
+    purchaseModalKeyboardPendingInset: 0,
+    purchaseModalKeyboardStableViewportProbe: null,
 
     init: async function () {
         console.log('🛍️ Shop Client Initialized');
@@ -385,6 +395,271 @@ const ShopClient = {
     // State for the purchase modal
     currentPurchase: { productId: null, productName: null, productNameEn: null, basePrice: 0, unitPrice: 0, quantity: 1, orderId: null, rules: [], discountCode: null, discountAmount: 0 },
 
+    isPurchaseModalKeyboardDockEnabled: function () {
+        const ua = navigator.userAgent || '';
+        const isiOS = /iPad|iPhone|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        return isiOS && window.matchMedia('(max-width: 768px)').matches && !!window.visualViewport;
+    },
+
+    getPurchaseModalElements: function () {
+        const overlay = document.getElementById('shopPurchaseModal');
+        return {
+            overlay,
+            card: overlay?.querySelector('.modal-content') || null
+        };
+    },
+
+    getActivePurchaseModalInput: function () {
+        const { overlay } = this.getPurchaseModalElements();
+        const active = document.activeElement;
+        if (!overlay || !active || !overlay.contains(active)) return null;
+        return /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName) ? active : null;
+    },
+
+    getPurchaseModalStableViewportProbe: function () {
+        if (this.purchaseModalKeyboardStableViewportProbe?.isConnected) {
+            return this.purchaseModalKeyboardStableViewportProbe;
+        }
+
+        const probe = document.createElement('div');
+        probe.setAttribute('aria-hidden', 'true');
+        probe.style.position = 'fixed';
+        probe.style.top = '0';
+        probe.style.left = '0';
+        probe.style.width = '0';
+        probe.style.height = '100svh';
+        probe.style.pointerEvents = 'none';
+        probe.style.visibility = 'hidden';
+        probe.style.opacity = '0';
+        probe.style.zIndex = '-1';
+        document.body.appendChild(probe);
+        this.purchaseModalKeyboardStableViewportProbe = probe;
+        return probe;
+    },
+
+    getPurchaseModalStableViewportHeight: function () {
+        const probe = this.getPurchaseModalStableViewportProbe();
+        if (!probe) return 0;
+        return Math.max(0, Math.round(probe.getBoundingClientRect().height || probe.offsetHeight || 0));
+    },
+
+    clearPurchaseModalKeyboardTimers: function () {
+        if (this.purchaseModalKeyboardInitialDockTimer) {
+            clearTimeout(this.purchaseModalKeyboardInitialDockTimer);
+            this.purchaseModalKeyboardInitialDockTimer = null;
+        }
+        if (this.purchaseModalKeyboardInsetDropTimer) {
+            clearTimeout(this.purchaseModalKeyboardInsetDropTimer);
+            this.purchaseModalKeyboardInsetDropTimer = null;
+        }
+        this.purchaseModalKeyboardPendingInset = 0;
+    },
+
+    capturePurchaseModalKeyboardBase: function () {
+        const vv = window.visualViewport;
+        const { card } = this.getPurchaseModalElements();
+        const visualHeight = Math.max(0, vv?.height || 0);
+        const fallbackBaseHeight = Math.max(
+            window.innerHeight || 0,
+            document.documentElement.clientHeight || 0,
+            visualHeight
+        );
+        const stableViewportHeight = this.getPurchaseModalStableViewportHeight();
+        const normalizedBaseHeight = (stableViewportHeight > 0 && stableViewportHeight + 24 < fallbackBaseHeight)
+            ? stableViewportHeight
+            : fallbackBaseHeight;
+
+        this.purchaseModalKeyboardBaseViewportHeight = normalizedBaseHeight;
+        if (card) {
+            const cardHeight = Math.round(card.offsetHeight || card.getBoundingClientRect().height || 420);
+            this.purchaseModalKeyboardBaseCardHeight = Math.max(320, cardHeight || 420);
+        }
+    },
+
+    getPurchaseModalViewportMetrics: function () {
+        const vv = window.visualViewport;
+        const visualHeight = Math.max(0, vv?.height || 0);
+        const baseVisualHeight = this.purchaseModalKeyboardBaseViewportHeight || visualHeight;
+
+        return {
+            visualHeight,
+            baseVisualHeight,
+            bottomInset: Math.max(0, Math.round(baseVisualHeight - visualHeight))
+        };
+    },
+
+    applyPurchaseModalKeyboardDock: function (bottomInset) {
+        const { overlay, card } = this.getPurchaseModalElements();
+        if (!overlay || !card) return;
+
+        const metrics = this.getPurchaseModalViewportMetrics();
+        if (!this.purchaseModalKeyboardBaseCardHeight) {
+            const liveHeight = Math.round(card.offsetHeight || card.getBoundingClientRect().height || 420);
+            this.purchaseModalKeyboardBaseCardHeight = Math.max(320, liveHeight || 420);
+        }
+
+        const baseCardHeight = Math.max(320, this.purchaseModalKeyboardBaseCardHeight || 420);
+        const baseViewportHeight = Math.max(metrics.baseVisualHeight || 0, this.purchaseModalKeyboardBaseViewportHeight || 0);
+        const keyboardTop = Math.max(0, baseViewportHeight - Math.max(0, bottomInset));
+        const minTop = 14;
+        const maxAvailableHeight = Math.max(280, Math.round(keyboardTop - minTop - 14));
+        const dockHeight = Math.min(baseCardHeight, maxAvailableHeight);
+        const centeredTop = (baseViewportHeight - dockHeight) / 2;
+        const desiredTop = Math.max(minTop, keyboardTop - 14 - dockHeight);
+        const shiftY = Math.round(desiredTop - centeredTop);
+
+        overlay.classList.add('keyboard-docked');
+        overlay.style.setProperty('--shop-purchase-shift-y', `${shiftY}px`);
+        card.style.height = `${dockHeight}px`;
+        card.style.maxHeight = `${dockHeight}px`;
+        this.purchaseModalKeyboardDocked = bottomInset > 0;
+        this.purchaseModalKeyboardLastBottomInset = Math.max(0, bottomInset);
+    },
+
+    releasePurchaseModalKeyboardDock: function () {
+        const { overlay, card } = this.getPurchaseModalElements();
+        if (!overlay || !card) return;
+
+        overlay.classList.remove('keyboard-docked');
+        overlay.style.setProperty('--shop-purchase-shift-y', '0px');
+        card.style.removeProperty('height');
+        card.style.removeProperty('max-height');
+        this.purchaseModalKeyboardDocked = false;
+        this.purchaseModalKeyboardLastBottomInset = 0;
+    },
+
+    resetPurchaseModalKeyboardDockState: function () {
+        this.clearPurchaseModalKeyboardTimers();
+        if (this.purchaseModalKeyboardViewportRafId) {
+            cancelAnimationFrame(this.purchaseModalKeyboardViewportRafId);
+            this.purchaseModalKeyboardViewportRafId = null;
+        }
+        this.releasePurchaseModalKeyboardDock();
+        this.purchaseModalKeyboardBaseViewportHeight = 0;
+        this.purchaseModalKeyboardBaseCardHeight = 0;
+    },
+
+    syncPurchaseModalKeyboardDock: function () {
+        const { overlay, card } = this.getPurchaseModalElements();
+        if (!overlay || !card || !overlay.classList.contains('active')) {
+            this.resetPurchaseModalKeyboardDockState();
+            return;
+        }
+
+        if (!this.isPurchaseModalKeyboardDockEnabled()) {
+            this.releasePurchaseModalKeyboardDock();
+            return;
+        }
+
+        const activeInput = this.getActivePurchaseModalInput();
+        const metrics = this.getPurchaseModalViewportMetrics();
+        const bottomInset = metrics.bottomInset;
+        const shouldDock = !!activeInput && (this.purchaseModalKeyboardDocked ? bottomInset > 8 : bottomInset > 24);
+        const nextInset = shouldDock ? bottomInset : 0;
+        const previousInset = this.purchaseModalKeyboardLastBottomInset;
+        const isInsetDroppingWhileFocused = this.purchaseModalKeyboardDocked && !!activeInput && nextInset > 24 && nextInset + 24 < previousInset;
+
+        if (!this.purchaseModalKeyboardDocked && shouldDock) {
+            this.purchaseModalKeyboardPendingInset = nextInset;
+            if (!this.purchaseModalKeyboardInitialDockTimer) {
+                this.purchaseModalKeyboardInitialDockTimer = setTimeout(() => {
+                    this.purchaseModalKeyboardInitialDockTimer = null;
+                    if (!this.getActivePurchaseModalInput()) return;
+                    const liveMetrics = this.getPurchaseModalViewportMetrics();
+                    if (liveMetrics.bottomInset <= 24) return;
+                    this.applyPurchaseModalKeyboardDock(liveMetrics.bottomInset);
+                }, 90);
+            }
+            return;
+        }
+
+        if (this.purchaseModalKeyboardInitialDockTimer && (this.purchaseModalKeyboardDocked || !shouldDock)) {
+            clearTimeout(this.purchaseModalKeyboardInitialDockTimer);
+            this.purchaseModalKeyboardInitialDockTimer = null;
+        }
+
+        if (this.purchaseModalKeyboardInsetDropTimer && (!isInsetDroppingWhileFocused || nextInset >= previousInset)) {
+            clearTimeout(this.purchaseModalKeyboardInsetDropTimer);
+            this.purchaseModalKeyboardInsetDropTimer = null;
+            this.purchaseModalKeyboardPendingInset = 0;
+        }
+
+        if (isInsetDroppingWhileFocused) {
+            this.purchaseModalKeyboardPendingInset = nextInset;
+            if (!this.purchaseModalKeyboardInsetDropTimer) {
+                this.purchaseModalKeyboardInsetDropTimer = setTimeout(() => {
+                    this.purchaseModalKeyboardInsetDropTimer = null;
+                    const settledInset = this.purchaseModalKeyboardPendingInset;
+                    this.purchaseModalKeyboardPendingInset = 0;
+                    if (settledInset > 24) {
+                        this.applyPurchaseModalKeyboardDock(settledInset);
+                    }
+                }, 90);
+            }
+            return;
+        }
+
+        if (this.purchaseModalKeyboardDocked && activeInput && nextInset <= 24) {
+            return;
+        }
+
+        if (nextInset > 24) {
+            this.applyPurchaseModalKeyboardDock(nextInset);
+            return;
+        }
+
+        if (this.purchaseModalKeyboardDocked) {
+            this.releasePurchaseModalKeyboardDock();
+        }
+    },
+
+    attachPurchaseModalKeyboardDock: function () {
+        if (!this.isPurchaseModalKeyboardDockEnabled()) return;
+
+        const { overlay } = this.getPurchaseModalElements();
+        const vv = window.visualViewport;
+        if (!overlay || !vv) return;
+
+        this.detachPurchaseModalKeyboardDock();
+        this.capturePurchaseModalKeyboardBase();
+        this.syncPurchaseModalKeyboardDock();
+
+        const inputs = Array.from(overlay.querySelectorAll('input, textarea, select'));
+        const handleViewportChange = () => {
+            if (this.purchaseModalKeyboardViewportRafId) return;
+            this.purchaseModalKeyboardViewportRafId = requestAnimationFrame(() => {
+                this.purchaseModalKeyboardViewportRafId = null;
+                this.syncPurchaseModalKeyboardDock();
+            });
+        };
+
+        vv.addEventListener('resize', handleViewportChange, { passive: true });
+        inputs.forEach((input) => {
+            input.addEventListener('focus', handleViewportChange);
+            input.addEventListener('blur', handleViewportChange);
+        });
+
+        this.purchaseModalKeyboardViewportCleanup = () => {
+            vv.removeEventListener('resize', handleViewportChange);
+            inputs.forEach((input) => {
+                input.removeEventListener('focus', handleViewportChange);
+                input.removeEventListener('blur', handleViewportChange);
+            });
+            if (this.purchaseModalKeyboardViewportRafId) {
+                cancelAnimationFrame(this.purchaseModalKeyboardViewportRafId);
+                this.purchaseModalKeyboardViewportRafId = null;
+            }
+            this.purchaseModalKeyboardViewportCleanup = null;
+        };
+    },
+
+    detachPurchaseModalKeyboardDock: function () {
+        if (typeof this.purchaseModalKeyboardViewportCleanup === 'function') {
+            this.purchaseModalKeyboardViewportCleanup();
+        }
+        this.clearPurchaseModalKeyboardTimers();
+    },
+
     // ---- New Purchase Flow via Modal ----
 
     buyProduct: async function (productId, productName, productNameEn, price, rulesStr) {
@@ -440,10 +715,14 @@ const ShopClient = {
         modal.classList.add('active');
         // Lock background scroll on mobile Safari
         if (window.iOSScrollLock) window.iOSScrollLock.lockLight(modal);
+        this.attachPurchaseModalKeyboardDock();
     },
 
     closePurchaseModal: function () {
         const modal = document.getElementById('shopPurchaseModal');
+        this.detachPurchaseModalKeyboardDock();
+        this.resetPurchaseModalKeyboardDockState();
+        this.getActivePurchaseModalInput()?.blur();
         modal.classList.remove('active');
         // Unlock background scroll on mobile Safari
         if (window.iOSScrollLock) window.iOSScrollLock.unlock();

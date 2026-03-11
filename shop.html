@@ -607,6 +607,29 @@
             border-radius: 24px;
             color: #fff;
         }
+
+        #shopPurchaseModal {
+            --shop-purchase-shift-y: 0px;
+        }
+
+        #shopPurchaseModal .modal-content {
+            margin-top: var(--shop-purchase-shift-y, 0px);
+        }
+
+        @media (max-width: 768px) {
+            #shopPurchaseModal .modal-content,
+            #shopPurchaseModal.active .modal-content,
+            #shopPurchaseModal.active:focus-within .modal-content,
+            #shopPurchaseModal.ios-focus-lock .modal-content {
+                margin-top: var(--shop-purchase-shift-y, 0px) !important;
+                transition:
+                    margin-top 180ms cubic-bezier(0.22, 1, 0.36, 1),
+                    height 180ms cubic-bezier(0.22, 1, 0.36, 1),
+                    max-height 180ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+                will-change: margin-top, height !important;
+                overscroll-behavior: contain;
+            }
+        }
     </style>
 </head>
 
@@ -1209,7 +1232,7 @@
     <script src="js/components/WalletModal.js?v=20260302_G_AUTH" defer></script>
 
     <!-- Shop Logic -->
-    <script src="js/shop-client.js?v=SKELETON_V2" defer></script>
+    <script src="js/shop-client.js?v=20260311_SHOP_MODAL_V3" defer></script>
 
     <!-- Background Animations -->
     <script src="starry-sky.js"></script>
