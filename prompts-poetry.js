@@ -5627,6 +5627,7 @@ function getPromptCommentComposerElements() {
     return {
         overlay: document.getElementById('promptCommentComposer'),
         sheet: document.querySelector('#promptCommentComposer .prompt-comment-composer-sheet'),
+        editor: document.querySelector('#promptCommentComposer .prompt-comment-composer-editor'),
         input: document.getElementById('promptCommentComposerInput'),
         meta: document.getElementById('promptCommentComposerMeta'),
         uploadBtn: document.getElementById('promptCommentComposerUploadBtn'),
@@ -5637,11 +5638,26 @@ function getPromptCommentComposerElements() {
 
 function autoExpandPromptCommentComposerInput(input) {
     if (!input) return;
+    if (!input.value.trim()) {
+        input.style.height = 'auto';
+        input.style.overflowY = 'hidden';
+        return;
+    }
     input.style.height = 'auto';
     const maxHeight = Math.min(Math.round((window.innerHeight || 0) * 0.42), 360);
     const targetHeight = Math.max(160, Math.min(input.scrollHeight, maxHeight || 360));
     input.style.height = `${targetHeight}px`;
     input.style.overflowY = input.scrollHeight > targetHeight ? 'auto' : 'hidden';
+}
+
+function syncPromptCommentComposerEmptyState() {
+    const { editor, input } = getPromptCommentComposerElements();
+    if (!editor || !input) return;
+    const isEmpty = !input.value.trim();
+    const isFocused = document.activeElement === input;
+
+    editor.classList.toggle('is-empty', isEmpty && !isFocused);
+    input.classList.toggle('is-empty', isEmpty && !isFocused);
 }
 
 function focusPromptCommentComposerInputWithoutScroll(input) {
@@ -5761,6 +5777,7 @@ function resetPromptCommentComposerViewportStyles() {
     sheet?.style.removeProperty('max-height');
     sheet?.style.removeProperty('min-height');
     sheet?.style.removeProperty('height');
+    sheet?.style.removeProperty('transform');
     input?.style.removeProperty('max-height');
 }
 
@@ -5878,10 +5895,10 @@ function syncPromptCommentComposerViewport() {
 
     const vv = window.visualViewport;
     const basePadding = window.innerWidth <= 768 ? 12 : 18;
-
-    resetPromptCommentComposerViewportStyles();
-
-    if (!overlay.classList.contains('active') || !vv) return;
+    if (!overlay.classList.contains('active') || !vv) {
+        resetPromptCommentComposerViewportStyles();
+        return;
+    }
 
     const visualTop = Math.max(0, vv.offsetTop || 0);
     const visualHeight = Math.max(0, vv.height || 0);
@@ -5908,13 +5925,15 @@ function syncPromptCommentComposerViewport() {
         Math.min(baseSheetHeight || availableHeight, availableHeight)
     );
 
-    overlay.style.paddingBottom = `${basePadding + bottomInset}px`;
+    overlay.style.paddingTop = `${basePadding}px`;
+    overlay.style.paddingBottom = `${basePadding}px`;
     window.scrollTo(0, 0);
 
     if (sheet) {
         sheet.style.height = `${targetSheetHeight}px`;
         sheet.style.minHeight = `${targetSheetHeight}px`;
         sheet.style.maxHeight = `${targetSheetHeight}px`;
+        sheet.style.transform = `translate3d(0, -${bottomInset}px, 0)`;
     }
     if (input) {
         const maxInputHeight = Math.min(320, Math.max(160, Math.round(targetSheetHeight * 0.42)));
@@ -6002,10 +6021,13 @@ function ensurePromptCommentComposer() {
 
     input?.addEventListener('input', () => {
         autoExpandPromptCommentComposerInput(input);
+        syncPromptCommentComposerEmptyState();
         syncPromptCommentComposerMeta();
         syncPromptCommentComposerTrigger();
     });
     input?.addEventListener('keydown', handleCommentKeydown);
+    input?.addEventListener('focus', () => syncPromptCommentComposerEmptyState());
+    input?.addEventListener('blur', () => syncPromptCommentComposerEmptyState());
     bindPromptCommentComposerInputFocusStabilizer(input);
 
     return getPromptCommentComposerElements();
@@ -6048,6 +6070,7 @@ function openPromptCommentComposer(options = {}) {
     composer.overlay.classList.add('active');
     capturePromptCommentComposerViewportBase();
     autoExpandPromptCommentComposerInput(composer.input);
+    syncPromptCommentComposerEmptyState();
     syncPromptCommentComposerMeta();
     syncPromptCommentComposerTrigger();
     startPromptCommentComposerScrollClamp();
@@ -6099,6 +6122,7 @@ function closePromptCommentComposer(options = {}) {
     promptCommentComposerBaseVisualHeight = 0;
     promptCommentComposerBaseSheetHeight = 0;
     promptCommentComposerOverlayBaseHeight = 0;
+    syncPromptCommentComposerEmptyState();
     syncPromptModalTopButtonState();
     input?.blur();
     if (options.preserveModalDock) {
