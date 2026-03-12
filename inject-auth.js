@@ -784,15 +784,25 @@
                 box-shadow: 0 0 0 3px rgba(155, 93, 229, 0.15), 0 0 20px rgba(168, 85, 247, 0.12) !important;
             }
 
-            /* Mobile iOS: avoid caret offset and focus zoom glitches
-               ⚡ PRESERVED: staggered rise animation on modal open.
-               Only disable transforms when input is focused (ios-focus-lock). */
+            /* Mobile login modal layout:
+               keep the card in normal flow and reveal inputs by scrolling,
+               instead of translating the whole modal against the keyboard. */
             @media (max-width: 768px) {
                 #loginModal {
-                    --login-modal-base-shift-y: -52px;
-                    --login-modal-shift-y: 0px;
-                    padding-top: calc(env(safe-area-inset-top, 0px) + 12px) !important;
-                    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px) !important;
+                    --login-modal-viewport-height: 100dvh;
+                    --login-modal-keyboard-inset: 0px;
+                    --login-modal-safe-top: calc(env(safe-area-inset-top, 0px) + 12px);
+                    --login-modal-safe-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+                    padding:
+                        var(--login-modal-safe-top)
+                        16px
+                        max(var(--login-modal-safe-bottom), calc(var(--login-modal-keyboard-inset) + 12px))
+                        !important;
+                    min-height: var(--login-modal-viewport-height, 100dvh) !important;
+                    height: auto !important;
+                    overflow-y: auto !important;
+                    overscroll-behavior: contain !important;
+                    -webkit-overflow-scrolling: touch !important;
                 }
 
                 .login-overlay .glass-input,
@@ -811,67 +821,43 @@
 
                 .login-overlay .login-card,
                 #loginModal .login-card {
-                    position: fixed !important;
-                    top: 50% !important;
-                    left: 50% !important;
+                    position: relative !important;
+                    top: auto !important;
+                    left: auto !important;
                     right: auto !important;
                     bottom: auto !important;
-                    margin: 0 !important;
-                    width: min(360px, calc(100vw - 40px)) !important;
-                    max-width: calc(100vw - 40px) !important;
+                    margin: auto !important;
+                    width: min(360px, calc(100vw - 32px)) !important;
+                    max-width: 100% !important;
                     box-sizing: border-box !important;
-                    max-height: calc(100svh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px) !important;
+                    max-height: calc(
+                        var(--login-modal-viewport-height, 100dvh) -
+                        var(--login-modal-safe-top) -
+                        max(var(--login-modal-safe-bottom), calc(var(--login-modal-keyboard-inset) + 12px))
+                    ) !important;
                     overflow-y: auto !important;
                     overscroll-behavior: contain !important;
                     -webkit-overflow-scrolling: touch !important;
-                    transform: translate3d(-50%, calc(-50% + var(--login-modal-base-shift-y, 0px) + var(--login-modal-shift-y, 0px)), 0) scale(0.95) !important;
+                    transform: scale(0.98) !important;
                     transition:
-                        transform 0.3s ease-out,
-                        opacity 0.3s ease-out,
-                        height 180ms cubic-bezier(0.22, 1, 0.36, 1),
-                        max-height 180ms cubic-bezier(0.22, 1, 0.36, 1) !important;
-                    will-change: transform, opacity !important;
+                        opacity 0.24s ease-out,
+                        transform 0.24s ease-out !important;
+                    will-change: auto !important;
                 }
 
                 .login-overlay.active .login-card,
                 #loginModal.active .login-card {
-                    transform: translate3d(-50%, calc(-50% + var(--login-modal-base-shift-y, 0px) + var(--login-modal-shift-y, 0px)), 0) scale(1) !important;
+                    transform: scale(1) !important;
                     opacity: 1 !important;
                 }
 
                 .login-overlay.active:focus-within .login-card,
                 #loginModal.active:focus-within .login-card {
-                    transform: translate3d(-50%, calc(-50% + var(--login-modal-base-shift-y, 0px) + var(--login-modal-shift-y, 0px)), 0) scale(1) !important;
-                    will-change: auto !important;
+                    transform: scale(1) !important;
                     animation: none !important;
-                    transition: none !important;
-                }
-
-                /* ⚡ iOS CARET FIX: only flatten transforms when input is focused */
-                .login-overlay.ios-focus-lock {
-                    will-change: auto !important;
-                    animation: none !important;
-                }
-
-                .login-overlay.ios-focus-lock .login-card {
-                    transform: translate3d(-50%, calc(-50% + var(--login-modal-base-shift-y, 0px) + var(--login-modal-shift-y, 0px)), 0) scale(1) !important;
-                    will-change: auto !important;
-                    animation: none !important;
-                    transition: none !important;
-                }
-
-                .login-overlay.ios-focus-lock .form-view,
-                .login-overlay.ios-focus-lock .form-view > *,
-                .login-overlay.ios-focus-lock .form-view > form > * {
-                    transform: none !important;
-                    transition: none !important;
-                    transition-delay: 0s !important;
-                    animation: none !important;
-                }
-
-                #loginModal.keyboard-docked .login-card {
-                    --login-modal-base-shift-y: 0px;
-                    box-shadow: 0 20px 48px rgba(0, 0, 0, 0.42) !important;
+                    transition:
+                        opacity 0.24s ease-out,
+                        transform 0.24s ease-out !important;
                 }
 
             }
@@ -1173,52 +1159,14 @@
                 // Auth state will be checked by initializeAuthPageBoot() on DOMContentLoaded
             }
 
-            const LOGIN_MODAL_KEYBOARD_SETTLE_MS = 90;
-            const LOGIN_MODAL_INPUT_SWITCH_GRACE_MS = 180;
-            const LOGIN_MODAL_ACTIONABLE_SELECTOR = [
-                'button',
-                'a',
-                'label',
-                '.switch-link',
-                '.forgot-password-link',
-                '.login-submit-btn',
-                '.verify-code-btn',
-                '.google-login-btn',
-                '.mac-dot',
-                'input[type="checkbox"]',
-                'input[type="button"]',
-                'input[type="submit"]',
-                '[onclick]'
-            ].join(', ');
-            const loginModalKeyboardState = {
-                baseScrollY: 0,
-                ownsFullScrollLock: false,
+            const LOGIN_MODAL_KEYBOARD_THRESHOLD = 120;
+            const LOGIN_MODAL_INPUT_REVEAL_DELAY_MS = 120;
+            const LOGIN_MODAL_SCROLL_MARGIN = 18;
+            const loginModalViewportState = {
+                baseViewportHeight: 0,
                 viewportCleanup: null,
                 viewportRafId: null,
-                rootScrollCleanup: null,
-                stableViewportProbe: null,
-                overlayBaseHeight: 0,
-                overlayCleanup: null,
-                baseViewportHeight: 0,
-                baseVisualViewportHeight: 0,
-                baseCardHeight: 0,
-                stableDockHeight: 0,
-                baseShiftY: -96,
-                docked: false,
-                lastBottomInset: 0,
-                lastStableKeyboardInset: 0,
-                pendingStableKeyboardInset: 0,
-                keyboardBlurUndocking: false,
-                initialDockTimer: null,
-                pendingUndockTimer: null,
-                postUndockSyncTimer: null,
-                keyboardSettleTimer: null,
-                transitionCleanupTimer: null,
-                motionVisualLockTimer: null,
-                sessionVisualLocked: false,
-                inputSwitchDeadline: 0,
-                focusAwaitDockUntil: 0,
-                openingSettleUntil: 0,
+                focusRevealTimer: null,
                 overlayCloseDisabledUntil: 0
             };
 
@@ -1228,12 +1176,15 @@
                 return isIOS && window.matchMedia('(max-width: 768px)').matches && !!window.visualViewport;
             }
 
+            function supportsLoginModalViewportSync() {
+                return window.matchMedia('(max-width: 768px)').matches && !!window.visualViewport;
+            }
+
             function getLoginModalElements() {
                 const overlay = document.getElementById('loginModal');
                 return {
                     overlay,
-                    card: overlay?.querySelector('.login-card') || null,
-                    inputs: overlay ? Array.from(overlay.querySelectorAll('input, textarea, select')) : []
+                    card: overlay?.querySelector('.login-card') || null
                 };
             }
 
@@ -1244,764 +1195,155 @@
                 return /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName) ? active : null;
             }
 
-            function focusLoginModalInputWithoutScroll(input) {
-                if (!input) return;
-                try {
-                    input.focus({ preventScroll: true });
-                } catch (_) {
-                    input.focus();
-                }
-            }
-
-            function getLoginModalStableViewportProbe() {
-                if (loginModalKeyboardState.stableViewportProbe?.isConnected) {
-                    return loginModalKeyboardState.stableViewportProbe;
-                }
-
-                const probe = document.createElement('div');
-                probe.setAttribute('aria-hidden', 'true');
-                probe.style.position = 'fixed';
-                probe.style.top = '0';
-                probe.style.left = '0';
-                probe.style.width = '0';
-                probe.style.height = '100svh';
-                probe.style.pointerEvents = 'none';
-                probe.style.visibility = 'hidden';
-                probe.style.opacity = '0';
-                probe.style.zIndex = '-1';
-                document.body.appendChild(probe);
-                loginModalKeyboardState.stableViewportProbe = probe;
-                return probe;
-            }
-
-            function getLoginModalStableViewportHeight() {
-                const probe = getLoginModalStableViewportProbe();
-                if (!probe) return 0;
-                return Math.max(0, Math.round(probe.getBoundingClientRect().height || probe.offsetHeight || 0));
-            }
-
-            function clearLoginModalTransitionCleanupTimer() {
-                if (loginModalKeyboardState.transitionCleanupTimer) {
-                    clearTimeout(loginModalKeyboardState.transitionCleanupTimer);
-                    loginModalKeyboardState.transitionCleanupTimer = null;
-                }
-            }
-
-            function clearLoginModalMotionVisualLockTimer() {
-                if (loginModalKeyboardState.motionVisualLockTimer) {
-                    clearTimeout(loginModalKeyboardState.motionVisualLockTimer);
-                    loginModalKeyboardState.motionVisualLockTimer = null;
-                }
-            }
-
-            function clearLoginModalPendingFirstDock() {
-                if (loginModalKeyboardState.initialDockTimer) {
-                    clearTimeout(loginModalKeyboardState.initialDockTimer);
-                    loginModalKeyboardState.initialDockTimer = null;
-                }
-            }
-
-            function clearLoginModalPendingUndock() {
-                if (loginModalKeyboardState.pendingUndockTimer) {
-                    clearTimeout(loginModalKeyboardState.pendingUndockTimer);
-                    loginModalKeyboardState.pendingUndockTimer = null;
-                }
-            }
-
-            function clearLoginModalPostUndockSyncTimer() {
-                if (loginModalKeyboardState.postUndockSyncTimer) {
-                    clearTimeout(loginModalKeyboardState.postUndockSyncTimer);
-                    loginModalKeyboardState.postUndockSyncTimer = null;
-                }
-            }
-
-            function clearLoginModalKeyboardSettleTimer() {
-                if (loginModalKeyboardState.keyboardSettleTimer) {
-                    clearTimeout(loginModalKeyboardState.keyboardSettleTimer);
-                    loginModalKeyboardState.keyboardSettleTimer = null;
-                }
-            }
-
-            function clearLoginModalKeyboardTimers() {
-                clearLoginModalPendingFirstDock();
-                clearLoginModalPendingUndock();
-                clearLoginModalPostUndockSyncTimer();
-                clearLoginModalKeyboardSettleTimer();
-                clearLoginModalTransitionCleanupTimer();
-                clearLoginModalMotionVisualLockTimer();
-            }
-
-            function computeLoginModalBaseShiftY() {
-                const fallbackShift = -96;
-                if (!isIOSMobileWebKit() || !window.visualViewport) {
-                    return fallbackShift;
-                }
-
-                const { card } = getLoginModalElements();
-                const vv = window.visualViewport;
-                const visualTop = Math.max(0, vv.offsetTop || 0);
-                const visualHeight = Math.max(0, vv.height || 0);
-                const visualBottom = visualTop + visualHeight;
-                const layoutHeight = Math.max(
-                    loginModalKeyboardState.baseViewportHeight || 0,
-                    window.innerHeight || 0,
-                    document.documentElement.clientHeight || 0,
-                    visualBottom
-                );
-                const cardHeight = Math.max(
-                    320,
-                    Math.round(card?.getBoundingClientRect().height || loginModalKeyboardState.baseCardHeight || 420)
-                );
-
-                if (!layoutHeight || !visualHeight || !cardHeight) {
-                    return fallbackShift;
-                }
-
-                const minTop = Math.max(16, visualTop + 10);
-                const maxTop = Math.max(minTop, visualBottom - cardHeight - 22);
-                const centeredTop = visualTop + ((visualHeight - cardHeight) * 0.5) - 36;
-                const desiredTop = Math.max(minTop, Math.min(maxTop, centeredTop));
-                const layoutCenteredTop = (layoutHeight * 0.5) - (cardHeight * 0.5);
-                const desiredShift = Math.round(desiredTop - layoutCenteredTop);
-                return Math.max(-176, Math.min(-24, desiredShift));
-            }
-
-            function syncLoginModalBaseShift(force = false) {
-                const { overlay } = getLoginModalElements();
-                if (!overlay) return;
-                if (!force && overlay.classList.contains('keyboard-docked')) return;
-
-                let baseShiftY = computeLoginModalBaseShiftY();
-                const activeInput = getActiveLoginModalInput();
-                const currentShiftRaw = overlay.style.getPropertyValue('--login-modal-base-shift-y');
-                const currentShift = Number.parseFloat(currentShiftRaw);
-                if (!overlay.classList.contains('keyboard-docked') &&
-                    activeInput &&
-                    Date.now() < (loginModalKeyboardState.focusAwaitDockUntil || 0) &&
-                    Number.isFinite(currentShift)) {
-                    baseShiftY = currentShift;
-                } else if (!overlay.classList.contains('keyboard-docked') &&
-                    !activeInput &&
-                    Date.now() < (loginModalKeyboardState.openingSettleUntil || 0) &&
-                    Number.isFinite(currentShift)) {
-                        baseShiftY = Math.min(currentShift, baseShiftY);
-                }
-                loginModalKeyboardState.baseShiftY = baseShiftY;
-                overlay.style.setProperty('--login-modal-base-shift-y', `${baseShiftY}px`);
-            }
-
-            function applyLoginModalStableVisualStyles() {
-                const { card } = getLoginModalElements();
-                if (!card) return;
-
-                card.style.setProperty('will-change', 'transform', 'important');
-                card.style.setProperty('backface-visibility', 'hidden', 'important');
-                card.style.setProperty('-webkit-backface-visibility', 'hidden', 'important');
-                card.style.setProperty('transform-style', 'preserve-3d', 'important');
-                card.style.setProperty('contain', 'layout paint style', 'important');
-                card.style.setProperty('isolation', 'isolate', 'important');
-                card.style.setProperty('-webkit-mask-image', '-webkit-radial-gradient(white, black)', 'important');
-                card.style.setProperty('backdrop-filter', 'none', 'important');
-                card.style.setProperty('-webkit-backdrop-filter', 'none', 'important');
-                card.style.setProperty(
-                    'background',
-                    'linear-gradient(180deg, rgba(10, 10, 10, 0.92) 0%, rgba(10, 10, 10, 0.86) 100%)',
-                    'important'
-                );
-                card.style.setProperty('border', '1px solid rgba(255, 255, 255, 0.12)', 'important');
-                card.style.setProperty('border-top', '1px solid rgba(255, 255, 255, 0.20)', 'important');
-                card.style.setProperty(
-                    'box-shadow',
-                    '0 24px 56px rgba(0, 0, 0, 0.52), 0 0 0 1px rgba(255, 255, 255, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.14)',
-                    'important'
-                );
-            }
-
-            function restoreLoginModalMotionVisuals() {
-                clearLoginModalMotionVisualLockTimer();
-                const { card } = getLoginModalElements();
-                if (!card) return;
-                if (loginModalKeyboardState.sessionVisualLocked) {
-                    applyLoginModalStableVisualStyles();
-                    return;
-                }
-
-                card.style.removeProperty('will-change');
-                card.style.removeProperty('backface-visibility');
-                card.style.removeProperty('-webkit-backface-visibility');
-                card.style.removeProperty('transform-style');
-                card.style.removeProperty('contain');
-                card.style.removeProperty('isolation');
-                card.style.removeProperty('-webkit-mask-image');
-                card.style.removeProperty('backdrop-filter');
-                card.style.removeProperty('-webkit-backdrop-filter');
-                card.style.removeProperty('background');
-                card.style.removeProperty('border');
-                card.style.removeProperty('border-top');
-                card.style.removeProperty('box-shadow');
-            }
-
-            function applyLoginModalMotionVisualLock(duration = 180) {
-                if (!isIOSMobileWebKit()) return;
-                if (loginModalKeyboardState.sessionVisualLocked) {
-                    applyLoginModalStableVisualStyles();
-                    return;
-                }
-
-                clearLoginModalMotionVisualLockTimer();
-                applyLoginModalStableVisualStyles();
-                loginModalKeyboardState.motionVisualLockTimer = window.setTimeout(() => {
-                    loginModalKeyboardState.motionVisualLockTimer = null;
-                    restoreLoginModalMotionVisuals();
-                }, Math.max(130, duration));
-            }
-
-            function enableLoginModalSessionVisualLock() {
-                if (!isIOSMobileWebKit()) {
-                    loginModalKeyboardState.sessionVisualLocked = false;
-                    return;
-                }
-                loginModalKeyboardState.sessionVisualLocked = true;
-                applyLoginModalStableVisualStyles();
-            }
-
-            function disableLoginModalSessionVisualLock() {
-                loginModalKeyboardState.sessionVisualLocked = false;
-                restoreLoginModalMotionVisuals();
-            }
-
-            function freezeLoginModalOverlay() {
-                const { overlay } = getLoginModalElements();
-                if (!overlay || loginModalKeyboardState.overlayCleanup) return;
-
-                const vv = window.visualViewport;
-                const initialViewportHeight = Math.max(
-                    window.innerHeight || 0,
-                    document.documentElement.clientHeight || 0,
-                    vv ? ((vv.height || 0) + (vv.offsetTop || 0)) : 0,
-                    window.screen?.height || 0
-                );
-                loginModalKeyboardState.overlayBaseHeight = initialViewportHeight + 64;
-
-                const syncOverlayFrame = () => {
-                    const liveViewport = window.visualViewport;
-                    const overlayHeight = Math.max(
-                        loginModalKeyboardState.overlayBaseHeight || 0,
-                        window.innerHeight || 0,
-                        document.documentElement.clientHeight || 0,
-                        liveViewport ? ((liveViewport.height || 0) + (liveViewport.offsetTop || 0) + 64) : 0,
-                        window.screen?.height || 0
-                    );
-
-                    overlay.style.setProperty('position', 'fixed', 'important');
-                    overlay.style.setProperty('top', '0', 'important');
-                    overlay.style.setProperty('left', '0', 'important');
-                    overlay.style.setProperty('right', '0', 'important');
-                    overlay.style.setProperty('bottom', 'auto', 'important');
-                    overlay.style.setProperty('width', '100%', 'important');
-                    overlay.style.setProperty('height', `${overlayHeight}px`, 'important');
-                };
-
-                syncOverlayFrame();
-                window.addEventListener('resize', syncOverlayFrame, { passive: true });
-                if (window.visualViewport) {
-                    window.visualViewport.addEventListener('resize', syncOverlayFrame, { passive: true });
-                    window.visualViewport.addEventListener('scroll', syncOverlayFrame, { passive: true });
-                }
-
-                loginModalKeyboardState.overlayCleanup = () => {
-                    window.removeEventListener('resize', syncOverlayFrame);
-                    if (window.visualViewport) {
-                        window.visualViewport.removeEventListener('resize', syncOverlayFrame);
-                        window.visualViewport.removeEventListener('scroll', syncOverlayFrame);
-                    }
-                    overlay.style.removeProperty('position');
-                    overlay.style.removeProperty('top');
-                    overlay.style.removeProperty('left');
-                    overlay.style.removeProperty('right');
-                    overlay.style.removeProperty('bottom');
-                    overlay.style.removeProperty('width');
-                    overlay.style.removeProperty('height');
-                    loginModalKeyboardState.overlayBaseHeight = 0;
-                    loginModalKeyboardState.overlayCleanup = null;
-                };
-            }
-
-            function restoreLoginModalOverlay() {
-                if (typeof loginModalKeyboardState.overlayCleanup === 'function') {
-                    loginModalKeyboardState.overlayCleanup();
-                }
-            }
-
-            function stabilizeLoginModalRootScroll() {
-                const { overlay } = getLoginModalElements();
-                if (!overlay?.classList.contains('active')) return;
-                const desiredScrollY = Math.max(0, Math.round(loginModalKeyboardState.baseScrollY || 0));
-                const currentScrollY = Math.max(0, Math.round(window.scrollY || window.pageYOffset || 0));
-
-                if (Math.abs(currentScrollY - desiredScrollY) > 1) {
-                    window.scrollTo(0, desiredScrollY);
-                }
-                document.documentElement.scrollTop = desiredScrollY;
-                document.body.scrollTop = desiredScrollY;
-            }
-
-            function attachLoginModalRootScrollGuard() {
-                if (!isIOSMobileWebKit() || loginModalKeyboardState.rootScrollCleanup) return;
-
-                let rootScrollRafId = 0;
-                const scheduleStabilize = () => {
-                    if (rootScrollRafId) return;
-                    rootScrollRafId = requestAnimationFrame(() => {
-                        rootScrollRafId = 0;
-                        stabilizeLoginModalRootScroll();
-                    });
-                };
-
-                window.addEventListener('scroll', scheduleStabilize, { passive: true });
-                window.addEventListener('resize', scheduleStabilize, { passive: true });
-                if (window.visualViewport) {
-                    window.visualViewport.addEventListener('resize', scheduleStabilize, { passive: true });
-                    window.visualViewport.addEventListener('scroll', scheduleStabilize, { passive: true });
-                }
-
-                loginModalKeyboardState.rootScrollCleanup = () => {
-                    window.removeEventListener('scroll', scheduleStabilize);
-                    window.removeEventListener('resize', scheduleStabilize);
-                    if (window.visualViewport) {
-                        window.visualViewport.removeEventListener('resize', scheduleStabilize);
-                        window.visualViewport.removeEventListener('scroll', scheduleStabilize);
-                    }
-                    if (rootScrollRafId) {
-                        cancelAnimationFrame(rootScrollRafId);
-                    }
-                    loginModalKeyboardState.rootScrollCleanup = null;
-                };
-            }
-
-            function detachLoginModalRootScrollGuard() {
-                if (typeof loginModalKeyboardState.rootScrollCleanup === 'function') {
-                    loginModalKeyboardState.rootScrollCleanup();
-                }
-            }
-
-            function captureLoginModalKeyboardBase() {
-                const vv = window.visualViewport;
-                const { card } = getLoginModalElements();
-                const visualTop = Math.max(0, vv?.offsetTop || 0);
-                const visualHeight = Math.max(0, vv?.height || 0);
-                const visualBottom = visualTop + visualHeight;
-                const fallbackBaseHeight = Math.max(
-                    window.innerHeight || 0,
-                    document.documentElement.clientHeight || 0,
-                    visualBottom,
-                    visualHeight
-                );
-                const stableViewportHeight = getLoginModalStableViewportHeight();
-                const normalizedBaseHeight = (stableViewportHeight > 0 && stableViewportHeight + 24 < fallbackBaseHeight)
-                    ? stableViewportHeight
-                    : fallbackBaseHeight;
-
-                loginModalKeyboardState.baseViewportHeight = Math.max(
-                    loginModalKeyboardState.baseViewportHeight || 0,
-                    normalizedBaseHeight
-                );
-                loginModalKeyboardState.baseVisualViewportHeight = Math.max(
-                    loginModalKeyboardState.baseVisualViewportHeight || 0,
-                    visualHeight
-                );
-                if (card) {
-                    const cardHeight = Math.round(card.offsetHeight || card.getBoundingClientRect().height || 420);
-                    loginModalKeyboardState.baseCardHeight = Math.max(320, cardHeight || 420);
-                }
-            }
-
-            function captureLoginModalStableDockHeight() {
-                const { card } = getLoginModalElements();
-                if (!card) return;
-
-                if (window.visualViewport) {
-                    const vv = window.visualViewport;
-                    const visualBottom = Math.max(0, (vv.height || 0) + (vv.offsetTop || 0));
-                    const layoutHeight = Math.max(
-                        window.innerHeight || 0,
-                        document.documentElement.clientHeight || 0,
-                        visualBottom
-                    );
-                    const keyboardInset = Math.max(0, layoutHeight - visualBottom);
-                    if (keyboardInset > 60) return;
-                }
-
-                const rect = card.getBoundingClientRect();
-                const height = Math.round(rect.height || 0);
-                if (height > 220) {
-                    loginModalKeyboardState.stableDockHeight = height;
+            function clearLoginModalFocusRevealTimer() {
+                if (loginModalViewportState.focusRevealTimer) {
+                    clearTimeout(loginModalViewportState.focusRevealTimer);
+                    loginModalViewportState.focusRevealTimer = null;
                 }
             }
 
             function getLoginModalViewportMetrics() {
                 const vv = window.visualViewport;
-                const visualTop = Math.max(0, vv?.offsetTop || 0);
-                const visualHeight = Math.max(0, vv?.height || 0);
-                const visualBottom = visualTop + visualHeight;
-                const baseViewportHeight = Math.max(
-                    loginModalKeyboardState.baseViewportHeight || 0,
+                const visualHeight = Math.max(
+                    0,
+                    Math.round(vv?.height || window.innerHeight || document.documentElement.clientHeight || 0)
+                );
+                const offsetTop = Math.max(0, Math.round(vv?.offsetTop || 0));
+                const layoutHeight = Math.max(
+                    visualHeight + offsetTop,
                     window.innerHeight || 0,
-                    document.documentElement.clientHeight || 0,
-                    visualBottom
+                    document.documentElement.clientHeight || 0
                 );
-                const baseVisualHeight = Math.max(
-                    loginModalKeyboardState.baseVisualViewportHeight || 0,
-                    visualHeight
+                const activeInput = getActiveLoginModalInput();
+
+                if (!loginModalViewportState.baseViewportHeight ||
+                    (!activeInput && layoutHeight > loginModalViewportState.baseViewportHeight - 1)) {
+                    loginModalViewportState.baseViewportHeight = layoutHeight;
+                }
+
+                const keyboardInset = Math.max(
+                    0,
+                    Math.round((loginModalViewportState.baseViewportHeight || layoutHeight) - (visualHeight + offsetTop))
                 );
-                const insetFromLayout = Math.max(0, baseViewportHeight - visualBottom);
-                const insetFromViewportDelta = Math.max(0, baseVisualHeight - visualHeight);
 
                 return {
-                    visualTop,
                     visualHeight,
-                    visualBottom,
-                    baseViewportHeight,
-                    bottomInset: Math.max(insetFromLayout, insetFromViewportDelta)
+                    offsetTop,
+                    layoutHeight,
+                    keyboardInset,
+                    keyboardVisible: keyboardInset >= LOGIN_MODAL_KEYBOARD_THRESHOLD
                 };
             }
 
-            function scheduleLoginModalStableKeyboardInset(bottomInset) {
-                loginModalKeyboardState.pendingStableKeyboardInset = bottomInset;
-                clearLoginModalKeyboardSettleTimer();
-                loginModalKeyboardState.keyboardSettleTimer = window.setTimeout(() => {
-                    loginModalKeyboardState.keyboardSettleTimer = null;
-                    loginModalKeyboardState.lastStableKeyboardInset = loginModalKeyboardState.pendingStableKeyboardInset;
-                }, 88);
+            function getLoginModalScrollableContainer(card, overlay) {
+                if (card && card.scrollHeight > card.clientHeight + 4) {
+                    return card;
+                }
+                if (overlay && overlay.scrollHeight > overlay.clientHeight + 4) {
+                    return overlay;
+                }
+                return card || overlay || null;
             }
 
-            function lockLoginModalKeyboardPage() {
-                if (!window.iOSScrollLock) return;
-                const { overlay, card } = getLoginModalElements();
-                if (!overlay?.classList.contains('active')) return;
-
-                if (!window.iOSScrollLock.isLocked) {
-                    window.iOSScrollLock.lockLight(card || overlay);
-                }
-                loginModalKeyboardState.ownsFullScrollLock = false;
-            }
-
-            function scrollLoginModalActiveInputIntoView(keyboardTop = null) {
-                const { card } = getLoginModalElements();
-                const activeInput = getActiveLoginModalInput();
-                if (!card || !activeInput) return;
-
-                const cardRect = card.getBoundingClientRect();
-                const inputRect = activeInput.getBoundingClientRect();
-                const safeTop = cardRect.top + 18;
-                const keyboardLimit = Number.isFinite(keyboardTop) ? keyboardTop : Number.POSITIVE_INFINITY;
-                const safeBottom = Math.max(
-                    safeTop + 48,
-                    Math.min(cardRect.bottom - 20, keyboardLimit - 20)
-                );
-
-                if (inputRect.bottom > safeBottom) {
-                    card.scrollTop += Math.ceil(inputRect.bottom - safeBottom);
-                } else if (inputRect.top < safeTop) {
-                    card.scrollTop = Math.max(0, card.scrollTop - Math.ceil(safeTop - inputRect.top));
-                }
-            }
-
-            function applyLoginModalKeyboardDock(visualHeight, bottomInset, animate = false) {
-                const { overlay, card } = getLoginModalElements();
-                if (!overlay || !card) return;
-
-                overlay.classList.add('keyboard-docked');
-                clearLoginModalTransitionCleanupTimer();
-
-                const dockDuration = animate ? 150 : 0;
-                if (animate) {
-                    applyLoginModalMotionVisualLock(dockDuration + 40);
-                    card.style.setProperty(
-                        'transition',
-                        `transform ${dockDuration}ms cubic-bezier(0.22, 1, 0.36, 1), height ${dockDuration}ms cubic-bezier(0.22, 1, 0.36, 1), max-height ${dockDuration}ms cubic-bezier(0.22, 1, 0.36, 1)`,
-                        'important'
-                    );
-                    loginModalKeyboardState.transitionCleanupTimer = window.setTimeout(() => {
-                        loginModalKeyboardState.transitionCleanupTimer = null;
-                        if (card && overlay.classList.contains('keyboard-docked')) {
-                            card.style.removeProperty('transition');
-                        }
-                    }, dockDuration + 40);
-                } else {
-                    card.style.setProperty('transition', 'none', 'important');
-                }
-
-                const baseViewportHeight = Math.max(
-                    loginModalKeyboardState.baseViewportHeight || 0,
-                    window.innerHeight || 0,
-                    document.documentElement.clientHeight || 0,
-                    visualHeight + Math.max(0, bottomInset)
-                );
-                const fallbackHeight = Math.min(560, Math.max(400, Math.round(baseViewportHeight * 0.72)));
-                let dockHeight = Math.max(
-                    320,
-                    Math.round(loginModalKeyboardState.stableDockHeight || loginModalKeyboardState.baseCardHeight || fallbackHeight)
-                );
-                const keyboardTop = Math.max(0, baseViewportHeight - Math.max(0, bottomInset));
-                const maxAvailableHeight = Math.max(300, Math.round(keyboardTop - 34));
-                dockHeight = Math.min(dockHeight, maxAvailableHeight);
-
-                const centeredBottom = (baseViewportHeight * 0.5) + (dockHeight * 0.5);
-                const targetBottom = Math.max(34, keyboardTop - 14);
-                const shiftY = Math.max(-460, Math.min(0, Math.round(targetBottom - centeredBottom)));
-
-                overlay.style.setProperty('--login-modal-shift-y', `${shiftY}px`);
-                card.style.height = `${dockHeight}px`;
-                card.style.maxHeight = `${dockHeight}px`;
-                loginModalKeyboardState.docked = true;
-                loginModalKeyboardState.focusAwaitDockUntil = 0;
-                loginModalKeyboardState.lastBottomInset = Math.max(0, bottomInset);
-                clearLoginModalPostUndockSyncTimer();
-
-                requestAnimationFrame(() => scrollLoginModalActiveInputIntoView(keyboardTop));
-            }
-
-            function resetLoginModalKeyboardViewportStyles(animate = false) {
-                const { overlay, card } = getLoginModalElements();
-                if (!overlay || !card) return;
-
-                loginModalKeyboardState.docked = false;
-                loginModalKeyboardState.lastBottomInset = 0;
-                overlay.classList.remove('keyboard-docked');
-                overlay.style.setProperty('--login-modal-shift-y', '0px');
-                clearLoginModalTransitionCleanupTimer();
-
-                const resetDuration = animate ? 170 : 0;
-                if (animate) {
-                    applyLoginModalMotionVisualLock(resetDuration + 40);
-                    card.style.setProperty(
-                        'transition',
-                        `transform ${resetDuration}ms cubic-bezier(0.22, 1, 0.36, 1), height ${resetDuration}ms cubic-bezier(0.22, 1, 0.36, 1), max-height ${resetDuration}ms cubic-bezier(0.22, 1, 0.36, 1)`,
-                        'important'
-                    );
-                    loginModalKeyboardState.transitionCleanupTimer = window.setTimeout(() => {
-                        loginModalKeyboardState.transitionCleanupTimer = null;
-                        if (card && !overlay.classList.contains('keyboard-docked')) {
-                            card.style.removeProperty('transition');
-                        }
-                    }, resetDuration + 40);
-                } else {
-                    card.style.setProperty('transition', 'none', 'important');
-                    restoreLoginModalMotionVisuals();
-                    requestAnimationFrame(() => {
-                        if (card && !overlay.classList.contains('keyboard-docked')) {
-                            card.style.removeProperty('transition');
-                        }
-                    });
-                }
-
-                card.style.removeProperty('height');
-                card.style.removeProperty('max-height');
-                if (loginModalKeyboardState.keyboardBlurUndocking) {
-                    scheduleLoginModalPostUndockSync();
-                    return;
-                }
-                syncLoginModalBaseShift(true);
-            }
-
-            function resetLoginModalKeyboardDockState() {
-                clearLoginModalKeyboardTimers();
-                if (loginModalKeyboardState.viewportRafId) {
-                    cancelAnimationFrame(loginModalKeyboardState.viewportRafId);
-                    loginModalKeyboardState.viewportRafId = null;
-                }
-                resetLoginModalKeyboardViewportStyles(false);
-                loginModalKeyboardState.baseViewportHeight = 0;
-                loginModalKeyboardState.baseVisualViewportHeight = 0;
-                loginModalKeyboardState.baseCardHeight = 0;
-                loginModalKeyboardState.stableDockHeight = 0;
-                loginModalKeyboardState.baseShiftY = -96;
-                loginModalKeyboardState.lastStableKeyboardInset = 0;
-                loginModalKeyboardState.pendingStableKeyboardInset = 0;
-                loginModalKeyboardState.keyboardBlurUndocking = false;
-                loginModalKeyboardState.inputSwitchDeadline = 0;
-                loginModalKeyboardState.focusAwaitDockUntil = 0;
-                loginModalKeyboardState.openingSettleUntil = 0;
-                loginModalKeyboardState.overlayCloseDisabledUntil = 0;
-            }
-
-            function scheduleLoginModalInitialDock(visualHeight, bottomInset) {
-                const requiresWarmup = loginModalKeyboardState.lastStableKeyboardInset <= 40;
-                let predictedInset = bottomInset;
-                if (loginModalKeyboardState.lastStableKeyboardInset > 40) {
-                    if (bottomInset < 24) {
-                        predictedInset = loginModalKeyboardState.lastStableKeyboardInset;
-                    } else {
-                        predictedInset = Math.min(bottomInset, loginModalKeyboardState.lastStableKeyboardInset + 12);
-                    }
-                }
-
-                clearLoginModalPendingFirstDock();
-                const delay = requiresWarmup ? 96 : 40;
-                loginModalKeyboardState.initialDockTimer = window.setTimeout(() => {
-                    loginModalKeyboardState.initialDockTimer = null;
-                    const activeInput = getActiveLoginModalInput();
-                    if (!activeInput) return;
-                    applyLoginModalKeyboardDock(visualHeight, predictedInset, !requiresWarmup);
-                    if (predictedInset > 40) {
-                        loginModalKeyboardState.lastStableKeyboardInset = predictedInset;
-                    }
-                }, delay);
-            }
-
-            function scheduleLoginModalPostUndockSync(delay = LOGIN_MODAL_KEYBOARD_SETTLE_MS + 80) {
-                clearLoginModalPostUndockSyncTimer();
-                loginModalKeyboardState.postUndockSyncTimer = window.setTimeout(() => {
-                    loginModalKeyboardState.postUndockSyncTimer = null;
-                    const { overlay } = getLoginModalElements();
-                    if (!overlay || !overlay.classList.contains('active')) return;
-                    captureLoginModalKeyboardBase();
-                    captureLoginModalStableDockHeight();
-                    requestLoginModalViewportSync();
-                }, delay);
-            }
-
-            function evaluateLoginModalViewportState() {
-                const { overlay, card } = getLoginModalElements();
-                if (!overlay || !card || !overlay.classList.contains('active')) {
-                    return;
-                }
-
-                if (!isIOSMobileWebKit()) {
-                    syncLoginModalBaseShift(true);
-                    return;
-                }
+            function applyLoginModalViewportVars() {
+                const { overlay } = getLoginModalElements();
+                if (!overlay) return null;
 
                 const metrics = getLoginModalViewportMetrics();
-                const bottomInset = Math.max(0, Math.round(metrics.bottomInset || 0));
+                const keyboardInset = metrics.keyboardVisible ? metrics.keyboardInset : 0;
+                overlay.style.setProperty('--login-modal-viewport-height', `${metrics.visualHeight}px`);
+                overlay.style.setProperty('--login-modal-keyboard-inset', `${keyboardInset}px`);
+                overlay.classList.toggle('keyboard-visible', !!getActiveLoginModalInput() && metrics.keyboardVisible);
+                return metrics;
+            }
+
+            function scrollLoginModalInputIntoView(input, metrics = null) {
+                if (!(input instanceof HTMLElement)) return;
+
+                const { overlay, card } = getLoginModalElements();
+                if (!overlay || !card || !overlay.classList.contains('active')) return;
+
+                const container = getLoginModalScrollableContainer(card, overlay);
+                if (!container) return;
+
+                const viewportMetrics = metrics || getLoginModalViewportMetrics();
+                const inputRect = input.getBoundingClientRect();
+                const topLimit = Math.max(LOGIN_MODAL_SCROLL_MARGIN, viewportMetrics.offsetTop + LOGIN_MODAL_SCROLL_MARGIN);
+                const bottomLimit = Math.max(
+                    topLimit + 48,
+                    viewportMetrics.visualHeight - LOGIN_MODAL_SCROLL_MARGIN
+                );
+
+                let delta = 0;
+                if (inputRect.bottom > bottomLimit) {
+                    delta = inputRect.bottom - bottomLimit + 12;
+                } else if (inputRect.top < topLimit) {
+                    delta = inputRect.top - topLimit - 12;
+                }
+
+                if (Math.abs(delta) < 2) return;
+                container.scrollTop = Math.max(0, container.scrollTop + delta);
+            }
+
+            function syncLoginModalViewport() {
+                const { overlay } = getLoginModalElements();
+                if (!overlay || !overlay.classList.contains('active')) return;
+
+                const metrics = applyLoginModalViewportVars();
                 const activeInput = getActiveLoginModalInput();
-
-                if (bottomInset < 40) {
-                    captureLoginModalStableDockHeight();
-                } else {
-                    scheduleLoginModalStableKeyboardInset(bottomInset);
-                }
-
-                if (!activeInput && bottomInset <= 8) {
-                    loginModalKeyboardState.keyboardBlurUndocking = false;
-                    loginModalKeyboardState.pendingStableKeyboardInset = 0;
-                    loginModalKeyboardState.focusAwaitDockUntil = 0;
-                    clearLoginModalPostUndockSyncTimer();
-                    clearLoginModalKeyboardSettleTimer();
-                }
-
-                if (!activeInput && loginModalKeyboardState.keyboardBlurUndocking) {
-                    if (bottomInset > 8) {
-                        scheduleLoginModalPostUndockSync(120);
-                        return;
-                    }
-                    captureLoginModalKeyboardBase();
-                    captureLoginModalStableDockHeight();
-                }
-
-                const shouldDock = !!activeInput &&
-                    !loginModalKeyboardState.keyboardBlurUndocking &&
-                    (loginModalKeyboardState.docked ? bottomInset > 8 : bottomInset > 24);
-
-                if (activeInput &&
-                    !loginModalKeyboardState.docked &&
-                    bottomInset <= 24 &&
-                    Date.now() < (loginModalKeyboardState.focusAwaitDockUntil || 0)) {
-                    return;
-                }
-
-                if (shouldDock) {
-                    stabilizeLoginModalRootScroll();
-                    lockLoginModalKeyboardPage();
-                    clearLoginModalPendingUndock();
-                    if (!loginModalKeyboardState.docked) {
-                        scheduleLoginModalInitialDock(metrics.visualHeight, bottomInset);
-                        return;
-                    }
-
-                    clearLoginModalPendingFirstDock();
-                    if (Math.abs(bottomInset - loginModalKeyboardState.lastBottomInset) > 1) {
-                        applyLoginModalKeyboardDock(metrics.visualHeight, bottomInset, false);
-                    } else {
-                        requestAnimationFrame(() => scrollLoginModalActiveInputIntoView(
-                            Math.max(0, metrics.baseViewportHeight - bottomInset)
-                        ));
-                    }
-                    return;
-                }
-
-                clearLoginModalPendingFirstDock();
-                if (loginModalKeyboardState.docked) {
-                    resetLoginModalKeyboardViewportStyles(true);
-                } else {
-                    syncLoginModalBaseShift(true);
+                if (activeInput && metrics) {
+                    scrollLoginModalInputIntoView(activeInput, metrics);
                 }
             }
 
             function requestLoginModalViewportSync() {
-                if (loginModalKeyboardState.viewportRafId) return;
-                loginModalKeyboardState.viewportRafId = requestAnimationFrame(() => {
-                    loginModalKeyboardState.viewportRafId = null;
-                    evaluateLoginModalViewportState();
+                if (loginModalViewportState.viewportRafId) return;
+                loginModalViewportState.viewportRafId = requestAnimationFrame(() => {
+                    loginModalViewportState.viewportRafId = null;
+                    syncLoginModalViewport();
                 });
             }
 
-            function syncLoginModalKeyboardDock() {
-                requestLoginModalViewportSync();
+            function scheduleLoginModalInputReveal(input, delay = LOGIN_MODAL_INPUT_REVEAL_DELAY_MS) {
+                clearLoginModalFocusRevealTimer();
+                loginModalViewportState.focusRevealTimer = window.setTimeout(() => {
+                    loginModalViewportState.focusRevealTimer = null;
+                    requestLoginModalViewportSync();
+                    requestAnimationFrame(() => {
+                        scrollLoginModalInputIntoView(input);
+                    });
+                }, delay);
             }
 
-            function triggerLoginModalActionTarget(actionTarget) {
-                if (!(actionTarget instanceof HTMLElement) || !actionTarget.isConnected) return;
-
-                if (actionTarget.matches('label[for]')) {
-                    const control = document.getElementById(actionTarget.getAttribute('for'));
-                    if (control instanceof HTMLElement) {
-                        control.click();
-                        return;
-                    }
+            function detachLoginModalViewportSync() {
+                if (typeof loginModalViewportState.viewportCleanup === 'function') {
+                    loginModalViewportState.viewportCleanup();
                 }
-
-                actionTarget.click();
+                if (loginModalViewportState.viewportRafId) {
+                    cancelAnimationFrame(loginModalViewportState.viewportRafId);
+                    loginModalViewportState.viewportRafId = null;
+                }
+                clearLoginModalFocusRevealTimer();
             }
 
-            function bindLoginModalActionTapAssist() {
-                const { overlay } = getLoginModalElements();
-                if (!overlay || overlay.dataset.loginActionTapAssistBound === '1') return;
+            function resetLoginModalViewportState() {
+                detachLoginModalViewportSync();
+                loginModalViewportState.baseViewportHeight = 0;
+                loginModalViewportState.overlayCloseDisabledUntil = 0;
 
-                overlay.addEventListener('touchstart', (event) => {
-                    if (!isIOSMobileWebKit() || !overlay.classList.contains('active')) return;
-                    if (!(event.target instanceof Element)) return;
-
-                    const activeInput = getActiveLoginModalInput();
-                    if (!activeInput) return;
-
-                    const actionTarget = event.target.closest(LOGIN_MODAL_ACTIONABLE_SELECTOR);
-                    if (!(actionTarget instanceof HTMLElement)) return;
-                    if (actionTarget === activeInput) return;
-                    if (actionTarget.matches(
-                        'input:not([type="checkbox"]):not([type="button"]):not([type="submit"]):not([type="radio"]), textarea, select'
-                    )) {
-                        return;
-                    }
-                    if (actionTarget.closest('.glass-input') === activeInput) return;
-
-                    if (event.cancelable) event.preventDefault();
-                    event.stopPropagation();
-
-                    activeInput.blur();
-                    const actionDelay = loginModalKeyboardState.docked
-                        ? LOGIN_MODAL_KEYBOARD_SETTLE_MS + 30
-                        : 30;
-
-                    window.setTimeout(() => {
-                        if (!overlay.classList.contains('active')) return;
-                        triggerLoginModalActionTarget(actionTarget);
-                        requestAnimationFrame(() => syncLoginModalKeyboardDock());
-                    }, actionDelay);
-                }, { passive: false });
-
-                overlay.dataset.loginActionTapAssistBound = '1';
+                const { overlay, card } = getLoginModalElements();
+                overlay?.classList.remove('keyboard-visible');
+                overlay?.style.removeProperty('--login-modal-viewport-height');
+                overlay?.style.removeProperty('--login-modal-keyboard-inset');
+                if (overlay) {
+                    overlay.scrollTop = 0;
+                }
+                if (card) {
+                    card.scrollTop = 0;
+                    card.style.removeProperty('height');
+                    card.style.removeProperty('max-height');
+                    card.style.removeProperty('transition');
+                }
             }
 
             function bindLoginModalOverlayDismiss() {
@@ -2010,8 +1352,9 @@
 
                 overlay.addEventListener('click', (event) => {
                     if (event.target !== overlay) return;
+
                     const now = Date.now();
-                    if (now < loginModalKeyboardState.overlayCloseDisabledUntil) {
+                    if (now < loginModalViewportState.overlayCloseDisabledUntil) {
                         if (event.cancelable) event.preventDefault();
                         return;
                     }
@@ -2020,7 +1363,8 @@
                     if (activeInput) {
                         if (event.cancelable) event.preventDefault();
                         activeInput.blur();
-                        loginModalKeyboardState.overlayCloseDisabledUntil = now + 260;
+                        loginModalViewportState.overlayCloseDisabledUntil = now + 180;
+                        requestLoginModalViewportSync();
                         return;
                     }
 
@@ -2030,65 +1374,12 @@
                 overlay.dataset.loginOverlayDismissBound = '1';
             }
 
-            function bindLoginModalInputSwitchAssist() {
+            function attachLoginModalViewportSync() {
+                if (!supportsLoginModalViewportSync() || loginModalViewportState.viewportCleanup) return;
+
                 const { overlay } = getLoginModalElements();
-                if (!overlay || overlay.dataset.loginInputSwitchAssistBound === '1') return;
-
-                overlay.addEventListener('touchstart', (event) => {
-                    if (!isIOSMobileWebKit() || !overlay.classList.contains('active')) return;
-                    if (!(event.target instanceof Element)) return;
-
-                    const nextInput = event.target.closest(
-                        'input:not([type="checkbox"]):not([type="button"]):not([type="submit"]):not([type="radio"]), textarea, select'
-                    );
-                    if (!(nextInput instanceof HTMLElement)) return;
-
-                    const activeInput = getActiveLoginModalInput();
-                    if (!activeInput || activeInput === nextInput) return;
-
-                    if (event.cancelable) event.preventDefault();
-                    event.stopPropagation();
-
-                    loginModalKeyboardState.inputSwitchDeadline = Date.now() + 520;
-                    loginModalKeyboardState.focusAwaitDockUntil = Date.now() + 520;
-                    overlay.classList.add('ios-focus-lock');
-                    loginModalKeyboardState.keyboardBlurUndocking = false;
-                    loginModalKeyboardState.overlayCloseDisabledUntil = Date.now() + 320;
-                    loginModalKeyboardState.focusAwaitDockUntil = Date.now() + 420;
-                    clearLoginModalPendingUndock();
-                    clearLoginModalPostUndockSyncTimer();
-                    clearLoginModalKeyboardSettleTimer();
-                    window.setTimeout(() => {
-                        focusLoginModalInputWithoutScroll(nextInput);
-                        captureLoginModalKeyboardBase();
-                        captureLoginModalStableDockHeight();
-                        syncLoginModalBaseShift(true);
-                        lockLoginModalKeyboardPage();
-                        requestLoginModalViewportSync();
-                        window.setTimeout(() => {
-                            if (document.activeElement === nextInput) {
-                                loginModalKeyboardState.inputSwitchDeadline = 0;
-                                requestLoginModalViewportSync();
-                            }
-                        }, 120);
-                    }, 0);
-                }, { passive: false });
-
-                overlay.dataset.loginInputSwitchAssistBound = '1';
-            }
-
-            function attachLoginModalKeyboardDock() {
-                if (!isIOSMobileWebKit()) return;
-
-                const { overlay, card } = getLoginModalElements();
                 const vv = window.visualViewport;
-                if (!overlay || !card || !vv) return;
-
-                detachLoginModalKeyboardDock();
-                captureLoginModalKeyboardBase();
-                captureLoginModalStableDockHeight();
-                syncLoginModalBaseShift(true);
-                requestLoginModalViewportSync();
+                if (!overlay || !vv) return;
 
                 const handleViewportChange = () => requestLoginModalViewportSync();
                 const handleFocusIn = (event) => {
@@ -2096,137 +1387,77 @@
                     if (!overlay.contains(event.target)) return;
                     if (!/^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName)) return;
 
-                    overlay.classList.add('ios-focus-lock');
-                    loginModalKeyboardState.keyboardBlurUndocking = false;
-                    loginModalKeyboardState.focusAwaitDockUntil = Date.now() + 420;
-                    loginModalKeyboardState.overlayCloseDisabledUntil = Date.now() + 320;
-                    clearLoginModalPendingUndock();
-                    clearLoginModalPostUndockSyncTimer();
-                    clearLoginModalKeyboardSettleTimer();
-                    captureLoginModalKeyboardBase();
-                    captureLoginModalStableDockHeight();
-                    syncLoginModalBaseShift(true);
-                    lockLoginModalKeyboardPage();
+                    loginModalViewportState.overlayCloseDisabledUntil = Date.now() + 220;
                     requestLoginModalViewportSync();
-                    window.setTimeout(() => {
-                        if (document.activeElement === event.target) {
-                            requestLoginModalViewportSync();
-                        }
-                    }, 160);
+                    scheduleLoginModalInputReveal(event.target);
                 };
                 const handleFocusOut = (event) => {
                     if (!(event.target instanceof HTMLElement)) return;
                     if (!overlay.contains(event.target)) return;
                     if (!/^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName)) return;
 
-                    if (Date.now() < loginModalKeyboardState.inputSwitchDeadline) {
-                        return;
-                    }
-                    clearLoginModalPendingUndock();
-                    loginModalKeyboardState.pendingUndockTimer = window.setTimeout(() => {
-                        loginModalKeyboardState.pendingUndockTimer = null;
-                        if (getActiveLoginModalInput()) return;
-                        overlay.classList.remove('ios-focus-lock');
-                        loginModalKeyboardState.keyboardBlurUndocking = true;
-                        loginModalKeyboardState.inputSwitchDeadline = 0;
-                        loginModalKeyboardState.focusAwaitDockUntil = 0;
-                        if (loginModalKeyboardState.docked) {
-                            resetLoginModalKeyboardViewportStyles(true);
-                        } else {
-                            syncLoginModalBaseShift(true);
+                    clearLoginModalFocusRevealTimer();
+                    loginModalViewportState.overlayCloseDisabledUntil = Date.now() + 120;
+                    window.setTimeout(() => {
+                        if (!getActiveLoginModalInput()) {
+                            requestLoginModalViewportSync();
                         }
-                        requestLoginModalViewportSync();
-                        scheduleLoginModalPostUndockSync();
-                    }, LOGIN_MODAL_INPUT_SWITCH_GRACE_MS);
+                    }, 120);
                 };
 
+                window.addEventListener('resize', handleViewportChange, { passive: true });
                 vv.addEventListener('resize', handleViewportChange, { passive: true });
                 vv.addEventListener('scroll', handleViewportChange, { passive: true });
                 overlay.addEventListener('focusin', handleFocusIn, true);
                 overlay.addEventListener('focusout', handleFocusOut, true);
 
-                loginModalKeyboardState.viewportCleanup = () => {
+                loginModalViewportState.viewportCleanup = () => {
+                    window.removeEventListener('resize', handleViewportChange);
                     vv.removeEventListener('resize', handleViewportChange);
                     vv.removeEventListener('scroll', handleViewportChange);
                     overlay.removeEventListener('focusin', handleFocusIn, true);
                     overlay.removeEventListener('focusout', handleFocusOut, true);
-                    if (loginModalKeyboardState.viewportRafId) {
-                        cancelAnimationFrame(loginModalKeyboardState.viewportRafId);
-                        loginModalKeyboardState.viewportRafId = null;
-                    }
-                    loginModalKeyboardState.viewportCleanup = null;
+                    loginModalViewportState.viewportCleanup = null;
                 };
-            }
-
-            function detachLoginModalKeyboardDock() {
-                if (typeof loginModalKeyboardState.viewportCleanup === 'function') {
-                    loginModalKeyboardState.viewportCleanup();
-                }
-                clearLoginModalKeyboardTimers();
-                loginModalKeyboardState.keyboardBlurUndocking = false;
-                loginModalKeyboardState.inputSwitchDeadline = 0;
-                loginModalKeyboardState.focusAwaitDockUntil = 0;
-                loginModalKeyboardState.openingSettleUntil = 0;
             }
 
             function openLoginModal() {
                 const modal = document.getElementById('loginModal');
                 if (!modal) return;
 
-                const card = modal.querySelector('.login-card');
-                loginModalKeyboardState.baseScrollY = Math.max(0, Math.round(window.scrollY || window.pageYOffset || 0));
-                loginModalKeyboardState.ownsFullScrollLock = false;
-                detachLoginModalKeyboardDock();
-                resetLoginModalKeyboardDockState();
-                modal.classList.remove('keyboard-docked', 'ios-focus-lock');
-                modal.style.setProperty('--login-modal-base-shift-y', '-96px');
-                modal.style.setProperty('--login-modal-shift-y', '0px');
-                if (card) {
-                    card.scrollTop = 0;
-                    card.style.removeProperty('height');
-                    card.style.removeProperty('max-height');
-                    card.style.removeProperty('transition');
-                }
-
+                resetLoginModalViewportState();
+                modal.classList.remove('keyboard-visible', 'ios-focus-lock', 'keyboard-docked');
                 modal.style.display = 'flex';
                 modal.style.removeProperty('visibility');
                 modal.style.removeProperty('opacity');
-                if (isIOSMobileWebKit()) {
-                    freezeLoginModalOverlay();
-                    attachLoginModalRootScrollGuard();
-                    stabilizeLoginModalRootScroll();
-                    enableLoginModalSessionVisualLock();
-                    syncLoginModalBaseShift(true);
-                }
+
+                loginModalViewportState.baseViewportHeight = Math.max(
+                    window.innerHeight || 0,
+                    document.documentElement.clientHeight || 0,
+                    window.visualViewport ? Math.round((window.visualViewport.height || 0) + (window.visualViewport.offsetTop || 0)) : 0
+                );
+
                 void modal.offsetHeight;
                 modal.classList.add('active');
-                requestAnimationFrame(() => {
-                    captureLoginModalKeyboardBase();
-                    captureLoginModalStableDockHeight();
-                    syncLoginModalBaseShift(true);
-                    requestAnimationFrame(() => {
-                        captureLoginModalKeyboardBase();
-                        captureLoginModalStableDockHeight();
-                        syncLoginModalBaseShift(true);
-                    });
-                });
 
                 if (window.iOSScrollLock) {
                     if (isIOSMobileWebKit()) {
-                        window.iOSScrollLock.lockLight(card || modal);
+                        window.iOSScrollLock.lockLight(modal);
                     } else {
                         window.iOSScrollLock.lock(modal);
                     }
                 }
 
-                loginModalKeyboardState.overlayCloseDisabledUntil = Date.now() + 260;
-                loginModalKeyboardState.inputSwitchDeadline = 0;
-                loginModalKeyboardState.focusAwaitDockUntil = 0;
-                loginModalKeyboardState.openingSettleUntil = Date.now() + 420;
+                loginModalViewportState.overlayCloseDisabledUntil = Date.now() + 260;
                 bindLoginModalOverlayDismiss();
-                bindLoginModalInputSwitchAssist();
-                bindLoginModalActionTapAssist();
-                attachLoginModalKeyboardDock();
+                attachLoginModalViewportSync();
+
+                requestAnimationFrame(() => {
+                    requestLoginModalViewportSync();
+                    window.setTimeout(() => {
+                        requestLoginModalViewportSync();
+                    }, 120);
+                });
 
                 if (typeof window.ensureGoogleInlineButtonReady === 'function') {
                     window.ensureGoogleInlineButtonReady({ renderFallbackButton: true }).catch((err) => {
@@ -2240,24 +1471,12 @@
                 if (!modal) return;
 
                 getActiveLoginModalInput()?.blur();
-                detachLoginModalKeyboardDock();
-                resetLoginModalKeyboardDockState();
-                modal.classList.remove('active', 'ios-focus-lock', 'keyboard-docked');
-                modal.style.removeProperty('--login-modal-base-shift-y');
-                modal.style.setProperty('--login-modal-shift-y', '0px');
+                resetLoginModalViewportState();
+                modal.classList.remove('active', 'keyboard-visible', 'ios-focus-lock', 'keyboard-docked');
                 modal.style.display = 'none';
                 modal.style.visibility = 'hidden';
                 modal.style.opacity = '0';
-                detachLoginModalRootScrollGuard();
-                restoreLoginModalOverlay();
-                disableLoginModalSessionVisualLock();
                 if (window.iOSScrollLock) window.iOSScrollLock.unlock();
-                loginModalKeyboardState.ownsFullScrollLock = false;
-                loginModalKeyboardState.baseScrollY = 0;
-                loginModalKeyboardState.inputSwitchDeadline = 0;
-                loginModalKeyboardState.focusAwaitDockUntil = 0;
-                loginModalKeyboardState.openingSettleUntil = 0;
-                loginModalKeyboardState.overlayCloseDisabledUntil = 0;
             }
 
             window.openLoginModal = openLoginModal;
@@ -2285,24 +1504,23 @@
                     input.removeAttribute('readonly');
                 });
 
+                const { overlay, card } = getLoginModalElements();
+                if (overlay) overlay.scrollTop = 0;
+                if (card) card.scrollTop = 0;
+
                 setTimeout(() => {
                     inputs.forEach(input => {
                         input.value = '';
                         input.dispatchEvent(new Event('input', { bubbles: true }));
                     });
                     requestAnimationFrame(() => {
-                        captureLoginModalKeyboardBase();
-                        captureLoginModalStableDockHeight();
-                        syncLoginModalBaseShift(true);
-                        syncLoginModalKeyboardDock();
+                        requestLoginModalViewportSync();
                     });
                     console.log(`✅ 已切换到 ${viewId} 视图并清空输入框`);
                 }, 10);
             };
 
             bindLoginModalOverlayDismiss();
-            bindLoginModalInputSwitchAssist();
-            bindLoginModalActionTapAssist();
 
         } catch (error) {
             console.error('Failed to initialize auth:', error);
