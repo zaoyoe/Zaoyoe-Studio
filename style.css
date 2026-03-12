@@ -6921,14 +6921,17 @@ body {
 
     #guestbookModal .guestbook-content .input-group,
     #guestbookModal .guestbook-form .input-group {
+        display: flex !important;
+        align-items: stretch !important;
         flex: 1 1 auto !important;
         min-height: 0 !important;
     }
 
     #guestbookModal .guestbook-content textarea,
     #guestbookModal .guestbook-form textarea {
-        height: 100% !important;
-        min-height: 156px !important;
+        flex: 1 1 auto !important;
+        height: auto !important;
+        min-height: 164px !important;
         resize: none !important;
     }
 
@@ -6955,6 +6958,16 @@ body {
         box-sizing: border-box !important;
         justify-content: center !important;
         padding: 10px 16px !important;
+    }
+
+    #guestbookModal.keyboard-docked .guestbook-content,
+    #guestbookModal.keyboard-docked .guestbook-form {
+        gap: 10px !important;
+    }
+
+    #guestbookModal.keyboard-docked .guestbook-content textarea,
+    #guestbookModal.keyboard-docked .guestbook-form textarea {
+        min-height: 112px !important;
     }
 
     /*
