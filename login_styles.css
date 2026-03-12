@@ -344,6 +344,18 @@
 
 /* glass-input styles are inherited from style.css - DO NOT override */
 
+/* Fix Autofill ugly yellow background on WebKit browsers */
+.glass-input:-webkit-autofill,
+.glass-input:-webkit-autofill:hover,
+.glass-input:-webkit-autofill:focus,
+.glass-input:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 30px rgba(255, 255, 255, 0.05) inset !important;
+    /* Forces a dark/transparent match */
+    -webkit-text-fill-color: white !important;
+    /* Keep text white */
+    transition: background-color 5000s ease-in-out 0s;
+}
+
 
 /* Input with Action Button (for verification code) */
 /* Input with Action Button (for verification code) */
