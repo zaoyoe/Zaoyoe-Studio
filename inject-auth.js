@@ -695,7 +695,9 @@
             .login-modal-scroll,
             #loginModal .login-modal-scroll {
                 width: 100% !important;
-                display: block !important;
+                display: flex !important;
+                justify-content: center !important;
+                align-items: center !important;
                 box-sizing: border-box !important;
             }
             
@@ -802,10 +804,6 @@
                     --login-modal-safe-top: calc(env(safe-area-inset-top, 0px) + 12px);
                     --login-modal-safe-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
                     padding: 0 !important;
-                    /* height:auto is correct here: the overlay is position:fixed with
-                       top:0;bottom:0 so inset:0 already gives it full viewport height.
-                       100dvh would resize dynamically as keyboard opens/closes and cause
-                       layout thrashing bounces. */
                     height: auto !important;
                     min-height: 0 !important;
                     overflow: hidden !important;
@@ -825,29 +823,27 @@
                 }
 
                 #loginModal .login-modal-scroll {
-                    /* Use absolute+inset:0 so height is always = overlay height,
-                       regardless of display:block / flex / align-items on the parent.
-                       This fixes clientHeight returning 0 on iOS when parent is height:auto. */
-                    position: absolute !important;
-                    inset: 0 !important;
                     width: 100% !important;
-                    padding-top: var(--login-modal-card-top-offset, 24px) !important;
+                    height: 100% !important;
+                    min-height: 100% !important;
+                    max-height: 100% !important;
+                    padding-top: var(--login-modal-safe-top) !important;
                     padding-right: 16px !important;
                     padding-bottom: calc(var(--login-modal-safe-bottom) + var(--login-modal-keyboard-inset) + 12px) !important;
                     padding-left: 16px !important;
                     overflow-y: auto !important;
                     overscroll-behavior: contain !important;
                     -webkit-overflow-scrolling: touch !important;
-                    display: block !important;
-                    scroll-padding-top: calc(var(--login-modal-card-top-offset, 24px) + 12px) !important;
+                    display: grid !important;
+                    justify-items: center !important;
+                    align-content: center !important;
+                    scroll-padding-top: calc(var(--login-modal-safe-top) + 12px) !important;
                     scroll-padding-bottom: calc(var(--login-modal-keyboard-inset) + var(--login-modal-safe-bottom) + 24px) !important;
                     box-sizing: border-box !important;
+                    position: relative !important;
                     z-index: 1 !important;
                     overflow-anchor: none !important;
-                    /* Animate both paddings so keyboard dismiss and view-switch settle smoothly */
-                    transition:
-                        padding-top 260ms cubic-bezier(0.16, 1, 0.3, 1),
-                        padding-bottom 220ms cubic-bezier(0.16, 1, 0.3, 1) !important;
+                    transition: padding-bottom 220ms cubic-bezier(0.16, 1, 0.3, 1) !important;
                 }
 
                 #loginModal::before {
@@ -1259,7 +1255,6 @@
             const LOGIN_MODAL_SCROLL_MARGIN = 18;
             const loginModalViewportState = {
                 baseViewportHeight: 0,
-                cardTopOffset: 0,
                 viewportCleanup: null,
                 viewportRafId: null,
                 focusRevealTimer: null,
@@ -1298,19 +1293,6 @@
                 const active = document.activeElement;
                 if (!overlay || !active || !overlay.contains(active)) return null;
                 return /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName) ? active : null;
-            }
-
-            function recalculateLoginModalCardTopOffset(force = false) {
-                const { overlay, scroller, card } = getLoginModalElements();
-                if (!overlay || !scroller || !card || !overlay.classList.contains('active')) return;
-
-                if (!force && getActiveLoginModalInput()) return;
-
-                const availableHeight = Math.max(0, scroller.clientHeight);
-                const cardHeight = Math.max(0, card.offsetHeight);
-                const nextOffset = Math.max(24, Math.round((availableHeight - cardHeight) / 2));
-                loginModalViewportState.cardTopOffset = nextOffset;
-                scroller.style.setProperty('--login-modal-card-top-offset', `${nextOffset}px`);
             }
 
             function clearLoginModalFocusRevealTimer() {
@@ -1395,7 +1377,6 @@
                 if (loginModalViewportState.focusTransferDirection !== 'up') {
                     loginModalViewportState.viewportHoldUntil = 0;
                 }
-                // 420ms covers iOS Safari's longer focusout→focusin gap when autofill bar appears
                 loginModalViewportState.focusTransferUntil = Date.now() + 420;
                 overlay.classList.add('login-focus-transfer');
                 clearLoginModalFocusTransferTimer();
@@ -1452,8 +1433,6 @@
                 );
                 const activeInput = getActiveLoginModalInput();
 
-                // Lock baseViewportHeight during focus transfers to prevent keyboardInset
-                // from briefly computing as 0 and triggering an unwanted settle/scroll-back.
                 if (!loginModalViewportState.baseViewportHeight ||
                     (!activeInput && !isLoginModalFocusTransferActive() &&
                         layoutHeight > loginModalViewportState.baseViewportHeight - 1)) {
@@ -1488,7 +1467,7 @@
             }
 
             function applyLoginModalViewportVars() {
-                const { overlay, scroller } = getLoginModalElements();
+                const { overlay } = getLoginModalElements();
                 if (!overlay) return null;
 
                 const metrics = getLoginModalViewportMetrics();
@@ -1505,9 +1484,6 @@
                 }
 
                 overlay.style.setProperty('--login-modal-keyboard-inset', `${keyboardInset}px`);
-                if (scroller && !activeInput && !metrics.keyboardVisible) {
-                    recalculateLoginModalCardTopOffset(loginModalViewportState.cardTopOffset <= 0);
-                }
                 overlay.classList.toggle('keyboard-visible', !!activeInput && keyboardInset >= LOGIN_MODAL_KEYBOARD_THRESHOLD);
                 overlay.classList.remove('keyboard-settling');
                 return metrics;
@@ -1529,12 +1505,14 @@
                     topLimit + 48,
                     viewportMetrics.visualHeight - LOGIN_MODAL_SCROLL_MARGIN
                 );
+                const keyboardActive = viewportMetrics.keyboardVisible ||
+                    loginModalViewportState.lastKeyboardInset >= LOGIN_MODAL_KEYBOARD_THRESHOLD;
                 const allowTopReveal = !!options.allowTopReveal;
 
                 let delta = 0;
                 if (inputRect.bottom > bottomLimit) {
                     delta = inputRect.bottom - bottomLimit + 12;
-                } else if (allowTopReveal && inputRect.top < topLimit) {
+                } else if ((!keyboardActive || allowTopReveal) && inputRect.top < topLimit) {
                     delta = inputRect.top - topLimit - 12;
                 }
 
@@ -1654,7 +1632,6 @@
             function resetLoginModalViewportState() {
                 detachLoginModalViewportSync();
                 loginModalViewportState.baseViewportHeight = 0;
-                loginModalViewportState.cardTopOffset = 0;
                 loginModalViewportState.lastKeyboardInset = 0;
                 loginModalViewportState.isKeyboardClosing = false;
                 loginModalViewportState.isKeyboardSettling = false;
@@ -1668,7 +1645,6 @@
                 overlay?.style.removeProperty('--login-modal-keyboard-inset');
                 if (overlay) overlay.scrollTop = 0;
                 if (scroller) {
-                    scroller.style.removeProperty('--login-modal-card-top-offset');
                     scroller.style.removeProperty('scroll-behavior');
                     scroller.scrollTop = 0;
                 }
@@ -1817,10 +1793,8 @@
                 attachLoginModalViewportSync();
 
                 requestAnimationFrame(() => {
-                    recalculateLoginModalCardTopOffset(true);
                     requestLoginModalViewportSync();
                     window.setTimeout(() => {
-                        recalculateLoginModalCardTopOffset();
                         requestLoginModalViewportSync();
                     }, 120);
                 });
@@ -1875,23 +1849,16 @@
                 if (scroller) scroller.scrollTop = 0;
                 if (card) card.scrollTop = 0;
 
-                // 60ms gives iOS time to complete layout after view switch;
-                // rAF then waits for a paint frame so scroller.clientHeight is accurate.
-                // No force flag: if an input is still focused (keyboard visible), skip
-                // the recalculation to avoid a visible padding-top jump at switch time.
                 setTimeout(() => {
                     inputs.forEach(input => {
                         input.value = '';
                         input.dispatchEvent(new Event('input', { bubbles: true }));
                     });
                     requestAnimationFrame(() => {
-                        requestAnimationFrame(() => {
-                            recalculateLoginModalCardTopOffset(); // no force — respects active-input guard
-                            requestLoginModalViewportSync();
-                        });
+                        requestLoginModalViewportSync();
                     });
                     console.log(`✅ 已切换到 ${viewId} 视图并清空输入框`);
-                }, 60);
+                }, 10);
             };
 
             bindLoginModalOverlayDismiss();
