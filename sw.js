@@ -2,9 +2,9 @@
 // SERVICE WORKER - Performance Optimization
 // ========================================
 
-const CACHE_NAME = 'prompts-gallery-v4';
-const STATIC_CACHE = 'static-v4';
-const IMAGE_CACHE = 'images-v4';
+const CACHE_NAME = 'prompts-gallery-v5';
+const STATIC_CACHE = 'static-v5';
+const IMAGE_CACHE = 'images-v5';
 
 // Static assets to cache immediately
 const STATIC_ASSETS = [
