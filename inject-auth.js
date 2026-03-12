@@ -810,26 +810,42 @@
 
                 .login-overlay .login-card,
                 #loginModal .login-card {
-                    position: relative !important;
-                    top: var(--login-modal-shift-y, 0px) !important;
-                    width: 100% !important;
-                    max-width: 100% !important;
+                    position: fixed !important;
+                    top: 50% !important;
+                    left: 50% !important;
+                    right: auto !important;
+                    bottom: auto !important;
+                    margin: 0 !important;
+                    width: min(360px, calc(100vw - 40px)) !important;
+                    max-width: calc(100vw - 40px) !important;
                     box-sizing: border-box !important;
                     max-height: calc(100svh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px) !important;
                     overflow-y: auto !important;
                     overscroll-behavior: contain !important;
                     -webkit-overflow-scrolling: touch !important;
+                    transform: translate3d(-50%, calc(-50% + var(--login-modal-shift-y, 0px)), 0) scale(0.95) !important;
                     transition:
-                        top 180ms cubic-bezier(0.22, 1, 0.36, 1),
                         transform 0.3s ease-out,
-                        opacity 0.3s ease-out !important;
-                    will-change: top, transform, opacity !important;
+                        opacity 0.3s ease-out,
+                        height 180ms cubic-bezier(0.22, 1, 0.36, 1),
+                        max-height 180ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+                    will-change: transform, opacity !important;
+                }
+
+                .login-overlay.active .login-card,
+                #loginModal.active .login-card {
+                    transform: translate3d(-50%, calc(-50% + var(--login-modal-shift-y, 0px)), 0) scale(1) !important;
+                    opacity: 1 !important;
                 }
 
                 /* ⚡ iOS CARET FIX: only flatten transforms when input is focused */
-                .login-overlay.ios-focus-lock,
+                .login-overlay.ios-focus-lock {
+                    will-change: auto !important;
+                    animation: none !important;
+                }
+
                 .login-overlay.ios-focus-lock .login-card {
-                    transform: none !important;
+                    transform: translate3d(-50%, calc(-50% + var(--login-modal-shift-y, 0px)), 0) scale(1) !important;
                     will-change: auto !important;
                     animation: none !important;
                     transition: none !important;
@@ -1169,6 +1185,8 @@
                 viewportCleanup: null,
                 viewportRafId: null,
                 stableViewportProbe: null,
+                overlayBaseHeight: 0,
+                overlayCleanup: null,
                 baseViewportHeight: 0,
                 baseCardHeight: 0,
                 docked: false,
@@ -1237,6 +1255,69 @@
                 return Math.max(0, Math.round(probe.getBoundingClientRect().height || probe.offsetHeight || 0));
             }
 
+            function freezeLoginModalOverlay() {
+                const { overlay } = getLoginModalElements();
+                if (!overlay || loginModalKeyboardState.overlayCleanup) return;
+
+                const vv = window.visualViewport;
+                const initialViewportHeight = Math.max(
+                    window.innerHeight || 0,
+                    document.documentElement.clientHeight || 0,
+                    vv ? ((vv.height || 0) + (vv.offsetTop || 0)) : 0,
+                    window.screen?.height || 0
+                );
+                loginModalKeyboardState.overlayBaseHeight = initialViewportHeight + 64;
+
+                const syncOverlayFrame = () => {
+                    const liveViewport = window.visualViewport;
+                    const overlayHeight = Math.max(
+                        loginModalKeyboardState.overlayBaseHeight || 0,
+                        window.innerHeight || 0,
+                        document.documentElement.clientHeight || 0,
+                        liveViewport ? ((liveViewport.height || 0) + (liveViewport.offsetTop || 0) + 64) : 0,
+                        window.screen?.height || 0
+                    );
+
+                    overlay.style.setProperty('position', 'fixed', 'important');
+                    overlay.style.setProperty('top', '0', 'important');
+                    overlay.style.setProperty('left', '0', 'important');
+                    overlay.style.setProperty('right', '0', 'important');
+                    overlay.style.setProperty('bottom', 'auto', 'important');
+                    overlay.style.setProperty('width', '100%', 'important');
+                    overlay.style.setProperty('height', `${overlayHeight}px`, 'important');
+                };
+
+                syncOverlayFrame();
+                window.addEventListener('resize', syncOverlayFrame, { passive: true });
+                if (window.visualViewport) {
+                    window.visualViewport.addEventListener('resize', syncOverlayFrame, { passive: true });
+                    window.visualViewport.addEventListener('scroll', syncOverlayFrame, { passive: true });
+                }
+
+                loginModalKeyboardState.overlayCleanup = () => {
+                    window.removeEventListener('resize', syncOverlayFrame);
+                    if (window.visualViewport) {
+                        window.visualViewport.removeEventListener('resize', syncOverlayFrame);
+                        window.visualViewport.removeEventListener('scroll', syncOverlayFrame);
+                    }
+                    overlay.style.removeProperty('position');
+                    overlay.style.removeProperty('top');
+                    overlay.style.removeProperty('left');
+                    overlay.style.removeProperty('right');
+                    overlay.style.removeProperty('bottom');
+                    overlay.style.removeProperty('width');
+                    overlay.style.removeProperty('height');
+                    loginModalKeyboardState.overlayBaseHeight = 0;
+                    loginModalKeyboardState.overlayCleanup = null;
+                };
+            }
+
+            function restoreLoginModalOverlay() {
+                if (typeof loginModalKeyboardState.overlayCleanup === 'function') {
+                    loginModalKeyboardState.overlayCleanup();
+                }
+            }
+
             function clearLoginModalKeyboardTimers() {
                 if (loginModalKeyboardState.initialDockTimer) {
                     clearTimeout(loginModalKeyboardState.initialDockTimer);
@@ -1288,11 +1369,11 @@
 
             function lockLoginModalKeyboardPage() {
                 if (!window.iOSScrollLock) return;
-                const { overlay } = getLoginModalElements();
+                const { overlay, card } = getLoginModalElements();
                 if (!overlay?.classList.contains('active')) return;
 
                 if (!window.iOSScrollLock.isLocked) {
-                    window.iOSScrollLock.lockLight(overlay);
+                    window.iOSScrollLock.lockLight(card || overlay);
                 }
                 loginModalKeyboardState.ownsFullScrollLock = false;
             }
@@ -1329,19 +1410,16 @@
                 }
 
                 const baseCardHeight = Math.max(320, loginModalKeyboardState.baseCardHeight || 420);
-                const naturalHeight = Math.max(baseCardHeight, Math.round(card.scrollHeight || 0));
                 const baseViewportHeight = Math.max(
                     metrics.baseVisualHeight || 0,
                     loginModalKeyboardState.baseViewportHeight || 0
                 );
                 const keyboardTop = Math.max(0, baseViewportHeight - Math.max(0, bottomInset));
-                const minTop = 14;
-                const keyboardClearance = 40;
-                const maxAvailableHeight = Math.max(280, Math.round(keyboardTop - minTop - keyboardClearance));
-                const dockHeight = Math.min(naturalHeight, maxAvailableHeight);
-                const centeredTop = (baseViewportHeight - dockHeight) / 2;
-                const desiredTop = Math.max(minTop, keyboardTop - keyboardClearance - dockHeight);
-                const shiftY = Math.min(0, Math.round(desiredTop - centeredTop));
+                const maxAvailableHeight = Math.max(280, Math.round(keyboardTop - 52));
+                const dockHeight = Math.max(320, Math.min(baseCardHeight, maxAvailableHeight));
+                const centeredBottom = (baseViewportHeight * 0.5) + (dockHeight * 0.5);
+                const targetBottom = Math.max(40, keyboardTop - 12);
+                const shiftY = Math.min(0, Math.max(-520, Math.round(targetBottom - centeredBottom)));
 
                 overlay.classList.add('keyboard-docked');
                 overlay.style.setProperty('--login-modal-shift-y', `${shiftY}px`);
@@ -1669,12 +1747,15 @@
                 modal.style.display = 'flex';
                 modal.style.removeProperty('visibility');
                 modal.style.removeProperty('opacity');
+                if (isIOSMobileWebKit()) {
+                    freezeLoginModalOverlay();
+                }
                 void modal.offsetHeight;
                 modal.classList.add('active');
 
                 if (window.iOSScrollLock) {
                     if (isIOSMobileWebKit()) {
-                        window.iOSScrollLock.lockLight(modal);
+                        window.iOSScrollLock.lockLight(card || modal);
                     } else {
                         window.iOSScrollLock.lock(modal);
                     }
@@ -1702,6 +1783,7 @@
                 modal.style.display = 'none';
                 modal.style.visibility = 'hidden';
                 modal.style.opacity = '0';
+                restoreLoginModalOverlay();
                 if (window.iOSScrollLock) window.iOSScrollLock.unlock();
                 loginModalKeyboardState.ownsFullScrollLock = false;
                 loginModalKeyboardState.baseScrollY = 0;
