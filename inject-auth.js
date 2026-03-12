@@ -94,6 +94,7 @@
     const loginModalHTML = `
     <!-- Login Modal -->
     <div class="login-overlay" id="loginModal" style="display: none; opacity: 0; visibility: hidden;">
+        <div class="login-modal-scroll">
         <div class="login-card" onclick="event.stopPropagation()">
             <!-- Mac Window Controls -->
             <div class="mac-controls">
@@ -213,6 +214,7 @@
                 </div>
             </div>
 
+        </div>
         </div>
     </div>
     `;
@@ -689,6 +691,15 @@
                 -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
                 box-sizing: border-box !important;
             }
+
+            .login-modal-scroll,
+            #loginModal .login-modal-scroll {
+                width: 100% !important;
+                display: flex !important;
+                justify-content: center !important;
+                align-items: center !important;
+                box-sizing: border-box !important;
+            }
             
             /* Submit Button - Centered, narrow width like homepage */
             .login-submit-btn,
@@ -792,29 +803,53 @@
                     --login-modal-keyboard-inset: 0px;
                     --login-modal-safe-top: calc(env(safe-area-inset-top, 0px) + 12px);
                     --login-modal-safe-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
-                    padding-top: var(--login-modal-safe-top) !important;
-                    padding-right: 16px !important;
-                    padding-bottom: calc(var(--login-modal-safe-bottom) + var(--login-modal-keyboard-inset) + 12px) !important;
-                    padding-left: 16px !important;
-                    height: auto !important;
-                    min-height: auto !important;
-                    overflow-y: auto !important;
-                    overscroll-behavior: contain !important;
-                    -webkit-overflow-scrolling: touch !important;
-                    align-items: flex-start !important;
-                    scroll-padding-top: calc(var(--login-modal-safe-top) + 12px) !important;
-                    scroll-padding-bottom: calc(var(--login-modal-keyboard-inset) + var(--login-modal-safe-bottom) + 24px) !important;
+                    padding: 0 !important;
+                    height: 100dvh !important;
+                    min-height: 100dvh !important;
+                    overflow: hidden !important;
+                    overscroll-behavior: none !important;
+                    align-items: stretch !important;
+                    justify-content: stretch !important;
                     background: rgba(0, 0, 0, 0.12) !important;
                     backdrop-filter: blur(18px) saturate(152%) !important;
                     -webkit-backdrop-filter: blur(18px) saturate(152%) !important;
                     isolation: isolate !important;
-                    will-change: opacity, padding-bottom !important;
+                    will-change: opacity !important;
                     transition:
                         opacity 0.3s ease,
-                        padding-bottom 220ms cubic-bezier(0.16, 1, 0.3, 1),
                         background-color 180ms ease,
                         backdrop-filter 180ms ease,
                         -webkit-backdrop-filter 180ms ease !important;
+                }
+
+                #loginModal .login-modal-scroll {
+                    width: 100% !important;
+                    height: 100% !important;
+                    min-height: 100% !important;
+                    max-height: 100% !important;
+                    padding-top: var(--login-modal-safe-top) !important;
+                    padding-right: 16px !important;
+                    padding-bottom: calc(var(--login-modal-safe-bottom) + var(--login-modal-keyboard-inset) + 12px) !important;
+                    padding-left: 16px !important;
+                    overflow-y: auto !important;
+                    overscroll-behavior: contain !important;
+                    -webkit-overflow-scrolling: touch !important;
+                    display: flex !important;
+                    flex-direction: column !important;
+                    justify-content: center !important;
+                    align-items: center !important;
+                    scroll-padding-top: calc(var(--login-modal-safe-top) + 12px) !important;
+                    scroll-padding-bottom: calc(var(--login-modal-keyboard-inset) + var(--login-modal-safe-bottom) + 24px) !important;
+                    box-sizing: border-box !important;
+                    position: relative !important;
+                    z-index: 1 !important;
+                    transition: padding-bottom 220ms cubic-bezier(0.16, 1, 0.3, 1) !important;
+                }
+
+                #loginModal.keyboard-visible .login-modal-scroll,
+                #loginModal.login-focus-transfer .login-modal-scroll,
+                #loginModal.active:focus-within .login-modal-scroll {
+                    justify-content: flex-start !important;
                 }
 
                 #loginModal::before {
@@ -861,7 +896,7 @@
                     left: auto !important;
                     right: auto !important;
                     bottom: auto !important;
-                    margin: auto !important;
+                    margin: 0 auto !important;
                     width: min(360px, calc(100vw - 32px)) !important;
                     max-width: 100% !important;
                     box-sizing: border-box !important;
@@ -887,13 +922,6 @@
                     will-change: auto !important;
                     isolation: isolate !important;
                     z-index: 1 !important;
-                }
-
-                #loginModal.keyboard-visible .login-card,
-                #loginModal.login-focus-transfer .login-card,
-                #loginModal.active:focus-within .login-card {
-                    margin-top: 0 !important;
-                    margin-bottom: 0 !important;
                 }
 
                 .login-overlay .login-card::before,
@@ -1261,6 +1289,7 @@
                 const overlay = document.getElementById('loginModal');
                 return {
                     overlay,
+                    scroller: overlay?.querySelector('.login-modal-scroll') || null,
                     card: overlay?.querySelector('.login-card') || null
                 };
             }
@@ -1430,7 +1459,10 @@
                 };
             }
 
-            function getLoginModalScrollableContainer(card, overlay) {
+            function getLoginModalScrollableContainer(card, overlay, scroller = null) {
+                if (scroller) {
+                    return scroller;
+                }
                 if (overlay && overlay.scrollHeight > overlay.clientHeight + 4) {
                     return overlay;
                 }
@@ -1466,10 +1498,10 @@
             function scrollLoginModalInputIntoView(input, metrics = null, options = {}) {
                 if (!(input instanceof HTMLElement)) return;
 
-                const { overlay, card } = getLoginModalElements();
+                const { overlay, scroller, card } = getLoginModalElements();
                 if (!overlay || !card || !overlay.classList.contains('active')) return;
 
-                const container = getLoginModalScrollableContainer(card, overlay);
+                const container = getLoginModalScrollableContainer(card, overlay, scroller);
                 if (!container) return;
 
                 const viewportMetrics = metrics || getLoginModalViewportMetrics();
@@ -1497,10 +1529,10 @@
             function relaxLoginModalCardIntoView(input, metrics = null) {
                 if (!(input instanceof HTMLElement)) return;
 
-                const { overlay, card } = getLoginModalElements();
+                const { overlay, scroller, card } = getLoginModalElements();
                 if (!overlay || !card || !overlay.classList.contains('active')) return;
 
-                const container = getLoginModalScrollableContainer(card, overlay);
+                const container = getLoginModalScrollableContainer(card, overlay, scroller);
                 if (!container || container.scrollTop <= 0) return;
 
                 const viewportMetrics = metrics || getLoginModalViewportMetrics();
@@ -1615,12 +1647,13 @@
                 loginModalViewportState.viewportHoldUntil = 0;
                 loginModalViewportState.overlayCloseDisabledUntil = 0;
 
-                const { overlay, card } = getLoginModalElements();
+                const { overlay, scroller, card } = getLoginModalElements();
                 overlay?.classList.remove('keyboard-visible', 'keyboard-settling', 'login-focus-transfer');
                 overlay?.style.removeProperty('--login-modal-keyboard-inset');
-                if (overlay) {
-                    overlay.style.removeProperty('scroll-behavior');
-                    overlay.scrollTop = 0;
+                if (overlay) overlay.scrollTop = 0;
+                if (scroller) {
+                    scroller.style.removeProperty('scroll-behavior');
+                    scroller.scrollTop = 0;
                 }
                 if (card) {
                     card.scrollTop = 0;
@@ -1635,7 +1668,9 @@
                 if (!overlay || overlay.dataset.loginOverlayDismissBound === '1') return;
 
                 overlay.addEventListener('click', (event) => {
-                    if (event.target !== overlay) return;
+                    const clickedScroller = event.target instanceof HTMLElement &&
+                        event.target.classList.contains('login-modal-scroll');
+                    if (event.target !== overlay && !clickedScroller) return;
 
                     const now = Date.now();
                     if (now < loginModalViewportState.overlayCloseDisabledUntil) {
@@ -1817,8 +1852,9 @@
                     input.removeAttribute('readonly');
                 });
 
-                const { overlay, card } = getLoginModalElements();
+                const { overlay, scroller, card } = getLoginModalElements();
                 if (overlay) overlay.scrollTop = 0;
+                if (scroller) scroller.scrollTop = 0;
                 if (card) card.scrollTop = 0;
 
                 setTimeout(() => {
