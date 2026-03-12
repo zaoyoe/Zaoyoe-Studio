@@ -73,7 +73,10 @@
         return !!(
             currentModal &&
             currentModal.classList &&
-            currentModal.classList.contains('poetry-modal') &&
+            (
+                currentModal.classList.contains('login-overlay') ||
+                currentModal.classList.contains('poetry-modal')
+            ) &&
             isFocusedFieldInsideCurrentModal()
         );
     }
