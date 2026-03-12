@@ -1481,10 +1481,12 @@
                 input.addEventListener('touchstart', (event) => {
                     const { overlay } = getLoginModalElements();
                     if (!isIOSMobileWebKit() || !overlay?.classList.contains('active')) return;
-                    lockLoginModalKeyboardPage();
-                    if (event.cancelable) event.preventDefault();
-                    focusLoginInputWithoutScroll(input);
                     overlay.classList.add('ios-focus-lock');
+                    if (document.activeElement === input) {
+                        lockLoginModalKeyboardPage();
+                        if (event.cancelable) event.preventDefault();
+                        focusLoginInputWithoutScroll(input);
+                    }
                     requestAnimationFrame(() => {
                         syncLoginModalKeyboardDock();
                         scrollLoginModalActiveInputIntoView();
@@ -1498,6 +1500,7 @@
                 input.addEventListener('focus', () => {
                     const { overlay } = getLoginModalElements();
                     overlay?.classList.add('ios-focus-lock');
+                    lockLoginModalKeyboardPage();
                     syncLoginModalKeyboardDock();
                     requestAnimationFrame(() => scrollLoginModalActiveInputIntoView());
                 });
