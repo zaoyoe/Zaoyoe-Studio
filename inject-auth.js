@@ -788,6 +788,12 @@
                ⚡ PRESERVED: staggered rise animation on modal open.
                Only disable transforms when input is focused (ios-focus-lock). */
             @media (max-width: 768px) {
+                #loginModal {
+                    --login-modal-shift-y: 0px;
+                    padding-top: calc(env(safe-area-inset-top, 0px) + 12px) !important;
+                    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px) !important;
+                }
+
                 .login-overlay .glass-input,
                 .login-card .glass-input,
                 #loginModal .glass-input,
@@ -804,11 +810,20 @@
 
                 .login-overlay .login-card,
                 #loginModal .login-card {
+                    position: relative !important;
+                    top: var(--login-modal-shift-y, 0px) !important;
                     width: 100% !important;
                     max-width: 100% !important;
                     box-sizing: border-box !important;
-                    max-height: none !important;
-                    overflow-y: visible !important;
+                    max-height: calc(100svh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px) !important;
+                    overflow-y: auto !important;
+                    overscroll-behavior: contain !important;
+                    -webkit-overflow-scrolling: touch !important;
+                    transition:
+                        top 180ms cubic-bezier(0.22, 1, 0.36, 1),
+                        transform 0.3s ease-out,
+                        opacity 0.3s ease-out !important;
+                    will-change: top, transform, opacity !important;
                 }
 
                 /* ⚡ iOS CARET FIX: only flatten transforms when input is focused */
@@ -827,6 +842,10 @@
                     transition: none !important;
                     transition-delay: 0s !important;
                     animation: none !important;
+                }
+
+                #loginModal.keyboard-docked .login-card {
+                    box-shadow: 0 20px 48px rgba(0, 0, 0, 0.42) !important;
                 }
 
             }
