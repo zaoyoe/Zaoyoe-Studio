@@ -6534,10 +6534,7 @@ input[type="submit"],
     box-sizing: border-box !important;
 }
 
-#guestbookModal .guestbook-composer-sheet,
-#guestbookModal.active .guestbook-composer-sheet,
-#guestbookModal.active:focus-within .guestbook-composer-sheet,
-#guestbookModal.ios-focus-lock .guestbook-composer-sheet {
+#guestbookModal .guestbook-composer-sheet {
     width: min(calc(100vw - 40px), 620px) !important;
     max-width: 620px !important;
     height: 420px;
@@ -6562,11 +6559,21 @@ input[type="submit"],
         inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
-    transform: none !important;
-    opacity: 1 !important;
-    transition: top 180ms cubic-bezier(0.22, 1, 0.36, 1) !important;
-    will-change: top !important;
+    transform: translate3d(0, 18px, 0) scale(0.985) !important;
+    opacity: 0 !important;
+    transition:
+        top 180ms cubic-bezier(0.22, 1, 0.36, 1),
+        transform 320ms cubic-bezier(0.22, 1, 0.36, 1),
+        opacity 260ms ease-out !important;
+    will-change: top, transform, opacity !important;
     pointer-events: auto !important;
+}
+
+#guestbookModal.active .guestbook-composer-sheet,
+#guestbookModal.active:focus-within .guestbook-composer-sheet,
+#guestbookModal.ios-focus-lock .guestbook-composer-sheet {
+    transform: translate3d(0, 0, 0) scale(1) !important;
+    opacity: 1 !important;
 }
 
 #guestbookModal .guestbook-composer-sheet > * {

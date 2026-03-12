@@ -60,7 +60,7 @@
     <link rel="stylesheet" href="security-cards.css?v=20260304_IOS_CARET_FIX1">
 
     <!-- Core Styles (for modals, profile, etc) -->
-    <link rel="stylesheet" href="style.css?v=20260312_HOME_GUESTBOOK_COMPOSER_17">
+    <link rel="stylesheet" href="style.css?v=20260312_HOME_GUESTBOOK_COMPOSER_18">
     <link rel="stylesheet" href="login_styles.css?v=20260312_HOME_LOGIN_WIDTH_1">
     <link rel="stylesheet" href="avatar-fix.css?v=20260302_G_AUTH">
 
@@ -420,6 +420,17 @@
                 uploadBtn?.classList.toggle('has-image', hasImage);
             }
 
+            function resetGuestbookComposerAnimationStyles() {
+                const { overlay } = getGuestbookModalElements();
+                if (!overlay) return;
+
+                overlay.querySelectorAll('.guestbook-content > *, .guestbook-form > *').forEach((el) => {
+                    el.style.removeProperty('opacity');
+                    el.style.removeProperty('transform');
+                    el.style.removeProperty('transition');
+                });
+            }
+
             function focusGuestbookInputWithoutScroll(input) {
                 if (!input) return;
                 try {
@@ -777,29 +788,7 @@
                 modal.style.setProperty('--guestbook-modal-shift-y', '0px');
                 syncGuestbookComposerEmptyState();
                 syncGuestbookComposerImageState();
-
-                const content = modal.querySelector('.guestbook-content');
-                const form = modal.querySelector('.guestbook-form');
-                const allItems = [];
-
-                if (content) {
-                    Array.from(content.children).forEach((el, i, children) => {
-                        const delay = (i === children.length - 1) ? 420 : (50 + i * 70);
-                        allItems.push({ el, delay });
-                    });
-                }
-
-                if (form) {
-                    Array.from(form.children).forEach((el, i) => {
-                        allItems.push({ el, delay: 200 + i * 70 });
-                    });
-                }
-
-                allItems.forEach(({ el }) => {
-                    el.style.opacity = '0';
-                    el.style.transform = 'translateY(20px)';
-                    el.style.transition = 'none';
-                });
+                resetGuestbookComposerAnimationStyles();
 
                 modal.classList.remove('active');
                 void modal.offsetWidth;
@@ -815,20 +804,8 @@
                 attachGuestbookModalKeyboardDock();
 
                 if (typeof window._prefetchGuestbook === 'function') window._prefetchGuestbook();
-
-                requestAnimationFrame(() => {
-                    requestAnimationFrame(() => {
-                        syncGuestbookComposerEmptyState();
-                        syncGuestbookComposerImageState();
-                        allItems.forEach(({ el, delay }) => {
-                            setTimeout(() => {
-                                el.style.transition = 'opacity 0.4s ease-out, transform 0.4s ease-out';
-                                el.style.opacity = '1';
-                                el.style.transform = 'translateY(0)';
-                            }, delay);
-                        });
-                    });
-                });
+                syncGuestbookComposerEmptyState();
+                syncGuestbookComposerImageState();
             };
 
             document.getElementById('guestbookModal')?.addEventListener('mousedown', function (e) {
