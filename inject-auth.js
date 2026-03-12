@@ -1175,6 +1175,7 @@
                 lastBottomInset: 0,
                 initialDockTimer: null,
                 insetDropTimer: null,
+                blurReleaseTimer: null,
                 pendingInset: 0
             };
 
@@ -1245,6 +1246,10 @@
                     clearTimeout(loginModalKeyboardState.insetDropTimer);
                     loginModalKeyboardState.insetDropTimer = null;
                 }
+                if (loginModalKeyboardState.blurReleaseTimer) {
+                    clearTimeout(loginModalKeyboardState.blurReleaseTimer);
+                    loginModalKeyboardState.blurReleaseTimer = null;
+                }
                 loginModalKeyboardState.pendingInset = 0;
             }
 
@@ -1282,17 +1287,14 @@
             }
 
             function lockLoginModalKeyboardPage() {
-                if (loginModalKeyboardState.ownsFullScrollLock || !window.iOSScrollLock) return;
-                const { card } = getLoginModalElements();
-                if (!card) return;
+                if (!window.iOSScrollLock) return;
+                const { overlay } = getLoginModalElements();
+                if (!overlay?.classList.contains('active')) return;
 
-                window.iOSScrollLock.lock(card, {
-                    freezeScrollY: Math.max(
-                        0,
-                        Math.round(loginModalKeyboardState.baseScrollY || window.scrollY || window.pageYOffset || 0)
-                    )
-                });
-                loginModalKeyboardState.ownsFullScrollLock = true;
+                if (!window.iOSScrollLock.isLocked) {
+                    window.iOSScrollLock.lockLight(overlay);
+                }
+                loginModalKeyboardState.ownsFullScrollLock = false;
             }
 
             function scrollLoginModalActiveInputIntoView(keyboardTop = null) {
@@ -1363,6 +1365,20 @@
                 loginModalKeyboardState.lastBottomInset = 0;
             }
 
+            function scheduleLoginModalKeyboardRelease() {
+                if (loginModalKeyboardState.blurReleaseTimer) {
+                    clearTimeout(loginModalKeyboardState.blurReleaseTimer);
+                }
+
+                loginModalKeyboardState.blurReleaseTimer = window.setTimeout(() => {
+                    loginModalKeyboardState.blurReleaseTimer = null;
+                    const { overlay } = getLoginModalElements();
+                    if (getActiveLoginModalInput()) return;
+                    overlay?.classList.remove('ios-focus-lock');
+                    releaseLoginModalKeyboardDock();
+                }, LOGIN_MODAL_KEYBOARD_SETTLE_MS + 140);
+            }
+
             function resetLoginModalKeyboardDockState() {
                 clearLoginModalKeyboardTimers();
                 if (loginModalKeyboardState.viewportRafId) {
@@ -1387,8 +1403,20 @@
                 }
 
                 const activeInput = getActiveLoginModalInput();
-                if (activeInput && !loginModalKeyboardState.ownsFullScrollLock) {
+                if (activeInput) {
+                    if (loginModalKeyboardState.blurReleaseTimer) {
+                        clearTimeout(loginModalKeyboardState.blurReleaseTimer);
+                        loginModalKeyboardState.blurReleaseTimer = null;
+                    }
                     lockLoginModalKeyboardPage();
+                } else {
+                    if (loginModalKeyboardState.blurReleaseTimer) {
+                        return;
+                    }
+                    if (loginModalKeyboardState.docked) {
+                        releaseLoginModalKeyboardDock();
+                    }
+                    return;
                 }
 
                 const metrics = getLoginModalViewportMetrics();
@@ -1444,10 +1472,6 @@
                     return;
                 }
 
-                if (loginModalKeyboardState.docked && !activeInput && bottomInset > 8) {
-                    return;
-                }
-
                 if (loginModalKeyboardState.docked && activeInput && nextInset <= 24) {
                     requestAnimationFrame(() => scrollLoginModalActiveInputIntoView());
                     return;
@@ -1500,6 +1524,10 @@
                 input.addEventListener('focus', () => {
                     const { overlay } = getLoginModalElements();
                     overlay?.classList.add('ios-focus-lock');
+                    if (loginModalKeyboardState.blurReleaseTimer) {
+                        clearTimeout(loginModalKeyboardState.blurReleaseTimer);
+                        loginModalKeyboardState.blurReleaseTimer = null;
+                    }
                     lockLoginModalKeyboardPage();
                     syncLoginModalKeyboardDock();
                     requestAnimationFrame(() => scrollLoginModalActiveInputIntoView());
@@ -1510,7 +1538,8 @@
                         const { overlay } = getLoginModalElements();
                         if (!overlay) return;
                         if (!overlay.contains(document.activeElement)) {
-                            overlay.classList.remove('ios-focus-lock');
+                            scheduleLoginModalKeyboardRelease();
+                            return;
                         }
                         syncLoginModalKeyboardDock();
                     }, 120);
@@ -1594,7 +1623,6 @@
                 };
 
                 vv.addEventListener('resize', handleViewportChange, { passive: true });
-                vv.addEventListener('scroll', handleViewportChange, { passive: true });
                 inputs.forEach((input) => {
                     input.addEventListener('focus', handleViewportChange);
                     input.addEventListener('blur', handleViewportChange);
@@ -1602,7 +1630,6 @@
 
                 loginModalKeyboardState.viewportCleanup = () => {
                     vv.removeEventListener('resize', handleViewportChange);
-                    vv.removeEventListener('scroll', handleViewportChange);
                     inputs.forEach((input) => {
                         input.removeEventListener('focus', handleViewportChange);
                         input.removeEventListener('blur', handleViewportChange);
