@@ -1230,8 +1230,10 @@
                 if (!targetView) return;
 
                 targetView.classList.remove('hidden');
-                const inputs = targetView.querySelectorAll('input[type="text"], input[type="email"], input[type="password"]');
-                inputs.forEach(input => {
+
+                // Clear ALL inputs in the entire modal to prevent autofill bleed across views
+                const allInputs = document.querySelectorAll('#loginModal input[type="text"], #loginModal input[type="email"], #loginModal input[type="password"]');
+                allInputs.forEach(input => {
                     input.value = '';
                     input.removeAttribute('readonly');
                 });
@@ -1242,11 +1244,12 @@
                 if (card) card.scrollTop = 0;
 
                 setTimeout(() => {
-                    inputs.forEach(input => {
+                    allInputs.forEach(input => {
                         input.value = '';
+                        // Also proactively trigger an event to help clear tricky browser states
                         input.dispatchEvent(new Event('input', { bubbles: true }));
                     });
-                    console.log(`✅ 已切换到 ${viewId} 视图并清空输入框`);
+                    console.log(`✅ 已切换到 ${viewId} 视图并全局清空输入框`);
                 }, 10);
             };
 
