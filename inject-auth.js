@@ -802,8 +802,12 @@
                     --login-modal-safe-top: calc(env(safe-area-inset-top, 0px) + 12px);
                     --login-modal-safe-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
                     padding: 0 !important;
-                    height: auto !important;
-                    min-height: 0 !important;
+                    /* Use 100dvh (dynamic viewport) so the overlay fills the visible area
+                       even after the address bar collapses. 'auto' caused .login-modal-scroll
+                       (height:100%) to collapse to 0, breaking cardTopOffset calculation. */
+                    height: 100dvh !important;
+                    min-height: 100dvh !important;
+                    max-height: 100dvh !important;
                     overflow: hidden !important;
                     overscroll-behavior: none !important;
                     align-items: stretch !important;
@@ -822,9 +826,11 @@
 
                 #loginModal .login-modal-scroll {
                     width: 100% !important;
-                    height: 100% !important;
-                    min-height: 100% !important;
-                    max-height: 100% !important;
+                    /* Use 100dvh instead of 100% to be independent of the parent's
+                       computed height. On iOS Safari the parent was 'auto' so '100%' = 0. */
+                    height: 100dvh !important;
+                    min-height: 100dvh !important;
+                    max-height: 100dvh !important;
                     padding-top: var(--login-modal-card-top-offset, 24px) !important;
                     padding-right: 16px !important;
                     padding-bottom: calc(var(--login-modal-safe-bottom) + var(--login-modal-keyboard-inset) + 12px) !important;
@@ -1387,13 +1393,14 @@
                 if (loginModalViewportState.focusTransferDirection !== 'up') {
                     loginModalViewportState.viewportHoldUntil = 0;
                 }
-                loginModalViewportState.focusTransferUntil = Date.now() + 260;
+                // 420ms covers iOS Safari's longer focusout→focusin gap when autofill bar appears
+                loginModalViewportState.focusTransferUntil = Date.now() + 420;
                 overlay.classList.add('login-focus-transfer');
                 clearLoginModalFocusTransferTimer();
                 loginModalViewportState.focusTransferTimer = window.setTimeout(() => {
                     loginModalViewportState.focusTransferTimer = null;
                     clearLoginModalFocusTransfer(overlay);
-                }, 280);
+                }, 440);
             }
 
             function finalizeLoginModalKeyboardClose() {
@@ -1443,8 +1450,11 @@
                 );
                 const activeInput = getActiveLoginModalInput();
 
+                // Lock baseViewportHeight during focus transfers to prevent keyboardInset
+                // from briefly computing as 0 and triggering an unwanted settle/scroll-back.
                 if (!loginModalViewportState.baseViewportHeight ||
-                    (!activeInput && layoutHeight > loginModalViewportState.baseViewportHeight - 1)) {
+                    (!activeInput && !isLoginModalFocusTransferActive() &&
+                        layoutHeight > loginModalViewportState.baseViewportHeight - 1)) {
                     loginModalViewportState.baseViewportHeight = layoutHeight;
                 }
 
@@ -1863,17 +1873,21 @@
                 if (scroller) scroller.scrollTop = 0;
                 if (card) card.scrollTop = 0;
 
+                // 60ms gives iOS time to complete layout after view switch;
+                // rAF then waits for a paint frame so scroller.clientHeight is accurate.
                 setTimeout(() => {
                     inputs.forEach(input => {
                         input.value = '';
                         input.dispatchEvent(new Event('input', { bubbles: true }));
                     });
                     requestAnimationFrame(() => {
-                        recalculateLoginModalCardTopOffset(true);
-                        requestLoginModalViewportSync();
+                        requestAnimationFrame(() => {
+                            recalculateLoginModalCardTopOffset(true);
+                            requestLoginModalViewportSync();
+                        });
                     });
                     console.log(`✅ 已切换到 ${viewId} 视图并清空输入框`);
-                }, 10);
+                }, 60);
             };
 
             bindLoginModalOverlayDismiss();

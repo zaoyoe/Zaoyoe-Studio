@@ -6576,7 +6576,7 @@ input[type="submit"],
     opacity: 1 !important;
 }
 
-#guestbookModal .guestbook-composer-sheet > * {
+#guestbookModal .guestbook-composer-sheet>* {
     flex-shrink: 0;
 }
 
@@ -6933,9 +6933,9 @@ body {
 @media (max-width: 768px) {
 
     /* Fix all modal overlays on mobile */
-    /* Fix all modal overlays on mobile */
+    /* Exclude #loginModal — it has its own JS-managed viewport sync system */
     .modal-overlay.active,
-    .login-overlay.active {
+    .login-overlay.active:not(#loginModal) {
         align-items: center !important;
         /* Fixed: was flex-start causing top positioning */
         padding-top: calc(20px + env(safe-area-inset-top)) !important;
@@ -6945,8 +6945,9 @@ body {
     }
 
     /* Ensure modal content is scrollable and fits viewport */
+    /* Exclude #loginModal .login-card — inject-auth.js sets max-height:none + overflow:visible on mobile */
     .modal-content:not(.guestbook-composer-sheet),
-    .login-card {
+    .login-card:not(#loginModal .login-card) {
         max-height: calc(100vh - 40px) !important;
         overflow-y: auto !important;
         -webkit-overflow-scrolling: touch !important;
@@ -7221,8 +7222,8 @@ body {
         border-radius: 30px !important;
     }
 
-    #guestbookModal.active:focus-within .guestbook-composer-sheet > *,
-    #guestbookModal.ios-focus-lock .guestbook-composer-sheet > * {
+    #guestbookModal.active:focus-within .guestbook-composer-sheet>*,
+    #guestbookModal.ios-focus-lock .guestbook-composer-sheet>* {
         transform: none !important;
         transition: none !important;
         transition-delay: 0s !important;
