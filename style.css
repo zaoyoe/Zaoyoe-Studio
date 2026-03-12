@@ -6867,6 +6867,7 @@ body {
 
     #guestbookModal {
         --guestbook-modal-shift-y: 0px;
+        --guestbook-action-width: 188px;
     }
 
     /* Homepage guestbook modal should align with the shop card gutter width */
@@ -6933,11 +6934,13 @@ body {
     }
 
     #guestbookModal .guestbook-submit-btn {
-        width: min(100%, 208px) !important;
+        width: min(100%, var(--guestbook-action-width)) !important;
+        box-sizing: border-box !important;
         align-self: center !important;
+        display: inline-flex !important;
         justify-content: center !important;
         margin-top: 4px !important;
-        padding: 12px 20px !important;
+        padding: 10px 16px !important;
     }
 
     #guestbookModal #guestbookViewMoreWrap {
@@ -6946,7 +6949,8 @@ body {
     }
 
     #guestbookModal #guestbookViewMoreWrap a {
-        width: min(100%, 208px) !important;
+        width: min(100%, var(--guestbook-action-width)) !important;
+        box-sizing: border-box !important;
         justify-content: center !important;
         padding: 10px 16px !important;
     }
