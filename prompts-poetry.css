@@ -3450,7 +3450,7 @@ body.modal-open .prompt-card {
 .prompt-comment-composer-header {
     display: flex;
     align-items: flex-start;
-    justify-content: space-between;
+    justify-content: flex-start;
     gap: 16px;
 }
 
@@ -3465,20 +3465,6 @@ body.modal-open .prompt-card {
     font-weight: 520;
     color: rgba(241, 245, 249, 0.82);
     letter-spacing: -0.02em;
-}
-
-.prompt-comment-composer-close {
-    width: 44px;
-    height: 44px;
-    flex: 0 0 auto;
-    border: 1px solid rgba(255, 255, 255, 0.09);
-    border-radius: 999px;
-    background: rgba(21, 24, 31, 0.74);
-    color: rgba(240, 242, 247, 0.86);
-    cursor: pointer;
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    -webkit-tap-highlight-color: transparent;
 }
 
 .prompt-comment-composer-meta {
@@ -4038,10 +4024,6 @@ body.modal-open .prompt-card {
     .modal-inner.comment-mode .comment-input-area.composer-proxy #commentInput::placeholder {
         color: rgba(191, 219, 254, 0.82);
         text-align: center;
-    }
-
-    .modal-inner.comment-mode .prompt-comment-composer-close {
-        display: none;
     }
 
     .prompt-comment-composer {

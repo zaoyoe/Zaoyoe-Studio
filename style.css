@@ -6591,7 +6591,7 @@ input[type="submit"],
 #guestbookModal .guestbook-composer-header {
     display: flex !important;
     align-items: flex-start !important;
-    justify-content: space-between !important;
+    justify-content: flex-start !important;
     gap: 16px !important;
     margin: 0 !important;
 }
@@ -6623,29 +6623,6 @@ html[lang^="zh"] #guestbookModal .guestbook-composer-kicker {
     color: rgba(241, 245, 249, 0.82);
 }
 
-#guestbookModal .guestbook-composer-close {
-    width: 44px;
-    height: 44px;
-    flex: 0 0 auto;
-    display: inline-flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    padding: 0 !important;
-    border: 1px solid rgba(255, 255, 255, 0.09) !important;
-    border-radius: 999px !important;
-    background: rgba(21, 24, 31, 0.74) !important;
-    color: rgba(240, 242, 247, 0.86) !important;
-    cursor: pointer !important;
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    -webkit-tap-highlight-color: transparent;
-}
-
-#guestbookModal .guestbook-composer-close i {
-    font-size: 1rem;
-    pointer-events: none;
-}
-
 #guestbookModal .guestbook-composer-meta {
     min-height: 0;
     margin: 0;
@@ -6663,13 +6640,29 @@ html[lang^="zh"] #guestbookModal .guestbook-composer-kicker {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    color: rgba(200, 206, 216, 0.82);
+    padding: 9px 13px;
+    border-radius: 999px;
+    border: 1px solid rgba(126, 184, 239, 0.22);
+    background: rgba(126, 184, 239, 0.08);
+    color: rgba(232, 238, 247, 0.92);
+    font-weight: 520;
+    letter-spacing: 0.01em;
     text-decoration: none !important;
-    transition: color 160ms ease;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.05),
+        0 10px 22px rgba(0, 0, 0, 0.12);
+    transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease, transform 160ms ease;
 }
 
 #guestbookModal .guestbook-composer-more:hover {
-    color: rgba(241, 245, 249, 0.92);
+    color: rgba(248, 250, 252, 0.98);
+    background: rgba(126, 184, 239, 0.14);
+    border-color: rgba(126, 184, 239, 0.34);
+    transform: translateY(-1px);
+}
+
+#guestbookModal .guestbook-composer-more i {
+    color: rgba(126, 184, 239, 0.98);
 }
 
 #guestbookModal .guestbook-composer-form {
@@ -7214,11 +7207,6 @@ body {
 
     #guestbookModal .guestbook-composer-header {
         gap: 12px !important;
-    }
-
-    #guestbookModal .guestbook-composer-close {
-        width: 42px;
-        height: 42px;
     }
 
     #guestbookModal .guestbook-composer-title {

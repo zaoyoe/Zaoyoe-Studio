@@ -6210,9 +6210,6 @@ function ensurePromptCommentComposer() {
                     <div class="prompt-comment-composer-kicker" data-i18n="gallery.commentsTitle">${copy.commentsTitle}</div>
                     <div class="prompt-comment-composer-title" data-i18n="gallery.commentComposerTitle">${copy.title}</div>
                 </div>
-                <button type="button" class="prompt-comment-composer-close" id="promptCommentComposerCloseBtn" aria-label="${copy.close}" data-i18n="common.close" data-i18n-attr="aria-label">
-                    <i class="fas fa-times"></i>
-                </button>
             </div>
             <div class="prompt-comment-composer-meta" id="promptCommentComposerMeta"></div>
             <div class="prompt-comment-composer-editor">
@@ -6241,9 +6238,6 @@ function ensurePromptCommentComposer() {
     promptCommentComposerMounted = true;
 
     const { input, sendBtn } = getPromptCommentComposerElements();
-    const closeBtn = document.getElementById('promptCommentComposerCloseBtn');
-
-    closeBtn?.addEventListener('click', () => closePromptCommentComposer());
     sendBtn?.addEventListener('click', () => submitComment());
 
     input?.addEventListener('input', () => {
@@ -6265,13 +6259,11 @@ function refreshPromptCommentComposerLanguageUI() {
     if (!composer?.overlay) return;
 
     const copy = getPromptCommentComposerI18n();
-    const closeBtn = document.getElementById('promptCommentComposerCloseBtn');
     const uploadBtn = document.getElementById('promptCommentComposerUploadBtn');
     const sendBtn = document.getElementById('promptCommentComposerSendBtn');
     const placeholder = composer.overlay.querySelector('.prompt-comment-composer-empty-placeholder');
 
     composer.input?.setAttribute('placeholder', copy.placeholder);
-    closeBtn?.setAttribute('aria-label', copy.close);
 
     if (placeholder) {
         placeholder.textContent = copy.placeholder;
