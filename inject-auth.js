@@ -1342,18 +1342,17 @@
                 const metrics = getLoginModalViewportMetrics();
                 const activeInput = getActiveLoginModalInput();
                 const measuredKeyboardInset = metrics.keyboardVisible ? metrics.keyboardInset : 0;
-                if (measuredKeyboardInset > 0) {
-                    loginModalViewportState.lastKeyboardInset = measuredKeyboardInset;
-                }
-                const keyboardInset = loginModalViewportState.isKeyboardSettling &&
-                    !activeInput &&
-                    loginModalViewportState.lastKeyboardInset > 0
+                const keyboardInset = activeInput && loginModalViewportState.lastKeyboardInset > 0
                     ? Math.max(measuredKeyboardInset, loginModalViewportState.lastKeyboardInset)
                     : measuredKeyboardInset;
 
+                if (keyboardInset > 0) {
+                    loginModalViewportState.lastKeyboardInset = keyboardInset;
+                }
+
                 overlay.style.setProperty('--login-modal-keyboard-inset', `${keyboardInset}px`);
-                overlay.classList.toggle('keyboard-visible', !!activeInput && metrics.keyboardVisible);
-                overlay.classList.toggle('keyboard-settling', loginModalViewportState.isKeyboardSettling && !activeInput && keyboardInset > 0);
+                overlay.classList.toggle('keyboard-visible', !!activeInput && keyboardInset >= LOGIN_MODAL_KEYBOARD_THRESHOLD);
+                overlay.classList.remove('keyboard-settling');
                 return metrics;
             }
 
@@ -1417,7 +1416,7 @@
             }
 
             function maybeSettleLoginModalAfterKeyboard(metrics = null) {
-                if (getActiveLoginModalInput() || loginModalViewportState.isKeyboardSettling) {
+                if (getActiveLoginModalInput()) {
                     return false;
                 }
 
@@ -1444,20 +1443,16 @@
 
             function settleLoginModalAfterKeyboard() {
                 const { overlay } = getLoginModalElements();
-                if (!overlay) return;
+                if (!overlay || getActiveLoginModalInput()) return;
 
-                clearLoginModalSettleTimer();
-                loginModalViewportState.isKeyboardSettling = loginModalViewportState.lastKeyboardInset > 0;
+                cancelLoginModalKeyboardSettling(overlay);
+                loginModalViewportState.lastKeyboardInset = 0;
                 requestLoginModalViewportSync();
-                loginModalViewportState.settleTimer = window.setTimeout(() => {
-                    loginModalViewportState.settleTimer = null;
-                    if (getActiveLoginModalInput()) return;
-
-                    loginModalViewportState.isKeyboardSettling = false;
-                    loginModalViewportState.lastKeyboardInset = 0;
-                    overlay.classList.remove('keyboard-settling');
-                    requestLoginModalViewportSync();
-                }, 90);
+                requestAnimationFrame(() => {
+                    if (!getActiveLoginModalInput()) {
+                        requestLoginModalViewportSync();
+                    }
+                });
             }
 
             function resetLoginModalViewportState() {
@@ -1531,9 +1526,9 @@
                     loginModalViewportState.overlayCloseDisabledUntil = Date.now() + 220;
                     const metrics = applyLoginModalViewportVars();
 
-                    if (metrics?.keyboardVisible) {
+                    if (metrics?.keyboardVisible || loginModalViewportState.lastKeyboardInset > 0) {
                         requestAnimationFrame(() => {
-                            scrollLoginModalInputIntoView(event.target, metrics);
+                            scrollLoginModalInputIntoView(event.target);
                         });
                         return;
                     }
@@ -1552,9 +1547,9 @@
                         const activeInput = getActiveLoginModalInput();
                         if (activeInput) {
                             cancelLoginModalKeyboardSettling(overlay);
-                            const metrics = applyLoginModalViewportVars();
                             requestAnimationFrame(() => {
-                                scrollLoginModalInputIntoView(activeInput, metrics);
+                                requestLoginModalViewportSync();
+                                scrollLoginModalInputIntoView(activeInput);
                             });
                             return;
                         }
@@ -1563,7 +1558,7 @@
                         if (!maybeSettleLoginModalAfterKeyboard(metrics)) {
                             requestLoginModalViewportSync();
                         }
-                    }, 90);
+                    }, 60);
                 };
 
                 window.addEventListener('resize', handleViewportChange, { passive: true });

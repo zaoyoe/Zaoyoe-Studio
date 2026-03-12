@@ -73,8 +73,10 @@
         return !!(
             currentModal &&
             currentModal.classList &&
-            currentModal.classList.contains('poetry-modal') &&
-            isFocusedFieldInsideCurrentModal()
+            (
+                currentModal.classList.contains('login-overlay') ||
+                (currentModal.classList.contains('poetry-modal') && isFocusedFieldInsideCurrentModal())
+            )
         );
     }
 
@@ -409,7 +411,7 @@
             const target = e.target;
             if (!target || !/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
 
-            const modal = target.closest('.modal-overlay, .login-overlay, .poetry-modal');
+            const modal = target.closest('.modal-overlay, .poetry-modal');
             if (modal) {
                 modal.classList.add('ios-focus-lock');
             }
@@ -419,7 +421,7 @@
             const target = e.target;
             if (!target || !/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
 
-            const modal = target.closest('.modal-overlay, .login-overlay, .poetry-modal');
+            const modal = target.closest('.modal-overlay, .poetry-modal');
             if (modal) {
                 // Delay removal to avoid flickering when focus moves between inputs
                 setTimeout(() => {
