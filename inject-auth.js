@@ -789,23 +789,22 @@
                instead of translating the whole modal against the keyboard. */
             @media (max-width: 768px) {
                 #loginModal {
-                    --login-modal-viewport-height: 100dvh;
                     --login-modal-keyboard-inset: 0px;
                     --login-modal-safe-top: calc(env(safe-area-inset-top, 0px) + 12px);
                     --login-modal-safe-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
                     padding:
                         var(--login-modal-safe-top)
                         16px
-                        var(--login-modal-safe-bottom)
+                        max(var(--login-modal-safe-bottom), calc(var(--login-modal-keyboard-inset) + 12px))
                         !important;
-                    height: var(--login-modal-viewport-height, 100dvh) !important;
-                    min-height: 0 !important;
+                    height: auto !important;
+                    min-height: auto !important;
                     overflow-y: auto !important;
                     overscroll-behavior: contain !important;
                     -webkit-overflow-scrolling: touch !important;
                     align-items: flex-start !important;
                     scroll-padding-top: calc(var(--login-modal-safe-top) + 12px) !important;
-                    scroll-padding-bottom: calc(var(--login-modal-safe-bottom) + 24px) !important;
+                    scroll-padding-bottom: calc(var(--login-modal-keyboard-inset) + var(--login-modal-safe-bottom) + 24px) !important;
                 }
 
                 .login-overlay .glass-input,
@@ -1249,7 +1248,6 @@
 
                 const metrics = getLoginModalViewportMetrics();
                 const keyboardInset = metrics.keyboardVisible ? metrics.keyboardInset : 0;
-                overlay.style.setProperty('--login-modal-viewport-height', `${metrics.visualHeight}px`);
                 overlay.style.setProperty('--login-modal-keyboard-inset', `${keyboardInset}px`);
                 overlay.classList.toggle('keyboard-visible', !!getActiveLoginModalInput() && metrics.keyboardVisible);
                 return metrics;
@@ -1331,7 +1329,6 @@
 
                 const { overlay, card } = getLoginModalElements();
                 overlay?.classList.remove('keyboard-visible');
-                overlay?.style.removeProperty('--login-modal-viewport-height');
                 overlay?.style.removeProperty('--login-modal-keyboard-inset');
                 if (overlay) {
                     overlay.scrollTop = 0;
@@ -1439,11 +1436,7 @@
                 modal.classList.add('active');
 
                 if (window.iOSScrollLock) {
-                    if (isIOSMobileWebKit()) {
-                        window.iOSScrollLock.lockLight(modal);
-                    } else {
-                        window.iOSScrollLock.lock(modal);
-                    }
+                    window.iOSScrollLock.lock(modal);
                 }
 
                 loginModalViewportState.overlayCloseDisabledUntil = Date.now() + 260;
