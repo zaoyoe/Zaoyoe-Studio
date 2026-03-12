@@ -818,9 +818,12 @@
                     content: '';
                     position: fixed;
                     inset: 0;
-                    background: rgba(0, 0, 0, 0.56);
-                    backdrop-filter: blur(8px);
-                    -webkit-backdrop-filter: blur(8px);
+                    background:
+                        radial-gradient(circle at 18% 16%, rgba(255, 255, 255, 0.08), transparent 30%),
+                        radial-gradient(circle at 82% 0%, rgba(241, 91, 181, 0.12), transparent 36%),
+                        linear-gradient(180deg, rgba(10, 8, 16, 0.38), rgba(10, 8, 16, 0.5));
+                    backdrop-filter: blur(12px) saturate(140%);
+                    -webkit-backdrop-filter: blur(12px) saturate(140%);
                     pointer-events: none;
                     z-index: 0;
                     transition:
@@ -830,10 +833,14 @@
                         opacity 180ms ease;
                 }
 
-                #loginModal.keyboard-visible::before {
-                    background: rgba(0, 0, 0, 0.46);
-                    backdrop-filter: blur(6px);
-                    -webkit-backdrop-filter: blur(6px);
+                #loginModal.keyboard-visible::before,
+                #loginModal.keyboard-settling::before {
+                    background:
+                        radial-gradient(circle at 18% 16%, rgba(255, 255, 255, 0.09), transparent 30%),
+                        radial-gradient(circle at 82% 0%, rgba(241, 91, 181, 0.14), transparent 36%),
+                        linear-gradient(180deg, rgba(10, 8, 16, 0.34), rgba(10, 8, 16, 0.46));
+                    backdrop-filter: blur(12px) saturate(145%);
+                    -webkit-backdrop-filter: blur(12px) saturate(145%);
                 }
 
                 .login-overlay .glass-input,
@@ -861,6 +868,14 @@
                     width: min(360px, calc(100vw - 32px)) !important;
                     max-width: 100% !important;
                     box-sizing: border-box !important;
+                    background:
+                        linear-gradient(180deg, rgba(22, 18, 34, 0.58), rgba(9, 8, 18, 0.72)) !important;
+                    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+                    border-top-color: rgba(255, 255, 255, 0.22) !important;
+                    box-shadow:
+                        0 26px 60px rgba(0, 0, 0, 0.42),
+                        inset 0 1px 0 rgba(255, 255, 255, 0.14),
+                        inset 0 -1px 0 rgba(255, 255, 255, 0.04) !important;
                     max-height: none !important;
                     overflow: visible !important;
                     flex-shrink: 0 !important;
@@ -869,7 +884,27 @@
                     opacity 0.24s ease-out,
                     transform 0.24s ease-out !important;
                     will-change: auto !important;
+                    isolation: isolate !important;
                     z-index: 1 !important;
+                }
+
+                .login-overlay .login-card::before,
+                #loginModal .login-card::before {
+                    content: '';
+                    position: absolute;
+                    inset: 0;
+                    border-radius: inherit;
+                    background:
+                        linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.04) 42%, rgba(241, 91, 181, 0.08) 100%);
+                    pointer-events: none;
+                    opacity: 0.92;
+                    z-index: 0;
+                }
+
+                .login-overlay .login-card > .form-view,
+                #loginModal .login-card > .form-view {
+                    position: relative;
+                    z-index: 1;
                 }
 
                 .login-overlay.active .login-card,
@@ -1195,6 +1230,8 @@
                 viewportRafId: null,
                 focusRevealTimer: null,
                 settleTimer: null,
+                lastKeyboardInset: 0,
+                isKeyboardSettling: false,
                 overlayCloseDisabledUntil: 0
             };
 
@@ -1285,9 +1322,20 @@
                 if (!overlay) return null;
 
                 const metrics = getLoginModalViewportMetrics();
-                const keyboardInset = metrics.keyboardVisible ? metrics.keyboardInset : 0;
+                const activeInput = getActiveLoginModalInput();
+                const measuredKeyboardInset = metrics.keyboardVisible ? metrics.keyboardInset : 0;
+                if (measuredKeyboardInset > 0) {
+                    loginModalViewportState.lastKeyboardInset = measuredKeyboardInset;
+                }
+                const keyboardInset = loginModalViewportState.isKeyboardSettling &&
+                    !activeInput &&
+                    loginModalViewportState.lastKeyboardInset > 0
+                    ? Math.max(measuredKeyboardInset, loginModalViewportState.lastKeyboardInset)
+                    : measuredKeyboardInset;
+
                 overlay.style.setProperty('--login-modal-keyboard-inset', `${keyboardInset}px`);
-                overlay.classList.toggle('keyboard-visible', !!getActiveLoginModalInput() && metrics.keyboardVisible);
+                overlay.classList.toggle('keyboard-visible', !!activeInput && metrics.keyboardVisible);
+                overlay.classList.toggle('keyboard-settling', loginModalViewportState.isKeyboardSettling && !activeInput && keyboardInset > 0);
                 return metrics;
             }
 
@@ -1367,37 +1415,28 @@
                 if (!overlay) return;
 
                 clearLoginModalSettleTimer();
+                loginModalViewportState.isKeyboardSettling = loginModalViewportState.lastKeyboardInset > 0;
+                requestLoginModalViewportSync();
                 loginModalViewportState.settleTimer = window.setTimeout(() => {
                     loginModalViewportState.settleTimer = null;
                     if (getActiveLoginModalInput()) return;
 
+                    loginModalViewportState.isKeyboardSettling = false;
+                    loginModalViewportState.lastKeyboardInset = 0;
+                    overlay.classList.remove('keyboard-settling');
                     requestLoginModalViewportSync();
-
-                    if (overlay.scrollTop <= 1) return;
-
-                    const previousScrollBehavior = overlay.style.scrollBehavior;
-                    overlay.style.scrollBehavior = 'smooth';
-                    try {
-                        overlay.scrollTo({ top: 0, behavior: 'smooth' });
-                    } catch (_) {
-                        overlay.scrollTop = 0;
-                    }
-
-                    window.setTimeout(() => {
-                        if (!getActiveLoginModalInput()) {
-                            overlay.style.scrollBehavior = previousScrollBehavior;
-                        }
-                    }, 220);
-                }, 90);
+                }, 180);
             }
 
             function resetLoginModalViewportState() {
                 detachLoginModalViewportSync();
                 loginModalViewportState.baseViewportHeight = 0;
+                loginModalViewportState.lastKeyboardInset = 0;
+                loginModalViewportState.isKeyboardSettling = false;
                 loginModalViewportState.overlayCloseDisabledUntil = 0;
 
                 const { overlay, card } = getLoginModalElements();
-                overlay?.classList.remove('keyboard-visible');
+                overlay?.classList.remove('keyboard-visible', 'keyboard-settling');
                 overlay?.style.removeProperty('--login-modal-keyboard-inset');
                 if (overlay) {
                     overlay.style.removeProperty('scroll-behavior');
@@ -1453,6 +1492,8 @@
                     if (!/^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName)) return;
 
                     clearLoginModalSettleTimer();
+                    loginModalViewportState.isKeyboardSettling = false;
+                    overlay.classList.remove('keyboard-settling');
                     loginModalViewportState.overlayCloseDisabledUntil = Date.now() + 220;
                     requestLoginModalViewportSync();
                     scheduleLoginModalInputReveal(event.target);
@@ -1466,7 +1507,6 @@
                     loginModalViewportState.overlayCloseDisabledUntil = Date.now() + 120;
                     window.setTimeout(() => {
                         if (!getActiveLoginModalInput()) {
-                            requestLoginModalViewportSync();
                             settleLoginModalAfterKeyboard();
                         }
                     }, 120);
