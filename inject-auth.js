@@ -680,8 +680,8 @@
             /* Login Card - Fixed narrow width matching homepage */
             .login-card,
             #loginModal .login-card {
-                width: 320px !important;
-                max-width: 90vw !important;
+                width: calc(100% - 40px) !important;
+                max-width: 480px !important;
                 padding: 40px !important;
                 border-radius: 24px !important;
                 background: rgba(255, 255, 255, 0.03) !important;
