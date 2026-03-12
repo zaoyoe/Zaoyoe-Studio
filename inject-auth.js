@@ -1147,33 +1147,437 @@
                 // Auth state will be checked by initializeAuthPageBoot() on DOMContentLoaded
             }
 
+            const LOGIN_MODAL_KEYBOARD_SETTLE_MS = 90;
+            const loginModalKeyboardState = {
+                baseScrollY: 0,
+                ownsFullScrollLock: false,
+                viewportCleanup: null,
+                viewportRafId: null,
+                stableViewportProbe: null,
+                baseViewportHeight: 0,
+                baseCardHeight: 0,
+                docked: false,
+                lastBottomInset: 0,
+                initialDockTimer: null,
+                insetDropTimer: null,
+                pendingInset: 0
+            };
+
             function isIOSMobileWebKit() {
                 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
                     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-                return isIOS && window.matchMedia('(max-width: 768px)').matches;
+                return isIOS && window.matchMedia('(max-width: 768px)').matches && !!window.visualViewport;
             }
 
-            // iOS scroll lock now uses unified window.iOSScrollLock module
+            function getLoginModalElements() {
+                const overlay = document.getElementById('loginModal');
+                return {
+                    overlay,
+                    card: overlay?.querySelector('.login-card') || null,
+                    inputs: overlay ? Array.from(overlay.querySelectorAll('input, textarea, select')) : []
+                };
+            }
+
+            function getActiveLoginModalInput() {
+                const { overlay } = getLoginModalElements();
+                const active = document.activeElement;
+                if (!overlay || !active || !overlay.contains(active)) return null;
+                return /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName) ? active : null;
+            }
+
+            function focusLoginInputWithoutScroll(input) {
+                if (!input) return;
+                try {
+                    input.focus({ preventScroll: true });
+                } catch (_) {
+                    input.focus();
+                }
+            }
+
+            function getLoginModalStableViewportProbe() {
+                if (loginModalKeyboardState.stableViewportProbe?.isConnected) {
+                    return loginModalKeyboardState.stableViewportProbe;
+                }
+
+                const probe = document.createElement('div');
+                probe.setAttribute('aria-hidden', 'true');
+                probe.style.position = 'fixed';
+                probe.style.top = '0';
+                probe.style.left = '0';
+                probe.style.width = '0';
+                probe.style.height = '100svh';
+                probe.style.pointerEvents = 'none';
+                probe.style.visibility = 'hidden';
+                probe.style.opacity = '0';
+                probe.style.zIndex = '-1';
+                document.body.appendChild(probe);
+                loginModalKeyboardState.stableViewportProbe = probe;
+                return probe;
+            }
+
+            function getLoginModalStableViewportHeight() {
+                const probe = getLoginModalStableViewportProbe();
+                if (!probe) return 0;
+                return Math.max(0, Math.round(probe.getBoundingClientRect().height || probe.offsetHeight || 0));
+            }
+
+            function clearLoginModalKeyboardTimers() {
+                if (loginModalKeyboardState.initialDockTimer) {
+                    clearTimeout(loginModalKeyboardState.initialDockTimer);
+                    loginModalKeyboardState.initialDockTimer = null;
+                }
+                if (loginModalKeyboardState.insetDropTimer) {
+                    clearTimeout(loginModalKeyboardState.insetDropTimer);
+                    loginModalKeyboardState.insetDropTimer = null;
+                }
+                loginModalKeyboardState.pendingInset = 0;
+            }
+
+            function captureLoginModalKeyboardBase() {
+                const vv = window.visualViewport;
+                const { card } = getLoginModalElements();
+                const visualHeight = Math.max(0, vv?.height || 0);
+                const fallbackBaseHeight = Math.max(
+                    window.innerHeight || 0,
+                    document.documentElement.clientHeight || 0,
+                    visualHeight
+                );
+                const stableViewportHeight = getLoginModalStableViewportHeight();
+                const normalizedBaseHeight = (stableViewportHeight > 0 && stableViewportHeight + 24 < fallbackBaseHeight)
+                    ? stableViewportHeight
+                    : fallbackBaseHeight;
+
+                loginModalKeyboardState.baseViewportHeight = normalizedBaseHeight;
+                if (card) {
+                    const cardHeight = Math.round(card.offsetHeight || card.getBoundingClientRect().height || 420);
+                    loginModalKeyboardState.baseCardHeight = Math.max(320, cardHeight || 420);
+                }
+            }
+
+            function getLoginModalViewportMetrics() {
+                const vv = window.visualViewport;
+                const visualHeight = Math.max(0, vv?.height || 0);
+                const baseVisualHeight = loginModalKeyboardState.baseViewportHeight || visualHeight;
+
+                return {
+                    visualHeight,
+                    baseVisualHeight,
+                    bottomInset: Math.max(0, Math.round(baseVisualHeight - visualHeight))
+                };
+            }
+
+            function lockLoginModalKeyboardPage() {
+                if (loginModalKeyboardState.ownsFullScrollLock || !window.iOSScrollLock) return;
+                const { card } = getLoginModalElements();
+                if (!card) return;
+
+                window.iOSScrollLock.lock(card, {
+                    freezeScrollY: Math.max(
+                        0,
+                        Math.round(loginModalKeyboardState.baseScrollY || window.scrollY || window.pageYOffset || 0)
+                    )
+                });
+                loginModalKeyboardState.ownsFullScrollLock = true;
+            }
+
+            function scrollLoginModalActiveInputIntoView(keyboardTop = null) {
+                const { card } = getLoginModalElements();
+                const activeInput = getActiveLoginModalInput();
+                if (!card || !activeInput) return;
+
+                const cardRect = card.getBoundingClientRect();
+                const inputRect = activeInput.getBoundingClientRect();
+                const safeTop = cardRect.top + 18;
+                const keyboardLimit = Number.isFinite(keyboardTop) ? keyboardTop : Number.POSITIVE_INFINITY;
+                const safeBottom = Math.max(
+                    safeTop + 48,
+                    Math.min(cardRect.bottom - 20, keyboardLimit - 20)
+                );
+
+                if (inputRect.bottom > safeBottom) {
+                    card.scrollTop += Math.ceil(inputRect.bottom - safeBottom);
+                } else if (inputRect.top < safeTop) {
+                    card.scrollTop = Math.max(0, card.scrollTop - Math.ceil(safeTop - inputRect.top));
+                }
+            }
+
+            function applyLoginModalKeyboardDock(bottomInset) {
+                const { overlay, card } = getLoginModalElements();
+                if (!overlay || !card) return;
+
+                const metrics = getLoginModalViewportMetrics();
+                if (!loginModalKeyboardState.baseCardHeight) {
+                    const liveHeight = Math.round(card.offsetHeight || card.getBoundingClientRect().height || 420);
+                    loginModalKeyboardState.baseCardHeight = Math.max(320, liveHeight || 420);
+                }
+
+                const baseCardHeight = Math.max(320, loginModalKeyboardState.baseCardHeight || 420);
+                const naturalHeight = Math.max(baseCardHeight, Math.round(card.scrollHeight || 0));
+                const baseViewportHeight = Math.max(
+                    metrics.baseVisualHeight || 0,
+                    loginModalKeyboardState.baseViewportHeight || 0
+                );
+                const keyboardTop = Math.max(0, baseViewportHeight - Math.max(0, bottomInset));
+                const minTop = 14;
+                const keyboardClearance = 40;
+                const maxAvailableHeight = Math.max(280, Math.round(keyboardTop - minTop - keyboardClearance));
+                const dockHeight = Math.min(naturalHeight, maxAvailableHeight);
+                const centeredTop = (baseViewportHeight - dockHeight) / 2;
+                const desiredTop = Math.max(minTop, keyboardTop - keyboardClearance - dockHeight);
+                const shiftY = Math.min(0, Math.round(desiredTop - centeredTop));
+
+                overlay.classList.add('keyboard-docked');
+                overlay.style.setProperty('--login-modal-shift-y', `${shiftY}px`);
+                card.style.height = `${dockHeight}px`;
+                card.style.maxHeight = `${dockHeight}px`;
+                loginModalKeyboardState.docked = bottomInset > 0;
+                loginModalKeyboardState.lastBottomInset = Math.max(0, bottomInset);
+
+                requestAnimationFrame(() => scrollLoginModalActiveInputIntoView(keyboardTop));
+            }
+
+            function releaseLoginModalKeyboardDock() {
+                const { overlay, card } = getLoginModalElements();
+                if (!overlay || !card) return;
+
+                overlay.classList.remove('keyboard-docked');
+                overlay.style.setProperty('--login-modal-shift-y', '0px');
+                card.style.removeProperty('height');
+                card.style.removeProperty('max-height');
+                loginModalKeyboardState.docked = false;
+                loginModalKeyboardState.lastBottomInset = 0;
+            }
+
+            function resetLoginModalKeyboardDockState() {
+                clearLoginModalKeyboardTimers();
+                if (loginModalKeyboardState.viewportRafId) {
+                    cancelAnimationFrame(loginModalKeyboardState.viewportRafId);
+                    loginModalKeyboardState.viewportRafId = null;
+                }
+                releaseLoginModalKeyboardDock();
+                loginModalKeyboardState.baseViewportHeight = 0;
+                loginModalKeyboardState.baseCardHeight = 0;
+            }
+
+            function syncLoginModalKeyboardDock() {
+                const { overlay, card } = getLoginModalElements();
+                if (!overlay || !card || !overlay.classList.contains('active')) {
+                    resetLoginModalKeyboardDockState();
+                    return;
+                }
+
+                if (!isIOSMobileWebKit()) {
+                    releaseLoginModalKeyboardDock();
+                    return;
+                }
+
+                const activeInput = getActiveLoginModalInput();
+                if (activeInput && !loginModalKeyboardState.ownsFullScrollLock) {
+                    lockLoginModalKeyboardPage();
+                }
+
+                const metrics = getLoginModalViewportMetrics();
+                const bottomInset = metrics.bottomInset;
+                const shouldDock = !!activeInput && (loginModalKeyboardState.docked ? bottomInset > 8 : bottomInset > 24);
+                const nextInset = shouldDock ? bottomInset : 0;
+                const previousInset = loginModalKeyboardState.lastBottomInset;
+                const isInsetDroppingWhileFocused = loginModalKeyboardState.docked &&
+                    !!activeInput &&
+                    nextInset > 24 &&
+                    nextInset + 24 < previousInset;
+
+                if (!loginModalKeyboardState.docked && shouldDock) {
+                    lockLoginModalKeyboardPage();
+                    loginModalKeyboardState.pendingInset = nextInset;
+                    if (!loginModalKeyboardState.initialDockTimer) {
+                        loginModalKeyboardState.initialDockTimer = setTimeout(() => {
+                            loginModalKeyboardState.initialDockTimer = null;
+                            if (!getActiveLoginModalInput()) return;
+                            const liveMetrics = getLoginModalViewportMetrics();
+                            if (liveMetrics.bottomInset <= 24) return;
+                            applyLoginModalKeyboardDock(liveMetrics.bottomInset);
+                        }, LOGIN_MODAL_KEYBOARD_SETTLE_MS);
+                    }
+                    return;
+                }
+
+                if (loginModalKeyboardState.initialDockTimer &&
+                    (loginModalKeyboardState.docked || !shouldDock)) {
+                    clearTimeout(loginModalKeyboardState.initialDockTimer);
+                    loginModalKeyboardState.initialDockTimer = null;
+                }
+
+                if (loginModalKeyboardState.insetDropTimer &&
+                    (!isInsetDroppingWhileFocused || nextInset >= previousInset)) {
+                    clearTimeout(loginModalKeyboardState.insetDropTimer);
+                    loginModalKeyboardState.insetDropTimer = null;
+                    loginModalKeyboardState.pendingInset = 0;
+                }
+
+                if (isInsetDroppingWhileFocused) {
+                    loginModalKeyboardState.pendingInset = nextInset;
+                    if (!loginModalKeyboardState.insetDropTimer) {
+                        loginModalKeyboardState.insetDropTimer = setTimeout(() => {
+                            loginModalKeyboardState.insetDropTimer = null;
+                            const settledInset = loginModalKeyboardState.pendingInset;
+                            loginModalKeyboardState.pendingInset = 0;
+                            if (settledInset > 24) {
+                                applyLoginModalKeyboardDock(settledInset);
+                            }
+                        }, LOGIN_MODAL_KEYBOARD_SETTLE_MS);
+                    }
+                    return;
+                }
+
+                if (loginModalKeyboardState.docked && activeInput && nextInset <= 24) {
+                    requestAnimationFrame(() => scrollLoginModalActiveInputIntoView());
+                    return;
+                }
+
+                if (nextInset > 24) {
+                    applyLoginModalKeyboardDock(nextInset);
+                    return;
+                }
+
+                if (loginModalKeyboardState.docked) {
+                    releaseLoginModalKeyboardDock();
+                }
+            }
+
+            function bindLoginModalInputFocusStabilizer(input) {
+                if (!input || input.dataset.loginFocusStabilizerBound === '1') return;
+
+                const retapGuardHandler = (event) => {
+                    const { overlay } = getLoginModalElements();
+                    if (!overlay?.classList.contains('active') || document.activeElement !== input) return;
+                    if (event.cancelable) event.preventDefault();
+                    event.stopPropagation();
+                    overlay.classList.add('ios-focus-lock');
+                    requestAnimationFrame(() => {
+                        syncLoginModalKeyboardDock();
+                        scrollLoginModalActiveInputIntoView();
+                    });
+                };
+
+                input.addEventListener('touchstart', (event) => {
+                    const { overlay } = getLoginModalElements();
+                    if (!isIOSMobileWebKit() || !overlay?.classList.contains('active')) return;
+                    lockLoginModalKeyboardPage();
+                    if (event.cancelable) event.preventDefault();
+                    focusLoginInputWithoutScroll(input);
+                    overlay.classList.add('ios-focus-lock');
+                    requestAnimationFrame(() => {
+                        syncLoginModalKeyboardDock();
+                        scrollLoginModalActiveInputIntoView();
+                    });
+                }, { passive: false });
+
+                input.addEventListener('pointerdown', retapGuardHandler);
+                input.addEventListener('mousedown', retapGuardHandler);
+                input.addEventListener('click', retapGuardHandler);
+
+                input.addEventListener('focus', () => {
+                    const { overlay } = getLoginModalElements();
+                    overlay?.classList.add('ios-focus-lock');
+                    syncLoginModalKeyboardDock();
+                    requestAnimationFrame(() => scrollLoginModalActiveInputIntoView());
+                });
+
+                input.addEventListener('blur', () => {
+                    setTimeout(() => {
+                        const { overlay } = getLoginModalElements();
+                        if (!overlay) return;
+                        if (!overlay.contains(document.activeElement)) {
+                            overlay.classList.remove('ios-focus-lock');
+                        }
+                        syncLoginModalKeyboardDock();
+                    }, 120);
+                });
+
+                input.dataset.loginFocusStabilizerBound = '1';
+            }
+
+            function attachLoginModalKeyboardDock() {
+                if (!isIOSMobileWebKit()) return;
+
+                const { overlay, inputs } = getLoginModalElements();
+                const vv = window.visualViewport;
+                if (!overlay || !vv) return;
+
+                detachLoginModalKeyboardDock();
+                captureLoginModalKeyboardBase();
+                syncLoginModalKeyboardDock();
+                inputs.forEach((input) => bindLoginModalInputFocusStabilizer(input));
+
+                const handleViewportChange = () => {
+                    if (loginModalKeyboardState.viewportRafId) return;
+                    loginModalKeyboardState.viewportRafId = requestAnimationFrame(() => {
+                        loginModalKeyboardState.viewportRafId = null;
+                        syncLoginModalKeyboardDock();
+                    });
+                };
+
+                vv.addEventListener('resize', handleViewportChange, { passive: true });
+                vv.addEventListener('scroll', handleViewportChange, { passive: true });
+                inputs.forEach((input) => {
+                    input.addEventListener('focus', handleViewportChange);
+                    input.addEventListener('blur', handleViewportChange);
+                });
+
+                loginModalKeyboardState.viewportCleanup = () => {
+                    vv.removeEventListener('resize', handleViewportChange);
+                    vv.removeEventListener('scroll', handleViewportChange);
+                    inputs.forEach((input) => {
+                        input.removeEventListener('focus', handleViewportChange);
+                        input.removeEventListener('blur', handleViewportChange);
+                    });
+                    if (loginModalKeyboardState.viewportRafId) {
+                        cancelAnimationFrame(loginModalKeyboardState.viewportRafId);
+                        loginModalKeyboardState.viewportRafId = null;
+                    }
+                    loginModalKeyboardState.viewportCleanup = null;
+                };
+            }
+
+            function detachLoginModalKeyboardDock() {
+                if (typeof loginModalKeyboardState.viewportCleanup === 'function') {
+                    loginModalKeyboardState.viewportCleanup();
+                }
+                clearLoginModalKeyboardTimers();
+            }
 
             function openLoginModal() {
                 const modal = document.getElementById('loginModal');
                 if (!modal) return;
 
-                // Step 1: Make modal visible in DOM but NOT yet active.
-                // Remove leftover inline styles first so CSS classes can work.
+                const card = modal.querySelector('.login-card');
+                loginModalKeyboardState.baseScrollY = Math.max(0, Math.round(window.scrollY || window.pageYOffset || 0));
+                loginModalKeyboardState.ownsFullScrollLock = false;
+                detachLoginModalKeyboardDock();
+                resetLoginModalKeyboardDockState();
+                modal.classList.remove('keyboard-docked', 'ios-focus-lock');
+                modal.style.setProperty('--login-modal-shift-y', '0px');
+                if (card) {
+                    card.scrollTop = 0;
+                    card.style.removeProperty('height');
+                    card.style.removeProperty('max-height');
+                }
+
                 modal.style.display = 'flex';
                 modal.style.removeProperty('visibility');
                 modal.style.removeProperty('opacity');
-
-                // Step 2: Force a reflow so the browser paints the non-active state
-                // (opacity:0 from CSS .login-overlay) before we trigger .active
                 void modal.offsetHeight;
-
-                // Step 3: Add .active — CSS transitions handle opacity/visibility
-                // and staggered rise animation for form-view children
                 modal.classList.add('active');
 
-                if (window.iOSScrollLock) window.iOSScrollLock.lock(modal);
+                if (window.iOSScrollLock) {
+                    if (isIOSMobileWebKit()) {
+                        window.iOSScrollLock.lockLight(modal);
+                    } else {
+                        window.iOSScrollLock.lock(modal);
+                    }
+                }
+
+                attachLoginModalKeyboardDock();
 
                 if (typeof window.ensureGoogleInlineButtonReady === 'function') {
                     window.ensureGoogleInlineButtonReady({ renderFallbackButton: true }).catch((err) => {
@@ -1186,11 +1590,17 @@
                 const modal = document.getElementById('loginModal');
                 if (!modal) return;
 
-                modal.classList.remove('active', 'ios-focus-lock');
+                getActiveLoginModalInput()?.blur();
+                detachLoginModalKeyboardDock();
+                resetLoginModalKeyboardDockState();
+                modal.classList.remove('active', 'ios-focus-lock', 'keyboard-docked');
+                modal.style.setProperty('--login-modal-shift-y', '0px');
                 modal.style.display = 'none';
                 modal.style.visibility = 'hidden';
                 modal.style.opacity = '0';
                 if (window.iOSScrollLock) window.iOSScrollLock.unlock();
+                loginModalKeyboardState.ownsFullScrollLock = false;
+                loginModalKeyboardState.baseScrollY = 0;
             }
 
             // Add global handlers if needed
@@ -1213,6 +1623,9 @@
                 const targetView = document.getElementById(viewId + 'View');
                 if (targetView) {
                     targetView.classList.remove('hidden');
+                    requestAnimationFrame(() => {
+                        syncLoginModalKeyboardDock();
+                    });
 
                     // 强制清空目标视图中的所有输入框（多次清空确保生效）
                     const inputs = targetView.querySelectorAll('input[type="text"], input[type="email"], input[type="password"]');
@@ -1251,61 +1664,7 @@
                     mouseDownOnOverlay = false;
                 }
             };
-
-            // iOS Safari: suppress rapid re-taps on the same focused input to avoid caret jump-reflow.
-            function setupIOSLoginInputStabilizer() {
-                const modal = document.getElementById('loginModal');
-                if (!modal) return;
-
-                const isIOSDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-                    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-                if (!isIOSDevice) return;
-
-                let lastTapTs = 0;
-                let lastTapInput = null;
-
-                modal.querySelectorAll('input.glass-input').forEach((inputEl) => {
-                    /**
-                     * Suppress touchstart/pointer/mouse/click on an ALREADY focused input.
-                     * On iOS Safari, re-tapping a focused input triggers a caret
-                     * re-calculation cycle that makes it jump briefly to the wrong position.
-                     * By preventing the event when the input is already focused,
-                     * we keep the caret stable without affecting initial focus behavior.
-                     */
-                    const isAlreadyFocused = () => document.activeElement === inputEl;
-
-                    inputEl.addEventListener('touchstart', (ev) => {
-                        if (isAlreadyFocused()) {
-                            ev.preventDefault();
-                            modal.classList.add('ios-focus-lock');
-                        }
-                    }, { passive: false });
-
-                    const retapGuardHandler = (ev) => {
-                        if (isAlreadyFocused()) {
-                            ev.preventDefault();
-                            ev.stopPropagation();
-                            modal.classList.add('ios-focus-lock');
-                        }
-                    };
-                    inputEl.addEventListener('pointerdown', retapGuardHandler);
-                    inputEl.addEventListener('mousedown', retapGuardHandler);
-                    inputEl.addEventListener('click', retapGuardHandler);
-
-                    inputEl.addEventListener('focus', () => {
-                        modal.classList.add('ios-focus-lock');
-                    });
-
-                    inputEl.addEventListener('blur', () => {
-                        setTimeout(() => {
-                            if (!modal.contains(document.activeElement)) {
-                                modal.classList.remove('ios-focus-lock');
-                            }
-                        }, 120);
-                    });
-                });
-            }
-            setupIOSLoginInputStabilizer();
+            getLoginModalElements().inputs.forEach((input) => bindLoginModalInputFocusStabilizer(input));
 
         } catch (error) {
             console.error('Failed to initialize auth:', error);
