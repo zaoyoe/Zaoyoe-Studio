@@ -805,6 +805,35 @@
                     align-items: flex-start !important;
                     scroll-padding-top: calc(var(--login-modal-safe-top) + 12px) !important;
                     scroll-padding-bottom: calc(var(--login-modal-keyboard-inset) + var(--login-modal-safe-bottom) + 24px) !important;
+                    background: transparent !important;
+                    backdrop-filter: none !important;
+                    -webkit-backdrop-filter: none !important;
+                    isolation: isolate !important;
+                    transition:
+                        opacity 0.3s ease,
+                        padding 180ms ease !important;
+                }
+
+                #loginModal::before {
+                    content: '';
+                    position: fixed;
+                    inset: 0;
+                    background: rgba(0, 0, 0, 0.56);
+                    backdrop-filter: blur(8px);
+                    -webkit-backdrop-filter: blur(8px);
+                    pointer-events: none;
+                    z-index: 0;
+                    transition:
+                        background-color 180ms ease,
+                        backdrop-filter 180ms ease,
+                        -webkit-backdrop-filter 180ms ease,
+                        opacity 180ms ease;
+                }
+
+                #loginModal.keyboard-visible::before {
+                    background: rgba(0, 0, 0, 0.46);
+                    backdrop-filter: blur(6px);
+                    -webkit-backdrop-filter: blur(6px);
                 }
 
                 .login-overlay .glass-input,
@@ -837,9 +866,10 @@
                     flex-shrink: 0 !important;
                     transform: scale(0.98) !important;
                     transition:
-                        opacity 0.24s ease-out,
-                        transform 0.24s ease-out !important;
+                    opacity 0.24s ease-out,
+                    transform 0.24s ease-out !important;
                     will-change: auto !important;
+                    z-index: 1 !important;
                 }
 
                 .login-overlay.active .login-card,
@@ -1164,6 +1194,7 @@
                 viewportCleanup: null,
                 viewportRafId: null,
                 focusRevealTimer: null,
+                settleTimer: null,
                 overlayCloseDisabledUntil: 0
             };
 
@@ -1196,6 +1227,13 @@
                 if (loginModalViewportState.focusRevealTimer) {
                     clearTimeout(loginModalViewportState.focusRevealTimer);
                     loginModalViewportState.focusRevealTimer = null;
+                }
+            }
+
+            function clearLoginModalSettleTimer() {
+                if (loginModalViewportState.settleTimer) {
+                    clearTimeout(loginModalViewportState.settleTimer);
+                    loginModalViewportState.settleTimer = null;
                 }
             }
 
@@ -1301,6 +1339,7 @@
             }
 
             function scheduleLoginModalInputReveal(input, delay = LOGIN_MODAL_INPUT_REVEAL_DELAY_MS) {
+                clearLoginModalSettleTimer();
                 clearLoginModalFocusRevealTimer();
                 loginModalViewportState.focusRevealTimer = window.setTimeout(() => {
                     loginModalViewportState.focusRevealTimer = null;
@@ -1319,7 +1358,37 @@
                     cancelAnimationFrame(loginModalViewportState.viewportRafId);
                     loginModalViewportState.viewportRafId = null;
                 }
+                clearLoginModalSettleTimer();
                 clearLoginModalFocusRevealTimer();
+            }
+
+            function settleLoginModalAfterKeyboard() {
+                const { overlay } = getLoginModalElements();
+                if (!overlay) return;
+
+                clearLoginModalSettleTimer();
+                loginModalViewportState.settleTimer = window.setTimeout(() => {
+                    loginModalViewportState.settleTimer = null;
+                    if (getActiveLoginModalInput()) return;
+
+                    requestLoginModalViewportSync();
+
+                    if (overlay.scrollTop <= 1) return;
+
+                    const previousScrollBehavior = overlay.style.scrollBehavior;
+                    overlay.style.scrollBehavior = 'smooth';
+                    try {
+                        overlay.scrollTo({ top: 0, behavior: 'smooth' });
+                    } catch (_) {
+                        overlay.scrollTop = 0;
+                    }
+
+                    window.setTimeout(() => {
+                        if (!getActiveLoginModalInput()) {
+                            overlay.style.scrollBehavior = previousScrollBehavior;
+                        }
+                    }, 220);
+                }, 90);
             }
 
             function resetLoginModalViewportState() {
@@ -1331,6 +1400,7 @@
                 overlay?.classList.remove('keyboard-visible');
                 overlay?.style.removeProperty('--login-modal-keyboard-inset');
                 if (overlay) {
+                    overlay.style.removeProperty('scroll-behavior');
                     overlay.scrollTop = 0;
                 }
                 if (card) {
@@ -1382,6 +1452,7 @@
                     if (!overlay.contains(event.target)) return;
                     if (!/^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName)) return;
 
+                    clearLoginModalSettleTimer();
                     loginModalViewportState.overlayCloseDisabledUntil = Date.now() + 220;
                     requestLoginModalViewportSync();
                     scheduleLoginModalInputReveal(event.target);
@@ -1396,6 +1467,7 @@
                     window.setTimeout(() => {
                         if (!getActiveLoginModalInput()) {
                             requestLoginModalViewportSync();
+                            settleLoginModalAfterKeyboard();
                         }
                     }, 120);
                 };
