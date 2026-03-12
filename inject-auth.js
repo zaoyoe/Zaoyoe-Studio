@@ -1229,6 +1229,7 @@
                 viewportCleanup: null,
                 viewportRafId: null,
                 focusRevealTimer: null,
+                focusTransferTimer: null,
                 settleTimer: null,
                 lastKeyboardInset: 0,
                 isKeyboardClosing: false,
@@ -1269,6 +1270,13 @@
                 }
             }
 
+            function clearLoginModalFocusTransferTimer() {
+                if (loginModalViewportState.focusTransferTimer) {
+                    clearTimeout(loginModalViewportState.focusTransferTimer);
+                    loginModalViewportState.focusTransferTimer = null;
+                }
+            }
+
             function clearLoginModalSettleTimer() {
                 if (loginModalViewportState.settleTimer) {
                     clearTimeout(loginModalViewportState.settleTimer);
@@ -1283,14 +1291,30 @@
                 (overlay || getLoginModalElements().overlay)?.classList.remove('keyboard-settling');
             }
 
+            function clearLoginModalFocusTransfer(overlay = null) {
+                clearLoginModalFocusTransferTimer();
+                loginModalViewportState.focusTransferUntil = 0;
+                (overlay || getLoginModalElements().overlay)?.classList.remove('login-focus-transfer');
+            }
+
             function markLoginModalFocusTransfer(target) {
                 const { overlay } = getLoginModalElements();
                 if (!(target instanceof HTMLElement) || !overlay || !overlay.contains(target)) return;
                 if (!/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+                const activeInput = getActiveLoginModalInput();
+                if (!activeInput || activeInput === target) return;
+
                 loginModalViewportState.focusTransferUntil = Date.now() + 260;
+                overlay.classList.add('login-focus-transfer');
+                clearLoginModalFocusTransferTimer();
+                loginModalViewportState.focusTransferTimer = window.setTimeout(() => {
+                    loginModalViewportState.focusTransferTimer = null;
+                    clearLoginModalFocusTransfer(overlay);
+                }, 280);
             }
 
             function finalizeLoginModalKeyboardClose() {
+                clearLoginModalFocusTransfer();
                 loginModalViewportState.isKeyboardClosing = false;
                 loginModalViewportState.isKeyboardSettling = false;
                 loginModalViewportState.lastKeyboardInset = 0;
@@ -1478,6 +1502,7 @@
                 }
                 clearLoginModalSettleTimer();
                 clearLoginModalFocusRevealTimer();
+                clearLoginModalFocusTransferTimer();
             }
 
             function settleLoginModalAfterKeyboard() {
@@ -1504,7 +1529,7 @@
                 loginModalViewportState.overlayCloseDisabledUntil = 0;
 
                 const { overlay, card } = getLoginModalElements();
-                overlay?.classList.remove('keyboard-visible', 'keyboard-settling');
+                overlay?.classList.remove('keyboard-visible', 'keyboard-settling', 'login-focus-transfer');
                 overlay?.style.removeProperty('--login-modal-keyboard-inset');
                 if (overlay) {
                     overlay.style.removeProperty('scroll-behavior');
@@ -1569,7 +1594,6 @@
                     if (!/^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName)) return;
 
                     cancelLoginModalKeyboardSettling(overlay);
-                    loginModalViewportState.focusTransferUntil = 0;
                     loginModalViewportState.overlayCloseDisabledUntil = Date.now() + 220;
                     const metrics = applyLoginModalViewportVars();
 
