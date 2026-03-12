@@ -1399,7 +1399,6 @@
                 const viewportMetrics = metrics || getLoginModalViewportMetrics();
                 const inputRect = input.getBoundingClientRect();
                 const topLimit = Math.max(LOGIN_MODAL_SCROLL_MARGIN, viewportMetrics.offsetTop + LOGIN_MODAL_SCROLL_MARGIN);
-                const hardTopLimit = Math.max(0, viewportMetrics.offsetTop - 4);
                 const bottomLimit = Math.max(
                     topLimit + 48,
                     viewportMetrics.visualHeight - LOGIN_MODAL_SCROLL_MARGIN
@@ -1412,8 +1411,6 @@
                     delta = inputRect.bottom - bottomLimit + 12;
                 } else if (!keyboardActive && inputRect.top < topLimit) {
                     delta = inputRect.top - topLimit - 12;
-                } else if (keyboardActive && inputRect.top < hardTopLimit) {
-                    delta = inputRect.top - hardTopLimit - 8;
                 }
 
                 if (Math.abs(delta) < 2) return;
