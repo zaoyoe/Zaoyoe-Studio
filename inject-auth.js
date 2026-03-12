@@ -1315,6 +1315,7 @@
                     loginModalViewportState.viewportHoldUntil = Date.now() + 240;
                     requestAnimationFrame(() => {
                         scrollLoginModalInputIntoView(activeInput, null, { allowTopReveal: true });
+                        relaxLoginModalCardIntoView(activeInput);
                     });
                     return;
                 }
@@ -1493,6 +1494,35 @@
                 container.scrollTop = Math.max(0, container.scrollTop + delta);
             }
 
+            function relaxLoginModalCardIntoView(input, metrics = null) {
+                if (!(input instanceof HTMLElement)) return;
+
+                const { overlay, card } = getLoginModalElements();
+                if (!overlay || !card || !overlay.classList.contains('active')) return;
+
+                const container = getLoginModalScrollableContainer(card, overlay);
+                if (!container || container.scrollTop <= 0) return;
+
+                const viewportMetrics = metrics || getLoginModalViewportMetrics();
+                const cardRect = card.getBoundingClientRect();
+                const inputRect = input.getBoundingClientRect();
+                const topLimit = Math.max(LOGIN_MODAL_SCROLL_MARGIN, viewportMetrics.offsetTop + LOGIN_MODAL_SCROLL_MARGIN);
+                const bottomLimit = Math.max(
+                    topLimit + 48,
+                    viewportMetrics.visualHeight - LOGIN_MODAL_SCROLL_MARGIN
+                );
+                const cardNeedsDrop = topLimit - cardRect.top;
+                const inputDropHeadroom = bottomLimit - inputRect.bottom - 12;
+                const dropDelta = Math.min(
+                    Math.max(0, cardNeedsDrop),
+                    Math.max(0, inputDropHeadroom),
+                    container.scrollTop
+                );
+
+                if (dropDelta < 2) return;
+                container.scrollTop = Math.max(0, container.scrollTop - dropDelta);
+            }
+
             function syncLoginModalViewport() {
                 const { overlay } = getLoginModalElements();
                 if (!overlay || !overlay.classList.contains('active')) return;
@@ -1501,6 +1531,7 @@
                 const activeInput = getActiveLoginModalInput();
                 if (activeInput && metrics) {
                     scrollLoginModalInputIntoView(activeInput, metrics);
+                    relaxLoginModalCardIntoView(activeInput, metrics);
                 }
             }
 
@@ -1664,6 +1695,7 @@
                     if (metrics?.keyboardVisible || loginModalViewportState.lastKeyboardInset > 0) {
                         requestAnimationFrame(() => {
                             scrollLoginModalInputIntoView(event.target);
+                            relaxLoginModalCardIntoView(event.target);
                         });
                         return;
                     }
