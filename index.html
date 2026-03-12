@@ -57,7 +57,7 @@
     <link rel="stylesheet" href="security-cards.css?v=20260304_IOS_CARET_FIX1">
 
     <!-- Core Styles (for modals, profile, etc) -->
-    <link rel="stylesheet" href="style.css?v=20260312_HOME_GUESTBOOK_COMPOSER_10">
+    <link rel="stylesheet" href="style.css?v=20260312_HOME_GUESTBOOK_COMPOSER_11">
     <link rel="stylesheet" href="login_styles.css?v=20260312_HOME_LOGIN_WIDTH_1">
     <link rel="stylesheet" href="avatar-fix.css?v=20260302_G_AUTH">
 
@@ -338,8 +338,7 @@
             <form class="guestbook-form guestbook-composer-form" id="guestbookForm">
                 <div class="input-group relative-container guestbook-composer-editor" id="guestbookComposerEditor">
                     <div class="guestbook-composer-empty-placeholder" aria-hidden="true" data-i18n="guestbook.placeholder">畅所欲言...</div>
-                    <textarea id="guestMessage" placeholder="畅所欲言..." data-i18n-placeholder="guestbook.placeholder"
-                        rows="6"></textarea>
+                    <textarea id="guestMessage" rows="6"></textarea>
                 </div>
 
                 <div id="imagePreview" class="image-preview-container guestbook-composer-preview" style="display: none;">
@@ -735,9 +734,15 @@
             }
 
             const guestbookInput = document.getElementById('guestMessage');
+            const guestbookEditor = document.getElementById('guestbookComposerEditor');
             guestbookInput?.addEventListener('input', syncGuestbookComposerEmptyState);
             guestbookInput?.addEventListener('focus', syncGuestbookComposerEmptyState);
             guestbookInput?.addEventListener('blur', syncGuestbookComposerEmptyState);
+            guestbookEditor?.addEventListener('click', (event) => {
+                if (!guestbookInput) return;
+                if (event.target instanceof HTMLElement && event.target.closest('button, a')) return;
+                focusGuestbookInputWithoutScroll(guestbookInput);
+            });
             syncGuestbookComposerEmptyState();
             syncGuestbookComposerImageState();
 

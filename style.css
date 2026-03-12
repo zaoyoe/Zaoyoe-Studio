@@ -6538,7 +6538,8 @@ input[type="submit"],
 #guestbookModal.active .guestbook-composer-sheet,
 #guestbookModal.active:focus-within .guestbook-composer-sheet,
 #guestbookModal.ios-focus-lock .guestbook-composer-sheet {
-    width: min(100%, 620px);
+    width: min(calc(100vw - 40px), 620px) !important;
+    max-width: 620px !important;
     height: 420px;
     min-height: 320px;
     max-height: calc(100vh - 56px);
@@ -6608,6 +6609,10 @@ input[type="submit"],
     letter-spacing: 0.22em;
     text-transform: uppercase;
     color: rgba(255, 255, 255, 0.4);
+}
+
+html[lang^="zh"] #guestbookModal .guestbook-composer-kicker {
+    display: none;
 }
 
 #guestbookModal .guestbook-composer-title {
@@ -7191,7 +7196,8 @@ body {
     #guestbookModal.active .guestbook-composer-sheet,
     #guestbookModal.active:focus-within .guestbook-composer-sheet,
     #guestbookModal.ios-focus-lock .guestbook-composer-sheet {
-        width: 100% !important;
+        width: calc(100vw - 40px) !important;
+        max-width: 620px !important;
         height: min(400px, calc(100svh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px));
         min-height: 300px;
         max-height: calc(100svh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px);
