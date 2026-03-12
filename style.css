@@ -6874,7 +6874,7 @@ body {
         width: calc(100% - 40px) !important;
         max-width: calc(100% - 40px) !important;
         max-height: 82vh !important;
-        min-height: clamp(420px, 58vh, 500px) !important;
+        min-height: clamp(340px, 44vh, 400px) !important;
         box-sizing: border-box !important;
         margin: auto !important;
         position: relative !important;
@@ -6896,10 +6896,40 @@ body {
         overscroll-behavior: contain;
     }
 
+    #guestbookModal .guestbook-content {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 12px !important;
+        padding: 22px 18px calc(18px + env(safe-area-inset-bottom)) !important;
+    }
+
+    #guestbookModal .guestbook-form {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 12px !important;
+        margin: 0 !important;
+    }
+
+    #guestbookModal .guestbook-content .modal-title,
+    #guestbookModal .guestbook-content .input-group,
+    #guestbookModal #guestbookViewMoreWrap,
+    #guestbookModal .guestbook-submit-btn {
+        margin: 0 !important;
+    }
+
     #guestbookModal .guestbook-content textarea,
     #guestbookModal .guestbook-form textarea {
-        height: 136px !important;
-        min-height: 136px !important;
+        height: 112px !important;
+        min-height: 112px !important;
+        resize: none !important;
+    }
+
+    #guestbookModal #guestbookViewMoreWrap {
+        padding-top: 2px !important;
+    }
+
+    #guestbookModal #guestbookViewMoreWrap a {
+        padding: 10px 16px !important;
     }
 
     /*

@@ -57,7 +57,7 @@
     <link rel="stylesheet" href="security-cards.css?v=20260304_IOS_CARET_FIX1">
 
     <!-- Core Styles (for modals, profile, etc) -->
-    <link rel="stylesheet" href="style.css?v=20260312_HOME_MODAL_WIDTH_3">
+    <link rel="stylesheet" href="style.css?v=20260312_HOME_MODAL_WIDTH_4">
     <link rel="stylesheet" href="login_styles.css?v=20260312_HOME_LOGIN_WIDTH_1">
     <link rel="stylesheet" href="avatar-fix.css?v=20260302_G_AUTH">
 
@@ -478,8 +478,8 @@
 
                 guestbookModalKeyboardState.baseViewportHeight = normalizedBaseHeight;
                 if (card) {
-                    const liveHeight = Math.round(card.offsetHeight || card.getBoundingClientRect().height || 420);
-                    guestbookModalKeyboardState.baseCardHeight = Math.max(360, liveHeight || 420);
+                    const liveHeight = Math.round(card.offsetHeight || card.getBoundingClientRect().height || 400);
+                    guestbookModalKeyboardState.baseCardHeight = Math.max(320, liveHeight || 400);
                 }
             }
 
@@ -528,19 +528,19 @@
 
                 const metrics = getGuestbookModalViewportMetrics();
                 if (!guestbookModalKeyboardState.baseCardHeight) {
-                    const liveHeight = Math.round(card.offsetHeight || card.getBoundingClientRect().height || 420);
-                    guestbookModalKeyboardState.baseCardHeight = Math.max(360, liveHeight || 420);
+                    const liveHeight = Math.round(card.offsetHeight || card.getBoundingClientRect().height || 400);
+                    guestbookModalKeyboardState.baseCardHeight = Math.max(320, liveHeight || 400);
                 }
 
-                const baseCardHeight = Math.max(360, guestbookModalKeyboardState.baseCardHeight || 420);
+                const baseCardHeight = Math.max(320, guestbookModalKeyboardState.baseCardHeight || 400);
                 const baseViewportHeight = Math.max(
                     metrics.baseVisualHeight || 0,
                     guestbookModalKeyboardState.baseViewportHeight || 0
                 );
                 const keyboardTop = Math.max(0, baseViewportHeight - Math.max(0, bottomInset));
                 const minTop = 16;
-                const keyboardClearance = 32;
-                const maxAvailableHeight = Math.max(320, Math.round(keyboardTop - minTop - keyboardClearance));
+                const keyboardClearance = 48;
+                const maxAvailableHeight = Math.max(300, Math.round(keyboardTop - minTop - keyboardClearance));
                 const dockHeight = Math.min(baseCardHeight, maxAvailableHeight);
                 const centeredTop = (baseViewportHeight - dockHeight) / 2;
                 const desiredTop = Math.max(minTop, keyboardTop - keyboardClearance - dockHeight);
