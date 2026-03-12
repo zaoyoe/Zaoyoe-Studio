@@ -6643,7 +6643,7 @@ html[lang^="zh"] #guestbookModal .guestbook-composer-kicker {
     justify-content: flex-start;
     min-width: 0;
     height: auto;
-    padding: 0 4px;
+    padding: 2px 4px 0 0;
     flex: 0 0 auto;
     border-radius: 0;
     border: none !important;
@@ -6792,7 +6792,7 @@ html[lang^="zh"] #guestbookModal .guestbook-composer-kicker {
 #guestbookModal .guestbook-composer-actions {
     display: flex !important;
     align-items: center !important;
-    justify-content: space-between !important;
+    justify-content: flex-end !important;
     gap: 12px !important;
     padding-top: 6px !important;
     margin-top: auto !important;
