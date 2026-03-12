@@ -1148,6 +1148,21 @@
             }
 
             const LOGIN_MODAL_KEYBOARD_SETTLE_MS = 90;
+            const LOGIN_MODAL_ACTIONABLE_SELECTOR = [
+                'button',
+                'a',
+                'label',
+                '.switch-link',
+                '.forgot-password-link',
+                '.login-submit-btn',
+                '.verify-code-btn',
+                '.google-login-btn',
+                '.mac-dot',
+                'input[type="checkbox"]',
+                'input[type="button"]',
+                'input[type="submit"]',
+                '[onclick]'
+            ].join(', ');
             const loginModalKeyboardState = {
                 baseScrollY: 0,
                 ownsFullScrollLock: false,
@@ -1429,6 +1444,10 @@
                     return;
                 }
 
+                if (loginModalKeyboardState.docked && !activeInput && bottomInset > 8) {
+                    return;
+                }
+
                 if (loginModalKeyboardState.docked && activeInput && nextInset <= 24) {
                     requestAnimationFrame(() => scrollLoginModalActiveInputIntoView());
                     return;
@@ -1495,6 +1514,60 @@
                 });
 
                 input.dataset.loginFocusStabilizerBound = '1';
+            }
+
+            function triggerLoginModalActionTarget(actionTarget) {
+                if (!(actionTarget instanceof HTMLElement) || !actionTarget.isConnected) return;
+
+                if (actionTarget.matches('label[for]')) {
+                    const control = document.getElementById(actionTarget.getAttribute('for'));
+                    if (control instanceof HTMLElement) {
+                        control.click();
+                        return;
+                    }
+                }
+
+                actionTarget.click();
+            }
+
+            function bindLoginModalActionTapAssist() {
+                const { overlay } = getLoginModalElements();
+                if (!overlay || overlay.dataset.loginActionTapAssistBound === '1') return;
+
+                overlay.addEventListener('touchstart', (event) => {
+                    if (!isIOSMobileWebKit() || !overlay.classList.contains('active')) return;
+                    if (!(event.target instanceof Element)) return;
+
+                    const activeInput = getActiveLoginModalInput();
+                    if (!activeInput) return;
+
+                    const actionTarget = event.target.closest(LOGIN_MODAL_ACTIONABLE_SELECTOR);
+                    if (!(actionTarget instanceof HTMLElement)) return;
+                    if (actionTarget === activeInput) return;
+                    if (actionTarget.matches(
+                        'input:not([type="checkbox"]):not([type="button"]):not([type="submit"]):not([type="radio"]), textarea, select'
+                    )) {
+                        return;
+                    }
+                    if (actionTarget.closest('.glass-input') === activeInput) return;
+
+                    if (event.cancelable) event.preventDefault();
+                    event.stopPropagation();
+
+                    activeInput.blur();
+
+                    const actionDelay = loginModalKeyboardState.docked
+                        ? LOGIN_MODAL_KEYBOARD_SETTLE_MS + 30
+                        : 30;
+
+                    window.setTimeout(() => {
+                        if (!overlay.classList.contains('active')) return;
+                        triggerLoginModalActionTarget(actionTarget);
+                        requestAnimationFrame(() => syncLoginModalKeyboardDock());
+                    }, actionDelay);
+                }, { passive: false });
+
+                overlay.dataset.loginActionTapAssistBound = '1';
             }
 
             function attachLoginModalKeyboardDock() {
@@ -1577,6 +1650,7 @@
                     }
                 }
 
+                bindLoginModalActionTapAssist();
                 attachLoginModalKeyboardDock();
 
                 if (typeof window.ensureGoogleInlineButtonReady === 'function') {
@@ -1664,6 +1738,7 @@
                     mouseDownOnOverlay = false;
                 }
             };
+            bindLoginModalActionTapAssist();
             getLoginModalElements().inputs.forEach((input) => bindLoginModalInputFocusStabilizer(input));
 
         } catch (error) {
