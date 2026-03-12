@@ -804,8 +804,8 @@
                     --login-modal-safe-top: calc(env(safe-area-inset-top, 0px) + 12px);
                     --login-modal-safe-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
                     padding: 0 !important;
-                    height: 100dvh !important;
-                    min-height: 100dvh !important;
+                    height: auto !important;
+                    min-height: 0 !important;
                     overflow: hidden !important;
                     overscroll-behavior: none !important;
                     align-items: stretch !important;
@@ -834,22 +834,16 @@
                     overflow-y: auto !important;
                     overscroll-behavior: contain !important;
                     -webkit-overflow-scrolling: touch !important;
-                    display: flex !important;
-                    flex-direction: column !important;
-                    justify-content: center !important;
-                    align-items: center !important;
+                    display: grid !important;
+                    justify-items: center !important;
+                    align-content: center !important;
                     scroll-padding-top: calc(var(--login-modal-safe-top) + 12px) !important;
                     scroll-padding-bottom: calc(var(--login-modal-keyboard-inset) + var(--login-modal-safe-bottom) + 24px) !important;
                     box-sizing: border-box !important;
                     position: relative !important;
                     z-index: 1 !important;
+                    overflow-anchor: none !important;
                     transition: padding-bottom 220ms cubic-bezier(0.16, 1, 0.3, 1) !important;
-                }
-
-                #loginModal.keyboard-visible .login-modal-scroll,
-                #loginModal.login-focus-transfer .login-modal-scroll,
-                #loginModal.active:focus-within .login-modal-scroll {
-                    justify-content: flex-start !important;
                 }
 
                 #loginModal::before {
@@ -1344,7 +1338,6 @@
                     loginModalViewportState.viewportHoldUntil = Date.now() + 240;
                     requestAnimationFrame(() => {
                         scrollLoginModalInputIntoView(activeInput, null, { allowTopReveal: true });
-                        relaxLoginModalCardIntoView(activeInput);
                     });
                     return;
                 }
@@ -1563,7 +1556,6 @@
                 const activeInput = getActiveLoginModalInput();
                 if (activeInput && metrics) {
                     scrollLoginModalInputIntoView(activeInput, metrics);
-                    relaxLoginModalCardIntoView(activeInput, metrics);
                 }
             }
 
@@ -1730,7 +1722,6 @@
                     if (metrics?.keyboardVisible || loginModalViewportState.lastKeyboardInset > 0) {
                         requestAnimationFrame(() => {
                             scrollLoginModalInputIntoView(event.target);
-                            relaxLoginModalCardIntoView(event.target);
                         });
                         return;
                     }
