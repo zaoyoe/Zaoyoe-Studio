@@ -1174,6 +1174,7 @@
             }
 
             const LOGIN_MODAL_KEYBOARD_SETTLE_MS = 90;
+            const LOGIN_MODAL_INPUT_SWITCH_GRACE_MS = 180;
             const LOGIN_MODAL_ACTIONABLE_SELECTOR = [
                 'button',
                 'a',
@@ -1202,7 +1203,7 @@
                 baseVisualViewportHeight: 0,
                 baseCardHeight: 0,
                 stableDockHeight: 0,
-                baseShiftY: -58,
+                baseShiftY: -72,
                 docked: false,
                 lastBottomInset: 0,
                 lastStableKeyboardInset: 0,
@@ -1310,11 +1311,12 @@
             }
 
             function computeLoginModalBaseShiftY() {
-                const fallbackShift = -58;
+                const fallbackShift = -72;
                 if (!isIOSMobileWebKit() || !window.visualViewport) {
                     return fallbackShift;
                 }
 
+                const { card } = getLoginModalElements();
                 const vv = window.visualViewport;
                 const visualTop = Math.max(0, vv.offsetTop || 0);
                 const visualHeight = Math.max(0, vv.height || 0);
@@ -1325,16 +1327,22 @@
                     document.documentElement.clientHeight || 0,
                     visualBottom
                 );
+                const cardHeight = Math.max(
+                    320,
+                    Math.round(card?.getBoundingClientRect().height || loginModalKeyboardState.baseCardHeight || 420)
+                );
 
-                if (!layoutHeight || !visualHeight) {
+                if (!layoutHeight || !visualHeight || !cardHeight) {
                     return fallbackShift;
                 }
 
-                const visualCenter = visualTop + (visualHeight * 0.5);
-                const layoutCenter = layoutHeight * 0.5;
-                const centerDelta = visualCenter - layoutCenter;
-                const desiredShift = Math.round(centerDelta - 54);
-                return Math.max(-112, Math.min(-18, desiredShift));
+                const minTop = Math.max(18, visualTop + 14);
+                const maxTop = Math.max(minTop, visualBottom - cardHeight - 22);
+                const centeredTop = visualTop + ((visualHeight - cardHeight) * 0.5) - 10;
+                const desiredTop = Math.max(minTop, Math.min(maxTop, centeredTop));
+                const layoutCenteredTop = (layoutHeight * 0.5) - (cardHeight * 0.5);
+                const desiredShift = Math.round(desiredTop - layoutCenteredTop);
+                return Math.max(-140, Math.min(-18, desiredShift));
             }
 
             function syncLoginModalBaseShift(force = false) {
@@ -1767,7 +1775,7 @@
                 loginModalKeyboardState.baseVisualViewportHeight = 0;
                 loginModalKeyboardState.baseCardHeight = 0;
                 loginModalKeyboardState.stableDockHeight = 0;
-                loginModalKeyboardState.baseShiftY = -58;
+                loginModalKeyboardState.baseShiftY = -72;
                 loginModalKeyboardState.lastStableKeyboardInset = 0;
                 loginModalKeyboardState.pendingStableKeyboardInset = 0;
                 loginModalKeyboardState.keyboardBlurUndocking = false;
@@ -1974,6 +1982,7 @@
                     clearLoginModalKeyboardSettleTimer();
                     captureLoginModalKeyboardBase();
                     captureLoginModalStableDockHeight();
+                    syncLoginModalBaseShift(true);
                     lockLoginModalKeyboardPage();
                     requestLoginModalViewportSync();
                     window.setTimeout(() => {
@@ -1987,22 +1996,19 @@
                     if (!overlay.contains(event.target)) return;
                     if (!/^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName)) return;
 
-                    requestAnimationFrame(() => {
+                    clearLoginModalPendingUndock();
+                    loginModalKeyboardState.pendingUndockTimer = window.setTimeout(() => {
+                        loginModalKeyboardState.pendingUndockTimer = null;
                         if (getActiveLoginModalInput()) return;
                         overlay.classList.remove('ios-focus-lock');
                         loginModalKeyboardState.keyboardBlurUndocking = true;
-                        clearLoginModalPendingUndock();
-                        loginModalKeyboardState.pendingUndockTimer = window.setTimeout(() => {
-                            loginModalKeyboardState.pendingUndockTimer = null;
-                            if (getActiveLoginModalInput()) return;
-                            if (loginModalKeyboardState.docked) {
-                                resetLoginModalKeyboardViewportStyles(true);
-                            } else {
-                                syncLoginModalBaseShift(true);
-                            }
-                            requestLoginModalViewportSync();
-                        }, 24);
-                    });
+                        if (loginModalKeyboardState.docked) {
+                            resetLoginModalKeyboardViewportStyles(true);
+                        } else {
+                            syncLoginModalBaseShift(true);
+                        }
+                        requestLoginModalViewportSync();
+                    }, LOGIN_MODAL_INPUT_SWITCH_GRACE_MS);
                 };
 
                 vv.addEventListener('resize', handleViewportChange, { passive: true });
@@ -2041,7 +2047,7 @@
                 detachLoginModalKeyboardDock();
                 resetLoginModalKeyboardDockState();
                 modal.classList.remove('keyboard-docked', 'ios-focus-lock');
-                modal.style.setProperty('--login-modal-base-shift-y', '-58px');
+                modal.style.setProperty('--login-modal-base-shift-y', '-72px');
                 modal.style.setProperty('--login-modal-shift-y', '0px');
                 if (card) {
                     card.scrollTop = 0;
@@ -2062,6 +2068,11 @@
                 }
                 void modal.offsetHeight;
                 modal.classList.add('active');
+                requestAnimationFrame(() => {
+                    captureLoginModalKeyboardBase();
+                    captureLoginModalStableDockHeight();
+                    syncLoginModalBaseShift(true);
+                });
 
                 if (window.iOSScrollLock) {
                     if (isIOSMobileWebKit()) {
