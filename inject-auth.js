@@ -1211,11 +1211,14 @@
                 keyboardBlurUndocking: false,
                 initialDockTimer: null,
                 pendingUndockTimer: null,
+                postUndockSyncTimer: null,
                 keyboardSettleTimer: null,
                 transitionCleanupTimer: null,
                 motionVisualLockTimer: null,
                 sessionVisualLocked: false,
                 inputSwitchDeadline: 0,
+                focusAwaitDockUntil: 0,
+                openingSettleUntil: 0,
                 overlayCloseDisabledUntil: 0
             };
 
@@ -1305,6 +1308,13 @@
                 }
             }
 
+            function clearLoginModalPostUndockSyncTimer() {
+                if (loginModalKeyboardState.postUndockSyncTimer) {
+                    clearTimeout(loginModalKeyboardState.postUndockSyncTimer);
+                    loginModalKeyboardState.postUndockSyncTimer = null;
+                }
+            }
+
             function clearLoginModalKeyboardSettleTimer() {
                 if (loginModalKeyboardState.keyboardSettleTimer) {
                     clearTimeout(loginModalKeyboardState.keyboardSettleTimer);
@@ -1315,6 +1325,7 @@
             function clearLoginModalKeyboardTimers() {
                 clearLoginModalPendingFirstDock();
                 clearLoginModalPendingUndock();
+                clearLoginModalPostUndockSyncTimer();
                 clearLoginModalKeyboardSettleTimer();
                 clearLoginModalTransitionCleanupTimer();
                 clearLoginModalMotionVisualLockTimer();
@@ -1362,12 +1373,18 @@
 
                 let baseShiftY = computeLoginModalBaseShiftY();
                 const activeInput = getActiveLoginModalInput();
-                if (!overlay.classList.contains('keyboard-docked') && !activeInput) {
-                    const currentShiftRaw = overlay.style.getPropertyValue('--login-modal-base-shift-y');
-                    const currentShift = Number.parseFloat(currentShiftRaw);
-                    if (Number.isFinite(currentShift)) {
+                const currentShiftRaw = overlay.style.getPropertyValue('--login-modal-base-shift-y');
+                const currentShift = Number.parseFloat(currentShiftRaw);
+                if (!overlay.classList.contains('keyboard-docked') &&
+                    activeInput &&
+                    Date.now() < (loginModalKeyboardState.focusAwaitDockUntil || 0) &&
+                    Number.isFinite(currentShift)) {
+                    baseShiftY = currentShift;
+                } else if (!overlay.classList.contains('keyboard-docked') &&
+                    !activeInput &&
+                    Date.now() < (loginModalKeyboardState.openingSettleUntil || 0) &&
+                    Number.isFinite(currentShift)) {
                         baseShiftY = Math.min(currentShift, baseShiftY);
-                    }
                 }
                 loginModalKeyboardState.baseShiftY = baseShiftY;
                 overlay.style.setProperty('--login-modal-base-shift-y', `${baseShiftY}px`);
@@ -1738,7 +1755,9 @@
                 card.style.height = `${dockHeight}px`;
                 card.style.maxHeight = `${dockHeight}px`;
                 loginModalKeyboardState.docked = true;
+                loginModalKeyboardState.focusAwaitDockUntil = 0;
                 loginModalKeyboardState.lastBottomInset = Math.max(0, bottomInset);
+                clearLoginModalPostUndockSyncTimer();
 
                 requestAnimationFrame(() => scrollLoginModalActiveInputIntoView(keyboardTop));
             }
@@ -1779,6 +1798,10 @@
 
                 card.style.removeProperty('height');
                 card.style.removeProperty('max-height');
+                if (loginModalKeyboardState.keyboardBlurUndocking) {
+                    scheduleLoginModalPostUndockSync();
+                    return;
+                }
                 syncLoginModalBaseShift(true);
             }
 
@@ -1797,6 +1820,9 @@
                 loginModalKeyboardState.lastStableKeyboardInset = 0;
                 loginModalKeyboardState.pendingStableKeyboardInset = 0;
                 loginModalKeyboardState.keyboardBlurUndocking = false;
+                loginModalKeyboardState.inputSwitchDeadline = 0;
+                loginModalKeyboardState.focusAwaitDockUntil = 0;
+                loginModalKeyboardState.openingSettleUntil = 0;
                 loginModalKeyboardState.overlayCloseDisabledUntil = 0;
             }
 
@@ -1824,6 +1850,18 @@
                 }, delay);
             }
 
+            function scheduleLoginModalPostUndockSync(delay = LOGIN_MODAL_KEYBOARD_SETTLE_MS + 80) {
+                clearLoginModalPostUndockSyncTimer();
+                loginModalKeyboardState.postUndockSyncTimer = window.setTimeout(() => {
+                    loginModalKeyboardState.postUndockSyncTimer = null;
+                    const { overlay } = getLoginModalElements();
+                    if (!overlay || !overlay.classList.contains('active')) return;
+                    captureLoginModalKeyboardBase();
+                    captureLoginModalStableDockHeight();
+                    requestLoginModalViewportSync();
+                }, delay);
+            }
+
             function evaluateLoginModalViewportState() {
                 const { overlay, card } = getLoginModalElements();
                 if (!overlay || !card || !overlay.classList.contains('active')) {
@@ -1848,12 +1886,30 @@
                 if (!activeInput && bottomInset <= 8) {
                     loginModalKeyboardState.keyboardBlurUndocking = false;
                     loginModalKeyboardState.pendingStableKeyboardInset = 0;
+                    loginModalKeyboardState.focusAwaitDockUntil = 0;
+                    clearLoginModalPostUndockSyncTimer();
                     clearLoginModalKeyboardSettleTimer();
+                }
+
+                if (!activeInput && loginModalKeyboardState.keyboardBlurUndocking) {
+                    if (bottomInset > 8) {
+                        scheduleLoginModalPostUndockSync(120);
+                        return;
+                    }
+                    captureLoginModalKeyboardBase();
+                    captureLoginModalStableDockHeight();
                 }
 
                 const shouldDock = !!activeInput &&
                     !loginModalKeyboardState.keyboardBlurUndocking &&
                     (loginModalKeyboardState.docked ? bottomInset > 8 : bottomInset > 24);
+
+                if (activeInput &&
+                    !loginModalKeyboardState.docked &&
+                    bottomInset <= 24 &&
+                    Date.now() < (loginModalKeyboardState.focusAwaitDockUntil || 0)) {
+                    return;
+                }
 
                 if (shouldDock) {
                     stabilizeLoginModalRootScroll();
@@ -1994,10 +2050,13 @@
                     event.stopPropagation();
 
                     loginModalKeyboardState.inputSwitchDeadline = Date.now() + 520;
+                    loginModalKeyboardState.focusAwaitDockUntil = Date.now() + 520;
                     overlay.classList.add('ios-focus-lock');
                     loginModalKeyboardState.keyboardBlurUndocking = false;
                     loginModalKeyboardState.overlayCloseDisabledUntil = Date.now() + 320;
+                    loginModalKeyboardState.focusAwaitDockUntil = Date.now() + 420;
                     clearLoginModalPendingUndock();
+                    clearLoginModalPostUndockSyncTimer();
                     clearLoginModalKeyboardSettleTimer();
                     window.setTimeout(() => {
                         focusLoginModalInputWithoutScroll(nextInput);
@@ -2039,8 +2098,10 @@
 
                     overlay.classList.add('ios-focus-lock');
                     loginModalKeyboardState.keyboardBlurUndocking = false;
+                    loginModalKeyboardState.focusAwaitDockUntil = Date.now() + 420;
                     loginModalKeyboardState.overlayCloseDisabledUntil = Date.now() + 320;
                     clearLoginModalPendingUndock();
+                    clearLoginModalPostUndockSyncTimer();
                     clearLoginModalKeyboardSettleTimer();
                     captureLoginModalKeyboardBase();
                     captureLoginModalStableDockHeight();
@@ -2068,12 +2129,14 @@
                         overlay.classList.remove('ios-focus-lock');
                         loginModalKeyboardState.keyboardBlurUndocking = true;
                         loginModalKeyboardState.inputSwitchDeadline = 0;
+                        loginModalKeyboardState.focusAwaitDockUntil = 0;
                         if (loginModalKeyboardState.docked) {
                             resetLoginModalKeyboardViewportStyles(true);
                         } else {
                             syncLoginModalBaseShift(true);
                         }
                         requestLoginModalViewportSync();
+                        scheduleLoginModalPostUndockSync();
                     }, LOGIN_MODAL_INPUT_SWITCH_GRACE_MS);
                 };
 
@@ -2102,6 +2165,8 @@
                 clearLoginModalKeyboardTimers();
                 loginModalKeyboardState.keyboardBlurUndocking = false;
                 loginModalKeyboardState.inputSwitchDeadline = 0;
+                loginModalKeyboardState.focusAwaitDockUntil = 0;
+                loginModalKeyboardState.openingSettleUntil = 0;
             }
 
             function openLoginModal() {
@@ -2156,6 +2221,8 @@
 
                 loginModalKeyboardState.overlayCloseDisabledUntil = Date.now() + 260;
                 loginModalKeyboardState.inputSwitchDeadline = 0;
+                loginModalKeyboardState.focusAwaitDockUntil = 0;
+                loginModalKeyboardState.openingSettleUntil = Date.now() + 420;
                 bindLoginModalOverlayDismiss();
                 bindLoginModalInputSwitchAssist();
                 bindLoginModalActionTapAssist();
@@ -2188,6 +2255,8 @@
                 loginModalKeyboardState.ownsFullScrollLock = false;
                 loginModalKeyboardState.baseScrollY = 0;
                 loginModalKeyboardState.inputSwitchDeadline = 0;
+                loginModalKeyboardState.focusAwaitDockUntil = 0;
+                loginModalKeyboardState.openingSettleUntil = 0;
                 loginModalKeyboardState.overlayCloseDisabledUntil = 0;
             }
 
