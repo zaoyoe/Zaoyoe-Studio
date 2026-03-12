@@ -6869,7 +6869,14 @@ body {
     #guestbookModal .modal-content {
         width: calc(100% - 40px) !important;
         max-width: calc(100% - 40px) !important;
+        max-height: 82vh !important;
         box-sizing: border-box !important;
+    }
+
+    #guestbookModal .guestbook-content textarea,
+    #guestbookModal .guestbook-form textarea {
+        height: 112px !important;
+        min-height: 112px !important;
     }
 
     /*

@@ -804,6 +804,9 @@
 
                 .login-overlay .login-card,
                 #loginModal .login-card {
+                    width: 100% !important;
+                    max-width: 100% !important;
+                    box-sizing: border-box !important;
                     max-height: none !important;
                     overflow-y: visible !important;
                 }
