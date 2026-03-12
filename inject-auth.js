@@ -796,13 +796,16 @@
                     padding:
                         var(--login-modal-safe-top)
                         16px
-                        max(var(--login-modal-safe-bottom), calc(var(--login-modal-keyboard-inset) + 12px))
+                        var(--login-modal-safe-bottom)
                         !important;
-                    min-height: var(--login-modal-viewport-height, 100dvh) !important;
-                    height: auto !important;
+                    height: var(--login-modal-viewport-height, 100dvh) !important;
+                    min-height: 0 !important;
                     overflow-y: auto !important;
                     overscroll-behavior: contain !important;
                     -webkit-overflow-scrolling: touch !important;
+                    align-items: flex-start !important;
+                    scroll-padding-top: calc(var(--login-modal-safe-top) + 12px) !important;
+                    scroll-padding-bottom: calc(var(--login-modal-safe-bottom) + 24px) !important;
                 }
 
                 .login-overlay .glass-input,
@@ -830,14 +833,9 @@
                     width: min(360px, calc(100vw - 32px)) !important;
                     max-width: 100% !important;
                     box-sizing: border-box !important;
-                    max-height: calc(
-                        var(--login-modal-viewport-height, 100dvh) -
-                        var(--login-modal-safe-top) -
-                        max(var(--login-modal-safe-bottom), calc(var(--login-modal-keyboard-inset) + 12px))
-                    ) !important;
-                    overflow-y: auto !important;
-                    overscroll-behavior: contain !important;
-                    -webkit-overflow-scrolling: touch !important;
+                    max-height: none !important;
+                    overflow: visible !important;
+                    flex-shrink: 0 !important;
                     transform: scale(0.98) !important;
                     transition:
                         opacity 0.24s ease-out,
@@ -1236,11 +1234,11 @@
             }
 
             function getLoginModalScrollableContainer(card, overlay) {
-                if (card && card.scrollHeight > card.clientHeight + 4) {
-                    return card;
-                }
                 if (overlay && overlay.scrollHeight > overlay.clientHeight + 4) {
                     return overlay;
+                }
+                if (card && card.scrollHeight > card.clientHeight + 4) {
+                    return card;
                 }
                 return card || overlay || null;
             }
