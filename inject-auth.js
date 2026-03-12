@@ -1294,7 +1294,22 @@
             function clearLoginModalFocusTransfer(overlay = null) {
                 clearLoginModalFocusTransferTimer();
                 loginModalViewportState.focusTransferUntil = 0;
-                (overlay || getLoginModalElements().overlay)?.classList.remove('login-focus-transfer');
+                const resolvedOverlay = overlay || getLoginModalElements().overlay;
+                resolvedOverlay?.classList.remove('login-focus-transfer');
+
+                if (!resolvedOverlay || !resolvedOverlay.classList.contains('active')) return;
+
+                const activeInput = getActiveLoginModalInput();
+                if (activeInput) {
+                    requestLoginModalViewportSync();
+                    requestAnimationFrame(() => {
+                        scrollLoginModalInputIntoView(activeInput);
+                    });
+                }
+            }
+
+            function isLoginModalFocusTransferActive() {
+                return loginModalViewportState.focusTransferUntil > Date.now();
             }
 
             function markLoginModalFocusTransfer(target) {
@@ -1579,6 +1594,8 @@
                 if (!overlay || !vv) return;
 
                 const handleViewportChange = () => {
+                    if (isLoginModalFocusTransferActive()) return;
+
                     const metrics = getLoginModalViewportMetrics();
                     if (!loginModalViewportState.isKeyboardClosing) {
                         requestLoginModalViewportSync();
@@ -1595,6 +1612,11 @@
 
                     cancelLoginModalKeyboardSettling(overlay);
                     loginModalViewportState.overlayCloseDisabledUntil = Date.now() + 220;
+
+                    if (isLoginModalFocusTransferActive() && loginModalViewportState.lastKeyboardInset > 0) {
+                        return;
+                    }
+
                     const metrics = applyLoginModalViewportVars();
 
                     if (metrics?.keyboardVisible || loginModalViewportState.lastKeyboardInset > 0) {
@@ -1614,6 +1636,11 @@
 
                     clearLoginModalFocusRevealTimer();
                     loginModalViewportState.overlayCloseDisabledUntil = Date.now() + 120;
+
+                    if (isLoginModalFocusTransferActive()) {
+                        return;
+                    }
+
                     resolveLoginModalBlurState(overlay);
                 };
 
