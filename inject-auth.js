@@ -804,9 +804,9 @@
                     align-items: flex-start !important;
                     scroll-padding-top: calc(var(--login-modal-safe-top) + 12px) !important;
                     scroll-padding-bottom: calc(var(--login-modal-keyboard-inset) + var(--login-modal-safe-bottom) + 24px) !important;
-                    background: rgba(0, 0, 0, 0.22) !important;
-                    backdrop-filter: blur(10px) saturate(132%) !important;
-                    -webkit-backdrop-filter: blur(10px) saturate(132%) !important;
+                    background: rgba(0, 0, 0, 0.1) !important;
+                    backdrop-filter: blur(12px) saturate(140%) !important;
+                    -webkit-backdrop-filter: blur(12px) saturate(140%) !important;
                     isolation: isolate !important;
                     will-change: opacity, padding-bottom !important;
                     transition:
@@ -821,9 +821,9 @@
                     content: '';
                     position: fixed;
                     inset: 0;
-                    background: rgba(0, 0, 0, 0.74);
-                    backdrop-filter: blur(14px) saturate(145%);
-                    -webkit-backdrop-filter: blur(14px) saturate(145%);
+                    background: rgba(0, 0, 0, 0.52);
+                    backdrop-filter: blur(18px) saturate(150%);
+                    -webkit-backdrop-filter: blur(18px) saturate(150%);
                     pointer-events: none;
                     transform: translateZ(0);
                     backface-visibility: hidden;
@@ -839,9 +839,9 @@
 
                 #loginModal.keyboard-visible::before,
                 #loginModal.keyboard-settling::before {
-                    background: rgba(0, 0, 0, 0.74);
-                    backdrop-filter: blur(14px) saturate(145%);
-                    -webkit-backdrop-filter: blur(14px) saturate(145%);
+                    background: rgba(0, 0, 0, 0.52);
+                    backdrop-filter: blur(18px) saturate(150%);
+                    -webkit-backdrop-filter: blur(18px) saturate(150%);
                 }
 
                 .login-overlay .glass-input,
@@ -869,15 +869,15 @@
                     width: min(360px, calc(100vw - 32px)) !important;
                     max-width: 100% !important;
                     box-sizing: border-box !important;
-                    background: rgba(0, 0, 0, 0.82) !important;
-                    border: 1px solid rgba(255, 255, 255, 0.12) !important;
-                    border-top-color: rgba(255, 255, 255, 0.22) !important;
-                    backdrop-filter: blur(28px) saturate(168%) !important;
-                    -webkit-backdrop-filter: blur(28px) saturate(168%) !important;
+                    background: rgba(0, 0, 0, 0.46) !important;
+                    border: 1px solid rgba(255, 255, 255, 0.14) !important;
+                    border-top-color: rgba(255, 255, 255, 0.24) !important;
+                    backdrop-filter: blur(34px) saturate(182%) !important;
+                    -webkit-backdrop-filter: blur(34px) saturate(182%) !important;
                     box-shadow:
-                        0 26px 60px rgba(0, 0, 0, 0.42),
-                        inset 0 1px 0 rgba(255, 255, 255, 0.14),
-                        inset 0 -1px 0 rgba(255, 255, 255, 0.04) !important;
+                        0 26px 60px rgba(0, 0, 0, 0.46),
+                        inset 0 1px 0 rgba(255, 255, 255, 0.16),
+                        inset 0 -1px 0 rgba(255, 255, 255, 0.05) !important;
                     max-height: none !important;
                     overflow: visible !important;
                     flex-shrink: 0 !important;
@@ -899,7 +899,7 @@
                     position: absolute;
                     inset: 0;
                     border-radius: inherit;
-                    background: rgba(0, 0, 0, 0.12);
+                    background: rgba(255, 255, 255, 0.035);
                     pointer-events: none;
                     opacity: 1;
                     z-index: 0;
@@ -1234,6 +1234,7 @@
                 viewportRafId: null,
                 focusRevealTimer: null,
                 settleTimer: null,
+                scrollRestoreRafId: null,
                 lastKeyboardInset: 0,
                 isKeyboardClosing: false,
                 isKeyboardSettling: false,
@@ -1280,8 +1281,16 @@
                 }
             }
 
+            function clearLoginModalScrollRestore() {
+                if (loginModalViewportState.scrollRestoreRafId) {
+                    cancelAnimationFrame(loginModalViewportState.scrollRestoreRafId);
+                    loginModalViewportState.scrollRestoreRafId = null;
+                }
+            }
+
             function cancelLoginModalKeyboardSettling(overlay = null) {
                 clearLoginModalSettleTimer();
+                clearLoginModalScrollRestore();
                 loginModalViewportState.isKeyboardClosing = false;
                 loginModalViewportState.isKeyboardSettling = false;
                 (overlay || getLoginModalElements().overlay)?.classList.remove('keyboard-settling');
@@ -1295,9 +1304,45 @@
             }
 
             function finalizeLoginModalKeyboardClose() {
+                clearLoginModalScrollRestore();
                 loginModalViewportState.isKeyboardClosing = false;
                 loginModalViewportState.isKeyboardSettling = false;
                 loginModalViewportState.lastKeyboardInset = 0;
+            }
+
+            function animateLoginModalScrollRestore(overlay, targetTop = 0, duration = 220) {
+                if (!overlay) return;
+
+                clearLoginModalScrollRestore();
+
+                const startTop = overlay.scrollTop || 0;
+                if (startTop <= 1) {
+                    overlay.scrollTop = Math.max(0, targetTop);
+                    return;
+                }
+
+                const startTime = performance.now();
+                const delta = Math.max(0, targetTop) - startTop;
+
+                const step = (now) => {
+                    if (!overlay.isConnected || getActiveLoginModalInput()) {
+                        clearLoginModalScrollRestore();
+                        return;
+                    }
+
+                    const progress = Math.min(1, (now - startTime) / duration);
+                    const eased = 1 - Math.pow(1 - progress, 3);
+                    overlay.scrollTop = Math.max(0, startTop + (delta * eased));
+
+                    if (progress < 1) {
+                        loginModalViewportState.scrollRestoreRafId = requestAnimationFrame(step);
+                    } else {
+                        overlay.scrollTop = Math.max(0, targetTop);
+                        loginModalViewportState.scrollRestoreRafId = null;
+                    }
+                };
+
+                loginModalViewportState.scrollRestoreRafId = requestAnimationFrame(step);
             }
 
             function resolveLoginModalBlurState(overlay, delay = 0) {
@@ -1480,6 +1525,7 @@
                 }
                 clearLoginModalSettleTimer();
                 clearLoginModalFocusRevealTimer();
+                clearLoginModalScrollRestore();
             }
 
             function settleLoginModalAfterKeyboard() {
@@ -1489,6 +1535,7 @@
                 cancelLoginModalKeyboardSettling(overlay);
                 loginModalViewportState.isKeyboardClosing = true;
                 requestLoginModalViewportSync();
+                animateLoginModalScrollRestore(overlay, 0, 240);
                 requestAnimationFrame(() => {
                     if (!getActiveLoginModalInput()) {
                         requestLoginModalViewportSync();
@@ -1557,7 +1604,9 @@
 
                 const handleViewportChange = () => {
                     const metrics = getLoginModalViewportMetrics();
-                    requestLoginModalViewportSync();
+                    if (!loginModalViewportState.isKeyboardClosing) {
+                        requestLoginModalViewportSync();
+                    }
                     maybeSettleLoginModalAfterKeyboard(metrics);
                 };
                 const handleTransferIntent = (event) => {
