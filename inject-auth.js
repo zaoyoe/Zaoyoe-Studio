@@ -789,7 +789,7 @@
                Only disable transforms when input is focused (ios-focus-lock). */
             @media (max-width: 768px) {
                 #loginModal {
-                    --login-modal-base-shift-y: -34px;
+                    --login-modal-base-shift-y: -52px;
                     --login-modal-shift-y: 0px;
                     padding-top: calc(env(safe-area-inset-top, 0px) + 12px) !important;
                     padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px) !important;
@@ -1201,11 +1201,14 @@
                 baseViewportHeight: 0,
                 baseVisualViewportHeight: 0,
                 baseCardHeight: 0,
+                baseShiftY: -52,
                 docked: false,
                 lastBottomInset: 0,
                 initialDockTimer: null,
                 insetDropTimer: null,
                 blurReleaseTimer: null,
+                deferredFocusSyncTimer: null,
+                focusVisualLocked: false,
                 pendingInset: 0
             };
 
@@ -1265,6 +1268,101 @@
                 const probe = getLoginModalStableViewportProbe();
                 if (!probe) return 0;
                 return Math.max(0, Math.round(probe.getBoundingClientRect().height || probe.offsetHeight || 0));
+            }
+
+            function computeLoginModalBaseShiftY() {
+                const fallbackShift = -52;
+                if (!isIOSMobileWebKit() || !window.visualViewport) {
+                    return fallbackShift;
+                }
+
+                const vv = window.visualViewport;
+                const visualTop = Math.max(0, vv.offsetTop || 0);
+                const visualHeight = Math.max(0, vv.height || 0);
+                const visualBottom = visualTop + visualHeight;
+                const layoutHeight = Math.max(
+                    loginModalKeyboardState.baseViewportHeight || 0,
+                    window.innerHeight || 0,
+                    document.documentElement.clientHeight || 0,
+                    visualBottom
+                );
+
+                if (!layoutHeight || !visualHeight) {
+                    return fallbackShift;
+                }
+
+                const visualCenter = visualTop + (visualHeight * 0.5);
+                const layoutCenter = layoutHeight * 0.5;
+                const centerDelta = visualCenter - layoutCenter;
+                const desiredShift = Math.round(centerDelta - 12);
+                return Math.max(-96, Math.min(0, desiredShift));
+            }
+
+            function syncLoginModalBaseShift(force = false) {
+                const { overlay } = getLoginModalElements();
+                if (!overlay) return;
+                if (!force && overlay.classList.contains('keyboard-docked')) return;
+
+                const baseShiftY = computeLoginModalBaseShiftY();
+                loginModalKeyboardState.baseShiftY = baseShiftY;
+                overlay.style.setProperty('--login-modal-base-shift-y', `${baseShiftY}px`);
+            }
+
+            function applyLoginModalStableVisualStyles() {
+                const { card } = getLoginModalElements();
+                if (!card) return;
+
+                card.style.setProperty('will-change', 'transform', 'important');
+                card.style.setProperty('backface-visibility', 'hidden', 'important');
+                card.style.setProperty('-webkit-backface-visibility', 'hidden', 'important');
+                card.style.setProperty('transform-style', 'preserve-3d', 'important');
+                card.style.setProperty('contain', 'layout paint style', 'important');
+                card.style.setProperty('isolation', 'isolate', 'important');
+                card.style.setProperty('-webkit-mask-image', '-webkit-radial-gradient(white, black)', 'important');
+                card.style.setProperty('backdrop-filter', 'none', 'important');
+                card.style.setProperty('-webkit-backdrop-filter', 'none', 'important');
+                card.style.setProperty(
+                    'background',
+                    'linear-gradient(180deg, rgba(10, 10, 10, 0.90) 0%, rgba(10, 10, 10, 0.84) 100%)',
+                    'important'
+                );
+                card.style.setProperty('border', '1px solid rgba(255, 255, 255, 0.12)', 'important');
+                card.style.setProperty('border-top', '1px solid rgba(255, 255, 255, 0.20)', 'important');
+                card.style.setProperty(
+                    'box-shadow',
+                    '0 24px 56px rgba(0, 0, 0, 0.52), 0 0 0 1px rgba(255, 255, 255, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.14)',
+                    'important'
+                );
+            }
+
+            function restoreLoginModalVisualStyles() {
+                const { card } = getLoginModalElements();
+                if (!card) return;
+
+                card.style.removeProperty('will-change');
+                card.style.removeProperty('backface-visibility');
+                card.style.removeProperty('-webkit-backface-visibility');
+                card.style.removeProperty('transform-style');
+                card.style.removeProperty('contain');
+                card.style.removeProperty('isolation');
+                card.style.removeProperty('-webkit-mask-image');
+                card.style.removeProperty('backdrop-filter');
+                card.style.removeProperty('-webkit-backdrop-filter');
+                card.style.removeProperty('background');
+                card.style.removeProperty('border');
+                card.style.removeProperty('border-top');
+                card.style.removeProperty('box-shadow');
+            }
+
+            function enableLoginModalKeyboardVisualLock() {
+                if (!isIOSMobileWebKit()) return;
+                loginModalKeyboardState.focusVisualLocked = true;
+                applyLoginModalStableVisualStyles();
+            }
+
+            function disableLoginModalKeyboardVisualLock() {
+                loginModalKeyboardState.focusVisualLocked = false;
+                restoreLoginModalVisualStyles();
             }
 
             function freezeLoginModalOverlay() {
@@ -1394,6 +1492,10 @@
                 if (loginModalKeyboardState.blurReleaseTimer) {
                     clearTimeout(loginModalKeyboardState.blurReleaseTimer);
                     loginModalKeyboardState.blurReleaseTimer = null;
+                }
+                if (loginModalKeyboardState.deferredFocusSyncTimer) {
+                    clearTimeout(loginModalKeyboardState.deferredFocusSyncTimer);
+                    loginModalKeyboardState.deferredFocusSyncTimer = null;
                 }
                 loginModalKeyboardState.pendingInset = 0;
             }
@@ -1544,6 +1646,7 @@
                 card.style.removeProperty('max-height');
                 loginModalKeyboardState.docked = false;
                 loginModalKeyboardState.lastBottomInset = 0;
+                syncLoginModalBaseShift(true);
             }
 
             function scheduleLoginModalKeyboardRelease() {
@@ -1557,6 +1660,7 @@
                     if (getActiveLoginModalInput()) return;
                     overlay?.classList.remove('ios-focus-lock');
                     releaseLoginModalKeyboardDock();
+                    disableLoginModalKeyboardVisualLock();
                 }, LOGIN_MODAL_KEYBOARD_SETTLE_MS + 140);
             }
 
@@ -1570,6 +1674,7 @@
                 loginModalKeyboardState.baseViewportHeight = 0;
                 loginModalKeyboardState.baseVisualViewportHeight = 0;
                 loginModalKeyboardState.baseCardHeight = 0;
+                loginModalKeyboardState.baseShiftY = -52;
             }
 
             function syncLoginModalKeyboardDock() {
@@ -1599,6 +1704,7 @@
                     if (loginModalKeyboardState.docked) {
                         releaseLoginModalKeyboardDock();
                     }
+                    syncLoginModalBaseShift(true);
                     return;
                 }
 
@@ -1688,16 +1794,17 @@
                 input.addEventListener('touchstart', (event) => {
                     const { overlay } = getLoginModalElements();
                     if (!isIOSMobileWebKit() || !overlay?.classList.contains('active')) return;
-                    overlay.classList.add('ios-focus-lock');
                     if (document.activeElement === input) {
+                        overlay.classList.add('ios-focus-lock');
+                        enableLoginModalKeyboardVisualLock();
                         lockLoginModalKeyboardPage();
                         if (event.cancelable) event.preventDefault();
                         focusLoginInputWithoutScroll(input);
+                        requestAnimationFrame(() => {
+                            syncLoginModalKeyboardDock();
+                            scrollLoginModalActiveInputIntoView();
+                        });
                     }
-                    requestAnimationFrame(() => {
-                        syncLoginModalKeyboardDock();
-                        scrollLoginModalActiveInputIntoView();
-                    });
                 }, { passive: false });
 
                 input.addEventListener('pointerdown', retapGuardHandler);
@@ -1707,13 +1814,26 @@
                 input.addEventListener('focus', () => {
                     const { overlay } = getLoginModalElements();
                     overlay?.classList.add('ios-focus-lock');
+                    enableLoginModalKeyboardVisualLock();
                     if (loginModalKeyboardState.blurReleaseTimer) {
                         clearTimeout(loginModalKeyboardState.blurReleaseTimer);
                         loginModalKeyboardState.blurReleaseTimer = null;
                     }
+                    if (loginModalKeyboardState.deferredFocusSyncTimer) {
+                        clearTimeout(loginModalKeyboardState.deferredFocusSyncTimer);
+                        loginModalKeyboardState.deferredFocusSyncTimer = null;
+                    }
+                    captureLoginModalKeyboardBase();
+                    syncLoginModalBaseShift(true);
                     lockLoginModalKeyboardPage();
                     syncLoginModalKeyboardDock();
                     requestAnimationFrame(() => scrollLoginModalActiveInputIntoView());
+                    loginModalKeyboardState.deferredFocusSyncTimer = window.setTimeout(() => {
+                        loginModalKeyboardState.deferredFocusSyncTimer = null;
+                        if (document.activeElement !== input) return;
+                        syncLoginModalKeyboardDock();
+                        requestAnimationFrame(() => scrollLoginModalActiveInputIntoView());
+                    }, 160);
                 });
 
                 input.addEventListener('blur', () => {
@@ -1794,6 +1914,7 @@
 
                 detachLoginModalKeyboardDock();
                 captureLoginModalKeyboardBase();
+                syncLoginModalBaseShift(true);
                 syncLoginModalKeyboardDock();
                 inputs.forEach((input) => bindLoginModalInputFocusStabilizer(input));
 
@@ -1806,6 +1927,7 @@
                 };
 
                 vv.addEventListener('resize', handleViewportChange, { passive: true });
+                vv.addEventListener('scroll', handleViewportChange, { passive: true });
                 inputs.forEach((input) => {
                     input.addEventListener('focus', handleViewportChange);
                     input.addEventListener('blur', handleViewportChange);
@@ -1813,6 +1935,7 @@
 
                 loginModalKeyboardState.viewportCleanup = () => {
                     vv.removeEventListener('resize', handleViewportChange);
+                    vv.removeEventListener('scroll', handleViewportChange);
                     inputs.forEach((input) => {
                         input.removeEventListener('focus', handleViewportChange);
                         input.removeEventListener('blur', handleViewportChange);
@@ -1842,6 +1965,7 @@
                 detachLoginModalKeyboardDock();
                 resetLoginModalKeyboardDockState();
                 modal.classList.remove('keyboard-docked', 'ios-focus-lock');
+                modal.style.setProperty('--login-modal-base-shift-y', '-52px');
                 modal.style.setProperty('--login-modal-shift-y', '0px');
                 if (card) {
                     card.scrollTop = 0;
@@ -1856,6 +1980,7 @@
                     freezeLoginModalOverlay();
                     attachLoginModalRootScrollGuard();
                     stabilizeLoginModalRootScroll();
+                    syncLoginModalBaseShift(true);
                 }
                 void modal.offsetHeight;
                 modal.classList.add('active');
@@ -1886,12 +2011,14 @@
                 detachLoginModalKeyboardDock();
                 resetLoginModalKeyboardDockState();
                 modal.classList.remove('active', 'ios-focus-lock', 'keyboard-docked');
+                modal.style.removeProperty('--login-modal-base-shift-y');
                 modal.style.setProperty('--login-modal-shift-y', '0px');
                 modal.style.display = 'none';
                 modal.style.visibility = 'hidden';
                 modal.style.opacity = '0';
                 detachLoginModalRootScrollGuard();
                 restoreLoginModalOverlay();
+                disableLoginModalKeyboardVisualLock();
                 if (window.iOSScrollLock) window.iOSScrollLock.unlock();
                 loginModalKeyboardState.ownsFullScrollLock = false;
                 loginModalKeyboardState.baseScrollY = 0;
