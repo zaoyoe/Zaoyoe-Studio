@@ -542,6 +542,8 @@
                 const { overlay, card } = getGuestbookModalElements();
                 if (!overlay || !card) return;
 
+                overlay.classList.add('keyboard-docked');
+
                 const metrics = getGuestbookModalViewportMetrics();
                 if (!guestbookModalKeyboardState.baseCardHeight) {
                     const liveHeight = Math.round(card.offsetHeight || card.getBoundingClientRect().height || 400);
@@ -557,16 +559,21 @@
                 const minTop = 16;
                 const keyboardClearance = 48;
                 const maxAvailableHeight = Math.max(300, Math.round(keyboardTop - minTop - keyboardClearance));
-                const dockHeight = Math.min(baseCardHeight, maxAvailableHeight);
-                const centeredTop = (baseViewportHeight - dockHeight) / 2;
-                const desiredTop = Math.max(minTop, keyboardTop - keyboardClearance - dockHeight);
+                const liveDockedHeight = Math.round(card.getBoundingClientRect().height || baseCardHeight);
+                const preferredCardHeight = Math.max(300, liveDockedHeight || baseCardHeight);
+                const finalCardHeight = Math.min(preferredCardHeight, maxAvailableHeight);
+                const centeredTop = (baseViewportHeight - finalCardHeight) / 2;
+                const desiredTop = Math.max(minTop, keyboardTop - keyboardClearance - finalCardHeight);
                 const shiftY = Math.round(desiredTop - centeredTop);
 
-                overlay.classList.add('keyboard-docked');
                 overlay.style.setProperty('--guestbook-modal-shift-y', `${shiftY}px`);
                 card.style.minHeight = '0px';
-                card.style.height = `${dockHeight}px`;
-                card.style.maxHeight = `${dockHeight}px`;
+                card.style.height = 'auto';
+                if (preferredCardHeight > maxAvailableHeight + 2) {
+                    card.style.maxHeight = `${maxAvailableHeight}px`;
+                } else {
+                    card.style.removeProperty('max-height');
+                }
                 guestbookModalKeyboardState.docked = bottomInset > 0;
                 guestbookModalKeyboardState.lastBottomInset = Math.max(0, bottomInset);
             }
