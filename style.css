@@ -6865,6 +6865,13 @@ body {
         transition-delay: 0s !important;
     }
 
+    /* Homepage guestbook modal should align with the shop card gutter width */
+    #guestbookModal .modal-content {
+        width: calc(100% - 40px) !important;
+        max-width: calc(100% - 40px) !important;
+        box-sizing: border-box !important;
+    }
+
     /*
       ⚠️ DO NOT apply translateZ(0) to inputs.
       Even translateZ(0) creates a compositing layer on iOS that

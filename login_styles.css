@@ -557,6 +557,14 @@
     }
 }
 
+@media (max-width: 768px) {
+    .login-overlay .login-card {
+        width: 100% !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+    }
+}
+
 /* Override browser autofill green border - Force purple theme */
 .glass-input:-webkit-autofill,
 .glass-input:-webkit-autofill:hover,
