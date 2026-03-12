@@ -802,12 +802,12 @@
                     --login-modal-safe-top: calc(env(safe-area-inset-top, 0px) + 12px);
                     --login-modal-safe-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
                     padding: 0 !important;
-                    /* Use 100dvh (dynamic viewport) so the overlay fills the visible area
-                       even after the address bar collapses. 'auto' caused .login-modal-scroll
-                       (height:100%) to collapse to 0, breaking cardTopOffset calculation. */
-                    height: 100dvh !important;
-                    min-height: 100dvh !important;
-                    max-height: 100dvh !important;
+                    /* height:auto is correct here: the overlay is position:fixed with
+                       top:0;bottom:0 so inset:0 already gives it full viewport height.
+                       100dvh would resize dynamically as keyboard opens/closes and cause
+                       layout thrashing bounces. */
+                    height: auto !important;
+                    min-height: 0 !important;
                     overflow: hidden !important;
                     overscroll-behavior: none !important;
                     align-items: stretch !important;
@@ -825,12 +825,12 @@
                 }
 
                 #loginModal .login-modal-scroll {
+                    /* Use absolute+inset:0 so height is always = overlay height,
+                       regardless of display:block / flex / align-items on the parent.
+                       This fixes clientHeight returning 0 on iOS when parent is height:auto. */
+                    position: absolute !important;
+                    inset: 0 !important;
                     width: 100% !important;
-                    /* Use 100dvh instead of 100% to be independent of the parent's
-                       computed height. On iOS Safari the parent was 'auto' so '100%' = 0. */
-                    height: 100dvh !important;
-                    min-height: 100dvh !important;
-                    max-height: 100dvh !important;
                     padding-top: var(--login-modal-card-top-offset, 24px) !important;
                     padding-right: 16px !important;
                     padding-bottom: calc(var(--login-modal-safe-bottom) + var(--login-modal-keyboard-inset) + 12px) !important;
@@ -842,10 +842,12 @@
                     scroll-padding-top: calc(var(--login-modal-card-top-offset, 24px) + 12px) !important;
                     scroll-padding-bottom: calc(var(--login-modal-keyboard-inset) + var(--login-modal-safe-bottom) + 24px) !important;
                     box-sizing: border-box !important;
-                    position: relative !important;
                     z-index: 1 !important;
                     overflow-anchor: none !important;
-                    transition: padding-bottom 220ms cubic-bezier(0.16, 1, 0.3, 1) !important;
+                    /* Animate both paddings so keyboard dismiss and view-switch settle smoothly */
+                    transition:
+                        padding-top 260ms cubic-bezier(0.16, 1, 0.3, 1),
+                        padding-bottom 220ms cubic-bezier(0.16, 1, 0.3, 1) !important;
                 }
 
                 #loginModal::before {
@@ -1875,6 +1877,8 @@
 
                 // 60ms gives iOS time to complete layout after view switch;
                 // rAF then waits for a paint frame so scroller.clientHeight is accurate.
+                // No force flag: if an input is still focused (keyboard visible), skip
+                // the recalculation to avoid a visible padding-top jump at switch time.
                 setTimeout(() => {
                     inputs.forEach(input => {
                         input.value = '';
@@ -1882,7 +1886,7 @@
                     });
                     requestAnimationFrame(() => {
                         requestAnimationFrame(() => {
-                            recalculateLoginModalCardTopOffset(true);
+                            recalculateLoginModalCardTopOffset(); // no force — respects active-input guard
                             requestLoginModalViewportSync();
                         });
                     });
