@@ -6888,11 +6888,8 @@ body {
         margin: auto !important;
         position: relative !important;
         top: var(--guestbook-modal-shift-y, 0px) !important;
-        transition:
-            top 180ms cubic-bezier(0.22, 1, 0.36, 1),
-            height 180ms cubic-bezier(0.22, 1, 0.36, 1),
-            max-height 180ms cubic-bezier(0.22, 1, 0.36, 1) !important;
-        will-change: top, height !important;
+        transition: top 180ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+        will-change: top !important;
         overscroll-behavior: contain;
     }
 
@@ -6958,16 +6955,6 @@ body {
         box-sizing: border-box !important;
         justify-content: center !important;
         padding: 10px 16px !important;
-    }
-
-    #guestbookModal.keyboard-docked .guestbook-content,
-    #guestbookModal.keyboard-docked .guestbook-form {
-        gap: 10px !important;
-    }
-
-    #guestbookModal.keyboard-docked .guestbook-content textarea,
-    #guestbookModal.keyboard-docked .guestbook-form textarea {
-        min-height: 112px !important;
     }
 
     /*
