@@ -315,62 +315,51 @@
 
     <!-- Guestbook Modal -->
     <div class="modal-overlay" id="guestbookModal">
-        <div class="modal-content guestbook-content premium-modal" style="position: relative; max-width: 520px;"
+        <div class="modal-content guestbook-content premium-modal guestbook-composer-sheet"
             onclick="event.stopPropagation()">
-            <!-- Mac Window Controls -->
-            <div class="mac-controls">
-                <div class="mac-dot red" onclick="window.closeGuestbookModal?.()">
+            <div class="guestbook-composer-handle" aria-hidden="true"></div>
+            <div class="guestbook-composer-header">
+                <div class="guestbook-composer-copy">
+                    <div class="guestbook-composer-kicker">GUESTBOOK</div>
+                    <div class="guestbook-composer-title" data-i18n="guestbook.title">留言板</div>
+                </div>
+                <button type="button" class="guestbook-composer-close" onclick="window.closeGuestbookModal?.()"
+                    aria-label="关闭" data-i18n="common.close" data-i18n-attr="aria-label">
                     <i class="fas fa-times"></i>
-                </div>
-                <div class="mac-dot yellow"></div>
-                <div class="mac-dot green"></div>
-            </div>
-            <div class="modal-title" data-i18n="guestbook.title">留言板</div>
-
-            <form class="guestbook-form" id="guestbookForm">
-                <div class="input-group relative-container">
-                    <textarea id="guestMessage" placeholder="畅所欲言..." data-i18n-placeholder="guestbook.placeholder"
-                        style="width: 100%; min-height: 100px; resize: vertical; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 14px; color: var(--text-primary, #fff); font-size: 14px; font-family: inherit;"></textarea>
-
-                    <!-- Integrated Upload Icon -->
-                    <div style="position: absolute; bottom: 12px; right: 12px;">
-                        <input type="file" id="imageUpload" accept="image/*" style="display: none;">
-                        <button type="button"
-                            style="background: none; border: none; color: rgba(255,255,255,0.4); cursor: pointer; font-size: 16px; padding: 4px;"
-                            onclick="document.getElementById('imageUpload').click()" title="上传图片">
-                            <i class="fas fa-camera"></i>
-                        </button>
-                    </div>
-                </div>
-
-                <div id="imagePreview" class="image-preview-container"
-                    style="display: none; margin: 8px 0; position: relative;">
-                    <img id="previewImg" src="" alt="Preview"
-                        style="max-width: 100%; max-height: 200px; border-radius: 8px;">
-                    <button type="button" id="removeImageBtn"
-                        style="position: absolute; top: 4px; right: 4px; background: rgba(0,0,0,0.6); border: none; color: white; border-radius: 50%; width: 24px; height: 24px; cursor: pointer; display: flex; align-items: center; justify-content: center;">
-                        <i class="fas fa-times" style="font-size: 12px;"></i>
-                    </button>
-                </div>
-
-                <button type="submit" class="guestbook-submit-btn"
-                    style="width: 100%; padding: 14px; background: linear-gradient(135deg, #9b5de5 0%, #f15bb5 100%); border: none; border-radius: 14px; color: white; font-size: 15px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; transition: all 0.3s cubic-bezier(0.4,0,0.2,1); position: relative; overflow: hidden; letter-spacing: 0.5px; box-shadow: 0 6px 20px rgba(155,93,229,0.3);"
-                    onmouseenter="this.style.transform='translateY(-2px)';this.style.boxShadow='0 10px 30px rgba(155,93,229,0.5)';"
-                    onmouseleave="this.style.transform='translateY(0)';this.style.boxShadow='0 6px 20px rgba(155,93,229,0.3)';">
-                    <i class="fas fa-paper-plane"></i>
-                    <span data-i18n="guestbook.submit">留言</span>
                 </button>
-            </form>
-
-            <!-- View More Button -->
-            <div id="guestbookViewMoreWrap" style="text-align: center; margin-top: 16px;">
-                <a href="guestbook.html"
-                    style="display: inline-flex; align-items: center; gap: 8px; padding: 12px 20px; color: #f15bb5; text-decoration: none; font-size: 14px; font-weight: 600; cursor: pointer;"
-                    onmouseenter="this.style.color='#ff85c0';" onmouseleave="this.style.color='#f15bb5';">
+            </div>
+            <div class="guestbook-composer-meta" id="guestbookViewMoreWrap">
+                <a href="guestbook.html" class="guestbook-composer-more">
                     <i class="fas fa-comment-dots"></i>
                     <span data-i18n="guestbook.viewMore">查看更多留言</span>
                 </a>
             </div>
+
+            <form class="guestbook-form guestbook-composer-form" id="guestbookForm">
+                <div class="input-group relative-container guestbook-composer-editor" id="guestbookComposerEditor">
+                    <div class="guestbook-composer-empty-placeholder" aria-hidden="true" data-i18n="guestbook.placeholder">畅所欲言...</div>
+                    <textarea id="guestMessage" placeholder="畅所欲言..." data-i18n-placeholder="guestbook.placeholder"
+                        rows="6"></textarea>
+                </div>
+
+                <div id="imagePreview" class="image-preview-container guestbook-composer-preview" style="display: none;">
+                    <img id="previewImg" src="" alt="Preview">
+                    <button type="button" id="removeImageBtn" class="guestbook-composer-preview-remove" aria-label="移除图片">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <input type="file" id="imageUpload" accept="image/*" style="display: none;">
+
+                <div class="guestbook-composer-actions">
+                    <button type="button" class="guestbook-composer-upload" id="guestbookComposerUploadBtn"
+                        onclick="document.getElementById('imageUpload').click()" title="上传图片" aria-label="上传图片">
+                        <i class="fas fa-image"></i>
+                    </button>
+                    <button type="submit" class="guestbook-submit-btn guestbook-composer-send">
+                        <span data-i18n="guestbook.submit">留言</span>
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 
@@ -415,20 +404,25 @@
                 return /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName) ? active : null;
             }
 
-            function syncGuestbookActionWidth() {
+            function syncGuestbookComposerEmptyState() {
                 const { overlay } = getGuestbookModalElements();
                 if (!overlay) return;
 
-                const submitBtn = overlay.querySelector('.guestbook-submit-btn');
-                const viewMoreLink = overlay.querySelector('#guestbookViewMoreWrap a');
-                if (!submitBtn || !viewMoreLink) return;
+                const input = document.getElementById('guestMessage');
+                const editor = overlay.querySelector('.guestbook-composer-editor');
+                if (!input || !editor) return;
 
-                const measuredWidth = Math.ceil(viewMoreLink.getBoundingClientRect().width || 0);
-                if (measuredWidth > 0) {
-                    overlay.style.setProperty('--guestbook-action-width', `${measuredWidth + 14}px`);
-                } else {
-                    overlay.style.removeProperty('--guestbook-action-width');
-                }
+                editor.classList.toggle('is-empty', !input.value.trim());
+            }
+
+            function syncGuestbookComposerImageState() {
+                const { overlay } = getGuestbookModalElements();
+                if (!overlay) return;
+
+                const uploadBtn = overlay.querySelector('#guestbookComposerUploadBtn');
+                const imagePreview = document.getElementById('imagePreview');
+                const hasImage = !!(imagePreview && imagePreview.style.display !== 'none');
+                uploadBtn?.classList.toggle('has-image', hasImage);
             }
 
             function focusGuestbookInputWithoutScroll(input) {
@@ -494,8 +488,8 @@
 
                 guestbookModalKeyboardState.baseViewportHeight = normalizedBaseHeight;
                 if (card) {
-                    const liveHeight = Math.round(card.offsetHeight || card.getBoundingClientRect().height || 400);
-                    guestbookModalKeyboardState.baseCardHeight = Math.max(320, liveHeight || 400);
+                    const liveHeight = Math.round(card.offsetHeight || card.getBoundingClientRect().height || 420);
+                    guestbookModalKeyboardState.baseCardHeight = Math.max(320, liveHeight || 420);
                 }
             }
 
@@ -546,11 +540,11 @@
 
                 const metrics = getGuestbookModalViewportMetrics();
                 if (!guestbookModalKeyboardState.baseCardHeight) {
-                    const liveHeight = Math.round(card.offsetHeight || card.getBoundingClientRect().height || 400);
-                    guestbookModalKeyboardState.baseCardHeight = Math.max(320, liveHeight || 400);
+                    const liveHeight = Math.round(card.offsetHeight || card.getBoundingClientRect().height || 420);
+                    guestbookModalKeyboardState.baseCardHeight = Math.max(320, liveHeight || 420);
                 }
 
-                const baseCardHeight = Math.max(320, guestbookModalKeyboardState.baseCardHeight || 400);
+                const baseCardHeight = Math.max(320, guestbookModalKeyboardState.baseCardHeight || 420);
                 const baseViewportHeight = Math.max(
                     metrics.baseVisualHeight || 0,
                     guestbookModalKeyboardState.baseViewportHeight || 0
@@ -740,6 +734,13 @@
                 clearGuestbookModalKeyboardTimers();
             }
 
+            const guestbookInput = document.getElementById('guestMessage');
+            guestbookInput?.addEventListener('input', syncGuestbookComposerEmptyState);
+            guestbookInput?.addEventListener('focus', syncGuestbookComposerEmptyState);
+            guestbookInput?.addEventListener('blur', syncGuestbookComposerEmptyState);
+            syncGuestbookComposerEmptyState();
+            syncGuestbookComposerImageState();
+
             window.closeGuestbookModal = function () {
                 const { overlay } = getGuestbookModalElements();
                 if (!overlay) return;
@@ -749,6 +750,8 @@
                 resetGuestbookModalKeyboardState();
                 overlay.classList.remove('active', 'keyboard-docked', 'ios-focus-lock');
                 overlay.style.setProperty('--guestbook-modal-shift-y', '0px');
+                syncGuestbookComposerEmptyState();
+                syncGuestbookComposerImageState();
 
                 if (window.iOSScrollLock) {
                     window.iOSScrollLock.unlock();
@@ -771,6 +774,8 @@
                 resetGuestbookModalKeyboardState();
                 modal.classList.remove('keyboard-docked', 'ios-focus-lock');
                 modal.style.setProperty('--guestbook-modal-shift-y', '0px');
+                syncGuestbookComposerEmptyState();
+                syncGuestbookComposerImageState();
 
                 const content = modal.querySelector('.guestbook-content');
                 const form = modal.querySelector('.guestbook-form');
@@ -812,7 +817,8 @@
 
                 requestAnimationFrame(() => {
                     requestAnimationFrame(() => {
-                        syncGuestbookActionWidth();
+                        syncGuestbookComposerEmptyState();
+                        syncGuestbookComposerImageState();
                         allItems.forEach(({ el, delay }) => {
                             setTimeout(() => {
                                 el.style.transition = 'opacity 0.4s ease-out, transform 0.4s ease-out';

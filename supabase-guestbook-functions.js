@@ -1401,6 +1401,9 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (messageInput) {
                     messageInput.value = '';
                 }
+                if (typeof window.syncGuestbookComposerEmptyState === 'function') {
+                    window.syncGuestbookComposerEmptyState();
+                }
 
                 // 清空图片预览
                 if (typeof window.clearGuestbookImage === 'function') {
@@ -1410,8 +1413,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 // 关闭模态框
                 const modal = document.getElementById('guestbookModal');
                 if (modal) {
-                    modal.classList.remove('active');
-                    document.body.classList.remove('no-scroll');
+                    if (typeof window.closeGuestbookModal === 'function') {
+                        window.closeGuestbookModal();
+                    } else {
+                        modal.classList.remove('active');
+                        document.body.classList.remove('no-scroll');
+                    }
                 }
 
                 // 如果在首页，不跳转，显示成功提示
@@ -1464,6 +1471,9 @@ document.addEventListener('DOMContentLoaded', function () {
                     previewImg.src = currentImageData;
                     imagePreview.style.display = 'block';
                 }
+                if (typeof window.syncGuestbookComposerImageState === 'function') {
+                    window.syncGuestbookComposerImageState();
+                }
             } catch (error) {
                 console.error('图片处理失败:', error);
                 alert('图片处理失败,请重试!');
@@ -1482,6 +1492,9 @@ document.addEventListener('DOMContentLoaded', function () {
         if (imagePreview) imagePreview.style.display = 'none';
         if (previewImg) previewImg.src = '';
         currentImageData = null;
+        if (typeof window.syncGuestbookComposerImageState === 'function') {
+            window.syncGuestbookComposerImageState();
+        }
     }
 
     async function compressImage(file, maxWidth = 800, quality = 0.7) {
@@ -1687,4 +1700,3 @@ window.insertReplyToDOM = insertReplyToDOM;
 window.loadGuestbookMessages.invalidateGuestbookCache = invalidateGuestbookCache;
 
 console.log('✅ Supabase 留言板函数已加载');
-
