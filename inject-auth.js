@@ -1234,7 +1234,9 @@
                 lastKeyboardInset: 0,
                 isKeyboardClosing: false,
                 isKeyboardSettling: false,
+                focusTransferDirection: '',
                 focusTransferUntil: 0,
+                viewportHoldUntil: 0,
                 overlayCloseDisabledUntil: 0
             };
 
@@ -1293,6 +1295,8 @@
 
             function clearLoginModalFocusTransfer(overlay = null) {
                 clearLoginModalFocusTransferTimer();
+                const transferDirection = loginModalViewportState.focusTransferDirection;
+                loginModalViewportState.focusTransferDirection = '';
                 loginModalViewportState.focusTransferUntil = 0;
                 const resolvedOverlay = overlay || getLoginModalElements().overlay;
                 resolvedOverlay?.classList.remove('login-focus-transfer');
@@ -1300,6 +1304,12 @@
                 if (!resolvedOverlay || !resolvedOverlay.classList.contains('active')) return;
 
                 const activeInput = getActiveLoginModalInput();
+                if (activeInput && transferDirection === 'up') {
+                    loginModalViewportState.viewportHoldUntil = Date.now() + 240;
+                    return;
+                }
+
+                loginModalViewportState.viewportHoldUntil = 0;
                 if (activeInput) {
                     requestLoginModalViewportSync();
                     requestAnimationFrame(() => {
@@ -1312,6 +1322,13 @@
                 return loginModalViewportState.focusTransferUntil > Date.now();
             }
 
+            function shouldHoldLoginModalViewportSync() {
+                return (
+                    loginModalViewportState.viewportHoldUntil > Date.now() &&
+                    !!getActiveLoginModalInput()
+                );
+            }
+
             function markLoginModalFocusTransfer(target) {
                 const { overlay } = getLoginModalElements();
                 if (!(target instanceof HTMLElement) || !overlay || !overlay.contains(target)) return;
@@ -1319,6 +1336,14 @@
                 const activeInput = getActiveLoginModalInput();
                 if (!activeInput || activeInput === target) return;
 
+                const activeRect = activeInput.getBoundingClientRect();
+                const targetRect = target.getBoundingClientRect();
+                loginModalViewportState.focusTransferDirection = targetRect.top < activeRect.top - 2
+                    ? 'up'
+                    : (targetRect.top > activeRect.top + 2 ? 'down' : 'same');
+                if (loginModalViewportState.focusTransferDirection !== 'up') {
+                    loginModalViewportState.viewportHoldUntil = 0;
+                }
                 loginModalViewportState.focusTransferUntil = Date.now() + 260;
                 overlay.classList.add('login-focus-transfer');
                 clearLoginModalFocusTransferTimer();
@@ -1333,6 +1358,7 @@
                 loginModalViewportState.isKeyboardClosing = false;
                 loginModalViewportState.isKeyboardSettling = false;
                 loginModalViewportState.lastKeyboardInset = 0;
+                loginModalViewportState.viewportHoldUntil = 0;
             }
 
             function resolveLoginModalBlurState(overlay, delay = 0) {
@@ -1468,9 +1494,11 @@
             }
 
             function requestLoginModalViewportSync() {
+                if (shouldHoldLoginModalViewportSync()) return;
                 if (loginModalViewportState.viewportRafId) return;
                 loginModalViewportState.viewportRafId = requestAnimationFrame(() => {
                     loginModalViewportState.viewportRafId = null;
+                    if (shouldHoldLoginModalViewportSync()) return;
                     syncLoginModalViewport();
                 });
             }
@@ -1540,7 +1568,9 @@
                 loginModalViewportState.lastKeyboardInset = 0;
                 loginModalViewportState.isKeyboardClosing = false;
                 loginModalViewportState.isKeyboardSettling = false;
+                loginModalViewportState.focusTransferDirection = '';
                 loginModalViewportState.focusTransferUntil = 0;
+                loginModalViewportState.viewportHoldUntil = 0;
                 loginModalViewportState.overlayCloseDisabledUntil = 0;
 
                 const { overlay, card } = getLoginModalElements();
@@ -1595,6 +1625,7 @@
 
                 const handleViewportChange = () => {
                     if (isLoginModalFocusTransferActive()) return;
+                    if (shouldHoldLoginModalViewportSync()) return;
 
                     const metrics = getLoginModalViewportMetrics();
                     if (!loginModalViewportState.isKeyboardClosing) {
