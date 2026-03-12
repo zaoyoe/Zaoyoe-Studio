@@ -789,6 +789,7 @@
                Only disable transforms when input is focused (ios-focus-lock). */
             @media (max-width: 768px) {
                 #loginModal {
+                    --login-modal-base-shift-y: -34px;
                     --login-modal-shift-y: 0px;
                     padding-top: calc(env(safe-area-inset-top, 0px) + 12px) !important;
                     padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px) !important;
@@ -823,7 +824,7 @@
                     overflow-y: auto !important;
                     overscroll-behavior: contain !important;
                     -webkit-overflow-scrolling: touch !important;
-                    transform: translate3d(-50%, calc(-50% + var(--login-modal-shift-y, 0px)), 0) scale(0.95) !important;
+                    transform: translate3d(-50%, calc(-50% + var(--login-modal-base-shift-y, 0px) + var(--login-modal-shift-y, 0px)), 0) scale(0.95) !important;
                     transition:
                         transform 0.3s ease-out,
                         opacity 0.3s ease-out,
@@ -834,8 +835,16 @@
 
                 .login-overlay.active .login-card,
                 #loginModal.active .login-card {
-                    transform: translate3d(-50%, calc(-50% + var(--login-modal-shift-y, 0px)), 0) scale(1) !important;
+                    transform: translate3d(-50%, calc(-50% + var(--login-modal-base-shift-y, 0px) + var(--login-modal-shift-y, 0px)), 0) scale(1) !important;
                     opacity: 1 !important;
+                }
+
+                .login-overlay.active:focus-within .login-card,
+                #loginModal.active:focus-within .login-card {
+                    transform: translate3d(-50%, calc(-50% + var(--login-modal-base-shift-y, 0px) + var(--login-modal-shift-y, 0px)), 0) scale(1) !important;
+                    will-change: auto !important;
+                    animation: none !important;
+                    transition: none !important;
                 }
 
                 /* ⚡ iOS CARET FIX: only flatten transforms when input is focused */
@@ -845,7 +854,7 @@
                 }
 
                 .login-overlay.ios-focus-lock .login-card {
-                    transform: translate3d(-50%, calc(-50% + var(--login-modal-shift-y, 0px)), 0) scale(1) !important;
+                    transform: translate3d(-50%, calc(-50% + var(--login-modal-base-shift-y, 0px) + var(--login-modal-shift-y, 0px)), 0) scale(1) !important;
                     will-change: auto !important;
                     animation: none !important;
                     transition: none !important;
@@ -861,6 +870,7 @@
                 }
 
                 #loginModal.keyboard-docked .login-card {
+                    --login-modal-base-shift-y: 0px;
                     box-shadow: 0 20px 48px rgba(0, 0, 0, 0.42) !important;
                 }
 
@@ -1184,10 +1194,12 @@
                 ownsFullScrollLock: false,
                 viewportCleanup: null,
                 viewportRafId: null,
+                rootScrollCleanup: null,
                 stableViewportProbe: null,
                 overlayBaseHeight: 0,
                 overlayCleanup: null,
                 baseViewportHeight: 0,
+                baseVisualViewportHeight: 0,
                 baseCardHeight: 0,
                 docked: false,
                 lastBottomInset: 0,
@@ -1318,6 +1330,58 @@
                 }
             }
 
+            function stabilizeLoginModalRootScroll() {
+                const { overlay } = getLoginModalElements();
+                if (!overlay?.classList.contains('active')) return;
+                const desiredScrollY = Math.max(0, Math.round(loginModalKeyboardState.baseScrollY || 0));
+                const currentScrollY = Math.max(0, Math.round(window.scrollY || window.pageYOffset || 0));
+
+                if (Math.abs(currentScrollY - desiredScrollY) > 1) {
+                    window.scrollTo(0, desiredScrollY);
+                }
+                document.documentElement.scrollTop = desiredScrollY;
+                document.body.scrollTop = desiredScrollY;
+            }
+
+            function attachLoginModalRootScrollGuard() {
+                if (!isIOSMobileWebKit() || loginModalKeyboardState.rootScrollCleanup) return;
+
+                let rootScrollRafId = 0;
+                const scheduleStabilize = () => {
+                    if (rootScrollRafId) return;
+                    rootScrollRafId = requestAnimationFrame(() => {
+                        rootScrollRafId = 0;
+                        stabilizeLoginModalRootScroll();
+                    });
+                };
+
+                window.addEventListener('scroll', scheduleStabilize, { passive: true });
+                window.addEventListener('resize', scheduleStabilize, { passive: true });
+                if (window.visualViewport) {
+                    window.visualViewport.addEventListener('resize', scheduleStabilize, { passive: true });
+                    window.visualViewport.addEventListener('scroll', scheduleStabilize, { passive: true });
+                }
+
+                loginModalKeyboardState.rootScrollCleanup = () => {
+                    window.removeEventListener('scroll', scheduleStabilize);
+                    window.removeEventListener('resize', scheduleStabilize);
+                    if (window.visualViewport) {
+                        window.visualViewport.removeEventListener('resize', scheduleStabilize);
+                        window.visualViewport.removeEventListener('scroll', scheduleStabilize);
+                    }
+                    if (rootScrollRafId) {
+                        cancelAnimationFrame(rootScrollRafId);
+                    }
+                    loginModalKeyboardState.rootScrollCleanup = null;
+                };
+            }
+
+            function detachLoginModalRootScrollGuard() {
+                if (typeof loginModalKeyboardState.rootScrollCleanup === 'function') {
+                    loginModalKeyboardState.rootScrollCleanup();
+                }
+            }
+
             function clearLoginModalKeyboardTimers() {
                 if (loginModalKeyboardState.initialDockTimer) {
                     clearTimeout(loginModalKeyboardState.initialDockTimer);
@@ -1337,18 +1401,26 @@
             function captureLoginModalKeyboardBase() {
                 const vv = window.visualViewport;
                 const { card } = getLoginModalElements();
+                const visualTop = Math.max(0, vv?.offsetTop || 0);
                 const visualHeight = Math.max(0, vv?.height || 0);
+                const visualBottom = visualTop + visualHeight;
                 const fallbackBaseHeight = Math.max(
                     window.innerHeight || 0,
                     document.documentElement.clientHeight || 0,
+                    visualBottom,
                     visualHeight
                 );
                 const stableViewportHeight = getLoginModalStableViewportHeight();
                 const normalizedBaseHeight = (stableViewportHeight > 0 && stableViewportHeight + 24 < fallbackBaseHeight)
                     ? stableViewportHeight
                     : fallbackBaseHeight;
+                const normalizedVisualHeight = Math.max(
+                    visualHeight,
+                    stableViewportHeight > 0 ? Math.min(stableViewportHeight, normalizedBaseHeight) : 0
+                );
 
                 loginModalKeyboardState.baseViewportHeight = normalizedBaseHeight;
+                loginModalKeyboardState.baseVisualViewportHeight = normalizedVisualHeight;
                 if (card) {
                     const cardHeight = Math.round(card.offsetHeight || card.getBoundingClientRect().height || 420);
                     loginModalKeyboardState.baseCardHeight = Math.max(320, cardHeight || 420);
@@ -1357,13 +1429,35 @@
 
             function getLoginModalViewportMetrics() {
                 const vv = window.visualViewport;
+                const visualTop = Math.max(0, vv?.offsetTop || 0);
                 const visualHeight = Math.max(0, vv?.height || 0);
-                const baseVisualHeight = loginModalKeyboardState.baseViewportHeight || visualHeight;
+                const visualBottom = visualTop + visualHeight;
+                const baseViewportHeight = Math.max(
+                    loginModalKeyboardState.baseViewportHeight || 0,
+                    window.innerHeight || 0,
+                    document.documentElement.clientHeight || 0,
+                    visualBottom
+                );
+                const baseVisualHeight = Math.max(
+                    loginModalKeyboardState.baseVisualViewportHeight || 0,
+                    visualHeight
+                );
 
                 return {
+                    visualTop,
                     visualHeight,
+                    visualBottom,
+                    baseViewportHeight,
                     baseVisualHeight,
-                    bottomInset: Math.max(0, Math.round(baseVisualHeight - visualHeight))
+                    bottomInset: Math.max(
+                        0,
+                        Math.round(
+                            Math.max(
+                                baseViewportHeight - visualBottom,
+                                baseVisualHeight - visualHeight
+                            )
+                        )
+                    )
                 };
             }
 
@@ -1411,15 +1505,24 @@
 
                 const baseCardHeight = Math.max(320, loginModalKeyboardState.baseCardHeight || 420);
                 const baseViewportHeight = Math.max(
-                    metrics.baseVisualHeight || 0,
+                    metrics.baseViewportHeight || 0,
                     loginModalKeyboardState.baseViewportHeight || 0
                 );
                 const keyboardTop = Math.max(0, baseViewportHeight - Math.max(0, bottomInset));
-                const maxAvailableHeight = Math.max(280, Math.round(keyboardTop - 52));
-                const dockHeight = Math.max(320, Math.min(baseCardHeight, maxAvailableHeight));
-                const centeredBottom = (baseViewportHeight * 0.5) + (dockHeight * 0.5);
-                const targetBottom = Math.max(40, keyboardTop - 12);
-                const shiftY = Math.min(0, Math.max(-520, Math.round(targetBottom - centeredBottom)));
+                const minTop = Math.max(18, Math.round((metrics.visualTop || 0) + 12));
+                const keyboardClearance = 20;
+                const maxAvailableHeight = Math.max(280, Math.round(keyboardTop - minTop - keyboardClearance));
+                const dockHeight = Math.max(
+                    320,
+                    Math.min(
+                        baseCardHeight,
+                        maxAvailableHeight,
+                        Math.round(baseViewportHeight * 0.82)
+                    )
+                );
+                const centeredTop = (baseViewportHeight - dockHeight) / 2;
+                const desiredTop = Math.max(minTop, keyboardTop - keyboardClearance - dockHeight);
+                const shiftY = Math.min(0, Math.max(-420, Math.round(desiredTop - centeredTop)));
 
                 overlay.classList.add('keyboard-docked');
                 overlay.style.setProperty('--login-modal-shift-y', `${shiftY}px`);
@@ -1465,6 +1568,7 @@
                 }
                 releaseLoginModalKeyboardDock();
                 loginModalKeyboardState.baseViewportHeight = 0;
+                loginModalKeyboardState.baseVisualViewportHeight = 0;
                 loginModalKeyboardState.baseCardHeight = 0;
             }
 
@@ -1486,6 +1590,7 @@
                         clearTimeout(loginModalKeyboardState.blurReleaseTimer);
                         loginModalKeyboardState.blurReleaseTimer = null;
                     }
+                    stabilizeLoginModalRootScroll();
                     lockLoginModalKeyboardPage();
                 } else {
                     if (loginModalKeyboardState.blurReleaseTimer) {
@@ -1749,6 +1854,8 @@
                 modal.style.removeProperty('opacity');
                 if (isIOSMobileWebKit()) {
                     freezeLoginModalOverlay();
+                    attachLoginModalRootScrollGuard();
+                    stabilizeLoginModalRootScroll();
                 }
                 void modal.offsetHeight;
                 modal.classList.add('active');
@@ -1783,6 +1890,7 @@
                 modal.style.display = 'none';
                 modal.style.visibility = 'hidden';
                 modal.style.opacity = '0';
+                detachLoginModalRootScrollGuard();
                 restoreLoginModalOverlay();
                 if (window.iOSScrollLock) window.iOSScrollLock.unlock();
                 loginModalKeyboardState.ownsFullScrollLock = false;
