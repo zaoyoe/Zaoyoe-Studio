@@ -792,11 +792,10 @@
                     --login-modal-keyboard-inset: 0px;
                     --login-modal-safe-top: calc(env(safe-area-inset-top, 0px) + 12px);
                     --login-modal-safe-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
-                    padding:
-                        var(--login-modal-safe-top)
-                        16px
-                        max(var(--login-modal-safe-bottom), calc(var(--login-modal-keyboard-inset) + 12px))
-                        !important;
+                    padding-top: var(--login-modal-safe-top) !important;
+                    padding-right: 16px !important;
+                    padding-bottom: calc(var(--login-modal-safe-bottom) + var(--login-modal-keyboard-inset) + 12px) !important;
+                    padding-left: 16px !important;
                     height: auto !important;
                     min-height: auto !important;
                     overflow-y: auto !important;
@@ -805,13 +804,17 @@
                     align-items: flex-start !important;
                     scroll-padding-top: calc(var(--login-modal-safe-top) + 12px) !important;
                     scroll-padding-bottom: calc(var(--login-modal-keyboard-inset) + var(--login-modal-safe-bottom) + 24px) !important;
-                    background: transparent !important;
-                    backdrop-filter: none !important;
-                    -webkit-backdrop-filter: none !important;
+                    background: rgba(10, 8, 16, 0.14) !important;
+                    backdrop-filter: blur(10px) saturate(132%) !important;
+                    -webkit-backdrop-filter: blur(10px) saturate(132%) !important;
                     isolation: isolate !important;
+                    will-change: opacity, padding-bottom !important;
                     transition:
                         opacity 0.3s ease,
-                        padding 180ms ease !important;
+                        padding-bottom 260ms cubic-bezier(0.22, 1, 0.36, 1),
+                        background-color 180ms ease,
+                        backdrop-filter 180ms ease,
+                        -webkit-backdrop-filter 180ms ease !important;
                 }
 
                 #loginModal::before {
@@ -819,12 +822,16 @@
                     position: fixed;
                     inset: 0;
                     background:
-                        radial-gradient(circle at 18% 16%, rgba(255, 255, 255, 0.08), transparent 30%),
-                        radial-gradient(circle at 82% 0%, rgba(241, 91, 181, 0.12), transparent 36%),
-                        linear-gradient(180deg, rgba(10, 8, 16, 0.38), rgba(10, 8, 16, 0.5));
-                    backdrop-filter: blur(12px) saturate(140%);
-                    -webkit-backdrop-filter: blur(12px) saturate(140%);
+                        radial-gradient(circle at 18% 16%, rgba(255, 255, 255, 0.1), transparent 30%),
+                        radial-gradient(circle at 82% 0%, rgba(241, 91, 181, 0.14), transparent 36%),
+                        linear-gradient(180deg, rgba(10, 8, 16, 0.34), rgba(10, 8, 16, 0.46));
+                    backdrop-filter: blur(14px) saturate(145%);
+                    -webkit-backdrop-filter: blur(14px) saturate(145%);
                     pointer-events: none;
+                    transform: translateZ(0);
+                    backface-visibility: hidden;
+                    -webkit-backface-visibility: hidden;
+                    will-change: opacity, backdrop-filter, -webkit-backdrop-filter;
                     z-index: 0;
                     transition:
                         background-color 180ms ease,
@@ -836,11 +843,11 @@
                 #loginModal.keyboard-visible::before,
                 #loginModal.keyboard-settling::before {
                     background:
-                        radial-gradient(circle at 18% 16%, rgba(255, 255, 255, 0.09), transparent 30%),
+                        radial-gradient(circle at 18% 16%, rgba(255, 255, 255, 0.1), transparent 30%),
                         radial-gradient(circle at 82% 0%, rgba(241, 91, 181, 0.14), transparent 36%),
                         linear-gradient(180deg, rgba(10, 8, 16, 0.34), rgba(10, 8, 16, 0.46));
-                    backdrop-filter: blur(12px) saturate(145%);
-                    -webkit-backdrop-filter: blur(12px) saturate(145%);
+                    backdrop-filter: blur(14px) saturate(145%);
+                    -webkit-backdrop-filter: blur(14px) saturate(145%);
                 }
 
                 .login-overlay .glass-input,
@@ -869,9 +876,11 @@
                     max-width: 100% !important;
                     box-sizing: border-box !important;
                     background:
-                        linear-gradient(180deg, rgba(22, 18, 34, 0.58), rgba(9, 8, 18, 0.72)) !important;
+                        linear-gradient(180deg, rgba(28, 22, 42, 0.42), rgba(10, 8, 20, 0.58)) !important;
                     border: 1px solid rgba(255, 255, 255, 0.12) !important;
                     border-top-color: rgba(255, 255, 255, 0.22) !important;
+                    backdrop-filter: blur(28px) saturate(168%) !important;
+                    -webkit-backdrop-filter: blur(28px) saturate(168%) !important;
                     box-shadow:
                         0 26px 60px rgba(0, 0, 0, 0.42),
                         inset 0 1px 0 rgba(255, 255, 255, 0.14),
@@ -882,7 +891,10 @@
                     transform: scale(0.98) !important;
                     transition:
                     opacity 0.24s ease-out,
-                    transform 0.24s ease-out !important;
+                    transform 0.24s ease-out,
+                    background-color 200ms ease,
+                    backdrop-filter 200ms ease,
+                    -webkit-backdrop-filter 200ms ease !important;
                     will-change: auto !important;
                     isolation: isolate !important;
                     z-index: 1 !important;
@@ -1274,6 +1286,12 @@
                 }
             }
 
+            function cancelLoginModalKeyboardSettling(overlay = null) {
+                clearLoginModalSettleTimer();
+                loginModalViewportState.isKeyboardSettling = false;
+                (overlay || getLoginModalElements().overlay)?.classList.remove('keyboard-settling');
+            }
+
             function getLoginModalViewportMetrics() {
                 const vv = window.visualViewport;
                 const visualHeight = Math.max(
@@ -1398,6 +1416,20 @@
                 }, delay);
             }
 
+            function maybeSettleLoginModalAfterKeyboard(metrics = null) {
+                if (getActiveLoginModalInput() || loginModalViewportState.isKeyboardSettling) {
+                    return false;
+                }
+
+                const viewportMetrics = metrics || getLoginModalViewportMetrics();
+                if (viewportMetrics.keyboardVisible || loginModalViewportState.lastKeyboardInset <= 0) {
+                    return false;
+                }
+
+                settleLoginModalAfterKeyboard();
+                return true;
+            }
+
             function detachLoginModalViewportSync() {
                 if (typeof loginModalViewportState.viewportCleanup === 'function') {
                     loginModalViewportState.viewportCleanup();
@@ -1425,7 +1457,7 @@
                     loginModalViewportState.lastKeyboardInset = 0;
                     overlay.classList.remove('keyboard-settling');
                     requestLoginModalViewportSync();
-                }, 180);
+                }, 90);
             }
 
             function resetLoginModalViewportState() {
@@ -1485,16 +1517,27 @@
                 const vv = window.visualViewport;
                 if (!overlay || !vv) return;
 
-                const handleViewportChange = () => requestLoginModalViewportSync();
+                const handleViewportChange = () => {
+                    const metrics = getLoginModalViewportMetrics();
+                    requestLoginModalViewportSync();
+                    maybeSettleLoginModalAfterKeyboard(metrics);
+                };
                 const handleFocusIn = (event) => {
                     if (!(event.target instanceof HTMLElement)) return;
                     if (!overlay.contains(event.target)) return;
                     if (!/^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName)) return;
 
-                    clearLoginModalSettleTimer();
-                    loginModalViewportState.isKeyboardSettling = false;
-                    overlay.classList.remove('keyboard-settling');
+                    cancelLoginModalKeyboardSettling(overlay);
                     loginModalViewportState.overlayCloseDisabledUntil = Date.now() + 220;
+                    const metrics = applyLoginModalViewportVars();
+
+                    if (metrics?.keyboardVisible) {
+                        requestAnimationFrame(() => {
+                            scrollLoginModalInputIntoView(event.target, metrics);
+                        });
+                        return;
+                    }
+
                     requestLoginModalViewportSync();
                     scheduleLoginModalInputReveal(event.target);
                 };
@@ -1506,10 +1549,21 @@
                     clearLoginModalFocusRevealTimer();
                     loginModalViewportState.overlayCloseDisabledUntil = Date.now() + 120;
                     window.setTimeout(() => {
-                        if (!getActiveLoginModalInput()) {
-                            settleLoginModalAfterKeyboard();
+                        const activeInput = getActiveLoginModalInput();
+                        if (activeInput) {
+                            cancelLoginModalKeyboardSettling(overlay);
+                            const metrics = applyLoginModalViewportVars();
+                            requestAnimationFrame(() => {
+                                scrollLoginModalInputIntoView(activeInput, metrics);
+                            });
+                            return;
                         }
-                    }, 120);
+
+                        const metrics = getLoginModalViewportMetrics();
+                        if (!maybeSettleLoginModalAfterKeyboard(metrics)) {
+                            requestLoginModalViewportSync();
+                        }
+                    }, 90);
                 };
 
                 window.addEventListener('resize', handleViewportChange, { passive: true });
