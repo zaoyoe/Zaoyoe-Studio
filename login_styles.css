@@ -1,55 +1,9 @@
 /* ==================== Login Modal Styles ==================== */
 
-/* Login Overlay - Exact copy from modal-overlay */
+/* Login Overlay Extensions (builds on .modal-overlay) */
 .login-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    /* Use inset 0 for full viewport coverage */
-    width: auto;
-    height: auto;
-    /* Mobile adjust */
-    background: rgba(0, 0, 0, 0.6);
-    /* Darker background for less transparency */
-    backdrop-filter: blur(8px);
-    /* Blur background to focus attention */
-    -webkit-backdrop-filter: blur(8px);
     z-index: 2000;
     /* Higher than modals (1000) but below user dropdown (2100) */
-    display: flex;
-    justify-content: center;
-    align-items: center;
-
-    /* Safe Area Padding to Fix "Too High" Visual Center */
-    padding-top: calc(20px + env(safe-area-inset-top));
-    padding-bottom: calc(20px + env(safe-area-inset-bottom));
-    padding-left: 20px;
-    padding-right: 20px;
-    z-index: 2000;
-    display: flex !important;
-    justify-content: center !important;
-    align-items: center !important;
-    flex-direction: row !important;
-    /* Ensure default axis */
-
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.3s ease;
-    will-change: opacity;
-    /* Optimize animation */
-    transform: translateZ(0);
-    /* Hardware acceleration */
-}
-
-.login-overlay.active {
-    opacity: 1;
-    pointer-events: all !important;
-    /* 确保激活时恢复背景和模糊效果，使用 !important 覆盖内联样式 */
-    backdrop-filter: blur(8px) !important;
-    -webkit-backdrop-filter: blur(8px) !important;
-    background: rgba(0, 0, 0, 0.6) !important;
 }
 
 /* 确保激活状态下所有子元素可交互 */
@@ -112,17 +66,13 @@
     color: white;
     cursor: default;
     /* Mobile Centering Fixes */
-    /* Removed margin: auto to rely on flex align-items: center */
-    max-height: 90vh;
-    max-height: 90dvh;
+    max-height: calc(100vh - 40px);
     overflow-y: auto;
     /* Soft scrollbar for card */
     scrollbar-width: thin;
     scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
 }
 
-/* 确保 login-card 的所有直接子元素可交互 */
-.login-card>* {}
 
 /* 确保 login-card 内的所有按钮和交互元素都有正确的 cursor 和 pointer-events */
 .login-card button,

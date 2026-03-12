@@ -93,7 +93,7 @@
     // Login Modal (always appended to body)
     const loginModalHTML = `
     <!-- Login Modal -->
-    <div class="login-overlay" id="loginModal" style="display: none; opacity: 0; visibility: hidden;">
+    <div class="modal-overlay login-overlay" id="loginModal" style="display: none; opacity: 0; visibility: hidden;">
         <div class="login-modal-scroll">
         <div class="login-card" onclick="event.stopPropagation()">
             <!-- Mac Window Controls -->
@@ -796,74 +796,8 @@
             }
 
             /* Mobile login modal layout:
-               keep the card in normal flow and reveal inputs by scrolling,
-               instead of translating the whole modal against the keyboard. */
+               let it fall back to standard .modal-overlay and .modal-content behavior. */
             @media (max-width: 768px) {
-                #loginModal {
-                    padding: 0 !important;
-                    position: fixed !important;
-                    left: 0 !important;
-                    width: 100% !important;
-                    /* top 和 height 将由 JS 中 visualViewport 动态注入 */
-                    overflow: hidden !important;
-                    overscroll-behavior: none !important;
-                    align-items: stretch !important;
-                    justify-content: stretch !important;
-                    background: rgba(0, 0, 0, 0.12) !important;
-                    backdrop-filter: blur(18px) saturate(152%) !important;
-                    -webkit-backdrop-filter: blur(18px) saturate(152%) !important;
-                    isolation: isolate !important;
-                    will-change: opacity !important;
-                    transition:
-                        top 0.1s ease,
-                        height 0.1s ease,
-                        opacity 0.3s ease,
-                        background-color 180ms ease,
-                        backdrop-filter 180ms ease,
-                        -webkit-backdrop-filter 180ms ease !important;
-                }
-
-                #loginModal .login-modal-scroll {
-                    width: 100% !important;
-                    height: 100% !important;
-                    padding-top: calc(env(safe-area-inset-top, 0px) + 12px) !important;
-                    padding-right: 16px !important;
-                    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 24px) !important;
-                    padding-left: 16px !important;
-                    overflow-y: auto !important;
-                    overscroll-behavior: contain !important;
-                    -webkit-overflow-scrolling: touch !important;
-                    display: flex !important;
-                    flex-direction: column !important;
-                    justify-content: center !important;
-                    align-items: center !important;
-                    box-sizing: border-box !important;
-                    position: relative !important;
-                    z-index: 1 !important;
-                }
-
-                #loginModal::before {
-                    content: '';
-                    position: absolute;
-                    inset: 0;
-                    background: rgba(0, 0, 0, 0.03);
-                    backdrop-filter: none;
-                    -webkit-backdrop-filter: none;
-                    pointer-events: none;
-                    transform: translateZ(0);
-                    backface-visibility: hidden;
-                    -webkit-backface-visibility: hidden;
-                    will-change: opacity;
-                    z-index: 0;
-                    transition:
-                        background-color 180ms ease,
-                        opacity 180ms ease;
-                }
-
-                #loginModal.keyboard-visible::before,
-                #loginModal.keyboard-settling::before {
-                    background: rgba(0, 0, 0, 0.03);
-                }
 
                 .login-overlay .glass-input,
                 .login-card .glass-input,
@@ -879,73 +813,6 @@
                     caret-color: #ffffff !important;
                 }
 
-                .login-overlay .login-card,
-                #loginModal .login-card {
-                    position: relative !important;
-                    top: auto !important;
-                    left: auto !important;
-                    right: auto !important;
-                    bottom: auto !important;
-                    margin: 0 auto !important;
-                    width: min(360px, calc(100vw - 32px)) !important;
-                    max-width: 100% !important;
-                    box-sizing: border-box !important;
-                    background: rgba(0, 0, 0, 0.26) !important;
-                    border: 1px solid rgba(255, 255, 255, 0.16) !important;
-                    border-top-color: rgba(255, 255, 255, 0.28) !important;
-                    backdrop-filter: blur(36px) saturate(178%) !important;
-                    -webkit-backdrop-filter: blur(36px) saturate(178%) !important;
-                    box-shadow:
-                        0 24px 52px rgba(0, 0, 0, 0.36),
-                        inset 0 1px 0 rgba(255, 255, 255, 0.15),
-                        inset 0 -1px 0 rgba(255, 255, 255, 0.04) !important;
-                    max-height: none !important;
-                    overflow: visible !important;
-                    flex-shrink: 0 !important;
-                    transform: scale(0.98) !important;
-                    transition:
-                    opacity 0.24s ease-out,
-                    transform 0.24s ease-out,
-                    background-color 200ms ease,
-                    backdrop-filter 200ms ease,
-                    -webkit-backdrop-filter 200ms ease !important;
-                    will-change: auto !important;
-                    isolation: isolate !important;
-                    z-index: 1 !important;
-                }
-
-                .login-overlay .login-card::before,
-                #loginModal .login-card::before {
-                    content: '';
-                    position: absolute;
-                    inset: 0;
-                    border-radius: inherit;
-                    background: rgba(0, 0, 0, 0.01);
-                    pointer-events: none;
-                    opacity: 1;
-                    z-index: 0;
-                }
-
-                .login-overlay .login-card > .form-view,
-                #loginModal .login-card > .form-view {
-                    position: relative;
-                    z-index: 1;
-                }
-
-                .login-overlay.active .login-card,
-                #loginModal.active .login-card {
-                    transform: scale(1) !important;
-                    opacity: 1 !important;
-                }
-
-                .login-overlay.active:focus-within .login-card,
-                #loginModal.active:focus-within .login-card {
-                    transform: scale(1) !important;
-                    animation: none !important;
-                    transition:
-                        opacity 0.24s ease-out,
-                        transform 0.24s ease-out !important;
-                }
 
             }
             
@@ -1246,17 +1113,8 @@
                 // Auth state will be checked by initializeAuthPageBoot() on DOMContentLoaded
             }
 
-            const LOGIN_MODAL_KEYBOARD_THRESHOLD = 120;
-            const LOGIN_MODAL_INPUT_REVEAL_DELAY_MS = 120;
-            const LOGIN_MODAL_SCROLL_MARGIN = 18;
-            let viewportCleanup = null;
             let overlayCloseDisabledUntil = 0;
 
-            function isIOSMobileWebKit() {
-                const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-                    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-                return isIOS && window.matchMedia('(max-width: 768px)').matches && !!window.visualViewport;
-            }
 
             function getLoginModalElements() {
                 const overlay = document.getElementById('loginModal');
@@ -1274,27 +1132,11 @@
                 return /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName) ? active : null;
             }
 
-            function applySimpleViewportSync() {
-                const { overlay } = getLoginModalElements();
-                const vv = window.visualViewport;
-                if (!overlay || !overlay.classList.contains('active') || !vv) return;
-
-                // Native-First viewport alignment
-                overlay.style.height = `${vv.height}px`;
-                overlay.style.top = `${Math.max(0, vv.offsetTop)}px`;
-            }
-
             function resetLoginModalViewportState() {
                 const { overlay, scroller, card } = getLoginModalElements();
-                if (viewportCleanup) {
-                    viewportCleanup();
-                    viewportCleanup = null;
-                }
                 overlayCloseDisabledUntil = 0;
 
                 if (overlay) {
-                    overlay.style.removeProperty('height');
-                    overlay.style.removeProperty('top');
                     overlay.scrollTop = 0;
                 }
                 if (scroller) scroller.scrollTop = 0;
@@ -1330,34 +1172,11 @@
                 overlay.dataset.loginOverlayDismissBound = '1';
             }
 
-            function attachLoginModalViewportSync() {
-                if (!isIOSMobileWebKit() || viewportCleanup) return;
-
-                const vv = window.visualViewport;
-                if (!vv) return;
-
-                const handleViewportChange = () => {
-                    applySimpleViewportSync();
-                };
-
-                // Request initial sync
-                applySimpleViewportSync();
-
-                vv.addEventListener('resize', handleViewportChange, { passive: true });
-                vv.addEventListener('scroll', handleViewportChange, { passive: true });
-
-                viewportCleanup = () => {
-                    vv.removeEventListener('resize', handleViewportChange);
-                    vv.removeEventListener('scroll', handleViewportChange);
-                };
-            }
-
             function openLoginModal() {
                 const modal = document.getElementById('loginModal');
                 if (!modal) return;
 
                 resetLoginModalViewportState();
-                modal.classList.remove('keyboard-visible', 'ios-focus-lock', 'keyboard-docked');
                 modal.style.display = 'flex';
                 modal.style.removeProperty('visibility');
                 modal.style.removeProperty('opacity');
@@ -1371,11 +1190,6 @@
 
                 overlayCloseDisabledUntil = Date.now() + 260;
                 bindLoginModalOverlayDismiss();
-                attachLoginModalViewportSync();
-
-                requestAnimationFrame(() => {
-                    applySimpleViewportSync();
-                });
 
                 if (typeof window.ensureGoogleInlineButtonReady === 'function') {
                     window.ensureGoogleInlineButtonReady({ renderFallbackButton: true }).catch((err) => {
@@ -1390,7 +1204,7 @@
 
                 getActiveLoginModalInput()?.blur();
                 resetLoginModalViewportState();
-                modal.classList.remove('active', 'keyboard-visible', 'ios-focus-lock', 'keyboard-docked');
+                modal.classList.remove('active');
                 modal.style.display = 'none';
                 modal.style.visibility = 'hidden';
                 modal.style.opacity = '0';
@@ -1431,9 +1245,6 @@
                     inputs.forEach(input => {
                         input.value = '';
                         input.dispatchEvent(new Event('input', { bubbles: true }));
-                    });
-                    requestAnimationFrame(() => {
-                        applySimpleViewportSync();
                     });
                     console.log(`✅ 已切换到 ${viewId} 视图并清空输入框`);
                 }, 10);
