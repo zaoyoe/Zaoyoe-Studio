@@ -6524,6 +6524,324 @@ input[type="submit"],
     transform: scale(1.1) !important;
 }
 
+/* Homepage Guestbook Composer */
+#guestbookModal {
+    --guestbook-modal-shift-y: 0px;
+    background: rgba(7, 9, 12, 0.28) !important;
+    backdrop-filter: blur(14px) saturate(108%) !important;
+    -webkit-backdrop-filter: blur(14px) saturate(108%) !important;
+    padding: 24px 18px 18px !important;
+    box-sizing: border-box !important;
+}
+
+#guestbookModal .guestbook-composer-sheet,
+#guestbookModal.active .guestbook-composer-sheet,
+#guestbookModal.active:focus-within .guestbook-composer-sheet,
+#guestbookModal.ios-focus-lock .guestbook-composer-sheet {
+    width: min(100%, 620px);
+    height: 420px;
+    min-height: 320px;
+    max-height: calc(100vh - 56px);
+    max-height: calc(100svh - 56px);
+    margin: 0 auto !important;
+    padding: 14px 18px calc(18px + env(safe-area-inset-bottom)) !important;
+    box-sizing: border-box !important;
+    position: relative !important;
+    top: var(--guestbook-modal-shift-y, 0px) !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 12px !important;
+    overflow: hidden !important;
+    text-align: left !important;
+    background: rgba(11, 14, 20, 0.94) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border-radius: 32px !important;
+    box-shadow:
+        0 26px 70px rgba(0, 0, 0, 0.28),
+        inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    transform: none !important;
+    opacity: 1 !important;
+    transition: top 180ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+    will-change: top !important;
+    pointer-events: auto !important;
+}
+
+#guestbookModal .guestbook-composer-sheet > * {
+    flex-shrink: 0;
+}
+
+#guestbookModal .guestbook-composer-handle {
+    width: 42px;
+    height: 4px;
+    margin: 0 auto 4px;
+    border-radius: 999px;
+    background: rgba(107, 158, 206, 0.24);
+    transition: background-color 180ms ease, opacity 180ms ease, box-shadow 180ms ease;
+}
+
+#guestbookModal:focus-within .guestbook-composer-handle,
+#guestbookModal.keyboard-docked .guestbook-composer-handle {
+    background: rgba(126, 184, 239, 0.96);
+    box-shadow: 0 0 0 1px rgba(126, 184, 239, 0.08), 0 0 18px rgba(126, 184, 239, 0.2);
+}
+
+#guestbookModal .guestbook-composer-header {
+    display: flex !important;
+    align-items: flex-start !important;
+    justify-content: space-between !important;
+    gap: 16px !important;
+    margin: 0 !important;
+}
+
+#guestbookModal .guestbook-composer-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+#guestbookModal .guestbook-composer-kicker {
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.4);
+}
+
+#guestbookModal .guestbook-composer-title {
+    margin: 0;
+    font-size: clamp(1.04rem, 2.05vw, 1.22rem);
+    font-weight: 520;
+    letter-spacing: -0.02em;
+    color: rgba(241, 245, 249, 0.82);
+}
+
+#guestbookModal .guestbook-composer-close {
+    width: 44px;
+    height: 44px;
+    flex: 0 0 auto;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 0 !important;
+    border: 1px solid rgba(255, 255, 255, 0.09) !important;
+    border-radius: 999px !important;
+    background: rgba(21, 24, 31, 0.74) !important;
+    color: rgba(240, 242, 247, 0.86) !important;
+    cursor: pointer !important;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    -webkit-tap-highlight-color: transparent;
+}
+
+#guestbookModal .guestbook-composer-close i {
+    font-size: 1rem;
+    pointer-events: none;
+}
+
+#guestbookModal .guestbook-composer-meta {
+    min-height: 0;
+    margin: 0;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    color: rgba(200, 206, 216, 0.74);
+}
+
+#guestbookModal .guestbook-composer-meta:empty {
+    display: none;
+}
+
+#guestbookModal .guestbook-composer-more,
+#guestbookModal .guestbook-composer-more:visited {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: rgba(200, 206, 216, 0.82);
+    text-decoration: none !important;
+    transition: color 160ms ease;
+}
+
+#guestbookModal .guestbook-composer-more:hover {
+    color: rgba(241, 245, 249, 0.92);
+}
+
+#guestbookModal .guestbook-composer-form {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 12px !important;
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+}
+
+#guestbookModal .guestbook-composer-editor {
+    flex: 1 1 auto !important;
+    min-height: 140px !important;
+    margin: 0 !important;
+    padding: 18px 18px 14px !important;
+    position: relative !important;
+    display: flex !important;
+    align-items: stretch !important;
+    justify-content: stretch !important;
+    overflow: hidden !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border-radius: 24px !important;
+    background: rgba(255, 255, 255, 0.025) !important;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.04),
+        inset 0 -12px 24px rgba(0, 0, 0, 0.08) !important;
+}
+
+#guestbookModal .guestbook-composer-empty-placeholder {
+    position: absolute;
+    inset: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 24px;
+    text-align: center;
+    color: rgba(200, 206, 216, 0.46);
+    font-size: 17px;
+    line-height: 1.82;
+    pointer-events: none;
+    z-index: 2;
+    opacity: 0;
+    transition: opacity 160ms ease;
+}
+
+#guestbookModal .guestbook-composer-editor.is-empty .guestbook-composer-empty-placeholder {
+    opacity: 1;
+}
+
+#guestbookModal #guestMessage {
+    width: 100% !important;
+    flex: 1 1 auto !important;
+    min-height: 100% !important;
+    max-height: 100% !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    color: rgba(241, 245, 249, 0.96) !important;
+    font-size: 17px !important;
+    line-height: 1.82 !important;
+    resize: none !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    align-self: stretch !important;
+    position: relative;
+    z-index: 1;
+}
+
+#guestbookModal #guestMessage:focus {
+    outline: none !important;
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+#guestbookModal #guestMessage::placeholder,
+#guestbookModal #guestMessage::-webkit-input-placeholder,
+#guestbookModal #guestMessage::-moz-placeholder,
+#guestbookModal #guestMessage:-ms-input-placeholder {
+    color: transparent !important;
+}
+
+#guestbookModal .guestbook-composer-preview {
+    flex: 0 0 auto;
+    margin: 0 !important;
+    border-radius: 18px !important;
+    overflow: hidden !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    background: rgba(255, 255, 255, 0.03) !important;
+}
+
+#guestbookModal .guestbook-composer-preview img {
+    display: block;
+    width: 100%;
+    max-height: 160px;
+    object-fit: contain;
+    background: rgba(0, 0, 0, 0.28);
+}
+
+#guestbookModal .guestbook-composer-preview-remove {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 32px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: none;
+    border-radius: 999px;
+    background: rgba(11, 14, 20, 0.82);
+    color: rgba(241, 245, 249, 0.92);
+    cursor: pointer;
+}
+
+#guestbookModal .guestbook-composer-actions {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 12px !important;
+    padding-top: 6px !important;
+    margin-top: auto !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+#guestbookModal .guestbook-composer-upload {
+    width: 48px;
+    height: 48px;
+    flex: 0 0 auto;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 0 !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border-radius: 16px !important;
+    background: rgba(255, 255, 255, 0.03) !important;
+    color: rgba(230, 234, 241, 0.82) !important;
+    font-size: 1.02rem !important;
+    cursor: pointer !important;
+}
+
+#guestbookModal .guestbook-composer-upload.has-image {
+    color: rgba(126, 184, 239, 0.96) !important;
+    border-color: rgba(126, 184, 239, 0.28) !important;
+    background: rgba(126, 184, 239, 0.08) !important;
+}
+
+#guestbookModal .guestbook-submit-btn.guestbook-composer-send {
+    min-width: 108px;
+    height: 46px;
+    flex: 0 0 auto;
+    margin: 0 !important;
+    padding: 0 24px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border: none !important;
+    border-radius: 999px !important;
+    background: rgba(224, 230, 240, 0.92) !important;
+    color: #12161d !important;
+    font-size: 1rem !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.01em !important;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.14) !important;
+}
+
+#guestbookModal .guestbook-submit-btn.guestbook-composer-send span {
+    color: inherit !important;
+}
+
 /* Mobile Scroll Highlight Effect - 白色卡片版 */
 @media (max-width: 768px) {
     .message-item {
@@ -6606,7 +6924,7 @@ body {
     }
 
     /* Ensure modal content is scrollable and fits viewport */
-    .modal-content,
+    .modal-content:not(.guestbook-composer-sheet),
     .login-card {
         max-height: calc(100vh - 40px) !important;
         overflow-y: auto !important;
@@ -6866,95 +7184,48 @@ body {
     }
 
     #guestbookModal {
-        --guestbook-modal-shift-y: 0px;
+        padding: calc(env(safe-area-inset-top, 0px) + 12px) 20px calc(env(safe-area-inset-bottom, 0px) + 12px) !important;
     }
 
-    /* Homepage guestbook modal should align with the shop card gutter width */
-    #guestbookModal .modal-content {
-        width: calc(100% - 40px) !important;
-        max-width: calc(100% - 40px) !important;
-        max-height: 82vh !important;
-        min-height: clamp(340px, 44vh, 400px) !important;
-        box-sizing: border-box !important;
-        margin: auto !important;
-        position: relative !important;
-        top: var(--guestbook-modal-shift-y, 0px) !important;
+    #guestbookModal .guestbook-composer-sheet,
+    #guestbookModal.active .guestbook-composer-sheet,
+    #guestbookModal.active:focus-within .guestbook-composer-sheet,
+    #guestbookModal.ios-focus-lock .guestbook-composer-sheet {
+        width: 100% !important;
+        height: min(400px, calc(100svh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px));
+        min-height: 300px;
+        max-height: calc(100svh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px);
+        padding: 14px 16px calc(16px + env(safe-area-inset-bottom)) !important;
+        border-radius: 30px !important;
     }
 
-    #guestbookModal .modal-content,
-    #guestbookModal.active .modal-content,
-    #guestbookModal.active:focus-within .modal-content,
-    #guestbookModal.ios-focus-lock .modal-content {
-        margin: auto !important;
-        position: relative !important;
-        top: var(--guestbook-modal-shift-y, 0px) !important;
-        transition: top 180ms cubic-bezier(0.22, 1, 0.36, 1) !important;
-        will-change: top !important;
-        overscroll-behavior: contain;
+    #guestbookModal.active:focus-within .guestbook-composer-sheet > *,
+    #guestbookModal.ios-focus-lock .guestbook-composer-sheet > * {
+        transform: none !important;
+        transition: none !important;
+        transition-delay: 0s !important;
     }
 
-    #guestbookModal .guestbook-content {
-        display: flex !important;
-        flex-direction: column !important;
+    #guestbookModal .guestbook-composer-header {
         gap: 12px !important;
-        padding: 22px 18px calc(18px + env(safe-area-inset-bottom)) !important;
     }
 
-    #guestbookModal .guestbook-form {
-        display: flex !important;
-        flex-direction: column !important;
-        gap: 12px !important;
-        margin: 0 !important;
-        flex: 1 1 auto !important;
-        min-height: 0 !important;
+    #guestbookModal .guestbook-composer-close {
+        width: 42px;
+        height: 42px;
     }
 
-    #guestbookModal .guestbook-content .modal-title,
-    #guestbookModal .guestbook-content .input-group,
-    #guestbookModal #guestbookViewMoreWrap,
-    #guestbookModal .guestbook-submit-btn {
-        margin: 0 !important;
+    #guestbookModal .guestbook-composer-title {
+        font-size: clamp(1rem, 5vw, 1.18rem) !important;
     }
 
-    #guestbookModal .guestbook-content .input-group,
-    #guestbookModal .guestbook-form .input-group {
-        display: flex !important;
-        align-items: stretch !important;
-        flex: 1 1 auto !important;
-        min-height: 0 !important;
+    #guestbookModal .guestbook-composer-editor {
+        min-height: 140px !important;
     }
 
-    #guestbookModal .guestbook-content textarea,
-    #guestbookModal .guestbook-form textarea {
-        flex: 1 1 auto !important;
-        height: auto !important;
-        min-height: 164px !important;
-        resize: none !important;
-    }
-
-    #guestbookModal .guestbook-submit-btn {
-        width: var(--guestbook-action-width, fit-content) !important;
-        max-width: 100% !important;
-        box-sizing: border-box !important;
-        align-self: center !important;
-        display: inline-flex !important;
-        justify-content: center !important;
-        margin-top: 4px !important;
-        padding: 10px 16px !important;
-    }
-
-    #guestbookModal #guestbookViewMoreWrap {
-        padding-top: 6px !important;
-        align-self: center !important;
-    }
-
-    #guestbookModal #guestbookViewMoreWrap a {
-        width: auto !important;
-        max-width: 100% !important;
-        display: inline-flex !important;
-        box-sizing: border-box !important;
-        justify-content: center !important;
-        padding: 10px 16px !important;
+    #guestbookModal #guestMessage {
+        font-size: 16px !important;
+        line-height: 1.78 !important;
     }
 
     /*
