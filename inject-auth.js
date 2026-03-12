@@ -680,7 +680,7 @@
             /* Login Card - Fixed narrow width matching homepage */
             .login-card,
             #loginModal .login-card {
-                width: 360px !important;
+                width: 320px !important;
                 max-width: 90vw !important;
                 padding: 40px !important;
                 border-radius: 24px !important;
