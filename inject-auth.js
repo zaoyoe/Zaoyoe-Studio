@@ -889,6 +889,13 @@
                     z-index: 1 !important;
                 }
 
+                #loginModal.keyboard-visible .login-card,
+                #loginModal.login-focus-transfer .login-card,
+                #loginModal.active:focus-within .login-card {
+                    margin-top: 0 !important;
+                    margin-bottom: 0 !important;
+                }
+
                 .login-overlay .login-card::before,
                 #loginModal .login-card::before {
                     content: '';
@@ -1306,6 +1313,9 @@
                 const activeInput = getActiveLoginModalInput();
                 if (activeInput && transferDirection === 'up') {
                     loginModalViewportState.viewportHoldUntil = Date.now() + 240;
+                    requestAnimationFrame(() => {
+                        scrollLoginModalInputIntoView(activeInput, null, { allowTopReveal: true });
+                    });
                     return;
                 }
 
@@ -1452,7 +1462,7 @@
                 return metrics;
             }
 
-            function scrollLoginModalInputIntoView(input, metrics = null) {
+            function scrollLoginModalInputIntoView(input, metrics = null, options = {}) {
                 if (!(input instanceof HTMLElement)) return;
 
                 const { overlay, card } = getLoginModalElements();
@@ -1470,11 +1480,12 @@
                 );
                 const keyboardActive = viewportMetrics.keyboardVisible ||
                     loginModalViewportState.lastKeyboardInset >= LOGIN_MODAL_KEYBOARD_THRESHOLD;
+                const allowTopReveal = !!options.allowTopReveal;
 
                 let delta = 0;
                 if (inputRect.bottom > bottomLimit) {
                     delta = inputRect.bottom - bottomLimit + 12;
-                } else if (!keyboardActive && inputRect.top < topLimit) {
+                } else if ((!keyboardActive || allowTopReveal) && inputRect.top < topLimit) {
                     delta = inputRect.top - topLimit - 12;
                 }
 
