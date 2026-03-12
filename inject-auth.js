@@ -695,9 +695,7 @@
             .login-modal-scroll,
             #loginModal .login-modal-scroll {
                 width: 100% !important;
-                display: flex !important;
-                justify-content: center !important;
-                align-items: center !important;
+                display: block !important;
                 box-sizing: border-box !important;
             }
             
@@ -827,17 +825,15 @@
                     height: 100% !important;
                     min-height: 100% !important;
                     max-height: 100% !important;
-                    padding-top: var(--login-modal-safe-top) !important;
+                    padding-top: var(--login-modal-card-top-offset, 24px) !important;
                     padding-right: 16px !important;
                     padding-bottom: calc(var(--login-modal-safe-bottom) + var(--login-modal-keyboard-inset) + 12px) !important;
                     padding-left: 16px !important;
                     overflow-y: auto !important;
                     overscroll-behavior: contain !important;
                     -webkit-overflow-scrolling: touch !important;
-                    display: grid !important;
-                    justify-items: center !important;
-                    align-content: center !important;
-                    scroll-padding-top: calc(var(--login-modal-safe-top) + 12px) !important;
+                    display: block !important;
+                    scroll-padding-top: calc(var(--login-modal-card-top-offset, 24px) + 12px) !important;
                     scroll-padding-bottom: calc(var(--login-modal-keyboard-inset) + var(--login-modal-safe-bottom) + 24px) !important;
                     box-sizing: border-box !important;
                     position: relative !important;
@@ -1255,6 +1251,7 @@
             const LOGIN_MODAL_SCROLL_MARGIN = 18;
             const loginModalViewportState = {
                 baseViewportHeight: 0,
+                cardTopOffset: 0,
                 viewportCleanup: null,
                 viewportRafId: null,
                 focusRevealTimer: null,
@@ -1293,6 +1290,19 @@
                 const active = document.activeElement;
                 if (!overlay || !active || !overlay.contains(active)) return null;
                 return /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName) ? active : null;
+            }
+
+            function recalculateLoginModalCardTopOffset(force = false) {
+                const { overlay, scroller, card } = getLoginModalElements();
+                if (!overlay || !scroller || !card || !overlay.classList.contains('active')) return;
+
+                if (!force && getActiveLoginModalInput()) return;
+
+                const availableHeight = Math.max(0, scroller.clientHeight);
+                const cardHeight = Math.max(0, card.offsetHeight);
+                const nextOffset = Math.max(24, Math.round((availableHeight - cardHeight) / 2));
+                loginModalViewportState.cardTopOffset = nextOffset;
+                scroller.style.setProperty('--login-modal-card-top-offset', `${nextOffset}px`);
             }
 
             function clearLoginModalFocusRevealTimer() {
@@ -1466,7 +1476,7 @@
             }
 
             function applyLoginModalViewportVars() {
-                const { overlay } = getLoginModalElements();
+                const { overlay, scroller } = getLoginModalElements();
                 if (!overlay) return null;
 
                 const metrics = getLoginModalViewportMetrics();
@@ -1483,6 +1493,9 @@
                 }
 
                 overlay.style.setProperty('--login-modal-keyboard-inset', `${keyboardInset}px`);
+                if (scroller && !activeInput && !metrics.keyboardVisible) {
+                    recalculateLoginModalCardTopOffset(loginModalViewportState.cardTopOffset <= 0);
+                }
                 overlay.classList.toggle('keyboard-visible', !!activeInput && keyboardInset >= LOGIN_MODAL_KEYBOARD_THRESHOLD);
                 overlay.classList.remove('keyboard-settling');
                 return metrics;
@@ -1504,14 +1517,12 @@
                     topLimit + 48,
                     viewportMetrics.visualHeight - LOGIN_MODAL_SCROLL_MARGIN
                 );
-                const keyboardActive = viewportMetrics.keyboardVisible ||
-                    loginModalViewportState.lastKeyboardInset >= LOGIN_MODAL_KEYBOARD_THRESHOLD;
                 const allowTopReveal = !!options.allowTopReveal;
 
                 let delta = 0;
                 if (inputRect.bottom > bottomLimit) {
                     delta = inputRect.bottom - bottomLimit + 12;
-                } else if ((!keyboardActive || allowTopReveal) && inputRect.top < topLimit) {
+                } else if (allowTopReveal && inputRect.top < topLimit) {
                     delta = inputRect.top - topLimit - 12;
                 }
 
@@ -1631,6 +1642,7 @@
             function resetLoginModalViewportState() {
                 detachLoginModalViewportSync();
                 loginModalViewportState.baseViewportHeight = 0;
+                loginModalViewportState.cardTopOffset = 0;
                 loginModalViewportState.lastKeyboardInset = 0;
                 loginModalViewportState.isKeyboardClosing = false;
                 loginModalViewportState.isKeyboardSettling = false;
@@ -1644,6 +1656,7 @@
                 overlay?.style.removeProperty('--login-modal-keyboard-inset');
                 if (overlay) overlay.scrollTop = 0;
                 if (scroller) {
+                    scroller.style.removeProperty('--login-modal-card-top-offset');
                     scroller.style.removeProperty('scroll-behavior');
                     scroller.scrollTop = 0;
                 }
@@ -1792,8 +1805,10 @@
                 attachLoginModalViewportSync();
 
                 requestAnimationFrame(() => {
+                    recalculateLoginModalCardTopOffset(true);
                     requestLoginModalViewportSync();
                     window.setTimeout(() => {
+                        recalculateLoginModalCardTopOffset();
                         requestLoginModalViewportSync();
                     }, 120);
                 });
@@ -1854,6 +1869,7 @@
                         input.dispatchEvent(new Event('input', { bubbles: true }));
                     });
                     requestAnimationFrame(() => {
+                        recalculateLoginModalCardTopOffset(true);
                         requestLoginModalViewportSync();
                     });
                     console.log(`✅ 已切换到 ${viewId} 视图并清空输入框`);
