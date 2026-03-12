@@ -57,7 +57,7 @@
     <link rel="stylesheet" href="security-cards.css?v=20260304_IOS_CARET_FIX1">
 
     <!-- Core Styles (for modals, profile, etc) -->
-    <link rel="stylesheet" href="style.css?v=20260312_HOME_MODAL_WIDTH_2">
+    <link rel="stylesheet" href="style.css?v=20260312_HOME_MODAL_WIDTH_3">
     <link rel="stylesheet" href="login_styles.css?v=20260312_HOME_LOGIN_WIDTH_1">
     <link rel="stylesheet" href="avatar-fix.css?v=20260302_G_AUTH">
 
@@ -319,8 +319,7 @@
             onclick="event.stopPropagation()">
             <!-- Mac Window Controls -->
             <div class="mac-controls">
-                <div class="mac-dot red"
-                    onclick="document.getElementById('guestbookModal').classList.remove('active'); document.body.classList.remove('no-scroll');">
+                <div class="mac-dot red" onclick="window.closeGuestbookModal?.()">
                     <i class="fas fa-times"></i>
                 </div>
                 <div class="mac-dot yellow"></div>
@@ -377,75 +376,437 @@
 
     <!-- Guestbook Modal Script -->
     <script>
-        // Open guestbook modal function
-        window.openGuestbookModal = function () {
-            const modal = document.getElementById('guestbookModal');
-            if (!modal) return;
+        (function () {
+            const GUESTBOOK_KEYBOARD_SETTLE_MS = 90;
+            const guestbookModalKeyboardState = {
+                baseScrollY: 0,
+                ownsFullScrollLock: false,
+                viewportCleanup: null,
+                viewportRafId: null,
+                stableViewportProbe: null,
+                baseViewportHeight: 0,
+                baseCardHeight: 0,
+                docked: false,
+                lastBottomInset: 0,
+                initialDockTimer: null,
+                insetDropTimer: null,
+                pendingInset: 0
+            };
 
-            // Collect ALL elements to animate
-            const content = modal.querySelector('.guestbook-content');
-            const form = modal.querySelector('.guestbook-form');
-            const allItems = [];
-
-            // Direct children of content card (mac-controls, title, form, viewMoreWrap)
-            if (content) {
-                const children = Array.from(content.children);
-                children.forEach((el, i) => {
-                    // Last child (viewMoreWrap) gets the latest delay — after all form children
-                    const delay = (i === children.length - 1) ? 420 : (50 + i * 70);
-                    allItems.push({ el, delay });
-                });
-            }
-            // Form inner children (textarea group, image preview, submit btn)
-            if (form) {
-                Array.from(form.children).forEach((el, i) => {
-                    allItems.push({ el, delay: 200 + i * 70 });
-                });
+            function isGuestbookModalKeyboardDockEnabled() {
+                const ua = navigator.userAgent || '';
+                const isiOS = /iPad|iPhone|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+                return isiOS && window.matchMedia('(max-width: 768px)').matches && !!window.visualViewport;
             }
 
-            // Step 1: Hide everything BEFORE making modal visible
-            allItems.forEach(({ el }) => {
-                el.style.opacity = '0';
-                el.style.transform = 'translateY(20px)';
-                el.style.transition = 'none';
-            });
+            function getGuestbookModalElements() {
+                const overlay = document.getElementById('guestbookModal');
+                return {
+                    overlay,
+                    card: overlay?.querySelector('.guestbook-content, .modal-content') || null,
+                    inputs: overlay ? Array.from(overlay.querySelectorAll('input, textarea, select')) : []
+                };
+            }
 
-            // Step 2: Show modal
-            modal.classList.remove('active');
-            void modal.offsetWidth;
-            modal.classList.add('active');
-            document.body.classList.add('no-scroll');
+            function getActiveGuestbookModalInput() {
+                const { overlay } = getGuestbookModalElements();
+                const active = document.activeElement;
+                if (!overlay || !active || !overlay.contains(active)) return null;
+                return /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName) ? active : null;
+            }
 
-            // Trigger guestbook data prefetch while user reads the modal
-            if (typeof window._prefetchGuestbook === 'function') window._prefetchGuestbook();
+            function focusGuestbookInputWithoutScroll(input) {
+                if (!input) return;
+                try {
+                    input.focus({ preventScroll: true });
+                } catch (_) {
+                    input.focus();
+                }
+            }
 
-            // Step 3: After one frame (modal is now display:flex), start staggered reveal
-            requestAnimationFrame(() => {
+            function getGuestbookStableViewportProbe() {
+                if (guestbookModalKeyboardState.stableViewportProbe?.isConnected) {
+                    return guestbookModalKeyboardState.stableViewportProbe;
+                }
+
+                const probe = document.createElement('div');
+                probe.setAttribute('aria-hidden', 'true');
+                probe.style.position = 'fixed';
+                probe.style.top = '0';
+                probe.style.left = '0';
+                probe.style.width = '0';
+                probe.style.height = '100svh';
+                probe.style.pointerEvents = 'none';
+                probe.style.visibility = 'hidden';
+                probe.style.opacity = '0';
+                probe.style.zIndex = '-1';
+                document.body.appendChild(probe);
+                guestbookModalKeyboardState.stableViewportProbe = probe;
+                return probe;
+            }
+
+            function getGuestbookStableViewportHeight() {
+                const probe = getGuestbookStableViewportProbe();
+                return Math.max(0, Math.round(probe.getBoundingClientRect().height || probe.offsetHeight || 0));
+            }
+
+            function clearGuestbookModalKeyboardTimers() {
+                if (guestbookModalKeyboardState.initialDockTimer) {
+                    clearTimeout(guestbookModalKeyboardState.initialDockTimer);
+                    guestbookModalKeyboardState.initialDockTimer = null;
+                }
+                if (guestbookModalKeyboardState.insetDropTimer) {
+                    clearTimeout(guestbookModalKeyboardState.insetDropTimer);
+                    guestbookModalKeyboardState.insetDropTimer = null;
+                }
+                guestbookModalKeyboardState.pendingInset = 0;
+            }
+
+            function captureGuestbookModalKeyboardBase() {
+                const vv = window.visualViewport;
+                const { card } = getGuestbookModalElements();
+                const visualHeight = Math.max(0, vv?.height || 0);
+                const fallbackBaseHeight = Math.max(
+                    window.innerHeight || 0,
+                    document.documentElement.clientHeight || 0,
+                    visualHeight
+                );
+                const stableViewportHeight = getGuestbookStableViewportHeight();
+                const normalizedBaseHeight = (stableViewportHeight > 0 && stableViewportHeight + 24 < fallbackBaseHeight)
+                    ? stableViewportHeight
+                    : fallbackBaseHeight;
+
+                guestbookModalKeyboardState.baseViewportHeight = normalizedBaseHeight;
+                if (card) {
+                    const liveHeight = Math.round(card.offsetHeight || card.getBoundingClientRect().height || 420);
+                    guestbookModalKeyboardState.baseCardHeight = Math.max(360, liveHeight || 420);
+                }
+            }
+
+            function getGuestbookModalViewportMetrics() {
+                const vv = window.visualViewport;
+                const visualHeight = Math.max(0, vv?.height || 0);
+                const baseVisualHeight = guestbookModalKeyboardState.baseViewportHeight || visualHeight;
+
+                return {
+                    visualHeight,
+                    baseVisualHeight,
+                    bottomInset: Math.max(0, Math.round(baseVisualHeight - visualHeight))
+                };
+            }
+
+            function lockGuestbookModalKeyboardPage() {
+                if (guestbookModalKeyboardState.ownsFullScrollLock || !window.iOSScrollLock) return;
+                const { card } = getGuestbookModalElements();
+                if (!card) return;
+
+                window.iOSScrollLock.lock(card, {
+                    freezeScrollY: Math.max(0, Math.round(
+                        guestbookModalKeyboardState.baseScrollY || window.scrollY || window.pageYOffset || 0
+                    ))
+                });
+                guestbookModalKeyboardState.ownsFullScrollLock = true;
+            }
+
+            function bindGuestbookModalInputFocusStabilizer(input) {
+                if (!input || input.dataset.guestbookFocusStabilizerBound === '1') return;
+
+                input.addEventListener('touchstart', (e) => {
+                    const { overlay } = getGuestbookModalElements();
+                    if (!isGuestbookModalKeyboardDockEnabled() || !overlay?.classList.contains('active')) return;
+                    lockGuestbookModalKeyboardPage();
+                    if (e.cancelable) e.preventDefault();
+                    focusGuestbookInputWithoutScroll(input);
+                }, { passive: false });
+
+                input.dataset.guestbookFocusStabilizerBound = '1';
+            }
+
+            function applyGuestbookModalKeyboardDock(bottomInset) {
+                const { overlay, card } = getGuestbookModalElements();
+                if (!overlay || !card) return;
+
+                const metrics = getGuestbookModalViewportMetrics();
+                if (!guestbookModalKeyboardState.baseCardHeight) {
+                    const liveHeight = Math.round(card.offsetHeight || card.getBoundingClientRect().height || 420);
+                    guestbookModalKeyboardState.baseCardHeight = Math.max(360, liveHeight || 420);
+                }
+
+                const baseCardHeight = Math.max(360, guestbookModalKeyboardState.baseCardHeight || 420);
+                const baseViewportHeight = Math.max(
+                    metrics.baseVisualHeight || 0,
+                    guestbookModalKeyboardState.baseViewportHeight || 0
+                );
+                const keyboardTop = Math.max(0, baseViewportHeight - Math.max(0, bottomInset));
+                const minTop = 16;
+                const keyboardClearance = 32;
+                const maxAvailableHeight = Math.max(320, Math.round(keyboardTop - minTop - keyboardClearance));
+                const dockHeight = Math.min(baseCardHeight, maxAvailableHeight);
+                const centeredTop = (baseViewportHeight - dockHeight) / 2;
+                const desiredTop = Math.max(minTop, keyboardTop - keyboardClearance - dockHeight);
+                const shiftY = Math.round(desiredTop - centeredTop);
+
+                overlay.classList.add('keyboard-docked');
+                overlay.style.setProperty('--guestbook-modal-shift-y', `${shiftY}px`);
+                card.style.minHeight = '0px';
+                card.style.height = `${dockHeight}px`;
+                card.style.maxHeight = `${dockHeight}px`;
+                guestbookModalKeyboardState.docked = bottomInset > 0;
+                guestbookModalKeyboardState.lastBottomInset = Math.max(0, bottomInset);
+            }
+
+            function releaseGuestbookModalKeyboardDock() {
+                const { overlay, card } = getGuestbookModalElements();
+                if (!overlay || !card) return;
+
+                overlay.classList.remove('keyboard-docked');
+                overlay.style.setProperty('--guestbook-modal-shift-y', '0px');
+                card.style.removeProperty('min-height');
+                card.style.removeProperty('height');
+                card.style.removeProperty('max-height');
+                guestbookModalKeyboardState.docked = false;
+                guestbookModalKeyboardState.lastBottomInset = 0;
+            }
+
+            function resetGuestbookModalKeyboardState() {
+                clearGuestbookModalKeyboardTimers();
+                if (guestbookModalKeyboardState.viewportRafId) {
+                    cancelAnimationFrame(guestbookModalKeyboardState.viewportRafId);
+                    guestbookModalKeyboardState.viewportRafId = null;
+                }
+                releaseGuestbookModalKeyboardDock();
+                guestbookModalKeyboardState.baseViewportHeight = 0;
+                guestbookModalKeyboardState.baseCardHeight = 0;
+            }
+
+            function syncGuestbookModalKeyboardDock() {
+                const { overlay, card } = getGuestbookModalElements();
+                if (!overlay || !card || !overlay.classList.contains('active')) {
+                    resetGuestbookModalKeyboardState();
+                    return;
+                }
+
+                if (!isGuestbookModalKeyboardDockEnabled()) {
+                    releaseGuestbookModalKeyboardDock();
+                    return;
+                }
+
+                const activeInput = getActiveGuestbookModalInput();
+                if (activeInput && !guestbookModalKeyboardState.ownsFullScrollLock) {
+                    lockGuestbookModalKeyboardPage();
+                }
+
+                const metrics = getGuestbookModalViewportMetrics();
+                const bottomInset = metrics.bottomInset;
+                const shouldDock = !!activeInput && (guestbookModalKeyboardState.docked ? bottomInset > 8 : bottomInset > 24);
+                const nextInset = shouldDock ? bottomInset : 0;
+                const previousInset = guestbookModalKeyboardState.lastBottomInset;
+                const isInsetDroppingWhileFocused = guestbookModalKeyboardState.docked &&
+                    !!activeInput &&
+                    nextInset > 24 &&
+                    nextInset + 24 < previousInset;
+
+                if (!guestbookModalKeyboardState.docked && shouldDock) {
+                    lockGuestbookModalKeyboardPage();
+                    guestbookModalKeyboardState.pendingInset = nextInset;
+                    if (!guestbookModalKeyboardState.initialDockTimer) {
+                        guestbookModalKeyboardState.initialDockTimer = setTimeout(() => {
+                            guestbookModalKeyboardState.initialDockTimer = null;
+                            if (!getActiveGuestbookModalInput()) return;
+                            const liveMetrics = getGuestbookModalViewportMetrics();
+                            if (liveMetrics.bottomInset <= 24) return;
+                            applyGuestbookModalKeyboardDock(liveMetrics.bottomInset);
+                        }, GUESTBOOK_KEYBOARD_SETTLE_MS);
+                    }
+                    return;
+                }
+
+                if (guestbookModalKeyboardState.initialDockTimer &&
+                    (guestbookModalKeyboardState.docked || !shouldDock)) {
+                    clearTimeout(guestbookModalKeyboardState.initialDockTimer);
+                    guestbookModalKeyboardState.initialDockTimer = null;
+                }
+
+                if (guestbookModalKeyboardState.insetDropTimer &&
+                    (!isInsetDroppingWhileFocused || nextInset >= previousInset)) {
+                    clearTimeout(guestbookModalKeyboardState.insetDropTimer);
+                    guestbookModalKeyboardState.insetDropTimer = null;
+                    guestbookModalKeyboardState.pendingInset = 0;
+                }
+
+                if (isInsetDroppingWhileFocused) {
+                    guestbookModalKeyboardState.pendingInset = nextInset;
+                    if (!guestbookModalKeyboardState.insetDropTimer) {
+                        guestbookModalKeyboardState.insetDropTimer = setTimeout(() => {
+                            guestbookModalKeyboardState.insetDropTimer = null;
+                            const settledInset = guestbookModalKeyboardState.pendingInset;
+                            guestbookModalKeyboardState.pendingInset = 0;
+                            if (settledInset > 24) {
+                                applyGuestbookModalKeyboardDock(settledInset);
+                            }
+                        }, GUESTBOOK_KEYBOARD_SETTLE_MS);
+                    }
+                    return;
+                }
+
+                if (guestbookModalKeyboardState.docked && activeInput && nextInset <= 24) {
+                    return;
+                }
+
+                if (nextInset > 24) {
+                    applyGuestbookModalKeyboardDock(nextInset);
+                    return;
+                }
+
+                if (guestbookModalKeyboardState.docked) {
+                    releaseGuestbookModalKeyboardDock();
+                }
+            }
+
+            function attachGuestbookModalKeyboardDock() {
+                if (!isGuestbookModalKeyboardDockEnabled()) return;
+
+                const { overlay, inputs } = getGuestbookModalElements();
+                const vv = window.visualViewport;
+                if (!overlay || !vv) return;
+
+                detachGuestbookModalKeyboardDock();
+                captureGuestbookModalKeyboardBase();
+                syncGuestbookModalKeyboardDock();
+
+                inputs.forEach((input) => bindGuestbookModalInputFocusStabilizer(input));
+
+                const handleViewportChange = () => {
+                    if (guestbookModalKeyboardState.viewportRafId) return;
+                    guestbookModalKeyboardState.viewportRafId = requestAnimationFrame(() => {
+                        guestbookModalKeyboardState.viewportRafId = null;
+                        syncGuestbookModalKeyboardDock();
+                    });
+                };
+
+                vv.addEventListener('resize', handleViewportChange, { passive: true });
+                inputs.forEach((input) => {
+                    input.addEventListener('focus', handleViewportChange);
+                    input.addEventListener('blur', handleViewportChange);
+                });
+
+                guestbookModalKeyboardState.viewportCleanup = () => {
+                    vv.removeEventListener('resize', handleViewportChange);
+                    inputs.forEach((input) => {
+                        input.removeEventListener('focus', handleViewportChange);
+                        input.removeEventListener('blur', handleViewportChange);
+                    });
+                    if (guestbookModalKeyboardState.viewportRafId) {
+                        cancelAnimationFrame(guestbookModalKeyboardState.viewportRafId);
+                        guestbookModalKeyboardState.viewportRafId = null;
+                    }
+                    guestbookModalKeyboardState.viewportCleanup = null;
+                };
+            }
+
+            function detachGuestbookModalKeyboardDock() {
+                if (typeof guestbookModalKeyboardState.viewportCleanup === 'function') {
+                    guestbookModalKeyboardState.viewportCleanup();
+                }
+                clearGuestbookModalKeyboardTimers();
+            }
+
+            window.closeGuestbookModal = function () {
+                const { overlay } = getGuestbookModalElements();
+                if (!overlay) return;
+
+                getActiveGuestbookModalInput()?.blur();
+                detachGuestbookModalKeyboardDock();
+                resetGuestbookModalKeyboardState();
+                overlay.classList.remove('active', 'keyboard-docked', 'ios-focus-lock');
+                overlay.style.setProperty('--guestbook-modal-shift-y', '0px');
+
+                if (window.iOSScrollLock) {
+                    window.iOSScrollLock.unlock();
+                } else {
+                    document.documentElement.classList.remove('no-scroll');
+                    document.body.classList.remove('no-scroll');
+                }
+
+                guestbookModalKeyboardState.ownsFullScrollLock = false;
+                guestbookModalKeyboardState.baseScrollY = 0;
+            };
+
+            window.openGuestbookModal = function () {
+                const modal = document.getElementById('guestbookModal');
+                if (!modal) return;
+
+                guestbookModalKeyboardState.baseScrollY = Math.max(0, Math.round(window.scrollY || window.pageYOffset || 0));
+                guestbookModalKeyboardState.ownsFullScrollLock = false;
+                detachGuestbookModalKeyboardDock();
+                resetGuestbookModalKeyboardState();
+                modal.classList.remove('keyboard-docked', 'ios-focus-lock');
+                modal.style.setProperty('--guestbook-modal-shift-y', '0px');
+
+                const content = modal.querySelector('.guestbook-content');
+                const form = modal.querySelector('.guestbook-form');
+                const allItems = [];
+
+                if (content) {
+                    Array.from(content.children).forEach((el, i, children) => {
+                        const delay = (i === children.length - 1) ? 420 : (50 + i * 70);
+                        allItems.push({ el, delay });
+                    });
+                }
+
+                if (form) {
+                    Array.from(form.children).forEach((el, i) => {
+                        allItems.push({ el, delay: 200 + i * 70 });
+                    });
+                }
+
+                allItems.forEach(({ el }) => {
+                    el.style.opacity = '0';
+                    el.style.transform = 'translateY(20px)';
+                    el.style.transition = 'none';
+                });
+
+                modal.classList.remove('active');
+                void modal.offsetWidth;
+                modal.classList.add('active');
+
+                if (window.iOSScrollLock) {
+                    window.iOSScrollLock.lockLight(modal);
+                } else {
+                    document.documentElement.classList.add('no-scroll');
+                    document.body.classList.add('no-scroll');
+                }
+
+                attachGuestbookModalKeyboardDock();
+
+                if (typeof window._prefetchGuestbook === 'function') window._prefetchGuestbook();
+
                 requestAnimationFrame(() => {
-                    allItems.forEach(({ el, delay }) => {
-                        setTimeout(() => {
-                            el.style.transition = 'opacity 0.4s ease-out, transform 0.4s ease-out';
-                            el.style.opacity = '1';
-                            el.style.transform = 'translateY(0)';
-                        }, delay);
+                    requestAnimationFrame(() => {
+                        allItems.forEach(({ el, delay }) => {
+                            setTimeout(() => {
+                                el.style.transition = 'opacity 0.4s ease-out, transform 0.4s ease-out';
+                                el.style.opacity = '1';
+                                el.style.transform = 'translateY(0)';
+                            }, delay);
+                        });
                     });
                 });
-            });
-        };
+            };
 
-        // Close on overlay click
-        document.getElementById('guestbookModal')?.addEventListener('mousedown', function (e) {
-            if (e.target === this) {
-                this._overlayDown = true;
-            }
-        });
-        document.getElementById('guestbookModal')?.addEventListener('mouseup', function (e) {
-            if (e.target === this && this._overlayDown) {
-                this.classList.remove('active');
-                document.body.classList.remove('no-scroll');
-            }
-            this._overlayDown = false;
-        });
+            document.getElementById('guestbookModal')?.addEventListener('mousedown', function (e) {
+                if (e.target === this) {
+                    this._overlayDown = true;
+                }
+            });
+
+            document.getElementById('guestbookModal')?.addEventListener('mouseup', function (e) {
+                if (e.target === this && this._overlayDown) {
+                    window.closeGuestbookModal?.();
+                }
+                this._overlayDown = false;
+            });
+        })();
     </script>
 
     <!-- Universal Hover Prefetch: Pre-load target page data on hover intent -->

@@ -6865,18 +6865,41 @@ body {
         transition-delay: 0s !important;
     }
 
+    #guestbookModal {
+        --guestbook-modal-shift-y: 0px;
+    }
+
     /* Homepage guestbook modal should align with the shop card gutter width */
     #guestbookModal .modal-content {
         width: calc(100% - 40px) !important;
         max-width: calc(100% - 40px) !important;
         max-height: 82vh !important;
+        min-height: clamp(420px, 58vh, 500px) !important;
         box-sizing: border-box !important;
+        margin: auto !important;
+        position: relative !important;
+        top: var(--guestbook-modal-shift-y, 0px) !important;
+    }
+
+    #guestbookModal .modal-content,
+    #guestbookModal.active .modal-content,
+    #guestbookModal.active:focus-within .modal-content,
+    #guestbookModal.ios-focus-lock .modal-content {
+        margin: auto !important;
+        position: relative !important;
+        top: var(--guestbook-modal-shift-y, 0px) !important;
+        transition:
+            top 180ms cubic-bezier(0.22, 1, 0.36, 1),
+            height 180ms cubic-bezier(0.22, 1, 0.36, 1),
+            max-height 180ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+        will-change: top, height !important;
+        overscroll-behavior: contain;
     }
 
     #guestbookModal .guestbook-content textarea,
     #guestbookModal .guestbook-form textarea {
-        height: 112px !important;
-        min-height: 112px !important;
+        height: 136px !important;
+        min-height: 136px !important;
     }
 
     /*
