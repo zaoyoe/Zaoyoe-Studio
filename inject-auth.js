@@ -804,9 +804,9 @@
                     align-items: flex-start !important;
                     scroll-padding-top: calc(var(--login-modal-safe-top) + 12px) !important;
                     scroll-padding-bottom: calc(var(--login-modal-keyboard-inset) + var(--login-modal-safe-bottom) + 24px) !important;
-                    background: rgba(0, 0, 0, 0.16) !important;
-                    backdrop-filter: blur(16px) saturate(148%) !important;
-                    -webkit-backdrop-filter: blur(16px) saturate(148%) !important;
+                    background: rgba(0, 0, 0, 0.12) !important;
+                    backdrop-filter: blur(18px) saturate(152%) !important;
+                    -webkit-backdrop-filter: blur(18px) saturate(152%) !important;
                     isolation: isolate !important;
                     will-change: opacity, padding-bottom !important;
                     transition:
@@ -821,7 +821,7 @@
                     content: '';
                     position: absolute;
                     inset: 0;
-                    background: rgba(255, 255, 255, 0.018);
+                    background: rgba(0, 0, 0, 0.03);
                     backdrop-filter: none;
                     -webkit-backdrop-filter: none;
                     pointer-events: none;
@@ -837,7 +837,7 @@
 
                 #loginModal.keyboard-visible::before,
                 #loginModal.keyboard-settling::before {
-                    background: rgba(255, 255, 255, 0.018);
+                    background: rgba(0, 0, 0, 0.03);
                 }
 
                 .login-overlay .glass-input,
@@ -865,15 +865,15 @@
                     width: min(360px, calc(100vw - 32px)) !important;
                     max-width: 100% !important;
                     box-sizing: border-box !important;
-                    background: rgba(0, 0, 0, 0.34) !important;
+                    background: rgba(0, 0, 0, 0.26) !important;
                     border: 1px solid rgba(255, 255, 255, 0.16) !important;
                     border-top-color: rgba(255, 255, 255, 0.28) !important;
-                    backdrop-filter: blur(30px) saturate(176%) !important;
-                    -webkit-backdrop-filter: blur(30px) saturate(176%) !important;
+                    backdrop-filter: blur(36px) saturate(178%) !important;
+                    -webkit-backdrop-filter: blur(36px) saturate(178%) !important;
                     box-shadow:
-                        0 26px 60px rgba(0, 0, 0, 0.42),
-                        inset 0 1px 0 rgba(255, 255, 255, 0.18),
-                        inset 0 -1px 0 rgba(255, 255, 255, 0.06) !important;
+                        0 24px 52px rgba(0, 0, 0, 0.36),
+                        inset 0 1px 0 rgba(255, 255, 255, 0.15),
+                        inset 0 -1px 0 rgba(255, 255, 255, 0.04) !important;
                     max-height: none !important;
                     overflow: visible !important;
                     flex-shrink: 0 !important;
@@ -895,7 +895,7 @@
                     position: absolute;
                     inset: 0;
                     border-radius: inherit;
-                    background: rgba(255, 255, 255, 0.045);
+                    background: rgba(0, 0, 0, 0.01);
                     pointer-events: none;
                     opacity: 1;
                     z-index: 0;
@@ -1399,16 +1399,21 @@
                 const viewportMetrics = metrics || getLoginModalViewportMetrics();
                 const inputRect = input.getBoundingClientRect();
                 const topLimit = Math.max(LOGIN_MODAL_SCROLL_MARGIN, viewportMetrics.offsetTop + LOGIN_MODAL_SCROLL_MARGIN);
+                const hardTopLimit = Math.max(0, viewportMetrics.offsetTop - 4);
                 const bottomLimit = Math.max(
                     topLimit + 48,
                     viewportMetrics.visualHeight - LOGIN_MODAL_SCROLL_MARGIN
                 );
+                const keyboardActive = viewportMetrics.keyboardVisible ||
+                    loginModalViewportState.lastKeyboardInset >= LOGIN_MODAL_KEYBOARD_THRESHOLD;
 
                 let delta = 0;
                 if (inputRect.bottom > bottomLimit) {
                     delta = inputRect.bottom - bottomLimit + 12;
-                } else if (inputRect.top < topLimit) {
+                } else if (!keyboardActive && inputRect.top < topLimit) {
                     delta = inputRect.top - topLimit - 12;
+                } else if (keyboardActive && inputRect.top < hardTopLimit) {
+                    delta = inputRect.top - hardTopLimit - 8;
                 }
 
                 if (Math.abs(delta) < 2) return;
