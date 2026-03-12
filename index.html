@@ -60,7 +60,7 @@
     <link rel="stylesheet" href="security-cards.css?v=20260304_IOS_CARET_FIX1">
 
     <!-- Core Styles (for modals, profile, etc) -->
-    <link rel="stylesheet" href="style.css?v=20260312_HOME_GUESTBOOK_COMPOSER_16">
+    <link rel="stylesheet" href="style.css?v=20260312_HOME_GUESTBOOK_COMPOSER_17">
     <link rel="stylesheet" href="login_styles.css?v=20260312_HOME_LOGIN_WIDTH_1">
     <link rel="stylesheet" href="avatar-fix.css?v=20260302_G_AUTH">
 
@@ -325,9 +325,6 @@
                 <div class="guestbook-composer-copy">
                     <div class="guestbook-composer-kicker">GUESTBOOK</div>
                     <div class="guestbook-composer-title" data-i18n="guestbook.title">留言板</div>
-                    <a href="guestbook.html" class="guestbook-composer-more" id="guestbookViewMoreWrap">
-                        <span data-i18n="guestbook.viewMore">查看更多</span>
-                    </a>
                 </div>
             </div>
             <form class="guestbook-form guestbook-composer-form" id="guestbookForm">
@@ -349,6 +346,10 @@
                 <input type="file" id="imageUpload" accept="image/*" style="display: none;">
 
                 <div class="guestbook-composer-actions">
+                    <a href="guestbook.html" class="guestbook-composer-more" id="guestbookViewMoreWrap">
+                        <i class="fas fa-comment-dots"></i>
+                        <span data-i18n="guestbook.viewMore">查看更多</span>
+                    </a>
                     <button type="submit" class="guestbook-submit-btn guestbook-composer-send">
                         <span data-i18n="guestbook.submit">留言</span>
                     </button>
