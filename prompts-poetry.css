@@ -80,7 +80,7 @@ canvas#starryCanvas,
     }
 
     50% {
-        transform: translateY(-4px);
+        transform: translateY(-6px);
     }
 }
 
@@ -88,6 +88,7 @@ canvas#starryCanvas,
 .prompt-card.breathing {
     animation: breathe 4s ease-in-out infinite;
     animation-delay: var(--breathe-delay, 0s);
+    will-change: transform;
 }
 
 /* Disable breathing on hover to prevent jank */
@@ -1930,8 +1931,8 @@ html[lang="en"] .nav-item .en {
     max-width: 1600px;
     margin: 0 auto;
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 40px;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 24px;
     opacity: 0;
     /* Animated in */
     transform: translateY(20px);
@@ -3775,6 +3776,12 @@ body.modal-open .prompt-card {
 
 /* Mobile Responsive */
 @media (max-width: 768px) {
+
+    .gallery-container {
+        padding: 24px 20px calc(40px + env(safe-area-inset-bottom));
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 24px;
+    }
 
     /* Add top margin to avoid overlapping with user avatar */
     .poetry-nav-container {
