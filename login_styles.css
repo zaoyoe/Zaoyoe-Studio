@@ -526,6 +526,15 @@
         max-width: 100% !important;
         box-sizing: border-box !important;
     }
+
+    .modal-content.profile-modal,
+    #profileModal .modal-content.profile-modal,
+    .modal-content.profile-modal.wide,
+    #profileModal .modal-content.profile-modal.wide {
+        width: calc(100% - 40px) !important;
+        max-width: 480px !important;
+        box-sizing: border-box !important;
+    }
 }
 
 /* Override browser autofill green border - Force purple theme */

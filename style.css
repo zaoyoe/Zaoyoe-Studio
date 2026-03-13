@@ -6954,10 +6954,16 @@ body {
         position: relative !important;
     }
 
-    /* Match profile modal width to the mobile login modal */
+    /* Match profile modal width to the actual mobile login modal dimensions */
     .profile-modal {
-        width: 100% !important;
-        max-width: 100% !important;
+        width: calc(100% - 40px) !important;
+        max-width: 480px !important;
+        box-sizing: border-box !important;
+    }
+
+    .profile-modal.wide {
+        width: calc(100% - 40px) !important;
+        max-width: 480px !important;
         box-sizing: border-box !important;
     }
 
