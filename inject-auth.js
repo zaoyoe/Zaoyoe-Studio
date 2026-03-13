@@ -93,10 +93,11 @@
     // Login Modal (always appended to body)
     const loginModalHTML = `
     <!-- Login Modal -->
-    <div class="modal-overlay login-overlay" id="loginModal" style="display: none; opacity: 0; visibility: hidden;">
-        <div class="login-modal-scroll">
-        <div class="login-modal-aligner">
-        <div class="login-card" onclick="event.stopPropagation()">
+    <div class="auth-login-overlay" id="loginModal" style="display: none; opacity: 0; visibility: hidden;">
+        <div class="auth-login-viewport">
+        <div class="auth-login-scroll">
+        <div class="auth-login-aligner">
+        <div class="auth-login-panel login-card" onclick="event.stopPropagation()">
             <!-- Mac Window Controls -->
             <div class="mac-controls">
                 <div class="mac-dot red" onclick="toggleLoginModal()">
@@ -214,6 +215,7 @@
                 </div>
             </div>
 
+        </div>
         </div>
         </div>
         </div>
@@ -1101,7 +1103,7 @@
                     console.log(`🎨 Injected CSS: ${href}`);
                 }
             }
-            loadCSS(`login_styles.css?v=20260313_LOGIN_VIEWPORT_REWRITE_24`);
+            loadCSS(`login_styles.css?v=20260313_LOGIN_SAFARI_REWRITE_25`);
             loadCSS(`login_dual_mode.css?v=20260303_G_AUTH_FIX17`);
 
             // Supabase Auth - loaded via static <script> tag in HTML, not dynamically
@@ -1127,8 +1129,10 @@
                 const overlay = document.getElementById('loginModal');
                 return {
                     overlay,
-                    scroller: overlay?.querySelector('.login-modal-scroll') || null,
-                    card: overlay?.querySelector('.login-card') || null
+                    viewport: overlay?.querySelector('.auth-login-viewport') || null,
+                    scroller: overlay?.querySelector('.auth-login-scroll') || null,
+                    aligner: overlay?.querySelector('.auth-login-aligner') || null,
+                    card: overlay?.querySelector('.auth-login-panel') || null
                 };
             }
 
@@ -1145,8 +1149,30 @@
                 return isiOS && window.matchMedia('(max-width: 768px)').matches && !!window.visualViewport;
             }
 
+            function focusLoginModalInputWithoutScroll(input) {
+                if (!input) return;
+                try {
+                    input.focus({ preventScroll: true });
+                } catch (_) {
+                    input.focus();
+                }
+            }
+
             function bindLoginModalInputFocusStabilizer(input) {
                 if (!input || input.dataset.loginFocusStabilizerBound === '1') return;
+
+                input.addEventListener('touchstart', (event) => {
+                    if (!isLoginModalKeyboardDockEnabled()) return;
+                    const { overlay } = getLoginModalElements();
+                    if (event.cancelable) event.preventDefault();
+                    overlay?.classList.add('login-focus-transfer');
+                    focusLoginModalInputWithoutScroll(input);
+                    requestLoginModalViewportSync();
+                    window.setTimeout(() => {
+                        overlay?.classList.remove('login-focus-transfer');
+                    }, 220);
+                }, { passive: false });
+
                 input.dataset.loginFocusStabilizerBound = '1';
             }
 
@@ -1178,21 +1204,15 @@
             }
 
             function syncActiveLoginModalInputIntoView() {
-                const { scroller } = getLoginModalElements();
+                const { viewport, scroller } = getLoginModalElements();
                 const activeInput = getActiveLoginModalInput();
-                if (!scroller || !activeInput) return;
+                if (!viewport || !scroller || !activeInput) return;
 
                 requestAnimationFrame(() => {
-                    const vv = window.visualViewport;
-                    const scrollerRect = scroller.getBoundingClientRect();
+                    const viewportRect = viewport.getBoundingClientRect();
                     const inputRect = activeInput.getBoundingClientRect();
-                    const visualTop = Math.round(vv?.offsetTop || 0);
-                    const visualBottom = Math.round(
-                        (vv?.offsetTop || 0) +
-                        (vv?.height || window.innerHeight || document.documentElement.clientHeight || 0)
-                    );
-                    const visibleTop = Math.max(scrollerRect.top + 12, visualTop + 12);
-                    const visibleBottom = Math.min(scrollerRect.bottom - 12, visualBottom - 12);
+                    const visibleTop = viewportRect.top + 12;
+                    const visibleBottom = viewportRect.bottom - 12;
 
                     if (visibleBottom <= visibleTop) return;
 
@@ -1242,9 +1262,9 @@
                 const activeInput = getActiveLoginModalInput();
                 const keyboardActive = !!activeInput && metrics.bottomInset > 24;
 
-                overlay.style.setProperty('--login-modal-visual-top', `${metrics.visualTop}px`);
-                overlay.style.setProperty('--login-modal-visual-height', `${Math.max(0, metrics.visualHeight)}px`);
-                overlay.classList.toggle('login-keyboard-active', keyboardActive);
+                overlay.style.setProperty('--auth-login-vv-top', `${metrics.visualTop}px`);
+                overlay.style.setProperty('--auth-login-vv-height', `${Math.max(0, metrics.visualHeight)}px`);
+                overlay.classList.toggle('keyboard-open', keyboardActive);
 
                 if (!keyboardActive && metrics.visualHeight > 0) {
                     loginModalKeyboardState.baseViewportHeight = Math.max(
@@ -1262,9 +1282,10 @@
                 const { overlay } = getLoginModalElements();
                 if (!overlay) return;
 
-                overlay.classList.remove('login-keyboard-active');
-                overlay.style.removeProperty('--login-modal-visual-top');
-                overlay.style.removeProperty('--login-modal-visual-height');
+                overlay.classList.remove('keyboard-open');
+                overlay.classList.remove('login-focus-transfer');
+                overlay.style.removeProperty('--auth-login-vv-top');
+                overlay.style.removeProperty('--auth-login-vv-height');
             }
 
             function resetLoginModalKeyboardDockState() {
@@ -1363,10 +1384,12 @@
 
                 overlay.addEventListener('click', (event) => {
                     const clickedScroller = event.target instanceof HTMLElement &&
-                        event.target.classList.contains('login-modal-scroll');
+                        event.target.classList.contains('auth-login-scroll');
                     const clickedAligner = event.target instanceof HTMLElement &&
-                        event.target.classList.contains('login-modal-aligner');
-                    if (event.target !== overlay && !clickedScroller && !clickedAligner) return;
+                        event.target.classList.contains('auth-login-aligner');
+                    const clickedViewport = event.target instanceof HTMLElement &&
+                        event.target.classList.contains('auth-login-viewport');
+                    if (event.target !== overlay && !clickedScroller && !clickedAligner && !clickedViewport) return;
 
                     const now = Date.now();
                     if (now < overlayCloseDisabledUntil) {
@@ -1395,7 +1418,7 @@
                 detachLoginModalKeyboardDock();
                 resetLoginModalKeyboardDockState();
                 resetLoginModalViewportState();
-                modal.style.display = 'flex';
+                modal.style.display = 'block';
                 modal.style.removeProperty('visibility');
                 modal.style.removeProperty('opacity');
 
