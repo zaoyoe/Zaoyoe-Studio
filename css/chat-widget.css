@@ -663,18 +663,34 @@
 .chat-action-btn {
     width: 36px;
     height: 36px;
+    min-width: 36px;
+    min-height: 36px;
+    flex: 0 0 36px;
+    margin: 0;
     border-radius: 50%;
     background: var(--chat-panel-bg);
     border: 1px solid var(--chat-panel-border);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
     box-shadow: var(--chat-panel-shadow);
+    appearance: none;
+    -webkit-appearance: none;
     color: rgba(255, 255, 255, 0.7);
     display: flex;
     justify-content: center;
     align-items: center;
     cursor: pointer;
     transition: all 0.2s;
+}
+
+.chat-action-btn i {
+    width: 16px;
+    height: 16px;
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 16px;
+    line-height: 1;
 }
 
 .chat-action-btn:hover {
@@ -721,12 +737,17 @@
 #chatEmojiBtn.chat-action-btn {
     width: 36px;
     height: 36px;
+    min-width: 36px;
+    min-height: 36px;
+    flex: 0 0 36px;
     padding: 0;
+    margin: 0;
     background: transparent;
     border: none;
+    border-radius: 50%;
     box-shadow: none;
+    outline: none;
     color: rgba(255, 255, 255, 0.7);
-    font-size: 16px;
 }
 
 #chatEmojiBtn.chat-action-btn:hover {

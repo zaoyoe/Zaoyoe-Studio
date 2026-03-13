@@ -84,6 +84,44 @@ class ChatWidget {
         requestAnimationFrame(step);
     }
 
+    _closeEmojiPicker() {
+        if (this.emojiPicker) {
+            this.emojiPicker.classList.remove('active');
+        }
+    }
+
+    _bindEmojiPicker(emojiBtn) {
+        if (!emojiBtn || !this.emojiPicker) return;
+
+        if (this._onEmojiDismissClick) {
+            document.removeEventListener('click', this._onEmojiDismissClick);
+        }
+
+        emojiBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.emojiPicker.classList.toggle('active');
+        });
+
+        this.emojiPicker.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const emojiItem = e.target instanceof Element ? e.target.closest('.emoji-item') : null;
+            if (!emojiItem) return;
+            if (this.input) {
+                this.input.value += emojiItem.textContent;
+                this._focusInputWithoutScroll(this.input);
+            }
+            this._closeEmojiPicker();
+        });
+
+        this._onEmojiDismissClick = (e) => {
+            if (!this.emojiPicker?.classList.contains('active')) return;
+            if (this.emojiPicker.contains(e.target) || emojiBtn.contains(e.target)) return;
+            this._closeEmojiPicker();
+        };
+        document.addEventListener('click', this._onEmojiDismissClick);
+    }
+
     _getAdaptiveKeyboardDuration(frames, minMs, maxMs) {
         const hz = Math.max(50, this._estimatedRefreshHz || 60);
         const ms = Math.round((frames * 1000) / hz);
@@ -1526,19 +1564,7 @@ class ChatWidget {
 
         // Emoji Picker
         const emojiBtn = this.chatWindow.querySelector('#chatEmojiBtn');
-        emojiBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            this.emojiPicker.classList.toggle('active');
-        });
-
-        this.emojiPicker.addEventListener('click', (e) => {
-            if (e.target.classList.contains('emoji-item')) {
-                this.input.value += e.target.textContent;
-                this._focusInputWithoutScroll(this.input);
-            }
-        });
-
-        document.addEventListener('click', () => this.emojiPicker.classList.remove('active'));
+        this._bindEmojiPicker(emojiBtn);
 
         // Image Upload
         const uploadBtn = this.chatWindow.querySelector('#chatUploadBtn');
@@ -1761,17 +1787,38 @@ class ChatWidget {
                 background: var(--chat-panel-bg, rgba(255, 255, 255, 0.025)) !important;
                 border: 1px solid var(--chat-panel-border, rgba(255, 255, 255, 0.08)) !important;
                 box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), inset 0 -12px 24px rgba(0, 0, 0, 0.08) !important;
+                min-width: 36px !important;
+                min-height: 36px !important;
+                flex: 0 0 36px !important;
+                margin: 0 !important;
+                appearance: none !important;
+                -webkit-appearance: none !important;
+            }
+
+            .chat-window:not(.admin-mode-layout) .chat-action-btn i {
+                width: 16px !important;
+                height: 16px !important;
+                display: inline-flex !important;
+                justify-content: center !important;
+                align-items: center !important;
+                font-size: 16px !important;
+                line-height: 1 !important;
             }
 
             .chat-window:not(.admin-mode-layout) #chatEmojiBtn.chat-action-btn {
                 width: 36px !important;
                 height: 36px !important;
+                min-width: 36px !important;
+                min-height: 36px !important;
+                flex: 0 0 36px !important;
                 padding: 0 !important;
+                margin: 0 !important;
                 background: transparent !important;
                 border: none !important;
+                border-radius: 50% !important;
                 box-shadow: none !important;
+                outline: none !important;
                 color: rgba(255, 255, 255, 0.7) !important;
-                font-size: 16px !important;
             }
 
             .chat-window:not(.admin-mode-layout) #chatEmojiBtn.chat-action-btn:hover {
@@ -2036,26 +2083,7 @@ class ChatWidget {
 
         // Emoji Picker
         const emojiBtn = this.chatWindow.querySelector('#chatEmojiBtn');
-        emojiBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            this.emojiPicker.classList.toggle('active');
-        });
-
-        // Add Emoji
-        this.chatWindow.querySelectorAll('.emoji-item').forEach(item => {
-            item.addEventListener('click', (e) => {
-                this.input.value += e.target.textContent;
-                this.emojiPicker.classList.remove('active');
-                this._focusInputWithoutScroll(this.input);
-            });
-        });
-
-        // Close UI when clicking outside
-        document.addEventListener('click', (e) => {
-            if (this.chatWindow.contains(e.target) || this.fab.contains(e.target)) return;
-            // logic: close emoji picker
-            if (this.emojiPicker) this.emojiPicker.classList.remove('active');
-        });
+        this._bindEmojiPicker(emojiBtn);
 
         // Image Upload
         const uploadBtn = this.chatWindow.querySelector('#chatUploadBtn');
