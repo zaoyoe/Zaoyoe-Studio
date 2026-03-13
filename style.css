@@ -4356,20 +4356,7 @@ input.login-submit-btn {
 
 #loginModal .login-modal-scroll {
     min-height: 0;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    overflow: hidden;
-}
-
-#loginModal .login-card-scroll {
-    min-height: 0;
-    flex: 1 1 auto;
-    overflow-y: auto;
-    overflow-x: hidden;
-    -webkit-overflow-scrolling: touch;
-    overscroll-behavior: contain;
-    touch-action: pan-y;
+    display: block;
 }
 
 html.login-modal-lock,
@@ -7073,33 +7060,10 @@ body {
     }
 
     #loginModal .login-modal-scroll {
-        display: flex !important;
-        justify-content: center !important;
-        align-items: center !important;
+        display: block !important;
         width: 100% !important;
         min-height: 0 !important;
         max-height: 100% !important;
-        overflow: hidden !important;
-        box-sizing: border-box !important;
-    }
-
-    #loginModal .login-card,
-    #loginModal.active .login-card,
-    #loginModal.active:focus-within .login-card,
-    #loginModal.ios-focus-lock .login-card {
-        display: flex !important;
-        flex-direction: column !important;
-        max-height: none !important;
-        overflow: hidden !important;
-        margin-top: 0 !important;
-        margin-bottom: 0 !important;
-        position: relative !important;
-    }
-
-    #loginModal .login-card-scroll {
-        width: 100% !important;
-        min-height: 0 !important;
-        flex: 1 1 auto !important;
         overflow-y: auto !important;
         overflow-x: hidden !important;
         overscroll-behavior: contain !important;
@@ -7110,8 +7074,20 @@ body {
         box-sizing: border-box !important;
     }
 
-    /* Generic mobile modal scrolling. Login modal uses its own layered scroller. */
-    .modal-content:not(.guestbook-composer-sheet) {
+    #loginModal .login-card,
+    #loginModal.active .login-card,
+    #loginModal.active:focus-within .login-card,
+    #loginModal.ios-focus-lock .login-card {
+        max-height: none !important;
+        overflow: visible !important;
+        margin-top: 0 !important;
+        margin-bottom: 0 !important;
+        position: relative !important;
+    }
+
+    /* Ensure modal content is scrollable and fits viewport */
+    .modal-content:not(.guestbook-composer-sheet),
+    .login-card {
         max-height: calc(100vh - 40px) !important;
         overflow-y: auto !important;
         -webkit-overflow-scrolling: touch !important;
