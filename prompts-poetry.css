@@ -3207,6 +3207,18 @@ body.modal-open .prompt-card {
     text-align: center;
 }
 
+.comment-list.comment-list-empty {
+    display: flex;
+    flex-direction: column;
+    padding-bottom: 0;
+}
+
+.comment-list.comment-list-empty .comment-empty-state {
+    flex: 1;
+    min-height: 100%;
+    padding: 0 20px;
+}
+
 .comment-empty-title {
     font-size: 1.05rem;
     font-weight: 600;
@@ -4088,6 +4100,11 @@ body.modal-open .prompt-card {
     .modal-inner.comment-mode .comment-list {
         padding: 4px 2px calc(168px + env(safe-area-inset-bottom));
         scroll-padding-bottom: calc(168px + env(safe-area-inset-bottom));
+    }
+
+    .modal-inner.comment-mode .comment-list.comment-list-empty {
+        padding: 0 2px;
+        scroll-padding-bottom: 0;
     }
 
     .modal-inner.comment-mode .comment-item {

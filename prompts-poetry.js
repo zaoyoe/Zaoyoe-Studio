@@ -4611,10 +4611,16 @@ function sanitizeCommentSortTopUI() {
 
 function renderCommentEmptyState(list) {
     if (!list) return;
-    const title = window.i18n?.t('gallery.commentsEmpty') || 'No comments yet';
-    const subtitle = window.i18n?.t('gallery.commentsEmptySub') || 'Be the first to leave a note.';
+    const currentLang = window.i18n?.getCurrentLanguage?.() || document.documentElement.lang || 'zh';
+    const title = window.i18n?.t('gallery.commentsEmpty')
+        || (currentLang === 'en' ? 'No comments yet' : '暂无评论');
+    const subtitle = currentLang === 'en'
+        ? (window.i18n?.t('gallery.commentsEmptySub') || 'Be the first to leave a note.')
+        : '';
+
+    list.classList.add('comment-list-empty');
     list.innerHTML = `
-        <div class="comment-empty-state">
+        <div class="comment-empty-state" data-state="empty">
             <div class="comment-empty-title">${title}</div>
             ${subtitle ? `<div class="comment-empty-subtitle">${subtitle}</div>` : ''}
         </div>
@@ -5389,7 +5395,11 @@ function openPromptModal(id) {
     }
 
     // Reset Comments
-    document.getElementById('commentList').innerHTML = '';
+    const commentList = document.getElementById('commentList');
+    if (commentList) {
+        commentList.classList.remove('comment-list-empty');
+        commentList.innerHTML = '';
+    }
     document.getElementById('commentCountBadge').textContent = '0';
 
     // Check unlock status (if logged in)
@@ -6978,6 +6988,7 @@ function renderCommentsFromCache(cached, list) {
 
     updateCommentSectionHeading(data.length);
 
+    list.classList.remove('comment-list-empty');
     list.innerHTML = '';
     if (data.length === 0) {
         updateCommentSectionHeading(0);
@@ -7087,7 +7098,8 @@ async function fetchComments(promptId, forceRefresh = false) {
         // Continue to refresh in background (don't return)
     } else {
         // No cache: show loading
-        list.innerHTML = `<div class="comment-empty-state"><div class="comment-empty-subtitle">${window.i18n?.t('common.loading') || 'Loading...'}</div></div>`;
+        list.classList.add('comment-list-empty');
+        list.innerHTML = `<div class="comment-empty-state" data-state="loading"><div class="comment-empty-subtitle">${window.i18n?.t('common.loading') || 'Loading...'}</div></div>`;
     }
 
     // Get cached user ID if available (avoid re-calling getUser if we have it)
@@ -7137,7 +7149,8 @@ async function fetchComments(promptId, forceRefresh = false) {
 
     if (error) {
         console.error("Comment Load Error:", error);
-        list.innerHTML = `<div class="comment-empty-state"><div class="comment-empty-subtitle" style="color:#fca5a5;">${window.i18n?.t('common.error') || 'Failed to load comments'}</div></div>`;
+        list.classList.add('comment-list-empty');
+        list.innerHTML = `<div class="comment-empty-state" data-state="error"><div class="comment-empty-subtitle" style="color:#fca5a5;">${window.i18n?.t('common.error') || 'Failed to load comments'}</div></div>`;
         return;
     }
 
@@ -7170,6 +7183,7 @@ async function fetchComments(promptId, forceRefresh = false) {
         commentLikeCounts: Object.fromEntries(commentLikeCounts)
     });
 
+    list.classList.remove('comment-list-empty');
     list.innerHTML = '';
     if (data.length === 0) {
         updateCommentSectionHeading(0);
@@ -7378,6 +7392,13 @@ window.handleCollapseToggle = handleCollapseToggle;
 
 function renderComment(comment, overrideAvatar = null, replyToProfile = null, hasReplies = false, isLastReply = false, isLiked = false, likeCount = 0) {
     const list = document.getElementById('commentList');
+    if (!list) return;
+
+    if (list.classList.contains('comment-list-empty')) {
+        list.classList.remove('comment-list-empty');
+        list.innerHTML = '';
+    }
+
     // Handle various profile structures (standard vs metadata)
     const profile = comment.profiles || {};
 
@@ -7984,7 +8005,7 @@ function refreshCommentLanguageUI() {
     }
 
     const list = document.getElementById('commentList');
-    if (list?.querySelector('.comment-empty-state')) {
+    if (list?.querySelector('.comment-empty-state[data-state="empty"]')) {
         renderCommentEmptyState(list);
     }
 }
