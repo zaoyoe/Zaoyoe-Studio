@@ -303,6 +303,12 @@
                     transform: translateY(0);
                 }
             }
+
+            @media (max-width: 768px) {
+                .announcement-modal {
+                    width: 95%;
+                }
+            }
             
             /* ========================================
                Decoration Particles (from prompts-poetry.css)

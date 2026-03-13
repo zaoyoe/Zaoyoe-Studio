@@ -3856,6 +3856,11 @@ body.modal-open .prompt-card {
         margin: 0 auto;
     }
 
+    /* Match announcement modal width to the mobile prompt card modal */
+    .announcement-modal {
+        width: 95%;
+    }
+
     .modal-image-col {
         height: 40%;
     }
