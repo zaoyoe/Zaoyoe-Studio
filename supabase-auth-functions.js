@@ -1863,7 +1863,6 @@ const profileModalState = {
     blurTimer: null,
     focusTransferUntil: 0,
     lastFocusAnchor: null,
-    lastShiftY: 0,
     preserveLayoutDuringFocusTransfer: false,
     pageFrozen: false
 };
@@ -1951,7 +1950,6 @@ function resetProfileModalVisualState() {
     card.style.removeProperty('scroll-padding-bottom');
     profileModalState.focusTransferUntil = 0;
     profileModalState.lastFocusAnchor = null;
-    profileModalState.lastShiftY = 0;
     profileModalState.preserveLayoutDuringFocusTransfer = false;
 }
 
@@ -1972,31 +1970,6 @@ function getProfileModalFocusAnchor(input = getActiveProfileModalInput()) {
         input.closest('.input-group') ||
         input
     );
-}
-
-function scrollProfileModalToFocusedField(input = getActiveProfileModalInput()) {
-    const { card } = getProfileModalElements();
-    if (!card || !input) return;
-
-    const anchor = getProfileModalFocusAnchor(input);
-    if (!anchor) return;
-
-    const cardRect = card.getBoundingClientRect();
-    const anchorRect = anchor.getBoundingClientRect();
-    const maxScrollTop = Math.max(0, card.scrollHeight - card.clientHeight);
-    const anchorCenterInContent = (anchorRect.top - cardRect.top) + card.scrollTop + (anchorRect.height / 2);
-    const desiredCenterInViewport = Math.max(
-        120,
-        Math.min(card.clientHeight * 0.42, card.clientHeight - 120)
-    );
-    const nextScrollTop = Math.max(
-        0,
-        Math.min(anchorCenterInContent - desiredCenterInViewport, maxScrollTop)
-    );
-
-    if (Math.abs(nextScrollTop - card.scrollTop) > 1) {
-        card.scrollTop = nextScrollTop;
-    }
 }
 
 function ensureProfileModalInputVisible(input = getActiveProfileModalInput()) {
@@ -2054,16 +2027,13 @@ function applyProfileModalLayout() {
 
     card.style.maxHeight = `${Math.max(320, visibleHeight - 24)}px`;
     card.style.scrollPaddingBottom = `${activeInput || holdDuringFocusTransfer ? 144 : 96}px`;
-    if (!holdDuringFocusTransfer && !preserveWithinSameAnchor) {
-        overlay.style.setProperty('--profile-modal-shift-y', '0px');
-    }
+    overlay.style.setProperty('--profile-modal-shift-y', '0px');
     overlay.classList.toggle('keyboard-active', !!activeInput || holdDuringFocusTransfer);
 
     if (!activeInput) {
         if (!holdDuringFocusTransfer) {
             profileModalState.lastFocusAnchor = null;
             profileModalState.preserveLayoutDuringFocusTransfer = false;
-            profileModalState.lastShiftY = 0;
         }
         return;
     }
@@ -2075,35 +2045,17 @@ function applyProfileModalLayout() {
     }
 
     if (preserveWithinSameAnchor) {
-        overlay.style.setProperty('--profile-modal-shift-y', `${profileModalState.lastShiftY}px`);
         profileModalState.lastFocusAnchor = activeAnchor || null;
         profileModalState.preserveLayoutDuringFocusTransfer = false;
         return;
     }
 
-    if (activeAnchor && activeAnchor === profileModalState.lastFocusAnchor) {
-        ensureProfileModalInputVisible(activeInput);
-    } else {
-        scrollProfileModalToFocusedField(activeInput);
-    }
-
-    const cardRect = card.getBoundingClientRect();
-    const safeTop = 12;
-    const visibleBottom = visibleHeight - 12;
-    const overflowBottom = Math.max(0, Math.ceil(cardRect.bottom - visibleBottom));
-    const minShiftY = Math.min(0, Math.round(safeTop - cardRect.top));
-    const shiftY = Math.max(minShiftY, -overflowBottom);
-    overlay.style.setProperty('--profile-modal-shift-y', `${shiftY}px`);
-    profileModalState.lastShiftY = shiftY;
+    ensureProfileModalInputVisible(activeInput);
     profileModalState.lastFocusAnchor = activeAnchor || null;
     profileModalState.preserveLayoutDuringFocusTransfer = false;
 
     requestAnimationFrame(() => {
-        if (activeAnchor && activeAnchor === profileModalState.lastFocusAnchor) {
-            ensureProfileModalInputVisible(activeInput);
-        } else {
-            scrollProfileModalToFocusedField(activeInput);
-        }
+        ensureProfileModalInputVisible(activeInput);
     });
 }
 

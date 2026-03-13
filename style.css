@@ -4614,6 +4614,10 @@ body.profile-modal-lock {
     overscroll-behavior: none !important;
 }
 
+#profileModal.keyboard-active {
+    align-items: flex-start !important;
+}
+
 .profile-modal.wide {
     width: 900px;
     max-width: 95vw;
@@ -7043,6 +7047,10 @@ body {
     #profileModal {
         padding: calc(env(safe-area-inset-top, 0px) + 12px) 20px calc(env(safe-area-inset-bottom, 0px) + 12px) !important;
         box-sizing: border-box !important;
+    }
+
+    #profileModal.keyboard-active {
+        align-items: flex-start !important;
     }
 
     #profileModal .modal-content.profile-modal,
