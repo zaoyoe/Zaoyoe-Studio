@@ -1903,13 +1903,38 @@ function focusProfileModalInputWithoutScroll(input) {
 
 function bindProfileModalInputFocusStabilizer(input) {
     if (!input || input.dataset.profileFocusStabilizerBound === '1') return;
+    let touchDragY = 0;
 
     input.addEventListener('touchstart', (event) => {
         const { overlay } = getProfileModalElements();
         if (!isProfileModalKeyboardDockEnabled() || !overlay?.classList.contains('active')) return;
+        touchDragY = event.touches[0]?.clientY || 0;
         if (document.activeElement === input) return;
         if (event.cancelable) event.preventDefault();
         focusProfileModalInputWithoutScroll(input);
+    }, { passive: false });
+
+    input.addEventListener('touchmove', (event) => {
+        const { overlay, card } = getProfileModalElements();
+        if (!isProfileModalKeyboardDockEnabled() || !overlay?.classList.contains('active') || !card) return;
+        if (document.activeElement !== input) return;
+
+        const nextY = event.touches[0]?.clientY || 0;
+        const deltaY = touchDragY - nextY;
+        if (Math.abs(deltaY) < 1) return;
+
+        const prevScrollTop = card.scrollTop;
+        const nextScrollTop = Math.max(0, Math.min(
+            prevScrollTop + deltaY,
+            Math.max(0, card.scrollHeight - card.clientHeight)
+        ));
+
+        if (nextScrollTop !== prevScrollTop) {
+            card.scrollTop = nextScrollTop;
+            if (event.cancelable) event.preventDefault();
+        }
+
+        touchDragY = nextY;
     }, { passive: false });
 
     input.dataset.profileFocusStabilizerBound = '1';
