@@ -22,6 +22,28 @@ function getOptimizedImageUrl(url) {
     return url;
 }
 
+function shouldForcePromptPageTop() {
+    if (!window.__PROMPTS_FORCE_SCROLL_TOP__) return false;
+
+    const urlParams = new URLSearchParams(window.location.search);
+    return !urlParams.has('id') && !window.location.hash;
+}
+
+function forcePromptPageTop() {
+    if (!shouldForcePromptPageTop()) return;
+
+    const forceTop = typeof window.__PROMPTS_FORCE_SCROLL_TOP_FN__ === 'function'
+        ? window.__PROMPTS_FORCE_SCROLL_TOP_FN__
+        : () => {
+            window.scrollTo(0, 0);
+            document.documentElement.scrollTop = 0;
+            document.body.scrollTop = 0;
+        };
+
+    forceTop();
+    requestAnimationFrame(forceTop);
+}
+
 // --- Theme Toggle ---
 function initTheme() {
     const savedTheme = localStorage.getItem('theme');
@@ -1971,6 +1993,7 @@ function showBannerAnnouncement(color, size, content, ackKey, decoration) {
 
         // Add class to body to offset fixed elements
         document.body.classList.add('has-banner');
+        forcePromptPageTop();
     }
 }
 
@@ -3033,6 +3056,7 @@ function renderFeaturedBanner() {
         banner.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
         banner.style.opacity = '1';
         banner.style.transform = 'translateY(0)';
+        forcePromptPageTop();
     });
 
     // Pick a random artwork (or use a daily seed for consistency)
@@ -3319,7 +3343,7 @@ function renderCurrentPage() {
 
     // Clear grid for standard pagination
     grid.innerHTML = '';
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: shouldForcePromptPageTop() ? 'auto' : 'smooth' });
 
     const totalItems = allFilteredItems.length;
     const totalPages = Math.ceil(totalItems / CARDS_PER_PAGE);
@@ -3414,6 +3438,7 @@ function renderCurrentPage() {
     // Show container
     requestAnimationFrame(() => {
         grid.classList.add('visible');
+        forcePromptPageTop();
     });
 
     // Render Pagination Controls
