@@ -6703,23 +6703,23 @@ input[type="submit"],
     will-change: transform, opacity;
 }
 
-#guestbookModal.active .guestbook-composer-handle {
+#guestbookModal.guestbook-entrying .guestbook-composer-handle {
     animation: guestbookComposerHandleRise 0.38s cubic-bezier(0.22, 1, 0.36, 1) 0.03s both;
 }
 
-#guestbookModal.active .guestbook-composer-header {
+#guestbookModal.guestbook-entrying .guestbook-composer-header {
     animation: guestbookComposerSectionRise 0.42s cubic-bezier(0.22, 1, 0.36, 1) 0.08s both;
 }
 
-#guestbookModal.active .guestbook-composer-editor {
+#guestbookModal.guestbook-entrying .guestbook-composer-editor {
     animation: guestbookComposerSectionRise 0.46s cubic-bezier(0.22, 1, 0.36, 1) 0.14s both;
 }
 
-#guestbookModal.active .guestbook-composer-preview {
+#guestbookModal.guestbook-entrying .guestbook-composer-preview {
     animation: guestbookComposerSectionRise 0.44s cubic-bezier(0.22, 1, 0.36, 1) 0.18s both;
 }
 
-#guestbookModal.active .guestbook-composer-actions {
+#guestbookModal.guestbook-entrying .guestbook-composer-actions {
     animation: guestbookComposerSectionRise 0.48s cubic-bezier(0.22, 1, 0.36, 1) 0.21s both;
 }
 

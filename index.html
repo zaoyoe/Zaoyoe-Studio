@@ -60,7 +60,7 @@
     <link rel="stylesheet" href="security-cards.css?v=20260304_IOS_CARET_FIX1">
 
     <!-- Core Styles (for modals, profile, etc) -->
-    <link rel="stylesheet" href="style.css?v=20260313_GUESTBOOK_COMPOSER_ENTRY_16">
+    <link rel="stylesheet" href="style.css?v=20260313_GUESTBOOK_COMPOSER_ENTRY_17">
     <link rel="stylesheet" href="login_styles.css?v=20260313_HOME_PROFILE_MODAL_WIDTH_1">
     <link rel="stylesheet" href="avatar-fix.css?v=20260302_G_AUTH">
 
@@ -374,7 +374,8 @@
                 lastBottomInset: 0,
                 initialDockTimer: null,
                 insetDropTimer: null,
-                pendingInset: 0
+                pendingInset: 0,
+                entryAnimationTimer: null
             };
 
             function isGuestbookModalKeyboardDockEnabled() {
@@ -476,6 +477,27 @@
                     guestbookModalKeyboardState.insetDropTimer = null;
                 }
                 guestbookModalKeyboardState.pendingInset = 0;
+            }
+
+            function clearGuestbookEntryAnimationTimer() {
+                if (guestbookModalKeyboardState.entryAnimationTimer) {
+                    clearTimeout(guestbookModalKeyboardState.entryAnimationTimer);
+                    guestbookModalKeyboardState.entryAnimationTimer = null;
+                }
+            }
+
+            function playGuestbookComposerEntryAnimation(overlay) {
+                if (!overlay) return;
+
+                clearGuestbookEntryAnimationTimer();
+                overlay.classList.remove('guestbook-entrying');
+                void overlay.offsetWidth;
+                overlay.classList.add('guestbook-entrying');
+
+                guestbookModalKeyboardState.entryAnimationTimer = setTimeout(() => {
+                    overlay.classList.remove('guestbook-entrying');
+                    guestbookModalKeyboardState.entryAnimationTimer = null;
+                }, 760);
             }
 
             function captureGuestbookModalKeyboardBase() {
@@ -760,7 +782,8 @@
                 getActiveGuestbookModalInput()?.blur();
                 detachGuestbookModalKeyboardDock();
                 resetGuestbookModalKeyboardState();
-                overlay.classList.remove('active', 'keyboard-docked', 'ios-focus-lock');
+                clearGuestbookEntryAnimationTimer();
+                overlay.classList.remove('active', 'keyboard-docked', 'ios-focus-lock', 'guestbook-entrying');
                 overlay.style.setProperty('--guestbook-modal-shift-y', '0px');
                 syncGuestbookComposerEmptyState();
                 syncGuestbookComposerImageState();
@@ -784,7 +807,8 @@
                 guestbookModalKeyboardState.ownsFullScrollLock = false;
                 detachGuestbookModalKeyboardDock();
                 resetGuestbookModalKeyboardState();
-                modal.classList.remove('keyboard-docked', 'ios-focus-lock');
+                clearGuestbookEntryAnimationTimer();
+                modal.classList.remove('keyboard-docked', 'ios-focus-lock', 'guestbook-entrying');
                 modal.style.setProperty('--guestbook-modal-shift-y', '0px');
                 syncGuestbookComposerEmptyState();
                 syncGuestbookComposerImageState();
@@ -793,6 +817,7 @@
                 modal.classList.remove('active');
                 void modal.offsetWidth;
                 modal.classList.add('active');
+                playGuestbookComposerEntryAnimation(modal);
 
                 if (window.iOSScrollLock) {
                     window.iOSScrollLock.lockLight(modal);
