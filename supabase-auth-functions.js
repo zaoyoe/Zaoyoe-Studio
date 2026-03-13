@@ -2083,7 +2083,7 @@ function animateProfileModalScroll(scrollHost, targetScrollTop) {
     profileModalState.scrollAnimationTarget = to;
 
     const startAt = performance.now();
-    const duration = 220;
+    const duration = 165;
 
     const step = (now) => {
         if (!scrollHost.isConnected) {
@@ -2092,9 +2092,7 @@ function animateProfileModalScroll(scrollHost, targetScrollTop) {
         }
 
         const elapsed = Math.min(1, (now - startAt) / duration);
-        const eased = elapsed < 0.5
-            ? 4 * elapsed * elapsed * elapsed
-            : 1 - Math.pow(-2 * elapsed + 2, 3) / 2;
+        const eased = 1 - Math.pow(1 - elapsed, 2.2);
         scrollHost.scrollTop = from + ((to - from) * eased);
 
         if (elapsed < 1) {
@@ -2199,7 +2197,7 @@ function bindProfileModalInputBehavior(input) {
             clearTimeout(profileModalState.blurTimer);
             profileModalState.blurTimer = null;
         }
-        scheduleProfileModalLayout({ settled: true, deferOnly: true });
+        scheduleProfileModalLayout();
     });
 
     input.addEventListener('blur', () => {
@@ -2217,7 +2215,7 @@ function bindProfileModalInputBehavior(input) {
     input.addEventListener('click', () => {
         if (document.activeElement === input) return;
         markProfileModalFocusTransfer(input);
-        scheduleProfileModalLayout({ settled: true, deferOnly: true });
+        scheduleProfileModalLayout();
     });
 
     input.addEventListener('touchstart', (event) => {
@@ -2276,7 +2274,7 @@ function bindProfileModalInputBehavior(input) {
             } catch (_) {
                 input.focus();
             }
-            scheduleProfileModalLayout({ settled: true, deferOnly: true });
+            scheduleProfileModalLayout();
         }
         gesture.mode = 'idle';
     });
