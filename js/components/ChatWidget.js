@@ -852,10 +852,10 @@ class ChatWidget {
                 left: 0;
                 width: 100%;
                 height: 100%;
-                background: rgba(0, 0, 0, 0.3);
+                background: var(--chat-overlay-bg, rgba(7, 9, 12, 0.28));
                 z-index: 9998;
-                backdrop-filter: blur(8px);
-                -webkit-backdrop-filter: blur(8px);
+                backdrop-filter: var(--chat-overlay-filter, blur(14px) saturate(108%));
+                -webkit-backdrop-filter: var(--chat-overlay-filter, blur(14px) saturate(108%));
                 transform: translateZ(0);
                 -webkit-transform: translateZ(0);
                 will-change: opacity, backdrop-filter;
@@ -1729,46 +1729,56 @@ class ChatWidget {
         style.textContent = `
             /* User Mode Glassmorphism Enhancement */
             .chat-window:not(.admin-mode-layout) {
-                background: var(--chat-shell-bg, rgba(30, 41, 59, 0.95)) !important;
+                background: var(--chat-shell-bg, rgba(11, 14, 20, 0.94)) !important;
                 backdrop-filter: none !important;
                 -webkit-backdrop-filter: none !important;
-                border: 1px solid var(--chat-shell-border, rgba(255, 255, 255, 0.1)) !important;
-                box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5) !important;
+                border: 1px solid var(--chat-shell-border, rgba(255, 255, 255, 0.08)) !important;
+                box-shadow: 0 26px 70px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
             }
 
             .chat-window:not(.admin-mode-layout) .chat-header {
                 background: transparent !important;
-                border-bottom: 1px solid var(--chat-frost-border, rgba(255, 255, 255, 0.15)) !important;
+                border-bottom: 1px solid var(--chat-panel-border, rgba(255, 255, 255, 0.08)) !important;
             }
 
             .chat-window:not(.admin-mode-layout) .chat-messages {
-                background: linear-gradient(180deg, rgba(30, 41, 59, 0.08) 0%, rgba(30, 41, 59, 0.16) 100%) !important;
+                background: var(--chat-panel-bg, rgba(255, 255, 255, 0.025)) !important;
+                box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), inset 0 -12px 24px rgba(0, 0, 0, 0.08) !important;
             }
 
             .chat-window:not(.admin-mode-layout) .chat-input-area {
-                background: var(--chat-frost-panel-bg, rgba(30, 41, 59, 0.22)) !important;
-                border-top: 1px solid var(--chat-frost-border, rgba(255, 255, 255, 0.15)) !important;
+                background: transparent !important;
+                border-top: 1px solid var(--chat-panel-border, rgba(255, 255, 255, 0.08)) !important;
             }
 
             .chat-window:not(.admin-mode-layout) .chat-input,
             .chat-window:not(.admin-mode-layout) .chat-action-btn {
-                background: var(--chat-frost-bg, rgba(30, 41, 59, 0.35)) !important;
-                border: 1px solid var(--chat-frost-border, rgba(255, 255, 255, 0.15)) !important;
-                backdrop-filter: blur(8px) !important;
-                -webkit-backdrop-filter: blur(8px) !important;
-                box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+                backdrop-filter: none !important;
+                -webkit-backdrop-filter: none !important;
+            }
+
+            .chat-window:not(.admin-mode-layout) .chat-action-btn {
+                background: var(--chat-panel-bg, rgba(255, 255, 255, 0.025)) !important;
+                border: 1px solid var(--chat-panel-border, rgba(255, 255, 255, 0.08)) !important;
+                box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), inset 0 -12px 24px rgba(0, 0, 0, 0.08) !important;
+            }
+
+            .chat-window:not(.admin-mode-layout) .chat-input {
+                background: var(--chat-input-bg, rgba(0, 0, 0, 0.2)) !important;
+                border: 1px solid var(--chat-input-border, rgba(255, 255, 255, 0.1)) !important;
+                box-shadow: none !important;
             }
 
             .chat-window:not(.admin-mode-layout) .chat-input:focus {
-                background: rgba(30, 41, 59, 0.5) !important;
-                border-color: rgba(255, 255, 255, 0.3) !important;
-                box-shadow: 0 0 0 3px rgba(107, 158, 206, 0.14) !important;
+                background: var(--chat-input-bg-focus, rgba(0, 0, 0, 0.4)) !important;
+                border-color: rgba(107, 158, 206, 0.32) !important;
+                box-shadow: 0 0 0 3px rgba(107, 158, 206, 0.12) !important;
             }
 
             .chat-window:not(.admin-mode-layout) .message.admin {
-                background: var(--chat-frost-bg, rgba(30, 41, 59, 0.35)) !important;
-                border: 1px solid var(--chat-frost-border, rgba(255, 255, 255, 0.15)) !important;
-                box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+                background: var(--chat-panel-bg, rgba(255, 255, 255, 0.025)) !important;
+                border: 1px solid var(--chat-panel-border, rgba(255, 255, 255, 0.08)) !important;
+                box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), inset 0 -12px 24px rgba(0, 0, 0, 0.08) !important;
             }
 
             body.chat-spotlight-suspended .spotlight-overlay,
@@ -1806,10 +1816,10 @@ class ChatWidget {
                 left: 0;
                 width: 100%;
                 height: 100%;
-                background: rgba(0, 0, 0, 0.3);
+                background: var(--chat-overlay-bg, rgba(7, 9, 12, 0.28));
                 z-index: 9997;
-                backdrop-filter: blur(8px);
-                -webkit-backdrop-filter: blur(8px);
+                backdrop-filter: var(--chat-overlay-filter, blur(14px) saturate(108%));
+                -webkit-backdrop-filter: var(--chat-overlay-filter, blur(14px) saturate(108%));
                 transform: translateZ(0);
                 -webkit-transform: translateZ(0);
                 will-change: opacity, backdrop-filter;
@@ -1823,7 +1833,7 @@ class ChatWidget {
             .chat-overlay.closing {
                 display: block;
                 opacity: 0;
-                background: rgba(0, 0, 0, 0.3);
+                background: var(--chat-overlay-bg, rgba(7, 9, 12, 0.28));
                 backdrop-filter: none;
                 -webkit-backdrop-filter: none;
                 transition: opacity 120ms linear 140ms;
@@ -2767,10 +2777,14 @@ class ChatWidget {
         this.chatWindow.style.setProperty('-webkit-mask-image', '-webkit-radial-gradient(white, black)', 'important');
         this.chatWindow.style.setProperty('backdrop-filter', 'none', 'important');
         this.chatWindow.style.setProperty('-webkit-backdrop-filter', 'none', 'important');
-        this.chatWindow.style.setProperty('background', 'var(--chat-shell-bg, rgba(30, 41, 59, 0.95))', 'important');
-        this.chatWindow.style.setProperty('border', '1px solid var(--chat-shell-border, rgba(255, 255, 255, 0.1))', 'important');
+        this.chatWindow.style.setProperty('background', 'var(--chat-shell-bg, rgba(11, 14, 20, 0.94))', 'important');
+        this.chatWindow.style.setProperty('border', '1px solid var(--chat-shell-border, rgba(255, 255, 255, 0.08))', 'important');
         this.chatWindow.style.removeProperty('border-top');
-        this.chatWindow.style.setProperty('box-shadow', '0 25px 60px rgba(0, 0, 0, 0.5)', 'important');
+        this.chatWindow.style.setProperty(
+            'box-shadow',
+            '0 26px 70px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.06)',
+            'important'
+        );
     }
 
     _enableSessionVisualLock() {
