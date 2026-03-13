@@ -5843,6 +5843,20 @@ function syncPromptCommentComposerMeta() {
     meta.classList.toggle('has-reply', !!replyToName);
 }
 
+function updatePromptCommentComposerTriggerState() {
+    const triggerInput = document.getElementById('commentInput');
+    const triggerArea = triggerInput?.closest('.comment-input-area');
+    const proxyLabel = document.getElementById('commentInputProxyLabel');
+    if (!triggerInput || !triggerArea) return;
+
+    const hasDraft = Boolean(triggerInput.value.trim());
+    triggerArea.classList.toggle('has-draft', hasDraft);
+
+    if (proxyLabel) {
+        proxyLabel.textContent = window.i18n?.t('gallery.commentsTitle') || '评论';
+    }
+}
+
 function syncPromptCommentComposerTrigger() {
     const triggerInput = document.getElementById('commentInput');
     const { input } = getPromptCommentComposerElements();
@@ -5860,6 +5874,7 @@ function syncPromptCommentComposerTrigger() {
         delete triggerInput.dataset.replyToName;
     }
     autoExpandTextarea(triggerInput);
+    updatePromptCommentComposerTriggerState();
 }
 
 function clearCommentDraftFields() {
@@ -5883,6 +5898,7 @@ function clearCommentDraftFields() {
     }
 
     syncPromptCommentComposerMeta();
+    updatePromptCommentComposerTriggerState();
 }
 
 function detachPromptCommentComposerViewportSync() {
@@ -7819,6 +7835,7 @@ function refreshCommentLanguageUI() {
     updateCommentSectionHeading();
     refreshCommentImageUploadLanguageUI();
     refreshPromptCommentComposerLanguageUI();
+    updatePromptCommentComposerTriggerState();
 
     const sortLabel = document.getElementById('currentSortLabel');
     const sortType = localStorage.getItem('commentSortPreference') || 'newest';
@@ -7855,6 +7872,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             commentInputArea?.classList.add('composer-proxy');
             commentInput.setAttribute('readonly', 'readonly');
+            updatePromptCommentComposerTriggerState();
             commentInput.addEventListener('touchstart', (e) => launchComposer(e), { passive: false });
             commentInput.addEventListener('click', (e) => launchComposer(e));
             commentInput.addEventListener('focus', () => {
