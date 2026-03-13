@@ -6624,6 +6624,30 @@ input[type="submit"],
     box-sizing: border-box !important;
 }
 
+@keyframes guestbookComposerSectionRise {
+    from {
+        opacity: 0;
+        transform: translate3d(0, 22px, 0) scale(0.985);
+    }
+
+    to {
+        opacity: 1;
+        transform: translate3d(0, 0, 0) scale(1);
+    }
+}
+
+@keyframes guestbookComposerHandleRise {
+    from {
+        opacity: 0;
+        transform: translate3d(0, 10px, 0) scaleX(0.88);
+    }
+
+    to {
+        opacity: 1;
+        transform: translate3d(0, 0, 0) scaleX(1);
+    }
+}
+
 #guestbookModal .guestbook-composer-sheet {
     width: min(calc(100vw - 40px), 620px) !important;
     max-width: 620px !important;
@@ -6668,6 +6692,35 @@ input[type="submit"],
 
 #guestbookModal .guestbook-composer-sheet>* {
     flex-shrink: 0;
+}
+
+#guestbookModal .guestbook-composer-handle,
+#guestbookModal .guestbook-composer-header,
+#guestbookModal .guestbook-composer-editor,
+#guestbookModal .guestbook-composer-preview,
+#guestbookModal .guestbook-composer-actions {
+    backface-visibility: hidden;
+    will-change: transform, opacity;
+}
+
+#guestbookModal.active .guestbook-composer-handle {
+    animation: guestbookComposerHandleRise 0.38s cubic-bezier(0.22, 1, 0.36, 1) 0.03s both;
+}
+
+#guestbookModal.active .guestbook-composer-header {
+    animation: guestbookComposerSectionRise 0.42s cubic-bezier(0.22, 1, 0.36, 1) 0.08s both;
+}
+
+#guestbookModal.active .guestbook-composer-editor {
+    animation: guestbookComposerSectionRise 0.46s cubic-bezier(0.22, 1, 0.36, 1) 0.14s both;
+}
+
+#guestbookModal.active .guestbook-composer-preview {
+    animation: guestbookComposerSectionRise 0.44s cubic-bezier(0.22, 1, 0.36, 1) 0.18s both;
+}
+
+#guestbookModal.active .guestbook-composer-actions {
+    animation: guestbookComposerSectionRise 0.48s cubic-bezier(0.22, 1, 0.36, 1) 0.21s both;
 }
 
 #guestbookModal .guestbook-composer-handle {
@@ -7355,10 +7408,17 @@ body {
     }
 
     #guestbookModal.active:focus-within .guestbook-composer-sheet>*,
-    #guestbookModal.ios-focus-lock .guestbook-composer-sheet>* {
+    #guestbookModal.ios-focus-lock .guestbook-composer-sheet>*,
+    #guestbookModal.keyboard-docked .guestbook-composer-sheet>*,
+    #guestbookModal.active:focus-within .guestbook-composer-form>*,
+    #guestbookModal.ios-focus-lock .guestbook-composer-form>*,
+    #guestbookModal.keyboard-docked .guestbook-composer-form>* {
+        opacity: 1 !important;
         transform: none !important;
+        animation: none !important;
         transition: none !important;
         transition-delay: 0s !important;
+        will-change: auto !important;
     }
 
     #guestbookModal .guestbook-composer-header {
