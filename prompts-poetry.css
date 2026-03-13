@@ -3957,10 +3957,11 @@ body.modal-open .prompt-card {
     }
 
     .modal-inner.comment-mode .comment-sort-btn {
+        position: relative;
         padding: 8px 12px;
         border-radius: 999px;
         background: rgba(15, 23, 42, 0.24);
-        border: 1px solid rgba(255, 255, 255, 0.14);
+        border: none;
         box-sizing: border-box;
         box-shadow: 0 12px 28px rgba(2, 6, 23, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.08);
         backdrop-filter: blur(16px) saturate(1.22);
@@ -3969,9 +3970,10 @@ body.modal-open .prompt-card {
     }
 
     .comment-sort-dropdown.floating {
+        position: fixed;
         min-width: 156px;
         background: rgba(15, 23, 42, 0.24);
-        border: 1px solid rgba(255, 255, 255, 0.14);
+        border: none;
         border-radius: 24px;
         box-shadow: 0 12px 28px rgba(2, 6, 23, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.08);
         backdrop-filter: blur(16px) saturate(1.22);
@@ -3979,6 +3981,17 @@ body.modal-open .prompt-card {
         isolation: isolate;
         transform: translateZ(0);
         overflow: hidden;
+    }
+
+    .modal-inner.comment-mode .comment-sort-btn::before,
+    .comment-sort-dropdown.floating::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: inherit;
+        pointer-events: none;
+        box-sizing: border-box;
     }
 
     .comment-sort-dropdown.floating .sort-option {
