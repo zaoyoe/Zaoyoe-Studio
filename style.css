@@ -6616,7 +6616,7 @@ input[type="submit"],
 
 /* Homepage Guestbook Composer */
 #guestbookModal {
-    --guestbook-modal-shift-y: 0px;
+    --guestbook-modal-translate-y: 0px;
     background: rgba(7, 9, 12, 0.28) !important;
     backdrop-filter: blur(14px) saturate(108%) !important;
     -webkit-backdrop-filter: blur(14px) saturate(108%) !important;
@@ -6648,6 +6648,18 @@ input[type="submit"],
     }
 }
 
+@keyframes guestbookComposerSheetFadeIn {
+    from {
+        opacity: 0;
+        transform: translate3d(0, calc(var(--guestbook-modal-translate-y, 0px) + 18px), 0) scale(0.985);
+    }
+
+    to {
+        opacity: 1;
+        transform: translate3d(0, var(--guestbook-modal-translate-y, 0px), 0) scale(1);
+    }
+}
+
 #guestbookModal .guestbook-composer-sheet {
     width: min(calc(100vw - 40px), 620px) !important;
     max-width: 620px !important;
@@ -6659,7 +6671,6 @@ input[type="submit"],
     padding: 14px 18px calc(18px + env(safe-area-inset-bottom)) !important;
     box-sizing: border-box !important;
     position: relative !important;
-    top: var(--guestbook-modal-shift-y, 0px) !important;
     display: flex !important;
     flex-direction: column !important;
     gap: 12px !important;
@@ -6673,21 +6684,25 @@ input[type="submit"],
         inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
-    transform: translate3d(0, 18px, 0) scale(0.985) !important;
+    transform: translate3d(0, calc(var(--guestbook-modal-translate-y, 0px) + 18px), 0) scale(0.985) !important;
     opacity: 0 !important;
-    transition:
-        top 180ms cubic-bezier(0.22, 1, 0.36, 1),
-        transform 320ms cubic-bezier(0.22, 1, 0.36, 1),
-        opacity 260ms ease-out !important;
-    will-change: top, transform, opacity !important;
+    will-change: transform, height !important;
     pointer-events: auto !important;
 }
 
 #guestbookModal.active .guestbook-composer-sheet,
 #guestbookModal.active:focus-within .guestbook-composer-sheet,
 #guestbookModal.ios-focus-lock .guestbook-composer-sheet {
-    transform: translate3d(0, 0, 0) scale(1) !important;
+    transform: translate3d(0, var(--guestbook-modal-translate-y, 0px), 0) scale(1) !important;
     opacity: 1 !important;
+}
+
+#guestbookModal.guestbook-entrying .guestbook-composer-sheet {
+    animation: guestbookComposerSheetFadeIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+#guestbookModal .guestbook-composer-sheet.guestbook-sheet-animating {
+    transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1) !important;
 }
 
 #guestbookModal .guestbook-composer-sheet>* {
@@ -7356,7 +7371,7 @@ body {
     }
 
     .login-overlay.active:focus-within .login-card,
-    .modal-overlay.active:focus-within .modal-content {
+    .modal-overlay.active:focus-within .modal-content:not(.guestbook-content) {
         transform: none !important;
         animation: none !important;
         transition: none !important;
@@ -7377,7 +7392,7 @@ body {
 
     /* JS-based ios-focus-lock class (for ALL modal types) */
     .modal-overlay.ios-focus-lock,
-    .modal-overlay.ios-focus-lock .modal-content {
+    .modal-overlay.ios-focus-lock .modal-content:not(.guestbook-content) {
         transform: none !important;
         will-change: auto !important;
         animation: none !important;
