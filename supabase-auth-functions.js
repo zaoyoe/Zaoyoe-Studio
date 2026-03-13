@@ -1949,10 +1949,19 @@ function resetProfileModalVisualState() {
 
 function getProfileModalFocusAnchor(input = getActiveProfileModalInput()) {
     if (!input) return null;
+
+    const mobileSection = input.closest('.mobile-security-section');
+    if (mobileSection) {
+        return mobileSection;
+    }
+
+    const detailPanel = input.closest('.security-detail-content');
+    if (detailPanel) {
+        return detailPanel;
+    }
+
     return (
         input.closest('.input-group') ||
-        input.closest('.mobile-security-section') ||
-        input.closest('.security-detail-content') ||
         input
     );
 }
