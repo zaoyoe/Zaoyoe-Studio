@@ -308,6 +308,32 @@
                 .announcement-modal {
                     width: 95%;
                 }
+
+                .announcement-modal .announcement-header {
+                    padding-top: 21px;
+                    padding-bottom: 17px;
+                }
+
+                .announcement-modal .announcement-body {
+                    padding-top: 17px;
+                    padding-bottom: 25px;
+                }
+
+                .announcement-modal .announcement-text {
+                    padding-top: 17px;
+                    padding-bottom: 17px;
+                    max-height: 317px;
+                }
+
+                .announcement-modal .announcement-footer {
+                    padding-top: 17px;
+                    padding-bottom: 21px;
+                }
+
+                .announcement-modal .announcement-ack-btn {
+                    padding-top: 11px;
+                    padding-bottom: 11px;
+                }
             }
             
             /* ========================================

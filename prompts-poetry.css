@@ -3861,6 +3861,32 @@ body.modal-open .prompt-card {
         width: 95%;
     }
 
+    /* Scale announcement modal height-related spacing by the same 95/90 ratio */
+    .announcement-modal .announcement-header {
+        padding-top: 25px;
+        padding-bottom: 13px;
+    }
+
+    .announcement-modal .announcement-body {
+        padding-top: 17px;
+        padding-bottom: 25px;
+    }
+
+    .announcement-modal .announcement-text {
+        padding-top: 17px;
+        padding-bottom: 17px;
+        max-height: 317px;
+    }
+
+    .announcement-modal .announcement-footer {
+        padding-bottom: 25px;
+    }
+
+    .announcement-modal .announcement-ack-btn {
+        padding-top: 11px;
+        padding-bottom: 11px;
+    }
+
     .modal-image-col {
         height: 40%;
     }
