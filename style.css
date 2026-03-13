@@ -6616,12 +6616,19 @@ input[type="submit"],
 
 /* Homepage Guestbook Composer */
 #guestbookModal {
+    --guestbook-modal-overlay-height: 100dvh;
     --guestbook-modal-translate-y: 0px;
     background: rgba(7, 9, 12, 0.28) !important;
     backdrop-filter: blur(14px) saturate(108%) !important;
     -webkit-backdrop-filter: blur(14px) saturate(108%) !important;
+    height: var(--guestbook-modal-overlay-height) !important;
+    min-height: var(--guestbook-modal-overlay-height) !important;
     padding: 24px 18px 18px !important;
     box-sizing: border-box !important;
+    overflow: hidden !important;
+    overscroll-behavior: none !important;
+    transform: none !important;
+    will-change: opacity !important;
 }
 
 @keyframes guestbookComposerSectionRise {
@@ -6699,6 +6706,12 @@ input[type="submit"],
 
 #guestbookModal.guestbook-entrying .guestbook-composer-sheet {
     animation: guestbookComposerSheetFadeIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+#guestbookModal.active:focus-within .guestbook-composer-sheet,
+#guestbookModal.ios-focus-lock .guestbook-composer-sheet,
+#guestbookModal.keyboard-docked .guestbook-composer-sheet {
+    animation: none !important;
 }
 
 #guestbookModal .guestbook-composer-sheet.guestbook-sheet-animating {
@@ -7407,6 +7420,16 @@ body {
 
     #guestbookModal {
         padding: calc(env(safe-area-inset-top, 0px) + 12px) 20px calc(env(safe-area-inset-bottom, 0px) + 12px) !important;
+        box-sizing: border-box !important;
+        height: var(--guestbook-modal-overlay-height, 100dvh) !important;
+        min-height: var(--guestbook-modal-overlay-height, 100dvh) !important;
+        overflow: hidden !important;
+        -webkit-overflow-scrolling: auto !important;
+    }
+
+    #guestbookModal.active {
+        overflow: hidden !important;
+        -webkit-overflow-scrolling: auto !important;
     }
 
     #guestbookModal .guestbook-composer-sheet,
@@ -7415,9 +7438,9 @@ body {
     #guestbookModal.ios-focus-lock .guestbook-composer-sheet {
         width: calc(100vw - 40px) !important;
         max-width: 620px !important;
-        height: min(400px, calc(100svh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px));
+        height: min(400px, calc(var(--guestbook-modal-overlay-height, 100svh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px));
         min-height: 300px;
-        max-height: calc(100svh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px);
+        max-height: calc(var(--guestbook-modal-overlay-height, 100svh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px);
         padding: 14px 16px calc(16px + env(safe-area-inset-bottom)) !important;
         border-radius: 30px !important;
     }

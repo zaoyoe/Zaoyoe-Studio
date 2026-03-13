@@ -60,7 +60,7 @@
     <link rel="stylesheet" href="security-cards.css?v=20260304_IOS_CARET_FIX1">
 
     <!-- Core Styles (for modals, profile, etc) -->
-    <link rel="stylesheet" href="style.css?v=20260313_GUESTBOOK_COMPOSER_REFACTOR_18">
+    <link rel="stylesheet" href="style.css?v=20260313_GUESTBOOK_KEYBOARD_STABILITY_19">
     <link rel="stylesheet" href="login_styles.css?v=20260313_HOME_PROFILE_MODAL_WIDTH_1">
     <link rel="stylesheet" href="avatar-fix.css?v=20260302_G_AUTH">
 
@@ -368,6 +368,7 @@
                 viewportCleanup: null,
                 viewportRafId: null,
                 stableViewportProbe: null,
+                overlayBaseHeight: 0,
                 baseViewportHeight: 0,
                 baseCardHeight: 0,
                 docked: false,
@@ -435,11 +436,23 @@
 
             function focusGuestbookInputWithoutScroll(input) {
                 if (!input) return;
+                prepareGuestbookModalForInputFocus();
                 try {
                     input.focus({ preventScroll: true });
                 } catch (_) {
                     input.focus();
                 }
+            }
+
+            function prepareGuestbookModalForInputFocus() {
+                const { overlay, card } = getGuestbookModalElements();
+                if (!overlay) return;
+
+                clearGuestbookEntryAnimationTimer();
+                clearGuestbookSheetAnimationTimer();
+                overlay.classList.remove('guestbook-entrying');
+                card?.classList.remove('guestbook-sheet-animating');
+                captureGuestbookModalOverlayBaseHeight(true);
             }
 
             function getGuestbookStableViewportProbe() {
@@ -466,6 +479,38 @@
             function getGuestbookStableViewportHeight() {
                 const probe = getGuestbookStableViewportProbe();
                 return Math.max(0, Math.round(probe.getBoundingClientRect().height || probe.offsetHeight || 0));
+            }
+
+            function captureGuestbookModalOverlayBaseHeight(force = false) {
+                const { overlay } = getGuestbookModalElements();
+                if (!overlay) return;
+
+                const vv = window.visualViewport;
+                const visualFrameHeight = Math.max(
+                    0,
+                    Math.round((vv?.height || 0) + (vv?.offsetTop || 0))
+                );
+                const stableViewportHeight = getGuestbookStableViewportHeight();
+                const fallbackHeight = Math.max(
+                    Math.round(window.innerHeight || 0),
+                    Math.round(document.documentElement.clientHeight || 0),
+                    Math.round(vv?.height || 0)
+                );
+                const measuredHeight = visualFrameHeight || stableViewportHeight || fallbackHeight;
+
+                if (!measuredHeight) return;
+                if (!force && guestbookModalKeyboardState.overlayBaseHeight === measuredHeight) return;
+
+                guestbookModalKeyboardState.overlayBaseHeight = measuredHeight;
+                overlay.style.setProperty('--guestbook-modal-overlay-height', `${measuredHeight}px`);
+            }
+
+            function restoreGuestbookModalOverlayBaseHeight() {
+                const { overlay } = getGuestbookModalElements();
+                if (!overlay) return;
+
+                guestbookModalKeyboardState.overlayBaseHeight = 0;
+                overlay.style.removeProperty('--guestbook-modal-overlay-height');
             }
 
             function clearGuestbookModalKeyboardTimers() {
@@ -532,9 +577,12 @@
                     visualHeight
                 );
                 const stableViewportHeight = getGuestbookStableViewportHeight();
-                const normalizedBaseHeight = (stableViewportHeight > 0 && stableViewportHeight + 24 < fallbackBaseHeight)
-                    ? stableViewportHeight
-                    : fallbackBaseHeight;
+                const normalizedBaseHeight = Math.max(
+                    guestbookModalKeyboardState.overlayBaseHeight || 0,
+                    (stableViewportHeight > 0 && stableViewportHeight + 24 < fallbackBaseHeight)
+                        ? stableViewportHeight
+                        : fallbackBaseHeight
+                );
 
                 guestbookModalKeyboardState.baseViewportHeight = normalizedBaseHeight;
                 if (card) {
@@ -649,11 +697,15 @@
                 }
 
                 if (!isGuestbookModalKeyboardDockEnabled()) {
+                    captureGuestbookModalOverlayBaseHeight(true);
                     releaseGuestbookModalKeyboardDock(false);
                     return;
                 }
 
                 const activeInput = getActiveGuestbookModalInput();
+                if (!activeInput && !guestbookModalKeyboardState.docked) {
+                    captureGuestbookModalOverlayBaseHeight(true);
+                }
                 if (activeInput && !guestbookModalKeyboardState.ownsFullScrollLock) {
                     lockGuestbookModalKeyboardPage();
                 }
@@ -747,6 +799,7 @@
                 };
 
                 vv.addEventListener('resize', handleViewportChange, { passive: true });
+                vv.addEventListener('scroll', handleViewportChange, { passive: true });
                 inputs.forEach((input) => {
                     input.addEventListener('focus', handleViewportChange);
                     input.addEventListener('blur', handleViewportChange);
@@ -754,6 +807,7 @@
 
                 guestbookModalKeyboardState.viewportCleanup = () => {
                     vv.removeEventListener('resize', handleViewportChange);
+                    vv.removeEventListener('scroll', handleViewportChange);
                     inputs.forEach((input) => {
                         input.removeEventListener('focus', handleViewportChange);
                         input.removeEventListener('blur', handleViewportChange);
@@ -776,7 +830,10 @@
             const guestbookInput = document.getElementById('guestMessage');
             const guestbookEditor = document.getElementById('guestbookComposerEditor');
             guestbookInput?.addEventListener('input', syncGuestbookComposerEmptyState);
-            guestbookInput?.addEventListener('focus', syncGuestbookComposerEmptyState);
+            guestbookInput?.addEventListener('focus', () => {
+                prepareGuestbookModalForInputFocus();
+                syncGuestbookComposerEmptyState();
+            });
             guestbookInput?.addEventListener('blur', syncGuestbookComposerEmptyState);
             guestbookEditor?.addEventListener('click', (event) => {
                 if (!guestbookInput) return;
@@ -798,6 +855,7 @@
                 overlay.classList.remove('active', 'keyboard-docked', 'ios-focus-lock', 'guestbook-entrying');
                 overlay.style.setProperty('--guestbook-modal-translate-y', '0px');
                 overlay.querySelector('.guestbook-composer-sheet')?.classList.remove('guestbook-sheet-animating');
+                restoreGuestbookModalOverlayBaseHeight();
                 syncGuestbookComposerEmptyState();
                 syncGuestbookComposerImageState();
 
@@ -832,6 +890,7 @@
                 modal.classList.remove('active');
                 void modal.offsetWidth;
                 modal.classList.add('active');
+                captureGuestbookModalOverlayBaseHeight(true);
                 playGuestbookComposerEntryAnimation(modal);
 
                 if (window.iOSScrollLock) {
