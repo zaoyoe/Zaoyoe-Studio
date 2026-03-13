@@ -1314,7 +1314,11 @@
                 if (!overlay) return;
                 overlay.classList.remove('keyboard-active', 'ios-focus-lock');
                 overlay.style.removeProperty('--login-modal-overlay-height');
+                scroller?.style.removeProperty('height');
+                scroller?.style.removeProperty('max-height');
+                scroller?.style.removeProperty('padding-top');
                 scroller?.style.removeProperty('padding-bottom');
+                scroller?.style.removeProperty('scroll-padding-top');
                 scroller?.style.removeProperty('scroll-padding-bottom');
                 loginModalState.overlayBaseHeight = 0;
                 loginModalState.userScrollUntil = 0;
@@ -1397,27 +1401,42 @@
             }
 
             function applyLoginModalLayout({ ensureInput = true } = {}) {
-                const { overlay, scroller } = getLoginModalElements();
-                if (!overlay || !scroller) return;
+                const { overlay, scroller, card } = getLoginModalElements();
+                if (!overlay || !scroller || !card) return;
 
                 captureLoginModalOverlayBaseHeight();
 
                 const activeInput = getActiveLoginModalInput();
                 const vv = window.visualViewport;
+                const viewportHeight = Math.max(
+                    320,
+                    Math.round(vv?.height || window.innerHeight || document.documentElement.clientHeight || 0)
+                );
                 const viewportBottom = vv
                     ? Math.round((vv.offsetTop || 0) + (vv.height || 0))
                     : Math.round(window.innerHeight || document.documentElement.clientHeight || 0);
                 const bottomInset = Math.max(0, (loginModalState.overlayBaseHeight || viewportBottom) - viewportBottom);
+                const hostHeight = Math.max(320, viewportHeight - 24);
+                const cardHeight = Math.max(0, Math.ceil(card.getBoundingClientRect().height || card.offsetHeight || 0));
+                const slack = Math.max(0, hostHeight - cardHeight);
+                const centeredPadding = Math.max(12, Math.floor(slack / 2));
+                const centeredBottomPadding = Math.max(12, slack - centeredPadding);
+                const keyboardTopPadding = 12;
+                const keyboardBottomPadding = Math.max(24, bottomInset + 28);
 
                 overlay.classList.toggle('keyboard-active', !!activeInput || bottomInset > 0);
-                if (bottomInset > 0) {
-                    const scrollBottomPadding = Math.max(160, bottomInset + 28);
-                    const actualBottomPadding = Math.max(24, bottomInset + 24);
-                    scroller.style.paddingBottom = `calc(env(safe-area-inset-bottom, 0px) + ${actualBottomPadding}px)`;
-                    scroller.style.scrollPaddingBottom = `${scrollBottomPadding}px`;
+                scroller.style.height = `${hostHeight}px`;
+                scroller.style.maxHeight = `${hostHeight}px`;
+                scroller.style.scrollPaddingTop = '24px';
+
+                if (activeInput || bottomInset > 0) {
+                    scroller.style.paddingTop = `${keyboardTopPadding}px`;
+                    scroller.style.paddingBottom = `calc(env(safe-area-inset-bottom, 0px) + ${keyboardBottomPadding}px)`;
+                    scroller.style.scrollPaddingBottom = `${Math.max(160, keyboardBottomPadding + 36)}px`;
                 } else {
-                    scroller.style.removeProperty('padding-bottom');
-                    scroller.style.removeProperty('scroll-padding-bottom');
+                    scroller.style.paddingTop = `${centeredPadding}px`;
+                    scroller.style.paddingBottom = `${centeredBottomPadding}px`;
+                    scroller.style.scrollPaddingBottom = '24px';
                 }
 
                 if (activeInput && ensureInput && !isLoginModalUserScrolling()) {
@@ -1583,9 +1602,7 @@
                     cancelLoginModalScrollAnimation();
                 };
 
-                scroller.addEventListener('touchstart', stopAutoScroll, { passive: true });
                 scroller.addEventListener('touchmove', stopAutoScroll, { passive: true });
-                scroller.addEventListener('touchend', stopAutoScroll, { passive: true });
             }
 
             function attachLoginModalViewportHandlers() {
@@ -1601,7 +1618,11 @@
                         captureLoginModalOverlayBaseHeight(true);
                     }
 
-                    scheduleLoginModalLayout({ settled: true, deferOnly: true, ensureInput: false });
+                    scheduleLoginModalLayout({
+                        settled: true,
+                        deferOnly: true,
+                        ensureInput: !!getActiveLoginModalInput() && !isLoginModalUserScrolling()
+                    });
                 };
 
                 const handleRootScroll = () => {
@@ -1693,7 +1714,7 @@
                 bindLoginModalOverlayDismiss();
 
                 if (useIsolatedIOSLock) {
-                    scheduleLoginModalLayout({ settled: true, deferOnly: true, ensureInput: false });
+                    scheduleLoginModalLayout({ settled: true, ensureInput: false });
                 }
 
                 if (typeof window.ensureGoogleInlineButtonReady === 'function') {
@@ -1756,7 +1777,7 @@
                 if (card) card.scrollTop = 0;
 
                 if (isLoginModalIOSMode()) {
-                    scheduleLoginModalLayout({ settled: true, deferOnly: true, ensureInput: false });
+                    scheduleLoginModalLayout({ settled: true, ensureInput: false });
                 }
 
                 setTimeout(() => {
