@@ -6695,6 +6695,7 @@ input[type="submit"],
     transform: translate3d(0, calc(var(--guestbook-modal-translate-y, 0px) + 18px), 0) scale(0.985) !important;
     opacity: 0 !important;
     will-change: transform, height !important;
+    transition: none !important;
     pointer-events: auto !important;
 }
 
@@ -6711,11 +6712,13 @@ input[type="submit"],
 #guestbookModal.keyboard-docked.active:focus-within .guestbook-composer-sheet {
     position: absolute !important;
     top: var(--guestbook-modal-dock-top, 12px) !important;
-    left: 50% !important;
-    right: auto !important;
+    left: 0 !important;
+    right: 0 !important;
     bottom: auto !important;
     margin: 0 !important;
-    transform: translate3d(-50%, 0, 0) scale(1) !important;
+    width: auto !important;
+    max-width: none !important;
+    transform: none !important;
     will-change: top, height !important;
 }
 
