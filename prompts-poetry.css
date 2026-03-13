@@ -4037,6 +4037,9 @@ body.modal-open .prompt-card {
         height: 48px !important;
         max-height: 48px;
         padding: 12px 18px;
+        flex: 0 0 auto;
+        width: min(214px, calc(100% - 84px));
+        margin: 0 auto;
         border: 1px solid rgba(255, 255, 255, 0.08);
         border-radius: 18px;
         background:
@@ -4057,7 +4060,7 @@ body.modal-open .prompt-card {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        gap: 12px;
+        gap: 9px;
         pointer-events: none;
         z-index: 2;
         opacity: 0;
@@ -4079,48 +4082,48 @@ body.modal-open .prompt-card {
     }
 
     .modal-inner.comment-mode .comment-input-area.composer-proxy .comment-input-proxy-label {
-        color: rgba(241, 245, 249, 0.9);
-        font-size: 0.96rem;
-        font-weight: 600;
-        letter-spacing: 0.16em;
-        text-shadow: 0 1px 12px rgba(2, 6, 23, 0.18);
+        color: rgba(241, 245, 249, 0.84);
+        font-size: 0.94rem;
+        font-weight: 560;
+        letter-spacing: 0.08em;
+        text-shadow: 0 1px 10px rgba(2, 6, 23, 0.12);
     }
 
     .modal-inner.comment-mode .comment-input-area.composer-proxy .comment-input-proxy-pencil {
         position: relative;
-        width: 18px;
-        height: 8px;
+        width: 16px;
+        height: 4px;
         border-radius: 999px;
-        transform: rotate(-34deg);
+        transform: rotate(-32deg);
         background:
             linear-gradient(90deg,
-                rgba(250, 204, 21, 0.95) 0 54%,
-                rgba(241, 245, 249, 0.95) 54% 84%,
-                rgba(248, 113, 113, 0.9) 84% 100%);
-        box-shadow: 0 4px 12px rgba(2, 6, 23, 0.18);
+                rgba(226, 232, 240, 0.88) 0 70%,
+                rgba(148, 163, 184, 0.78) 70% 88%,
+                rgba(100, 116, 139, 0.72) 88% 100%);
+        box-shadow: 0 2px 8px rgba(2, 6, 23, 0.12);
     }
 
     .modal-inner.comment-mode .comment-input-area.composer-proxy .comment-input-proxy-pencil::before {
         content: '';
         position: absolute;
         top: 0;
-        right: -6px;
-        width: 10px;
-        height: 8px;
+        right: -5px;
+        width: 7px;
+        height: 4px;
         border-radius: 1px;
         clip-path: polygon(0 50%, 100% 0, 100% 100%);
-        background: linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(191, 219, 254, 0.84));
+        background: linear-gradient(135deg, rgba(248, 250, 252, 0.92), rgba(203, 213, 225, 0.76));
     }
 
     .modal-inner.comment-mode .comment-input-area.composer-proxy .comment-input-proxy-pencil::after {
         content: '';
         position: absolute;
-        top: 1px;
-        left: -5px;
-        width: 6px;
-        height: 6px;
-        border-radius: 2px 1px 1px 2px;
-        background: linear-gradient(180deg, rgba(244, 114, 182, 0.92), rgba(253, 230, 138, 0.82));
+        top: 0;
+        left: -3px;
+        width: 3px;
+        height: 4px;
+        border-radius: 1px 0 0 1px;
+        background: rgba(241, 245, 249, 0.5);
     }
 
     .modal-inner.comment-mode .comment-input-area.composer-proxy #commentInput::placeholder {
