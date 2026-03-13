@@ -1907,6 +1907,7 @@ function bindProfileModalInputFocusStabilizer(input) {
     input.addEventListener('touchstart', (event) => {
         const { overlay } = getProfileModalElements();
         if (!isProfileModalKeyboardDockEnabled() || !overlay?.classList.contains('active')) return;
+        if (document.activeElement === input) return;
         if (event.cancelable) event.preventDefault();
         focusProfileModalInputWithoutScroll(input);
     }, { passive: false });

@@ -24,6 +24,16 @@
     let currentModal = null;
     let touchStartY = 0;
 
+    function isProfileModalScrollableInputContext() {
+        return !!(
+            currentModal &&
+            (
+                currentModal.id === 'profileModal' ||
+                currentModal.classList?.contains('profile-modal')
+            )
+        );
+    }
+
     function applyFixedBodyLock() {
         document.body.style.position = 'fixed';
         document.body.style.top = `-${savedScrollY}px`;
@@ -179,6 +189,27 @@
         // We handle inputs directly to prevent Safari scroll chaining (rubberbanding)
         const inputEl = target.closest('textarea, input');
         if (inputEl) {
+            if (isProfileModalScrollableInputContext()) {
+                const touchY = e.touches[0].clientY;
+                const deltaY = touchStartY - touchY;
+                const scrollableParent = findScrollableParent(inputEl.parentElement || inputEl);
+
+                if (scrollableParent) {
+                    const atTop = scrollableParent.scrollTop <= 0;
+                    const atBottom = scrollableParent.scrollTop + scrollableParent.clientHeight >= scrollableParent.scrollHeight - 1;
+
+                    if ((atTop && deltaY < 0) || (atBottom && deltaY > 0)) {
+                        e.preventDefault();
+                    } else if (deltaY !== 0) {
+                        scrollableParent.scrollTop += deltaY;
+                        e.preventDefault();
+                    }
+
+                    touchStartY = touchY;
+                    return;
+                }
+            }
+
             // If it's not vertically scrollable, completely swallow the touchmove
             if (Math.ceil(inputEl.scrollHeight) <= Math.ceil(inputEl.clientHeight) + 2) {
                 e.preventDefault();
