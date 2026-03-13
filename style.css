@@ -6724,7 +6724,10 @@ input[type="submit"],
 }
 
 #guestbookModal .guestbook-composer-sheet.guestbook-sheet-animating {
-    transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+    transition:
+        transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+        height 220ms cubic-bezier(0.22, 1, 0.36, 1),
+        max-height 220ms cubic-bezier(0.22, 1, 0.36, 1) !important;
 }
 
 #guestbookModal .guestbook-composer-sheet>* {

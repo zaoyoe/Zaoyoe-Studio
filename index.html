@@ -60,7 +60,7 @@
     <link rel="stylesheet" href="security-cards.css?v=20260304_IOS_CARET_FIX1">
 
     <!-- Core Styles (for modals, profile, etc) -->
-    <link rel="stylesheet" href="style.css?v=20260313_GUESTBOOK_KEYBOARD_STABILITY_23">
+    <link rel="stylesheet" href="style.css?v=20260313_GUESTBOOK_KEYBOARD_STABILITY_24">
     <link rel="stylesheet" href="login_styles.css?v=20260313_HOME_PROFILE_MODAL_WIDTH_1">
     <link rel="stylesheet" href="avatar-fix.css?v=20260302_G_AUTH">
 
@@ -588,7 +588,7 @@
                 guestbookModalKeyboardState.sheetAnimationTimer = setTimeout(() => {
                     card.classList.remove('guestbook-sheet-animating');
                     guestbookModalKeyboardState.sheetAnimationTimer = null;
-                }, 220);
+                }, 260);
             }
 
             function captureGuestbookModalKeyboardBase() {
@@ -685,7 +685,7 @@
                 card.style.setProperty('height', `${finalCardHeight}px`);
                 card.style.setProperty('max-height', `${finalCardHeight}px`);
                 toggleGuestbookSheetAnimation(card, animate);
-                setGuestbookKeyboardSettling(false);
+                setGuestbookKeyboardSettling(!!animate);
                 guestbookModalKeyboardState.docked = bottomInset > 0;
                 guestbookModalKeyboardState.lastBottomInset = Math.max(0, bottomInset);
             }
@@ -758,7 +758,7 @@
                             if (!getActiveGuestbookModalInput()) return;
                             const liveMetrics = getGuestbookModalViewportMetrics();
                             if (liveMetrics.bottomInset <= 24) return;
-                            applyGuestbookModalKeyboardDock(liveMetrics.bottomInset, false);
+                            applyGuestbookModalKeyboardDock(liveMetrics.bottomInset, true);
                         }, GUESTBOOK_KEYBOARD_SETTLE_MS);
                     }
                     return;
@@ -785,7 +785,7 @@
                             const settledInset = guestbookModalKeyboardState.pendingInset;
                             guestbookModalKeyboardState.pendingInset = 0;
                             if (settledInset > 24) {
-                                applyGuestbookModalKeyboardDock(settledInset, false);
+                                applyGuestbookModalKeyboardDock(settledInset, true);
                             }
                         }, GUESTBOOK_KEYBOARD_SETTLE_MS);
                     }
@@ -797,7 +797,7 @@
                 }
 
                 if (nextInset > 24) {
-                    applyGuestbookModalKeyboardDock(nextInset, false);
+                    applyGuestbookModalKeyboardDock(nextInset, true);
                     return;
                 }
 
