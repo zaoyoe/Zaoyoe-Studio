@@ -1863,6 +1863,8 @@ const profileModalState = {
     blurTimer: null,
     focusTransferUntil: 0,
     lastFocusAnchor: null,
+    lastShiftY: 0,
+    preserveLayoutDuringFocusTransfer: false,
     pageFrozen: false
 };
 
@@ -1949,6 +1951,8 @@ function resetProfileModalVisualState() {
     card.style.removeProperty('scroll-padding-bottom');
     profileModalState.focusTransferUntil = 0;
     profileModalState.lastFocusAnchor = null;
+    profileModalState.lastShiftY = 0;
+    profileModalState.preserveLayoutDuringFocusTransfer = false;
 }
 
 function getProfileModalFocusAnchor(input = getActiveProfileModalInput()) {
@@ -2020,8 +2024,13 @@ function ensureProfileModalInputVisible(input = getActiveProfileModalInput()) {
 }
 
 function markProfileModalFocusTransfer(nextInput = null) {
+    const nextAnchor = getProfileModalFocusAnchor(nextInput);
     profileModalState.focusTransferUntil = Date.now() + 260;
-    profileModalState.lastFocusAnchor = getProfileModalFocusAnchor(nextInput) || profileModalState.lastFocusAnchor;
+    profileModalState.preserveLayoutDuringFocusTransfer = !!(
+        nextAnchor &&
+        profileModalState.lastFocusAnchor &&
+        nextAnchor === profileModalState.lastFocusAnchor
+    );
 }
 
 function applyProfileModalLayout() {
@@ -2035,10 +2044,17 @@ function applyProfileModalLayout() {
     const activeInput = getActiveProfileModalInput();
     const activeAnchor = getProfileModalFocusAnchor(activeInput);
     const holdDuringFocusTransfer = !activeInput && profileModalState.focusTransferUntil > Date.now();
+    const preserveWithinSameAnchor = !!(
+        activeInput &&
+        activeAnchor &&
+        profileModalState.preserveLayoutDuringFocusTransfer &&
+        profileModalState.focusTransferUntil > Date.now() &&
+        activeAnchor === profileModalState.lastFocusAnchor
+    );
 
     card.style.maxHeight = `${Math.max(320, visibleHeight - 24)}px`;
     card.style.scrollPaddingBottom = `${activeInput || holdDuringFocusTransfer ? 144 : 96}px`;
-    if (!holdDuringFocusTransfer) {
+    if (!holdDuringFocusTransfer && !preserveWithinSameAnchor) {
         overlay.style.setProperty('--profile-modal-shift-y', '0px');
     }
     overlay.classList.toggle('keyboard-active', !!activeInput || holdDuringFocusTransfer);
@@ -2046,12 +2062,22 @@ function applyProfileModalLayout() {
     if (!activeInput) {
         if (!holdDuringFocusTransfer) {
             profileModalState.lastFocusAnchor = null;
+            profileModalState.preserveLayoutDuringFocusTransfer = false;
+            profileModalState.lastShiftY = 0;
         }
         return;
     }
 
     if (!isProfileModalIOSMode()) {
         profileModalState.lastFocusAnchor = activeAnchor || null;
+        profileModalState.preserveLayoutDuringFocusTransfer = false;
+        return;
+    }
+
+    if (preserveWithinSameAnchor) {
+        overlay.style.setProperty('--profile-modal-shift-y', `${profileModalState.lastShiftY}px`);
+        profileModalState.lastFocusAnchor = activeAnchor || null;
+        profileModalState.preserveLayoutDuringFocusTransfer = false;
         return;
     }
 
@@ -2068,7 +2094,9 @@ function applyProfileModalLayout() {
     const minShiftY = Math.min(0, Math.round(safeTop - cardRect.top));
     const shiftY = Math.max(minShiftY, -overflowBottom);
     overlay.style.setProperty('--profile-modal-shift-y', `${shiftY}px`);
+    profileModalState.lastShiftY = shiftY;
     profileModalState.lastFocusAnchor = activeAnchor || null;
+    profileModalState.preserveLayoutDuringFocusTransfer = false;
 
     requestAnimationFrame(() => {
         if (activeAnchor && activeAnchor === profileModalState.lastFocusAnchor) {
@@ -2136,6 +2164,7 @@ function bindProfileModalInputBehavior(input) {
     });
 
     input.addEventListener('click', () => {
+        if (document.activeElement === input) return;
         markProfileModalFocusTransfer(input);
         scheduleProfileModalLayout({ settled: true });
     });
