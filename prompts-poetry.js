@@ -5716,6 +5716,7 @@ let promptCommentComposerBaseSheetHeight = 0;
 let promptCommentComposerOwnsScrollLock = false;
 let promptCommentComposerScrollClampCleanup = null;
 let promptCommentComposerStableViewportProbe = null;
+let promptCommentComposerAuthAlertTimer = null;
 
 function isPromptCommentComposerEnabled() {
     return isPromptModalIOSMobile();
@@ -5865,6 +5866,26 @@ function syncPromptCommentComposerMeta() {
 
     meta.textContent = pieces.join(' · ');
     meta.classList.toggle('has-reply', !!replyToName);
+}
+
+function flashPromptCommentComposerAuthRequired() {
+    const { overlay } = getPromptCommentComposerElements();
+    if (!overlay || !overlay.classList.contains('active')) return false;
+
+    overlay.classList.remove('auth-required');
+    void overlay.offsetWidth;
+    overlay.classList.add('auth-required');
+
+    if (promptCommentComposerAuthAlertTimer) {
+        clearTimeout(promptCommentComposerAuthAlertTimer);
+    }
+
+    promptCommentComposerAuthAlertTimer = setTimeout(() => {
+        overlay.classList.remove('auth-required');
+        promptCommentComposerAuthAlertTimer = null;
+    }, 1100);
+
+    return true;
 }
 
 function updatePromptCommentComposerTriggerState() {
@@ -7603,15 +7624,22 @@ async function submitComment() {
     const input = getActiveCommentInput();
     const content = input.value.trim();
 
-    // Allow empty content if there's an image attached
-    if (!content && !selectedCommentImage) {
-        return; // Need either text or image
-    }
-
-    // Check auth
+    // Check auth first so unauthenticated users always get feedback
     const { data: { user } } = await window.supabaseClient.auth.getUser();
     if (!user) {
-        showLoginModal();
+        const flashedComposer = flashPromptCommentComposerAuthRequired();
+        if (flashedComposer) {
+            setTimeout(() => {
+                showLoginModal();
+            }, 180);
+        } else {
+            showLoginModal();
+        }
+        return;
+    }
+
+    // Allow empty content if there's an image attached
+    if (!content && !selectedCommentImage) {
         return;
     }
 
