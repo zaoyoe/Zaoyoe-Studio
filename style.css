@@ -6576,7 +6576,7 @@ input[type="submit"],
     opacity: 1 !important;
 }
 
-#guestbookModal .guestbook-composer-sheet > * {
+#guestbookModal .guestbook-composer-sheet>* {
     flex-shrink: 0;
 }
 
@@ -6954,6 +6954,12 @@ body {
         position: relative !important;
     }
 
+    /* Widen profile modal on mobile to match login modal and shop cards */
+    .profile-modal {
+        width: calc(100% - 40px) !important;
+        max-width: 480px !important;
+    }
+
     /* .guestbook-content rule REMOVED to fix mobile scroll lock */
     /* It was causing the content to be trapped in a small scrollable area */
 
@@ -7221,8 +7227,8 @@ body {
         border-radius: 30px !important;
     }
 
-    #guestbookModal.active:focus-within .guestbook-composer-sheet > *,
-    #guestbookModal.ios-focus-lock .guestbook-composer-sheet > * {
+    #guestbookModal.active:focus-within .guestbook-composer-sheet>*,
+    #guestbookModal.ios-focus-lock .guestbook-composer-sheet>* {
         transform: none !important;
         transition: none !important;
         transition-delay: 0s !important;
