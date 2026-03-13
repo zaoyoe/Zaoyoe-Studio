@@ -1460,7 +1460,7 @@
                         loginModalState.blurTimer = setTimeout(() => {
                             loginModalState.blurTimer = null;
                             if (!getActiveLoginModalInput()) {
-                                scheduleLoginModalLayout({ settled: true, deferOnly: true });
+                                scheduleLoginModalLayout({ settled: true });
                             }
                         }, 120);
                     });
@@ -1492,6 +1492,19 @@
                 });
             }
 
+            function bindLoginModalScrollerBehavior() {
+                const { scroller } = getLoginModalElements();
+                if (!scroller || scroller.dataset.loginModalScrollBound === '1') return;
+                scroller.dataset.loginModalScrollBound = '1';
+
+                const stopAutoScroll = () => {
+                    cancelLoginModalScrollAnimation();
+                };
+
+                scroller.addEventListener('touchstart', stopAutoScroll, { passive: true });
+                scroller.addEventListener('touchmove', stopAutoScroll, { passive: true });
+            }
+
             function attachLoginModalViewportHandlers() {
                 if (!isLoginModalIOSMode() || !window.visualViewport) return;
 
@@ -1505,7 +1518,11 @@
                         captureLoginModalOverlayBaseHeight(true);
                     }
 
-                    scheduleLoginModalLayout({ settled: true, deferOnly: true });
+                    if (getActiveLoginModalInput()) {
+                        scheduleLoginModalLayout({ settled: true, deferOnly: true });
+                    } else {
+                        scheduleLoginModalLayout({ settled: true });
+                    }
                 };
 
                 const handleRootScroll = () => {
@@ -1575,6 +1592,7 @@
                 resetLoginModalVisualState();
                 resetLoginModalViewportState();
                 bindLoginModalInputBehavior();
+                bindLoginModalScrollerBehavior();
                 modal.style.display = 'flex';
                 modal.style.removeProperty('visibility');
                 modal.style.removeProperty('opacity');
