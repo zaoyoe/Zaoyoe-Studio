@@ -44,6 +44,33 @@ function forcePromptPageTop() {
     requestAnimationFrame(forceTop);
 }
 
+function syncPromptNavOffset() {
+    const nav = document.querySelector('.framer-nav');
+    if (!nav) return;
+
+    const applyNavHeight = () => {
+        const navHeight = Math.round(nav.getBoundingClientRect().height);
+        if (navHeight > 0) {
+            document.documentElement.style.setProperty('--prompts-nav-height', `${navHeight}px`);
+        }
+    };
+
+    applyNavHeight();
+
+    if (nav._promptNavOffsetSynced) return;
+
+    window.addEventListener('resize', applyNavHeight, { passive: true });
+    window.addEventListener('load', applyNavHeight, { once: true });
+
+    if (typeof ResizeObserver !== 'undefined') {
+        const navResizeObserver = new ResizeObserver(applyNavHeight);
+        navResizeObserver.observe(nav);
+        nav._promptNavResizeObserver = navResizeObserver;
+    }
+
+    nav._promptNavOffsetSynced = true;
+}
+
 // --- Theme Toggle ---
 function initTheme() {
     const savedTheme = localStorage.getItem('theme');
@@ -2296,6 +2323,8 @@ async function loadPromptsFromSupabase() {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+    syncPromptNavOffset();
+
     // Try to load from Supabase first
     await loadPromptsFromSupabase();
 

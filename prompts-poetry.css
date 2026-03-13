@@ -28,6 +28,8 @@ canvas#starryCanvas,
     --accent-gradient: linear-gradient(135deg, #9b5de5 0%, #a78bfa 100%);
     --pagination-hover-rgb: 155, 93, 229;
     /* Diamond Purple */
+    --prompts-nav-height: 64px;
+    --prompts-mobile-nav-gap: 44px;
 }
 
 /* ========================================
@@ -3790,8 +3792,8 @@ body.modal-open .prompt-card {
 
     /* Add top margin to avoid overlapping with user avatar */
     .poetry-nav-container {
-        padding-top: calc(8vh + 40px);
-        /* Increased spacing from avatar */
+        padding-top: calc(var(--prompts-nav-height, 64px) + var(--prompts-mobile-nav-gap, 44px));
+        /* Match actual nav height plus a stable "breathing" gap */
         padding-left: 10px;
         padding-right: 10px;
     }
