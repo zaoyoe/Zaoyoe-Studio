@@ -4867,6 +4867,29 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     padding-bottom: 20px;
 }
 
+#profileModal .profile-front {
+    text-align: center;
+}
+
+#profileModal .profile-front .profile-nickname-section,
+#profileModal .profile-front .profile-email-section,
+#profileModal .profile-front .profile-member-since-section {
+    margin-left: auto;
+    margin-right: auto;
+    text-align: center;
+}
+
+#profileModal .profile-front .nickname-display,
+#profileModal .profile-front .nickname-edit,
+#profileModal .profile-front .edit-actions,
+#profileModal .profile-front .profile-email-section label,
+#profileModal .profile-front .profile-email-display,
+#profileModal .profile-front .profile-member-since-section label,
+#profileModal .profile-front .profile-member-since-display {
+    justify-content: center;
+    text-align: center;
+}
+
 .profile-front {
     z-index: 2;
     opacity: 1;
@@ -5203,6 +5226,27 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
 #profileModal #mobile_sendPhoneCodeBtn.code-btn:disabled {
     opacity: 0.5 !important;
     cursor: not-allowed !important;
+}
+
+#profileModal .security-detail-content .gradient-btn,
+#profileModal .security-detail-content .danger-btn,
+#profileModal .mobile-security-layout .gradient-btn,
+#profileModal .mobile-security-layout .danger-btn {
+    width: fit-content !important;
+    min-width: 168px !important;
+    max-width: 220px !important;
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+    padding-left: 28px !important;
+    padding-right: 28px !important;
+}
+
+#profileModal .mobile-security-layout .gradient-btn,
+#profileModal .mobile-security-layout .danger-btn {
+    margin-top: 8px !important;
 }
 
 #profileModal .mobile-security-layout .security-input.glass-input {
