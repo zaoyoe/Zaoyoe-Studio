@@ -1099,7 +1099,7 @@
                     console.log(`🎨 Injected CSS: ${href}`);
                 }
             }
-            loadCSS(`login_styles.css?v=20260313_LOGIN_KEYBOARD_TRANSFORM_19`);
+            loadCSS(`login_styles.css?v=20260313_LOGIN_KEYBOARD_TRANSFORM_20`);
             loadCSS(`login_dual_mode.css?v=20260303_G_AUTH_FIX17`);
 
             // Supabase Auth - loaded via static <script> tag in HTML, not dynamically
@@ -1291,12 +1291,14 @@
                 if (!overlay || !card) return;
 
                 const metrics = getLoginModalViewportMetrics();
+                const liveRect = card.getBoundingClientRect();
                 if (!loginModalKeyboardState.baseCardHeight) {
-                    const liveHeight = Math.round(card.offsetHeight || card.getBoundingClientRect().height || 420);
+                    const liveHeight = Math.round(card.offsetHeight || liveRect.height || 420);
                     loginModalKeyboardState.baseCardHeight = Math.max(320, liveHeight || 420);
                 }
 
                 const baseCardHeight = Math.max(320, loginModalKeyboardState.baseCardHeight || 420);
+                const liveCardHeight = Math.max(320, Math.round(liveRect.height || baseCardHeight));
                 const baseViewportHeight = Math.max(
                     metrics.baseVisualHeight || 0,
                     loginModalKeyboardState.baseViewportHeight || 0
@@ -1307,8 +1309,8 @@
                 const maxAvailableHeight = Math.max(280, Math.round(keyboardTop - minTop - keyboardClearance));
                 const finalCardHeight = Math.min(baseCardHeight, maxAvailableHeight);
                 const desiredTop = Math.max(minTop, keyboardTop - keyboardClearance - finalCardHeight);
-                const centeredTop = (baseViewportHeight - finalCardHeight) / 2;
-                const translateY = Math.round(desiredTop - centeredTop);
+                const currentCenteredTop = liveRect.top + ((liveCardHeight - finalCardHeight) / 2);
+                const translateY = Math.round(desiredTop - currentCenteredTop);
 
                 overlay.classList.add('keyboard-docked');
                 overlay.style.setProperty('--login-modal-overlay-height', `${baseViewportHeight}px`);

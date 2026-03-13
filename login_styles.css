@@ -567,7 +567,7 @@
 
     #loginModal.keyboard-docked .login-modal-scroll {
         min-height: 100%;
-        overflow: hidden;
+        overflow: visible;
     }
 
     .login-overlay .login-card {
