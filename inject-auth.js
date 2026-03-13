@@ -1106,7 +1106,7 @@
             // Supabase Auth - loaded via static <script> tag in HTML, not dynamically
 
             // ✅ 加载 script.js (包含 sendVerificationCode 函数)
-            await loadScript('./script.js?v=20260302_G_AUTH');
+            await loadScript('./script.js?v=20260313_PROFILE_MODAL_DOCK_1');
 
             // Initialize UI - handled by supabase-auth-functions.js initializeAuthPageBoot()
             if (window.supabaseClient && typeof checkAuthState === 'function') {

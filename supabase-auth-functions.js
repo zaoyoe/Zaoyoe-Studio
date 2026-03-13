@@ -1854,6 +1854,474 @@ if (document.readyState === 'loading') {
 
 let profileModalOpenLock = false;
 let lastProfileModalOpenAt = 0;
+const PROFILE_MODAL_KEYBOARD_SETTLE_MS = 90;
+const profileModalViewportState = {
+    baseScrollY: 0,
+    ownsFullScrollLock: false,
+    viewportCleanup: null,
+    viewportRafId: null,
+    stableViewportProbe: null,
+    baseViewportHeight: 0,
+    baseCardHeight: 0,
+    docked: false,
+    lastBottomInset: 0,
+    initialDockTimer: null,
+    insetDropTimer: null,
+    pendingInset: 0
+};
+
+function isProfileModalKeyboardDockEnabled() {
+    const ua = navigator.userAgent || '';
+    const isiOS = /iPad|iPhone|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    return isiOS && window.matchMedia('(max-width: 768px)').matches && !!window.visualViewport;
+}
+
+function getProfileModalElements() {
+    const overlay = document.getElementById('profileModal');
+    return {
+        overlay,
+        card: overlay?.querySelector('.profile-modal') || null,
+        inputs: overlay ? Array.from(overlay.querySelectorAll('input, textarea, select')) : []
+    };
+}
+
+function getActiveProfileModalInput() {
+    const { overlay } = getProfileModalElements();
+    const active = document.activeElement;
+    if (!overlay || !active || !overlay.contains(active)) return null;
+    return /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName) ? active : null;
+}
+
+function focusProfileModalInputWithoutScroll(input) {
+    if (!input) return;
+    try {
+        input.focus({ preventScroll: true });
+    } catch (_) {
+        input.focus();
+    }
+}
+
+function bindProfileModalInputFocusStabilizer(input) {
+    if (!input || input.dataset.profileFocusStabilizerBound === '1') return;
+
+    input.addEventListener('touchstart', (event) => {
+        const { overlay } = getProfileModalElements();
+        if (!isProfileModalKeyboardDockEnabled() || !overlay?.classList.contains('active')) return;
+        if (event.cancelable) event.preventDefault();
+        focusProfileModalInputWithoutScroll(input);
+    }, { passive: false });
+
+    input.dataset.profileFocusStabilizerBound = '1';
+}
+
+function getProfileStableViewportProbe() {
+    if (profileModalViewportState.stableViewportProbe?.isConnected) {
+        return profileModalViewportState.stableViewportProbe;
+    }
+
+    const probe = document.createElement('div');
+    probe.setAttribute('aria-hidden', 'true');
+    probe.style.position = 'fixed';
+    probe.style.top = '0';
+    probe.style.left = '0';
+    probe.style.width = '0';
+    probe.style.height = '100svh';
+    probe.style.pointerEvents = 'none';
+    probe.style.visibility = 'hidden';
+    probe.style.opacity = '0';
+    probe.style.zIndex = '-1';
+    document.body.appendChild(probe);
+    profileModalViewportState.stableViewportProbe = probe;
+    return probe;
+}
+
+function getProfileStableViewportHeight() {
+    const probe = getProfileStableViewportProbe();
+    return Math.max(0, Math.round(probe.getBoundingClientRect().height || probe.offsetHeight || 0));
+}
+
+function clearProfileModalKeyboardTimers() {
+    if (profileModalViewportState.initialDockTimer) {
+        clearTimeout(profileModalViewportState.initialDockTimer);
+        profileModalViewportState.initialDockTimer = null;
+    }
+    if (profileModalViewportState.insetDropTimer) {
+        clearTimeout(profileModalViewportState.insetDropTimer);
+        profileModalViewportState.insetDropTimer = null;
+    }
+    profileModalViewportState.pendingInset = 0;
+}
+
+function captureProfileModalKeyboardBase() {
+    const vv = window.visualViewport;
+    const { card } = getProfileModalElements();
+    const visualHeight = Math.max(0, vv?.height || 0);
+    const fallbackBaseHeight = Math.max(
+        window.innerHeight || 0,
+        document.documentElement.clientHeight || 0,
+        visualHeight
+    );
+    const stableViewportHeight = getProfileStableViewportHeight();
+    const normalizedBaseHeight = (stableViewportHeight > 0 && stableViewportHeight + 24 < fallbackBaseHeight)
+        ? stableViewportHeight
+        : fallbackBaseHeight;
+
+    profileModalViewportState.baseViewportHeight = normalizedBaseHeight;
+    if (card) {
+        const liveHeight = Math.round(card.offsetHeight || card.getBoundingClientRect().height || 680);
+        profileModalViewportState.baseCardHeight = Math.max(420, liveHeight || 680);
+    }
+}
+
+function getProfileModalViewportMetrics() {
+    const vv = window.visualViewport;
+    const visualHeight = Math.max(0, vv?.height || 0);
+    const baseVisualHeight = profileModalViewportState.baseViewportHeight || visualHeight;
+
+    return {
+        visualHeight,
+        baseVisualHeight,
+        bottomInset: Math.max(0, Math.round(baseVisualHeight - visualHeight))
+    };
+}
+
+function applyProfileModalKeyboardDock(bottomInset) {
+    const { overlay, card } = getProfileModalElements();
+    if (!overlay || !card) return;
+
+    overlay.classList.add('keyboard-docked');
+
+    const metrics = getProfileModalViewportMetrics();
+    if (!profileModalViewportState.baseCardHeight) {
+        const liveHeight = Math.round(card.offsetHeight || card.getBoundingClientRect().height || 680);
+        profileModalViewportState.baseCardHeight = Math.max(420, liveHeight || 680);
+    }
+
+    const baseCardHeight = Math.max(420, profileModalViewportState.baseCardHeight || 680);
+    const baseViewportHeight = Math.max(
+        metrics.baseVisualHeight || 0,
+        profileModalViewportState.baseViewportHeight || 0
+    );
+    const keyboardTop = Math.max(0, baseViewportHeight - Math.max(0, bottomInset));
+    const minTop = 16;
+    const keyboardClearance = 24;
+    const maxAvailableHeight = Math.max(360, Math.round(keyboardTop - minTop - keyboardClearance));
+    const liveDockedHeight = Math.round(card.getBoundingClientRect().height || 0);
+    const preferredCardHeight = Math.max(
+        420,
+        Math.round(card.scrollHeight || 0),
+        liveDockedHeight,
+        baseCardHeight
+    );
+    const finalCardHeight = Math.min(preferredCardHeight, maxAvailableHeight);
+    const centeredTop = (baseViewportHeight - finalCardHeight) / 2;
+    const desiredTop = Math.max(minTop, keyboardTop - keyboardClearance - finalCardHeight);
+    const shiftY = Math.round(desiredTop - centeredTop);
+
+    overlay.style.setProperty('--profile-modal-shift-y', `${shiftY}px`);
+    card.style.height = 'auto';
+    card.style.maxHeight = `${maxAvailableHeight}px`;
+    profileModalViewportState.docked = bottomInset > 0;
+    profileModalViewportState.lastBottomInset = Math.max(0, bottomInset);
+}
+
+function releaseProfileModalKeyboardDock() {
+    const { overlay, card } = getProfileModalElements();
+    if (!overlay || !card) return;
+
+    overlay.classList.remove('keyboard-docked');
+    overlay.style.setProperty('--profile-modal-shift-y', '0px');
+    card.style.removeProperty('height');
+    card.style.removeProperty('max-height');
+    profileModalViewportState.docked = false;
+    profileModalViewportState.lastBottomInset = 0;
+}
+
+function resetProfileModalViewportState() {
+    clearProfileModalKeyboardTimers();
+    if (profileModalViewportState.viewportRafId) {
+        cancelAnimationFrame(profileModalViewportState.viewportRafId);
+        profileModalViewportState.viewportRafId = null;
+    }
+    releaseProfileModalKeyboardDock();
+    profileModalViewportState.baseViewportHeight = 0;
+    profileModalViewportState.baseCardHeight = 0;
+}
+
+function syncProfileModalKeyboardDock() {
+    const { overlay, card } = getProfileModalElements();
+    if (!overlay || !card || !overlay.classList.contains('active')) {
+        resetProfileModalViewportState();
+        return;
+    }
+
+    if (!isProfileModalKeyboardDockEnabled()) {
+        releaseProfileModalKeyboardDock();
+        return;
+    }
+
+    const activeInput = getActiveProfileModalInput();
+    const metrics = getProfileModalViewportMetrics();
+    const bottomInset = metrics.bottomInset;
+    const shouldDock = !!activeInput && (profileModalViewportState.docked ? bottomInset > 8 : bottomInset > 24);
+    const nextInset = shouldDock ? bottomInset : 0;
+    const previousInset = profileModalViewportState.lastBottomInset;
+    const isInsetDroppingWhileFocused = profileModalViewportState.docked &&
+        !!activeInput &&
+        nextInset > 24 &&
+        nextInset + 24 < previousInset;
+
+    if (!profileModalViewportState.docked && shouldDock) {
+        profileModalViewportState.pendingInset = nextInset;
+        if (!profileModalViewportState.initialDockTimer) {
+            profileModalViewportState.initialDockTimer = setTimeout(() => {
+                profileModalViewportState.initialDockTimer = null;
+                if (!getActiveProfileModalInput()) return;
+                const liveMetrics = getProfileModalViewportMetrics();
+                if (liveMetrics.bottomInset <= 24) return;
+                applyProfileModalKeyboardDock(liveMetrics.bottomInset);
+            }, PROFILE_MODAL_KEYBOARD_SETTLE_MS);
+        }
+        return;
+    }
+
+    if (profileModalViewportState.initialDockTimer &&
+        (profileModalViewportState.docked || !shouldDock)) {
+        clearTimeout(profileModalViewportState.initialDockTimer);
+        profileModalViewportState.initialDockTimer = null;
+    }
+
+    if (profileModalViewportState.insetDropTimer &&
+        (!isInsetDroppingWhileFocused || nextInset >= previousInset)) {
+        clearTimeout(profileModalViewportState.insetDropTimer);
+        profileModalViewportState.insetDropTimer = null;
+        profileModalViewportState.pendingInset = 0;
+    }
+
+    if (isInsetDroppingWhileFocused) {
+        profileModalViewportState.pendingInset = nextInset;
+        if (!profileModalViewportState.insetDropTimer) {
+            profileModalViewportState.insetDropTimer = setTimeout(() => {
+                profileModalViewportState.insetDropTimer = null;
+                const settledInset = profileModalViewportState.pendingInset;
+                profileModalViewportState.pendingInset = 0;
+                if (settledInset > 24) {
+                    applyProfileModalKeyboardDock(settledInset);
+                }
+            }, PROFILE_MODAL_KEYBOARD_SETTLE_MS);
+        }
+        return;
+    }
+
+    if (profileModalViewportState.docked && activeInput && nextInset <= 24) {
+        return;
+    }
+
+    if (nextInset > 24) {
+        applyProfileModalKeyboardDock(nextInset);
+        return;
+    }
+
+    if (profileModalViewportState.docked) {
+        releaseProfileModalKeyboardDock();
+    }
+}
+
+function keepActiveProfileModalFieldInView() {
+    const { card } = getProfileModalElements();
+    const activeInput = getActiveProfileModalInput();
+    if (!card || !activeInput) return;
+
+    const cardRect = card.getBoundingClientRect();
+    const inputRect = activeInput.getBoundingClientRect();
+    const topBuffer = 92;
+    const bottomBuffer = 132;
+    let scrollDelta = 0;
+
+    if (inputRect.top < cardRect.top + topBuffer) {
+        scrollDelta = inputRect.top - (cardRect.top + topBuffer);
+    } else if (inputRect.bottom > cardRect.bottom - bottomBuffer) {
+        scrollDelta = inputRect.bottom - (cardRect.bottom - bottomBuffer);
+    }
+
+    if (scrollDelta !== 0) {
+        card.scrollTop += scrollDelta;
+    }
+}
+
+function attachProfileModalKeyboardDock() {
+    if (!isProfileModalKeyboardDockEnabled()) return;
+
+    const { overlay, inputs } = getProfileModalElements();
+    const vv = window.visualViewport;
+    if (!overlay || !vv) return;
+
+    detachProfileModalKeyboardDock();
+    captureProfileModalKeyboardBase();
+    syncProfileModalKeyboardDock();
+
+    inputs.forEach((input) => bindProfileModalInputFocusStabilizer(input));
+
+    const handleViewportChange = () => {
+        if (profileModalViewportState.viewportRafId) return;
+        profileModalViewportState.viewportRafId = requestAnimationFrame(() => {
+            profileModalViewportState.viewportRafId = null;
+            syncProfileModalKeyboardDock();
+            keepActiveProfileModalFieldInView();
+        });
+    };
+
+    vv.addEventListener('resize', handleViewportChange, { passive: true });
+    vv.addEventListener('scroll', handleViewportChange, { passive: true });
+    inputs.forEach((input) => {
+        input.addEventListener('focus', handleViewportChange);
+        input.addEventListener('blur', handleViewportChange);
+    });
+
+    profileModalViewportState.viewportCleanup = () => {
+        vv.removeEventListener('resize', handleViewportChange);
+        vv.removeEventListener('scroll', handleViewportChange);
+        inputs.forEach((input) => {
+            input.removeEventListener('focus', handleViewportChange);
+            input.removeEventListener('blur', handleViewportChange);
+        });
+        if (profileModalViewportState.viewportRafId) {
+            cancelAnimationFrame(profileModalViewportState.viewportRafId);
+            profileModalViewportState.viewportRafId = null;
+        }
+        profileModalViewportState.viewportCleanup = null;
+    };
+}
+
+function detachProfileModalKeyboardDock() {
+    if (typeof profileModalViewportState.viewportCleanup === 'function') {
+        profileModalViewportState.viewportCleanup();
+    }
+    clearProfileModalKeyboardTimers();
+}
+
+function hydrateProfileModalFromCache() {
+    const nicknameSpan = document.getElementById('profileModalNickname');
+    const emailDiv = document.getElementById('profileModalEmail');
+
+    try {
+        const cachedRaw = localStorage.getItem('cached_user_profile');
+        if (!cachedRaw) return;
+
+        const cached = JSON.parse(cachedRaw);
+        if (!cached) return;
+
+        const cachedNickname = cached.nickname || cached.username || cached.email?.split('@')[0] || '';
+        const cachedEmail = cached.email || '';
+
+        if (cachedNickname && nicknameSpan) {
+            nicknameSpan.textContent = cachedNickname;
+        }
+        if (cachedEmail && emailDiv) {
+            emailDiv.textContent = cachedEmail;
+        }
+        if (cached.avatarUrl || cachedEmail || cachedNickname) {
+            setProfileModalAvatar(cached.avatarUrl, cachedEmail || cachedNickname || 'User');
+        }
+    } catch (_) {
+        // Ignore cache parse issues and fall back to live data.
+    }
+}
+
+function resetProfileModalViewState() {
+    const { overlay, card } = getProfileModalElements();
+    const flipInner = document.querySelector('.profile-flip-inner');
+    const profileFront = document.querySelector('.profile-front');
+    const profileBack = document.querySelector('.profile-back');
+    const nicknameDisplay = document.getElementById('nicknameDisplay');
+    const nicknameEdit = document.getElementById('nicknameEdit');
+
+    if (flipInner) {
+        flipInner.classList.remove('flipped');
+    }
+
+    document.querySelectorAll('.tab-item').forEach((tab) => {
+        tab.classList.remove('active');
+    });
+    const profileTab = document.querySelector('.tab-item:first-child');
+    if (profileTab) {
+        profileTab.classList.add('active');
+    }
+
+    if (card) {
+        card.classList.remove('wide');
+        card.scrollTop = 0;
+    }
+
+    if (profileFront) {
+        profileFront.style.pointerEvents = 'auto';
+        profileFront.classList.remove('animate-in');
+    }
+    if (profileBack) {
+        profileBack.style.pointerEvents = 'none';
+        profileBack.classList.remove('animate-in');
+    }
+
+    if (nicknameDisplay && nicknameEdit) {
+        nicknameEdit.style.display = 'none';
+        nicknameDisplay.style.display = 'flex';
+        nicknameDisplay.classList.remove('hiding', 'showing');
+    }
+
+    if (typeof resetSecurityCards === 'function') {
+        resetSecurityCards();
+    }
+
+    if (overlay) {
+        overlay.classList.remove('keyboard-docked', 'ios-focus-lock');
+        overlay.style.setProperty('--profile-modal-shift-y', '0px');
+    }
+}
+
+function cleanupProfileModalAfterClose() {
+    const { overlay, card } = getProfileModalElements();
+
+    getActiveProfileModalInput()?.blur();
+    detachProfileModalKeyboardDock();
+    resetProfileModalViewportState();
+
+    if (overlay) {
+        overlay.classList.remove('keyboard-docked', 'ios-focus-lock');
+        overlay.style.setProperty('--profile-modal-shift-y', '0px');
+    }
+
+    if (card) {
+        card.scrollTop = 0;
+        card.style.removeProperty('height');
+        card.style.removeProperty('max-height');
+    }
+
+    profileModalViewportState.ownsFullScrollLock = false;
+    profileModalViewportState.baseScrollY = 0;
+}
+
+function closeProfileModal() {
+    const { overlay } = getProfileModalElements();
+    if (!overlay) return;
+
+    cleanupProfileModalAfterClose();
+    overlay.classList.remove('active');
+    overlay.style.removeProperty('visibility');
+    overlay.style.removeProperty('opacity');
+    overlay.style.removeProperty('display');
+
+    if (window.iOSScrollLock) {
+        window.iOSScrollLock.unlock();
+    } else {
+        document.documentElement.classList.remove('no-scroll');
+        document.body.classList.remove('no-scroll');
+    }
+
+    profileModalOpenLock = false;
+}
+
+window.closeProfileModal = closeProfileModal;
+window.__cleanupProfileModalAfterClose = cleanupProfileModalAfterClose;
 
 // ==================== 打开个人资料模态框 (Supabase 版本) ====================
 async function openProfileModal(event) {
@@ -1886,43 +2354,41 @@ async function openProfileModal(event) {
     }
 
     const wasActive = modal.classList.contains('active');
-
-    // 立即打开模态框
-    modal.classList.add('active');
-    modal.style.visibility = 'visible';
-    modal.style.opacity = '1';
-    modal.style.display = 'flex';
-
-    // 重置到资料页面
-    const flipInner = document.querySelector('.profile-flip-inner');
-    if (flipInner) {
-        flipInner.classList.remove('flipped');
-    }
-
-    // 重置tab状态
-    document.querySelectorAll('.tab-item').forEach(tab => {
-        tab.classList.remove('active');
-    });
-    const profileTab = document.querySelector('.tab-item:first-child');
-    if (profileTab) {
-        profileTab.classList.add('active');
-    }
-
-    // Reset modal to compact width
-    const profileModalElement = document.querySelector('.profile-modal');
-    if (profileModalElement) {
-        profileModalElement.classList.remove('wide');
-    }
-
-    // 仅首次打开时触发错落动画，避免重复闪烁
+    const { card: profileModalElement } = getProfileModalElements();
     const profileFront = document.querySelector('.profile-front');
-    if (profileFront && !wasActive) {
-        setTimeout(() => {
+
+    profileModalViewportState.baseScrollY = Math.max(0, Math.round(window.scrollY || window.pageYOffset || 0));
+    cleanupProfileModalAfterClose();
+    resetProfileModalViewState();
+    hydrateProfileModalFromCache();
+
+    modal.classList.remove('active');
+    modal.style.display = 'flex';
+    modal.style.visibility = 'hidden';
+    modal.style.opacity = '0';
+
+    void modal.offsetHeight;
+    modal.classList.add('active');
+
+    if (window.iOSScrollLock) {
+        window.iOSScrollLock.lock(profileModalElement || modal, {
+            freezeScrollY: profileModalViewportState.baseScrollY
+        });
+        profileModalViewportState.ownsFullScrollLock = true;
+    }
+
+    attachProfileModalKeyboardDock();
+
+    requestAnimationFrame(() => {
+        modal.style.removeProperty('visibility');
+        modal.style.removeProperty('opacity');
+
+        if (profileFront && !wasActive) {
             profileFront.classList.remove('animate-in');
             void profileFront.offsetWidth;
             profileFront.classList.add('animate-in');
-        }, 50);
-    }
+        }
+    });
 
     // 保持当前数据，避免每次打开先闪“加载中...”
     const nicknameSpan = document.getElementById('profileModalNickname');
@@ -1936,7 +2402,7 @@ async function openProfileModal(event) {
             const { data: { user } } = await window.supabaseClient.auth.getUser();
             if (!user) {
                 alert('请先登录');
-                modal.classList.remove('active');
+                closeProfileModal();
                 return;
             }
 

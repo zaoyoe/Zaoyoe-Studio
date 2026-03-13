@@ -85,6 +85,13 @@
                 isFocusedFieldInsideCurrentModal() ||
                 currentModal.classList.contains('login-focus-transfer')
             )
+        ) || !!(
+            currentModal &&
+            (
+                currentModal.id === 'profileModal' ||
+                currentModal.classList?.contains('profile-modal')
+            ) &&
+            isFocusedFieldInsideCurrentModal()
         );
     }
 

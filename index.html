@@ -60,7 +60,7 @@
     <link rel="stylesheet" href="security-cards.css?v=20260304_IOS_CARET_FIX1">
 
     <!-- Core Styles (for modals, profile, etc) -->
-    <link rel="stylesheet" href="style.css?v=20260313_HOME_PROFILE_MODAL_ALIGN_2">
+    <link rel="stylesheet" href="style.css?v=20260313_PROFILE_MODAL_IOS_3">
     <link rel="stylesheet" href="login_styles.css?v=20260313_HOME_PROFILE_MODAL_WIDTH_1">
     <link rel="stylesheet" href="avatar-fix.css?v=20260302_G_AUTH">
 
@@ -282,9 +282,9 @@
 
     <!-- Auth System (integrated from inject-auth.js) -->
     <script src="./js/avatar-uploader.js" defer></script>
-    <script src="./supabase-auth-functions.js?v=20260304_CARET_FIX2" defer></script>
-    <script src="./js/ios-scroll-lock.js?v=20260312_SCROLL_LOCK_14" defer></script>
-    <script src="./inject-auth.js?v=20260312_LOGIN_MODAL_REWRITE_35" defer></script>
+    <script src="./supabase-auth-functions.js?v=20260313_PROFILE_MODAL_IOS_1" defer></script>
+    <script src="./js/ios-scroll-lock.js?v=20260313_PROFILE_MODAL_IOS_LOCK_1" defer></script>
+    <script src="./inject-auth.js?v=20260313_PROFILE_MODAL_IOS_1" defer></script>
     <script src="./notification-client.js?v=20260209" defer></script>
 
     <!-- Supabase Guestbook Functions (for modal form) -->
@@ -948,7 +948,7 @@
     <div class="modal-overlay" id="profileModal" onmousedown="closeModal(event)" onmouseup="closeModal(event)">
         <div class="modal-content profile-modal" onclick="event.stopPropagation()">
             <div class="mac-controls">
-                <div class="mac-dot red" onclick="document.getElementById('profileModal').classList.remove('active')"><i
+                <div class="mac-dot red" onclick="window.closeProfileModal ? window.closeProfileModal() : document.getElementById('profileModal').classList.remove('active')"><i
                         class="fas fa-times"></i></div>
                 <div class="mac-dot yellow"></div>
                 <div class="mac-dot green"></div>

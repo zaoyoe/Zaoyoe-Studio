@@ -215,6 +215,10 @@ function closeModal(event) {
 }
 
 function closeAllModals() {
+    if (typeof window.__cleanupProfileModalAfterClose === 'function') {
+        window.__cleanupProfileModalAfterClose();
+    }
+
     const modals = document.querySelectorAll('.modal-overlay');
     modals.forEach(modal => {
         modal.classList.remove('active');

@@ -4585,6 +4585,22 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     /* Remove width transition to prevent layout shifts */
 }
 
+#profileModal {
+    --profile-modal-shift-y: 0px;
+}
+
+#profileModal .modal-content.profile-modal {
+    position: relative;
+    top: var(--profile-modal-shift-y, 0px);
+    transition:
+        top 180ms cubic-bezier(0.22, 1, 0.36, 1),
+        transform 0.3s ease-out,
+        opacity 0.3s ease-out;
+    will-change: top, transform, opacity;
+    scroll-padding-top: 24px;
+    scroll-padding-bottom: 200px;
+}
+
 .profile-modal.wide {
     width: 900px;
     max-width: 95vw;
@@ -7009,6 +7025,20 @@ body {
         width: calc(100% - 40px) !important;
         max-width: 480px !important;
         box-sizing: border-box !important;
+    }
+
+    #profileModal {
+        padding: calc(env(safe-area-inset-top, 0px) + 12px) 20px calc(env(safe-area-inset-bottom, 0px) + 12px) !important;
+        box-sizing: border-box !important;
+    }
+
+    #profileModal .modal-content.profile-modal,
+    #profileModal.active .modal-content.profile-modal,
+    #profileModal.active:focus-within .modal-content.profile-modal,
+    #profileModal.ios-focus-lock .modal-content.profile-modal {
+        top: var(--profile-modal-shift-y, 0px) !important;
+        max-height: calc(100svh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px) !important;
+        scroll-padding-bottom: 220px !important;
     }
 
     /* .guestbook-content rule REMOVED to fix mobile scroll lock */
