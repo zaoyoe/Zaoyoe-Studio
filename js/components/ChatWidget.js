@@ -852,10 +852,10 @@ class ChatWidget {
                 left: 0;
                 width: 100%;
                 height: 100%;
-                background: rgba(0, 0, 0, 0.01);
+                background: rgba(0, 0, 0, 0.3);
                 z-index: 9998;
-                backdrop-filter: blur(20px) saturate(150%);
-                -webkit-backdrop-filter: blur(20px) saturate(150%);
+                backdrop-filter: blur(8px);
+                -webkit-backdrop-filter: blur(8px);
                 transform: translateZ(0);
                 -webkit-transform: translateZ(0);
                 will-change: opacity, backdrop-filter;
@@ -1729,14 +1729,11 @@ class ChatWidget {
         style.textContent = `
             /* User Mode Glassmorphism Enhancement */
             .chat-window:not(.admin-mode-layout) {
-                background: var(--chat-frost-bg, rgba(30, 41, 59, 0.35)) !important;
-                backdrop-filter: blur(8px) !important;
-                -webkit-backdrop-filter: blur(8px) !important;
-                border: 1px solid var(--chat-frost-border, rgba(255, 255, 255, 0.15)) !important;
-                box-shadow:
-                    0 24px 64px rgba(0, 0, 0, 0.32),
-                    0 2px 12px rgba(0, 0, 0, 0.15),
-                    inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+                background: var(--chat-shell-bg, rgba(30, 41, 59, 0.95)) !important;
+                backdrop-filter: none !important;
+                -webkit-backdrop-filter: none !important;
+                border: 1px solid var(--chat-shell-border, rgba(255, 255, 255, 0.1)) !important;
+                box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5) !important;
             }
 
             .chat-window:not(.admin-mode-layout) .chat-header {
@@ -1757,6 +1754,8 @@ class ChatWidget {
             .chat-window:not(.admin-mode-layout) .chat-action-btn {
                 background: var(--chat-frost-bg, rgba(30, 41, 59, 0.35)) !important;
                 border: 1px solid var(--chat-frost-border, rgba(255, 255, 255, 0.15)) !important;
+                backdrop-filter: blur(8px) !important;
+                -webkit-backdrop-filter: blur(8px) !important;
                 box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
             }
 
@@ -1807,10 +1806,10 @@ class ChatWidget {
                 left: 0;
                 width: 100%;
                 height: 100%;
-                background: rgba(0, 0, 0, 0.01);
+                background: rgba(0, 0, 0, 0.3);
                 z-index: 9997;
-                backdrop-filter: blur(20px) saturate(150%);
-                -webkit-backdrop-filter: blur(20px) saturate(150%);
+                backdrop-filter: blur(8px);
+                -webkit-backdrop-filter: blur(8px);
                 transform: translateZ(0);
                 -webkit-transform: translateZ(0);
                 will-change: opacity, backdrop-filter;
@@ -1824,7 +1823,7 @@ class ChatWidget {
             .chat-overlay.closing {
                 display: block;
                 opacity: 0;
-                background: rgba(0, 0, 0, 0.56);
+                background: rgba(0, 0, 0, 0.3);
                 backdrop-filter: none;
                 -webkit-backdrop-filter: none;
                 transition: opacity 120ms linear 140ms;
@@ -2768,14 +2767,10 @@ class ChatWidget {
         this.chatWindow.style.setProperty('-webkit-mask-image', '-webkit-radial-gradient(white, black)', 'important');
         this.chatWindow.style.setProperty('backdrop-filter', 'none', 'important');
         this.chatWindow.style.setProperty('-webkit-backdrop-filter', 'none', 'important');
-        this.chatWindow.style.setProperty('background', 'var(--chat-frost-bg, rgba(30, 41, 59, 0.35))', 'important');
-        this.chatWindow.style.setProperty('border', '1px solid var(--chat-frost-border, rgba(255, 255, 255, 0.15))', 'important');
+        this.chatWindow.style.setProperty('background', 'var(--chat-shell-bg, rgba(30, 41, 59, 0.95))', 'important');
+        this.chatWindow.style.setProperty('border', '1px solid var(--chat-shell-border, rgba(255, 255, 255, 0.1))', 'important');
         this.chatWindow.style.removeProperty('border-top');
-        this.chatWindow.style.setProperty(
-            'box-shadow',
-            '0 24px 64px rgba(0, 0, 0, 0.32), 0 2px 12px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.1)',
-            'important'
-        );
+        this.chatWindow.style.setProperty('box-shadow', '0 25px 60px rgba(0, 0, 0, 0.5)', 'important');
     }
 
     _enableSessionVisualLock() {

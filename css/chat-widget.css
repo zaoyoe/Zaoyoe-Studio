@@ -7,12 +7,14 @@
     --chat-text: #ffffff;
     --chat-user-bubble: #667eea;
     --chat-admin-bubble: rgba(255, 255, 255, 0.1);
+    --chat-shell-bg: rgba(30, 41, 59, 0.95);
+    --chat-shell-border: rgba(255, 255, 255, 0.1);
+    --chat-shell-shadow: 0 25px 60px rgba(0, 0, 0, 0.5);
     --chat-frost-bg: rgba(30, 41, 59, 0.35);
     --chat-frost-panel-bg: rgba(30, 41, 59, 0.22);
     --chat-frost-border: rgba(255, 255, 255, 0.15);
     --chat-frost-highlight: rgba(255, 255, 255, 0.1);
-    --chat-frost-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
-    --chat-frost-shell-shadow: 0 24px 64px rgba(0, 0, 0, 0.32), 0 2px 12px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    --chat-frost-shadow: 0 2px 12px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 /* Floating Action Button */
@@ -379,11 +381,11 @@
     width: 380px;
     height: 600px;
     max-height: 80vh;
-    background: var(--chat-frost-bg);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    box-shadow: var(--chat-frost-shell-shadow);
-    border: 1px solid var(--chat-frost-border);
+    background: var(--chat-shell-bg);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: var(--chat-shell-shadow);
+    border: 1px solid var(--chat-shell-border);
     border-radius: 20px;
     display: flex;
     flex-direction: column;
@@ -658,7 +660,9 @@
     border-radius: 50%;
     background: var(--chat-frost-bg);
     border: 1px solid var(--chat-frost-border);
-    box-shadow: var(--chat-frost-shadow), inset 0 1px 0 var(--chat-frost-highlight);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    box-shadow: var(--chat-frost-shadow);
     color: rgba(255, 255, 255, 0.7);
     display: flex;
     justify-content: center;
@@ -682,7 +686,9 @@
     font-size: 14px;
     outline: none;
     transition: all 0.2s;
-    box-shadow: var(--chat-frost-shadow), inset 0 1px 0 var(--chat-frost-highlight);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    box-shadow: var(--chat-frost-shadow);
 }
 
 .chat-input:focus {
