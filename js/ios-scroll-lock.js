@@ -79,10 +79,8 @@
             isFocusedFieldInsideCurrentModal()
         ) || !!(
             currentModal &&
-            (
-                currentModal.id === 'loginModal' ||
-                (currentModal.classList && currentModal.classList.contains('auth-login-overlay'))
-            ) &&
+            currentModal.classList &&
+            currentModal.classList.contains('login-overlay') &&
             (
                 isFocusedFieldInsideCurrentModal() ||
                 currentModal.classList.contains('login-focus-transfer')
