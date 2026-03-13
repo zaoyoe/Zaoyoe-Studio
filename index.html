@@ -185,7 +185,7 @@
 
             <div class="mobile-menu-item">
                 <a href="#guestbook" class="mobile-menu-link" data-i18n="nav.guestbook"
-                    onclick="if(typeof window.openGuestbookModal==='function'){event.preventDefault();window.openGuestbookModal();document.querySelector('.mobile-menu')?.classList.remove('active');document.querySelector('.nav-hamburger')?.classList.remove('active');}">留言板</a>
+                    onclick="if(typeof window.openGuestbookModal==='function'){event.preventDefault();window.openGuestbookModal();window.closeActiveMobileMenu?.();}">留言板</a>
             </div>
 
             <div class="mobile-menu-item">

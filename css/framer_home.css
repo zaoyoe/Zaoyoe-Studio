@@ -78,6 +78,12 @@ body {
     -moz-osx-font-smoothing: grayscale;
 }
 
+html.mobile-menu-open,
+body.mobile-menu-open {
+    overflow: hidden;
+    overscroll-behavior: none;
+}
+
 /* ========== Typography =========== */
 .hero-title {
     font-family: var(--font-display);
@@ -461,6 +467,8 @@ a.nav-trigger.active {
     z-index: var(--z-mobile-menu);
     padding: 100px var(--spacing-lg) calc(var(--spacing-xl) + env(safe-area-inset-bottom, 50px));
     overflow-y: auto;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
