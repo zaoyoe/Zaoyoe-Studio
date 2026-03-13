@@ -7,6 +7,12 @@
     --chat-text: #ffffff;
     --chat-user-bubble: #667eea;
     --chat-admin-bubble: rgba(255, 255, 255, 0.1);
+    --chat-frost-bg: rgba(30, 41, 59, 0.35);
+    --chat-frost-panel-bg: rgba(30, 41, 59, 0.22);
+    --chat-frost-border: rgba(255, 255, 255, 0.15);
+    --chat-frost-highlight: rgba(255, 255, 255, 0.1);
+    --chat-frost-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+    --chat-frost-shell-shadow: 0 24px 64px rgba(0, 0, 0, 0.32), 0 2px 12px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 /* Floating Action Button */
@@ -365,7 +371,7 @@
 
 
 /* Chat Window Container */
-/* Chat Window Container - Premium Glass (NO backdrop-filter for 240Hz performance) */
+/* Match the announcement modal's frosted glass treatment */
 .chat-window {
     position: fixed;
     bottom: 100px;
@@ -373,14 +379,11 @@
     width: 380px;
     height: 600px;
     max-height: 80vh;
-    /* Static glass effect - NO backdrop-filter for 240Hz monitors */
-    background: linear-gradient(135deg,
-            rgba(20, 20, 30, 0.92) 0%,
-            rgba(15, 15, 25, 0.94) 50%,
-            rgba(18, 18, 28, 0.92) 100%);
-    /* Clean shadow only - no border effects */
-    box-shadow: 0 20px 60px -10px rgba(0, 0, 0, 0.5);
-    border: none;
+    background: var(--chat-frost-bg);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    box-shadow: var(--chat-frost-shell-shadow);
+    border: 1px solid var(--chat-frost-border);
     border-radius: 20px;
     display: flex;
     flex-direction: column;
@@ -407,8 +410,8 @@
 /* Header */
 .chat-header {
     padding: 20px;
-    background: rgba(255, 255, 255, 0.05);
-    border-bottom: 1px solid var(--chat-glass-border);
+    background: transparent;
+    border-bottom: 1px solid var(--chat-frost-border);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -525,6 +528,7 @@
     /* PERFORMANCE: GPU layer for smooth scroll, no contain (causes blank on fast scroll) */
     transform: translateZ(0);
     backface-visibility: hidden;
+    background: linear-gradient(180deg, rgba(30, 41, 59, 0.08) 0%, rgba(30, 41, 59, 0.16) 100%);
 }
 
 /* Scroll Lock State - Preloading */
@@ -601,10 +605,11 @@
 
 .message.admin {
     align-self: flex-start;
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--chat-frost-bg);
     color: rgba(255, 255, 255, 0.9);
     border-bottom-left-radius: 4px;
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--chat-frost-border);
+    box-shadow: var(--chat-frost-shadow), inset 0 1px 0 var(--chat-frost-highlight);
 }
 
 .message-image {
@@ -640,8 +645,8 @@
 /* Input Area */
 .chat-input-area {
     padding: 15px;
-    background: rgba(0, 0, 0, 0.2);
-    border-top: 1px solid var(--chat-glass-border);
+    background: var(--chat-frost-panel-bg);
+    border-top: 1px solid var(--chat-frost-border);
     display: flex;
     align-items: center;
     gap: 10px;
@@ -651,8 +656,9 @@
     width: 36px;
     height: 36px;
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--chat-frost-bg);
+    border: 1px solid var(--chat-frost-border);
+    box-shadow: var(--chat-frost-shadow), inset 0 1px 0 var(--chat-frost-highlight);
     color: rgba(255, 255, 255, 0.7);
     display: flex;
     justify-content: center;
@@ -662,24 +668,25 @@
 }
 
 .chat-action-btn:hover {
-    background: rgba(255, 255, 255, 0.15);
+    background: rgba(30, 41, 59, 0.5);
     color: white;
 }
 
 .chat-input {
     flex: 1;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--chat-frost-bg);
+    border: 1px solid var(--chat-frost-border);
     border-radius: 20px;
     padding: 10px 15px;
     color: white;
     font-size: 14px;
     outline: none;
     transition: all 0.2s;
+    box-shadow: var(--chat-frost-shadow), inset 0 1px 0 var(--chat-frost-highlight);
 }
 
 .chat-input:focus {
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(30, 41, 59, 0.5);
     border-color: var(--chat-primary);
 }
 
