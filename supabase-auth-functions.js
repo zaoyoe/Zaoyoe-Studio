@@ -1992,16 +1992,6 @@ function stabilizeProfileModalViewport() {
 function getProfileModalFocusAnchor(input = getActiveProfileModalInput()) {
     if (!input) return null;
 
-    const mobileSection = input.closest('.mobile-security-section');
-    if (mobileSection) {
-        return mobileSection;
-    }
-
-    const detailPanel = input.closest('.security-detail-content');
-    if (detailPanel) {
-        return detailPanel;
-    }
-
     return (
         input.closest('.input-group') ||
         input
@@ -2013,22 +2003,46 @@ function ensureProfileModalInputVisible(input = getActiveProfileModalInput()) {
     const scrollHost = scroller || card;
     if (!card || !scrollHost || !input) return;
 
+    const anchor = getProfileModalFocusAnchor(input) || input;
     const cardRect = scrollHost.getBoundingClientRect();
+    const anchorRect = anchor.getBoundingClientRect();
     const inputRect = input.getBoundingClientRect();
-    const topGuard = Math.max(88, Math.round(scrollHost.clientHeight * 0.22));
-    const bottomGuard = Math.max(132, Math.round(scrollHost.clientHeight * 0.28));
-    let nextScrollTop = scrollHost.scrollTop;
+    const maxScrollTop = Math.max(0, scrollHost.scrollHeight - scrollHost.clientHeight);
+    if (maxScrollTop <= 0) return;
+
+    const preferredCenter = Math.max(
+        136,
+        Math.min(Math.round(scrollHost.clientHeight * 0.36), scrollHost.clientHeight - 136)
+    );
+    const anchorCenterInContent =
+        scrollHost.scrollTop +
+        (anchorRect.top - cardRect.top) +
+        (anchorRect.height / 2);
+
+    let nextScrollTop = Math.max(
+        0,
+        Math.min(anchorCenterInContent - preferredCenter, maxScrollTop)
+    );
+
+    const topGuard = Math.max(72, Math.round(scrollHost.clientHeight * 0.18));
+    const bottomGuard = Math.max(124, Math.round(scrollHost.clientHeight * 0.26));
 
     if (inputRect.top < cardRect.top + topGuard) {
-        nextScrollTop += inputRect.top - (cardRect.top + topGuard);
+        nextScrollTop = Math.min(
+            nextScrollTop,
+            Math.max(0, scrollHost.scrollTop + (inputRect.top - (cardRect.top + topGuard)))
+        );
     } else if (inputRect.bottom > cardRect.bottom - bottomGuard) {
-        nextScrollTop += inputRect.bottom - (cardRect.bottom - bottomGuard);
+        nextScrollTop = Math.max(
+            nextScrollTop,
+            Math.min(
+                maxScrollTop,
+                scrollHost.scrollTop + (inputRect.bottom - (cardRect.bottom - bottomGuard))
+            )
+        );
     }
 
-    const maxScrollTop = Math.max(0, scrollHost.scrollHeight - scrollHost.clientHeight);
-    nextScrollTop = Math.max(0, Math.min(nextScrollTop, maxScrollTop));
-
-    if (Math.abs(nextScrollTop - scrollHost.scrollTop) > 1) {
+    if (Math.abs(nextScrollTop - scrollHost.scrollTop) > 2) {
         scrollHost.scrollTop = nextScrollTop;
     }
 }
