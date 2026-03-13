@@ -1859,6 +1859,7 @@ const profileModalState = {
     baseScrollY: 0,
     overlayBaseHeight: 0,
     viewportCleanup: null,
+    rootScrollCleanup: null,
     layoutRafId: 0,
     settleTimer: null,
     blurTimer: null,
@@ -1879,6 +1880,7 @@ function getProfileModalElements() {
     return {
         overlay,
         card: overlay?.querySelector('.profile-modal') || null,
+        scroller: overlay?.querySelector('.profile-modal-scroll') || null,
         inputs: overlay ? Array.from(overlay.querySelectorAll('input, textarea, select')) : []
     };
 }
@@ -1919,6 +1921,7 @@ function freezeProfileModalPage() {
     document.body.style.width = '100%';
     document.body.style.overflow = 'hidden';
     profileModalState.pageFrozen = true;
+    stabilizeProfileModalViewport();
 }
 
 function unfreezeProfileModalPage() {
@@ -1942,14 +1945,14 @@ function unfreezeProfileModalPage() {
 }
 
 function resetProfileModalVisualState() {
-    const { overlay, card } = getProfileModalElements();
+    const { overlay, card, scroller } = getProfileModalElements();
     if (!overlay || !card) return;
 
     overlay.classList.remove('keyboard-active', 'keyboard-docked', 'ios-focus-lock');
     overlay.style.setProperty('--profile-modal-shift-y', '0px');
     overlay.style.removeProperty('--profile-modal-overlay-height');
     card.style.removeProperty('max-height');
-    card.style.removeProperty('scroll-padding-bottom');
+    scroller?.style.removeProperty('scroll-padding-bottom');
     profileModalState.overlayBaseHeight = 0;
     profileModalState.focusTransferUntil = 0;
     profileModalState.lastFocusAnchor = null;
@@ -1973,6 +1976,19 @@ function captureProfileModalOverlayBaseHeight(force = false) {
     overlay.style.setProperty('--profile-modal-overlay-height', `${measuredHeight}px`);
 }
 
+function stabilizeProfileModalViewport() {
+    if (!profileModalState.pageFrozen) return;
+
+    document.body.style.top = `-${profileModalState.baseScrollY}px`;
+
+    if ((window.scrollY || window.pageYOffset || 0) !== 0) {
+        window.scrollTo(0, 0);
+    }
+
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+}
+
 function getProfileModalFocusAnchor(input = getActiveProfileModalInput()) {
     if (!input) return null;
 
@@ -1993,14 +2009,15 @@ function getProfileModalFocusAnchor(input = getActiveProfileModalInput()) {
 }
 
 function ensureProfileModalInputVisible(input = getActiveProfileModalInput()) {
-    const { card } = getProfileModalElements();
-    if (!card || !input) return;
+    const { card, scroller } = getProfileModalElements();
+    const scrollHost = scroller || card;
+    if (!card || !scrollHost || !input) return;
 
-    const cardRect = card.getBoundingClientRect();
+    const cardRect = scrollHost.getBoundingClientRect();
     const inputRect = input.getBoundingClientRect();
-    const topGuard = Math.max(88, Math.round(card.clientHeight * 0.22));
-    const bottomGuard = Math.max(132, Math.round(card.clientHeight * 0.28));
-    let nextScrollTop = card.scrollTop;
+    const topGuard = Math.max(88, Math.round(scrollHost.clientHeight * 0.22));
+    const bottomGuard = Math.max(132, Math.round(scrollHost.clientHeight * 0.28));
+    let nextScrollTop = scrollHost.scrollTop;
 
     if (inputRect.top < cardRect.top + topGuard) {
         nextScrollTop += inputRect.top - (cardRect.top + topGuard);
@@ -2008,11 +2025,11 @@ function ensureProfileModalInputVisible(input = getActiveProfileModalInput()) {
         nextScrollTop += inputRect.bottom - (cardRect.bottom - bottomGuard);
     }
 
-    const maxScrollTop = Math.max(0, card.scrollHeight - card.clientHeight);
+    const maxScrollTop = Math.max(0, scrollHost.scrollHeight - scrollHost.clientHeight);
     nextScrollTop = Math.max(0, Math.min(nextScrollTop, maxScrollTop));
 
-    if (Math.abs(nextScrollTop - card.scrollTop) > 1) {
-        card.scrollTop = nextScrollTop;
+    if (Math.abs(nextScrollTop - scrollHost.scrollTop) > 1) {
+        scrollHost.scrollTop = nextScrollTop;
     }
 }
 
@@ -2027,7 +2044,7 @@ function markProfileModalFocusTransfer(nextInput = null) {
 }
 
 function applyProfileModalLayout() {
-    const { overlay, card } = getProfileModalElements();
+    const { overlay, card, scroller } = getProfileModalElements();
     if (!overlay || !card || !overlay.classList.contains('active')) return;
 
     const visibleHeight = Math.max(
@@ -2046,7 +2063,9 @@ function applyProfileModalLayout() {
     );
 
     card.style.maxHeight = `${Math.max(320, visibleHeight - 24)}px`;
-    card.style.scrollPaddingBottom = `${activeInput || holdDuringFocusTransfer ? 144 : 96}px`;
+    if (scroller) {
+        scroller.style.scrollPaddingBottom = `${activeInput || holdDuringFocusTransfer ? 144 : 96}px`;
+    }
     overlay.style.setProperty('--profile-modal-shift-y', '0px');
     overlay.classList.toggle('keyboard-active', !!activeInput || holdDuringFocusTransfer);
 
@@ -2142,20 +2161,22 @@ function bindProfileModalInputBehavior(input) {
     });
 
     input.addEventListener('touchstart', (event) => {
-        const { overlay, card } = getProfileModalElements();
-        if (!overlay?.classList.contains('active') || !card) return;
+        const { overlay, card, scroller } = getProfileModalElements();
+        const scrollHost = scroller || card;
+        if (!overlay?.classList.contains('active') || !scrollHost) return;
 
         const touch = event.touches[0];
         gesture.startX = touch?.clientX || 0;
         gesture.startY = touch?.clientY || 0;
-        gesture.startScrollTop = card.scrollTop;
+        gesture.startScrollTop = scrollHost.scrollTop;
         gesture.mode = 'pending';
         markProfileModalFocusTransfer(input);
     }, { passive: true });
 
     input.addEventListener('touchmove', (event) => {
-        const { overlay, card } = getProfileModalElements();
-        if (!overlay?.classList.contains('active') || !card) return;
+        const { overlay, card, scroller } = getProfileModalElements();
+        const scrollHost = scroller || card;
+        if (!overlay?.classList.contains('active') || !scrollHost) return;
         if (document.activeElement !== input) return;
 
         const touch = event.touches[0];
@@ -2171,11 +2192,11 @@ function bindProfileModalInputBehavior(input) {
 
         if (gesture.mode !== 'scroll') return;
 
-        const maxScrollTop = Math.max(0, card.scrollHeight - card.clientHeight);
+        const maxScrollTop = Math.max(0, scrollHost.scrollHeight - scrollHost.clientHeight);
         const nextScrollTop = Math.max(0, Math.min(gesture.startScrollTop - deltaY, maxScrollTop));
 
-        if (nextScrollTop !== card.scrollTop) {
-            card.scrollTop = nextScrollTop;
+        if (nextScrollTop !== scrollHost.scrollTop) {
+            scrollHost.scrollTop = nextScrollTop;
         }
 
         if (event.cancelable) {
@@ -2226,19 +2247,29 @@ function attachProfileModalViewportHandlers() {
     captureProfileModalOverlayBaseHeight(true);
 
     const handleViewportChange = () => {
+        stabilizeProfileModalViewport();
         if (!getActiveProfileModalInput()) {
             captureProfileModalOverlayBaseHeight();
         }
         scheduleProfileModalLayout({ settled: true });
     };
 
+    const handleRootScroll = () => {
+        stabilizeProfileModalViewport();
+    };
+
     vv.addEventListener('resize', handleViewportChange, { passive: true });
     vv.addEventListener('scroll', handleViewportChange, { passive: true });
+    window.addEventListener('scroll', handleRootScroll, { passive: true });
 
     profileModalState.viewportCleanup = () => {
         vv.removeEventListener('resize', handleViewportChange);
         vv.removeEventListener('scroll', handleViewportChange);
         profileModalState.viewportCleanup = null;
+    };
+    profileModalState.rootScrollCleanup = () => {
+        window.removeEventListener('scroll', handleRootScroll);
+        profileModalState.rootScrollCleanup = null;
     };
 
     scheduleProfileModalLayout({ settled: true });
@@ -2247,6 +2278,9 @@ function attachProfileModalViewportHandlers() {
 function detachProfileModalViewportHandlers() {
     if (typeof profileModalState.viewportCleanup === 'function') {
         profileModalState.viewportCleanup();
+    }
+    if (typeof profileModalState.rootScrollCleanup === 'function') {
+        profileModalState.rootScrollCleanup();
     }
     clearProfileModalTimers();
 }

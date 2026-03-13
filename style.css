@@ -4594,6 +4594,8 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
 }
 
 #profileModal .modal-content.profile-modal {
+    display: flex;
+    flex-direction: column;
     position: relative;
     top: var(--profile-modal-shift-y, 0px);
     transform: none !important;
@@ -4602,6 +4604,13 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
         opacity 0.3s ease-out,
         max-height 180ms cubic-bezier(0.22, 1, 0.36, 1);
     will-change: top, opacity;
+    overflow: hidden !important;
+}
+
+#profileModal .profile-modal-scroll {
+    width: 100%;
+    flex: 1 1 auto;
+    min-height: 0;
     scroll-padding-top: 24px;
     scroll-padding-bottom: 200px;
     overflow-y: auto !important;
@@ -7067,6 +7076,10 @@ body {
         top: var(--profile-modal-shift-y, 0px) !important;
         transform: none !important;
         max-height: calc(100svh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px) !important;
+        overflow: hidden !important;
+    }
+
+    #profileModal .profile-modal-scroll {
         scroll-padding-bottom: 220px !important;
         overflow-y: auto !important;
         overflow-x: hidden !important;

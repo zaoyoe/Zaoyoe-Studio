@@ -519,6 +519,7 @@
     <!-- Profile Modal -->
     <div class="modal-overlay" id="profileModal" onmousedown="closeModal(event)" onmouseup="closeModal(event)">
         <div class="modal-content profile-modal" onclick="event.stopPropagation()">
+            <div class="profile-modal-scroll">
             <div class="mac-controls">
                 <div class="mac-dot red" onclick="window.closeProfileModal ? window.closeProfileModal() : document.getElementById('profileModal').classList.remove('active')"><i
                         class="fas fa-times"></i></div>
@@ -762,6 +763,7 @@
                         </div>
                     </div>
                 </div>
+            </div>
             </div>
         </div>
     </div>
