@@ -690,14 +690,13 @@
                 backdrop-filter: blur(20px) saturate(150%) !important;
                 -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
                 box-sizing: border-box !important;
+                margin: 0 auto !important;
             }
 
             .login-modal-scroll,
             #loginModal .login-modal-scroll {
                 width: 100% !important;
-                display: flex !important;
-                justify-content: center !important;
-                align-items: center !important;
+                display: block !important;
                 box-sizing: border-box !important;
             }
             
@@ -1459,8 +1458,15 @@
                 inputs.forEach((input) => {
                     if (!input || input.dataset.loginModalInputBound === '1') return;
                     input.dataset.loginModalInputBound = '1';
+                    const gesture = {
+                        startX: 0,
+                        startY: 0,
+                        startScrollTop: 0,
+                        mode: 'idle'
+                    };
 
                     input.addEventListener('focus', () => {
+                        loginModalState.userScrollUntil = 0;
                         if (loginModalState.blurTimer) {
                             clearTimeout(loginModalState.blurTimer);
                             loginModalState.blurTimer = null;
@@ -1480,15 +1486,70 @@
                         }, 120);
                     });
 
-                    input.addEventListener('touchstart', () => {
+                    input.addEventListener('click', () => {
+                        loginModalState.userScrollUntil = 0;
+                        if (document.activeElement === input) {
+                            scheduleLoginModalLayout({ settled: true, ensureInput: true });
+                        }
+                    });
+
+                    input.addEventListener('touchstart', (event) => {
+                        const { overlay, scroller } = getLoginModalElements();
+                        const scrollHost = scroller || overlay;
+                        if (!scrollHost) return;
+
                         cancelLoginModalScrollAnimation();
+                        const touch = event.touches[0];
+                        gesture.startX = touch?.clientX || 0;
+                        gesture.startY = touch?.clientY || 0;
+                        gesture.startScrollTop = scrollHost.scrollTop;
+                        gesture.mode = 'pending';
                     }, { passive: true });
+
+                    input.addEventListener('touchmove', (event) => {
+                        const { overlay, scroller } = getLoginModalElements();
+                        const scrollHost = scroller || overlay;
+                        if (!scrollHost || document.activeElement !== input) return;
+
+                        const touch = event.touches[0];
+                        const deltaX = (touch?.clientX || 0) - gesture.startX;
+                        const deltaY = (touch?.clientY || 0) - gesture.startY;
+
+                        if (gesture.mode === 'pending') {
+                            if (Math.abs(deltaY) < 8 || Math.abs(deltaY) <= Math.abs(deltaX)) {
+                                return;
+                            }
+                            gesture.mode = 'scroll';
+                        }
+
+                        if (gesture.mode !== 'scroll') return;
+
+                        loginModalState.userScrollUntil = Date.now() + 260;
+                        cancelLoginModalScrollAnimation();
+                        const maxScrollTop = Math.max(0, scrollHost.scrollHeight - scrollHost.clientHeight);
+                        const nextScrollTop = Math.max(0, Math.min(gesture.startScrollTop - deltaY, maxScrollTop));
+
+                        if (nextScrollTop !== scrollHost.scrollTop) {
+                            scrollHost.scrollTop = nextScrollTop;
+                        }
+
+                        if (event.cancelable) {
+                            event.preventDefault();
+                        }
+                    }, { passive: false });
 
                     input.addEventListener('touchend', (event) => {
                         if (!isLoginModalIOSMode()) return;
 
                         if (document.activeElement === input) {
+                            loginModalState.userScrollUntil = 0;
                             scheduleLoginModalLayout({ ensureInput: true });
+                            gesture.mode = 'idle';
+                            return;
+                        }
+
+                        if (gesture.mode !== 'pending') {
+                            gesture.mode = 'idle';
                             return;
                         }
 
@@ -1502,8 +1563,13 @@
                             input.focus();
                         }
 
+                        loginModalState.userScrollUntil = 0;
                         scheduleLoginModalLayout({ settled: true, ensureInput: true });
                     }, { passive: false });
+
+                    input.addEventListener('touchcancel', () => {
+                        gesture.mode = 'idle';
+                    });
                 });
             }
 
@@ -1535,15 +1601,7 @@
                         captureLoginModalOverlayBaseHeight(true);
                     }
 
-                    if (getActiveLoginModalInput()) {
-                        scheduleLoginModalLayout({
-                            settled: true,
-                            deferOnly: true,
-                            ensureInput: !isLoginModalUserScrolling()
-                        });
-                    } else {
-                        scheduleLoginModalLayout({ settled: true, ensureInput: false });
-                    }
+                    scheduleLoginModalLayout({ settled: true, deferOnly: true, ensureInput: false });
                 };
 
                 const handleRootScroll = () => {

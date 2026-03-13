@@ -4356,6 +4356,7 @@ input.login-submit-btn {
 
 #loginModal .login-modal-scroll {
     min-height: 0;
+    display: block;
 }
 
 html.login-modal-lock,
@@ -7059,10 +7060,9 @@ body {
     }
 
     #loginModal .login-modal-scroll {
+        display: block !important;
         width: 100% !important;
         height: 100% !important;
-        flex: 1 1 auto !important;
-        align-self: stretch !important;
         min-height: 0 !important;
         max-height: 100% !important;
         overflow-y: auto !important;
@@ -7070,7 +7070,6 @@ body {
         overscroll-behavior: contain !important;
         -webkit-overflow-scrolling: touch !important;
         touch-action: pan-y !important;
-        align-items: flex-start !important;
         padding-top: clamp(16px, 6vh, 64px) !important;
         padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 24px) !important;
         scroll-padding-top: 24px !important;
