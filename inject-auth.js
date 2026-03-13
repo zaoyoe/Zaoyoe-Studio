@@ -1099,7 +1099,7 @@
                     console.log(`🎨 Injected CSS: ${href}`);
                 }
             }
-            loadCSS(`login_styles.css?v=20260313_LOGIN_KEYBOARD_TRANSFORM_20`);
+            loadCSS(`login_styles.css?v=20260313_LOGIN_KEYBOARD_TRANSFORM_21`);
             loadCSS(`login_dual_mode.css?v=20260303_G_AUTH_FIX17`);
 
             // Supabase Auth - loaded via static <script> tag in HTML, not dynamically
@@ -1317,7 +1317,6 @@
                 overlay.classList.add('keyboard-docked');
                 overlay.style.setProperty('--login-modal-overlay-height', `${baseViewportHeight}px`);
                 overlay.style.setProperty('--login-modal-translate-y', `${translateY}px`);
-                card.style.setProperty('height', `${finalCardHeight}px`);
                 card.style.setProperty('max-height', `${finalCardHeight}px`);
                 toggleLoginModalSheetAnimation(card, animate);
                 toggleLoginModalKeyboardSettling(overlay, !!animate);
@@ -1333,7 +1332,6 @@
                 overlay.classList.remove('keyboard-settling');
                 overlay.style.setProperty('--login-modal-translate-y', '0px');
                 overlay.style.removeProperty('--login-modal-overlay-height');
-                card.style.removeProperty('height');
                 card.style.removeProperty('max-height');
                 toggleLoginModalSheetAnimation(card, animate);
                 if (!getActiveLoginModalInput()) {
@@ -1373,6 +1371,7 @@
                 const nextInset = shouldDock ? bottomInset : 0;
                 const previousInset = loginModalKeyboardState.lastBottomInset;
                 const isInsetDroppingWhileFocused = loginModalKeyboardState.docked && !!activeInput && nextInset > 24 && nextInset + 24 < previousInset;
+                const insetDelta = Math.abs(nextInset - previousInset);
 
                 if (!loginModalKeyboardState.docked && shouldDock) {
                     loginModalKeyboardState.pendingInset = nextInset;
@@ -1407,7 +1406,7 @@
                             const settledInset = loginModalKeyboardState.pendingInset;
                             loginModalKeyboardState.pendingInset = 0;
                             if (settledInset > 24) {
-                                applyLoginModalKeyboardDock(settledInset, true);
+                                applyLoginModalKeyboardDock(settledInset, false);
                             }
                         }, 90);
                     }
@@ -1419,7 +1418,10 @@
                 }
 
                 if (nextInset > 24) {
-                    applyLoginModalKeyboardDock(nextInset, true);
+                    if (loginModalKeyboardState.docked && insetDelta <= 18) {
+                        return;
+                    }
+                    applyLoginModalKeyboardDock(nextInset, false);
                     return;
                 }
 

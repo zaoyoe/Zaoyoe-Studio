@@ -133,7 +133,6 @@
 #loginModal.keyboard-docked .login-card.login-sheet-animating {
     transition:
         transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
-        height 220ms cubic-bezier(0.22, 1, 0.36, 1),
         max-height 220ms cubic-bezier(0.22, 1, 0.36, 1) !important;
 }
 
@@ -563,11 +562,14 @@
         max-height: var(--login-modal-overlay-height, 100svh) !important;
         overflow: hidden !important;
         align-items: center !important;
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
     }
 
     #loginModal.keyboard-docked .login-modal-scroll {
         min-height: 100%;
         overflow: visible;
+        padding: 0 !important;
     }
 
     .login-overlay .login-card {
