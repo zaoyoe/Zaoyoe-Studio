@@ -104,6 +104,7 @@
                 <div class="mac-dot yellow"></div>
                 <div class="mac-dot green"></div>
             </div>
+            <div class="login-card-scroll">
 
             <!-- Login View -->
             <div id="loginView" class="form-view">
@@ -214,6 +215,7 @@
                 </div>
             </div>
 
+            </div>
         </div>
         </div>
     </div>
@@ -691,12 +693,32 @@
                 -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
                 box-sizing: border-box !important;
                 margin: 0 auto !important;
+                display: flex !important;
+                flex-direction: column !important;
+                overflow: hidden !important;
             }
 
             .login-modal-scroll,
             #loginModal .login-modal-scroll {
                 width: 100% !important;
-                display: block !important;
+                height: 100% !important;
+                display: flex !important;
+                justify-content: center !important;
+                align-items: center !important;
+                box-sizing: border-box !important;
+                overflow: hidden !important;
+            }
+
+            .login-card-scroll,
+            #loginModal .login-card-scroll {
+                width: 100% !important;
+                flex: 1 1 auto !important;
+                min-height: 0 !important;
+                overflow-y: auto !important;
+                overflow-x: hidden !important;
+                -webkit-overflow-scrolling: touch !important;
+                overscroll-behavior: contain !important;
+                touch-action: pan-y !important;
                 box-sizing: border-box !important;
             }
             
@@ -1142,7 +1164,8 @@
                 const overlay = document.getElementById('loginModal');
                 return {
                     overlay,
-                    scroller: overlay?.querySelector('.login-modal-scroll') || null,
+                    frame: overlay?.querySelector('.login-modal-scroll') || null,
+                    scroller: overlay?.querySelector('.login-card-scroll') || null,
                     card: overlay?.querySelector('.login-card') || null,
                     inputs: overlay ? Array.from(overlay.querySelectorAll('input, textarea, select')) : []
                 };
@@ -1308,18 +1331,21 @@
             }
 
             function resetLoginModalVisualState() {
-                const { overlay, scroller } = getLoginModalElements();
+                const { overlay, frame, scroller, card } = getLoginModalElements();
                 overlayCloseDisabledUntil = 0;
 
                 if (!overlay) return;
                 overlay.classList.remove('keyboard-active', 'ios-focus-lock');
                 overlay.style.removeProperty('--login-modal-overlay-height');
+                frame?.style.removeProperty('height');
+                frame?.style.removeProperty('max-height');
                 scroller?.style.removeProperty('height');
                 scroller?.style.removeProperty('max-height');
                 scroller?.style.removeProperty('padding-top');
                 scroller?.style.removeProperty('padding-bottom');
                 scroller?.style.removeProperty('scroll-padding-top');
                 scroller?.style.removeProperty('scroll-padding-bottom');
+                card?.style.removeProperty('max-height');
                 loginModalState.overlayBaseHeight = 0;
                 loginModalState.userScrollUntil = 0;
             }
@@ -1341,9 +1367,9 @@
             }
 
             function ensureLoginModalInputVisible(input = getActiveLoginModalInput()) {
-                const { overlay, scroller } = getLoginModalElements();
-                const scrollHost = scroller || overlay;
-                if (!overlay || !scrollHost || !input) return;
+                const { scroller } = getLoginModalElements();
+                const scrollHost = scroller;
+                if (!scrollHost || !input) return;
 
                 const maxScrollTop = Math.max(0, scrollHost.scrollHeight - scrollHost.clientHeight);
                 if (maxScrollTop <= 0) return;
@@ -1380,8 +1406,8 @@
             }
 
             function applyLoginModalLayout({ ensureInput = true } = {}) {
-                const { overlay, scroller, card } = getLoginModalElements();
-                if (!overlay || !scroller || !card) return;
+                const { overlay, frame, scroller, card } = getLoginModalElements();
+                if (!overlay || !frame || !scroller || !card) return;
 
                 captureLoginModalOverlayBaseHeight();
 
@@ -1407,8 +1433,9 @@
                 const keyboardBottomPadding = Math.max(24, bottomInset + 28);
 
                 overlay.classList.toggle('keyboard-active', !!activeInput || bottomInset > 0);
-                scroller.style.height = `${hostHeight}px`;
-                scroller.style.maxHeight = `${hostHeight}px`;
+                frame.style.height = `${hostHeight}px`;
+                frame.style.maxHeight = `${hostHeight}px`;
+                card.style.maxHeight = `${hostHeight}px`;
                 scroller.style.scrollPaddingTop = '24px';
 
                 if (activeInput || bottomInset > 0) {
