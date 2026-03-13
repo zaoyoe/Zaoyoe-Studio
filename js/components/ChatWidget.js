@@ -1770,11 +1770,13 @@ class ChatWidget {
                 background: transparent !important;
                 border: none !important;
                 box-shadow: none !important;
+                color: rgba(255, 255, 255, 0.7) !important;
+                font-size: 16px !important;
             }
 
             .chat-window:not(.admin-mode-layout) #chatEmojiBtn.chat-action-btn:hover {
                 background: transparent !important;
-                color: var(--chat-accent-blue, rgba(126, 184, 239, 0.96)) !important;
+                color: white !important;
             }
 
             .chat-window:not(.admin-mode-layout) .chat-input {
