@@ -2,8 +2,8 @@
 
 /* Login Overlay Extensions (builds on .modal-overlay) */
 .login-overlay {
-    z-index: 2000;
-    /* Higher than modals (1000) but below user dropdown (2100) */
+    z-index: 12060;
+    /* Keep login above prompt/detail modals so auth prompts are always actionable */
 }
 
 /* 确保激活状态下所有子元素可交互 */
