@@ -5741,6 +5741,8 @@ let promptCommentComposerOwnsScrollLock = false;
 let promptCommentComposerScrollClampCleanup = null;
 let promptCommentComposerStableViewportProbe = null;
 let promptCommentComposerAuthAlertTimer = null;
+let promptCommentComposerLoginModalTimer = null;
+const PROMPT_COMMENT_COMPOSER_AUTH_ALERT_DURATION_MS = 1080;
 
 function isPromptCommentComposerEnabled() {
     return isPromptModalIOSMobile();
@@ -5907,9 +5909,20 @@ function flashPromptCommentComposerAuthRequired() {
     promptCommentComposerAuthAlertTimer = setTimeout(() => {
         overlay.classList.remove('auth-required');
         promptCommentComposerAuthAlertTimer = null;
-    }, 1100);
+    }, PROMPT_COMMENT_COMPOSER_AUTH_ALERT_DURATION_MS);
 
     return true;
+}
+
+function queuePromptCommentComposerLoginModal(delayMs = 0) {
+    if (promptCommentComposerLoginModalTimer) {
+        clearTimeout(promptCommentComposerLoginModalTimer);
+    }
+
+    promptCommentComposerLoginModalTimer = setTimeout(() => {
+        promptCommentComposerLoginModalTimer = null;
+        showLoginModal();
+    }, Math.max(0, delayMs));
 }
 
 function updatePromptCommentComposerTriggerState() {
@@ -7653,9 +7666,7 @@ async function submitComment() {
     if (!user) {
         const flashedComposer = flashPromptCommentComposerAuthRequired();
         if (flashedComposer) {
-            setTimeout(() => {
-                showLoginModal();
-            }, 180);
+            queuePromptCommentComposerLoginModal(PROMPT_COMMENT_COMPOSER_AUTH_ALERT_DURATION_MS);
         } else {
             showLoginModal();
         }
