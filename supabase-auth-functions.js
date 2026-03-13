@@ -2054,13 +2054,6 @@ function applyProfileModalLayout() {
     const activeInput = getActiveProfileModalInput();
     const activeAnchor = getProfileModalFocusAnchor(activeInput);
     const holdDuringFocusTransfer = !activeInput && profileModalState.focusTransferUntil > Date.now();
-    const preserveWithinSameAnchor = !!(
-        activeInput &&
-        activeAnchor &&
-        profileModalState.preserveLayoutDuringFocusTransfer &&
-        profileModalState.focusTransferUntil > Date.now() &&
-        activeAnchor === profileModalState.lastFocusAnchor
-    );
 
     card.style.maxHeight = `${Math.max(320, visibleHeight - 24)}px`;
     if (scroller) {
@@ -2078,12 +2071,6 @@ function applyProfileModalLayout() {
     }
 
     if (!isProfileModalIOSMode()) {
-        profileModalState.lastFocusAnchor = activeAnchor || null;
-        profileModalState.preserveLayoutDuringFocusTransfer = false;
-        return;
-    }
-
-    if (preserveWithinSameAnchor) {
         profileModalState.lastFocusAnchor = activeAnchor || null;
         profileModalState.preserveLayoutDuringFocusTransfer = false;
         return;
