@@ -4091,8 +4091,8 @@ body.modal-open .prompt-card {
     }
 
     .modal-inner.comment-mode .comment-input-area.composer-proxy .comment-input-proxy-icon {
-        width: 32px;
-        height: 32px;
+        width: 36px;
+        height: 36px;
         color: rgba(255, 255, 255, 0.92);
     }
 
