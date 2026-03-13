@@ -4030,7 +4030,7 @@ body.modal-open .prompt-card {
         max-height: 48px;
         padding: 12px 16px;
         flex: 0 0 auto;
-        width: min(148px, calc(100% - 132px));
+        width: min(128px, calc(100% - 152px));
         margin: 0 auto;
         border: 1px solid rgba(255, 255, 255, 0.16);
         border-radius: 18px;
@@ -4051,11 +4051,11 @@ body.modal-open .prompt-card {
         top: 0;
         bottom: 0;
         left: 50%;
-        width: min(148px, calc(100% - 132px));
+        width: min(128px, calc(100% - 152px));
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        gap: 0;
+        gap: 8px;
         pointer-events: none;
         z-index: 2;
         opacity: 0;
@@ -4063,54 +4063,56 @@ body.modal-open .prompt-card {
         transition: opacity 0.22s ease, transform 0.22s ease;
     }
 
-    .modal-inner.comment-mode .comment-input-area.composer-proxy:not(.has-draft) .comment-input-proxy-ui {
+    .modal-inner.comment-mode .comment-input-area.composer-proxy .comment-input-proxy-ui {
         opacity: 1;
         transform: translate(-50%, 0);
     }
 
-    .modal-inner.comment-mode .comment-input-area.composer-proxy:not(.has-draft) #commentInput {
+    .modal-inner.comment-mode .comment-input-area.composer-proxy #commentInput {
         color: transparent;
     }
 
-    .modal-inner.comment-mode .comment-input-area.composer-proxy:not(.has-draft) #commentInput::placeholder {
+    .modal-inner.comment-mode .comment-input-area.composer-proxy #commentInput::placeholder {
         color: transparent;
+    }
+
+    .modal-inner.comment-mode .comment-input-area.composer-proxy .comment-input-proxy-label {
+        color: rgba(241, 245, 249, 0.9);
+        font-size: 0.88rem;
+        font-weight: 560;
+        letter-spacing: 0.04em;
+        text-shadow: 0 1px 8px rgba(2, 6, 23, 0.1);
     }
 
     .modal-inner.comment-mode .comment-input-area.composer-proxy .comment-input-proxy-pencil {
         position: relative;
-        width: 14px;
-        height: 3px;
-        border-radius: 999px;
-        transform: rotate(-32deg);
-        background:
-            linear-gradient(90deg,
-                rgba(226, 232, 240, 0.88) 0 70%,
-                rgba(148, 163, 184, 0.78) 70% 88%,
-                rgba(100, 116, 139, 0.72) 88% 100%);
-        box-shadow: 0 2px 6px rgba(2, 6, 23, 0.1);
+        width: 15px;
+        height: 15px;
+        flex: 0 0 15px;
+        transform: rotate(-38deg);
     }
 
     .modal-inner.comment-mode .comment-input-area.composer-proxy .comment-input-proxy-pencil::before {
         content: '';
         position: absolute;
-        top: 0;
-        right: -4px;
-        width: 6px;
+        top: 6px;
+        left: 1px;
+        width: 12px;
         height: 3px;
-        border-radius: 1px;
-        clip-path: polygon(0 50%, 100% 0, 100% 100%);
-        background: linear-gradient(135deg, rgba(248, 250, 252, 0.92), rgba(203, 213, 225, 0.76));
+        border-radius: 999px;
+        background: linear-gradient(90deg, rgba(203, 213, 225, 0.96) 0%, rgba(148, 163, 184, 0.82) 100%);
+        box-shadow: 0 1px 4px rgba(2, 6, 23, 0.1);
     }
 
     .modal-inner.comment-mode .comment-input-area.composer-proxy .comment-input-proxy-pencil::after {
         content: '';
         position: absolute;
-        top: 0;
-        left: -3px;
-        width: 3px;
-        height: 3px;
-        border-radius: 1px 0 0 1px;
-        background: rgba(241, 245, 249, 0.5);
+        top: 5px;
+        right: 0;
+        width: 5px;
+        height: 5px;
+        clip-path: polygon(0 50%, 100% 0, 100% 100%);
+        background: linear-gradient(135deg, rgba(248, 250, 252, 0.95), rgba(148, 163, 184, 0.75));
     }
 
     .modal-inner.comment-mode .comment-input-area.composer-proxy #commentInput::placeholder {
