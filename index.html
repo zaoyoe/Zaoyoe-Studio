@@ -944,7 +944,7 @@
         })();
     </script>
     <!-- Profile Modal (for user profile/security settings) -->
-    <script src="security-cards.js?v=20260304_IOS_CARET_FIX1" defer></script>
+    <script src="security-cards.js?v=20260313_PHONE_TEXT_INPUT_1" defer></script>
     <div class="modal-overlay" id="profileModal" onmousedown="closeModal(event)" onmouseup="closeModal(event)">
         <div class="modal-content profile-modal" onclick="event.stopPropagation()">
             <div class="mac-controls">
@@ -1078,7 +1078,7 @@
                                     <p class="detail-desc" data-i18n="security.bindPhoneDesc">绑定手机号可以增强账户安全性</p>
                                     <div class="input-group input-with-action"
                                         style="max-width: 100%; margin-bottom: 12px;">
-                                        <input type="tel" id="phoneNumberInput" placeholder="输入手机号"
+                                        <input type="text" id="phoneNumberInput" placeholder="输入手机号"
                                             class="security-input glass-input" maxlength="11"
                                             data-i18n-placeholder="security.enterPhone">
                                         <button type="button" class="verify-code-btn" id="sendPhoneCodeBtn"
@@ -1131,8 +1131,9 @@
                                 <h3 class="mobile-section-title" data-i18n="security.bindPhone">绑定手机号</h3>
                                 <p class="mobile-section-desc" data-i18n="security.bindPhoneDesc">绑定手机号可以增强账户安全性</p>
                                 <div class="input-group">
-                                    <input type="tel" id="mobile_phoneNumberInput" class="security-input glass-input"
-                                        placeholder="输入手机号" data-i18n-placeholder="security.enterPhone">
+                                    <input type="text" id="mobile_phoneNumberInput" class="security-input glass-input"
+                                        placeholder="输入手机号" maxlength="11"
+                                        data-i18n-placeholder="security.enterPhone">
                                 </div>
                                 <div class="input-group" style="display: flex; gap: 10px;">
                                     <input type="text" id="mobile_phoneCodeInput" class="security-input glass-input"

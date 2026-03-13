@@ -82,6 +82,37 @@ function resetSecurityCards() {
 let phoneCooldownTimer = null;
 let phoneCooldownSeconds = 0;
 
+function sanitizePhoneDigits(value) {
+    return String(value || '').replace(/\D/g, '').slice(0, 11);
+}
+
+function bindPhoneDigitFilter(input) {
+    if (!input || input.dataset.phoneDigitsBound === '1') return;
+
+    input.addEventListener('input', () => {
+        const sanitized = sanitizePhoneDigits(input.value);
+        if (input.value !== sanitized) {
+            input.value = sanitized;
+        }
+    });
+
+    input.dataset.phoneDigitsBound = '1';
+}
+
+function initializePhoneDigitFilters() {
+    ['phoneNumberInput', 'mobile_phoneNumberInput'].forEach((id) => {
+        const input = document.getElementById(id);
+        if (!input) return;
+
+        input.setAttribute('maxlength', '11');
+        input.setAttribute('inputmode', 'text');
+        input.setAttribute('autocapitalize', 'off');
+        input.setAttribute('autocorrect', 'off');
+        input.setAttribute('spellcheck', 'false');
+        bindPhoneDigitFilter(input);
+    });
+}
+
 function sendPhoneVerificationCode(source = 'desktop') {
     // Determine which input to use based on source
     const prefix = source === 'mobile' ? 'mobile_' : '';
@@ -90,7 +121,8 @@ function sendPhoneVerificationCode(source = 'desktop') {
 
     if (!phoneInput || !sendBtn) return;
 
-    const phoneNumber = phoneInput.value.trim();
+    const phoneNumber = sanitizePhoneDigits(phoneInput.value);
+    phoneInput.value = phoneNumber;
     if (!phoneNumber) {
         alert('请输入手机号');
         return;
@@ -169,7 +201,8 @@ function bindPhone(source = 'desktop') {
 
     if (!phoneInput || !codeInput) return;
 
-    const phoneNumber = phoneInput.value.trim();
+    const phoneNumber = sanitizePhoneDigits(phoneInput.value);
+    phoneInput.value = phoneNumber;
     const code = codeInput.value.trim();
 
     if (!phoneNumber || !code) {
@@ -336,3 +369,9 @@ window.sendPhoneVerificationCode = sendPhoneVerificationCode;
 window.bindPhone = bindPhone;
 window.changePassword = changePassword;
 window.deleteAccount = deleteAccount;
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializePhoneDigitFilters);
+} else {
+    initializePhoneDigitFilters();
+}
