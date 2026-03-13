@@ -1113,15 +1113,38 @@
                 // Auth state will be checked by initializeAuthPageBoot() on DOMContentLoaded
             }
 
+            // Stable iOS baseline: freeze the page layer and let only the modal
+            // scroller react to keyboard and focus changes.
             let overlayCloseDisabledUntil = 0;
+            const LOGIN_MODAL_KEYBOARD_SETTLE_MS = 100;
+            const LOGIN_MODAL_SCROLL_STATE_CLEAR_MS = 320;
+            const loginModalState = {
+                baseScrollY: 0,
+                overlayBaseHeight: 0,
+                viewportCleanup: null,
+                rootScrollCleanup: null,
+                layoutRafId: 0,
+                scrollAnimationClearTimer: null,
+                scrollAnimationHost: null,
+                scrollAnimationTarget: null,
+                settleTimer: null,
+                blurTimer: null,
+                pageFrozen: false
+            };
 
+            function isLoginModalIOSMode() {
+                const ua = navigator.userAgent || '';
+                const isiOS = /iPad|iPhone|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+                return isiOS && window.matchMedia('(max-width: 768px)').matches && !!window.visualViewport;
+            }
 
             function getLoginModalElements() {
                 const overlay = document.getElementById('loginModal');
                 return {
                     overlay,
                     scroller: overlay?.querySelector('.login-modal-scroll') || null,
-                    card: overlay?.querySelector('.login-card') || null
+                    card: overlay?.querySelector('.login-card') || null,
+                    inputs: overlay ? Array.from(overlay.querySelectorAll('input, textarea, select')) : []
                 };
             }
 
@@ -1130,6 +1153,165 @@
                 const active = document.activeElement;
                 if (!overlay || !active || !overlay.contains(active)) return null;
                 return /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName) ? active : null;
+            }
+
+            function clearLoginModalScrollAnimationState() {
+                if (loginModalState.scrollAnimationClearTimer) {
+                    clearTimeout(loginModalState.scrollAnimationClearTimer);
+                    loginModalState.scrollAnimationClearTimer = null;
+                }
+                loginModalState.scrollAnimationHost = null;
+                loginModalState.scrollAnimationTarget = null;
+            }
+
+            function cancelLoginModalScrollAnimation() {
+                const scrollHost = loginModalState.scrollAnimationHost;
+                clearLoginModalScrollAnimationState();
+
+                if (!scrollHost || !scrollHost.isConnected) {
+                    return;
+                }
+
+                const currentTop = scrollHost.scrollTop;
+                try {
+                    scrollHost.scrollTo({ top: currentTop, behavior: 'auto' });
+                } catch (_) {
+                    scrollHost.scrollTop = currentTop;
+                }
+            }
+
+            function animateLoginModalScroll(scrollHost, targetScrollTop) {
+                if (!scrollHost) return;
+
+                const to = Math.max(0, targetScrollTop);
+                if (Math.abs(to - scrollHost.scrollTop) <= 2) {
+                    clearLoginModalScrollAnimationState();
+                    return;
+                }
+
+                if (
+                    loginModalState.scrollAnimationHost === scrollHost &&
+                    loginModalState.scrollAnimationTarget !== null &&
+                    Math.abs(loginModalState.scrollAnimationTarget - to) <= 2
+                ) {
+                    return;
+                }
+
+                cancelLoginModalScrollAnimation();
+                loginModalState.scrollAnimationHost = scrollHost;
+                loginModalState.scrollAnimationTarget = to;
+
+                try {
+                    scrollHost.scrollTo({ top: to, behavior: 'smooth' });
+                } catch (_) {
+                    scrollHost.scrollTop = to;
+                    clearLoginModalScrollAnimationState();
+                    return;
+                }
+
+                loginModalState.scrollAnimationClearTimer = setTimeout(() => {
+                    if (
+                        loginModalState.scrollAnimationHost === scrollHost &&
+                        loginModalState.scrollAnimationTarget !== null &&
+                        Math.abs(loginModalState.scrollAnimationTarget - to) <= 2
+                    ) {
+                        clearLoginModalScrollAnimationState();
+                    }
+                }, LOGIN_MODAL_SCROLL_STATE_CLEAR_MS);
+            }
+
+            function clearLoginModalTimers() {
+                if (loginModalState.layoutRafId) {
+                    cancelAnimationFrame(loginModalState.layoutRafId);
+                    loginModalState.layoutRafId = 0;
+                }
+                cancelLoginModalScrollAnimation();
+                if (loginModalState.settleTimer) {
+                    clearTimeout(loginModalState.settleTimer);
+                    loginModalState.settleTimer = null;
+                }
+                if (loginModalState.blurTimer) {
+                    clearTimeout(loginModalState.blurTimer);
+                    loginModalState.blurTimer = null;
+                }
+            }
+
+            function freezeLoginModalPage() {
+                if (loginModalState.pageFrozen) return;
+
+                loginModalState.baseScrollY = Math.max(0, Math.round(window.scrollY || window.pageYOffset || 0));
+                document.documentElement.classList.add('login-modal-lock');
+                document.body.classList.add('login-modal-lock');
+                document.documentElement.style.overflow = 'hidden';
+                document.body.style.position = 'fixed';
+                document.body.style.top = `-${loginModalState.baseScrollY}px`;
+                document.body.style.left = '0';
+                document.body.style.right = '0';
+                document.body.style.width = '100%';
+                document.body.style.overflow = 'hidden';
+                loginModalState.pageFrozen = true;
+                stabilizeLoginModalViewport();
+            }
+
+            function unfreezeLoginModalPage() {
+                if (!loginModalState.pageFrozen) return;
+
+                const restoreScrollY = loginModalState.baseScrollY;
+                document.documentElement.classList.remove('login-modal-lock');
+                document.body.classList.remove('login-modal-lock');
+                document.documentElement.style.overflow = '';
+                document.body.style.position = '';
+                document.body.style.top = '';
+                document.body.style.left = '';
+                document.body.style.right = '';
+                document.body.style.width = '';
+                document.body.style.overflow = '';
+                loginModalState.pageFrozen = false;
+
+                requestAnimationFrame(() => {
+                    window.scrollTo(0, restoreScrollY);
+                });
+            }
+
+            function captureLoginModalOverlayBaseHeight(force = false) {
+                const { overlay } = getLoginModalElements();
+                if (!overlay) return;
+
+                const measuredHeight = Math.max(
+                    Math.round(window.innerHeight || 0),
+                    Math.round(document.documentElement.clientHeight || 0),
+                    Math.round(window.visualViewport?.height || 0)
+                );
+
+                if (!measuredHeight) return;
+                if (!force && loginModalState.overlayBaseHeight >= measuredHeight) return;
+
+                loginModalState.overlayBaseHeight = measuredHeight;
+                overlay.style.setProperty('--login-modal-overlay-height', `${measuredHeight}px`);
+            }
+
+            function stabilizeLoginModalViewport() {
+                if (!loginModalState.pageFrozen) return;
+
+                document.body.style.top = `-${loginModalState.baseScrollY}px`;
+
+                if ((window.scrollY || window.pageYOffset || 0) !== 0) {
+                    window.scrollTo(0, 0);
+                }
+
+                document.documentElement.scrollTop = 0;
+                document.body.scrollTop = 0;
+            }
+
+            function resetLoginModalVisualState() {
+                const { overlay, scroller } = getLoginModalElements();
+                overlayCloseDisabledUntil = 0;
+
+                if (!overlay) return;
+                overlay.classList.remove('keyboard-active', 'ios-focus-lock');
+                overlay.style.removeProperty('--login-modal-overlay-height');
+                scroller?.style.removeProperty('scroll-padding-bottom');
+                loginModalState.overlayBaseHeight = 0;
             }
 
             function resetLoginModalViewportState() {
@@ -1141,6 +1323,218 @@
                 }
                 if (scroller) scroller.scrollTop = 0;
                 if (card) card.scrollTop = 0;
+            }
+
+            function getLoginModalFocusAnchor(input = getActiveLoginModalInput()) {
+                if (!input) return null;
+                return input.closest('.input-group') || input;
+            }
+
+            function ensureLoginModalInputVisible(input = getActiveLoginModalInput()) {
+                const { overlay, scroller } = getLoginModalElements();
+                const scrollHost = scroller || overlay;
+                if (!overlay || !scrollHost || !input) return;
+
+                const maxScrollTop = Math.max(0, scrollHost.scrollHeight - scrollHost.clientHeight);
+                if (maxScrollTop <= 0) return;
+
+                const hostRect = scrollHost.getBoundingClientRect();
+                const anchor = getLoginModalFocusAnchor(input) || input;
+                const anchorRect = anchor.getBoundingClientRect();
+                const inputRect = input.getBoundingClientRect();
+                const vv = window.visualViewport;
+                const viewportTop = vv ? Math.round(vv.offsetTop || 0) : Math.round(hostRect.top);
+                const viewportBottom = vv
+                    ? Math.round((vv.offsetTop || 0) + (vv.height || 0))
+                    : Math.round(hostRect.bottom);
+                const visibleTop = Math.max(hostRect.top, viewportTop) + 18;
+                const visibleBottom = Math.min(hostRect.bottom, viewportBottom) - 18;
+                if (visibleBottom <= visibleTop + 80) return;
+
+                const visibleTopInHost = Math.max(0, visibleTop - hostRect.top);
+                const visibleBottomInHost = Math.min(scrollHost.clientHeight, visibleBottom - hostRect.top);
+                const visibleHeight = Math.max(120, visibleBottomInHost - visibleTopInHost);
+                const preferredCenter = Math.max(
+                    112,
+                    Math.min(Math.round(visibleHeight * 0.38), visibleHeight - 72)
+                );
+                const preferredAnchorCenter = visibleTopInHost + preferredCenter;
+                const anchorCenterInContent =
+                    scrollHost.scrollTop +
+                    (anchorRect.top - hostRect.top) +
+                    (anchorRect.height / 2);
+
+                let nextScrollTop = Math.max(
+                    0,
+                    Math.min(anchorCenterInContent - preferredAnchorCenter, maxScrollTop)
+                );
+
+                const topGuard = Math.max(52, Math.round(visibleHeight * 0.16));
+                const bottomGuard = Math.max(110, Math.round(visibleHeight * 0.28));
+
+                if (inputRect.top < visibleTop + topGuard) {
+                    nextScrollTop = Math.min(
+                        nextScrollTop,
+                        Math.max(0, scrollHost.scrollTop + (inputRect.top - (visibleTop + topGuard)))
+                    );
+                } else if (inputRect.bottom > visibleBottom - bottomGuard) {
+                    nextScrollTop = Math.max(
+                        nextScrollTop,
+                        Math.min(
+                            maxScrollTop,
+                            scrollHost.scrollTop + (inputRect.bottom - (visibleBottom - bottomGuard))
+                        )
+                    );
+                }
+
+                animateLoginModalScroll(scrollHost, nextScrollTop);
+            }
+
+            function applyLoginModalLayout() {
+                const { overlay, scroller } = getLoginModalElements();
+                if (!overlay || !scroller) return;
+
+                captureLoginModalOverlayBaseHeight();
+
+                const activeInput = getActiveLoginModalInput();
+                const vv = window.visualViewport;
+                const viewportBottom = vv
+                    ? Math.round((vv.offsetTop || 0) + (vv.height || 0))
+                    : Math.round(window.innerHeight || document.documentElement.clientHeight || 0);
+                const bottomInset = Math.max(0, (loginModalState.overlayBaseHeight || viewportBottom) - viewportBottom);
+
+                overlay.classList.toggle('keyboard-active', !!activeInput || bottomInset > 0);
+                scroller.style.scrollPaddingBottom = `${bottomInset > 0 ? Math.max(160, bottomInset + 28) : 24}px`;
+
+                if (activeInput) {
+                    ensureLoginModalInputVisible(activeInput);
+                }
+            }
+
+            function scheduleLoginModalLayout({ settled = false, deferOnly = false } = {}) {
+                if (!isLoginModalIOSMode()) return;
+
+                const runLayout = () => {
+                    if (loginModalState.layoutRafId) {
+                        cancelAnimationFrame(loginModalState.layoutRafId);
+                    }
+                    loginModalState.layoutRafId = requestAnimationFrame(() => {
+                        loginModalState.layoutRafId = 0;
+                        applyLoginModalLayout();
+                    });
+                };
+
+                if (!deferOnly) {
+                    runLayout();
+                }
+
+                if (settled) {
+                    if (loginModalState.settleTimer) {
+                        clearTimeout(loginModalState.settleTimer);
+                    }
+                    loginModalState.settleTimer = setTimeout(() => {
+                        loginModalState.settleTimer = null;
+                        runLayout();
+                    }, LOGIN_MODAL_KEYBOARD_SETTLE_MS);
+                }
+            }
+
+            function bindLoginModalInputBehavior() {
+                const { inputs } = getLoginModalElements();
+                inputs.forEach((input) => {
+                    if (!input || input.dataset.loginModalInputBound === '1') return;
+                    input.dataset.loginModalInputBound = '1';
+
+                    input.addEventListener('focus', () => {
+                        if (loginModalState.blurTimer) {
+                            clearTimeout(loginModalState.blurTimer);
+                            loginModalState.blurTimer = null;
+                        }
+                        scheduleLoginModalLayout({ settled: true });
+                    });
+
+                    input.addEventListener('blur', () => {
+                        if (loginModalState.blurTimer) {
+                            clearTimeout(loginModalState.blurTimer);
+                        }
+                        loginModalState.blurTimer = setTimeout(() => {
+                            loginModalState.blurTimer = null;
+                            if (!getActiveLoginModalInput()) {
+                                scheduleLoginModalLayout({ settled: true, deferOnly: true });
+                            }
+                        }, 120);
+                    });
+
+                    input.addEventListener('touchstart', () => {
+                        cancelLoginModalScrollAnimation();
+                    }, { passive: true });
+
+                    input.addEventListener('touchend', (event) => {
+                        if (!isLoginModalIOSMode()) return;
+
+                        if (document.activeElement === input) {
+                            scheduleLoginModalLayout();
+                            return;
+                        }
+
+                        if (event.cancelable) {
+                            event.preventDefault();
+                        }
+
+                        try {
+                            input.focus({ preventScroll: true });
+                        } catch (_) {
+                            input.focus();
+                        }
+
+                        scheduleLoginModalLayout({ settled: true });
+                    }, { passive: false });
+                });
+            }
+
+            function attachLoginModalViewportHandlers() {
+                if (!isLoginModalIOSMode() || !window.visualViewport) return;
+
+                detachLoginModalViewportHandlers();
+                captureLoginModalOverlayBaseHeight(true);
+
+                const handleViewportChange = () => {
+                    stabilizeLoginModalViewport();
+
+                    if (Math.round(window.visualViewport?.height || 0) >= loginModalState.overlayBaseHeight - 2) {
+                        captureLoginModalOverlayBaseHeight(true);
+                    }
+
+                    scheduleLoginModalLayout({ settled: true, deferOnly: true });
+                };
+
+                const handleRootScroll = () => {
+                    stabilizeLoginModalViewport();
+                };
+
+                window.visualViewport.addEventListener('resize', handleViewportChange, { passive: true });
+                window.visualViewport.addEventListener('scroll', handleViewportChange, { passive: true });
+                window.addEventListener('scroll', handleRootScroll, { passive: true });
+
+                loginModalState.viewportCleanup = () => {
+                    window.visualViewport.removeEventListener('resize', handleViewportChange);
+                    window.visualViewport.removeEventListener('scroll', handleViewportChange);
+                    loginModalState.viewportCleanup = null;
+                };
+
+                loginModalState.rootScrollCleanup = () => {
+                    window.removeEventListener('scroll', handleRootScroll);
+                    loginModalState.rootScrollCleanup = null;
+                };
+            }
+
+            function detachLoginModalViewportHandlers() {
+                if (typeof loginModalState.viewportCleanup === 'function') {
+                    loginModalState.viewportCleanup();
+                }
+                if (typeof loginModalState.rootScrollCleanup === 'function') {
+                    loginModalState.rootScrollCleanup();
+                }
             }
 
             function bindLoginModalOverlayDismiss() {
@@ -1176,20 +1570,34 @@
                 const modal = document.getElementById('loginModal');
                 if (!modal) return;
 
+                const useIsolatedIOSLock = isLoginModalIOSMode();
+                clearLoginModalTimers();
+                resetLoginModalVisualState();
                 resetLoginModalViewportState();
+                bindLoginModalInputBehavior();
                 modal.style.display = 'flex';
                 modal.style.removeProperty('visibility');
                 modal.style.removeProperty('opacity');
 
+                if (useIsolatedIOSLock) {
+                    freezeLoginModalPage();
+                    captureLoginModalOverlayBaseHeight(true);
+                    attachLoginModalViewportHandlers();
+                }
+
                 void modal.offsetHeight;
                 modal.classList.add('active');
 
-                if (window.iOSScrollLock) {
+                if (!useIsolatedIOSLock && window.iOSScrollLock) {
                     window.iOSScrollLock.lock(modal);
                 }
 
                 overlayCloseDisabledUntil = Date.now() + 260;
                 bindLoginModalOverlayDismiss();
+
+                if (useIsolatedIOSLock) {
+                    scheduleLoginModalLayout({ settled: true, deferOnly: true });
+                }
 
                 if (typeof window.ensureGoogleInlineButtonReady === 'function') {
                     window.ensureGoogleInlineButtonReady({ renderFallbackButton: true }).catch((err) => {
@@ -1203,12 +1611,20 @@
                 if (!modal) return;
 
                 getActiveLoginModalInput()?.blur();
+                detachLoginModalViewportHandlers();
+                clearLoginModalTimers();
+                resetLoginModalVisualState();
                 resetLoginModalViewportState();
                 modal.classList.remove('active');
                 modal.style.display = 'none';
                 modal.style.visibility = 'hidden';
                 modal.style.opacity = '0';
-                if (window.iOSScrollLock) window.iOSScrollLock.unlock();
+
+                if (loginModalState.pageFrozen) {
+                    unfreezeLoginModalPage();
+                } else if (window.iOSScrollLock) {
+                    window.iOSScrollLock.unlock();
+                }
             }
 
             window.openLoginModal = openLoginModal;
@@ -1231,7 +1647,6 @@
 
                 targetView.classList.remove('hidden');
 
-                // Clear ALL inputs in the entire modal to prevent autofill bleed across views
                 const allInputs = document.querySelectorAll('#loginModal input[type="text"], #loginModal input[type="email"], #loginModal input[type="password"]');
                 allInputs.forEach(input => {
                     input.value = '';
@@ -1243,10 +1658,13 @@
                 if (scroller) scroller.scrollTop = 0;
                 if (card) card.scrollTop = 0;
 
+                if (isLoginModalIOSMode()) {
+                    scheduleLoginModalLayout({ settled: true, deferOnly: true });
+                }
+
                 setTimeout(() => {
                     allInputs.forEach(input => {
                         input.value = '';
-                        // Also proactively trigger an event to help clear tricky browser states
                         input.dispatchEvent(new Event('input', { bubbles: true }));
                     });
                     console.log(`✅ 已切换到 ${viewId} 视图并全局清空输入框`);
