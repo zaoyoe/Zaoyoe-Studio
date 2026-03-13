@@ -60,7 +60,7 @@
     <link rel="stylesheet" href="security-cards.css?v=20260304_IOS_CARET_FIX1">
 
     <!-- Core Styles (for modals, profile, etc) -->
-    <link rel="stylesheet" href="style.css?v=20260313_GUESTBOOK_KEYBOARD_STABILITY_22">
+    <link rel="stylesheet" href="style.css?v=20260313_GUESTBOOK_KEYBOARD_STABILITY_23">
     <link rel="stylesheet" href="login_styles.css?v=20260313_HOME_PROFILE_MODAL_WIDTH_1">
     <link rel="stylesheet" href="avatar-fix.css?v=20260302_G_AUTH">
 
@@ -677,12 +677,11 @@
                 const minTop = 12;
                 const maxAvailableHeight = Math.max(260, Math.round(keyboardTop - minTop - 12));
                 const finalCardHeight = Math.min(baseCardHeight, maxAvailableHeight);
-                const centeredTop = (baseViewportHeight - finalCardHeight) / 2;
                 const desiredTop = Math.max(minTop, keyboardTop - 12 - finalCardHeight);
+                const centeredTop = (baseViewportHeight - finalCardHeight) / 2;
                 const shiftY = Math.round(desiredTop - centeredTop);
 
-                overlay.style.setProperty('--guestbook-modal-translate-y', '0px');
-                overlay.style.setProperty('--guestbook-modal-dock-top', `${shiftY}px`);
+                overlay.style.setProperty('--guestbook-modal-translate-y', `${shiftY}px`);
                 card.style.setProperty('height', `${finalCardHeight}px`);
                 card.style.setProperty('max-height', `${finalCardHeight}px`);
                 toggleGuestbookSheetAnimation(card, animate);
@@ -697,7 +696,6 @@
 
                 overlay.classList.remove('keyboard-docked');
                 overlay.style.setProperty('--guestbook-modal-translate-y', '0px');
-                overlay.style.setProperty('--guestbook-modal-dock-top', '0px');
                 card.style.removeProperty('height');
                 card.style.removeProperty('max-height');
                 toggleGuestbookSheetAnimation(card, animate);
@@ -889,7 +887,6 @@
                 clearGuestbookFocusSettleTimer();
                 overlay.classList.remove('active', 'keyboard-docked', 'ios-focus-lock', 'guestbook-entrying', 'keyboard-settling');
                 overlay.style.setProperty('--guestbook-modal-translate-y', '0px');
-                overlay.style.setProperty('--guestbook-modal-dock-top', '0px');
                 overlay.querySelector('.guestbook-composer-sheet')?.classList.remove('guestbook-sheet-animating');
                 restoreGuestbookModalOverlayBaseHeight();
                 syncGuestbookComposerEmptyState();
@@ -919,7 +916,6 @@
                 clearGuestbookFocusSettleTimer();
                 modal.classList.remove('keyboard-docked', 'ios-focus-lock', 'guestbook-entrying', 'keyboard-settling');
                 modal.style.setProperty('--guestbook-modal-translate-y', '0px');
-                modal.style.setProperty('--guestbook-modal-dock-top', '0px');
                 modal.querySelector('.guestbook-composer-sheet')?.classList.remove('guestbook-sheet-animating');
                 syncGuestbookComposerEmptyState();
                 syncGuestbookComposerImageState();
