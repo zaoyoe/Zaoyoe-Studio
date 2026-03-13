@@ -1129,6 +1129,7 @@
                 scrollAnimationTarget: null,
                 settleTimer: null,
                 blurTimer: null,
+                userScrollUntil: 0,
                 pageFrozen: false
             };
 
@@ -1153,6 +1154,10 @@
                 const active = document.activeElement;
                 if (!overlay || !active || !overlay.contains(active)) return null;
                 return /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName) ? active : null;
+            }
+
+            function isLoginModalUserScrolling() {
+                return loginModalState.userScrollUntil > Date.now();
             }
 
             function clearLoginModalScrollAnimationState() {
@@ -1310,8 +1315,10 @@
                 if (!overlay) return;
                 overlay.classList.remove('keyboard-active', 'ios-focus-lock');
                 overlay.style.removeProperty('--login-modal-overlay-height');
+                scroller?.style.removeProperty('padding-bottom');
                 scroller?.style.removeProperty('scroll-padding-bottom');
                 loginModalState.overlayBaseHeight = 0;
+                loginModalState.userScrollUntil = 0;
             }
 
             function resetLoginModalViewportState() {
@@ -1390,7 +1397,7 @@
                 animateLoginModalScroll(scrollHost, nextScrollTop);
             }
 
-            function applyLoginModalLayout() {
+            function applyLoginModalLayout({ ensureInput = true } = {}) {
                 const { overlay, scroller } = getLoginModalElements();
                 if (!overlay || !scroller) return;
 
@@ -1404,14 +1411,22 @@
                 const bottomInset = Math.max(0, (loginModalState.overlayBaseHeight || viewportBottom) - viewportBottom);
 
                 overlay.classList.toggle('keyboard-active', !!activeInput || bottomInset > 0);
-                scroller.style.scrollPaddingBottom = `${bottomInset > 0 ? Math.max(160, bottomInset + 28) : 24}px`;
+                if (bottomInset > 0) {
+                    const scrollBottomPadding = Math.max(160, bottomInset + 28);
+                    const actualBottomPadding = Math.max(24, bottomInset + 24);
+                    scroller.style.paddingBottom = `calc(env(safe-area-inset-bottom, 0px) + ${actualBottomPadding}px)`;
+                    scroller.style.scrollPaddingBottom = `${scrollBottomPadding}px`;
+                } else {
+                    scroller.style.removeProperty('padding-bottom');
+                    scroller.style.removeProperty('scroll-padding-bottom');
+                }
 
-                if (activeInput) {
+                if (activeInput && ensureInput && !isLoginModalUserScrolling()) {
                     ensureLoginModalInputVisible(activeInput);
                 }
             }
 
-            function scheduleLoginModalLayout({ settled = false, deferOnly = false } = {}) {
+            function scheduleLoginModalLayout({ settled = false, deferOnly = false, ensureInput = true } = {}) {
                 if (!isLoginModalIOSMode()) return;
 
                 const runLayout = () => {
@@ -1420,7 +1435,7 @@
                     }
                     loginModalState.layoutRafId = requestAnimationFrame(() => {
                         loginModalState.layoutRafId = 0;
-                        applyLoginModalLayout();
+                        applyLoginModalLayout({ ensureInput });
                     });
                 };
 
@@ -1450,7 +1465,7 @@
                             clearTimeout(loginModalState.blurTimer);
                             loginModalState.blurTimer = null;
                         }
-                        scheduleLoginModalLayout({ settled: true });
+                        scheduleLoginModalLayout({ settled: true, ensureInput: true });
                     });
 
                     input.addEventListener('blur', () => {
@@ -1460,7 +1475,7 @@
                         loginModalState.blurTimer = setTimeout(() => {
                             loginModalState.blurTimer = null;
                             if (!getActiveLoginModalInput()) {
-                                scheduleLoginModalLayout({ settled: true });
+                                scheduleLoginModalLayout({ settled: true, ensureInput: false });
                             }
                         }, 120);
                     });
@@ -1473,7 +1488,7 @@
                         if (!isLoginModalIOSMode()) return;
 
                         if (document.activeElement === input) {
-                            scheduleLoginModalLayout();
+                            scheduleLoginModalLayout({ ensureInput: true });
                             return;
                         }
 
@@ -1487,7 +1502,7 @@
                             input.focus();
                         }
 
-                        scheduleLoginModalLayout({ settled: true });
+                        scheduleLoginModalLayout({ settled: true, ensureInput: true });
                     }, { passive: false });
                 });
             }
@@ -1498,11 +1513,13 @@
                 scroller.dataset.loginModalScrollBound = '1';
 
                 const stopAutoScroll = () => {
+                    loginModalState.userScrollUntil = Date.now() + 260;
                     cancelLoginModalScrollAnimation();
                 };
 
                 scroller.addEventListener('touchstart', stopAutoScroll, { passive: true });
                 scroller.addEventListener('touchmove', stopAutoScroll, { passive: true });
+                scroller.addEventListener('touchend', stopAutoScroll, { passive: true });
             }
 
             function attachLoginModalViewportHandlers() {
@@ -1519,9 +1536,13 @@
                     }
 
                     if (getActiveLoginModalInput()) {
-                        scheduleLoginModalLayout({ settled: true, deferOnly: true });
+                        scheduleLoginModalLayout({
+                            settled: true,
+                            deferOnly: true,
+                            ensureInput: !isLoginModalUserScrolling()
+                        });
                     } else {
-                        scheduleLoginModalLayout({ settled: true });
+                        scheduleLoginModalLayout({ settled: true, ensureInput: false });
                     }
                 };
 
@@ -1614,7 +1635,7 @@
                 bindLoginModalOverlayDismiss();
 
                 if (useIsolatedIOSLock) {
-                    scheduleLoginModalLayout({ settled: true, deferOnly: true });
+                    scheduleLoginModalLayout({ settled: true, deferOnly: true, ensureInput: false });
                 }
 
                 if (typeof window.ensureGoogleInlineButtonReady === 'function') {
@@ -1677,7 +1698,7 @@
                 if (card) card.scrollTop = 0;
 
                 if (isLoginModalIOSMode()) {
-                    scheduleLoginModalLayout({ settled: true, deferOnly: true });
+                    scheduleLoginModalLayout({ settled: true, deferOnly: true, ensureInput: false });
                 }
 
                 setTimeout(() => {
