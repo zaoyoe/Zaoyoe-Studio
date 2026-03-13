@@ -2254,6 +2254,8 @@ body.modal-open .prompt-card {
 }
 
 .modal-inner {
+    --prompt-modal-translate-y: 0px;
+    --prompt-modal-scale: 0.92;
     width: 90%;
     max-width: 1000px;
     height: 85vh;
@@ -2262,17 +2264,16 @@ body.modal-open .prompt-card {
     border-radius: 24px;
     display: flex;
     overflow: hidden;
-    /* CRITICAL FIX: Force hardware GPU masking to clip child layers */
-    transform: translateZ(0);
     position: relative;
     box-shadow: 0 50px 100px rgba(0, 0, 0, 0.1);
     /* Softer shadow */
-    transform: scale(0.92);
+    /* CRITICAL FIX: Keep the sheet on a transform-driven path for keyboard docking */
+    transform: translate3d(0, var(--prompt-modal-translate-y, 0px), 0) scale(var(--prompt-modal-scale, 0.92)) translateZ(0);
     transition: none;
 }
 
 .poetry-modal.active .modal-inner {
-    transform: scale(1);
+    --prompt-modal-scale: 1;
 }
 
 .poetry-modal.modal-opening .modal-inner {
@@ -2285,6 +2286,16 @@ body.modal-open .prompt-card {
     animation: none !important;
     transition: none !important;
     will-change: auto !important;
+}
+
+.poetry-modal.active:focus-within .modal-inner.prompt-modal-animating,
+.poetry-modal.ios-focus-lock .modal-inner.prompt-modal-animating,
+.poetry-modal.keyboard-docked .modal-inner.prompt-modal-animating {
+    transition:
+        transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+        height 180ms cubic-bezier(0.22, 1, 0.36, 1),
+        max-height 180ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+    will-change: transform, height !important;
 }
 
 .modal-image-col {

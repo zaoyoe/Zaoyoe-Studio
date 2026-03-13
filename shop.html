@@ -616,13 +616,33 @@
         }
 
         #shopPurchaseModal {
-            --shop-purchase-shift-y: 0px;
+            --shop-purchase-translate-y: 0px;
+            --shop-purchase-scale: 0.95;
+        }
+
+        #shopPurchaseModal.active {
+            --shop-purchase-scale: 1;
         }
 
         #shopPurchaseModal .modal-content {
             margin: auto !important;
             position: relative !important;
-            top: var(--shop-purchase-shift-y, 0px) !important;
+            top: auto !important;
+            transform: translate3d(0, var(--shop-purchase-translate-y, 0px), 0) scale(var(--shop-purchase-scale, 0.95)) !important;
+            transition: none !important;
+            will-change: transform, height !important;
+        }
+
+        #shopPurchaseModal.active .modal-content,
+        #shopPurchaseModal.active:focus-within .modal-content,
+        #shopPurchaseModal.ios-focus-lock .modal-content,
+        #shopPurchaseModal.keyboard-docked .modal-content {
+            transform: translate3d(0, var(--shop-purchase-translate-y, 0px), 0) scale(1) !important;
+            animation: none !important;
+        }
+
+        #shopPurchaseModal.active:not(:focus-within):not(.ios-focus-lock):not(.keyboard-docked) .modal-content {
+            transition: transform 0.3s ease-out !important;
         }
 
         @media (max-width: 768px) {
@@ -637,16 +657,26 @@
             #shopPurchaseModal .modal-content,
             #shopPurchaseModal.active .modal-content,
             #shopPurchaseModal.active:focus-within .modal-content,
-            #shopPurchaseModal.ios-focus-lock .modal-content {
+            #shopPurchaseModal.ios-focus-lock .modal-content,
+            #shopPurchaseModal.keyboard-docked .modal-content {
                 margin: auto !important;
                 position: relative !important;
-                top: var(--shop-purchase-shift-y, 0px) !important;
-                transition:
-                    top 180ms cubic-bezier(0.22, 1, 0.36, 1),
-                    height 180ms cubic-bezier(0.22, 1, 0.36, 1),
-                    max-height 180ms cubic-bezier(0.22, 1, 0.36, 1) !important;
-                will-change: top, height !important;
+                top: auto !important;
+                transform: translate3d(0, var(--shop-purchase-translate-y, 0px), 0) scale(1) !important;
+                transition: none !important;
+                will-change: transform, height !important;
                 overscroll-behavior: contain;
+            }
+
+            #shopPurchaseModal .modal-content.shop-purchase-sheet-animating,
+            #shopPurchaseModal.active .modal-content.shop-purchase-sheet-animating,
+            #shopPurchaseModal.active:focus-within .modal-content.shop-purchase-sheet-animating,
+            #shopPurchaseModal.ios-focus-lock .modal-content.shop-purchase-sheet-animating,
+            #shopPurchaseModal.keyboard-docked .modal-content.shop-purchase-sheet-animating {
+                transition:
+                    transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
+                    height 200ms cubic-bezier(0.22, 1, 0.36, 1),
+                    max-height 200ms cubic-bezier(0.22, 1, 0.36, 1) !important;
             }
         }
     </style>
@@ -1251,7 +1281,7 @@
     <script src="js/components/WalletModal.js?v=20260302_G_AUTH" defer></script>
 
     <!-- Shop Logic -->
-    <script src="js/shop-client.js?v=20260311_SHOP_MODAL_V8" defer></script>
+    <script src="js/shop-client.js?v=20260313_SHOP_MODAL_TRANSFORM_V9" defer></script>
 
     <!-- Background Animations -->
     <script src="starry-sky.js"></script>

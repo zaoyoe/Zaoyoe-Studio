@@ -15,6 +15,7 @@ const ShopClient = {
     purchaseModalKeyboardDocked: false,
     purchaseModalKeyboardInitialDockTimer: null,
     purchaseModalKeyboardInsetDropTimer: null,
+    purchaseModalKeyboardTransitionTimer: null,
     purchaseModalKeyboardPendingInset: 0,
     purchaseModalKeyboardStableViewportProbe: null,
     purchaseModalBaseScrollY: 0,
@@ -499,7 +500,28 @@ const ShopClient = {
             clearTimeout(this.purchaseModalKeyboardInsetDropTimer);
             this.purchaseModalKeyboardInsetDropTimer = null;
         }
+        if (this.purchaseModalKeyboardTransitionTimer) {
+            clearTimeout(this.purchaseModalKeyboardTransitionTimer);
+            this.purchaseModalKeyboardTransitionTimer = null;
+        }
         this.purchaseModalKeyboardPendingInset = 0;
+    },
+
+    togglePurchaseModalSheetAnimation: function (card, animate, duration = 200) {
+        if (!card) return;
+
+        if (this.purchaseModalKeyboardTransitionTimer) {
+            clearTimeout(this.purchaseModalKeyboardTransitionTimer);
+            this.purchaseModalKeyboardTransitionTimer = null;
+        }
+
+        card.classList.toggle('shop-purchase-sheet-animating', !!animate);
+        if (!animate) return;
+
+        this.purchaseModalKeyboardTransitionTimer = setTimeout(() => {
+            card.classList.remove('shop-purchase-sheet-animating');
+            this.purchaseModalKeyboardTransitionTimer = null;
+        }, duration + 40);
     },
 
     capturePurchaseModalKeyboardBase: function () {
@@ -535,7 +557,7 @@ const ShopClient = {
         };
     },
 
-    applyPurchaseModalKeyboardDock: function (bottomInset) {
+    applyPurchaseModalKeyboardDock: function (bottomInset, animate = false) {
         const { overlay, card } = this.getPurchaseModalElements();
         if (!overlay || !card) return;
 
@@ -554,24 +576,26 @@ const ShopClient = {
         const dockHeight = Math.min(baseCardHeight, maxAvailableHeight);
         const centeredTop = (baseViewportHeight - dockHeight) / 2;
         const desiredTop = Math.max(minTop, keyboardTop - keyboardClearance - dockHeight);
-        const shiftY = Math.round(desiredTop - centeredTop);
+        const translateY = Math.round(desiredTop - centeredTop);
 
         overlay.classList.add('keyboard-docked');
-        overlay.style.setProperty('--shop-purchase-shift-y', `${shiftY}px`);
+        overlay.style.setProperty('--shop-purchase-translate-y', `${translateY}px`);
         card.style.height = `${dockHeight}px`;
         card.style.maxHeight = `${dockHeight}px`;
+        this.togglePurchaseModalSheetAnimation(card, animate);
         this.purchaseModalKeyboardDocked = bottomInset > 0;
         this.purchaseModalKeyboardLastBottomInset = Math.max(0, bottomInset);
     },
 
-    releasePurchaseModalKeyboardDock: function () {
+    releasePurchaseModalKeyboardDock: function (animate = false) {
         const { overlay, card } = this.getPurchaseModalElements();
         if (!overlay || !card) return;
 
         overlay.classList.remove('keyboard-docked');
-        overlay.style.setProperty('--shop-purchase-shift-y', '0px');
+        overlay.style.setProperty('--shop-purchase-translate-y', '0px');
         card.style.removeProperty('height');
         card.style.removeProperty('max-height');
+        this.togglePurchaseModalSheetAnimation(card, animate);
         this.purchaseModalKeyboardDocked = false;
         this.purchaseModalKeyboardLastBottomInset = 0;
     },
@@ -619,7 +643,7 @@ const ShopClient = {
                     if (!this.getActivePurchaseModalInput()) return;
                     const liveMetrics = this.getPurchaseModalViewportMetrics();
                     if (liveMetrics.bottomInset <= 24) return;
-                    this.applyPurchaseModalKeyboardDock(liveMetrics.bottomInset);
+                    this.applyPurchaseModalKeyboardDock(liveMetrics.bottomInset, true);
                 }, 90);
             }
             return;
@@ -644,7 +668,7 @@ const ShopClient = {
                     const settledInset = this.purchaseModalKeyboardPendingInset;
                     this.purchaseModalKeyboardPendingInset = 0;
                     if (settledInset > 24) {
-                        this.applyPurchaseModalKeyboardDock(settledInset);
+                        this.applyPurchaseModalKeyboardDock(settledInset, true);
                     }
                 }, 90);
             }
@@ -656,12 +680,12 @@ const ShopClient = {
         }
 
         if (nextInset > 24) {
-            this.applyPurchaseModalKeyboardDock(nextInset);
+            this.applyPurchaseModalKeyboardDock(nextInset, true);
             return;
         }
 
         if (this.purchaseModalKeyboardDocked) {
-            this.releasePurchaseModalKeyboardDock();
+            this.releasePurchaseModalKeyboardDock(true);
         }
     },
 
