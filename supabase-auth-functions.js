@@ -1854,23 +1854,17 @@ if (document.readyState === 'loading') {
 
 let profileModalOpenLock = false;
 let lastProfileModalOpenAt = 0;
-const PROFILE_MODAL_KEYBOARD_SETTLE_MS = 90;
-const profileModalViewportState = {
+const PROFILE_MODAL_KEYBOARD_SETTLE_MS = 100;
+const profileModalState = {
     baseScrollY: 0,
-    ownsFullScrollLock: false,
     viewportCleanup: null,
-    viewportRafId: null,
-    stableViewportProbe: null,
-    baseViewportHeight: 0,
-    baseCardHeight: 0,
-    docked: false,
-    lastBottomInset: 0,
-    initialDockTimer: null,
-    insetDropTimer: null,
-    pendingInset: 0
+    layoutRafId: 0,
+    settleTimer: null,
+    blurTimer: null,
+    pageFrozen: false
 };
 
-function isProfileModalKeyboardDockEnabled() {
+function isProfileModalIOSMode() {
     const ua = navigator.userAgent || '';
     const isiOS = /iPad|iPhone|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     return isiOS && window.matchMedia('(max-width: 768px)').matches && !!window.visualViewport;
@@ -1892,282 +1886,81 @@ function getActiveProfileModalInput() {
     return /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName) ? active : null;
 }
 
-function focusProfileModalInputWithoutScroll(input) {
-    if (!input) return;
-    try {
-        input.focus({ preventScroll: true });
-    } catch (_) {
-        input.focus();
+function clearProfileModalTimers() {
+    if (profileModalState.layoutRafId) {
+        cancelAnimationFrame(profileModalState.layoutRafId);
+        profileModalState.layoutRafId = 0;
+    }
+    if (profileModalState.settleTimer) {
+        clearTimeout(profileModalState.settleTimer);
+        profileModalState.settleTimer = null;
+    }
+    if (profileModalState.blurTimer) {
+        clearTimeout(profileModalState.blurTimer);
+        profileModalState.blurTimer = null;
     }
 }
 
-function bindProfileModalInputFocusStabilizer(input) {
-    if (!input || input.dataset.profileFocusStabilizerBound === '1') return;
-    let touchDragY = 0;
+function freezeProfileModalPage() {
+    if (profileModalState.pageFrozen) return;
 
-    input.addEventListener('touchstart', (event) => {
-        const { overlay } = getProfileModalElements();
-        if (!isProfileModalKeyboardDockEnabled() || !overlay?.classList.contains('active')) return;
-        touchDragY = event.touches[0]?.clientY || 0;
-        if (document.activeElement === input) return;
-        if (event.cancelable) event.preventDefault();
-        focusProfileModalInputWithoutScroll(input);
-    }, { passive: false });
-
-    input.addEventListener('touchmove', (event) => {
-        const { overlay, card } = getProfileModalElements();
-        if (!isProfileModalKeyboardDockEnabled() || !overlay?.classList.contains('active') || !card) return;
-        if (document.activeElement !== input) return;
-
-        const nextY = event.touches[0]?.clientY || 0;
-        const deltaY = touchDragY - nextY;
-        if (Math.abs(deltaY) < 1) return;
-
-        const prevScrollTop = card.scrollTop;
-        const nextScrollTop = Math.max(0, Math.min(
-            prevScrollTop + deltaY,
-            Math.max(0, card.scrollHeight - card.clientHeight)
-        ));
-
-        if (nextScrollTop !== prevScrollTop) {
-            card.scrollTop = nextScrollTop;
-            if (event.cancelable) event.preventDefault();
-        }
-
-        touchDragY = nextY;
-    }, { passive: false });
-
-    input.dataset.profileFocusStabilizerBound = '1';
+    profileModalState.baseScrollY = Math.max(0, Math.round(window.scrollY || window.pageYOffset || 0));
+    document.documentElement.classList.add('profile-modal-lock');
+    document.body.classList.add('profile-modal-lock');
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${profileModalState.baseScrollY}px`;
+    document.body.style.left = '0';
+    document.body.style.right = '0';
+    document.body.style.width = '100%';
+    document.body.style.overflow = 'hidden';
+    profileModalState.pageFrozen = true;
 }
 
-function getProfileStableViewportProbe() {
-    if (profileModalViewportState.stableViewportProbe?.isConnected) {
-        return profileModalViewportState.stableViewportProbe;
-    }
+function unfreezeProfileModalPage() {
+    if (!profileModalState.pageFrozen) return;
 
-    const probe = document.createElement('div');
-    probe.setAttribute('aria-hidden', 'true');
-    probe.style.position = 'fixed';
-    probe.style.top = '0';
-    probe.style.left = '0';
-    probe.style.width = '0';
-    probe.style.height = '100svh';
-    probe.style.pointerEvents = 'none';
-    probe.style.visibility = 'hidden';
-    probe.style.opacity = '0';
-    probe.style.zIndex = '-1';
-    document.body.appendChild(probe);
-    profileModalViewportState.stableViewportProbe = probe;
-    return probe;
+    const restoreScrollY = profileModalState.baseScrollY;
+    document.documentElement.classList.remove('profile-modal-lock');
+    document.body.classList.remove('profile-modal-lock');
+    document.documentElement.style.overflow = '';
+    document.body.style.position = '';
+    document.body.style.top = '';
+    document.body.style.left = '';
+    document.body.style.right = '';
+    document.body.style.width = '';
+    document.body.style.overflow = '';
+    profileModalState.pageFrozen = false;
+
+    requestAnimationFrame(() => {
+        window.scrollTo(0, restoreScrollY);
+    });
 }
 
-function getProfileStableViewportHeight() {
-    const probe = getProfileStableViewportProbe();
-    return Math.max(0, Math.round(probe.getBoundingClientRect().height || probe.offsetHeight || 0));
-}
-
-function clearProfileModalKeyboardTimers() {
-    if (profileModalViewportState.initialDockTimer) {
-        clearTimeout(profileModalViewportState.initialDockTimer);
-        profileModalViewportState.initialDockTimer = null;
-    }
-    if (profileModalViewportState.insetDropTimer) {
-        clearTimeout(profileModalViewportState.insetDropTimer);
-        profileModalViewportState.insetDropTimer = null;
-    }
-    profileModalViewportState.pendingInset = 0;
-}
-
-function captureProfileModalKeyboardBase() {
-    const vv = window.visualViewport;
-    const { card } = getProfileModalElements();
-    const visualHeight = Math.max(0, vv?.height || 0);
-    const fallbackBaseHeight = Math.max(
-        window.innerHeight || 0,
-        document.documentElement.clientHeight || 0,
-        visualHeight
-    );
-    const stableViewportHeight = getProfileStableViewportHeight();
-    const normalizedBaseHeight = (stableViewportHeight > 0 && stableViewportHeight + 24 < fallbackBaseHeight)
-        ? stableViewportHeight
-        : fallbackBaseHeight;
-
-    profileModalViewportState.baseViewportHeight = normalizedBaseHeight;
-    if (card) {
-        const liveHeight = Math.round(card.offsetHeight || card.getBoundingClientRect().height || 680);
-        profileModalViewportState.baseCardHeight = Math.max(420, liveHeight || 680);
-    }
-}
-
-function getProfileModalViewportMetrics() {
-    const vv = window.visualViewport;
-    const visualHeight = Math.max(0, vv?.height || 0);
-    const baseVisualHeight = profileModalViewportState.baseViewportHeight || visualHeight;
-
-    return {
-        visualHeight,
-        baseVisualHeight,
-        bottomInset: Math.max(0, Math.round(baseVisualHeight - visualHeight))
-    };
-}
-
-function applyProfileModalKeyboardDock(bottomInset) {
+function resetProfileModalVisualState() {
     const { overlay, card } = getProfileModalElements();
     if (!overlay || !card) return;
 
-    overlay.classList.add('keyboard-docked');
-
-    const metrics = getProfileModalViewportMetrics();
-    if (!profileModalViewportState.baseCardHeight) {
-        const liveHeight = Math.round(card.offsetHeight || card.getBoundingClientRect().height || 680);
-        profileModalViewportState.baseCardHeight = Math.max(420, liveHeight || 680);
-    }
-
-    const baseCardHeight = Math.max(420, profileModalViewportState.baseCardHeight || 680);
-    const baseViewportHeight = Math.max(
-        metrics.baseVisualHeight || 0,
-        profileModalViewportState.baseViewportHeight || 0
-    );
-    const keyboardTop = Math.max(0, baseViewportHeight - Math.max(0, bottomInset));
-    const minTop = 16;
-    const keyboardClearance = 24;
-    const maxAvailableHeight = Math.max(360, Math.round(keyboardTop - minTop - keyboardClearance));
-    const liveDockedHeight = Math.round(card.getBoundingClientRect().height || 0);
-    const preferredCardHeight = Math.max(
-        420,
-        Math.round(card.scrollHeight || 0),
-        liveDockedHeight,
-        baseCardHeight
-    );
-    const finalCardHeight = Math.min(preferredCardHeight, maxAvailableHeight);
-    const centeredTop = (baseViewportHeight - finalCardHeight) / 2;
-    const desiredTop = Math.max(minTop, keyboardTop - keyboardClearance - finalCardHeight);
-    const shiftY = Math.round(desiredTop - centeredTop);
-
-    overlay.style.setProperty('--profile-modal-shift-y', `${shiftY}px`);
-    card.style.height = 'auto';
-    card.style.maxHeight = `${maxAvailableHeight}px`;
-    profileModalViewportState.docked = bottomInset > 0;
-    profileModalViewportState.lastBottomInset = Math.max(0, bottomInset);
-}
-
-function releaseProfileModalKeyboardDock() {
-    const { overlay, card } = getProfileModalElements();
-    if (!overlay || !card) return;
-
-    overlay.classList.remove('keyboard-docked');
+    overlay.classList.remove('keyboard-active', 'keyboard-docked', 'ios-focus-lock');
     overlay.style.setProperty('--profile-modal-shift-y', '0px');
-    card.style.removeProperty('height');
     card.style.removeProperty('max-height');
-    profileModalViewportState.docked = false;
-    profileModalViewportState.lastBottomInset = 0;
+    card.style.removeProperty('scroll-padding-bottom');
 }
 
-function resetProfileModalViewportState() {
-    clearProfileModalKeyboardTimers();
-    if (profileModalViewportState.viewportRafId) {
-        cancelAnimationFrame(profileModalViewportState.viewportRafId);
-        profileModalViewportState.viewportRafId = null;
-    }
-    releaseProfileModalKeyboardDock();
-    profileModalViewportState.baseViewportHeight = 0;
-    profileModalViewportState.baseCardHeight = 0;
-}
-
-function syncProfileModalKeyboardDock() {
-    const { overlay, card } = getProfileModalElements();
-    if (!overlay || !card || !overlay.classList.contains('active')) {
-        resetProfileModalViewportState();
-        return;
-    }
-
-    if (!isProfileModalKeyboardDockEnabled()) {
-        releaseProfileModalKeyboardDock();
-        return;
-    }
-
-    const activeInput = getActiveProfileModalInput();
-    const metrics = getProfileModalViewportMetrics();
-    const bottomInset = metrics.bottomInset;
-    const shouldDock = !!activeInput && (profileModalViewportState.docked ? bottomInset > 8 : bottomInset > 24);
-    const nextInset = shouldDock ? bottomInset : 0;
-    const previousInset = profileModalViewportState.lastBottomInset;
-    const isInsetDroppingWhileFocused = profileModalViewportState.docked &&
-        !!activeInput &&
-        nextInset > 24 &&
-        nextInset + 24 < previousInset;
-
-    if (!profileModalViewportState.docked && shouldDock) {
-        profileModalViewportState.pendingInset = nextInset;
-        if (!profileModalViewportState.initialDockTimer) {
-            profileModalViewportState.initialDockTimer = setTimeout(() => {
-                profileModalViewportState.initialDockTimer = null;
-                if (!getActiveProfileModalInput()) return;
-                const liveMetrics = getProfileModalViewportMetrics();
-                if (liveMetrics.bottomInset <= 24) return;
-                applyProfileModalKeyboardDock(liveMetrics.bottomInset);
-            }, PROFILE_MODAL_KEYBOARD_SETTLE_MS);
-        }
-        return;
-    }
-
-    if (profileModalViewportState.initialDockTimer &&
-        (profileModalViewportState.docked || !shouldDock)) {
-        clearTimeout(profileModalViewportState.initialDockTimer);
-        profileModalViewportState.initialDockTimer = null;
-    }
-
-    if (profileModalViewportState.insetDropTimer &&
-        (!isInsetDroppingWhileFocused || nextInset >= previousInset)) {
-        clearTimeout(profileModalViewportState.insetDropTimer);
-        profileModalViewportState.insetDropTimer = null;
-        profileModalViewportState.pendingInset = 0;
-    }
-
-    if (isInsetDroppingWhileFocused) {
-        profileModalViewportState.pendingInset = nextInset;
-        if (!profileModalViewportState.insetDropTimer) {
-            profileModalViewportState.insetDropTimer = setTimeout(() => {
-                profileModalViewportState.insetDropTimer = null;
-                const settledInset = profileModalViewportState.pendingInset;
-                profileModalViewportState.pendingInset = 0;
-                if (settledInset > 24) {
-                    applyProfileModalKeyboardDock(settledInset);
-                }
-            }, PROFILE_MODAL_KEYBOARD_SETTLE_MS);
-        }
-        return;
-    }
-
-    if (profileModalViewportState.docked && activeInput && nextInset <= 24) {
-        return;
-    }
-
-    if (nextInset > 24) {
-        applyProfileModalKeyboardDock(nextInset);
-        return;
-    }
-
-    if (profileModalViewportState.docked) {
-        releaseProfileModalKeyboardDock();
-    }
-}
-
-function keepActiveProfileModalFieldInView() {
+function keepActiveProfileModalFieldInView(input = getActiveProfileModalInput()) {
     const { card } = getProfileModalElements();
-    const activeInput = getActiveProfileModalInput();
-    if (!card || !activeInput) return;
+    if (!card || !input) return;
 
     const cardRect = card.getBoundingClientRect();
-    const inputRect = activeInput.getBoundingClientRect();
-    const topBuffer = 92;
-    const bottomBuffer = 132;
+    const inputRect = input.getBoundingClientRect();
+    const topPadding = 92;
+    const bottomPadding = 156;
     let scrollDelta = 0;
 
-    if (inputRect.top < cardRect.top + topBuffer) {
-        scrollDelta = inputRect.top - (cardRect.top + topBuffer);
-    } else if (inputRect.bottom > cardRect.bottom - bottomBuffer) {
-        scrollDelta = inputRect.bottom - (cardRect.bottom - bottomBuffer);
+    if (inputRect.top < cardRect.top + topPadding) {
+        scrollDelta = inputRect.top - (cardRect.top + topPadding);
+    } else if (inputRect.bottom > cardRect.bottom - bottomPadding) {
+        scrollDelta = inputRect.bottom - (cardRect.bottom - bottomPadding);
     }
 
     if (scrollDelta !== 0) {
@@ -2175,55 +1968,189 @@ function keepActiveProfileModalFieldInView() {
     }
 }
 
-function attachProfileModalKeyboardDock() {
-    if (!isProfileModalKeyboardDockEnabled()) return;
+function applyProfileModalLayout() {
+    const { overlay, card } = getProfileModalElements();
+    if (!overlay || !card || !overlay.classList.contains('active')) return;
 
-    const { overlay, inputs } = getProfileModalElements();
+    const visibleHeight = Math.max(
+        320,
+        Math.round(window.visualViewport?.height || window.innerHeight || document.documentElement.clientHeight || 0)
+    );
+    const activeInput = getActiveProfileModalInput();
+
+    card.style.maxHeight = `${Math.max(320, visibleHeight - 24)}px`;
+    card.style.scrollPaddingBottom = `${activeInput ? 176 : 120}px`;
+    overlay.style.setProperty('--profile-modal-shift-y', '0px');
+    overlay.classList.toggle('keyboard-active', !!activeInput);
+
+    if (!activeInput || !isProfileModalIOSMode()) {
+        return;
+    }
+
+    keepActiveProfileModalFieldInView(activeInput);
+
+    const cardRect = card.getBoundingClientRect();
+    const visibleBottom = visibleHeight - 12;
+    const overflowBottom = Math.max(0, Math.ceil(cardRect.bottom - visibleBottom));
+    if (overflowBottom > 0) {
+        overlay.style.setProperty('--profile-modal-shift-y', `${-overflowBottom}px`);
+    }
+
+    requestAnimationFrame(() => {
+        keepActiveProfileModalFieldInView(activeInput);
+    });
+}
+
+function scheduleProfileModalLayout({ settled = false } = {}) {
+    if (profileModalState.layoutRafId) {
+        cancelAnimationFrame(profileModalState.layoutRafId);
+    }
+
+    const runLayout = () => {
+        profileModalState.layoutRafId = requestAnimationFrame(() => {
+            profileModalState.layoutRafId = 0;
+            applyProfileModalLayout();
+        });
+    };
+
+    runLayout();
+
+    if (settled) {
+        if (profileModalState.settleTimer) {
+            clearTimeout(profileModalState.settleTimer);
+        }
+        profileModalState.settleTimer = setTimeout(() => {
+            profileModalState.settleTimer = null;
+            runLayout();
+        }, PROFILE_MODAL_KEYBOARD_SETTLE_MS);
+    }
+}
+
+function bindProfileModalInputBehavior(input) {
+    if (!input || input.dataset.profileInputManaged === '1') return;
+
+    const gesture = {
+        startX: 0,
+        startY: 0,
+        startScrollTop: 0,
+        mode: 'idle'
+    };
+
+    input.addEventListener('focus', () => {
+        if (profileModalState.blurTimer) {
+            clearTimeout(profileModalState.blurTimer);
+            profileModalState.blurTimer = null;
+        }
+        scheduleProfileModalLayout({ settled: true });
+    });
+
+    input.addEventListener('blur', () => {
+        if (profileModalState.blurTimer) {
+            clearTimeout(profileModalState.blurTimer);
+        }
+        profileModalState.blurTimer = setTimeout(() => {
+            profileModalState.blurTimer = null;
+            if (!getActiveProfileModalInput()) {
+                scheduleProfileModalLayout({ settled: true });
+            }
+        }, 120);
+    });
+
+    input.addEventListener('click', () => {
+        scheduleProfileModalLayout({ settled: true });
+    });
+
+    input.addEventListener('touchstart', (event) => {
+        const { overlay, card } = getProfileModalElements();
+        if (!overlay?.classList.contains('active') || !card) return;
+
+        const touch = event.touches[0];
+        gesture.startX = touch?.clientX || 0;
+        gesture.startY = touch?.clientY || 0;
+        gesture.startScrollTop = card.scrollTop;
+        gesture.mode = 'pending';
+    }, { passive: true });
+
+    input.addEventListener('touchmove', (event) => {
+        const { overlay, card } = getProfileModalElements();
+        if (!overlay?.classList.contains('active') || !card) return;
+        if (document.activeElement !== input) return;
+
+        const touch = event.touches[0];
+        const deltaX = (touch?.clientX || 0) - gesture.startX;
+        const deltaY = (touch?.clientY || 0) - gesture.startY;
+
+        if (gesture.mode === 'pending') {
+            if (Math.abs(deltaY) < 8 || Math.abs(deltaY) <= Math.abs(deltaX)) {
+                return;
+            }
+            gesture.mode = 'scroll';
+        }
+
+        if (gesture.mode !== 'scroll') return;
+
+        const maxScrollTop = Math.max(0, card.scrollHeight - card.clientHeight);
+        const nextScrollTop = Math.max(0, Math.min(gesture.startScrollTop - deltaY, maxScrollTop));
+
+        if (nextScrollTop !== card.scrollTop) {
+            card.scrollTop = nextScrollTop;
+        }
+
+        if (event.cancelable) {
+            event.preventDefault();
+        }
+    }, { passive: false });
+
+    input.addEventListener('touchend', () => {
+        gesture.mode = 'idle';
+    });
+
+    input.addEventListener('touchcancel', () => {
+        gesture.mode = 'idle';
+    });
+
+    input.dataset.profileInputManaged = '1';
+}
+
+function bindProfileModalInputs() {
+    const { inputs } = getProfileModalElements();
+    inputs.forEach((input) => bindProfileModalInputBehavior(input));
+}
+
+function attachProfileModalViewportHandlers() {
+    bindProfileModalInputs();
+
+    if (!isProfileModalIOSMode()) {
+        scheduleProfileModalLayout();
+        return;
+    }
+
     const vv = window.visualViewport;
-    if (!overlay || !vv) return;
+    if (!vv) return;
 
-    detachProfileModalKeyboardDock();
-    captureProfileModalKeyboardBase();
-    syncProfileModalKeyboardDock();
-
-    inputs.forEach((input) => bindProfileModalInputFocusStabilizer(input));
+    detachProfileModalViewportHandlers();
 
     const handleViewportChange = () => {
-        if (profileModalViewportState.viewportRafId) return;
-        profileModalViewportState.viewportRafId = requestAnimationFrame(() => {
-            profileModalViewportState.viewportRafId = null;
-            syncProfileModalKeyboardDock();
-            keepActiveProfileModalFieldInView();
-        });
+        scheduleProfileModalLayout({ settled: true });
     };
 
     vv.addEventListener('resize', handleViewportChange, { passive: true });
     vv.addEventListener('scroll', handleViewportChange, { passive: true });
-    inputs.forEach((input) => {
-        input.addEventListener('focus', handleViewportChange);
-        input.addEventListener('blur', handleViewportChange);
-    });
 
-    profileModalViewportState.viewportCleanup = () => {
+    profileModalState.viewportCleanup = () => {
         vv.removeEventListener('resize', handleViewportChange);
         vv.removeEventListener('scroll', handleViewportChange);
-        inputs.forEach((input) => {
-            input.removeEventListener('focus', handleViewportChange);
-            input.removeEventListener('blur', handleViewportChange);
-        });
-        if (profileModalViewportState.viewportRafId) {
-            cancelAnimationFrame(profileModalViewportState.viewportRafId);
-            profileModalViewportState.viewportRafId = null;
-        }
-        profileModalViewportState.viewportCleanup = null;
+        profileModalState.viewportCleanup = null;
     };
+
+    scheduleProfileModalLayout({ settled: true });
 }
 
-function detachProfileModalKeyboardDock() {
-    if (typeof profileModalViewportState.viewportCleanup === 'function') {
-        profileModalViewportState.viewportCleanup();
+function detachProfileModalViewportHandlers() {
+    if (typeof profileModalState.viewportCleanup === 'function') {
+        profileModalState.viewportCleanup();
     }
-    clearProfileModalKeyboardTimers();
+    clearProfileModalTimers();
 }
 
 function hydrateProfileModalFromCache() {
@@ -2299,31 +2226,32 @@ function resetProfileModalViewState() {
     }
 
     if (overlay) {
-        overlay.classList.remove('keyboard-docked', 'ios-focus-lock');
+        overlay.classList.remove('keyboard-active', 'keyboard-docked', 'ios-focus-lock');
         overlay.style.setProperty('--profile-modal-shift-y', '0px');
     }
 }
 
-function cleanupProfileModalAfterClose() {
+function cleanupProfileModalAfterClose(options = {}) {
+    const restoreScroll = options.restoreScroll !== false;
     const { overlay, card } = getProfileModalElements();
 
     getActiveProfileModalInput()?.blur();
-    detachProfileModalKeyboardDock();
-    resetProfileModalViewportState();
+    detachProfileModalViewportHandlers();
+    resetProfileModalVisualState();
 
     if (overlay) {
-        overlay.classList.remove('keyboard-docked', 'ios-focus-lock');
+        overlay.classList.remove('keyboard-active', 'keyboard-docked', 'ios-focus-lock');
         overlay.style.setProperty('--profile-modal-shift-y', '0px');
     }
 
     if (card) {
         card.scrollTop = 0;
-        card.style.removeProperty('height');
         card.style.removeProperty('max-height');
     }
 
-    profileModalViewportState.ownsFullScrollLock = false;
-    profileModalViewportState.baseScrollY = 0;
+    if (restoreScroll) {
+        unfreezeProfileModalPage();
+    }
 }
 
 function closeProfileModal() {
@@ -2335,13 +2263,6 @@ function closeProfileModal() {
     overlay.style.removeProperty('visibility');
     overlay.style.removeProperty('opacity');
     overlay.style.removeProperty('display');
-
-    if (window.iOSScrollLock) {
-        window.iOSScrollLock.unlock();
-    } else {
-        document.documentElement.classList.remove('no-scroll');
-        document.body.classList.remove('no-scroll');
-    }
 
     profileModalOpenLock = false;
 }
@@ -2380,13 +2301,13 @@ async function openProfileModal(event) {
     }
 
     const wasActive = modal.classList.contains('active');
-    const { card: profileModalElement } = getProfileModalElements();
     const profileFront = document.querySelector('.profile-front');
 
-    profileModalViewportState.baseScrollY = Math.max(0, Math.round(window.scrollY || window.pageYOffset || 0));
-    cleanupProfileModalAfterClose();
+    cleanupProfileModalAfterClose({ restoreScroll: false });
     resetProfileModalViewState();
     hydrateProfileModalFromCache();
+    freezeProfileModalPage();
+    bindProfileModalInputs();
 
     modal.classList.remove('active');
     modal.style.display = 'flex';
@@ -2395,19 +2316,12 @@ async function openProfileModal(event) {
 
     void modal.offsetHeight;
     modal.classList.add('active');
-
-    if (window.iOSScrollLock) {
-        window.iOSScrollLock.lock(profileModalElement || modal, {
-            freezeScrollY: profileModalViewportState.baseScrollY
-        });
-        profileModalViewportState.ownsFullScrollLock = true;
-    }
-
-    attachProfileModalKeyboardDock();
+    attachProfileModalViewportHandlers();
 
     requestAnimationFrame(() => {
         modal.style.removeProperty('visibility');
         modal.style.removeProperty('opacity');
+        scheduleProfileModalLayout({ settled: true });
 
         if (profileFront && !wasActive) {
             profileFront.classList.remove('animate-in');
