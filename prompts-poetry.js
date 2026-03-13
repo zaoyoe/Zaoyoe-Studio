@@ -6409,12 +6409,12 @@ function ensurePromptCommentComposer() {
             <div class="prompt-comment-composer-editor">
                 <div class="prompt-comment-composer-empty-placeholder" aria-hidden="true" data-i18n="gallery.commentComposerPlaceholder">${copy.placeholder}</div>
                 <textarea id="promptCommentComposerInput" rows="6" placeholder="${copy.placeholder}" data-i18n-placeholder="gallery.commentComposerPlaceholder"></textarea>
+                <button type="button" class="prompt-comment-composer-upload prompt-comment-composer-upload-inline" id="promptCommentComposerUploadBtn" title="${copy.attachImage}" aria-label="${copy.attachImage}" data-i18n-title="gallery.attachImage">
+                    <i class="fas fa-image"></i>
+                </button>
             </div>
             <input type="file" id="promptCommentComposerImageUpload" accept="image/*" style="display:none;">
             <div class="prompt-comment-composer-actions">
-                <button type="button" class="prompt-comment-composer-upload" id="promptCommentComposerUploadBtn" title="${copy.attachImage}" aria-label="${copy.attachImage}" data-i18n-title="gallery.attachImage">
-                    <i class="fas fa-image"></i>
-                </button>
                 <button type="button" class="prompt-comment-composer-send" id="promptCommentComposerSendBtn" data-i18n="gallery.send">
                     ${copy.send}
                 </button>
