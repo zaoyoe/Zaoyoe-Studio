@@ -1763,6 +1763,20 @@ class ChatWidget {
                 box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), inset 0 -12px 24px rgba(0, 0, 0, 0.08) !important;
             }
 
+            .chat-window:not(.admin-mode-layout) #chatEmojiBtn.chat-action-btn {
+                width: 36px !important;
+                height: 36px !important;
+                padding: 0 !important;
+                background: transparent !important;
+                border: none !important;
+                box-shadow: none !important;
+            }
+
+            .chat-window:not(.admin-mode-layout) #chatEmojiBtn.chat-action-btn:hover {
+                background: transparent !important;
+                color: var(--chat-accent-blue, rgba(126, 184, 239, 0.96)) !important;
+            }
+
             .chat-window:not(.admin-mode-layout) .chat-input {
                 background: var(--chat-input-bg, rgba(0, 0, 0, 0.2)) !important;
                 border: 1px solid var(--chat-input-border, rgba(255, 255, 255, 0.1)) !important;
@@ -1771,8 +1785,20 @@ class ChatWidget {
 
             .chat-window:not(.admin-mode-layout) .chat-input:focus {
                 background: var(--chat-input-bg-focus, rgba(0, 0, 0, 0.4)) !important;
-                border-color: rgba(107, 158, 206, 0.32) !important;
-                box-shadow: 0 0 0 3px rgba(107, 158, 206, 0.12) !important;
+                border-color: var(--chat-accent-blue, rgba(126, 184, 239, 0.96)) !important;
+                box-shadow: 0 0 0 3px var(--chat-accent-blue-soft, rgba(126, 184, 239, 0.12)) !important;
+            }
+
+            .chat-window:not(.admin-mode-layout) .chat-send-btn {
+                color: var(--chat-accent-blue, rgba(126, 184, 239, 0.96)) !important;
+            }
+
+            .chat-window:not(.admin-mode-layout) .emoji-picker-popover {
+                background: var(--chat-shell-bg, rgba(11, 14, 20, 0.94)) !important;
+                backdrop-filter: none !important;
+                -webkit-backdrop-filter: none !important;
+                border: 1px solid var(--chat-panel-border, rgba(255, 255, 255, 0.08)) !important;
+                box-shadow: 0 26px 70px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
             }
 
             .chat-window:not(.admin-mode-layout) .message.admin {

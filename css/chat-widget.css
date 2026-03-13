@@ -18,6 +18,8 @@
     --chat-input-bg: rgba(0, 0, 0, 0.2);
     --chat-input-bg-focus: rgba(0, 0, 0, 0.4);
     --chat-input-border: rgba(255, 255, 255, 0.1);
+    --chat-accent-blue: rgba(126, 184, 239, 0.96);
+    --chat-accent-blue-soft: rgba(126, 184, 239, 0.12);
 }
 
 /* Floating Action Button */
@@ -697,11 +699,12 @@
 
 .chat-input:focus {
     background: var(--chat-input-bg-focus);
-    border-color: var(--chat-primary);
+    border-color: var(--chat-accent-blue);
+    box-shadow: 0 0 0 3px var(--chat-accent-blue-soft);
 }
 
 .chat-send-btn {
-    color: var(--chat-primary);
+    color: var(--chat-accent-blue);
     background: none;
     border: none;
     font-size: 20px;
@@ -715,21 +718,36 @@
     filter: brightness(1.2);
 }
 
+#chatEmojiBtn.chat-action-btn {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+#chatEmojiBtn.chat-action-btn:hover {
+    background: transparent;
+    color: var(--chat-accent-blue);
+}
+
 /* Emoji Picker (Simple Custom) */
 .emoji-picker-popover {
     position: absolute;
     bottom: 80px;
     right: 20px;
     width: 280px;
-    background: rgba(30, 30, 30, 0.95);
-    backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: var(--chat-shell-bg);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border: 1px solid var(--chat-panel-border);
     border-radius: 12px;
     padding: 10px;
     display: grid;
     grid-template-columns: repeat(6, 1fr);
     gap: 5px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    box-shadow: var(--chat-shell-shadow);
     opacity: 0;
     pointer-events: none;
     transform: translateY(10px);
