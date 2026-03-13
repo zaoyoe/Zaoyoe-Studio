@@ -30,7 +30,7 @@
 
     <!-- Styles -->
     <!-- Prompts Module Styles -->
-    <link rel="stylesheet" href="prompts-poetry.css?v=20260313_MOBILE_CARD_SYNC_V82">
+    <link rel="stylesheet" href="prompts-poetry.css?v=20260313_SCROLL_RESET_V83">
     <link rel="stylesheet" href="pagination.css?v=1">
     <!-- Legacy login-modal.css removed to prevent animation conflicts with login_styles.css -->
     <link rel="stylesheet" href="login_styles.css?v=20260303_G_AUTH_FIX17">
@@ -49,6 +49,27 @@
             } else {
                 document.documentElement.setAttribute('data-theme', 'light');
             }
+        })();
+    </script>
+
+    <script>
+        (function () {
+            const navEntry = performance.getEntriesByType?.('navigation')?.[0];
+            const isReload = navEntry
+                ? navEntry.type === 'reload'
+                : performance.navigation?.type === 1;
+
+            window.__PROMPTS_FORCE_SCROLL_TOP__ = Boolean(isReload);
+
+            if (!isReload) return;
+
+            if ('scrollRestoration' in history) {
+                history.scrollRestoration = 'manual';
+            }
+
+            window.scrollTo(0, 0);
+            document.documentElement.scrollTop = 0;
+            document.body.scrollTop = 0;
         })();
     </script>
 
