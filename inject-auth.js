@@ -1103,7 +1103,7 @@
                     console.log(`🎨 Injected CSS: ${href}`);
                 }
             }
-            loadCSS(`login_styles.css?v=20260313_LOGIN_SAFARI_REWRITE_26`);
+            loadCSS(`login_styles.css?v=20260313_LOGIN_SAFARI_REWRITE_27`);
             loadCSS(`login_dual_mode.css?v=20260303_G_AUTH_FIX17`);
 
             // Supabase Auth - loaded via static <script> tag in HTML, not dynamically
