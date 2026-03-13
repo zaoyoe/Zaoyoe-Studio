@@ -6954,10 +6954,11 @@ body {
         position: relative !important;
     }
 
-    /* Widen profile modal on mobile to match login modal and shop cards */
+    /* Match profile modal width to the mobile login modal */
     .profile-modal {
-        width: calc(100% - 40px) !important;
-        max-width: 480px !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
     }
 
     /* .guestbook-content rule REMOVED to fix mobile scroll lock */
