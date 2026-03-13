@@ -490,17 +490,41 @@ const SYNONYM_DICTIONARY = {
     'child': ['kid', 'baby', '儿童', '小孩', '宝宝']
 };
 
-function toggleAvatarMenu() {
-    const dropdown = document.getElementById('avatarDropdown');
-    dropdown.classList.toggle('active');
+function getAvatarMenuElements() {
+    return {
+        dropdown: document.getElementById('avatarDropdown') || document.getElementById('userDropdown'),
+        overlay: document.getElementById('dropdownOverlay'),
+        trigger: document.getElementById('userAvatarContainer') || document.getElementById('authBtn')
+    };
+}
+
+function toggleAvatarMenu(forceOpen = null) {
+    const { dropdown, overlay } = getAvatarMenuElements();
+    if (!dropdown) return false;
+
+    const nextState = typeof forceOpen === 'boolean'
+        ? forceOpen
+        : !dropdown.classList.contains('active');
+
+    dropdown.classList.toggle('active', nextState);
+    overlay?.classList.toggle('active', nextState);
+    return nextState;
+}
+
+function closeAvatarMenu() {
+    return toggleAvatarMenu(false);
 }
 
 // Close dropdown when clicking outside
 document.addEventListener('click', (e) => {
-    const container = document.getElementById('userAvatarContainer');
-    const dropdown = document.getElementById('avatarDropdown');
-    if (container && dropdown && !container.contains(e.target)) {
+    const { trigger, dropdown, overlay } = getAvatarMenuElements();
+    if (!dropdown) return;
+
+    const clickedInsideDropdown = dropdown.contains(e.target);
+    const clickedTrigger = !!(trigger && trigger.contains(e.target));
+    if (!clickedInsideDropdown && !clickedTrigger) {
         dropdown.classList.remove('active');
+        overlay?.classList.remove('active');
     }
 });
 
@@ -641,7 +665,7 @@ async function checkAuthState() {
 }
 
 function showLoginModal() {
-    toggleAvatarMenu(); // Close the avatar dropdown
+    closeAvatarMenu();
 
     // Prefer the unified avatar/login modal injected by inject-auth.js
     if (typeof window.openLoginModal === 'function') {
@@ -671,7 +695,7 @@ function closeAdminLoginModal() {
 // Gallery login handler (for user dropdown)
 function handleGalleryLogin() {
     console.log('🔐 Gallery login clicked');
-    toggleAvatarMenu(); // Close dropdown
+    closeAvatarMenu();
 
     if (typeof window.triggerGoogleLogin === 'function') {
         window.triggerGoogleLogin();
@@ -723,7 +747,7 @@ async function logoutUser() {
         checkAuthState();
 
         // 关闭下拉菜单
-        toggleAvatarMenu();
+        closeAvatarMenu();
 
         // 刷新页面以完全清除状态
         window.location.reload();
@@ -736,13 +760,13 @@ async function logoutUser() {
 
 function openGalleryProfile() {
     // Navigate to homepage with profile modal flag
-    toggleAvatarMenu();
+    closeAvatarMenu();
     sessionStorage.setItem('openProfileModal', 'true');
     window.location.href = 'index.html';
 }
 
 async function switchGalleryAccount() {
-    toggleAvatarMenu();
+    closeAvatarMenu();
     if (!window.supabaseClient) return;
 
     // Sign out and redirect to homepage login
@@ -754,7 +778,7 @@ async function switchGalleryAccount() {
 function enterAdminStudio() {
     // Navigate to Admin Studio
     window.location.href = 'admin-studio.html';
-    toggleAvatarMenu();
+    closeAvatarMenu();
 }
 
 // ========================================
