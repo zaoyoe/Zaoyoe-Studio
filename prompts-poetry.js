@@ -786,6 +786,62 @@ function enterAdminStudio() {
 // ========================================
 
 let currentAnnouncementElement = null;
+let announcementOwnsScrollLock = false;
+let announcementOverflowRestore = null;
+
+function lockAnnouncementBackground(lockTarget) {
+    if (announcementOwnsScrollLock) return;
+    if (window.iOSScrollLock?.isLocked) return;
+
+    announcementOwnsScrollLock = true;
+    announcementOverflowRestore = {
+        htmlOverflow: document.documentElement.style.overflow,
+        bodyOverflow: document.body.style.overflow
+    };
+
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.overflow = 'hidden';
+
+    if (window.iOSScrollLock) {
+        window.iOSScrollLock.lockLight(lockTarget);
+    }
+}
+
+function unlockAnnouncementBackground() {
+    if (!announcementOwnsScrollLock) return;
+
+    if (window.iOSScrollLock?.isLocked) {
+        window.iOSScrollLock.unlock();
+    }
+
+    if (announcementOverflowRestore) {
+        document.documentElement.style.overflow = announcementOverflowRestore.htmlOverflow;
+        document.body.style.overflow = announcementOverflowRestore.bodyOverflow;
+    } else {
+        document.documentElement.style.overflow = '';
+        document.body.style.overflow = '';
+    }
+
+    announcementOverflowRestore = null;
+    announcementOwnsScrollLock = false;
+}
+
+function clearCurrentAnnouncement() {
+    stopContinuousParticles();
+
+    if (currentAnnouncementElement) {
+        currentAnnouncementElement.remove();
+        currentAnnouncementElement = null;
+    }
+
+    if (toastBackdropElement) {
+        toastBackdropElement.remove();
+        toastBackdropElement = null;
+    }
+
+    document.body.classList.remove('has-banner');
+    unlockAnnouncementBackground();
+}
 
 // Get current page ID for announcement targeting
 function getCurrentPageId() {
@@ -871,7 +927,7 @@ async function loadAnnouncement() {
 function showAnnouncement(type, color, size, content, ackKey, decoration) {
     // Remove any existing announcement
     if (currentAnnouncementElement) {
-        currentAnnouncementElement.remove();
+        clearCurrentAnnouncement();
     }
 
     if (type === 'banner') {
@@ -2097,6 +2153,7 @@ function showModalAnnouncement(color, size, content, ackKey, decoration) {
 
     document.body.appendChild(overlay);
     currentAnnouncementElement = overlay;
+    lockAnnouncementBackground(overlay);
 
     // Start particle animation after DOM is ready
     if (decoration && decoration !== 'none') {
@@ -2242,6 +2299,7 @@ function showToastAnnouncement(color, size, content, ackKey, decoration) {
 
     document.body.appendChild(toast);
     currentAnnouncementElement = toast;
+    lockAnnouncementBackground(toast);
 }
 
 function closeAnnouncement(acknowledged = false) {
@@ -2271,23 +2329,7 @@ function closeAnnouncement(acknowledged = false) {
 
     // Remove after animation
     setTimeout(() => {
-        if (currentAnnouncementElement) {
-            currentAnnouncementElement.style.display = 'none';
-            if (currentAnnouncementElement.classList.contains('announcement-modal-overlay') ||
-                currentAnnouncementElement.classList.contains('announcement-toast')) {
-                currentAnnouncementElement.remove();
-            }
-            currentAnnouncementElement = null;
-
-            // Remove body class when banner is closed
-            document.body.classList.remove('has-banner');
-        }
-
-        // Remove backdrop
-        if (toastBackdropElement) {
-            toastBackdropElement.remove();
-            toastBackdropElement = null;
-        }
+        clearCurrentAnnouncement();
     }, 300);
 }
 

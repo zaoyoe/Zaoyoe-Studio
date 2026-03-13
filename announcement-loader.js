@@ -8,6 +8,71 @@
     'use strict';
 
     let currentAnnouncementElement = null;
+    let announcementOwnsScrollLock = false;
+    let announcementOverflowRestore = null;
+
+    function lockAnnouncementBackground(lockTarget) {
+        if (announcementOwnsScrollLock) return;
+        if (window.iOSScrollLock?.isLocked) return;
+
+        announcementOwnsScrollLock = true;
+        announcementOverflowRestore = {
+            htmlOverflow: document.documentElement.style.overflow,
+            bodyOverflow: document.body.style.overflow
+        };
+
+        document.documentElement.style.overflow = 'hidden';
+        document.body.style.overflow = 'hidden';
+
+        if (window.iOSScrollLock) {
+            window.iOSScrollLock.lockLight(lockTarget);
+        }
+    }
+
+    function unlockAnnouncementBackground() {
+        if (!announcementOwnsScrollLock) return;
+
+        if (window.iOSScrollLock?.isLocked) {
+            window.iOSScrollLock.unlock();
+        }
+
+        if (announcementOverflowRestore) {
+            document.documentElement.style.overflow = announcementOverflowRestore.htmlOverflow;
+            document.body.style.overflow = announcementOverflowRestore.bodyOverflow;
+        } else {
+            document.documentElement.style.overflow = '';
+            document.body.style.overflow = '';
+        }
+
+        announcementOverflowRestore = null;
+        announcementOwnsScrollLock = false;
+    }
+
+    function clearCurrentAnnouncement() {
+        ParticleSystem.stop();
+
+        if (currentAnnouncementElement) {
+            currentAnnouncementElement.remove();
+            currentAnnouncementElement = null;
+        }
+
+        unlockAnnouncementBackground();
+    }
+
+    function dismissAnnouncement(element, ackKey, acknowledged = true) {
+        if (acknowledged && ackKey) {
+            localStorage.setItem(ackKey, 'true');
+        }
+
+        ParticleSystem.stop();
+
+        if (element === currentAnnouncementElement) {
+            currentAnnouncementElement = null;
+        }
+
+        element.remove();
+        unlockAnnouncementBackground();
+    }
 
     // Get current page ID for announcement targeting
     function getCurrentPageId() {
@@ -88,7 +153,7 @@
 
     function showAnnouncement(type, color, size, content, ackKey, decoration) {
         if (currentAnnouncementElement) {
-            currentAnnouncementElement.remove();
+            clearCurrentAnnouncement();
         }
 
         if (type === 'banner') {
@@ -795,18 +860,17 @@
         `;
 
         overlay.querySelector('.announcement-ack-btn').onclick = () => {
-            localStorage.setItem(ackKey, 'true');
-            overlay.remove();
+            dismissAnnouncement(overlay, ackKey, true);
         };
         overlay.onclick = (e) => {
             if (e.target === overlay) {
-                localStorage.setItem(ackKey, 'true');
-                overlay.remove();
+                dismissAnnouncement(overlay, ackKey, true);
             }
         };
 
         document.body.appendChild(overlay);
         currentAnnouncementElement = overlay;
+        lockAnnouncementBackground(overlay);
 
         // Start physics particles for rain theme
         const modal = overlay.querySelector('.announcement-modal');
@@ -836,12 +900,12 @@
         `;
 
         toast.querySelector('.announcement-ack-btn').onclick = () => {
-            localStorage.setItem(ackKey, 'true');
-            toast.remove();
+            dismissAnnouncement(toast, ackKey, true);
         };
 
         document.body.appendChild(toast);
         currentAnnouncementElement = toast;
+        lockAnnouncementBackground(toast);
 
         // Start physics particles for rain theme
         startParticlesIfNeeded(toast, decoration);
