@@ -7122,8 +7122,7 @@ body {
 
     /* Fix all modal overlays on mobile */
     /* Fix all modal overlays on mobile */
-    .modal-overlay.active,
-    .login-overlay.active {
+    .modal-overlay.active {
         align-items: center !important;
         /* Fixed: was flex-start causing top positioning */
         padding-top: calc(20px + env(safe-area-inset-top)) !important;
@@ -7133,8 +7132,7 @@ body {
     }
 
     /* Ensure modal content is scrollable and fits viewport */
-    .modal-content:not(.guestbook-composer-sheet),
-    .login-card {
+    .modal-content:not(.guestbook-composer-sheet) {
         max-height: calc(100vh - 40px) !important;
         overflow-y: auto !important;
         -webkit-overflow-scrolling: touch !important;
@@ -7394,24 +7392,15 @@ body {
     */
 
     /* Clear transform on BOTH overlay and content when focused */
-    .login-overlay.active:focus-within,
     .modal-overlay.active:focus-within {
         transform: none !important;
         will-change: auto !important;
     }
 
-    .login-overlay.active:focus-within .login-card,
     .modal-overlay.active:focus-within .modal-content:not(.guestbook-content) {
         transform: none !important;
         animation: none !important;
         transition: none !important;
-    }
-
-    .login-overlay.active:focus-within .login-card .form-view>*,
-    .login-overlay.active:focus-within .login-card .form-view>form>* {
-        transform: none !important;
-        transition: none !important;
-        transition-delay: 0s !important;
     }
 
     .modal-overlay.active:focus-within .modal-content:not(.guestbook-content)>*:not(.window-controls):not(.modal-close) {
