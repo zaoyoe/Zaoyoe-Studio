@@ -47,11 +47,18 @@
 .login-modal-scroll {
     width: 100%;
     min-height: 100%;
+    max-height: 100%;
+    flex: 1 1 auto;
     display: flex;
     justify-content: center;
     align-items: center;
     box-sizing: border-box;
-    padding: calc(20px + env(safe-area-inset-top)) 20px calc(20px + env(safe-area-inset-bottom));
+    padding: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    scroll-padding-top: 12px;
+    scroll-padding-bottom: 24px;
 }
 
 /* Login Card - Forced Exact Match with Guestbook */
@@ -117,28 +124,6 @@
 .login-overlay.active .login-card {
     --login-modal-scale: 1;
     opacity: 1;
-}
-
-#loginModal.active:focus-within .login-card,
-#loginModal.ios-focus-lock .login-card,
-#loginModal.keyboard-docked .login-card {
-    transform: translate3d(0, var(--login-modal-translate-y, 0px), 0) scale(1) !important;
-    animation: none !important;
-    transition: none !important;
-    will-change: transform, height !important;
-}
-
-#loginModal.active:focus-within .login-card.login-sheet-animating,
-#loginModal.ios-focus-lock .login-card.login-sheet-animating,
-#loginModal.keyboard-docked .login-card.login-sheet-animating {
-    transition:
-        transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
-        max-height 220ms cubic-bezier(0.22, 1, 0.36, 1) !important;
-}
-
-#loginModal.keyboard-settling .glass-input,
-#loginModal.keyboard-settling .glass-input:focus {
-    caret-color: transparent !important;
 }
 
 /* Mac Window Controls - Hidden */
@@ -554,28 +539,41 @@
 }
 
 @media (max-width: 768px) {
-    #loginModal.keyboard-docked,
-    #loginModal.keyboard-docked.active,
-    #loginModal.keyboard-docked.ios-focus-lock,
-    #loginModal.keyboard-docked:focus-within {
-        height: var(--login-modal-overlay-height, 100svh) !important;
-        max-height: var(--login-modal-overlay-height, 100svh) !important;
+    #loginModal,
+    #loginModal.active,
+    #loginModal:focus-within,
+    #loginModal.ios-focus-lock,
+    #loginModal.login-keyboard-active,
+    #loginModal.login-keyboard-active.active,
+    #loginModal.login-keyboard-active:focus-within,
+    #loginModal.login-keyboard-active.ios-focus-lock {
+        align-items: stretch !important;
+        justify-content: center !important;
         overflow: hidden !important;
-        align-items: center !important;
-        padding-top: 0 !important;
-        padding-bottom: 0 !important;
+        padding: calc(env(safe-area-inset-top, 0px) + 20px) 20px calc(env(safe-area-inset-bottom, 0px) + 20px) !important;
+        box-sizing: border-box !important;
+        -webkit-overflow-scrolling: auto !important;
     }
 
-    #loginModal.keyboard-docked .login-modal-scroll {
+    #loginModal .login-modal-scroll {
         min-height: 100%;
-        overflow: visible;
-        padding: 0 !important;
+        max-height: 100%;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
+    }
+
+    #loginModal.login-keyboard-active .login-modal-scroll {
+        padding-bottom: calc(var(--login-modal-keyboard-offset, 0px) + 12px) !important;
+        scroll-padding-bottom: calc(var(--login-modal-keyboard-offset, 0px) + 24px);
     }
 
     .login-overlay .login-card {
         width: 100% !important;
         max-width: 100% !important;
         box-sizing: border-box !important;
+        max-height: none !important;
+        overflow-y: visible !important;
     }
 
     .modal-content.profile-modal,
