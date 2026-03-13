@@ -7837,6 +7837,15 @@ function refreshCommentLanguageUI() {
     refreshPromptCommentComposerLanguageUI();
     updatePromptCommentComposerTriggerState();
 
+    const commentInput = document.getElementById('commentInput');
+    if (commentInput) {
+        if (isPromptCommentComposerEnabled()) {
+            commentInput.setAttribute('placeholder', '');
+        } else {
+            commentInput.setAttribute('placeholder', window.i18n?.t('gallery.addComment') || 'Add a comment...');
+        }
+    }
+
     const sortLabel = document.getElementById('currentSortLabel');
     const sortType = localStorage.getItem('commentSortPreference') || 'newest';
     if (sortLabel) {
@@ -7872,6 +7881,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             commentInputArea?.classList.add('composer-proxy');
             commentInput.setAttribute('readonly', 'readonly');
+            commentInput.setAttribute('placeholder', '');
             updatePromptCommentComposerTriggerState();
             commentInput.addEventListener('touchstart', (e) => launchComposer(e), { passive: false });
             commentInput.addEventListener('click', (e) => launchComposer(e));

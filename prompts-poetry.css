@@ -4032,7 +4032,7 @@ body.modal-open .prompt-card {
         flex: 0 0 auto;
         width: min(128px, calc(100% - 152px));
         margin: 0 auto;
-        border: 1px solid rgba(255, 255, 255, 0.16);
+        border: none;
         border-radius: 18px;
         background:
             linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.05) 48%, rgba(255, 255, 255, 0.02) 100%),
@@ -4055,7 +4055,7 @@ body.modal-open .prompt-card {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        gap: 8px;
+        gap: 0;
         pointer-events: none;
         z-index: 2;
         opacity: 0;
@@ -4084,39 +4084,8 @@ body.modal-open .prompt-card {
         text-shadow: 0 1px 8px rgba(2, 6, 23, 0.1);
     }
 
-    .modal-inner.comment-mode .comment-input-area.composer-proxy .comment-input-proxy-pencil {
-        position: relative;
-        width: 15px;
-        height: 15px;
-        flex: 0 0 15px;
-        transform: rotate(-38deg);
-    }
-
-    .modal-inner.comment-mode .comment-input-area.composer-proxy .comment-input-proxy-pencil::before {
-        content: '';
-        position: absolute;
-        top: 6px;
-        left: 1px;
-        width: 12px;
-        height: 3px;
-        border-radius: 999px;
-        background: linear-gradient(90deg, rgba(203, 213, 225, 0.96) 0%, rgba(148, 163, 184, 0.82) 100%);
-        box-shadow: 0 1px 4px rgba(2, 6, 23, 0.1);
-    }
-
-    .modal-inner.comment-mode .comment-input-area.composer-proxy .comment-input-proxy-pencil::after {
-        content: '';
-        position: absolute;
-        top: 5px;
-        right: 0;
-        width: 5px;
-        height: 5px;
-        clip-path: polygon(0 50%, 100% 0, 100% 100%);
-        background: linear-gradient(135deg, rgba(248, 250, 252, 0.95), rgba(148, 163, 184, 0.75));
-    }
-
     .modal-inner.comment-mode .comment-input-area.composer-proxy #commentInput::placeholder {
-        color: rgba(191, 219, 254, 0.78);
+        color: transparent;
         text-align: left;
     }
 
