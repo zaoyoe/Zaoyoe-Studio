@@ -4512,11 +4512,23 @@ function isPromptModalExpandedCommentView() {
 }
 
 function getCommentSortLabels() {
+    const cleanTopLabel = (value, fallback) => (value || fallback).replace(/^🔥\s*/, '');
     return {
         newest: window.i18n?.t('gallery.newest') || 'Newest',
-        top: window.i18n?.t('gallery.top') || '🔥 Top',
+        top: cleanTopLabel(window.i18n?.t('gallery.top'), 'Top'),
         oldest: window.i18n?.t('gallery.oldest') || 'Oldest'
     };
+}
+
+function sanitizeCommentSortTopUI() {
+    const currentSortLabel = document.getElementById('currentSortLabel');
+    if (currentSortLabel) {
+        currentSortLabel.textContent = currentSortLabel.textContent.replace(/^🔥\s*/, '');
+    }
+
+    document.querySelectorAll('.sort-option[data-sort="top"]').forEach((option) => {
+        option.textContent = option.textContent.replace(/^🔥\s*/, '');
+    });
 }
 
 function renderCommentEmptyState(list) {
@@ -7836,6 +7848,7 @@ function refreshCommentLanguageUI() {
     refreshCommentImageUploadLanguageUI();
     refreshPromptCommentComposerLanguageUI();
     updatePromptCommentComposerTriggerState();
+    sanitizeCommentSortTopUI();
 
     const commentInput = document.getElementById('commentInput');
     if (commentInput) {

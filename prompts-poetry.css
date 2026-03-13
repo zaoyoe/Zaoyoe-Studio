@@ -3961,6 +3961,7 @@ body.modal-open .prompt-card {
         border-radius: 999px;
         background: rgba(15, 23, 42, 0.24);
         border: 1px solid rgba(255, 255, 255, 0.14);
+        box-sizing: border-box;
         box-shadow: 0 12px 28px rgba(2, 6, 23, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.08);
         backdrop-filter: blur(16px) saturate(1.22);
         -webkit-backdrop-filter: blur(16px) saturate(1.22);
@@ -4071,8 +4072,8 @@ body.modal-open .prompt-card {
     }
 
     .modal-inner.comment-mode .comment-input-area.composer-proxy .comment-input-proxy-icon {
-        width: 28px;
-        height: 28px;
+        width: 32px;
+        height: 32px;
         color: rgba(255, 255, 255, 0.92);
     }
 
