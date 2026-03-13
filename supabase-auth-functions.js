@@ -1855,13 +1855,14 @@ if (document.readyState === 'loading') {
 let profileModalOpenLock = false;
 let lastProfileModalOpenAt = 0;
 const PROFILE_MODAL_KEYBOARD_SETTLE_MS = 100;
+const PROFILE_MODAL_SCROLL_STATE_CLEAR_MS = 320;
 const profileModalState = {
     baseScrollY: 0,
     overlayBaseHeight: 0,
     viewportCleanup: null,
     rootScrollCleanup: null,
     layoutRafId: 0,
-    scrollAnimationRafId: 0,
+    scrollAnimationClearTimer: null,
     scrollAnimationHost: null,
     scrollAnimationTarget: null,
     settleTimer: null,
@@ -1900,12 +1901,7 @@ function clearProfileModalTimers() {
         cancelAnimationFrame(profileModalState.layoutRafId);
         profileModalState.layoutRafId = 0;
     }
-    if (profileModalState.scrollAnimationRafId) {
-        cancelAnimationFrame(profileModalState.scrollAnimationRafId);
-        profileModalState.scrollAnimationRafId = 0;
-    }
-    profileModalState.scrollAnimationHost = null;
-    profileModalState.scrollAnimationTarget = null;
+    cancelProfileModalScrollAnimation();
     if (profileModalState.settleTimer) {
         clearTimeout(profileModalState.settleTimer);
         profileModalState.settleTimer = null;
@@ -2054,21 +2050,39 @@ function ensureProfileModalInputVisible(input = getActiveProfileModalInput()) {
     animateProfileModalScroll(scrollHost, nextScrollTop);
 }
 
-function cancelProfileModalScrollAnimation() {
-    if (profileModalState.scrollAnimationRafId) {
-        cancelAnimationFrame(profileModalState.scrollAnimationRafId);
-        profileModalState.scrollAnimationRafId = 0;
+function clearProfileModalScrollAnimationState() {
+    if (profileModalState.scrollAnimationClearTimer) {
+        clearTimeout(profileModalState.scrollAnimationClearTimer);
+        profileModalState.scrollAnimationClearTimer = null;
     }
     profileModalState.scrollAnimationHost = null;
     profileModalState.scrollAnimationTarget = null;
 }
 
+function cancelProfileModalScrollAnimation() {
+    const scrollHost = profileModalState.scrollAnimationHost;
+    clearProfileModalScrollAnimationState();
+
+    if (!scrollHost || !scrollHost.isConnected) {
+        return;
+    }
+
+    const currentTop = scrollHost.scrollTop;
+    try {
+        scrollHost.scrollTo({ top: currentTop, behavior: 'auto' });
+    } catch (_) {
+        scrollHost.scrollTop = currentTop;
+    }
+}
+
 function animateProfileModalScroll(scrollHost, targetScrollTop) {
     if (!scrollHost) return;
 
-    const from = scrollHost.scrollTop;
     const to = Math.max(0, targetScrollTop);
-    if (Math.abs(to - from) <= 2) return;
+    if (Math.abs(to - scrollHost.scrollTop) <= 2) {
+        clearProfileModalScrollAnimationState();
+        return;
+    }
 
     if (
         profileModalState.scrollAnimationHost === scrollHost &&
@@ -2082,28 +2096,23 @@ function animateProfileModalScroll(scrollHost, targetScrollTop) {
     profileModalState.scrollAnimationHost = scrollHost;
     profileModalState.scrollAnimationTarget = to;
 
-    const startAt = performance.now();
-    const duration = 165;
+    try {
+        scrollHost.scrollTo({ top: to, behavior: 'smooth' });
+    } catch (_) {
+        scrollHost.scrollTop = to;
+        clearProfileModalScrollAnimationState();
+        return;
+    }
 
-    const step = (now) => {
-        if (!scrollHost.isConnected) {
-            cancelProfileModalScrollAnimation();
-            return;
+    profileModalState.scrollAnimationClearTimer = setTimeout(() => {
+        if (
+            profileModalState.scrollAnimationHost === scrollHost &&
+            profileModalState.scrollAnimationTarget !== null &&
+            Math.abs(profileModalState.scrollAnimationTarget - to) <= 2
+        ) {
+            clearProfileModalScrollAnimationState();
         }
-
-        const elapsed = Math.min(1, (now - startAt) / duration);
-        const eased = 1 - Math.pow(1 - elapsed, 2.2);
-        scrollHost.scrollTop = from + ((to - from) * eased);
-
-        if (elapsed < 1) {
-            profileModalState.scrollAnimationRafId = requestAnimationFrame(step);
-        } else {
-            scrollHost.scrollTop = to;
-            cancelProfileModalScrollAnimation();
-        }
-    };
-
-    profileModalState.scrollAnimationRafId = requestAnimationFrame(step);
+    }, PROFILE_MODAL_SCROLL_STATE_CLEAR_MS);
 }
 
 function markProfileModalFocusTransfer(nextInput = null) {
