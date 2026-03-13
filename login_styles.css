@@ -4,6 +4,9 @@
 .login-overlay {
     z-index: 12060;
     /* Keep login above prompt/detail modals so auth prompts are always actionable */
+    --login-modal-translate-y: 0px;
+    --login-modal-scale: 0.95;
+    --login-modal-overlay-height: 100svh;
 }
 
 /* 确保激活状态下所有子元素可交互 */
@@ -41,6 +44,16 @@
     pointer-events: none;
 }
 
+.login-modal-scroll {
+    width: 100%;
+    min-height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    box-sizing: border-box;
+    padding: calc(20px + env(safe-area-inset-top)) 20px calc(20px + env(safe-area-inset-bottom));
+}
+
 /* Login Card - Forced Exact Match with Guestbook */
 .login-card {
     background: rgba(255, 255, 255, 0.03) !important;
@@ -57,11 +70,9 @@
     backdrop-filter: blur(20px) saturate(150%) !important;
     /* Exact match: 20px blur + 150% saturation */
     -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
-    transform: scale(0.95);
-    /* Reverted to scale */
+    transform: translate3d(0, var(--login-modal-translate-y, 0px), 0) scale(var(--login-modal-scale, 0.95));
     opacity: 0;
-    transition: all 0.3s ease-out;
-    /* Elastic easing */
+    transition: transform 0.3s ease-out, opacity 0.3s ease-out;
     will-change: transform, opacity;
     backface-visibility: hidden;
     color: white;
@@ -104,8 +115,31 @@
 }
 
 .login-overlay.active .login-card {
-    transform: scale(1);
+    --login-modal-scale: 1;
     opacity: 1;
+}
+
+#loginModal.active:focus-within .login-card,
+#loginModal.ios-focus-lock .login-card,
+#loginModal.keyboard-docked .login-card {
+    transform: translate3d(0, var(--login-modal-translate-y, 0px), 0) scale(1) !important;
+    animation: none !important;
+    transition: none !important;
+    will-change: transform, height !important;
+}
+
+#loginModal.active:focus-within .login-card.login-sheet-animating,
+#loginModal.ios-focus-lock .login-card.login-sheet-animating,
+#loginModal.keyboard-docked .login-card.login-sheet-animating {
+    transition:
+        transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+        height 220ms cubic-bezier(0.22, 1, 0.36, 1),
+        max-height 220ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+}
+
+#loginModal.keyboard-settling .glass-input,
+#loginModal.keyboard-settling .glass-input:focus {
+    caret-color: transparent !important;
 }
 
 /* Mac Window Controls - Hidden */
@@ -521,6 +555,21 @@
 }
 
 @media (max-width: 768px) {
+    #loginModal.keyboard-docked,
+    #loginModal.keyboard-docked.active,
+    #loginModal.keyboard-docked.ios-focus-lock,
+    #loginModal.keyboard-docked:focus-within {
+        height: var(--login-modal-overlay-height, 100svh) !important;
+        max-height: var(--login-modal-overlay-height, 100svh) !important;
+        overflow: hidden !important;
+        align-items: center !important;
+    }
+
+    #loginModal.keyboard-docked .login-modal-scroll {
+        min-height: 100%;
+        overflow: hidden;
+    }
+
     .login-overlay .login-card {
         width: 100% !important;
         max-width: 100% !important;
