@@ -2083,7 +2083,7 @@ function animateProfileModalScroll(scrollHost, targetScrollTop) {
     profileModalState.scrollAnimationTarget = to;
 
     const startAt = performance.now();
-    const duration = 180;
+    const duration = 220;
 
     const step = (now) => {
         if (!scrollHost.isConnected) {
@@ -2092,7 +2092,9 @@ function animateProfileModalScroll(scrollHost, targetScrollTop) {
         }
 
         const elapsed = Math.min(1, (now - startAt) / duration);
-        const eased = 1 - Math.pow(1 - elapsed, 3);
+        const eased = elapsed < 0.5
+            ? 4 * elapsed * elapsed * elapsed
+            : 1 - Math.pow(-2 * elapsed + 2, 3) / 2;
         scrollHost.scrollTop = from + ((to - from) * eased);
 
         if (elapsed < 1) {
@@ -2152,13 +2154,9 @@ function applyProfileModalLayout() {
     ensureProfileModalInputVisible(activeInput);
     profileModalState.lastFocusAnchor = activeAnchor || null;
     profileModalState.preserveLayoutDuringFocusTransfer = false;
-
-    requestAnimationFrame(() => {
-        ensureProfileModalInputVisible(activeInput);
-    });
 }
 
-function scheduleProfileModalLayout({ settled = false } = {}) {
+function scheduleProfileModalLayout({ settled = false, deferOnly = false } = {}) {
     if (profileModalState.layoutRafId) {
         cancelAnimationFrame(profileModalState.layoutRafId);
     }
@@ -2170,7 +2168,9 @@ function scheduleProfileModalLayout({ settled = false } = {}) {
         });
     };
 
-    runLayout();
+    if (!deferOnly) {
+        runLayout();
+    }
 
     if (settled) {
         if (profileModalState.settleTimer) {
@@ -2199,7 +2199,7 @@ function bindProfileModalInputBehavior(input) {
             clearTimeout(profileModalState.blurTimer);
             profileModalState.blurTimer = null;
         }
-        scheduleProfileModalLayout({ settled: true });
+        scheduleProfileModalLayout({ settled: true, deferOnly: true });
     });
 
     input.addEventListener('blur', () => {
@@ -2209,7 +2209,7 @@ function bindProfileModalInputBehavior(input) {
         profileModalState.blurTimer = setTimeout(() => {
             profileModalState.blurTimer = null;
             if (!getActiveProfileModalInput()) {
-                scheduleProfileModalLayout({ settled: true });
+                scheduleProfileModalLayout({ settled: true, deferOnly: true });
             }
         }, 120);
     });
@@ -2217,7 +2217,7 @@ function bindProfileModalInputBehavior(input) {
     input.addEventListener('click', () => {
         if (document.activeElement === input) return;
         markProfileModalFocusTransfer(input);
-        scheduleProfileModalLayout({ settled: true });
+        scheduleProfileModalLayout({ settled: true, deferOnly: true });
     });
 
     input.addEventListener('touchstart', (event) => {
@@ -2276,7 +2276,7 @@ function bindProfileModalInputBehavior(input) {
             } catch (_) {
                 input.focus();
             }
-            scheduleProfileModalLayout({ settled: true });
+            scheduleProfileModalLayout({ settled: true, deferOnly: true });
         }
         gesture.mode = 'idle';
     });
@@ -2313,7 +2313,7 @@ function attachProfileModalViewportHandlers() {
         if (!getActiveProfileModalInput()) {
             captureProfileModalOverlayBaseHeight();
         }
-        scheduleProfileModalLayout({ settled: true });
+        scheduleProfileModalLayout({ settled: true, deferOnly: true });
     };
 
     const handleRootScroll = () => {
