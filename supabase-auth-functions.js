@@ -1947,24 +1947,38 @@ function resetProfileModalVisualState() {
     card.style.removeProperty('scroll-padding-bottom');
 }
 
-function keepActiveProfileModalFieldInView(input = getActiveProfileModalInput()) {
+function getProfileModalFocusAnchor(input = getActiveProfileModalInput()) {
+    if (!input) return null;
+    return (
+        input.closest('.input-group') ||
+        input.closest('.mobile-security-section') ||
+        input.closest('.security-detail-content') ||
+        input
+    );
+}
+
+function scrollProfileModalToFocusedField(input = getActiveProfileModalInput()) {
     const { card } = getProfileModalElements();
     if (!card || !input) return;
 
+    const anchor = getProfileModalFocusAnchor(input);
+    if (!anchor) return;
+
     const cardRect = card.getBoundingClientRect();
-    const inputRect = input.getBoundingClientRect();
-    const topPadding = 92;
-    const bottomPadding = 156;
-    let scrollDelta = 0;
+    const anchorRect = anchor.getBoundingClientRect();
+    const maxScrollTop = Math.max(0, card.scrollHeight - card.clientHeight);
+    const anchorCenterInContent = (anchorRect.top - cardRect.top) + card.scrollTop + (anchorRect.height / 2);
+    const desiredCenterInViewport = Math.max(
+        120,
+        Math.min(card.clientHeight * 0.42, card.clientHeight - 120)
+    );
+    const nextScrollTop = Math.max(
+        0,
+        Math.min(anchorCenterInContent - desiredCenterInViewport, maxScrollTop)
+    );
 
-    if (inputRect.top < cardRect.top + topPadding) {
-        scrollDelta = inputRect.top - (cardRect.top + topPadding);
-    } else if (inputRect.bottom > cardRect.bottom - bottomPadding) {
-        scrollDelta = inputRect.bottom - (cardRect.bottom - bottomPadding);
-    }
-
-    if (scrollDelta !== 0) {
-        card.scrollTop += scrollDelta;
+    if (Math.abs(nextScrollTop - card.scrollTop) > 1) {
+        card.scrollTop = nextScrollTop;
     }
 }
 
@@ -1979,7 +1993,7 @@ function applyProfileModalLayout() {
     const activeInput = getActiveProfileModalInput();
 
     card.style.maxHeight = `${Math.max(320, visibleHeight - 24)}px`;
-    card.style.scrollPaddingBottom = `${activeInput ? 176 : 120}px`;
+    card.style.scrollPaddingBottom = `${activeInput ? 144 : 96}px`;
     overlay.style.setProperty('--profile-modal-shift-y', '0px');
     overlay.classList.toggle('keyboard-active', !!activeInput);
 
@@ -1987,17 +2001,18 @@ function applyProfileModalLayout() {
         return;
     }
 
-    keepActiveProfileModalFieldInView(activeInput);
+    scrollProfileModalToFocusedField(activeInput);
 
     const cardRect = card.getBoundingClientRect();
+    const safeTop = 12;
     const visibleBottom = visibleHeight - 12;
     const overflowBottom = Math.max(0, Math.ceil(cardRect.bottom - visibleBottom));
-    if (overflowBottom > 0) {
-        overlay.style.setProperty('--profile-modal-shift-y', `${-overflowBottom}px`);
-    }
+    const minShiftY = Math.min(0, Math.round(safeTop - cardRect.top));
+    const shiftY = Math.max(minShiftY, -overflowBottom);
+    overlay.style.setProperty('--profile-modal-shift-y', `${shiftY}px`);
 
     requestAnimationFrame(() => {
-        keepActiveProfileModalFieldInView(activeInput);
+        scrollProfileModalToFocusedField(activeInput);
     });
 }
 
