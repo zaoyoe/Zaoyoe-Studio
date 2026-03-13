@@ -1361,41 +1361,20 @@
                 const visibleBottom = Math.min(hostRect.bottom, viewportBottom) - 18;
                 if (visibleBottom <= visibleTop + 80) return;
 
-                const visibleTopInHost = Math.max(0, visibleTop - hostRect.top);
-                const visibleBottomInHost = Math.min(scrollHost.clientHeight, visibleBottom - hostRect.top);
-                const visibleHeight = Math.max(120, visibleBottomInHost - visibleTopInHost);
-                const preferredCenter = Math.max(
-                    112,
-                    Math.min(Math.round(visibleHeight * 0.38), visibleHeight - 72)
-                );
-                const preferredAnchorCenter = visibleTopInHost + preferredCenter;
-                const anchorCenterInContent =
-                    scrollHost.scrollTop +
-                    (anchorRect.top - hostRect.top) +
-                    (anchorRect.height / 2);
+                const visibleHeight = Math.max(120, visibleBottom - visibleTop);
+                const topGuard = Math.max(44, Math.round(visibleHeight * 0.12));
+                const bottomGuard = Math.max(84, Math.round(visibleHeight * 0.22));
+                let nextScrollTop = scrollHost.scrollTop;
+                const anchorTopTarget = visibleTop + topGuard;
+                const inputBottomTarget = visibleBottom - bottomGuard;
 
-                let nextScrollTop = Math.max(
-                    0,
-                    Math.min(anchorCenterInContent - preferredAnchorCenter, maxScrollTop)
-                );
-
-                const topGuard = Math.max(52, Math.round(visibleHeight * 0.16));
-                const bottomGuard = Math.max(110, Math.round(visibleHeight * 0.28));
-
-                if (inputRect.top < visibleTop + topGuard) {
-                    nextScrollTop = Math.min(
-                        nextScrollTop,
-                        Math.max(0, scrollHost.scrollTop + (inputRect.top - (visibleTop + topGuard)))
-                    );
-                } else if (inputRect.bottom > visibleBottom - bottomGuard) {
-                    nextScrollTop = Math.max(
-                        nextScrollTop,
-                        Math.min(
-                            maxScrollTop,
-                            scrollHost.scrollTop + (inputRect.bottom - (visibleBottom - bottomGuard))
-                        )
-                    );
+                if (anchorRect.top < anchorTopTarget) {
+                    nextScrollTop += anchorRect.top - anchorTopTarget;
+                } else if (inputRect.bottom > inputBottomTarget) {
+                    nextScrollTop += inputRect.bottom - inputBottomTarget;
                 }
+
+                nextScrollTop = Math.max(0, Math.min(nextScrollTop, maxScrollTop));
 
                 animateLoginModalScroll(scrollHost, nextScrollTop);
             }
@@ -1408,6 +1387,9 @@
 
                 const activeInput = getActiveLoginModalInput();
                 const vv = window.visualViewport;
+                const overlayStyle = window.getComputedStyle(overlay);
+                const overlayPaddingTop = Math.round(parseFloat(overlayStyle.paddingTop) || 0);
+                const overlayPaddingBottom = Math.round(parseFloat(overlayStyle.paddingBottom) || 0);
                 const viewportHeight = Math.max(
                     320,
                     Math.round(vv?.height || window.innerHeight || document.documentElement.clientHeight || 0)
@@ -1416,7 +1398,7 @@
                     ? Math.round((vv.offsetTop || 0) + (vv.height || 0))
                     : Math.round(window.innerHeight || document.documentElement.clientHeight || 0);
                 const bottomInset = Math.max(0, (loginModalState.overlayBaseHeight || viewportBottom) - viewportBottom);
-                const hostHeight = Math.max(320, viewportHeight - 24);
+                const hostHeight = Math.max(240, viewportHeight - overlayPaddingTop - overlayPaddingBottom);
                 const cardHeight = Math.max(0, Math.ceil(card.getBoundingClientRect().height || card.offsetHeight || 0));
                 const slack = Math.max(0, hostHeight - cardHeight);
                 const centeredPadding = Math.max(12, Math.floor(slack / 2));
@@ -1507,9 +1489,6 @@
 
                     input.addEventListener('click', () => {
                         loginModalState.userScrollUntil = 0;
-                        if (document.activeElement === input) {
-                            scheduleLoginModalLayout({ settled: true, ensureInput: true });
-                        }
                     });
 
                     input.addEventListener('touchstart', (event) => {
@@ -1562,7 +1541,6 @@
 
                         if (document.activeElement === input) {
                             loginModalState.userScrollUntil = 0;
-                            scheduleLoginModalLayout({ ensureInput: true });
                             gesture.mode = 'idle';
                             return;
                         }
@@ -1602,6 +1580,7 @@
                     cancelLoginModalScrollAnimation();
                 };
 
+                scroller.addEventListener('touchstart', stopAutoScroll, { passive: true });
                 scroller.addEventListener('touchmove', stopAutoScroll, { passive: true });
             }
 
