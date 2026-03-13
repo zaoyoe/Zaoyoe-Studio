@@ -1276,10 +1276,12 @@
 
             function getLoginModalViewportMetrics() {
                 const vv = window.visualViewport;
+                const visualTop = Math.max(0, Math.round(vv?.offsetTop || 0));
                 const visualHeight = Math.max(0, vv?.height || 0);
                 const baseVisualHeight = loginModalKeyboardState.baseViewportHeight || visualHeight;
 
                 return {
+                    visualTop,
                     visualHeight,
                     baseVisualHeight,
                     bottomInset: Math.max(0, Math.round(baseVisualHeight - visualHeight))
@@ -1304,7 +1306,7 @@
                     loginModalKeyboardState.baseViewportHeight || 0
                 );
                 const keyboardTop = Math.max(0, baseViewportHeight - Math.max(0, bottomInset));
-                const minTop = 12;
+                const minTop = Math.max(12, metrics.visualTop + 12);
                 const keyboardClearance = 12;
                 const maxAvailableHeight = Math.max(280, Math.round(keyboardTop - minTop - keyboardClearance));
                 const finalCardHeight = Math.min(baseCardHeight, maxAvailableHeight);
