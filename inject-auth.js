@@ -1337,6 +1337,7 @@
                 if (!overlay) return;
                 overlay.classList.remove('keyboard-active', 'ios-focus-lock');
                 overlay.style.removeProperty('--login-modal-overlay-height');
+                frame?.style.removeProperty('align-items');
                 frame?.style.removeProperty('height');
                 frame?.style.removeProperty('max-height');
                 scroller?.style.removeProperty('height');
@@ -1425,26 +1426,23 @@
                     : Math.round(window.innerHeight || document.documentElement.clientHeight || 0);
                 const bottomInset = Math.max(0, (loginModalState.overlayBaseHeight || viewportBottom) - viewportBottom);
                 const hostHeight = Math.max(240, viewportHeight - overlayPaddingTop - overlayPaddingBottom);
-                const cardHeight = Math.max(0, Math.ceil(card.getBoundingClientRect().height || card.offsetHeight || 0));
-                const slack = Math.max(0, hostHeight - cardHeight);
-                const centeredPadding = Math.max(12, Math.floor(slack / 2));
-                const centeredBottomPadding = Math.max(12, slack - centeredPadding);
-                const keyboardTopPadding = 12;
+                const keyboardActive = !!activeInput || bottomInset > 0;
+                const keyboardCardMaxHeight = Math.min(hostHeight, Math.max(320, Math.round(hostHeight * 0.82)));
                 const keyboardBottomPadding = Math.max(24, bottomInset + 28);
 
-                overlay.classList.toggle('keyboard-active', !!activeInput || bottomInset > 0);
+                overlay.classList.toggle('keyboard-active', keyboardActive);
+                frame.style.alignItems = keyboardActive ? 'flex-start' : 'center';
                 frame.style.height = `${hostHeight}px`;
                 frame.style.maxHeight = `${hostHeight}px`;
-                card.style.maxHeight = `${hostHeight}px`;
+                card.style.maxHeight = `${keyboardActive ? keyboardCardMaxHeight : hostHeight}px`;
                 scroller.style.scrollPaddingTop = '24px';
+                scroller.style.paddingTop = '0px';
 
-                if (activeInput || bottomInset > 0) {
-                    scroller.style.paddingTop = `${keyboardTopPadding}px`;
+                if (keyboardActive) {
                     scroller.style.paddingBottom = `calc(env(safe-area-inset-bottom, 0px) + ${keyboardBottomPadding}px)`;
                     scroller.style.scrollPaddingBottom = `${Math.max(160, keyboardBottomPadding + 36)}px`;
                 } else {
-                    scroller.style.paddingTop = `${centeredPadding}px`;
-                    scroller.style.paddingBottom = `${centeredBottomPadding}px`;
+                    scroller.style.paddingBottom = '0px';
                     scroller.style.scrollPaddingBottom = '24px';
                 }
 

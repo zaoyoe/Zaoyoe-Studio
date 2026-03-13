@@ -7110,9 +7110,8 @@ body {
         box-sizing: border-box !important;
     }
 
-    /* Ensure modal content is scrollable and fits viewport */
-    .modal-content:not(.guestbook-composer-sheet),
-    .login-card {
+    /* Generic mobile modal scrolling. Login modal uses its own layered scroller. */
+    .modal-content:not(.guestbook-composer-sheet) {
         max-height: calc(100vh - 40px) !important;
         overflow-y: auto !important;
         -webkit-overflow-scrolling: touch !important;
