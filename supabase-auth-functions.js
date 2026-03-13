@@ -1857,6 +1857,7 @@ let lastProfileModalOpenAt = 0;
 const PROFILE_MODAL_KEYBOARD_SETTLE_MS = 100;
 const profileModalState = {
     baseScrollY: 0,
+    overlayBaseHeight: 0,
     viewportCleanup: null,
     layoutRafId: 0,
     settleTimer: null,
@@ -1946,11 +1947,30 @@ function resetProfileModalVisualState() {
 
     overlay.classList.remove('keyboard-active', 'keyboard-docked', 'ios-focus-lock');
     overlay.style.setProperty('--profile-modal-shift-y', '0px');
+    overlay.style.removeProperty('--profile-modal-overlay-height');
     card.style.removeProperty('max-height');
     card.style.removeProperty('scroll-padding-bottom');
+    profileModalState.overlayBaseHeight = 0;
     profileModalState.focusTransferUntil = 0;
     profileModalState.lastFocusAnchor = null;
     profileModalState.preserveLayoutDuringFocusTransfer = false;
+}
+
+function captureProfileModalOverlayBaseHeight(force = false) {
+    const { overlay } = getProfileModalElements();
+    if (!overlay) return;
+
+    const measuredHeight = Math.max(
+        Math.round(window.innerHeight || 0),
+        Math.round(document.documentElement.clientHeight || 0),
+        Math.round(window.visualViewport?.height || 0)
+    );
+
+    if (!measuredHeight) return;
+    if (!force && profileModalState.overlayBaseHeight >= measuredHeight) return;
+
+    profileModalState.overlayBaseHeight = measuredHeight;
+    overlay.style.setProperty('--profile-modal-overlay-height', `${measuredHeight}px`);
 }
 
 function getProfileModalFocusAnchor(input = getActiveProfileModalInput()) {
@@ -2163,7 +2183,18 @@ function bindProfileModalInputBehavior(input) {
         }
     }, { passive: false });
 
-    input.addEventListener('touchend', () => {
+    input.addEventListener('touchend', (event) => {
+        if (isProfileModalIOSMode() && gesture.mode === 'pending' && document.activeElement !== input) {
+            if (event.cancelable) {
+                event.preventDefault();
+            }
+            try {
+                input.focus({ preventScroll: true });
+            } catch (_) {
+                input.focus();
+            }
+            scheduleProfileModalLayout({ settled: true });
+        }
         gesture.mode = 'idle';
     });
 
@@ -2183,6 +2214,7 @@ function attachProfileModalViewportHandlers() {
     bindProfileModalInputs();
 
     if (!isProfileModalIOSMode()) {
+        captureProfileModalOverlayBaseHeight(true);
         scheduleProfileModalLayout();
         return;
     }
@@ -2191,8 +2223,12 @@ function attachProfileModalViewportHandlers() {
     if (!vv) return;
 
     detachProfileModalViewportHandlers();
+    captureProfileModalOverlayBaseHeight(true);
 
     const handleViewportChange = () => {
+        if (!getActiveProfileModalInput()) {
+            captureProfileModalOverlayBaseHeight();
+        }
         scheduleProfileModalLayout({ settled: true });
     };
 

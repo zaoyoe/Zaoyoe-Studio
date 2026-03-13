@@ -4587,6 +4587,10 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
 
 #profileModal {
     --profile-modal-shift-y: 0px;
+    --profile-modal-overlay-height: 100dvh;
+    height: var(--profile-modal-overlay-height);
+    min-height: var(--profile-modal-overlay-height);
+    overflow: hidden !important;
 }
 
 #profileModal .modal-content.profile-modal {
@@ -7047,6 +7051,9 @@ body {
     #profileModal {
         padding: calc(env(safe-area-inset-top, 0px) + 12px) 20px calc(env(safe-area-inset-bottom, 0px) + 12px) !important;
         box-sizing: border-box !important;
+        height: var(--profile-modal-overlay-height) !important;
+        min-height: var(--profile-modal-overlay-height) !important;
+        overflow: hidden !important;
     }
 
     #profileModal.keyboard-active {
