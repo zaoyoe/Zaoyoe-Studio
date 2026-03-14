@@ -377,11 +377,37 @@
 }
 
 /* ==================== Mobile Responsive ==================== */
-@media (max-width: 480px) {
+@media (max-width: 768px) {
+    .login-overlay {
+        align-items: flex-end;
+        /* Align to bottom on mobile */
+        padding: 0;
+    }
+
+    .login-overlay.active .login-card {
+        transform: translateY(0);
+    }
+
+    .login-overlay:not(.active) .login-card {
+        transform: translateY(100%);
+    }
+
     .login-card {
-        width: 90%;
-        max-width: 360px;
+        width: 100%;
+        max-width: 100%;
         padding: 32px 24px;
+        padding-bottom: calc(32px + env(safe-area-inset-bottom));
+        /* iOS safe area */
+        border-radius: 24px 24px 0 0;
+        /* Only top right/left rounded */
+        border-bottom: none;
+        box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.4);
+
+        /* Transition for bottom sheet sliding */
+        transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+
+        /* Make sure it's at the very bottom */
+        margin: 0;
     }
 
     .login-card .card-title {
@@ -391,5 +417,18 @@
     .login-card .login-submit-btn {
         width: 100%;
         max-width: none;
+    }
+
+    /* Add a pull indicator (pill) for bottom sheet aesthetics */
+    .login-card::before {
+        content: '';
+        position: absolute;
+        top: 12px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 36px;
+        height: 5px;
+        border-radius: 3px;
+        background: rgba(255, 255, 255, 0.2);
     }
 }

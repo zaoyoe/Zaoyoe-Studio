@@ -1117,10 +1117,8 @@
             let overlayCloseDisabledUntil = 0;
             const loginModalKeyboardState = {
                 attached: false,
-                viewportCleanup: null,
-                viewportRafId: null,
                 baseViewportHeight: 0,
-                stableViewportProbe: null
+                isKeyboardOpen: false
             };
 
             function getLoginModalElements() {
@@ -1145,205 +1143,84 @@
                 return isiOS && window.matchMedia('(max-width: 768px)').matches && !!window.visualViewport;
             }
 
-            function bindLoginModalInputFocusStabilizer(input) {
-                if (!input || input.dataset.loginFocusStabilizerBound === '1') return;
-                input.dataset.loginFocusStabilizerBound = '1';
-            }
+            function handleLoginModalViewportChange() {
+                if (!isLoginModalKeyboardDockEnabled()) return;
 
-            function getLoginModalStableViewportProbe() {
-                if (loginModalKeyboardState.stableViewportProbe?.isConnected) {
-                    return loginModalKeyboardState.stableViewportProbe;
-                }
-
-                const probe = document.createElement('div');
-                probe.setAttribute('aria-hidden', 'true');
-                probe.style.position = 'fixed';
-                probe.style.top = '0';
-                probe.style.left = '0';
-                probe.style.width = '0';
-                probe.style.height = '100svh';
-                probe.style.pointerEvents = 'none';
-                probe.style.visibility = 'hidden';
-                probe.style.opacity = '0';
-                probe.style.zIndex = '-1';
-                document.body.appendChild(probe);
-                loginModalKeyboardState.stableViewportProbe = probe;
-                return probe;
-            }
-
-            function getLoginModalStableViewportHeight() {
-                const probe = getLoginModalStableViewportProbe();
-                if (!probe) return 0;
-                return Math.max(0, Math.round(probe.getBoundingClientRect().height || probe.offsetHeight || 0));
-            }
-
-            function syncActiveLoginModalInputIntoView() {
-                const { scroller } = getLoginModalElements();
-                const activeInput = getActiveLoginModalInput();
-                if (!scroller || !activeInput) return;
-
-                requestAnimationFrame(() => {
-                    const vv = window.visualViewport;
-                    const scrollerRect = scroller.getBoundingClientRect();
-                    const inputRect = activeInput.getBoundingClientRect();
-                    const visualTop = Math.round(vv?.offsetTop || 0);
-                    const visualBottom = Math.round(
-                        (vv?.offsetTop || 0) +
-                        (vv?.height || window.innerHeight || document.documentElement.clientHeight || 0)
-                    );
-                    const visibleTop = Math.max(scrollerRect.top + 12, visualTop + 12);
-                    const visibleBottom = Math.min(scrollerRect.bottom - 12, visualBottom - 12);
-
-                    if (visibleBottom <= visibleTop) return;
-
-                    if (inputRect.bottom > visibleBottom) {
-                        scroller.scrollTop += Math.ceil(inputRect.bottom - visibleBottom);
-                    } else if (inputRect.top < visibleTop) {
-                        scroller.scrollTop -= Math.ceil(visibleTop - inputRect.top);
-                    }
-                });
-            }
-
-            function captureLoginModalKeyboardBase() {
+                const { overlay, card } = getLoginModalElements();
                 const vv = window.visualViewport;
-                const visualHeight = Math.max(0, vv?.height || 0);
-                const fallbackBaseHeight = Math.max(
-                    window.innerHeight || 0,
-                    document.documentElement.clientHeight || 0,
-                    visualHeight
-                );
-                const stableViewportHeight = getLoginModalStableViewportHeight();
-                const normalizedBaseHeight = (stableViewportHeight > 0 && stableViewportHeight + 24 < fallbackBaseHeight)
-                    ? stableViewportHeight
-                    : fallbackBaseHeight;
+                if (!overlay || !card || !vv) return;
 
-                loginModalKeyboardState.baseViewportHeight = normalizedBaseHeight;
-            }
-
-            function getLoginModalViewportMetrics() {
-                const vv = window.visualViewport;
-                const visualTop = Math.max(0, Math.round(vv?.offsetTop || 0));
-                const visualHeight = Math.max(0, vv?.height || 0);
-                const baseVisualHeight = Math.max(loginModalKeyboardState.baseViewportHeight || 0, visualHeight);
-
-                return {
-                    visualTop,
-                    visualHeight,
-                    baseVisualHeight,
-                    bottomInset: Math.max(0, Math.round(baseVisualHeight - visualHeight))
-                };
-            }
-
-            function applyLoginModalViewportFrame() {
-                const { overlay } = getLoginModalElements();
-                if (!overlay) return;
-
-                const metrics = getLoginModalViewportMetrics();
-                const activeInput = getActiveLoginModalInput();
-                const keyboardActive = !!activeInput && metrics.bottomInset > 24;
-
-                overlay.style.setProperty('--login-modal-visual-top', `${metrics.visualTop}px`);
-                overlay.style.setProperty('--login-modal-visual-height', `${Math.max(0, metrics.visualHeight)}px`);
-                overlay.classList.toggle('login-keyboard-active', keyboardActive);
-
-                if (!keyboardActive && metrics.visualHeight > 0) {
-                    loginModalKeyboardState.baseViewportHeight = Math.max(
-                        loginModalKeyboardState.baseViewportHeight || 0,
-                        metrics.visualHeight
-                    );
+                // On first open or when keyboard is clearly closed, establish base height
+                if (loginModalKeyboardState.baseViewportHeight === 0 || !loginModalKeyboardState.isKeyboardOpen) {
+                    loginModalKeyboardState.baseViewportHeight = Math.max(loginModalKeyboardState.baseViewportHeight, vv.height);
                 }
 
-                if (keyboardActive) {
-                    syncActiveLoginModalInputIntoView();
+                // If visualViewport shrinks significantly, keyboard is likely up
+                const heightDiff = loginModalKeyboardState.baseViewportHeight - vv.height;
+                const isKeyboardUp = heightDiff > 50 && getActiveLoginModalInput();
+
+                loginModalKeyboardState.isKeyboardOpen = isKeyboardUp;
+
+                if (isKeyboardUp) {
+                    // Push the card up by the keyboard height
+                    card.style.transform = `translateY(-${heightDiff}px)`;
+                    // Ensure the card isn't completely hidden by scrolling if it's tall
+                    setTimeout(() => {
+                        const activeInput = getActiveLoginModalInput();
+                        if (activeInput) {
+                            activeInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }
+                    }, 50);
+                } else {
+                    card.style.transform = '';
+                    loginModalKeyboardState.baseViewportHeight = Math.max(loginModalKeyboardState.baseViewportHeight, vv.height);
                 }
-            }
-
-            function releaseLoginModalViewportFrame() {
-                const { overlay } = getLoginModalElements();
-                if (!overlay) return;
-
-                overlay.classList.remove('login-keyboard-active');
-                overlay.style.removeProperty('--login-modal-visual-top');
-                overlay.style.removeProperty('--login-modal-visual-height');
-            }
-
-            function resetLoginModalKeyboardDockState() {
-                if (loginModalKeyboardState.viewportRafId) {
-                    cancelAnimationFrame(loginModalKeyboardState.viewportRafId);
-                    loginModalKeyboardState.viewportRafId = null;
-                }
-                releaseLoginModalViewportFrame();
-                loginModalKeyboardState.baseViewportHeight = 0;
-            }
-
-            function syncLoginModalKeyboardDock() {
-                const { overlay } = getLoginModalElements();
-                if (!overlay || !overlay.classList.contains('active')) {
-                    resetLoginModalKeyboardDockState();
-                    return;
-                }
-
-                if (!isLoginModalKeyboardDockEnabled()) {
-                    releaseLoginModalViewportFrame();
-                    return;
-                }
-
-                applyLoginModalViewportFrame();
-            }
-
-            function requestLoginModalViewportSync() {
-                if (loginModalKeyboardState.viewportRafId) return;
-                loginModalKeyboardState.viewportRafId = requestAnimationFrame(() => {
-                    loginModalKeyboardState.viewportRafId = null;
-                    syncLoginModalKeyboardDock();
-                });
             }
 
             function attachLoginModalKeyboardDock() {
                 if (!isLoginModalKeyboardDockEnabled() || loginModalKeyboardState.attached) return;
 
-                const { overlay } = getLoginModalElements();
                 const vv = window.visualViewport;
-                if (!overlay || !vv) return;
+                if (!vv) return;
 
-                captureLoginModalKeyboardBase();
-                syncLoginModalKeyboardDock();
+                loginModalKeyboardState.baseViewportHeight = vv.height;
 
-                const inputs = Array.from(overlay.querySelectorAll('input, textarea, select'));
-                inputs.forEach((input) => bindLoginModalInputFocusStabilizer(input));
+                vv.addEventListener('resize', handleLoginModalViewportChange, { passive: true });
+                vv.addEventListener('scroll', handleLoginModalViewportChange, { passive: true });
 
-                const handleViewportChange = () => {
-                    requestLoginModalViewportSync();
-                };
-
-                vv.addEventListener('resize', handleViewportChange, { passive: true });
-                vv.addEventListener('scroll', handleViewportChange, { passive: true });
-                inputs.forEach((input) => {
-                    input.addEventListener('focus', handleViewportChange);
-                    input.addEventListener('blur', handleViewportChange);
-                });
-
-                loginModalKeyboardState.viewportCleanup = () => {
-                    vv.removeEventListener('resize', handleViewportChange);
-                    vv.removeEventListener('scroll', handleViewportChange);
-                    inputs.forEach((input) => {
-                        input.removeEventListener('focus', handleViewportChange);
-                        input.removeEventListener('blur', handleViewportChange);
+                // Add focus/blur listeners to immediately react before resize fires
+                const { overlay } = getLoginModalElements();
+                if (overlay) {
+                    overlay.addEventListener('focusin', handleLoginModalViewportChange);
+                    overlay.addEventListener('focusout', () => {
+                        // Delay slightly to let the resize event handle the closing animation first if possible
+                        setTimeout(handleLoginModalViewportChange, 100);
                     });
-                    if (loginModalKeyboardState.viewportRafId) {
-                        cancelAnimationFrame(loginModalKeyboardState.viewportRafId);
-                        loginModalKeyboardState.viewportRafId = null;
-                    }
-                    loginModalKeyboardState.viewportCleanup = null;
-                };
+                }
+
                 loginModalKeyboardState.attached = true;
             }
 
             function detachLoginModalKeyboardDock() {
-                if (typeof loginModalKeyboardState.viewportCleanup === 'function') {
-                    loginModalKeyboardState.viewportCleanup();
+                if (!loginModalKeyboardState.attached) return;
+                const vv = window.visualViewport;
+
+                if (vv) {
+                    vv.removeEventListener('resize', handleLoginModalViewportChange);
+                    vv.removeEventListener('scroll', handleLoginModalViewportChange);
                 }
+
+                const { overlay, card } = getLoginModalElements();
+                if (overlay) {
+                    overlay.removeEventListener('focusin', handleLoginModalViewportChange);
+                    // Can't easily remove anonymous function for focusout, but it's fine since we check isLoginModalKeyboardDockEnabled
+                }
+                if (card) {
+                    card.style.transform = '';
+                }
+
                 loginModalKeyboardState.attached = false;
+                loginModalKeyboardState.isKeyboardOpen = false;
             }
 
             function resetLoginModalViewportState() {
@@ -1354,29 +1231,29 @@
                     overlay.scrollTop = 0;
                 }
                 if (scroller) scroller.scrollTop = 0;
-                if (card) card.scrollTop = 0;
+                if (card) {
+                    card.scrollTop = 0;
+                    card.style.transform = '';
+                }
             }
 
             function bindLoginModalOverlayDismiss() {
-                const { overlay } = getLoginModalElements();
+                const { overlay, card } = getLoginModalElements();
                 if (!overlay || overlay.dataset.loginOverlayDismissBound === '1') return;
 
                 overlay.addEventListener('click', (event) => {
-                    const clickedScroller = event.target instanceof HTMLElement &&
-                        event.target.classList.contains('login-modal-scroll');
-                    const clickedAligner = event.target instanceof HTMLElement &&
-                        event.target.classList.contains('login-modal-aligner');
-                    if (event.target !== overlay && !clickedScroller && !clickedAligner) return;
+                    // Prevent closing when clicking inside the card
+                    if (card && card.contains(event.target)) {
+                        return;
+                    }
 
                     const now = Date.now();
                     if (now < overlayCloseDisabledUntil) {
-                        if (event.cancelable) event.preventDefault();
                         return;
                     }
 
                     const activeInput = getActiveLoginModalInput();
                     if (activeInput) {
-                        if (event.cancelable) event.preventDefault();
                         activeInput.blur();
                         overlayCloseDisabledUntil = now + 180;
                         return;
@@ -1393,7 +1270,6 @@
                 if (!modal) return;
 
                 detachLoginModalKeyboardDock();
-                resetLoginModalKeyboardDockState();
                 resetLoginModalViewportState();
                 modal.style.display = 'flex';
                 modal.style.removeProperty('visibility');
@@ -1408,11 +1284,9 @@
 
                 overlayCloseDisabledUntil = Date.now() + 260;
                 bindLoginModalOverlayDismiss();
-                attachLoginModalKeyboardDock();
-                requestAnimationFrame(() => {
-                    captureLoginModalKeyboardBase();
-                    requestLoginModalViewportSync();
-                });
+
+                // Slight delay to attach dock so visualViewport is stable after display: flex
+                setTimeout(attachLoginModalKeyboardDock, 50);
 
                 if (typeof window.ensureGoogleInlineButtonReady === 'function') {
                     window.ensureGoogleInlineButtonReady({ renderFallbackButton: true }).catch((err) => {
@@ -1469,12 +1343,11 @@
                 if (card) card.scrollTop = 0;
 
                 loginModalKeyboardState.baseViewportHeight = 0;
-                requestAnimationFrame(() => {
-                    if (overlay?.classList.contains('active')) {
-                        captureLoginModalKeyboardBase();
-                        requestLoginModalViewportSync();
-                    }
-                });
+
+                // If keyboard is attached, trigger a check
+                if (loginModalKeyboardState.attached) {
+                    handleLoginModalViewportChange();
+                }
 
                 setTimeout(() => {
                     allInputs.forEach(input => {
