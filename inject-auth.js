@@ -710,8 +710,17 @@
                 }
                 .login-modal-scroll,
                 #loginModal .login-modal-scroll {
-                    align-items: flex-end !important;
+                    display: block !important;
                     height: 100% !important;
+                    padding: 0 !important;
+                }
+                .login-modal-aligner,
+                #loginModal .login-modal-aligner {
+                    display: flex !important;
+                    flex-direction: column !important;
+                    justify-content: flex-end !important;
+                    min-height: 100% !important;
+                    padding: 0 !important;
                 }
             }
 
