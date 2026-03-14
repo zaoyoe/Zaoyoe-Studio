@@ -1922,9 +1922,12 @@ a.nav-trigger.active {
     border-bottom: 1px solid rgba(255, 255, 255, 0.15);
 }
 
-.dropdown-notif-btn,
-.dropdown-lang-btn {
+.dropdown-notif-btn {
+    width: 34px;
     height: 34px;
+    padding: 0;
+    position: relative;
+    flex: 0 0 34px;
     border: 1px solid rgba(255, 255, 255, 0.18);
     background: rgba(255, 255, 255, 0.08);
     color: rgba(255, 255, 255, 0.92);
@@ -1934,13 +1937,6 @@ a.nav-trigger.active {
     justify-content: center;
     cursor: pointer;
     transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
-}
-
-.dropdown-notif-btn {
-    width: 34px;
-    padding: 0;
-    position: relative;
-    flex: 0 0 34px;
 }
 
 .dropdown-notif-btn i {
@@ -1960,38 +1956,73 @@ a.nav-trigger.active {
 }
 
 .dropdown-lang-btn {
-    min-width: 56px;
-    padding: 0 10px;
-    gap: 4px;
-    font-size: 0.84rem;
-    font-weight: 600;
-    letter-spacing: 0.01em;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.95);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+    flex: 0 0 36px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.lang-icon {
+.dropdown-lang-btn .lang-icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    position: absolute;
+    z-index: 1;
+    font-weight: 600;
+    letter-spacing: 0.01em;
     line-height: 1;
+    transition: all 0.5s cubic-bezier(0.68, -0.55, 0.27, 1.55);
 }
 
-.lang-icon.lang-zh {
+.dropdown-lang-btn .lang-icon.lang-zh {
+    opacity: 1;
+    transform: rotate(0deg) scale(1);
     font-size: 0.9rem;
 }
 
-.lang-icon.lang-en {
+.dropdown-lang-btn .lang-icon.lang-en {
+    opacity: 0;
+    transform: rotate(-90deg) scale(0.5);
     font-size: 0.82rem;
 }
 
-.dropdown-notif-btn:hover,
+.dropdown-lang-btn[data-lang="en"] .lang-icon.lang-zh {
+    opacity: 0;
+    transform: rotate(90deg) scale(0.5);
+}
+
+.dropdown-lang-btn[data-lang="en"] .lang-icon.lang-en {
+    opacity: 1;
+    transform: rotate(0deg) scale(1);
+}
+
 .dropdown-lang-btn:hover {
+    transform: scale(1.1);
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.25);
+}
+
+.dropdown-lang-btn:active {
+    transform: scale(0.95);
+}
+
+.dropdown-notif-btn:hover {
     background: rgba(255, 255, 255, 0.14);
     border-color: rgba(255, 255, 255, 0.28);
     transform: translateY(-1px);
 }
 
-.dropdown-notif-btn:active,
-.dropdown-lang-btn:active {
+.dropdown-notif-btn:active {
     transform: scale(0.96);
 }
 

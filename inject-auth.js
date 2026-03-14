@@ -115,7 +115,7 @@
                         <span id="dropdownNotifBadge" class="dropdown-notif-badge" style="display: none;"></span>
                     </button>
                     <button type="button" class="dropdown-lang-btn" id="dropdownLangBtn" data-auth-action="language">
-                        <span class="lang-icon lang-zh">文</span>
+                        <span class="lang-icon lang-zh">中</span>
                         <span class="lang-icon lang-en">A</span>
                     </button>
                     <button type="button" class="theme-toggle-btn" data-auth-action="theme">
@@ -1331,8 +1331,17 @@
             event.stopPropagation();
         }
 
+        const langBtn = document.getElementById('dropdownLangBtn');
+        if (langBtn) {
+            const currentLang = getCurrentLanguageCode();
+            langBtn.dataset.lang = currentLang === 'zh' ? 'en' : 'zh';
+        }
+
         if (window.i18n?.toggleLanguage) {
             window.i18n.toggleLanguage();
+            window.setTimeout(syncDropdownLanguageButton, 0);
+        } else {
+            syncDropdownLanguageButton();
         }
     };
 
@@ -1360,6 +1369,23 @@
         document.documentElement.setAttribute('data-theme', savedTheme === 'light' ? 'light' : 'dark');
     }
 
+    function getCurrentLanguageCode() {
+        const i18nLang = window.i18n?.getCurrentLanguage?.();
+        const storedLang = localStorage.getItem('zaoyoe_language');
+        const htmlLang = document.documentElement.lang;
+        const rawLang = i18nLang || storedLang || htmlLang || 'zh';
+        return String(rawLang).toLowerCase().startsWith('en') ? 'en' : 'zh';
+    }
+
+    function syncDropdownLanguageButton() {
+        const langBtn = document.getElementById('dropdownLangBtn');
+        if (!langBtn) return;
+
+        const currentLang = getCurrentLanguageCode();
+        langBtn.dataset.lang = currentLang;
+        langBtn.setAttribute('aria-label', currentLang === 'zh' ? '切换到英文' : 'Switch to Chinese');
+    }
+
     function initNotificationBadges() {
         if (window.NotificationManager?.getUnreadCount) {
             const count = window.NotificationManager.getUnreadCount();
@@ -1371,6 +1397,7 @@
         ensureStyles();
         ensureMarkup();
         initTheme();
+        syncDropdownLanguageButton();
 
         try {
             await ensureSupportScript();
@@ -1392,6 +1419,7 @@
     }
 
     window.addEventListener('languageChanged', () => {
+        syncDropdownLanguageButton();
         updateSheetCopy(sheetState.view);
         if (window.i18n?.applyTranslations) {
             window.i18n.applyTranslations();
