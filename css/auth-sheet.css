@@ -19,8 +19,13 @@
     --auth-sheet-text: #f2f5f8;
     --auth-sheet-muted: rgba(231, 236, 242, 0.62);
     --auth-sheet-soft: rgba(231, 236, 242, 0.4);
-    --auth-sheet-accent: #9ca7b5;
-    --auth-sheet-accent-strong: #e7edf3;
+    --auth-sheet-accent: #6b9ece;
+    --auth-sheet-accent-strong: #8bb8e8;
+    --auth-sheet-blue-soft: rgba(107, 158, 206, 0.12);
+    --auth-sheet-blue-soft-strong: rgba(107, 158, 206, 0.18);
+    --auth-sheet-blue-border: rgba(107, 158, 206, 0.34);
+    --auth-sheet-blue-bright: #8bb8e8;
+    --auth-sheet-blue-bright-soft: rgba(139, 184, 232, 0.2);
     --auth-sheet-danger: #d48a83;
     --auth-sheet-success: #94bba8;
 }
@@ -73,10 +78,11 @@ body.auth-sheet-open {
     max-height: min(88svh, 860px);
     border-radius: 26px;
     overflow: hidden;
-    background:
-        radial-gradient(circle at top right, rgba(151, 164, 182, 0.08) 0%, transparent 30%),
-        linear-gradient(180deg, rgba(18, 21, 27, 0.985) 0%, var(--auth-sheet-panel) 100%);
-    border: 1px solid var(--auth-sheet-border);
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-top: 1px solid rgba(255, 255, 255, 0.18);
+    backdrop-filter: blur(20px) saturate(150%);
+    -webkit-backdrop-filter: blur(20px) saturate(150%);
     box-shadow:
         0 24px 56px rgba(0, 0, 0, 0.44),
         inset 0 1px 0 rgba(255, 255, 255, 0.08);
@@ -250,8 +256,8 @@ body.auth-sheet-open {
     min-height: 46px;
     padding: 12px 14px;
     border-radius: 14px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    background: rgba(255, 255, 255, 0.042);
+    border: 1px solid var(--auth-sheet-blue-border);
+    background: var(--auth-sheet-blue-soft);
     color: var(--auth-sheet-text);
     font-size: 16px;
     line-height: 1.35;
@@ -267,16 +273,16 @@ body.auth-sheet-open {
 }
 
 .auth-sheet-input:focus {
-    border-color: rgba(167, 179, 194, 0.54);
-    background: rgba(255, 255, 255, 0.055);
-    box-shadow: 0 0 0 4px rgba(167, 179, 194, 0.1);
+    border-color: var(--auth-sheet-blue-bright);
+    background: var(--auth-sheet-blue-bright-soft);
+    box-shadow: 0 0 0 3px rgba(139, 184, 232, 0.16);
 }
 
 .auth-sheet-input:-webkit-autofill,
 .auth-sheet-input:-webkit-autofill:hover,
 .auth-sheet-input:-webkit-autofill:focus {
     -webkit-text-fill-color: var(--auth-sheet-text);
-    box-shadow: 0 0 0 1000px rgba(255, 255, 255, 0.045) inset;
+    box-shadow: 0 0 0 1000px var(--auth-sheet-blue-soft) inset;
     transition: background-color 9999s ease-in-out 0s;
 }
 
@@ -306,6 +312,8 @@ body.auth-sheet-open {
     padding-left: 12px;
     padding-right: 12px;
     align-self: stretch;
+    background: var(--auth-sheet-blue-soft);
+    border-color: var(--auth-sheet-blue-border);
 }
 
 .auth-sheet-inline-row {
@@ -472,8 +480,15 @@ body.auth-sheet-open {
 
 .auth-sheet-secondary:hover {
     transform: translateY(-1px);
-    background: rgba(255, 255, 255, 0.08);
-    border-color: rgba(255, 255, 255, 0.14);
+    background: var(--auth-sheet-blue-soft-strong);
+    border-color: rgba(139, 184, 232, 0.42);
+}
+
+.auth-sheet-inline-group--code .auth-sheet-secondary:active,
+.auth-sheet-inline-group--code .auth-sheet-secondary:focus-visible {
+    background: var(--auth-sheet-blue-bright-soft);
+    border-color: var(--auth-sheet-blue-bright);
+    box-shadow: 0 0 0 3px rgba(139, 184, 232, 0.16);
 }
 
 .auth-sheet-spinner {
