@@ -28,6 +28,7 @@
     --auth-sheet-blue-bright-soft: rgba(139, 184, 232, 0.2);
     --auth-sheet-danger: #d48a83;
     --auth-sheet-success: #94bba8;
+    --auth-sheet-focus-lift: 16px;
 }
 
 body.auth-sheet-open {
@@ -78,6 +79,13 @@ body.auth-sheet-open {
     align-items: flex-end;
     width: min(100%, 480px);
     min-height: 0;
+    transform: translateY(0);
+    transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform;
+}
+
+.auth-sheet-overlay.auth-sheet-input-active .auth-sheet-stage {
+    transform: translateY(calc(var(--auth-sheet-focus-lift) * -1));
 }
 
 .auth-sheet {

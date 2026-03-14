@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260314_AUTH_SHEET_PORTAL_PLANE_7';
+    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260314_AUTH_SHEET_PORTAL_PLANE_8';
     const SUPPORT_SCRIPT_SRC = './script.js?v=20260313_PROFILE_MODAL_DOCK_1';
     const EMAILJS_SRC = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
     const EMAILJS_PUBLIC_KEY = 'vawaxLVEzJMAVbut0';
@@ -491,6 +491,7 @@
         const { overlay } = getSheetElements();
         if (!overlay) return;
         overlay.classList.toggle('auth-sheet-input-active', !!portalState.activeId || !!getActiveAuthInput());
+        scheduleActivePortaledInputPosition();
     }
 
     function getProxyForInputId(inputId) {
