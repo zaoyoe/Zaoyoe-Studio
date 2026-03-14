@@ -160,11 +160,6 @@ canvas#starryCanvas,
     box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
 }
 
-body.prompts-page #loginModal .auth-sheet-backdrop {
-    background:
-        linear-gradient(180deg, rgba(0, 0, 0, 0.34) 0%, rgba(0, 0, 0, 0.86) 100%);
-}
-
 body.prompts-page #loginModal .auth-sheet-surface {
     background: linear-gradient(180deg, rgba(12, 14, 18, 0.82) 0%, rgba(9, 11, 15, 0.92) 100%);
     border: 1px solid rgba(255, 255, 255, 0.08);
@@ -174,6 +169,11 @@ body.prompts-page #loginModal .auth-sheet-surface {
     box-shadow:
         0 24px 56px rgba(0, 0, 0, 0.5),
         inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+body.prompts-page #loginModal .auth-sheet-backdrop {
+    backdrop-filter: blur(10px) saturate(92%);
+    -webkit-backdrop-filter: blur(10px) saturate(92%);
 }
 
 [data-theme="dark"] .modal-inner {
@@ -673,10 +673,10 @@ body {
     overflow-anchor: none;
 }
 
-/* iOS Safari: html 和 body 必须都透明，Safari 才能穿透采样到星空 Canvas 渲染通透地址栏 */
+/* Keep the page chrome truly black on iOS Safari instead of sampling the ambient canvas. */
 [data-theme="dark"] html,
 [data-theme="dark"] body {
-    background-color: transparent !important;
+    background-color: #000000 !important;
 }
 
 /* --- Spotlight Navigation --- */
