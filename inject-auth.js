@@ -921,6 +921,9 @@
         });
 
         document.body.classList.add('auth-sheet-open');
+        if (typeof window.__forcePromptThemeColorBlack === 'function') {
+            window.__forcePromptThemeColorBlack();
+        }
         if (window.iOSScrollLock) {
             window.iOSScrollLock.lock(overlay);
         }
@@ -950,6 +953,9 @@
         overlay.classList.remove('active');
         overlay.setAttribute('aria-hidden', 'true');
         document.body.classList.remove('auth-sheet-open');
+        if (typeof window.__forcePromptThemeColorBlack === 'function') {
+            window.__forcePromptThemeColorBlack();
+        }
 
         window.setTimeout(() => {
             if (!overlay.classList.contains('active')) {
