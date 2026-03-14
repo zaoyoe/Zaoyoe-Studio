@@ -1163,7 +1163,12 @@
 
                 if (isKeyboardUp) {
                     // Push the card up by the keyboard height
-                    card.style.transform = `translateY(-${heightDiff}px)`;
+                    // Limit the push so that the card's top is never pushed completely off-screen
+                    // Ensure at least 60px of the card remains visible from the top of the visual viewport
+                    const maxPushHeight = Math.max(0, loginModalKeyboardState.baseViewportHeight - 60);
+                    const safeHeightDiff = Math.min(heightDiff, maxPushHeight);
+
+                    card.style.transform = `translateY(-${safeHeightDiff}px)`;
                     // Ensure the card isn't completely hidden by scrolling if it's tall
                     setTimeout(() => {
                         const activeInput = getActiveLoginModalInput();
