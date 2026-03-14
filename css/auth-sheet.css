@@ -395,6 +395,8 @@ body.auth-sheet-open {
 
 .auth-sheet-input-proxy-placeholder {
     color: rgba(231, 236, 242, 0.28);
+    font-size: 14px;
+    line-height: 1.25;
 }
 
 .auth-sheet-input-proxy.is-filled .auth-sheet-input-proxy-placeholder {
@@ -464,6 +466,7 @@ body.auth-sheet-open {
 
 .auth-sheet-input::placeholder {
     color: rgba(231, 236, 242, 0.28);
+    font-size: 14px;
 }
 
 #loginModal .auth-sheet-input:focus,

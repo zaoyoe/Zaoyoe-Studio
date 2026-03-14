@@ -1,8 +1,8 @@
 (function () {
     'use strict';
 
-    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260314_AUTH_SHEET_PORTAL_PLANE_17';
-    const SUPPORT_SCRIPT_SRC = './script.js?v=20260313_PROFILE_MODAL_DOCK_1';
+    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260314_AUTH_SHEET_PORTAL_PLANE_22';
+    const SUPPORT_SCRIPT_SRC = './script.js?v=20260314_AUTH_I18N_1';
     const EMAILJS_SRC = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
     const EMAILJS_PUBLIC_KEY = 'vawaxLVEzJMAVbut0';
     const LEGACY_AUTH_STYLE_SELECTORS = [
@@ -190,7 +190,7 @@
                                 <h2 id="authSheetTitle" class="auth-sheet-title">${t('auth.welcomeBack', '欢迎回来')}</h2>
                             </header>
 
-                            <nav id="authSheetTabs" class="auth-sheet-tabs" aria-label="Authentication views">
+                            <nav id="authSheetTabs" class="auth-sheet-tabs" aria-label="${t('auth.tabsLabel', '登录与注册')}" data-i18n="auth.tabsLabel" data-i18n-attr="aria-label">
                                 <span class="auth-sheet-tab-indicator" aria-hidden="true"></span>
                                 <button type="button" class="auth-sheet-tab is-active" data-auth-tab="login" data-i18n="common.login">登录</button>
                                 <button type="button" class="auth-sheet-tab" data-auth-tab="register" data-i18n="auth.register">注册</button>
@@ -213,7 +213,7 @@
 
                                     <form id="loginForm" class="auth-sheet-form" autocomplete="on" novalidate>
                                         <div class="auth-sheet-field">
-                                            <span class="auth-sheet-label">Email</span>
+                                            <span class="auth-sheet-label" data-i18n="auth.emailLabel">邮箱</span>
                                             ${buildPortaledInputControlHTML({
                                                 id: 'login-email',
                                                 type: 'email',
@@ -260,7 +260,7 @@
                                         </div>
 
                                         <div class="auth-sheet-field">
-                                            <span class="auth-sheet-label">Email</span>
+                                            <span class="auth-sheet-label" data-i18n="auth.emailLabel">邮箱</span>
                                             ${buildPortaledInputControlHTML({
                                                 id: 'reg-email',
                                                 type: 'email',
@@ -271,18 +271,18 @@
                                         </div>
 
                                         <div class="auth-sheet-field auth-sheet-field--code">
-                                            <span class="auth-sheet-label" data-i18n="auth.enterVerifyCode">输入6位验证码</span>
+                                            <span class="auth-sheet-label" data-i18n="auth.codeLabel">验证码</span>
                                             <div class="auth-sheet-inline-group auth-sheet-inline-group--code">
                                                 ${buildPortaledInputControlHTML({
                                                     id: 'reg-code',
                                                     type: 'text',
-                                                    placeholder: t('auth.enterVerifyCode', '输入6位验证码'),
-                                                    placeholderKey: 'auth.enterVerifyCode',
+                                                    placeholder: t('auth.codeLabel', '验证码'),
+                                                    placeholderKey: 'auth.codeLabel',
                                                     inputClass: 'auth-sheet-input--code',
                                                     proxyClass: 'auth-sheet-input-proxy--code',
                                                     inputAttributes: 'maxlength="6" autocomplete="off" data-auth-form="registerForm" required'
                                                 })}
-                                                <button type="button" class="auth-sheet-secondary verify-code-btn" id="sendBtn" data-auth-send-code data-i18n="auth.getVerifyCode">获取验证码</button>
+                                                <button type="button" class="auth-sheet-secondary verify-code-btn" id="sendBtn" data-auth-send-code data-i18n="auth.getShort">获取</button>
                                             </div>
                                         </div>
 
@@ -314,7 +314,7 @@
 
                                     <form id="resetForm" class="auth-sheet-form" novalidate>
                                         <div class="auth-sheet-field">
-                                            <span class="auth-sheet-label">Email</span>
+                                            <span class="auth-sheet-label" data-i18n="auth.emailLabel">邮箱</span>
                                             ${buildPortaledInputControlHTML({
                                                 id: 'reset-email',
                                                 type: 'email',
@@ -1034,7 +1034,7 @@
                     .then(() => window.sendVerificationCode?.())
                     .catch((error) => {
                         console.error('Failed to load verification dependencies:', error);
-                        showAuthMessage('验证码能力加载失败，请稍后重试。');
+                        showAuthMessage(t('auth.codeServiceFailed', '验证码能力加载失败，请稍后重试。'));
                     });
                 return;
             }

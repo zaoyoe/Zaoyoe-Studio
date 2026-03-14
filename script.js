@@ -406,21 +406,35 @@ function showAuthMessageOrAlert(message, type = 'error', targetView = 'register'
     alert(message);
 }
 
+function authPopupT(key, fallback) {
+    return window.i18n?.t(key, fallback) || fallback;
+}
+
+function formatAuthPopupText(key, fallback, vars = {}) {
+    let text = authPopupT(key, fallback);
+    Object.entries(vars).forEach(([name, value]) => {
+        text = text.split(`{${name}}`).join(String(value));
+    });
+    return text;
+}
+
 // Function 1: Send Verification Code
 function sendVerificationCode() {
     const emailInput = document.getElementById('reg-email');
     const sendBtn = document.getElementById('sendBtn');
     const email = emailInput.value;
+    const sendingLabel = authPopupT('auth.sendingCode', '发送中...');
+    const idleLabel = authPopupT('auth.getShort', '获取');
 
     // 1. Validate email format
     if (!email || !email.includes('@')) {
-        showAuthMessageOrAlert("请先填写正确的邮箱地址！");
+        showAuthMessageOrAlert(authPopupT('auth.invalidEmailNotice', '请先填写正确的邮箱地址！'));
         return;
     }
 
     // ✅ 检查 EmailJS 是否已加载
     if (typeof emailjs === 'undefined') {
-        showAuthMessageOrAlert("邮件服务加载中，请稍后再试...");
+        showAuthMessageOrAlert(authPopupT('auth.emailServiceLoading', '邮件服务加载中，请稍后再试...'));
         console.error('❌ EmailJS not loaded');
         return;
     }
@@ -431,15 +445,15 @@ function sendVerificationCode() {
 
     // 3. Change button state (prevent duplicate clicks)
     sendBtn.disabled = true;
-    sendBtn.innerText = "发送中...";
+    sendBtn.innerText = sendingLabel;
 
     // ✅ 添加超时处理 (30秒后自动恢复按钮)
     const timeoutId = setTimeout(() => {
-        if (sendBtn.innerText === "发送中...") {
+        if (sendBtn.innerText === sendingLabel) {
             console.warn('⚠️ 验证码发送超时');
-            showAuthMessageOrAlert("发送超时，请检查网络后重试。");
+            showAuthMessageOrAlert(authPopupT('auth.sendTimeout', '发送超时，请检查网络后重试。'));
             sendBtn.disabled = false;
-            sendBtn.innerText = "重新获取";
+            sendBtn.innerText = idleLabel;
         }
     }, 30000);
 
@@ -453,14 +467,17 @@ function sendVerificationCode() {
         .then(function (response) {
             clearTimeout(timeoutId); // 清除超时
             console.log('SUCCESS!', response.status, response.text);
-            showAuthMessageOrAlert(`验证码已发送至 ${email}，请查收。`, 'success');
+            showAuthMessageOrAlert(
+                formatAuthPopupText('auth.codeSentNotice', '验证码已发送至 {email}，请查收。', { email }),
+                'success'
+            );
             startCountdown(sendBtn); // Start countdown
         }, function (error) {
             clearTimeout(timeoutId); // 清除超时
             console.log('FAILED...', error);
-            showAuthMessageOrAlert("发送失败，请检查网络或稍后重试。");
+            showAuthMessageOrAlert(authPopupT('auth.sendFailedNotice', '发送失败，请检查网络或稍后重试。'));
             sendBtn.disabled = false;
-            sendBtn.innerText = "重新获取";
+            sendBtn.innerText = idleLabel;
         });
 }
 
@@ -476,7 +493,7 @@ function startCountdown(btnElement) {
         if (seconds <= 0) {
             clearInterval(timer);
             btnElement.disabled = false;
-            btnElement.innerText = "重新获取";
+            btnElement.innerText = authPopupT('auth.getShort', '获取');
             // Optional: Invalidate code after timeout
             // generatedCode = null; 
         }

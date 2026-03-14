@@ -27,6 +27,18 @@ function clearAuthFeedback() {
     }
 }
 
+function authT(key, fallback) {
+    return window.i18n?.t(key, fallback) || fallback;
+}
+
+function formatAuthText(key, fallback, vars = {}) {
+    let text = authT(key, fallback);
+    Object.entries(vars).forEach(([name, value]) => {
+        text = text.split(`{${name}}`).join(String(value));
+    });
+    return text;
+}
+
 function setAuthLoading(formName, isLoading, label) {
     if (typeof window.setAuthFormLoading === 'function') {
         window.setAuthFormLoading(formName, isLoading, label);
@@ -38,7 +50,7 @@ async function handleRegister(event) {
     event.preventDefault();
 
     clearAuthFeedback();
-    setAuthLoading('register', true, '正在创建...');
+    setAuthLoading('register', true, authT('auth.creating', '正在创建...'));
 
     const inputCode = document.getElementById('reg-code').value;
     const password = document.getElementById('reg-password').value;
@@ -48,14 +60,14 @@ async function handleRegister(event) {
 
     // 隐私政策验证
     if (!privacyConsent) {
-        showAuthFeedback('请先阅读并同意隐私政策', 'error', 'register');
+        showAuthFeedback(authT('auth.agreePrivacyFirst', '请先阅读并同意隐私政策'), 'error', 'register');
         setAuthLoading('register', false);
         return;
     }
 
     // 验证码检查
     if (inputCode !== generatedCode) {
-        showAuthFeedback('验证码错误，请检查邮件后重新输入。', 'error', 'register');
+        showAuthFeedback(authT('auth.invalidCodeNotice', '验证码错误，请检查邮件后重新输入。'), 'error', 'register');
         setAuthLoading('register', false);
         return;
     }
@@ -69,7 +81,7 @@ async function handleRegister(event) {
             .limit(1);
 
         if (existingUsers && existingUsers.length > 0) {
-            showAuthFeedback('该用户名已被使用，请选择其他用户名。', 'error', 'register');
+            showAuthFeedback(authT('auth.usernameTaken', '该用户名已被使用，请选择其他用户名。'), 'error', 'register');
             setAuthLoading('register', false);
             return;
         }
@@ -114,12 +126,16 @@ async function handleRegister(event) {
 
         let errorMessage = '注册失败';
         if (error.message.includes('already registered')) {
-            errorMessage = '该邮箱已被注册。';
+            errorMessage = authT('auth.emailRegistered', '该邮箱已被注册。');
         } else {
             errorMessage = error.message || '未知错误';
         }
 
-        showAuthFeedback(`注册失败: ${errorMessage}`, 'error', 'register');
+        showAuthFeedback(
+            formatAuthText('auth.registerFailedPrefix', '注册失败: {message}', { message: errorMessage }),
+            'error',
+            'register'
+        );
     } finally {
         setAuthLoading('register', false);
     }
@@ -130,14 +146,14 @@ async function handleLogin(event) {
     event.preventDefault();
 
     clearAuthFeedback();
-    setAuthLoading('login', true, '正在登录...');
+    setAuthLoading('login', true, authT('auth.signingIn', '正在登录...'));
 
     const email = document.getElementById('login-email').value.trim();
     const password = document.getElementById('login-password').value;
     const rememberMe = document.getElementById('rememberMe')?.checked || false;
 
     if (!email || !password) {
-        showAuthFeedback('请输入邮箱和密码', 'error', 'login');
+        showAuthFeedback(authT('auth.enterEmailAndPassword', '请输入邮箱和密码'), 'error', 'login');
         setAuthLoading('login', false);
         return;
     }
@@ -168,7 +184,11 @@ async function handleLogin(event) {
         const lockStatus = await checkUserLocked(email);
         if (lockStatus.isLocked) {
             const minutes = Math.ceil(lockStatus.remainingSeconds / 60);
-            showAuthFeedback(`账户已锁定。由于多次登录失败，请在 ${minutes} 分钟后重试。`, 'error', 'login');
+            showAuthFeedback(
+                formatAuthText('auth.accountLockedRetry', '账户已锁定。由于多次登录失败，请在 {minutes} 分钟后重试。', { minutes }),
+                'error',
+                'login'
+            );
             setAuthLoading('login', false);
             return;
         }
@@ -273,6 +293,7 @@ async function handleLogin(event) {
         console.error('登录失败:', error);
 
         let errorMessage = '登录失败';
+        let shouldOpenRegister = false;
         if (error.message.includes('Invalid login credentials')) {
             // Check if email exists to distinguish between unregistered and wrong password
             try {
@@ -280,21 +301,30 @@ async function handleLogin(event) {
                     .rpc('fn_check_email_exists', { check_email: email });
 
                 if (!emailExists) {
-                    errorMessage = '该邮箱未注册，请先注册账号';
+                    errorMessage = authT('auth.emailNotRegistered', '该邮箱未注册，请先注册账号');
+                    shouldOpenRegister = true;
                 } else {
-                    errorMessage = '密码错误，请检查后重试';
+                    errorMessage = authT('auth.passwordIncorrect', '密码错误，请检查后重试');
                 }
             } catch (e) {
-                errorMessage = '用户名或密码错误';
+                errorMessage = authT('auth.credentialsIncorrect', '用户名或密码错误');
             }
         } else {
             errorMessage = error.message || '未知错误';
         }
 
-        if (errorMessage.includes('未注册')) {
-            showAuthFeedback(`登录失败: ${errorMessage}`, 'error', 'register');
+        if (shouldOpenRegister) {
+            showAuthFeedback(
+                formatAuthText('auth.loginFailedPrefix', '登录失败: {message}', { message: errorMessage }),
+                'error',
+                'register'
+            );
         } else {
-            showAuthFeedback(`登录失败: ${errorMessage}`, 'error', 'login');
+            showAuthFeedback(
+                formatAuthText('auth.loginFailedPrefix', '登录失败: {message}', { message: errorMessage }),
+                'error',
+                'login'
+            );
         }
     } finally {
         setAuthLoading('login', false);
@@ -1056,24 +1086,28 @@ async function handlePasswordReset(event) {
     const submitBtn = document.querySelector('#resetForm button[type="submit"]');
 
     if (!emailInput || !submitBtn) {
-        showAuthFeedback('系统错误：找不到表单元素，请刷新页面重试。', 'error', 'reset');
+        showAuthFeedback(authT('auth.resetFormMissing', '系统错误：找不到表单元素，请刷新页面重试。'), 'error', 'reset');
         return;
     }
 
     const email = emailInput.value.trim();
 
     if (!email) {
-        showAuthFeedback('请输入邮箱地址', 'error', 'reset');
+        showAuthFeedback(authT('auth.enterEmailAddress', '请输入邮箱地址'), 'error', 'reset');
         return;
     }
 
     if (resetCooldownSeconds > 0) {
-        showAuthFeedback(`请等待 ${resetCooldownSeconds} 秒后再试`, 'error', 'reset');
+        showAuthFeedback(
+            formatAuthText('auth.waitSecondsRetry', '请等待 {seconds} 秒后再试', { seconds: resetCooldownSeconds }),
+            'error',
+            'reset'
+        );
         return;
     }
 
     const originalText = submitBtn.textContent;
-    submitBtn.textContent = '发送中...';
+    submitBtn.textContent = authT('auth.sending', '发送中...');
     submitBtn.disabled = true;
 
     try {
@@ -1084,7 +1118,11 @@ async function handlePasswordReset(event) {
         if (error) throw error;
 
         console.log('✅ 重置邮件已发送');
-        showAuthFeedback(`重置密码邮件已发送到 ${email}，请检查收件箱（包括垃圾邮件）。`, 'success', 'reset');
+        showAuthFeedback(
+            formatAuthText('auth.resetEmailSent', '重置密码邮件已发送到 {email}，请检查收件箱（包括垃圾邮件）。', { email }),
+            'success',
+            'reset'
+        );
         emailInput.value = '';
 
         resetCooldownSeconds = 30;
@@ -1096,7 +1134,7 @@ async function handlePasswordReset(event) {
 
     } catch (error) {
         console.error('密码重置失败:', error);
-        showAuthFeedback(error.message || '发送失败', 'error', 'reset');
+        showAuthFeedback(error.message || authT('auth.sendFailed', '发送失败'), 'error', 'reset');
         submitBtn.textContent = originalText;
         submitBtn.disabled = false;
     }
@@ -1104,7 +1142,7 @@ async function handlePasswordReset(event) {
 
 function updateResetButtonCountdown(button, originalText) {
     if (resetCooldownSeconds > 0) {
-        button.textContent = `已发送 (${resetCooldownSeconds}s)`;
+        button.textContent = formatAuthText('auth.sentCountdown', '已发送 ({seconds}s)', { seconds: resetCooldownSeconds });
         button.disabled = true;
         resetCooldownSeconds--;
         resetCooldownTimer = setTimeout(() => updateResetButtonCountdown(button, originalText), 1000);
@@ -1155,7 +1193,7 @@ function resolveActiveGoogleButton() {
     );
 }
 
-function setGoogleButtonsLoading(isLoading, text = '正在登录...') {
+function setGoogleButtonsLoading(isLoading, text = authT('auth.signingIn', '正在登录...')) {
     document.querySelectorAll('.google-login-btn').forEach((btn) => {
         if (isLoading) {
             if (!btn.dataset.originalHtml) btn.dataset.originalHtml = btn.innerHTML;
@@ -1330,7 +1368,7 @@ window.triggerGoogleLogin = async () => {
 
     if (window.isGoogleLoginLoading) return;
     clearAuthFeedback();
-    setGoogleButtonsLoading(true, '正在打开授权窗口...');
+    setGoogleButtonsLoading(true, authT('auth.openingGoogleWindow', '正在打开授权窗口...'));
 
     try {
         openGooglePopupFallback();
@@ -1338,7 +1376,13 @@ window.triggerGoogleLogin = async () => {
     } catch (error) {
         console.error('❌ Google login failed:', error);
         setGoogleButtonsLoading(false);
-        showAuthFeedback('打开授权窗口失败: ' + (error.message || '请检查浏览器拦截设置'), 'error', 'login');
+        showAuthFeedback(
+            formatAuthText('auth.popupOpenFailed', '打开授权窗口失败: {message}', {
+                message: error.message || authT('auth.checkPopupSettings', '请检查浏览器拦截设置')
+            }),
+            'error',
+            'login'
+        );
     }
 };
 
@@ -1368,7 +1412,7 @@ function openGooglePopupFallback() {
 
     if (!popup) {
         setGoogleButtonsLoading(false);
-        showAuthFeedback('弹窗被浏览器拦截，请允许弹窗后重试', 'error', 'login');
+        showAuthFeedback(authT('auth.allowPopupRetry', '弹窗被浏览器拦截，请允许弹窗后重试'), 'error', 'login');
         return;
     }
 
@@ -1457,7 +1501,13 @@ async function handleGoogleCredentialResponse(response) {
         }
     } catch (error) {
         console.error('❌ Google ID Token login error:', error);
-        showAuthFeedback('Google 登录失败: ' + (error.message || '请稍后重试'), 'error', 'login');
+        showAuthFeedback(
+            formatAuthText('auth.googleLoginFailed', 'Google 登录失败: {message}', {
+                message: error.message || authT('auth.tryAgainLater', '请稍后重试')
+            }),
+            'error',
+            'login'
+        );
     } finally {
         setGoogleButtonsLoading(false);
     }
