@@ -1922,6 +1922,79 @@ a.nav-trigger.active {
     border-bottom: 1px solid rgba(255, 255, 255, 0.15);
 }
 
+.dropdown-notif-btn,
+.dropdown-lang-btn {
+    height: 34px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.92);
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+.dropdown-notif-btn {
+    width: 34px;
+    padding: 0;
+    position: relative;
+    flex: 0 0 34px;
+}
+
+.dropdown-notif-btn i {
+    font-size: 0.95rem;
+    line-height: 1;
+}
+
+.dropdown-notif-badge {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: #ef4444;
+    border: 1px solid rgba(0, 0, 0, 0.35);
+}
+
+.dropdown-lang-btn {
+    min-width: 56px;
+    padding: 0 10px;
+    gap: 4px;
+    font-size: 0.84rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+}
+
+.lang-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+}
+
+.lang-icon.lang-zh {
+    font-size: 0.9rem;
+}
+
+.lang-icon.lang-en {
+    font-size: 0.82rem;
+}
+
+.dropdown-notif-btn:hover,
+.dropdown-lang-btn:hover {
+    background: rgba(255, 255, 255, 0.14);
+    border-color: rgba(255, 255, 255, 0.28);
+    transform: translateY(-1px);
+}
+
+.dropdown-notif-btn:active,
+.dropdown-lang-btn:active {
+    transform: scale(0.96);
+}
+
 .identity-name {
     font-size: 1.1rem;
     color: rgba(255, 255, 255, 0.95);
