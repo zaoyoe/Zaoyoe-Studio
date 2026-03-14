@@ -9,8 +9,8 @@
 }
 
 :root {
-    --auth-sheet-overlay: rgba(5, 7, 10, 0.74);
-    --auth-sheet-backdrop-glow: rgba(169, 180, 194, 0.08);
+    --auth-sheet-overlay: rgba(0, 0, 0, 0.78);
+    --auth-sheet-backdrop-glow: rgba(0, 0, 0, 0);
     --auth-sheet-panel: rgba(12, 14, 18, 0.98);
     --auth-sheet-panel-strong: rgba(15, 18, 22, 0.995);
     --auth-sheet-surface: rgba(255, 255, 255, 0.04);
@@ -63,7 +63,7 @@ body.auth-sheet-open {
     inset: 0;
     background:
         radial-gradient(circle at top, var(--auth-sheet-backdrop-glow) 0%, transparent 36%),
-        linear-gradient(180deg, rgba(8, 10, 14, 0.18) 0%, var(--auth-sheet-overlay) 100%);
+        linear-gradient(180deg, rgba(0, 0, 0, 0.24) 0%, var(--auth-sheet-overlay) 100%);
     opacity: 0;
     transition: opacity 0.28s ease;
 }
