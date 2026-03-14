@@ -32,8 +32,16 @@
     --auth-sheet-mobile-bottom-inset: max(0px, env(safe-area-inset-bottom));
 }
 
+body.auth-sheet-prep,
 body.auth-sheet-open {
     overflow: hidden;
+}
+
+body.auth-sheet-prep:not(.prompts-page) .background-blobs .blob,
+body.auth-sheet-open:not(.prompts-page) .background-blobs .blob,
+body.auth-sheet-prep:not(.prompts-page) .ticker-track,
+body.auth-sheet-open:not(.prompts-page) .ticker-track {
+    animation-play-state: paused !important;
 }
 
 .auth-sheet-overlay {

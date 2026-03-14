@@ -1,10 +1,12 @@
 (function () {
     'use strict';
 
-    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260314_AUTH_SHEET_PORTAL_PLANE_23';
+    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260314_AUTH_SHEET_PORTAL_PLANE_24';
     const SUPPORT_SCRIPT_SRC = './script.js?v=20260314_AUTH_I18N_1';
     const EMAILJS_SRC = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
     const EMAILJS_PUBLIC_KEY = 'vawaxLVEzJMAVbut0';
+    const AUTH_SHEET_PREP_DELAY_MS = 56;
+    const AUTH_SHEET_TRANSITION_MS = 280;
     const LEGACY_AUTH_STYLE_SELECTORS = [
         'link[href*="login_styles.css"]',
         'link[href*="login_dual_mode.css"]',
@@ -47,6 +49,32 @@
         originNextSibling: null,
         layoutRafId: 0
     };
+    const transitionState = {
+        openDelayId: 0,
+        cleanupId: 0,
+        rafId: 0
+    };
+
+    function clearAuthSheetTransitionState() {
+        if (transitionState.openDelayId) {
+            window.clearTimeout(transitionState.openDelayId);
+            transitionState.openDelayId = 0;
+        }
+        if (transitionState.cleanupId) {
+            window.clearTimeout(transitionState.cleanupId);
+            transitionState.cleanupId = 0;
+        }
+        if (transitionState.rafId) {
+            window.cancelAnimationFrame(transitionState.rafId);
+            transitionState.rafId = 0;
+        }
+    }
+
+    function syncPromptThemeColorBlack() {
+        if (typeof window.__forcePromptThemeColorBlack === 'function') {
+            window.__forcePromptThemeColorBlack();
+        }
+    }
 
     function t(key, fallback) {
         return window.i18n?.t(key, fallback) || fallback;
@@ -905,30 +933,45 @@
         const { overlay } = getSheetElements();
         if (!overlay) return;
 
+        clearAuthSheetTransitionState();
+        document.body.classList.add('auth-sheet-prep');
+        syncPromptThemeColorBlack();
+
         overlay.hidden = false;
         overlay.style.removeProperty('display');
         overlay.style.removeProperty('visibility');
         overlay.style.removeProperty('opacity');
         overlay.classList.remove('auth-sheet-input-active');
+        overlay.classList.remove('active');
+        overlay.setAttribute('aria-hidden', 'true');
         await setAuthView(viewId, { clearMessage: true });
         syncAllInputProxyDisplays();
         syncPrimaryViewHeights();
         syncTabIndicator(sheetState.view, { immediate: true });
-
-        window.requestAnimationFrame(() => {
-            overlay.classList.add('active');
-            overlay.setAttribute('aria-hidden', 'false');
-        });
-
-        document.body.classList.add('auth-sheet-open');
-        if (typeof window.__forcePromptThemeColorBlack === 'function') {
-            window.__forcePromptThemeColorBlack();
-        }
         if (window.iOSScrollLock) {
             window.iOSScrollLock.lock(overlay);
         }
 
-        overlayCloseDisabledUntil = Date.now() + 240;
+        transitionState.openDelayId = window.setTimeout(() => {
+            transitionState.openDelayId = 0;
+            document.body.classList.add('auth-sheet-open');
+            syncPromptThemeColorBlack();
+
+            transitionState.rafId = window.requestAnimationFrame(() => {
+                transitionState.rafId = 0;
+                overlay.classList.add('active');
+                overlay.setAttribute('aria-hidden', 'false');
+
+                transitionState.cleanupId = window.setTimeout(() => {
+                    transitionState.cleanupId = 0;
+                    if (overlay.classList.contains('active')) {
+                        document.body.classList.remove('auth-sheet-prep');
+                    }
+                }, 140);
+            });
+        }, AUTH_SHEET_PREP_DELAY_MS);
+
+        overlayCloseDisabledUntil = Date.now() + AUTH_SHEET_PREP_DELAY_MS + 240;
         warmRegisterDependencies();
 
         if (typeof window.ensureGoogleInlineButtonReady === 'function') {
@@ -942,6 +985,7 @@
         const { overlay, sheet } = getSheetElements();
         if (!overlay) return;
 
+        clearAuthSheetTransitionState();
         deactivateActivePortaledInput();
         getActiveAuthInput()?.blur();
         clearAuthMessage();
@@ -949,23 +993,28 @@
         dragState.startY = 0;
         dragState.deltaY = 0;
         sheet?.style.removeProperty('transform');
+        document.body.classList.add('auth-sheet-prep');
+        syncPromptThemeColorBlack();
 
-        overlay.classList.remove('active');
-        overlay.setAttribute('aria-hidden', 'true');
-        document.body.classList.remove('auth-sheet-open');
-        if (typeof window.__forcePromptThemeColorBlack === 'function') {
-            window.__forcePromptThemeColorBlack();
-        }
+        transitionState.rafId = window.requestAnimationFrame(() => {
+            transitionState.rafId = 0;
+            overlay.classList.remove('active');
+            overlay.setAttribute('aria-hidden', 'true');
 
-        window.setTimeout(() => {
-            if (!overlay.classList.contains('active')) {
-                overlay.hidden = true;
-            }
-        }, 280);
+            transitionState.cleanupId = window.setTimeout(() => {
+                transitionState.cleanupId = 0;
+                if (!overlay.classList.contains('active')) {
+                    overlay.hidden = true;
+                }
+                document.body.classList.remove('auth-sheet-open');
+                document.body.classList.remove('auth-sheet-prep');
+                syncPromptThemeColorBlack();
 
-        if (window.iOSScrollLock) {
-            window.iOSScrollLock.unlock();
-        }
+                if (window.iOSScrollLock) {
+                    window.iOSScrollLock.unlock();
+                }
+            }, AUTH_SHEET_TRANSITION_MS);
+        });
     }
 
     function toggleLoginModal(viewId) {

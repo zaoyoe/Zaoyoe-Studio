@@ -1801,9 +1801,9 @@ const FramerHome = {
   /**
    * Initialize parallax scroll effect for masonry columns
    */
-  initMasonryParallax() {
-    const columns = document.querySelectorAll('.masonry-column');
-    if (columns.length === 0) return;
+    initMasonryParallax() {
+      const columns = document.querySelectorAll('.masonry-column');
+      if (columns.length === 0) return;
 
     // Define alternating scroll speed multipliers (Every other column slides faster)
     // 1.0 = normal scroll, 1.2 = moves faster (slides up)
@@ -1812,6 +1812,12 @@ const FramerHome = {
     let ticking = false;
 
     const updateParallax = () => {
+      const body = document.body;
+      if (body?.classList.contains('auth-sheet-prep') || body?.classList.contains('auth-sheet-open')) {
+        ticking = false;
+        return;
+      }
+
       const scrollY = window.pageYOffset;
       const section = document.querySelector('.prompts-masonry-section');
 
