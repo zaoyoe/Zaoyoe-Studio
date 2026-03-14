@@ -21,6 +21,7 @@
     --auth-sheet-soft: rgba(231, 236, 242, 0.4);
     --auth-sheet-accent: #6b9ece;
     --auth-sheet-accent-strong: #8bb8e8;
+    --auth-sheet-link-accent: #9fcaff;
     --auth-sheet-blue-soft: rgba(107, 158, 206, 0.12);
     --auth-sheet-blue-soft-strong: rgba(107, 158, 206, 0.18);
     --auth-sheet-blue-border: rgba(107, 158, 206, 0.34);
@@ -370,7 +371,7 @@ body.auth-sheet-open {
 
 #loginModal .auth-sheet-input-proxy.is-active,
 .auth-sheet-input-proxy.is-active {
-    border-color: var(--auth-sheet-accent-strong) !important;
+    border-color: var(--auth-sheet-link-accent) !important;
 }
 
 .auth-sheet-input-proxy.is-portaled .auth-sheet-input-proxy-value,
@@ -416,7 +417,7 @@ body.auth-sheet-open {
     appearance: none;
     touch-action: pan-y;
     box-sizing: border-box;
-    caret-color: var(--auth-sheet-accent-strong);
+    caret-color: var(--auth-sheet-link-accent) !important;
 }
 
 .auth-sheet-input--parked {
@@ -434,12 +435,14 @@ body.auth-sheet-open {
 
 #loginModal .auth-sheet-input.auth-sheet-input--portaled,
 .auth-sheet-input.auth-sheet-input--portaled,
+#authInputPlane .auth-sheet-input.auth-sheet-input--portaled,
 #loginModal .auth-sheet-input.auth-sheet-input--portaled:focus,
-.auth-sheet-input.auth-sheet-input--portaled:focus {
+.auth-sheet-input.auth-sheet-input--portaled:focus,
+#authInputPlane .auth-sheet-input.auth-sheet-input--portaled:focus {
     background: transparent !important;
     border-color: transparent !important;
     box-shadow: none !important;
-    caret-color: var(--auth-sheet-accent-strong);
+    caret-color: var(--auth-sheet-link-accent) !important;
 }
 
 #loginModal .auth-sheet-input.auth-sheet-input--portaled::placeholder,
@@ -463,7 +466,7 @@ body.auth-sheet-open {
 
 #loginModal .auth-sheet-input:focus,
 .auth-sheet-input:focus {
-    border-color: var(--auth-sheet-accent-strong) !important;
+    border-color: var(--auth-sheet-link-accent) !important;
     background: rgba(255, 255, 255, 0.042) !important;
     box-shadow: none !important;
 }
@@ -558,7 +561,7 @@ body.auth-sheet-open {
 }
 
 .auth-sheet-check a {
-    color: var(--auth-sheet-accent-strong);
+    color: var(--auth-sheet-link-accent);
     text-decoration: none;
     border-bottom: 1px solid rgba(231, 236, 242, 0.2);
 }
@@ -568,7 +571,7 @@ body.auth-sheet-open {
     border: none;
     background: transparent;
     padding: 0;
-    color: var(--auth-sheet-accent-strong);
+    color: var(--auth-sheet-link-accent);
     font-size: 12px;
     font-weight: 500;
     cursor: pointer;
