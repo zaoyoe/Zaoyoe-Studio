@@ -399,24 +399,25 @@
     }
 
     .login-card {
-        width: 95%;
-        max-width: 95%;
-        margin: 0 auto;
-        padding: 24px 20px;
-        padding-bottom: calc(24px + env(safe-area-inset-bottom));
+        width: 95% !important;
+        max-width: 95% !important;
+        margin: 0 auto !important;
+        padding: 24px 20px !important;
+        padding-bottom: calc(24px + env(safe-area-inset-bottom)) !important;
         /* iOS safe area */
-        border-radius: 20px 20px 0 0;
+        border-radius: 20px 20px 0 0 !important;
         /* Only top right/left rounded */
-        border-bottom: none;
-        box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.4);
+        border-bottom: none !important;
+        box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.4) !important;
 
         /* Make the card able to shrink when keyboard is up */
-        max-height: calc(100svh - var(--login-keyboard-offset, 0px) - 20px);
-        display: flex;
-        flex-direction: column;
+        /* Rely on parent flex container's dimensions which are already padded by keyboard offset */
+        max-height: calc(100% - 20px) !important;
+        display: flex !important;
+        flex-direction: column !important;
 
         /* Transition for bottom sheet sliding */
-        transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), max-height 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+        transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), max-height 0.3s cubic-bezier(0.22, 1, 0.36, 1) !important;
     }
 
     .login-card .form-view {
