@@ -7521,7 +7521,11 @@ body {
     max-width: 304px;
     padding: 12px 14px;
     margin-bottom: 14px;
+    min-height: 86px;
     border-radius: 10px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
     box-shadow:
         0 1px 6px rgba(0, 0, 0, 0.26),
         inset 0 1px 0 rgba(255, 255, 255, 0.04);
@@ -7546,12 +7550,19 @@ body {
 #profileModal .profile-front .profile-email-section label,
 #profileModal .profile-front .profile-member-since-section label {
     font-size: 11px;
-    margin-bottom: 6px;
+    margin-bottom: 4px;
+    line-height: 1.15;
 }
 
 #profileModal .profile-front .profile-email-display,
 #profileModal .profile-front .profile-member-since-display {
     font-size: 14px;
+    line-height: 1.2;
+}
+
+#profileModal .profile-front .profile-nickname-section .nickname-display {
+    min-height: 24px;
+    align-items: center;
 }
 
 @media (max-width: 768px) {
@@ -7571,13 +7582,14 @@ body {
         max-width: 100%;
         padding: 10px 12px;
         margin-bottom: 10px;
+        min-height: 82px;
         border-radius: 9px;
     }
 
     #profileModal .profile-front .profile-email-section label,
     #profileModal .profile-front .profile-member-since-section label {
         font-size: 10px;
-        margin-bottom: 5px;
+        margin-bottom: 4px;
     }
 
     #profileModal .profile-front .profile-email-display,
