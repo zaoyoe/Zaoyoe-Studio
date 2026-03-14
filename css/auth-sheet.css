@@ -824,6 +824,17 @@ body.auth-sheet-open {
     .auth-sheet-overlay.active:focus-within,
     .auth-sheet-overlay.ios-focus-lock {
         transform: none !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+        will-change: auto !important;
+    }
+
+    .auth-sheet-overlay.active:focus-within .auth-sheet-backdrop,
+    .auth-sheet-overlay.active:focus-within .auth-sheet-surface,
+    .auth-sheet-overlay.ios-focus-lock .auth-sheet-backdrop,
+    .auth-sheet-overlay.ios-focus-lock .auth-sheet-surface {
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
         will-change: auto !important;
     }
 
@@ -842,11 +853,21 @@ body.auth-sheet-open {
     .auth-sheet-overlay.active:focus-within .auth-sheet-input.auth-sheet-input--portaled:focus,
     .auth-sheet-overlay.ios-focus-lock .auth-sheet-input.auth-sheet-input--portaled,
     .auth-sheet-overlay.ios-focus-lock .auth-sheet-input.auth-sheet-input--portaled:focus {
-        background: rgba(12, 14, 18, 0.001) !important;
+        background: rgba(12, 14, 18, 0.015) !important;
         opacity: 1 !important;
         color: var(--auth-sheet-text) !important;
-        -webkit-text-fill-color: var(--auth-sheet-text) !important;
+        caret-color: #ffffff !important;
+        text-indent: 0 !important;
+        text-align: left !important;
         text-shadow: none !important;
+    }
+
+    .auth-sheet-overlay.active:focus-within .auth-sheet-input.auth-sheet-input--portaled::placeholder,
+    .auth-sheet-overlay.active:focus-within .auth-sheet-input.auth-sheet-input--portaled::-webkit-input-placeholder,
+    .auth-sheet-overlay.ios-focus-lock .auth-sheet-input.auth-sheet-input--portaled::placeholder,
+    .auth-sheet-overlay.ios-focus-lock .auth-sheet-input.auth-sheet-input--portaled::-webkit-input-placeholder {
+        color: transparent !important;
+        -webkit-text-fill-color: transparent !important;
     }
 }
 
