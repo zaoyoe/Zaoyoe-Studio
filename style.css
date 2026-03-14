@@ -7518,10 +7518,12 @@ body {
 #profileModal .profile-front .profile-nickname-section,
 #profileModal .profile-front .profile-email-section,
 #profileModal .profile-front .profile-member-since-section {
+    --profile-info-card-height: 86px;
     max-width: 304px;
     padding: 12px 14px;
-    margin-bottom: 14px;
-    min-height: 86px;
+    margin-bottom: 16px;
+    min-height: var(--profile-info-card-height);
+    height: var(--profile-info-card-height);
     border-radius: 10px;
     display: flex;
     flex-direction: column;
@@ -7565,6 +7567,11 @@ body {
     align-items: center;
 }
 
+/* Move the 3 profile info cards down as one group */
+#profileModal .profile-front .profile-nickname-section {
+    margin-top: 16px;
+}
+
 @media (max-width: 768px) {
     #profileModal .profile-avatar-section {
         width: 92px;
@@ -7579,11 +7586,17 @@ body {
     #profileModal .profile-front .profile-nickname-section,
     #profileModal .profile-front .profile-email-section,
     #profileModal .profile-front .profile-member-since-section {
+        --profile-info-card-height: 90px;
         max-width: 100%;
         padding: 10px 12px;
-        margin-bottom: 10px;
-        min-height: 82px;
+        margin-bottom: 14px;
+        min-height: var(--profile-info-card-height);
+        height: var(--profile-info-card-height);
         border-radius: 9px;
+    }
+
+    #profileModal .profile-front .profile-nickname-section {
+        margin-top: 18px;
     }
 
     #profileModal .profile-front .profile-email-section label,
