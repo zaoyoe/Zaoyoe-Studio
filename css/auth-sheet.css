@@ -28,6 +28,8 @@
     --auth-sheet-blue-bright-soft: rgba(139, 184, 232, 0.2);
     --auth-sheet-danger: #d48a83;
     --auth-sheet-success: #94bba8;
+    --auth-sheet-content-max-width: 364px;
+    --auth-sheet-tabs-max-width: 320px;
 }
 
 body.auth-sheet-open {
@@ -186,7 +188,8 @@ body.auth-sheet-open {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 4px;
-    margin: 0 20px;
+    width: min(100%, var(--auth-sheet-tabs-max-width));
+    margin: 0 auto;
     padding: 4px;
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.032);
@@ -237,7 +240,8 @@ body.auth-sheet-open {
 }
 
 .auth-sheet-message {
-    margin: 0 0 12px;
+    width: min(100%, var(--auth-sheet-content-max-width));
+    margin: 0 auto 12px;
     padding: 9px 11px;
     border-radius: 13px;
     font-size: 11.5px;
@@ -280,6 +284,8 @@ body.auth-sheet-open {
     display: flex;
     flex-direction: column;
     gap: 12px;
+    width: min(100%, var(--auth-sheet-content-max-width));
+    margin: 0 auto;
 }
 
 .auth-sheet-view--primary {
@@ -314,6 +320,7 @@ body.auth-sheet-open {
     display: flex;
     flex-direction: column;
     gap: 10px;
+    width: 100%;
 }
 
 .auth-sheet-field {
@@ -506,6 +513,7 @@ body.auth-sheet-open {
     display: flex;
     align-items: center;
     gap: 8px;
+    width: 100%;
 }
 
 .auth-sheet-inline-row--spread {
@@ -707,6 +715,11 @@ body.auth-sheet-open {
 }
 
 @media (min-width: 769px) {
+    :root {
+        --auth-sheet-content-max-width: 376px;
+        --auth-sheet-tabs-max-width: 332px;
+    }
+
     .auth-sheet-overlay {
         align-items: center;
         padding: 24px;
@@ -722,6 +735,11 @@ body.auth-sheet-open {
 }
 
 @media (max-width: 768px) {
+    :root {
+        --auth-sheet-content-max-width: 334px;
+        --auth-sheet-tabs-max-width: 300px;
+    }
+
     .top-right-nav {
         top: 20px;
         right: 16px;
@@ -753,11 +771,6 @@ body.auth-sheet-open {
 
     .auth-sheet-header {
         padding: 0 18px 8px;
-    }
-
-    .auth-sheet-tabs {
-        margin-left: 18px;
-        margin-right: 18px;
     }
 
     .auth-sheet-inline-group {
