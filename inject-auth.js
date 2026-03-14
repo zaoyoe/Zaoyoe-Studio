@@ -710,17 +710,24 @@
                 }
                 .login-modal-scroll,
                 #loginModal .login-modal-scroll {
-                    display: block !important;
-                    height: 100% !important;
-                    padding: 0 !important;
-                }
-                .login-modal-aligner,
-                #loginModal .login-modal-aligner {
                     display: flex !important;
                     flex-direction: column !important;
                     justify-content: flex-end !important;
+                    width: 100% !important;
+                    height: 100% !important;
+                    padding: 0 !important;
+                    align-items: center !important;
+                }
+                .login-modal-aligner,
+                #loginModal .login-modal-aligner {
+                    width: 100% !important;
+                    display: flex !important;
+                    flex-direction: column !important;
+                    justify-content: flex-end !important;
+                    align-items: center !important;
                     min-height: 100% !important;
                     padding: 0 !important;
+                    margin: 0 !important;
                 }
             }
 

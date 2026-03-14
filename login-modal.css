@@ -379,8 +379,8 @@
 /* ==================== Mobile Responsive ==================== */
 @media (max-width: 768px) {
     .login-overlay {
-        align-items: flex-end;
-        /* Align to bottom on mobile */
+        /* Maintain full 100% wrapper and let the inner aligner handle the bottom push */
+        display: block;
         padding: 0;
         padding-bottom: var(--login-keyboard-offset, 0px);
         box-sizing: border-box;
