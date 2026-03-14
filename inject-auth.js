@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260314_AUTH_SHEET_IOS_CARET_26';
+    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260314_AUTH_SHEET_IOS_INLINE_27';
     const SUPPORT_SCRIPT_SRC = './script.js?v=20260314_AUTH_I18N_1';
     const EMAILJS_SRC = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
     const EMAILJS_PUBLIC_KEY = 'vawaxLVEzJMAVbut0';
@@ -47,6 +47,15 @@
         originNextSibling: null,
         layoutRafId: 0
     };
+
+    function isIOSMobile() {
+        return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+            (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    }
+
+    function shouldUseInlineAuthInputs() {
+        return isIOSMobile() && window.matchMedia('(max-width: 768px)').matches;
+    }
     function t(key, fallback) {
         return window.i18n?.t(key, fallback) || fallback;
     }
@@ -533,6 +542,52 @@
         }
     }
 
+    function syncAuthInputMode() {
+        const { overlay, plane } = getSheetElements();
+        if (!overlay) return;
+
+        const useInlineInputs = shouldUseInlineAuthInputs();
+        overlay.classList.toggle('auth-sheet-inline-inputs', useInlineInputs);
+
+        if (useInlineInputs && portalState.activeId) {
+            deactivateActivePortaledInput({ blur: false });
+        }
+
+        overlay.querySelectorAll('[data-auth-canonical-input]').forEach((input) => {
+            resetPortaledInputStyles(input);
+
+            if (useInlineInputs) {
+                input.classList.remove('auth-sheet-input--parked');
+                input.classList.remove('auth-sheet-input--portaled');
+                input.classList.remove('auth-sheet-input--proxy-hidden');
+                input.removeAttribute('aria-hidden');
+                input.removeAttribute('tabindex');
+                return;
+            }
+
+            if (portalState.input === input) return;
+
+            input.classList.add('auth-sheet-input--parked');
+            input.classList.remove('auth-sheet-input--portaled');
+            input.classList.remove('auth-sheet-input--proxy-hidden');
+            input.setAttribute('aria-hidden', 'true');
+            input.setAttribute('tabindex', '-1');
+        });
+
+        overlay.querySelectorAll('[data-auth-proxy-for]').forEach((proxy) => {
+            proxy.classList.remove('is-active');
+            proxy.classList.remove('is-portaled');
+            proxy.classList.remove('is-proxy-hidden');
+        });
+
+        if (useInlineInputs) {
+            plane?.classList.remove('is-active');
+            plane?.setAttribute('aria-hidden', 'true');
+        }
+
+        syncAuthInputActiveState();
+    }
+
     function resetPortaledInputStyles(input) {
         if (!input) return;
         input.style.removeProperty('position');
@@ -655,6 +710,17 @@
     }
 
     function activatePortaledInputById(inputId, options = {}) {
+        if (shouldUseInlineAuthInputs()) {
+            const input = document.getElementById(inputId);
+            if (!input) return;
+            try {
+                input.focus({ preventScroll: true });
+            } catch (error) {
+                input.focus();
+            }
+            return;
+        }
+
         const { plane } = getSheetElements();
         const input = document.getElementById(inputId);
         const proxy = getProxyForInputId(inputId);
@@ -904,6 +970,7 @@
         const { overlay } = getSheetElements();
         if (!overlay) return;
 
+        syncAuthInputMode();
         overlay.hidden = false;
         overlay.style.removeProperty('display');
         overlay.style.removeProperty('visibility');
@@ -1156,6 +1223,7 @@
 
         window.addEventListener('resize', () => {
             if (!overlay.classList.contains('active')) return;
+            syncAuthInputMode();
             scheduleActivePortaledInputPosition();
             syncPrimaryViewHeights();
             syncTabIndicator(sheetState.view);

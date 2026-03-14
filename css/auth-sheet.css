@@ -815,6 +815,35 @@ body.auth-sheet-open {
         justify-content: space-between;
     }
 
+    .auth-sheet-overlay.auth-sheet-inline-inputs .auth-sheet-input-proxy {
+        display: none;
+    }
+
+    .auth-sheet-overlay.auth-sheet-inline-inputs .auth-input-plane {
+        display: none;
+    }
+
+    .auth-sheet-overlay.auth-sheet-inline-inputs .auth-sheet-input,
+    .auth-sheet-overlay.auth-sheet-inline-inputs .auth-sheet-input.auth-sheet-input--parked,
+    .auth-sheet-overlay.auth-sheet-inline-inputs .auth-sheet-input.auth-sheet-input--portaled,
+    .auth-sheet-overlay.auth-sheet-inline-inputs .auth-sheet-input.auth-sheet-input--proxy-hidden {
+        position: relative !important;
+        top: auto !important;
+        left: auto !important;
+        width: 100% !important;
+        height: 44px !important;
+        min-height: 44px !important;
+        margin: 0 !important;
+        padding: 11px 13px !important;
+        border: 1px solid var(--auth-sheet-border) !important;
+        background: rgba(255, 255, 255, 0.042) !important;
+        opacity: 1 !important;
+        pointer-events: auto !important;
+        color: var(--auth-sheet-text) !important;
+        caret-color: #ffffff !important;
+        z-index: auto !important;
+    }
+
     /*
       iOS Safari caret stability:
       flatten auth-sheet motion only while an input is focused, and give the
