@@ -154,10 +154,6 @@
             <div id="loginModal" class="auth-sheet-overlay login-overlay" hidden aria-hidden="true">
                 <div class="auth-sheet-backdrop" data-auth-backdrop></div>
                 <section class="auth-sheet" role="dialog" aria-modal="true" aria-labelledby="authSheetTitle">
-                    <button type="button" class="auth-sheet-close" data-auth-close aria-label="${t('common.close', '关闭')}">
-                        <i class="fas fa-times"></i>
-                    </button>
-
                     <div class="auth-sheet-shell">
                         <div class="auth-sheet-drag-zone" data-auth-drag-zone>
                             <div class="auth-sheet-handle" aria-hidden="true"></div>
@@ -176,10 +172,6 @@
                                 <span class="auth-sheet-badge">
                                     <i class="fas fa-box-open"></i>
                                     <span data-i18n="wallet.myOrders">我的订单</span>
-                                </span>
-                                <span class="auth-sheet-badge">
-                                    <i class="fas fa-wallet"></i>
-                                    <span data-i18n="wallet.title">我的钱包</span>
                                 </span>
                             </div>
                         </header>
@@ -752,11 +744,6 @@
                 return;
             }
 
-            if (event.target.closest('[data-auth-close]')) {
-                closeLoginModal();
-                return;
-            }
-
             if (event.target.closest('[data-auth-google]')) {
                 clearAuthMessage();
                 window.triggerGoogleLogin?.();
@@ -794,15 +781,23 @@
             window.handlePasswordReset?.(event);
         });
 
-        const dragZone = overlay.querySelector('[data-auth-drag-zone]');
-        dragZone?.addEventListener('touchstart', (event) => {
+        const dragTargets = overlay.querySelectorAll('[data-auth-drag-zone], .auth-sheet-header');
+        const resetDragState = () => {
+            const { sheet } = getSheetElements();
+            sheet?.style.removeProperty('transform');
+            dragState.active = false;
+            dragState.startY = 0;
+            dragState.deltaY = 0;
+        };
+
+        const handleDragStart = (event) => {
             if (event.touches.length !== 1) return;
             dragState.active = true;
             dragState.startY = event.touches[0].clientY;
             dragState.deltaY = 0;
-        }, { passive: true });
+        };
 
-        dragZone?.addEventListener('touchmove', (event) => {
+        const handleDragMove = (event) => {
             if (!dragState.active) return;
             const { sheet } = getSheetElements();
             if (!sheet) return;
@@ -813,23 +808,24 @@
                 return;
             }
 
-            const translate = Math.min(120, dragState.deltaY);
+            const translate = Math.min(112, dragState.deltaY);
             sheet.style.transform = `translateY(${translate}px) scale(${1 - translate * 0.00045})`;
-        }, { passive: true });
+        };
 
-        dragZone?.addEventListener('touchend', () => {
-            const { sheet } = getSheetElements();
-            if (!sheet) return;
-
-            if (dragState.deltaY > 92) {
+        const handleDragEnd = () => {
+            if (!dragState.active) return;
+            if (dragState.deltaY > 64) {
                 closeLoginModal();
             } else {
-                sheet.style.removeProperty('transform');
+                resetDragState();
             }
+        };
 
-            dragState.active = false;
-            dragState.startY = 0;
-            dragState.deltaY = 0;
+        dragTargets.forEach((target) => {
+            target.addEventListener('touchstart', handleDragStart, { passive: true });
+            target.addEventListener('touchmove', handleDragMove, { passive: true });
+            target.addEventListener('touchend', handleDragEnd);
+            target.addEventListener('touchcancel', resetDragState);
         });
 
         document.addEventListener('keydown', (event) => {
