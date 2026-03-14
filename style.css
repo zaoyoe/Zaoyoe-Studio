@@ -7486,3 +7486,102 @@ body {
       The parent's transform:none + will-change:auto is sufficient.
     */
 }
+
+/* =========================================
+   Profile Card Refinement (Avatar + 3 Blocks)
+   ========================================= */
+#profileModal .profile-avatar-section {
+    width: 112px;
+    height: 112px;
+    margin: 14px auto 16px;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.34);
+}
+
+#profileModal .profile-avatar-section:hover {
+    transform: scale(1.02);
+    box-shadow: 0 9px 22px rgba(0, 0, 0, 0.4) !important;
+}
+
+#profileModal #profileModalNickname {
+    font-size: 17px;
+    line-height: 1.2;
+}
+
+#profileModal .profile-front .nickname-display {
+    gap: 6px;
+}
+
+#profileModal .profile-front .edit-icon {
+    font-size: 13px;
+}
+
+#profileModal .profile-front .profile-nickname-section,
+#profileModal .profile-front .profile-email-section,
+#profileModal .profile-front .profile-member-since-section {
+    max-width: 304px;
+    padding: 12px 14px;
+    margin-bottom: 14px;
+    border-radius: 10px;
+    box-shadow:
+        0 1px 6px rgba(0, 0, 0, 0.26),
+        inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+#profileModal .profile-front .profile-nickname-section:hover,
+#profileModal .profile-front .profile-email-section:hover,
+#profileModal .profile-front .profile-member-since-section:hover {
+    transform: translateY(-1px);
+    box-shadow:
+        0 4px 10px rgba(0, 0, 0, 0.32),
+        inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+#profileModal .profile-front .profile-nickname-section::before,
+#profileModal .profile-front .profile-email-section::before,
+#profileModal .profile-front .profile-member-since-section::before {
+    width: 2px;
+    border-radius: 10px 0 0 10px;
+}
+
+#profileModal .profile-front .profile-email-section label,
+#profileModal .profile-front .profile-member-since-section label {
+    font-size: 11px;
+    margin-bottom: 6px;
+}
+
+#profileModal .profile-front .profile-email-display,
+#profileModal .profile-front .profile-member-since-display {
+    font-size: 14px;
+}
+
+@media (max-width: 768px) {
+    #profileModal .profile-avatar-section {
+        width: 92px;
+        height: 92px;
+        margin: 10px auto 12px;
+    }
+
+    #profileModal #profileModalNickname {
+        font-size: 16px;
+    }
+
+    #profileModal .profile-front .profile-nickname-section,
+    #profileModal .profile-front .profile-email-section,
+    #profileModal .profile-front .profile-member-since-section {
+        max-width: 100%;
+        padding: 10px 12px;
+        margin-bottom: 10px;
+        border-radius: 9px;
+    }
+
+    #profileModal .profile-front .profile-email-section label,
+    #profileModal .profile-front .profile-member-since-section label {
+        font-size: 10px;
+        margin-bottom: 5px;
+    }
+
+    #profileModal .profile-front .profile-email-display,
+    #profileModal .profile-front .profile-member-since-display {
+        font-size: 13px;
+    }
+}
