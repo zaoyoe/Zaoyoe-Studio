@@ -1097,7 +1097,7 @@
             scheduleActivePortaledInputPosition();
         }, { passive: true });
 
-        const dragTargets = overlay.querySelectorAll('[data-auth-drag-zone], .auth-sheet-header');
+        const dragTargets = overlay.querySelectorAll('[data-auth-drag-zone]');
         const resetDragState = () => {
             const { sheet } = getSheetElements();
             sheet?.style.removeProperty('transform');
