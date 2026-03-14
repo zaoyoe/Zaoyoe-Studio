@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260314_AUTH_SHEET_REWRITE_1';
+    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260314_AUTH_SHEET_KEYBOARD_STAGE_1';
     const SUPPORT_SCRIPT_SRC = './script.js?v=20260313_PROFILE_MODAL_DOCK_1';
     const EMAILJS_SRC = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
     const EMAILJS_PUBLIC_KEY = 'vawaxLVEzJMAVbut0';
@@ -147,115 +147,117 @@
         return `
             <div id="loginModal" class="auth-sheet-overlay login-overlay" hidden aria-hidden="true">
                 <div class="auth-sheet-backdrop" data-auth-backdrop></div>
-                <section class="auth-sheet" role="dialog" aria-modal="true" aria-labelledby="authSheetTitle">
-                    <div class="auth-sheet-shell">
-                        <div class="auth-sheet-drag-zone" data-auth-drag-zone>
-                            <div class="auth-sheet-handle" aria-hidden="true"></div>
-                        </div>
+                <div class="auth-sheet-stage">
+                    <section class="auth-sheet" role="dialog" aria-modal="true" aria-labelledby="authSheetTitle">
+                        <div class="auth-sheet-shell">
+                            <div class="auth-sheet-drag-zone" data-auth-drag-zone>
+                                <div class="auth-sheet-handle" aria-hidden="true"></div>
+                            </div>
 
-                        <header class="auth-sheet-header">
-                            <p class="auth-sheet-overline">ZAOYOE STUDIO</p>
-                            <h2 id="authSheetTitle" class="auth-sheet-title">${t('auth.welcomeBack', '欢迎回来')}</h2>
-                        </header>
+                            <header class="auth-sheet-header">
+                                <p class="auth-sheet-overline">ZAOYOE STUDIO</p>
+                                <h2 id="authSheetTitle" class="auth-sheet-title">${t('auth.welcomeBack', '欢迎回来')}</h2>
+                            </header>
 
-                        <nav id="authSheetTabs" class="auth-sheet-tabs" aria-label="Authentication views">
-                            <span class="auth-sheet-tab-indicator" aria-hidden="true"></span>
-                            <button type="button" class="auth-sheet-tab is-active" data-auth-tab="login" data-i18n="common.login">登录</button>
-                            <button type="button" class="auth-sheet-tab" data-auth-tab="register" data-i18n="auth.register">注册</button>
-                        </nav>
+                            <nav id="authSheetTabs" class="auth-sheet-tabs" aria-label="Authentication views">
+                                <span class="auth-sheet-tab-indicator" aria-hidden="true"></span>
+                                <button type="button" class="auth-sheet-tab is-active" data-auth-tab="login" data-i18n="common.login">登录</button>
+                                <button type="button" class="auth-sheet-tab" data-auth-tab="register" data-i18n="auth.register">注册</button>
+                            </nav>
 
-                        <div id="authSheetMessage" class="auth-sheet-message" hidden role="status" aria-live="polite"></div>
+                            <div id="authSheetMessage" class="auth-sheet-message" hidden role="status" aria-live="polite"></div>
 
-                        <div class="auth-sheet-body">
-                            <section id="loginView" class="auth-sheet-view auth-sheet-view--primary is-active" data-auth-view="login">
-                                <button type="button" class="auth-sheet-google-btn google-login-btn" data-auth-google>
-                                    <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" width="18" height="18">
-                                    <span data-i18n="auth.googleLogin">使用 Google 登录</span>
-                                </button>
+                            <div class="auth-sheet-body">
+                                <section id="loginView" class="auth-sheet-view auth-sheet-view--primary is-active" data-auth-view="login">
+                                    <button type="button" class="auth-sheet-google-btn google-login-btn" data-auth-google>
+                                        <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" width="18" height="18">
+                                        <span data-i18n="auth.googleLogin">使用 Google 登录</span>
+                                    </button>
 
-                                <div class="auth-sheet-divider">
-                                    <span data-i18n="auth.or">或者</span>
-                                </div>
-
-                                <form id="loginForm" class="auth-sheet-form" autocomplete="on" novalidate>
-                                    <label class="auth-sheet-field">
-                                        <span class="auth-sheet-label">Email</span>
-                                        <input type="email" id="login-email" class="auth-sheet-input" placeholder="${t('auth.emailPlaceholder', '邮箱地址')}" data-i18n-placeholder="auth.emailPlaceholder" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" required>
-                                    </label>
-
-                                    <label class="auth-sheet-field">
-                                        <span class="auth-sheet-label" data-i18n="auth.passwordPlaceholder">密码</span>
-                                        <input type="password" id="login-password" class="auth-sheet-input" placeholder="${t('auth.passwordPlaceholder', '密码')}" data-i18n-placeholder="auth.passwordPlaceholder" autocomplete="current-password" required>
-                                    </label>
-                                </form>
-
-                                <div class="auth-sheet-inline-row auth-sheet-inline-row--spread">
-                                    <label class="auth-sheet-check">
-                                        <input type="checkbox" id="rememberMe">
-                                        <span data-i18n="auth.rememberMe">记住密码</span>
-                                    </label>
-                                    <button type="button" class="auth-sheet-link" data-auth-reset data-i18n="auth.forgotPassword">忘记密码？</button>
-                                </div>
-
-                                <button type="submit" class="auth-sheet-submit login-submit-btn" data-auth-submit="login" form="loginForm" data-i18n="common.login">登录</button>
-                            </section>
-
-                            <section id="registerView" class="auth-sheet-view auth-sheet-view--primary" data-auth-view="register" hidden>
-                                <form id="registerForm" class="auth-sheet-form" autocomplete="off" novalidate>
-                                    <label class="auth-sheet-field">
-                                        <span class="auth-sheet-label" data-i18n="auth.usernamePlaceholder">用户名</span>
-                                        <input type="text" id="reg-username" class="auth-sheet-input" placeholder="${t('auth.usernamePlaceholder', '用户名')}" data-i18n-placeholder="auth.usernamePlaceholder" autocomplete="off" required>
-                                    </label>
-
-                                    <label class="auth-sheet-field">
-                                        <span class="auth-sheet-label">Email</span>
-                                        <input type="email" id="reg-email" class="auth-sheet-input" placeholder="${t('auth.emailPlaceholder', '邮箱地址')}" data-i18n-placeholder="auth.emailPlaceholder" autocomplete="off" required>
-                                    </label>
-
-                                    <div class="auth-sheet-field auth-sheet-field--code">
-                                        <label for="reg-code" class="auth-sheet-label" data-i18n="auth.enterVerifyCode">输入6位验证码</label>
-                                        <div class="auth-sheet-inline-group auth-sheet-inline-group--code">
-                                            <input type="text" id="reg-code" class="auth-sheet-input auth-sheet-input--code" placeholder="${t('auth.enterVerifyCode', '输入6位验证码')}" data-i18n-placeholder="auth.enterVerifyCode" maxlength="6" autocomplete="off" required>
-                                            <button type="button" class="auth-sheet-secondary verify-code-btn" id="sendBtn" data-auth-send-code data-i18n="auth.getVerifyCode">获取验证码</button>
-                                        </div>
+                                    <div class="auth-sheet-divider">
+                                        <span data-i18n="auth.or">或者</span>
                                     </div>
 
-                                    <label class="auth-sheet-field">
-                                        <span class="auth-sheet-label" data-i18n="auth.setPassword">设置密码</span>
-                                        <input type="password" id="reg-password" class="auth-sheet-input" placeholder="${t('auth.setPassword', '设置密码')}" data-i18n-placeholder="auth.setPassword" autocomplete="new-password" required>
-                                    </label>
+                                    <form id="loginForm" class="auth-sheet-form" autocomplete="on" novalidate>
+                                        <label class="auth-sheet-field">
+                                            <span class="auth-sheet-label">Email</span>
+                                            <input type="email" id="login-email" class="auth-sheet-input" placeholder="${t('auth.emailPlaceholder', '邮箱地址')}" data-i18n-placeholder="auth.emailPlaceholder" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" required>
+                                        </label>
 
-                                    <label class="auth-sheet-check auth-sheet-check--start">
-                                        <input type="checkbox" id="privacyConsent">
-                                        <span>
-                                            <span data-i18n="auth.agreeToTerms">我已阅读并同意</span>
-                                            <a href="/privacy.html" target="_blank" rel="noopener noreferrer" data-i18n="auth.privacyPolicy">隐私政策</a>
-                                        </span>
-                                    </label>
-                                </form>
+                                        <label class="auth-sheet-field">
+                                            <span class="auth-sheet-label" data-i18n="auth.passwordPlaceholder">密码</span>
+                                            <input type="password" id="login-password" class="auth-sheet-input" placeholder="${t('auth.passwordPlaceholder', '密码')}" data-i18n-placeholder="auth.passwordPlaceholder" autocomplete="current-password" required>
+                                        </label>
+                                    </form>
 
-                                <button type="submit" class="auth-sheet-submit login-submit-btn" data-auth-submit="register" form="registerForm" data-i18n="auth.createAccount">创建账号</button>
-                            </section>
+                                    <div class="auth-sheet-inline-row auth-sheet-inline-row--spread">
+                                        <label class="auth-sheet-check">
+                                            <input type="checkbox" id="rememberMe">
+                                            <span data-i18n="auth.rememberMe">记住密码</span>
+                                        </label>
+                                        <button type="button" class="auth-sheet-link" data-auth-reset data-i18n="auth.forgotPassword">忘记密码？</button>
+                                    </div>
 
-                            <section id="resetView" class="auth-sheet-view" data-auth-view="reset" hidden>
-                                <p class="auth-sheet-note" data-i18n="auth.resetSubtitle">请输入您的注册邮箱以重置密码</p>
+                                    <button type="submit" class="auth-sheet-submit login-submit-btn" data-auth-submit="login" form="loginForm" data-i18n="common.login">登录</button>
+                                </section>
 
-                                <form id="resetForm" class="auth-sheet-form" novalidate>
-                                    <label class="auth-sheet-field">
-                                        <span class="auth-sheet-label">Email</span>
-                                        <input type="email" id="reset-email" class="auth-sheet-input" placeholder="${t('auth.emailPlaceholder', '邮箱地址')}" data-i18n-placeholder="auth.emailPlaceholder" autocomplete="email" required>
-                                    </label>
-                                </form>
+                                <section id="registerView" class="auth-sheet-view auth-sheet-view--primary" data-auth-view="register" hidden>
+                                    <form id="registerForm" class="auth-sheet-form" autocomplete="off" novalidate>
+                                        <label class="auth-sheet-field">
+                                            <span class="auth-sheet-label" data-i18n="auth.usernamePlaceholder">用户名</span>
+                                            <input type="text" id="reg-username" class="auth-sheet-input" placeholder="${t('auth.usernamePlaceholder', '用户名')}" data-i18n-placeholder="auth.usernamePlaceholder" autocomplete="off" required>
+                                        </label>
 
-                                <button type="submit" class="auth-sheet-submit login-submit-btn" data-auth-submit="reset" form="resetForm" data-i18n="auth.recover">找回</button>
+                                        <label class="auth-sheet-field">
+                                            <span class="auth-sheet-label">Email</span>
+                                            <input type="email" id="reg-email" class="auth-sheet-input" placeholder="${t('auth.emailPlaceholder', '邮箱地址')}" data-i18n-placeholder="auth.emailPlaceholder" autocomplete="off" required>
+                                        </label>
 
-                                <div class="auth-sheet-inline-row auth-sheet-inline-row--center">
-                                    <button type="button" class="auth-sheet-link" data-auth-tab="login" data-i18n="auth.backToLogin">返回登录</button>
-                                </div>
-                            </section>
+                                        <div class="auth-sheet-field auth-sheet-field--code">
+                                            <label for="reg-code" class="auth-sheet-label" data-i18n="auth.enterVerifyCode">输入6位验证码</label>
+                                            <div class="auth-sheet-inline-group auth-sheet-inline-group--code">
+                                                <input type="text" id="reg-code" class="auth-sheet-input auth-sheet-input--code" placeholder="${t('auth.enterVerifyCode', '输入6位验证码')}" data-i18n-placeholder="auth.enterVerifyCode" maxlength="6" autocomplete="off" required>
+                                                <button type="button" class="auth-sheet-secondary verify-code-btn" id="sendBtn" data-auth-send-code data-i18n="auth.getVerifyCode">获取验证码</button>
+                                            </div>
+                                        </div>
+
+                                        <label class="auth-sheet-field">
+                                            <span class="auth-sheet-label" data-i18n="auth.setPassword">设置密码</span>
+                                            <input type="password" id="reg-password" class="auth-sheet-input" placeholder="${t('auth.setPassword', '设置密码')}" data-i18n-placeholder="auth.setPassword" autocomplete="new-password" required>
+                                        </label>
+
+                                        <label class="auth-sheet-check auth-sheet-check--start">
+                                            <input type="checkbox" id="privacyConsent">
+                                            <span>
+                                                <span data-i18n="auth.agreeToTerms">我已阅读并同意</span>
+                                                <a href="/privacy.html" target="_blank" rel="noopener noreferrer" data-i18n="auth.privacyPolicy">隐私政策</a>
+                                            </span>
+                                        </label>
+                                    </form>
+
+                                    <button type="submit" class="auth-sheet-submit login-submit-btn" data-auth-submit="register" form="registerForm" data-i18n="auth.createAccount">创建账号</button>
+                                </section>
+
+                                <section id="resetView" class="auth-sheet-view" data-auth-view="reset" hidden>
+                                    <p class="auth-sheet-note" data-i18n="auth.resetSubtitle">请输入您的注册邮箱以重置密码</p>
+
+                                    <form id="resetForm" class="auth-sheet-form" novalidate>
+                                        <label class="auth-sheet-field">
+                                            <span class="auth-sheet-label">Email</span>
+                                            <input type="email" id="reset-email" class="auth-sheet-input" placeholder="${t('auth.emailPlaceholder', '邮箱地址')}" data-i18n-placeholder="auth.emailPlaceholder" autocomplete="email" required>
+                                        </label>
+                                    </form>
+
+                                    <button type="submit" class="auth-sheet-submit login-submit-btn" data-auth-submit="reset" form="resetForm" data-i18n="auth.recover">找回</button>
+
+                                    <div class="auth-sheet-inline-row auth-sheet-inline-row--center">
+                                        <button type="button" class="auth-sheet-link" data-auth-tab="login" data-i18n="auth.backToLogin">返回登录</button>
+                                    </div>
+                                </section>
+                            </div>
                         </div>
-                    </div>
-                </section>
+                    </section>
+                </div>
             </div>
         `;
     }
@@ -388,6 +390,7 @@
         const overlay = document.getElementById('loginModal');
         return {
             overlay,
+            stage: overlay?.querySelector('.auth-sheet-stage') || null,
             sheet: overlay?.querySelector('.auth-sheet') || null,
             tabs: overlay?.querySelector('#authSheetTabs') || null,
             title: overlay?.querySelector('#authSheetTitle') || null,
@@ -409,6 +412,29 @@
         return isIOS && window.matchMedia('(max-width: 768px)').matches && !!window.visualViewport;
     }
 
+    function ensureInputVisibleInSheet(input, scrollContainer) {
+        if (!input || !scrollContainer) return;
+
+        const containerRect = scrollContainer.getBoundingClientRect();
+        const inputRect = input.getBoundingClientRect();
+        const topBuffer = 14;
+        const bottomBuffer = 22;
+
+        if (inputRect.bottom > containerRect.bottom - bottomBuffer) {
+            scrollContainer.scrollTop += Math.ceil(inputRect.bottom - (containerRect.bottom - bottomBuffer));
+        } else if (inputRect.top < containerRect.top + topBuffer) {
+            scrollContainer.scrollTop -= Math.ceil((containerRect.top + topBuffer) - inputRect.top);
+        }
+    }
+
+    function requestKeyboardDismiss() {
+        const activeInput = getActiveAuthInput();
+        if (!activeInput && !keyboardState.isKeyboardOpen) return false;
+        activeInput?.blur();
+        overlayCloseDisabledUntil = Date.now() + 220;
+        return true;
+    }
+
     function handleViewportChange() {
         if (!isKeyboardDockEnabled()) return;
 
@@ -424,15 +450,15 @@
         const activeInput = getActiveAuthInput();
         const isKeyboardOpen = heightDiff > 50 && !!activeInput;
         keyboardState.isKeyboardOpen = isKeyboardOpen;
+        overlay.classList.toggle('auth-sheet-keyboard-open', isKeyboardOpen);
 
         if (isKeyboardOpen) {
             const actualOverlap = keyboardState.baseViewportHeight - (vv.height + vv.offsetTop);
             const bottomInset = Math.max(0, actualOverlap);
             overlay.style.setProperty('--auth-sheet-keyboard-offset', `${bottomInset}px`);
-
-            window.setTimeout(() => {
-                activeInput?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-            }, 40);
+            window.requestAnimationFrame(() => {
+                ensureInputVisibleInSheet(activeInput, body);
+            });
         } else {
             overlay.style.setProperty('--auth-sheet-keyboard-offset', '0px');
             keyboardState.baseViewportHeight = Math.max(keyboardState.baseViewportHeight, vv.height);
@@ -470,6 +496,7 @@
         if (overlay) {
             overlay.removeEventListener('focusin', handleViewportChange);
             overlay.removeEventListener('focusout', onSheetFocusOut);
+            overlay.classList.remove('auth-sheet-keyboard-open');
         }
 
         overlay?.style.setProperty('--auth-sheet-keyboard-offset', '0px');
@@ -741,10 +768,7 @@
         const now = Date.now();
         if (now < overlayCloseDisabledUntil) return;
 
-        const activeInput = getActiveAuthInput();
-        if (activeInput) {
-            activeInput.blur();
-            overlayCloseDisabledUntil = now + 160;
+        if (requestKeyboardDismiss()) {
             return;
         }
 
@@ -819,6 +843,11 @@
 
         const handleDragStart = (event) => {
             if (event.touches.length !== 1) return;
+
+            if (requestKeyboardDismiss()) {
+                return;
+            }
+
             dragState.active = true;
             dragState.startY = event.touches[0].clientY;
             dragState.deltaY = 0;
@@ -863,6 +892,7 @@
 
         window.addEventListener('resize', () => {
             if (!overlay.classList.contains('active')) return;
+            if (keyboardState.isKeyboardOpen) return;
             syncPrimaryViewHeights();
             syncTabIndicator(sheetState.view);
         });

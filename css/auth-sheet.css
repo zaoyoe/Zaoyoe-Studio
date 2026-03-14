@@ -41,7 +41,7 @@ body.auth-sheet-open {
     display: flex;
     align-items: flex-end;
     justify-content: center;
-    padding: max(40px, env(safe-area-inset-top)) 16px calc(max(16px, env(safe-area-inset-bottom)) + var(--auth-sheet-keyboard-offset, 0px));
+    padding: max(40px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
@@ -72,9 +72,20 @@ body.auth-sheet-open {
     opacity: 1;
 }
 
+.auth-sheet-stage {
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+    width: min(100%, 480px);
+    min-height: 0;
+    transform: translate3d(0, calc(var(--auth-sheet-keyboard-offset, 0px) * -1), 0);
+    transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform;
+}
+
 .auth-sheet {
     position: relative;
-    width: min(100%, 480px);
+    width: 100%;
     max-height: min(88svh, 860px);
     border-radius: 26px;
     overflow: hidden;
@@ -570,6 +581,10 @@ body.auth-sheet-open {
         padding: 24px;
     }
 
+    .auth-sheet-stage {
+        width: min(100%, 480px);
+    }
+
     .auth-sheet {
         border-radius: 28px;
     }
@@ -584,7 +599,11 @@ body.auth-sheet-open {
     .auth-sheet-overlay {
         padding-left: 0;
         padding-right: 0;
-        padding-bottom: var(--auth-sheet-keyboard-offset, 0px);
+        padding-bottom: max(12px, env(safe-area-inset-bottom));
+    }
+
+    .auth-sheet-stage {
+        width: 100%;
     }
 
     .auth-sheet {
@@ -638,6 +657,7 @@ body.auth-sheet-open {
 @media (prefers-reduced-motion: reduce) {
     .auth-sheet-overlay,
     .auth-sheet-backdrop,
+    .auth-sheet-stage,
     .auth-sheet,
     .auth-sheet-tab,
     .auth-sheet-input,
