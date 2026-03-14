@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260314_AUTH_SHEET_MOTION_CORE_1';
+    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260314_AUTH_SHEET_EDITING_SCREEN_1';
     const SUPPORT_SCRIPT_SRC = './script.js?v=20260313_PROFILE_MODAL_DOCK_1';
     const EMAILJS_SRC = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
     const EMAILJS_PUBLIC_KEY = 'vawaxLVEzJMAVbut0';
@@ -32,12 +32,15 @@
     let overlayCloseDisabledUntil = 0;
     const sheetState = {
         view: 'login',
-        lastPrimaryView: 'login'
+        lastPrimaryView: 'login',
+        presentation: 'preview'
     };
     const keyboardState = {
         attached: false,
         baseViewportHeight: 0,
-        isKeyboardOpen: false
+        isKeyboardOpen: false,
+        rafId: 0,
+        exitEditTimer: 0
     };
     const dragState = {
         active: false,
@@ -412,10 +415,67 @@
         return /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName) ? active : null;
     }
 
+    function isEditableAuthField(target) {
+        return !!target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName);
+    }
+
     function isKeyboardDockEnabled() {
         const ua = navigator.userAgent || '';
         const isIOS = /iPad|iPhone|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
         return isIOS && window.matchMedia('(max-width: 768px)').matches && !!window.visualViewport;
+    }
+
+    function clearScheduledViewportChange() {
+        if (keyboardState.rafId) {
+            window.cancelAnimationFrame(keyboardState.rafId);
+            keyboardState.rafId = 0;
+        }
+    }
+
+    function scheduleViewportChange() {
+        if (!keyboardState.attached || keyboardState.rafId) return;
+        keyboardState.rafId = window.requestAnimationFrame(() => {
+            keyboardState.rafId = 0;
+            handleViewportChange();
+        });
+    }
+
+    function clearEditingExitTimer() {
+        if (keyboardState.exitEditTimer) {
+            window.clearTimeout(keyboardState.exitEditTimer);
+            keyboardState.exitEditTimer = 0;
+        }
+    }
+
+    function setSheetPresentation(mode) {
+        const { overlay } = getSheetElements();
+        if (!overlay) return;
+
+        const isEditing = mode === 'editing';
+        sheetState.presentation = isEditing ? 'editing' : 'preview';
+        overlay.classList.toggle('auth-sheet-editing', isEditing);
+        overlay.classList.toggle('auth-sheet-preview', !isEditing);
+
+        if (!isEditing) {
+            overlay.style.setProperty('--auth-sheet-keyboard-offset', '0px');
+        }
+    }
+
+    function enterEditingMode() {
+        if (!isKeyboardDockEnabled()) return;
+        clearEditingExitTimer();
+        if (sheetState.presentation === 'editing') return;
+        setSheetPresentation('editing');
+    }
+
+    function scheduleReturnToPreview(delay = 180) {
+        clearEditingExitTimer();
+        keyboardState.exitEditTimer = window.setTimeout(() => {
+            keyboardState.exitEditTimer = 0;
+            if (!getActiveAuthInput() && !keyboardState.isKeyboardOpen) {
+                setSheetPresentation('preview');
+            }
+        }, delay);
     }
 
     function ensureInputVisibleInSheet(input, scrollContainer) {
@@ -441,6 +501,15 @@
         return true;
     }
 
+    function runAfterKeyboardDismiss(callback, delay = 140) {
+        if (requestKeyboardDismiss()) {
+            window.setTimeout(callback, delay);
+            return;
+        }
+
+        callback();
+    }
+
     function handleViewportChange() {
         if (!isKeyboardDockEnabled()) return;
 
@@ -455,6 +524,9 @@
         const heightDiff = keyboardState.baseViewportHeight - vv.height;
         const activeInput = getActiveAuthInput();
         const isKeyboardOpen = heightDiff > 50 && !!activeInput;
+        if (activeInput) {
+            enterEditingMode();
+        }
         keyboardState.isKeyboardOpen = isKeyboardOpen;
         overlay.classList.toggle('auth-sheet-keyboard-open', isKeyboardOpen);
 
@@ -468,6 +540,9 @@
         } else {
             overlay.style.setProperty('--auth-sheet-keyboard-offset', '0px');
             keyboardState.baseViewportHeight = Math.max(keyboardState.baseViewportHeight, vv.height);
+            if (!activeInput) {
+                scheduleReturnToPreview(180);
+            }
         }
     }
 
@@ -478,15 +553,19 @@
         if (!vv || !overlay) return;
 
         keyboardState.baseViewportHeight = vv.height;
-        vv.addEventListener('resize', handleViewportChange, { passive: true });
-        vv.addEventListener('scroll', handleViewportChange, { passive: true });
-        overlay.addEventListener('focusin', handleViewportChange);
-        overlay.addEventListener('focusout', onSheetFocusOut);
+        vv.addEventListener('resize', scheduleViewportChange, { passive: true });
+        vv.addEventListener('scroll', scheduleViewportChange, { passive: true });
         keyboardState.attached = true;
+        scheduleViewportChange();
     }
 
     function onSheetFocusOut() {
-        window.setTimeout(handleViewportChange, 100);
+        window.setTimeout(() => {
+            scheduleViewportChange();
+            if (!getActiveAuthInput()) {
+                scheduleReturnToPreview(180);
+            }
+        }, 100);
     }
 
     function detachKeyboardDock() {
@@ -495,18 +574,19 @@
         const { overlay, sheet } = getSheetElements();
 
         if (vv) {
-            vv.removeEventListener('resize', handleViewportChange);
-            vv.removeEventListener('scroll', handleViewportChange);
+            vv.removeEventListener('resize', scheduleViewportChange);
+            vv.removeEventListener('scroll', scheduleViewportChange);
         }
 
         if (overlay) {
-            overlay.removeEventListener('focusin', handleViewportChange);
-            overlay.removeEventListener('focusout', onSheetFocusOut);
             overlay.classList.remove('auth-sheet-keyboard-open');
         }
 
+        clearScheduledViewportChange();
+        clearEditingExitTimer();
         overlay?.style.setProperty('--auth-sheet-keyboard-offset', '0px');
         sheet?.style.removeProperty('transform');
+        setSheetPresentation('preview');
         keyboardState.attached = false;
         keyboardState.baseViewportHeight = 0;
         keyboardState.isKeyboardOpen = false;
@@ -614,7 +694,7 @@
         body.scrollTop = 0;
         keyboardState.baseViewportHeight = 0;
         if (keyboardState.attached) {
-            handleViewportChange();
+            scheduleViewportChange();
         }
     }
 
@@ -706,6 +786,9 @@
         overlay.style.removeProperty('display');
         overlay.style.removeProperty('visibility');
         overlay.style.removeProperty('opacity');
+        setSheetPresentation('preview');
+        overlay.classList.remove('auth-sheet-keyboard-open');
+        overlay.style.setProperty('--auth-sheet-keyboard-offset', '0px');
         await setAuthView(viewId, { clearMessage: true });
         syncPrimaryViewHeights();
         syncTabIndicator(sheetState.view, { immediate: true });
@@ -788,15 +871,19 @@
         overlay.addEventListener('click', (event) => {
             const tabTrigger = event.target.closest('[data-auth-tab]');
             if (tabTrigger) {
-                setAuthView(tabTrigger.dataset.authTab).catch((error) => {
-                    console.warn('Failed to switch auth view:', error);
+                runAfterKeyboardDismiss(() => {
+                    setAuthView(tabTrigger.dataset.authTab).catch((error) => {
+                        console.warn('Failed to switch auth view:', error);
+                    });
                 });
                 return;
             }
 
             if (event.target.closest('[data-auth-reset]')) {
-                setAuthView('reset').catch((error) => {
-                    console.warn('Failed to open reset view:', error);
+                runAfterKeyboardDismiss(() => {
+                    setAuthView('reset').catch((error) => {
+                        console.warn('Failed to open reset view:', error);
+                    });
                 });
                 return;
             }
@@ -836,6 +923,23 @@
         overlay.querySelector('#resetForm')?.addEventListener('submit', (event) => {
             clearAuthMessage();
             window.handlePasswordReset?.(event);
+        });
+
+        overlay.addEventListener('touchstart', (event) => {
+            if (event.target.closest('input, textarea, select')) {
+                enterEditingMode();
+            }
+        }, { passive: true });
+
+        overlay.addEventListener('focusin', (event) => {
+            if (!isEditableAuthField(event.target)) return;
+            enterEditingMode();
+            scheduleViewportChange();
+        });
+
+        overlay.addEventListener('focusout', (event) => {
+            if (!isEditableAuthField(event.target)) return;
+            onSheetFocusOut();
         });
 
         const dragTargets = overlay.querySelectorAll('[data-auth-drag-zone], .auth-sheet-header');

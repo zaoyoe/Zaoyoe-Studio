@@ -147,6 +147,14 @@ body.auth-sheet-open {
     transition: none;
 }
 
+.auth-sheet-overlay.auth-sheet-editing .auth-sheet-stage,
+.auth-sheet-overlay.auth-sheet-editing .auth-sheet-motion-shell,
+.auth-sheet-overlay.auth-sheet-editing .auth-sheet-form-core,
+.auth-sheet-overlay.auth-sheet-editing .auth-sheet-tab-indicator,
+.auth-sheet-overlay.auth-sheet-editing .auth-sheet-surface {
+    transition: none;
+}
+
 .auth-sheet-drag-zone {
     display: flex;
     justify-content: center;
@@ -675,6 +683,51 @@ body.auth-sheet-open {
     .auth-sheet-inline-row--spread {
         flex-wrap: wrap;
         justify-content: space-between;
+    }
+
+    .auth-sheet-overlay.auth-sheet-editing {
+        align-items: stretch;
+        padding: 0;
+    }
+
+    .auth-sheet-overlay.auth-sheet-editing .auth-sheet-stage {
+        width: 100%;
+        min-height: 100%;
+        padding-bottom: 0;
+    }
+
+    .auth-sheet-overlay.auth-sheet-editing .auth-sheet {
+        height: 100%;
+        max-height: none;
+        border-radius: 0;
+    }
+
+    .auth-sheet-overlay.auth-sheet-editing .auth-sheet-surface {
+        background: #0f1317;
+        border: none;
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+        box-shadow: none;
+    }
+
+    .auth-sheet-overlay.auth-sheet-editing .auth-sheet-drag-zone {
+        min-height: 12px;
+        padding: 8px 24px 0;
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    .auth-sheet-overlay.auth-sheet-editing .auth-sheet-motion-shell {
+        padding-top: max(10px, env(safe-area-inset-top));
+        padding-bottom: 10px;
+    }
+
+    .auth-sheet-overlay.auth-sheet-editing .auth-sheet-form-core {
+        padding: 12px 18px calc(24px + env(safe-area-inset-bottom) + var(--auth-sheet-keyboard-offset, 0px));
+    }
+
+    .auth-sheet-overlay.auth-sheet-editing .auth-sheet-body {
+        overscroll-behavior: auto;
     }
 }
 
