@@ -9,7 +9,7 @@
 }
 
 :root {
-    --auth-sheet-overlay: rgba(0, 0, 0, 0.78);
+    --auth-sheet-overlay: rgba(0, 0, 0, 0.64);
     --auth-sheet-backdrop-glow: rgba(0, 0, 0, 0);
     --auth-sheet-panel: rgba(12, 14, 18, 0.98);
     --auth-sheet-panel-strong: rgba(15, 18, 22, 0.995);
@@ -74,7 +74,7 @@ body.auth-sheet-open {
 }
 
 .auth-sheet-backdrop::before {
-    background: rgba(0, 0, 0, 0.18);
+    background: rgba(0, 0, 0, 0.1);
     backdrop-filter: blur(10px) saturate(92%);
     -webkit-backdrop-filter: blur(10px) saturate(92%);
     transform: translateZ(0);
@@ -84,7 +84,7 @@ body.auth-sheet-open {
 .auth-sheet-backdrop::after {
     background:
         radial-gradient(circle at top, var(--auth-sheet-backdrop-glow) 0%, transparent 36%),
-        linear-gradient(180deg, rgba(0, 0, 0, 0.24) 0%, var(--auth-sheet-overlay) 100%);
+        linear-gradient(180deg, rgba(0, 0, 0, 0.14) 0%, var(--auth-sheet-overlay) 100%);
     opacity: 0;
     transition: opacity 0.28s ease;
 }
