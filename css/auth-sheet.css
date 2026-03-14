@@ -137,13 +137,6 @@ body.auth-sheet-open {
     opacity: 1;
 }
 
-.auth-sheet-overlay.auth-sheet-keyboard-open .auth-sheet-stage,
-.auth-sheet-overlay.auth-sheet-keyboard-open .auth-sheet-motion-shell,
-.auth-sheet-overlay.auth-sheet-keyboard-open .auth-sheet-form-core,
-.auth-sheet-overlay.auth-sheet-keyboard-open .auth-sheet-tab-indicator {
-    transition: none;
-}
-
 .auth-sheet-drag-zone {
     display: flex;
     justify-content: center;
@@ -266,7 +259,7 @@ body.auth-sheet-open {
     position: relative;
     min-height: 0;
     overflow: auto;
-    padding: 0 0 var(--auth-sheet-body-bottom-gap, 0px);
+    padding: 0;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
     touch-action: pan-y;

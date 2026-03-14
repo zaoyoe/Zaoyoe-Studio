@@ -70,6 +70,14 @@
         );
     }
 
+    function shouldObserveViewportChanges() {
+        return !!(
+            currentModal &&
+            currentModal.classList &&
+            !currentModal.classList.contains('login-overlay')
+        );
+    }
+
     function shouldSkipLockedViewportStabilization() {
         return !!(
             currentModal &&
@@ -78,14 +86,6 @@
                 currentModal.classList.contains('poetry-modal')
             ) &&
             isFocusedFieldInsideCurrentModal()
-        ) || !!(
-            currentModal &&
-            currentModal.classList &&
-            currentModal.classList.contains('login-overlay') &&
-            (
-                isFocusedFieldInsideCurrentModal() ||
-                currentModal.classList.contains('login-focus-transfer')
-            )
         );
     }
 
@@ -272,7 +272,7 @@
                 attachRootScrollGuard();
             }
 
-            if (isIOSMobile() && currentModal) {
+            if (isIOSMobile() && shouldObserveViewportChanges()) {
                 detachViewportListener();
                 attachViewportListener();
             }
@@ -300,7 +300,7 @@
         attachRootScrollGuard();
 
         // 5. iOS 专属：监听 visualViewport 变化，检测键盘收起后回位
-        if (isIOSMobile() && currentModal) {
+        if (isIOSMobile() && shouldObserveViewportChanges()) {
             attachViewportListener();
         }
     }
@@ -313,7 +313,7 @@
     function lockLight(modalElement) {
         if (isLocked) {
             currentModal = modalElement || currentModal;
-            if (isIOSMobile() && currentModal) {
+            if (isIOSMobile() && shouldObserveViewportChanges()) {
                 detachViewportListener();
                 attachViewportListener();
             }
@@ -337,7 +337,7 @@
         document.addEventListener('touchmove', handleTouchMove, { passive: false });
 
         // iOS 专属：监听 visualViewport 变化，暴露键盘事件
-        if (isIOSMobile() && currentModal) {
+        if (isIOSMobile() && shouldObserveViewportChanges()) {
             attachViewportListener();
         }
     }

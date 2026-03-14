@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260314_AUTH_SHEET_PORTAL_PLANE_3';
+    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260314_AUTH_SHEET_PORTAL_PLANE_6';
     const SUPPORT_SCRIPT_SRC = './script.js?v=20260313_PROFILE_MODAL_DOCK_1';
     const EMAILJS_SRC = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
     const EMAILJS_PUBLIC_KEY = 'vawaxLVEzJMAVbut0';
@@ -33,12 +33,6 @@
     const sheetState = {
         view: 'login',
         lastPrimaryView: 'login'
-    };
-    const keyboardState = {
-        attached: false,
-        baseViewportHeight: 0,
-        isKeyboardOpen: false,
-        rafId: 0
     };
     const dragState = {
         active: false,
@@ -493,10 +487,6 @@
         return /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName) ? active : null;
     }
 
-    function isEditableAuthField(target) {
-        return !!target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName);
-    }
-
     function getProxyForInputId(inputId) {
         const { overlay } = getSheetElements();
         return overlay?.querySelector(`[data-auth-proxy-for="${inputId}"]`) || null;
@@ -697,51 +687,9 @@
         }
     }
 
-    function isKeyboardDockEnabled() {
-        const ua = navigator.userAgent || '';
-        const isIOS = /iPad|iPhone|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-        return isIOS && window.matchMedia('(max-width: 768px)').matches && !!window.visualViewport;
-    }
-
-    function clearScheduledViewportChange() {
-        if (keyboardState.rafId) {
-            window.cancelAnimationFrame(keyboardState.rafId);
-            keyboardState.rafId = 0;
-        }
-    }
-
-    function scheduleViewportChange() {
-        if (!keyboardState.attached || keyboardState.rafId) return;
-        keyboardState.rafId = window.requestAnimationFrame(() => {
-            keyboardState.rafId = 0;
-            handleViewportChange();
-        });
-    }
-
-    function ensureInputVisibleInSheet(input, scrollContainer, options = {}) {
-        if (!input || !scrollContainer) return;
-
-        const containerRect = scrollContainer.getBoundingClientRect();
-        const inputRect = input.getBoundingClientRect();
-        const topBuffer = 14;
-        const bottomBuffer = 22;
-        const viewportTop = Number.isFinite(options.viewportTop)
-            ? Math.max(containerRect.top, options.viewportTop)
-            : containerRect.top;
-        const viewportBottom = Number.isFinite(options.viewportBottom)
-            ? Math.min(containerRect.bottom, options.viewportBottom)
-            : containerRect.bottom;
-
-        if (inputRect.bottom > viewportBottom - bottomBuffer) {
-            scrollContainer.scrollTop += Math.ceil(inputRect.bottom - (viewportBottom - bottomBuffer));
-        } else if (inputRect.top < viewportTop + topBuffer) {
-            scrollContainer.scrollTop -= Math.ceil((viewportTop + topBuffer) - inputRect.top);
-        }
-    }
-
     function requestKeyboardDismiss() {
         const activeInput = getActiveAuthInput();
-        if (!activeInput && !keyboardState.isKeyboardOpen) return false;
+        if (!activeInput) return false;
         activeInput?.blur();
         overlayCloseDisabledUntil = Date.now() + 220;
         return true;
@@ -754,82 +702,6 @@
         }
 
         callback();
-    }
-
-    function handleViewportChange() {
-        if (!isKeyboardDockEnabled()) return;
-
-        const { overlay, body } = getSheetElements();
-        const vv = window.visualViewport;
-        if (!overlay || !body || !vv) return;
-
-        if (keyboardState.baseViewportHeight === 0 || !keyboardState.isKeyboardOpen) {
-            keyboardState.baseViewportHeight = Math.max(keyboardState.baseViewportHeight, vv.height);
-        }
-
-        const heightDiff = keyboardState.baseViewportHeight - vv.height;
-        const activeInput = getActiveAuthInput();
-        const isKeyboardOpen = heightDiff > 50 && !!activeInput;
-        keyboardState.isKeyboardOpen = isKeyboardOpen;
-        overlay.classList.toggle('auth-sheet-keyboard-open', isKeyboardOpen);
-
-        if (isKeyboardOpen) {
-            const actualOverlap = keyboardState.baseViewportHeight - (vv.height + vv.offsetTop);
-            const bottomInset = Math.max(0, actualOverlap);
-            overlay.style.setProperty('--auth-sheet-body-bottom-gap', `${bottomInset}px`);
-            window.requestAnimationFrame(() => {
-                ensureInputVisibleInSheet(activeInput, body, {
-                    viewportTop: vv.offsetTop,
-                    viewportBottom: vv.offsetTop + vv.height
-                });
-                scheduleActivePortaledInputPosition();
-            });
-        } else {
-            overlay.style.setProperty('--auth-sheet-body-bottom-gap', '0px');
-            keyboardState.baseViewportHeight = Math.max(keyboardState.baseViewportHeight, vv.height);
-            scheduleActivePortaledInputPosition();
-        }
-    }
-
-    function attachKeyboardDock() {
-        if (!isKeyboardDockEnabled() || keyboardState.attached) return;
-        const vv = window.visualViewport;
-        const { overlay } = getSheetElements();
-        if (!vv || !overlay) return;
-
-        keyboardState.baseViewportHeight = vv.height;
-        vv.addEventListener('resize', scheduleViewportChange, { passive: true });
-        vv.addEventListener('scroll', scheduleViewportChange, { passive: true });
-        keyboardState.attached = true;
-        scheduleViewportChange();
-    }
-
-    function onSheetFocusOut() {
-        window.setTimeout(() => {
-            scheduleViewportChange();
-        }, 100);
-    }
-
-    function detachKeyboardDock() {
-        if (!keyboardState.attached) return;
-        const vv = window.visualViewport;
-        const { overlay, sheet } = getSheetElements();
-
-        if (vv) {
-            vv.removeEventListener('resize', scheduleViewportChange);
-            vv.removeEventListener('scroll', scheduleViewportChange);
-        }
-
-        if (overlay) {
-            overlay.classList.remove('auth-sheet-keyboard-open');
-        }
-
-        clearScheduledViewportChange();
-        overlay?.style.setProperty('--auth-sheet-body-bottom-gap', '0px');
-        sheet?.style.removeProperty('transform');
-        keyboardState.attached = false;
-        keyboardState.baseViewportHeight = 0;
-        keyboardState.isKeyboardOpen = false;
     }
 
     function updateSheetCopy(viewId) {
@@ -934,10 +806,6 @@
         }
 
         body.scrollTop = 0;
-        keyboardState.baseViewportHeight = 0;
-        if (keyboardState.attached) {
-            scheduleViewportChange();
-        }
     }
 
     function showAuthMessage(message, type = 'error', targetView) {
@@ -1028,8 +896,6 @@
         overlay.style.removeProperty('display');
         overlay.style.removeProperty('visibility');
         overlay.style.removeProperty('opacity');
-        overlay.classList.remove('auth-sheet-keyboard-open');
-        overlay.style.setProperty('--auth-sheet-body-bottom-gap', '0px');
         await setAuthView(viewId, { clearMessage: true });
         syncAllInputProxyDisplays();
         syncPrimaryViewHeights();
@@ -1046,7 +912,6 @@
         }
 
         overlayCloseDisabledUntil = Date.now() + 240;
-        attachKeyboardDock();
         warmRegisterDependencies();
 
         if (typeof window.ensureGoogleInlineButtonReady === 'function') {
@@ -1063,7 +928,6 @@
         deactivateActivePortaledInput();
         getActiveAuthInput()?.blur();
         clearAuthMessage();
-        detachKeyboardDock();
         dragState.active = false;
         dragState.startY = 0;
         dragState.deltaY = 0;
@@ -1076,7 +940,6 @@
         window.setTimeout(() => {
             if (!overlay.classList.contains('active')) {
                 overlay.hidden = true;
-                overlay.style.setProperty('--auth-sheet-body-bottom-gap', '0px');
             }
         }, 280);
 
@@ -1174,16 +1037,6 @@
         overlay.querySelector('#resetForm')?.addEventListener('submit', (event) => {
             clearAuthMessage();
             window.handlePasswordReset?.(event);
-        });
-
-        overlay.addEventListener('focusin', (event) => {
-            if (!isEditableAuthField(event.target)) return;
-            scheduleViewportChange();
-        });
-
-        overlay.addEventListener('focusout', (event) => {
-            if (!isEditableAuthField(event.target)) return;
-            onSheetFocusOut();
         });
 
         overlay.querySelectorAll('[data-auth-canonical-input]').forEach((input) => {
@@ -1284,7 +1137,6 @@
         window.addEventListener('resize', () => {
             if (!overlay.classList.contains('active')) return;
             scheduleActivePortaledInputPosition();
-            if (keyboardState.isKeyboardOpen) return;
             syncPrimaryViewHeights();
             syncTabIndicator(sheetState.view);
         });
