@@ -72,15 +72,18 @@
 /* Login Card - Forced Exact Match with Guestbook */
 .login-card {
     background: rgba(255, 255, 255, 0.03) !important;
+    /* Much lighter black transparent */
     padding: 40px !important;
     border-radius: 24px;
     text-align: center;
+    /* Force full width on mobile minus padding, matching shop cards */
     width: min(100%, 480px) !important;
     max-width: 480px !important;
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-top: 1px solid rgba(255, 255, 255, 0.2);
     backdrop-filter: blur(20px) saturate(150%) !important;
+    /* Exact match: 20px blur + 150% saturation */
     -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
     transform: scale(var(--login-modal-scale, 0.95));
     opacity: 0;
@@ -89,11 +92,14 @@
     backface-visibility: hidden;
     color: white;
     cursor: default;
+    /* Mobile Centering Fixes */
     max-height: none;
     overflow: visible;
+    /* Soft scrollbar for card */
     scrollbar-width: thin;
     scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
 }
+
 
 /* 确保 login-card 内的所有按钮和交互元素都有正确的 cursor 和 pointer-events */
 .login-card button,
