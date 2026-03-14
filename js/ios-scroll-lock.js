@@ -60,14 +60,31 @@
         };
     }
 
+    function getPortaledInputProxy(el) {
+        if (!el || !currentModal) return null;
+
+        const canonicalInput = el.closest?.('[data-auth-canonical-input][data-auth-proxy-source]');
+        if (!canonicalInput || !canonicalInput.closest('#authInputPlane')) {
+            return null;
+        }
+
+        const sourceId = canonicalInput.getAttribute('data-auth-proxy-source');
+        if (!sourceId) return null;
+
+        return currentModal.querySelector(`[data-auth-proxy-for="${sourceId}"]`);
+    }
+
     function isFocusedFieldInsideCurrentModal() {
         const active = document.activeElement;
-        return !!(
-            active &&
-            currentModal &&
-            currentModal.contains(active) &&
-            /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName)
-        );
+        if (!active || !currentModal || !/^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName)) {
+            return false;
+        }
+
+        if (currentModal.contains(active)) {
+            return true;
+        }
+
+        return !!getPortaledInputProxy(active);
     }
 
     function shouldObserveViewportChanges() {
@@ -85,6 +102,11 @@
             (
                 currentModal.classList.contains('poetry-modal')
             ) &&
+            isFocusedFieldInsideCurrentModal()
+        ) || !!(
+            currentModal &&
+            currentModal.classList &&
+            currentModal.classList.contains('login-overlay') &&
             isFocusedFieldInsideCurrentModal()
         );
     }
@@ -119,20 +141,6 @@
     /**
      * 查找触摸点所在的最近可滚动祖先元素（在 modal 内部）
      */
-    function getPortaledInputProxy(el) {
-        if (!el || !currentModal) return null;
-
-        const canonicalInput = el.closest?.('[data-auth-canonical-input][data-auth-proxy-source]');
-        if (!canonicalInput || !canonicalInput.closest('#authInputPlane')) {
-            return null;
-        }
-
-        const sourceId = canonicalInput.getAttribute('data-auth-proxy-source');
-        if (!sourceId) return null;
-
-        return currentModal.querySelector(`[data-auth-proxy-for="${sourceId}"]`);
-    }
-
     function findScrollableParent(el) {
         if (!el || !currentModal) return null;
         let node = getPortaledInputProxy(el) || el;
@@ -179,8 +187,8 @@
         const target = e.target;
         const portaledProxy = getPortaledInputProxy(target);
 
-        // 触摸点不在弹窗内 → 阻止
-        if (!currentModal.contains(target)) {
+        // 触摸点不在弹窗内，且也不是映射到弹窗内代理输入框的真实输入 → 阻止
+        if (!currentModal.contains(target) && !portaledProxy) {
             e.preventDefault();
             return;
         }

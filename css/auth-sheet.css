@@ -265,6 +265,10 @@ body.auth-sheet-open {
     touch-action: pan-y;
 }
 
+.auth-sheet-overlay.auth-sheet-input-active .auth-sheet-body {
+    padding-bottom: calc(min(360px, 42svh) + env(safe-area-inset-bottom));
+}
+
 .auth-sheet-view {
     display: none;
 }

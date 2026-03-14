@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260314_AUTH_SHEET_PORTAL_PLANE_6';
+    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260314_AUTH_SHEET_PORTAL_PLANE_7';
     const SUPPORT_SCRIPT_SRC = './script.js?v=20260313_PROFILE_MODAL_DOCK_1';
     const EMAILJS_SRC = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
     const EMAILJS_PUBLIC_KEY = 'vawaxLVEzJMAVbut0';
@@ -487,6 +487,12 @@
         return /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName) ? active : null;
     }
 
+    function syncAuthInputActiveState() {
+        const { overlay } = getSheetElements();
+        if (!overlay) return;
+        overlay.classList.toggle('auth-sheet-input-active', !!portalState.activeId || !!getActiveAuthInput());
+    }
+
     function getProxyForInputId(inputId) {
         const { overlay } = getSheetElements();
         return overlay?.querySelector(`[data-auth-proxy-for="${inputId}"]`) || null;
@@ -641,6 +647,7 @@
         portalState.proxy = null;
         portalState.originParent = null;
         portalState.originNextSibling = null;
+        syncAuthInputActiveState();
     }
 
     function activatePortaledInputById(inputId, options = {}) {
@@ -677,6 +684,7 @@
         plane.appendChild(input);
         proxy.classList.add('is-active');
         proxy.classList.add('is-portaled');
+        syncAuthInputActiveState();
 
         syncActivePortaledInputPosition();
         scheduleActivePortaledInputPosition();
@@ -896,6 +904,7 @@
         overlay.style.removeProperty('display');
         overlay.style.removeProperty('visibility');
         overlay.style.removeProperty('opacity');
+        overlay.classList.remove('auth-sheet-input-active');
         await setAuthView(viewId, { clearMessage: true });
         syncAllInputProxyDisplays();
         syncPrimaryViewHeights();
@@ -1067,6 +1076,7 @@
                     if (portalState.input === input && document.activeElement !== input) {
                         deactivateActivePortaledInput({ blur: false });
                     }
+                    syncAuthInputActiveState();
                 }, 60);
             });
         });
