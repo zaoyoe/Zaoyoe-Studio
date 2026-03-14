@@ -379,8 +379,11 @@
 /* ==================== Mobile Responsive ==================== */
 @media (max-width: 768px) {
     .login-overlay {
-        /* Maintain full 100% wrapper and let the inner aligner handle the bottom push */
-        display: block;
+        /* Clean direct parent container for mobile sheet */
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-end;
         padding: 0;
         padding-bottom: var(--login-keyboard-offset, 0px);
         box-sizing: border-box;

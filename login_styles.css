@@ -50,25 +50,6 @@
     pointer-events: none;
 }
 
-.login-modal-scroll {
-    width: 100%;
-    height: 100%;
-    box-sizing: border-box;
-    padding: calc(env(safe-area-inset-top, 0px) + 20px) 20px calc(env(safe-area-inset-bottom, 0px) + 20px);
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    overscroll-behavior: contain;
-    scroll-padding-top: 12px;
-    scroll-padding-bottom: 24px;
-}
-
-.login-modal-aligner {
-    min-height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
 /* Login Card - Forced Exact Match with Guestbook */
 .login-card {
     background: rgba(255, 255, 255, 0.03) !important;
@@ -547,40 +528,6 @@
 }
 
 @media (max-width: 768px) {
-    #loginModal,
-    #loginModal.active,
-    #loginModal:focus-within,
-    #loginModal.ios-focus-lock,
-    #loginModal.login-keyboard-active,
-    #loginModal.login-keyboard-active.active,
-    #loginModal.login-keyboard-active:focus-within,
-    #loginModal.login-keyboard-active.ios-focus-lock {
-        align-items: stretch !important;
-        justify-content: stretch !important;
-        overflow: hidden !important;
-        padding: 0 !important;
-        box-sizing: border-box !important;
-        -webkit-overflow-scrolling: auto !important;
-    }
-
-    #loginModal .login-modal-scroll {
-        height: 100%;
-        overflow-y: auto;
-        -webkit-overflow-scrolling: touch;
-        overscroll-behavior: contain;
-    }
-
-    #loginModal.login-keyboard-active .login-modal-aligner {
-        align-items: flex-start;
-    }
-
-    .login-overlay .login-card {
-        width: 100% !important;
-        max-width: 100% !important;
-        box-sizing: border-box !important;
-        max-height: none !important;
-        overflow-y: visible !important;
-    }
 
     .modal-content.profile-modal,
     #profileModal .modal-content.profile-modal,

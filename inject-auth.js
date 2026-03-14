@@ -94,8 +94,6 @@
     const loginModalHTML = `
     <!-- Login Modal -->
     <div class="modal-overlay login-overlay" id="loginModal" style="display: none; opacity: 0; visibility: hidden;">
-        <div class="login-modal-scroll">
-        <div class="login-modal-aligner">
         <div class="login-card" onclick="event.stopPropagation()">
             <!-- Mac Window Controls -->
             <div class="mac-controls">
@@ -213,9 +211,6 @@
                     <span class="switch-link back-to-login" onclick="switchAuthView('login')" data-i18n="auth.backToLogin">返回登录</span>
                 </div>
             </div>
-
-        </div>
-        </div>
         </div>
     </div>
     `;
@@ -708,36 +703,6 @@
                     display: flex !important;
                     flex-direction: column !important;
                 }
-                .login-modal-scroll,
-                #loginModal .login-modal-scroll {
-                    display: flex !important;
-                    flex-direction: column !important;
-                    justify-content: flex-end !important;
-                    width: 100% !important;
-                    height: 100% !important;
-                    padding: 0 !important;
-                    align-items: center !important;
-                }
-                .login-modal-aligner,
-                #loginModal .login-modal-aligner {
-                    width: 100% !important;
-                    display: flex !important;
-                    flex-direction: column !important;
-                    justify-content: flex-end !important;
-                    align-items: center !important;
-                    min-height: 100% !important;
-                    padding: 0 !important;
-                    margin: 0 !important;
-                }
-            }
-
-            .login-modal-scroll,
-            #loginModal .login-modal-scroll {
-                width: 100% !important;
-                display: flex !important;
-                justify-content: center !important;
-                align-items: center !important;
-                box-sizing: border-box !important;
             }
             
             /* Submit Button - Centered, narrow width like homepage */
@@ -1174,7 +1139,6 @@
                 const overlay = document.getElementById('loginModal');
                 return {
                     overlay,
-                    scroller: overlay?.querySelector('.login-modal-scroll') || null,
                     card: overlay?.querySelector('.login-card') || null
                 };
             }
@@ -1394,10 +1358,12 @@
                     input.removeAttribute('readonly');
                 });
 
-                const { overlay, scroller, card } = getLoginModalElements();
+                const { overlay, card } = getLoginModalElements();
                 if (overlay) overlay.scrollTop = 0;
-                if (scroller) scroller.scrollTop = 0;
-                if (card) card.scrollTop = 0;
+                if (card) {
+                    const formView = card.querySelector('.form-view:not(.hidden)');
+                    if (formView) formView.scrollTop = 0;
+                }
 
                 loginModalKeyboardState.baseViewportHeight = 0;
 
