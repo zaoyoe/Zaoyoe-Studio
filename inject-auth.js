@@ -486,16 +486,24 @@
         if (tabs) tabs.hidden = viewId === 'reset';
     }
 
-    function syncTabIndicator(viewId) {
+    function syncTabIndicator(viewId, options = {}) {
+        const { immediate = false } = options;
         const tabs = document.getElementById('authSheetTabs');
         const indicator = tabs?.querySelector('.auth-sheet-tab-indicator');
         const activeButton = tabs?.querySelector(`[data-auth-tab="${viewId}"]`);
         if (!tabs || !indicator || !activeButton || tabs.hidden) return;
 
-        window.requestAnimationFrame(() => {
+        const applyPosition = () => {
             indicator.style.width = `${activeButton.offsetWidth}px`;
             indicator.style.transform = `translateX(${activeButton.offsetLeft}px)`;
-        });
+        };
+
+        if (immediate) {
+            applyPosition();
+            return;
+        }
+
+        window.requestAnimationFrame(applyPosition);
     }
 
     function syncPrimaryViewHeights() {
@@ -529,13 +537,13 @@
         }
     }
 
-    function updateTabState(viewId) {
+    function updateTabState(viewId, options = {}) {
         document.querySelectorAll('#loginModal [data-auth-tab]').forEach((button) => {
             const isActive = button.dataset.authTab === viewId;
             button.classList.toggle('is-active', isActive);
             button.setAttribute('aria-selected', isActive ? 'true' : 'false');
         });
-        syncTabIndicator(viewId);
+        syncTabIndicator(viewId, options);
     }
 
     async function setAuthView(viewId, options = {}) {
@@ -564,7 +572,7 @@
         sheetState.view = viewId;
         overlay.classList.toggle('auth-sheet-primary-mode', PRIMARY_VIEWS.has(viewId));
         updateSheetCopy(viewId);
-        updateTabState(viewId);
+        updateTabState(viewId, { immediate: !overlay.classList.contains('active') });
 
         if (clearMessage) {
             clearAuthMessage();
@@ -666,19 +674,12 @@
         overlay.style.removeProperty('visibility');
         overlay.style.removeProperty('opacity');
         await setAuthView(viewId, { clearMessage: true });
+        syncPrimaryViewHeights();
+        syncTabIndicator(sheetState.view, { immediate: true });
 
         window.requestAnimationFrame(() => {
             overlay.classList.add('active');
             overlay.setAttribute('aria-hidden', 'false');
-            window.requestAnimationFrame(() => {
-                syncPrimaryViewHeights();
-                syncTabIndicator(sheetState.view);
-            });
-            window.setTimeout(() => {
-                if (!overlay.classList.contains('active')) return;
-                syncPrimaryViewHeights();
-                syncTabIndicator(sheetState.view);
-            }, 180);
         });
 
         document.body.classList.add('auth-sheet-open');
