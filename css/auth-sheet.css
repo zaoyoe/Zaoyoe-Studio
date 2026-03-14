@@ -342,6 +342,7 @@ body.auth-sheet-open {
 #loginModal .auth-sheet-input-proxy,
 .auth-sheet-input-proxy {
     width: 100%;
+    height: 44px;
     min-height: 44px;
     padding: 11px 13px;
     border-radius: 13px;
@@ -359,11 +360,11 @@ body.auth-sheet-open {
     position: relative;
     overflow: hidden;
     touch-action: manipulation;
+    box-sizing: border-box;
 }
 
 .auth-sheet-input-proxy.is-active {
     border-color: var(--auth-sheet-blue-bright);
-    box-shadow: 0 0 0 3px rgba(139, 184, 232, 0.16);
 }
 
 .auth-sheet-input-proxy.is-portaled .auth-sheet-input-proxy-value,
@@ -394,6 +395,7 @@ body.auth-sheet-open {
 #loginModal .auth-sheet-input,
 .auth-sheet-input {
     width: 100%;
+    height: 44px;
     min-height: 44px;
     padding: 11px 13px;
     border-radius: 13px;
@@ -407,6 +409,7 @@ body.auth-sheet-open {
     -webkit-appearance: none;
     appearance: none;
     touch-action: pan-y;
+    box-sizing: border-box;
 }
 
 .auth-sheet-input--parked {
@@ -455,7 +458,7 @@ body.auth-sheet-open {
 .auth-sheet-input:focus {
     border-color: var(--auth-sheet-blue-bright) !important;
     background: rgba(255, 255, 255, 0.042) !important;
-    box-shadow: 0 0 0 3px rgba(139, 184, 232, 0.16) !important;
+    box-shadow: none !important;
 }
 
 #loginModal .auth-sheet-input:-webkit-autofill,
