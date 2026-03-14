@@ -78,17 +78,30 @@ body.auth-sheet-open {
     align-items: flex-end;
     width: min(100%, 480px);
     min-height: 0;
-    transform: translate3d(0, calc(var(--auth-sheet-keyboard-offset, 0px) * -1), 0);
-    transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
-    will-change: transform;
+    padding-bottom: var(--auth-sheet-keyboard-offset, 0px);
+    transition: padding-bottom 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: padding-bottom;
 }
 
 .auth-sheet {
     position: relative;
     width: 100%;
     max-height: min(88svh, 860px);
+    min-height: 0;
     border-radius: 26px;
     overflow: hidden;
+    color: var(--auth-sheet-text);
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    isolation: isolate;
+}
+
+.auth-sheet-surface {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    border-radius: inherit;
     background: rgba(255, 255, 255, 0.03);
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-top: 1px solid rgba(255, 255, 255, 0.18);
@@ -97,23 +110,41 @@ body.auth-sheet-open {
     box-shadow:
         0 24px 56px rgba(0, 0, 0, 0.44),
         inset 0 1px 0 rgba(255, 255, 255, 0.08);
-    color: var(--auth-sheet-text);
+}
+
+.auth-sheet-motion-shell {
+    position: relative;
+    z-index: 1;
+    min-height: 0;
+    padding-bottom: 10px;
     transform: translateY(24px) scale(0.988);
     opacity: 0;
     transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.24s ease;
 }
 
-.auth-sheet-overlay.active .auth-sheet {
-    transform: translateY(0) scale(1);
+.auth-sheet-form-core {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    min-height: 0;
+    padding: 12px 20px 18px;
+    transform: translateY(18px);
+    opacity: 0;
+    transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.22s ease;
+}
+
+.auth-sheet-overlay.active .auth-sheet-motion-shell,
+.auth-sheet-overlay.active .auth-sheet-form-core {
+    transform: none;
     opacity: 1;
 }
 
-.auth-sheet-shell {
-    position: relative;
-    display: grid;
-    grid-template-rows: auto auto auto auto minmax(0, 1fr);
-    max-height: min(88svh, 860px);
-    min-height: 0;
+.auth-sheet-overlay.auth-sheet-keyboard-open .auth-sheet-stage,
+.auth-sheet-overlay.auth-sheet-keyboard-open .auth-sheet-motion-shell,
+.auth-sheet-overlay.auth-sheet-keyboard-open .auth-sheet-form-core,
+.auth-sheet-overlay.auth-sheet-keyboard-open .auth-sheet-tab-indicator {
+    transition: none;
 }
 
 .auth-sheet-drag-zone {
@@ -209,7 +240,7 @@ body.auth-sheet-open {
 }
 
 .auth-sheet-message {
-    margin: 10px 20px 0;
+    margin: 0 0 12px;
     padding: 9px 11px;
     border-radius: 13px;
     font-size: 11.5px;
@@ -238,7 +269,7 @@ body.auth-sheet-open {
     position: relative;
     min-height: 0;
     overflow: auto;
-    padding: 12px 20px 18px;
+    padding: 0;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
     touch-action: pan-y;
@@ -612,25 +643,25 @@ body.auth-sheet-open {
         border-radius: 24px 24px 0 0;
     }
 
-    .auth-sheet-shell {
-        max-height: calc(88svh - var(--auth-sheet-keyboard-offset, 0px));
+    .auth-sheet-motion-shell {
+        padding-bottom: 8px;
+    }
+
+    .auth-sheet-form-core {
+        padding: 12px 18px calc(16px + env(safe-area-inset-bottom));
     }
 
     .auth-sheet-header {
         padding: 0 18px 8px;
     }
 
-    .auth-sheet-tabs,
-    .auth-sheet-message,
-    .auth-sheet-body {
+    .auth-sheet-tabs {
         margin-left: 18px;
         margin-right: 18px;
-        padding-left: 0;
-        padding-right: 0;
     }
 
     .auth-sheet-body {
-        padding-bottom: calc(16px + env(safe-area-inset-bottom));
+        padding-bottom: 0;
     }
 
     .auth-sheet-inline-group {

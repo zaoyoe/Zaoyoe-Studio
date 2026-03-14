@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260314_AUTH_SHEET_KEYBOARD_STAGE_1';
+    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260314_AUTH_SHEET_MOTION_CORE_1';
     const SUPPORT_SCRIPT_SRC = './script.js?v=20260313_PROFILE_MODAL_DOCK_1';
     const EMAILJS_SRC = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
     const EMAILJS_PUBLIC_KEY = 'vawaxLVEzJMAVbut0';
@@ -149,7 +149,9 @@
                 <div class="auth-sheet-backdrop" data-auth-backdrop></div>
                 <div class="auth-sheet-stage">
                     <section class="auth-sheet" role="dialog" aria-modal="true" aria-labelledby="authSheetTitle">
-                        <div class="auth-sheet-shell">
+                        <div class="auth-sheet-surface" aria-hidden="true"></div>
+
+                        <div class="auth-sheet-motion-shell">
                             <div class="auth-sheet-drag-zone" data-auth-drag-zone>
                                 <div class="auth-sheet-handle" aria-hidden="true"></div>
                             </div>
@@ -164,7 +166,9 @@
                                 <button type="button" class="auth-sheet-tab is-active" data-auth-tab="login" data-i18n="common.login">登录</button>
                                 <button type="button" class="auth-sheet-tab" data-auth-tab="register" data-i18n="auth.register">注册</button>
                             </nav>
+                        </div>
 
+                        <div class="auth-sheet-form-core">
                             <div id="authSheetMessage" class="auth-sheet-message" hidden role="status" aria-live="polite"></div>
 
                             <div class="auth-sheet-body">
@@ -392,6 +396,8 @@
             overlay,
             stage: overlay?.querySelector('.auth-sheet-stage') || null,
             sheet: overlay?.querySelector('.auth-sheet') || null,
+            motionShell: overlay?.querySelector('.auth-sheet-motion-shell') || null,
+            formCore: overlay?.querySelector('.auth-sheet-form-core') || null,
             tabs: overlay?.querySelector('#authSheetTabs') || null,
             title: overlay?.querySelector('#authSheetTitle') || null,
             message: overlay?.querySelector('#authSheetMessage') || null,
