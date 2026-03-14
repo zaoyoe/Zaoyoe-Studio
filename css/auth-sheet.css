@@ -530,6 +530,7 @@ body.auth-sheet-open {
     position: fixed;
     inset: 0;
     z-index: 12090;
+    isolation: isolate;
     pointer-events: none;
 }
 
@@ -812,6 +813,40 @@ body.auth-sheet-open {
     .auth-sheet-inline-row--spread {
         flex-wrap: wrap;
         justify-content: space-between;
+    }
+
+    /*
+      iOS Safari caret stability:
+      flatten auth-sheet motion only while an input is focused, and give the
+      portaled real input a tiny paint layer so the caret is composited
+      against the input itself instead of a fully transparent surface.
+    */
+    .auth-sheet-overlay.active:focus-within,
+    .auth-sheet-overlay.ios-focus-lock {
+        transform: none !important;
+        will-change: auto !important;
+    }
+
+    .auth-sheet-overlay.active:focus-within .auth-sheet-motion-shell,
+    .auth-sheet-overlay.active:focus-within .auth-sheet-form-core,
+    .auth-sheet-overlay.ios-focus-lock .auth-sheet-motion-shell,
+    .auth-sheet-overlay.ios-focus-lock .auth-sheet-form-core {
+        transform: none !important;
+        opacity: 1 !important;
+        animation: none !important;
+        transition: none !important;
+        will-change: auto !important;
+    }
+
+    .auth-sheet-overlay.active:focus-within .auth-sheet-input.auth-sheet-input--portaled,
+    .auth-sheet-overlay.active:focus-within .auth-sheet-input.auth-sheet-input--portaled:focus,
+    .auth-sheet-overlay.ios-focus-lock .auth-sheet-input.auth-sheet-input--portaled,
+    .auth-sheet-overlay.ios-focus-lock .auth-sheet-input.auth-sheet-input--portaled:focus {
+        background: rgba(12, 14, 18, 0.001) !important;
+        opacity: 1 !important;
+        color: var(--auth-sheet-text) !important;
+        -webkit-text-fill-color: var(--auth-sheet-text) !important;
+        text-shadow: none !important;
     }
 }
 
