@@ -259,7 +259,7 @@
         /* Prompts page: longer verify input (left) + get button right aligned */
         #loginModal #registerView .auth-sheet-inline-group--code {
             width: 100%;
-            grid-template-columns: 168px 104px;
+            grid-template-columns: minmax(0, 184px) 104px;
             justify-content: space-between;
             gap: 6px;
         }
@@ -271,9 +271,23 @@
         /* Prompts page: brighter caret for better visibility */
         #loginModal .auth-sheet-input,
         #loginModal .auth-sheet-input:focus,
+        #loginModal #authInputPlane .auth-sheet-input,
+        #loginModal #authInputPlane .auth-sheet-input:focus,
         #loginModal .auth-sheet-input.auth-sheet-input--portaled,
+        #loginModal #authInputPlane .auth-sheet-input.auth-sheet-input--portaled,
         #loginModal .auth-sheet-input.auth-sheet-input--portaled:focus {
-            caret-color: #f4f8ff !important;
+            color: #f4f8ff !important;
+            -webkit-text-fill-color: #f4f8ff !important;
+            caret-color: #ffffff !important;
+        }
+
+        #loginModal #reg-code,
+        #loginModal #reg-code:focus,
+        #loginModal #authInputPlane #reg-code,
+        #loginModal #authInputPlane #reg-code:focus {
+            color: #f8fbff !important;
+            -webkit-text-fill-color: #f8fbff !important;
+            caret-color: #ffffff !important;
         }
 
         /* Prompts page: plain gray rectangular action button (no gradient / no 3D outline) */
