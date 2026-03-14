@@ -378,6 +378,12 @@
         await Promise.all([ensureSupportScript(), ensureEmailJs()]);
     }
 
+    function warmRegisterDependencies() {
+        ensureRegisterDependencies().catch((error) => {
+            console.warn('⚠️ Failed to warm register dependencies:', error?.message || error);
+        });
+    }
+
     function getSheetElements() {
         const overlay = document.getElementById('loginModal');
         return {
@@ -542,11 +548,7 @@
         }
 
         if (ensureDependencies && viewId === 'register') {
-            try {
-                await ensureRegisterDependencies();
-            } catch (error) {
-                console.warn('⚠️ Failed to prepare register dependencies:', error?.message || error);
-            }
+            warmRegisterDependencies();
         }
 
         document.querySelectorAll('#loginModal [data-auth-view]').forEach((view) => {
@@ -678,6 +680,7 @@
 
         overlayCloseDisabledUntil = Date.now() + 240;
         attachKeyboardDock();
+        warmRegisterDependencies();
 
         if (typeof window.ensureGoogleInlineButtonReady === 'function') {
             window.ensureGoogleInlineButtonReady({ renderFallbackButton: true }).catch((error) => {
