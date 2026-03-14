@@ -2,6 +2,7 @@
 #defaultAuthIcon {
     filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.4)) drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3));
     font-size: 2rem !important;
+    color: rgba(255, 255, 255, 0.55) !important;
 }
 
 /* 确保未登录时按钮也是透明背景，无正方形色块 */
@@ -13,6 +14,7 @@ button.login-trigger-btn,
     border: none !important;
     box-shadow: none !important;
     outline: none !important;
+    color: rgba(255, 255, 255, 0.92) !important;
 }
 
 /* Default icon hover - HIGHEST PRIORITY */

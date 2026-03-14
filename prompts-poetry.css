@@ -160,6 +160,22 @@ canvas#starryCanvas,
     box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
 }
 
+body.prompts-page #loginModal .auth-sheet-backdrop {
+    background:
+        linear-gradient(180deg, rgba(0, 0, 0, 0.34) 0%, rgba(0, 0, 0, 0.86) 100%);
+}
+
+body.prompts-page #loginModal .auth-sheet-surface {
+    background: linear-gradient(180deg, rgba(12, 14, 18, 0.82) 0%, rgba(9, 11, 15, 0.92) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-top: 1px solid rgba(255, 255, 255, 0.14);
+    backdrop-filter: blur(18px) saturate(118%);
+    -webkit-backdrop-filter: blur(18px) saturate(118%);
+    box-shadow:
+        0 24px 56px rgba(0, 0, 0, 0.5),
+        inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
 [data-theme="dark"] .modal-inner {
     border-color: rgba(255, 255, 255, 0.1);
     box-shadow: 0 50px 100px rgba(0, 0, 0, 0.5);
