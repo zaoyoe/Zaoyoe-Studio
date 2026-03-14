@@ -398,6 +398,14 @@ let generatedCode = null; // Stores the real system-generated code
 const serviceID = "service_1bvx7vq"; // Replace with your Service ID
 const templateID = "template_ieu7m97"; // Replace with your Template ID
 
+function showAuthMessageOrAlert(message, type = 'error', targetView = 'register') {
+    if (typeof window.showAuthMessage === 'function' && window.showAuthMessage(message, type, targetView)) {
+        return;
+    }
+
+    alert(message);
+}
+
 // Function 1: Send Verification Code
 function sendVerificationCode() {
     const emailInput = document.getElementById('reg-email');
@@ -406,13 +414,13 @@ function sendVerificationCode() {
 
     // 1. Validate email format
     if (!email || !email.includes('@')) {
-        alert("请先填写正确的邮箱地址！");
+        showAuthMessageOrAlert("请先填写正确的邮箱地址！");
         return;
     }
 
     // ✅ 检查 EmailJS 是否已加载
     if (typeof emailjs === 'undefined') {
-        alert("邮件服务加载中，请稍后再试...");
+        showAuthMessageOrAlert("邮件服务加载中，请稍后再试...");
         console.error('❌ EmailJS not loaded');
         return;
     }
@@ -429,7 +437,7 @@ function sendVerificationCode() {
     const timeoutId = setTimeout(() => {
         if (sendBtn.innerText === "发送中...") {
             console.warn('⚠️ 验证码发送超时');
-            alert("发送超时，请检查网络后重试。");
+            showAuthMessageOrAlert("发送超时，请检查网络后重试。");
             sendBtn.disabled = false;
             sendBtn.innerText = "重新获取";
         }
@@ -445,12 +453,12 @@ function sendVerificationCode() {
         .then(function (response) {
             clearTimeout(timeoutId); // 清除超时
             console.log('SUCCESS!', response.status, response.text);
-            alert(`验证码已发送至 ${email}，请查收！`);
+            showAuthMessageOrAlert(`验证码已发送至 ${email}，请查收。`, 'success');
             startCountdown(sendBtn); // Start countdown
         }, function (error) {
             clearTimeout(timeoutId); // 清除超时
             console.log('FAILED...', error);
-            alert("发送失败，请检查网络或稍后重试。");
+            showAuthMessageOrAlert("发送失败，请检查网络或稍后重试。");
             sendBtn.disabled = false;
             sendBtn.innerText = "重新获取";
         });

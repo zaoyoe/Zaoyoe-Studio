@@ -12,9 +12,33 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
+function showAuthFeedback(message, type = 'error', targetView) {
+    if (typeof window.showAuthMessage === 'function' && window.showAuthMessage(message, type, targetView)) {
+        return true;
+    }
+
+    alert(message);
+    return false;
+}
+
+function clearAuthFeedback() {
+    if (typeof window.clearAuthMessage === 'function') {
+        window.clearAuthMessage();
+    }
+}
+
+function setAuthLoading(formName, isLoading, label) {
+    if (typeof window.setAuthFormLoading === 'function') {
+        window.setAuthFormLoading(formName, isLoading, label);
+    }
+}
+
 // ==================== 注册功能 (Supabase 版本) ====================
 async function handleRegister(event) {
     event.preventDefault();
+
+    clearAuthFeedback();
+    setAuthLoading('register', true, '正在创建...');
 
     const inputCode = document.getElementById('reg-code').value;
     const password = document.getElementById('reg-password').value;
@@ -24,13 +48,15 @@ async function handleRegister(event) {
 
     // 隐私政策验证
     if (!privacyConsent) {
-        alert("请先阅读并同意隐私政策");
+        showAuthFeedback('请先阅读并同意隐私政策', 'error', 'register');
+        setAuthLoading('register', false);
         return;
     }
 
     // 验证码检查
     if (inputCode !== generatedCode) {
-        alert("验证码错误！请检查邮件重新输入。");
+        showAuthFeedback('验证码错误，请检查邮件后重新输入。', 'error', 'register');
+        setAuthLoading('register', false);
         return;
     }
 
@@ -43,7 +69,8 @@ async function handleRegister(event) {
             .limit(1);
 
         if (existingUsers && existingUsers.length > 0) {
-            alert("该用户名已被使用，请选择其他用户名。");
+            showAuthFeedback('该用户名已被使用，请选择其他用户名。', 'error', 'register');
+            setAuthLoading('register', false);
             return;
         }
 
@@ -67,7 +94,11 @@ async function handleRegister(event) {
         console.log('✅ User created:', data.user.id);
 
         // 关闭模态框
-        toggleLoginModal();
+        if (typeof window.closeLoginModal === 'function') {
+            window.closeLoginModal();
+        } else {
+            toggleLoginModal();
+        }
 
         // 更新UI
         updateUserUI({
@@ -88,7 +119,9 @@ async function handleRegister(event) {
             errorMessage = error.message || '未知错误';
         }
 
-        alert(`注册失败: ${errorMessage}`);
+        showAuthFeedback(`注册失败: ${errorMessage}`, 'error', 'register');
+    } finally {
+        setAuthLoading('register', false);
     }
 }
 
@@ -96,12 +129,16 @@ async function handleRegister(event) {
 async function handleLogin(event) {
     event.preventDefault();
 
+    clearAuthFeedback();
+    setAuthLoading('login', true, '正在登录...');
+
     const email = document.getElementById('login-email').value.trim();
     const password = document.getElementById('login-password').value;
     const rememberMe = document.getElementById('rememberMe')?.checked || false;
 
     if (!email || !password) {
-        alert("请输入邮箱和密码");
+        showAuthFeedback('请输入邮箱和密码', 'error', 'login');
+        setAuthLoading('login', false);
         return;
     }
 
@@ -121,7 +158,8 @@ async function handleLogin(event) {
                     const expiresDate = new Date(ipStatus.expires_at);
                     message += `\n解封时间: ${expiresDate.toLocaleString('zh-CN')}`;
                 }
-                alert(message);
+                showAuthFeedback(message, 'error', 'login');
+                setAuthLoading('login', false);
                 return;
             }
         }
@@ -130,7 +168,8 @@ async function handleLogin(event) {
         const lockStatus = await checkUserLocked(email);
         if (lockStatus.isLocked) {
             const minutes = Math.ceil(lockStatus.remainingSeconds / 60);
-            alert(`⚠️ 账户已锁定\n\n由于多次登录失败，您的账户已被临时锁定。\n请在 ${minutes} 分钟后重试。`);
+            showAuthFeedback(`账户已锁定。由于多次登录失败，请在 ${minutes} 分钟后重试。`, 'error', 'login');
+            setAuthLoading('login', false);
             return;
         }
 
@@ -185,7 +224,11 @@ async function handleLogin(event) {
         }
 
         // 关闭模态框
-        toggleLoginModal();
+        if (typeof window.closeLoginModal === 'function') {
+            window.closeLoginModal();
+        } else {
+            toggleLoginModal();
+        }
 
         // 更新UI
         let avatarUrl = profile?.avatar_url || data.user.user_metadata?.avatar_url || '';
@@ -248,12 +291,13 @@ async function handleLogin(event) {
             errorMessage = error.message || '未知错误';
         }
 
-        alert(`登录失败: ${errorMessage}`);
-
-        // If email is not registered, switch to register view after alert
-        if (errorMessage.includes('未注册') && typeof switchAuthView === 'function') {
-            switchAuthView('register');
+        if (errorMessage.includes('未注册')) {
+            showAuthFeedback(`登录失败: ${errorMessage}`, 'error', 'register');
+        } else {
+            showAuthFeedback(`登录失败: ${errorMessage}`, 'error', 'login');
         }
+    } finally {
+        setAuthLoading('login', false);
     }
 }
 
@@ -1006,23 +1050,25 @@ let resetCooldownSeconds = 0;
 async function handlePasswordReset(event) {
     if (event) event.preventDefault();
 
+    clearAuthFeedback();
+
     const emailInput = document.getElementById('reset-email');
     const submitBtn = document.querySelector('#resetForm button[type="submit"]');
 
     if (!emailInput || !submitBtn) {
-        alert("❌ 系统错误：找不到表单元素，请刷新页面重试。");
+        showAuthFeedback('系统错误：找不到表单元素，请刷新页面重试。', 'error', 'reset');
         return;
     }
 
     const email = emailInput.value.trim();
 
     if (!email) {
-        alert("❌ 请输入邮箱地址");
+        showAuthFeedback('请输入邮箱地址', 'error', 'reset');
         return;
     }
 
     if (resetCooldownSeconds > 0) {
-        alert(`⏱️ 请等待 ${resetCooldownSeconds} 秒后再试`);
+        showAuthFeedback(`请等待 ${resetCooldownSeconds} 秒后再试`, 'error', 'reset');
         return;
     }
 
@@ -1038,7 +1084,7 @@ async function handlePasswordReset(event) {
         if (error) throw error;
 
         console.log('✅ 重置邮件已发送');
-        alert(`✅ 重置密码邮件已发送到 ${email}\n\n请检查您的收件箱（包括垃圾邮件），点击邮件中的链接重置密码。`);
+        showAuthFeedback(`重置密码邮件已发送到 ${email}，请检查收件箱（包括垃圾邮件）。`, 'success', 'reset');
         emailInput.value = '';
 
         resetCooldownSeconds = 30;
@@ -1050,7 +1096,7 @@ async function handlePasswordReset(event) {
 
     } catch (error) {
         console.error('密码重置失败:', error);
-        alert(`❌ ${error.message || '发送失败'}`);
+        showAuthFeedback(error.message || '发送失败', 'error', 'reset');
         submitBtn.textContent = originalText;
         submitBtn.disabled = false;
     }
@@ -1283,6 +1329,7 @@ window.triggerGoogleLogin = async () => {
     console.log('🔵 triggerGoogleLogin called (Client-side Popup mode)');
 
     if (window.isGoogleLoginLoading) return;
+    clearAuthFeedback();
     setGoogleButtonsLoading(true, '正在打开授权窗口...');
 
     try {
@@ -1291,7 +1338,7 @@ window.triggerGoogleLogin = async () => {
     } catch (error) {
         console.error('❌ Google login failed:', error);
         setGoogleButtonsLoading(false);
-        alert('打开授权窗口失败: ' + (error.message || '请检查浏览器拦截设置'));
+        showAuthFeedback('打开授权窗口失败: ' + (error.message || '请检查浏览器拦截设置'), 'error', 'login');
     }
 };
 
@@ -1320,7 +1367,8 @@ function openGooglePopupFallback() {
         `width=${width},height=${height},top=${top},left=${left},toolbar=no,menubar=no`);
 
     if (!popup) {
-        alert('弹窗被浏览器拦截，请允许弹窗后重试');
+        setGoogleButtonsLoading(false);
+        showAuthFeedback('弹窗被浏览器拦截，请允许弹窗后重试', 'error', 'login');
         return;
     }
 
@@ -1409,7 +1457,7 @@ async function handleGoogleCredentialResponse(response) {
         }
     } catch (error) {
         console.error('❌ Google ID Token login error:', error);
-        alert('Google 登录失败: ' + (error.message || '请稍后重试'));
+        showAuthFeedback('Google 登录失败: ' + (error.message || '请稍后重试'), 'error', 'login');
     } finally {
         setGoogleButtonsLoading(false);
     }
