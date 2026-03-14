@@ -428,6 +428,16 @@ body.auth-sheet-open {
     color: transparent;
 }
 
+#loginModal .auth-sheet-input.auth-sheet-input--proxy-hidden,
+.auth-sheet-input.auth-sheet-input--proxy-hidden,
+#loginModal .auth-sheet-input.auth-sheet-input--proxy-hidden:focus,
+.auth-sheet-input.auth-sheet-input--proxy-hidden:focus {
+    color: transparent !important;
+    caret-color: transparent !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
 .auth-sheet-input::placeholder {
     color: rgba(231, 236, 242, 0.28);
 }

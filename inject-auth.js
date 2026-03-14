@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260314_AUTH_SHEET_PORTAL_PLANE_2';
+    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260314_AUTH_SHEET_PORTAL_PLANE_3';
     const SUPPORT_SCRIPT_SRC = './script.js?v=20260313_PROFILE_MODAL_DOCK_1';
     const EMAILJS_SRC = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
     const EMAILJS_PUBLIC_KEY = 'vawaxLVEzJMAVbut0';
@@ -565,11 +565,31 @@
         }
     }
 
+    function setPortaledInputVisibility(input, proxy, isVisible) {
+        if (!input) return;
+        input.classList.toggle('auth-sheet-input--proxy-hidden', !isVisible);
+        proxy?.classList.toggle('is-proxy-hidden', !isVisible);
+    }
+
     function syncActivePortaledInputPosition() {
         if (!portalState.activeId || !portalState.input || !portalState.proxy) return;
 
+        const { body } = getSheetElements();
         const rect = portalState.proxy.getBoundingClientRect();
         const input = portalState.input;
+        let isVisible = true;
+
+        if (body) {
+            const bodyRect = body.getBoundingClientRect();
+            const visibleTop = Math.max(bodyRect.top, 0);
+            const visibleBottom = Math.min(bodyRect.bottom, window.innerHeight);
+            const visibleLeft = Math.max(bodyRect.left, 0);
+            const visibleRight = Math.min(bodyRect.right, window.innerWidth);
+            const visibleWidth = Math.min(rect.right, visibleRight) - Math.max(rect.left, visibleLeft);
+            const visibleHeight = Math.min(rect.bottom, visibleBottom) - Math.max(rect.top, visibleTop);
+            isVisible = visibleWidth > 16 && visibleHeight > 20;
+        }
+
         input.style.position = 'fixed';
         input.style.left = `${rect.left}px`;
         input.style.top = `${rect.top}px`;
@@ -577,7 +597,8 @@
         input.style.height = `${rect.height}px`;
         input.style.margin = '0';
         input.style.zIndex = '12091';
-        input.style.pointerEvents = 'auto';
+        input.style.pointerEvents = isVisible ? 'auto' : 'none';
+        setPortaledInputVisibility(input, portalState.proxy, isVisible);
     }
 
     function scheduleActivePortaledInputPosition() {
@@ -613,11 +634,13 @@
 
         input.classList.add('auth-sheet-input--parked');
         input.classList.remove('auth-sheet-input--portaled');
+        input.classList.remove('auth-sheet-input--proxy-hidden');
         input.setAttribute('aria-hidden', 'true');
         input.setAttribute('tabindex', '-1');
 
         proxy?.classList.remove('is-active');
         proxy?.classList.remove('is-portaled');
+        proxy?.classList.remove('is-proxy-hidden');
         updateInputProxyDisplay(input);
 
         plane?.classList.remove('is-active');
