@@ -525,7 +525,7 @@
         });
 
         if (maxHeight > 0) {
-            body.style.setProperty('--auth-primary-view-min-height', `${maxHeight}px`);
+            body.style.setProperty('--auth-primary-view-min-height', `${maxHeight + 12}px`);
         }
     }
 
@@ -564,7 +564,6 @@
         sheetState.view = viewId;
         overlay.classList.toggle('auth-sheet-primary-mode', PRIMARY_VIEWS.has(viewId));
         updateSheetCopy(viewId);
-        syncPrimaryViewHeights();
         updateTabState(viewId);
 
         if (clearMessage) {
@@ -675,6 +674,11 @@
                 syncPrimaryViewHeights();
                 syncTabIndicator(sheetState.view);
             });
+            window.setTimeout(() => {
+                if (!overlay.classList.contains('active')) return;
+                syncPrimaryViewHeights();
+                syncTabIndicator(sheetState.view);
+            }, 180);
         });
 
         document.body.classList.add('auth-sheet-open');
