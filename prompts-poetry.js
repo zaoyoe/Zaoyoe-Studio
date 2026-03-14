@@ -667,29 +667,20 @@ async function checkAuthState() {
 function showLoginModal() {
     closeAvatarMenu();
 
-    // Prefer the unified avatar/login modal injected by inject-auth.js
     if (typeof window.openLoginModal === 'function') {
         const unifiedModal = document.getElementById('loginModal');
         if (unifiedModal) {
-            // Keep login above the prompt modal/comment sheet on this page
             unifiedModal.style.setProperty('z-index', '12060', 'important');
         }
         window.openLoginModal();
         return;
     }
 
-    // Fallback: legacy admin-only Google modal
-    const modal = document.getElementById('adminLoginModal');
-    if (modal) {
-        modal.classList.add('active');
-    }
+    console.warn('Unified auth sheet is not ready yet on prompts page.');
 }
 
 function closeAdminLoginModal() {
-    const modal = document.getElementById('adminLoginModal');
-    if (modal) {
-        modal.classList.remove('active');
-    }
+    window.closeLoginModal?.();
 }
 
 // Gallery login handler (for user dropdown)
