@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260314_AUTH_SHEET_IOS_INLINE_29';
+    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260314_AUTH_SHEET_IOS_OVERLAY_30';
     const SUPPORT_SCRIPT_SRC = './script.js?v=20260314_AUTH_I18N_1';
     const EMAILJS_SRC = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
     const EMAILJS_PUBLIC_KEY = 'vawaxLVEzJMAVbut0';
@@ -53,7 +53,7 @@
             (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     }
 
-    function shouldUseInlineAuthInputs() {
+    function shouldUseInPlaceAuthInput() {
         return isIOSMobile() && window.matchMedia('(max-width: 768px)').matches;
     }
     function t(key, fallback) {
@@ -542,54 +542,6 @@
         }
     }
 
-    function syncAuthInputMode() {
-        const { overlay, plane } = getSheetElements();
-        if (!overlay) return;
-
-        const useInlineInputs = shouldUseInlineAuthInputs();
-        overlay.classList.toggle('auth-sheet-inline-inputs', useInlineInputs);
-
-        if (useInlineInputs && portalState.activeId) {
-            deactivateActivePortaledInput({ blur: false });
-        }
-
-        overlay.querySelectorAll('[data-auth-canonical-input]').forEach((input) => {
-            resetPortaledInputStyles(input);
-
-            if (useInlineInputs) {
-                input.classList.remove('auth-sheet-input--parked');
-                input.classList.remove('auth-sheet-input--portaled');
-                input.classList.remove('auth-sheet-input--proxy-hidden');
-                input.removeAttribute('aria-hidden');
-                input.removeAttribute('tabindex');
-                return;
-            }
-
-            if (portalState.input === input) return;
-
-            input.classList.add('auth-sheet-input--parked');
-            input.classList.remove('auth-sheet-input--portaled');
-            input.classList.remove('auth-sheet-input--proxy-hidden');
-            input.setAttribute('aria-hidden', 'true');
-            input.setAttribute('tabindex', '-1');
-        });
-
-        overlay.querySelectorAll('[data-auth-proxy-for]').forEach((proxy) => {
-            proxy.hidden = useInlineInputs;
-            proxy.setAttribute('aria-hidden', useInlineInputs ? 'true' : 'false');
-            proxy.classList.remove('is-active');
-            proxy.classList.remove('is-portaled');
-            proxy.classList.remove('is-proxy-hidden');
-        });
-
-        if (useInlineInputs) {
-            plane?.classList.remove('is-active');
-            plane?.setAttribute('aria-hidden', 'true');
-        }
-
-        syncAuthInputActiveState();
-    }
-
     function resetPortaledInputStyles(input) {
         if (!input) return;
         input.style.removeProperty('position');
@@ -600,6 +552,8 @@
         input.style.removeProperty('margin');
         input.style.removeProperty('z-index');
         input.style.removeProperty('pointer-events');
+        input.style.removeProperty('right');
+        input.style.removeProperty('bottom');
     }
 
     function focusPortaledInput(input) {
@@ -626,10 +580,31 @@
     function syncActivePortaledInputPosition() {
         if (!portalState.activeId || !portalState.input || !portalState.proxy) return;
 
-        const { body } = getSheetElements();
+        const { body, plane } = getSheetElements();
         const rect = portalState.proxy.getBoundingClientRect();
         const input = portalState.input;
+        const useInPlaceInput = shouldUseInPlaceAuthInput();
         let isVisible = true;
+
+        if (useInPlaceInput) {
+            const offsetParent = input.offsetParent || portalState.proxy.offsetParent || portalState.originParent;
+            if (!offsetParent) return;
+            const offsetParentRect = offsetParent.getBoundingClientRect();
+
+            plane?.classList.remove('is-active');
+            plane?.setAttribute('aria-hidden', 'true');
+
+            input.style.position = 'absolute';
+            input.style.left = `${rect.left - offsetParentRect.left}px`;
+            input.style.top = `${rect.top - offsetParentRect.top}px`;
+            input.style.width = `${rect.width}px`;
+            input.style.height = `${rect.height}px`;
+            input.style.margin = '0';
+            input.style.zIndex = '2';
+            input.style.pointerEvents = 'auto';
+            setPortaledInputVisibility(input, portalState.proxy, true);
+            return;
+        }
 
         if (body) {
             const bodyRect = body.getBoundingClientRect();
@@ -712,25 +687,20 @@
     }
 
     function activatePortaledInputById(inputId, options = {}) {
-        if (shouldUseInlineAuthInputs()) {
-            const input = document.getElementById(inputId);
-            if (!input) return;
-            try {
-                input.focus({ preventScroll: true });
-            } catch (error) {
-                input.focus();
-            }
-            return;
-        }
-
         const { plane } = getSheetElements();
         const input = document.getElementById(inputId);
         const proxy = getProxyForInputId(inputId);
         if (!plane || !input || !proxy) return;
+        const useInPlaceInput = shouldUseInPlaceAuthInput();
 
         if (portalState.activeId === inputId) {
-            plane.classList.add('is-active');
-            plane.setAttribute('aria-hidden', 'false');
+            if (useInPlaceInput) {
+                plane.classList.remove('is-active');
+                plane.setAttribute('aria-hidden', 'true');
+            } else {
+                plane.classList.add('is-active');
+                plane.setAttribute('aria-hidden', 'false');
+            }
             scheduleActivePortaledInputPosition();
             if (options.focus !== false && document.activeElement !== input) {
                 input.focus({ preventScroll: true });
@@ -751,12 +721,18 @@
         input.removeAttribute('aria-hidden');
         input.removeAttribute('tabindex');
 
-        plane.classList.add('is-active');
-        plane.setAttribute('aria-hidden', 'false');
-        plane.appendChild(input);
         proxy.classList.add('is-active');
         proxy.classList.add('is-portaled');
         syncAuthInputActiveState();
+
+        if (useInPlaceInput) {
+            plane.classList.remove('is-active');
+            plane.setAttribute('aria-hidden', 'true');
+        } else {
+            plane.classList.add('is-active');
+            plane.setAttribute('aria-hidden', 'false');
+            plane.appendChild(input);
+        }
 
         syncActivePortaledInputPosition();
         scheduleActivePortaledInputPosition();
@@ -972,7 +948,6 @@
         const { overlay } = getSheetElements();
         if (!overlay) return;
 
-        syncAuthInputMode();
         overlay.hidden = false;
         overlay.style.removeProperty('display');
         overlay.style.removeProperty('visibility');
@@ -993,11 +968,7 @@
             window.__forcePromptThemeColorBlack();
         }
         if (window.iOSScrollLock) {
-            if (shouldUseInlineAuthInputs()) {
-                window.iOSScrollLock.lockLight(overlay);
-            } else {
-                window.iOSScrollLock.lock(overlay);
-            }
+            window.iOSScrollLock.lock(overlay);
         }
 
         overlayCloseDisabledUntil = Date.now() + 240;
@@ -1229,7 +1200,6 @@
 
         window.addEventListener('resize', () => {
             if (!overlay.classList.contains('active')) return;
-            syncAuthInputMode();
             scheduleActivePortaledInputPosition();
             syncPrimaryViewHeights();
             syncTabIndicator(sheetState.view);
