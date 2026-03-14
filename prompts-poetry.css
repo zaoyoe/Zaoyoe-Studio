@@ -30,6 +30,8 @@ canvas#starryCanvas,
     /* Diamond Purple */
     --prompts-nav-height: 64px;
     --prompts-mobile-nav-gap: 44px;
+    --prompt-auth-top-bar-shield: calc(env(safe-area-inset-top, 0px) + 34px);
+    --prompt-auth-bottom-bar-shield: calc(env(safe-area-inset-bottom, 0px) + 96px);
 }
 
 /* ========================================
@@ -201,19 +203,20 @@ body.prompts-page.auth-sheet-open::after {
     position: fixed;
     left: 0;
     right: 0;
-    background: #000000;
     pointer-events: none;
     z-index: 12040;
 }
 
 body.prompts-page.auth-sheet-open::before {
-    top: 0;
-    height: max(52px, env(safe-area-inset-top, 0px));
+    top: calc(-1 * env(safe-area-inset-top, 0px));
+    height: var(--prompt-auth-top-bar-shield);
+    background: linear-gradient(180deg, #000000 0%, #000000 74%, rgba(0, 0, 0, 0.94) 100%);
 }
 
 body.prompts-page.auth-sheet-open::after {
-    bottom: 0;
-    height: max(120px, env(safe-area-inset-bottom, 0px));
+    bottom: calc(-1 * env(safe-area-inset-bottom, 0px));
+    height: var(--prompt-auth-bottom-bar-shield);
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0.94) 0%, #000000 26px, #000000 100%);
 }
 
 [data-theme="dark"] .modal-inner {

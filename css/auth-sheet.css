@@ -29,6 +29,7 @@
     --auth-sheet-blue-bright-soft: rgba(139, 184, 232, 0.2);
     --auth-sheet-danger: #d48a83;
     --auth-sheet-success: #94bba8;
+    --auth-sheet-mobile-bottom-inset: max(4px, env(safe-area-inset-bottom));
 }
 
 body.auth-sheet-open {
@@ -754,7 +755,7 @@ body.auth-sheet-open {
     .auth-sheet-overlay {
         padding-left: 0;
         padding-right: 0;
-        padding-bottom: max(12px, env(safe-area-inset-bottom));
+        padding-bottom: var(--auth-sheet-mobile-bottom-inset);
     }
 
     .auth-sheet-stage {
