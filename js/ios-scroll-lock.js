@@ -23,6 +23,7 @@
     let scrollCleanup = null;
     let currentModal = null;
     let touchStartY = 0;
+    let lastTouchY = 0;
 
     function applyFixedBodyLock() {
         document.body.style.position = 'fixed';
@@ -118,9 +119,23 @@
     /**
      * 查找触摸点所在的最近可滚动祖先元素（在 modal 内部）
      */
+    function getPortaledInputProxy(el) {
+        if (!el || !currentModal) return null;
+
+        const canonicalInput = el.closest?.('[data-auth-canonical-input][data-auth-proxy-source]');
+        if (!canonicalInput || !canonicalInput.closest('#authInputPlane')) {
+            return null;
+        }
+
+        const sourceId = canonicalInput.getAttribute('data-auth-proxy-source');
+        if (!sourceId) return null;
+
+        return currentModal.querySelector(`[data-auth-proxy-for="${sourceId}"]`);
+    }
+
     function findScrollableParent(el) {
         if (!el || !currentModal) return null;
-        let node = el;
+        let node = getPortaledInputProxy(el) || el;
         while (node && node !== document.body) {
             const style = window.getComputedStyle(node);
             const overflowY = style.overflowY;
@@ -142,6 +157,7 @@
     function handleTouchStart(e) {
         if (!isLocked) return;
         touchStartY = e.touches[0].clientY;
+        lastTouchY = touchStartY;
     }
 
     /**
@@ -161,6 +177,7 @@
         }
 
         const target = e.target;
+        const portaledProxy = getPortaledInputProxy(target);
 
         // 触摸点不在弹窗内 → 阻止
         if (!currentModal.contains(target)) {
@@ -173,7 +190,7 @@
         // Plain inputs should be allowed to pass the gesture through so their scrollable parent
         // (such as the auth sheet body) can continue handling vertical scrolling.
         const inputEl = target.closest('textarea, input');
-        if (inputEl) {
+        if (inputEl && !portaledProxy) {
             if (Math.ceil(inputEl.scrollHeight) > Math.ceil(inputEl.clientHeight) + 2) {
                 const touchY = e.touches[0].clientY;
                 const deltaY = touchStartY - touchY;
@@ -203,6 +220,8 @@
         // 有可滚动容器，检查是否到达滚动边界
         const touchY = e.touches[0].clientY;
         const deltaY = touchStartY - touchY; // 正 = 向上滚, 负 = 向下滚
+        const deltaStep = lastTouchY - touchY;
+        lastTouchY = touchY;
         const { scrollTop, scrollHeight, clientHeight } = scrollable;
 
         const atTop = scrollTop <= 0;
@@ -216,6 +235,14 @@
 
         // 到达底部还想向上推 → 阻止
         if (atBottom && deltaY > 0) {
+            e.preventDefault();
+            return;
+        }
+
+        if (portaledProxy) {
+            if (deltaStep !== 0) {
+                scrollable.scrollTop += deltaStep;
+            }
             e.preventDefault();
             return;
         }

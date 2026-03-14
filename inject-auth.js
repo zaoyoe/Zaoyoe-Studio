@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260314_AUTH_SHEET_EDITING_SCREEN_1';
+    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260314_AUTH_SHEET_PORTAL_PLANE_1';
     const SUPPORT_SCRIPT_SRC = './script.js?v=20260313_PROFILE_MODAL_DOCK_1';
     const EMAILJS_SRC = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
     const EMAILJS_PUBLIC_KEY = 'vawaxLVEzJMAVbut0';
@@ -32,20 +32,26 @@
     let overlayCloseDisabledUntil = 0;
     const sheetState = {
         view: 'login',
-        lastPrimaryView: 'login',
-        presentation: 'preview'
+        lastPrimaryView: 'login'
     };
     const keyboardState = {
         attached: false,
         baseViewportHeight: 0,
         isKeyboardOpen: false,
-        rafId: 0,
-        exitEditTimer: 0
+        rafId: 0
     };
     const dragState = {
         active: false,
         startY: 0,
         deltaY: 0
+    };
+    const portalState = {
+        activeId: null,
+        input: null,
+        proxy: null,
+        originParent: null,
+        originNextSibling: null,
+        layoutRafId: 0
     };
 
     function t(key, fallback) {
@@ -146,6 +152,32 @@
         `;
     }
 
+    function buildPortaledInputControlHTML(options) {
+        const {
+            id,
+            type = 'text',
+            placeholder,
+            placeholderKey = '',
+            inputClass = '',
+            proxyClass = '',
+            inputAttributes = ''
+        } = options;
+
+        const proxyPlaceholderAttr = placeholderKey ? ` data-i18n="${placeholderKey}"` : '';
+        const inputPlaceholderAttr = placeholderKey ? ` data-i18n-placeholder="${placeholderKey}"` : '';
+        const className = ['auth-sheet-input', inputClass, 'auth-sheet-input--canonical', 'auth-sheet-input--parked']
+            .filter(Boolean)
+            .join(' ');
+
+        return `
+            <button type="button" class="auth-sheet-input-proxy${proxyClass ? ` ${proxyClass}` : ''}" data-auth-proxy-for="${id}" aria-controls="authInputPlane" aria-label="${placeholder}">
+                <span class="auth-sheet-input-proxy-value" data-auth-proxy-value></span>
+                <span class="auth-sheet-input-proxy-placeholder"${proxyPlaceholderAttr}>${placeholder}</span>
+            </button>
+            <input type="${type}" id="${id}" class="${className}" placeholder="${placeholder}"${inputPlaceholderAttr} data-auth-canonical-input data-auth-proxy-source="${id}" aria-hidden="true" tabindex="-1"${inputAttributes ? ` ${inputAttributes.trim()}` : ''}>
+        `;
+    }
+
     function buildAuthSheetHTML() {
         return `
             <div id="loginModal" class="auth-sheet-overlay login-overlay" hidden aria-hidden="true">
@@ -186,15 +218,27 @@
                                     </div>
 
                                     <form id="loginForm" class="auth-sheet-form" autocomplete="on" novalidate>
-                                        <label class="auth-sheet-field">
+                                        <div class="auth-sheet-field">
                                             <span class="auth-sheet-label">Email</span>
-                                            <input type="email" id="login-email" class="auth-sheet-input" placeholder="${t('auth.emailPlaceholder', '邮箱地址')}" data-i18n-placeholder="auth.emailPlaceholder" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" required>
-                                        </label>
+                                            ${buildPortaledInputControlHTML({
+                                                id: 'login-email',
+                                                type: 'email',
+                                                placeholder: t('auth.emailPlaceholder', '邮箱地址'),
+                                                placeholderKey: 'auth.emailPlaceholder',
+                                                inputAttributes: 'autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" data-auth-form="loginForm" required'
+                                            })}
+                                        </div>
 
-                                        <label class="auth-sheet-field">
+                                        <div class="auth-sheet-field">
                                             <span class="auth-sheet-label" data-i18n="auth.passwordPlaceholder">密码</span>
-                                            <input type="password" id="login-password" class="auth-sheet-input" placeholder="${t('auth.passwordPlaceholder', '密码')}" data-i18n-placeholder="auth.passwordPlaceholder" autocomplete="current-password" required>
-                                        </label>
+                                            ${buildPortaledInputControlHTML({
+                                                id: 'login-password',
+                                                type: 'password',
+                                                placeholder: t('auth.passwordPlaceholder', '密码'),
+                                                placeholderKey: 'auth.passwordPlaceholder',
+                                                inputAttributes: 'autocomplete="current-password" data-auth-form="loginForm" required'
+                                            })}
+                                        </div>
                                     </form>
 
                                     <div class="auth-sheet-inline-row auth-sheet-inline-row--spread">
@@ -210,28 +254,54 @@
 
                                 <section id="registerView" class="auth-sheet-view auth-sheet-view--primary" data-auth-view="register" hidden>
                                     <form id="registerForm" class="auth-sheet-form" autocomplete="off" novalidate>
-                                        <label class="auth-sheet-field">
+                                        <div class="auth-sheet-field">
                                             <span class="auth-sheet-label" data-i18n="auth.usernamePlaceholder">用户名</span>
-                                            <input type="text" id="reg-username" class="auth-sheet-input" placeholder="${t('auth.usernamePlaceholder', '用户名')}" data-i18n-placeholder="auth.usernamePlaceholder" autocomplete="off" required>
-                                        </label>
+                                            ${buildPortaledInputControlHTML({
+                                                id: 'reg-username',
+                                                type: 'text',
+                                                placeholder: t('auth.usernamePlaceholder', '用户名'),
+                                                placeholderKey: 'auth.usernamePlaceholder',
+                                                inputAttributes: 'autocomplete="off" data-auth-form="registerForm" required'
+                                            })}
+                                        </div>
 
-                                        <label class="auth-sheet-field">
+                                        <div class="auth-sheet-field">
                                             <span class="auth-sheet-label">Email</span>
-                                            <input type="email" id="reg-email" class="auth-sheet-input" placeholder="${t('auth.emailPlaceholder', '邮箱地址')}" data-i18n-placeholder="auth.emailPlaceholder" autocomplete="off" required>
-                                        </label>
+                                            ${buildPortaledInputControlHTML({
+                                                id: 'reg-email',
+                                                type: 'email',
+                                                placeholder: t('auth.emailPlaceholder', '邮箱地址'),
+                                                placeholderKey: 'auth.emailPlaceholder',
+                                                inputAttributes: 'autocomplete="off" data-auth-form="registerForm" required'
+                                            })}
+                                        </div>
 
                                         <div class="auth-sheet-field auth-sheet-field--code">
-                                            <label for="reg-code" class="auth-sheet-label" data-i18n="auth.enterVerifyCode">输入6位验证码</label>
+                                            <span class="auth-sheet-label" data-i18n="auth.enterVerifyCode">输入6位验证码</span>
                                             <div class="auth-sheet-inline-group auth-sheet-inline-group--code">
-                                                <input type="text" id="reg-code" class="auth-sheet-input auth-sheet-input--code" placeholder="${t('auth.enterVerifyCode', '输入6位验证码')}" data-i18n-placeholder="auth.enterVerifyCode" maxlength="6" autocomplete="off" required>
+                                                ${buildPortaledInputControlHTML({
+                                                    id: 'reg-code',
+                                                    type: 'text',
+                                                    placeholder: t('auth.enterVerifyCode', '输入6位验证码'),
+                                                    placeholderKey: 'auth.enterVerifyCode',
+                                                    inputClass: 'auth-sheet-input--code',
+                                                    proxyClass: 'auth-sheet-input-proxy--code',
+                                                    inputAttributes: 'maxlength="6" autocomplete="off" data-auth-form="registerForm" required'
+                                                })}
                                                 <button type="button" class="auth-sheet-secondary verify-code-btn" id="sendBtn" data-auth-send-code data-i18n="auth.getVerifyCode">获取验证码</button>
                                             </div>
                                         </div>
 
-                                        <label class="auth-sheet-field">
+                                        <div class="auth-sheet-field">
                                             <span class="auth-sheet-label" data-i18n="auth.setPassword">设置密码</span>
-                                            <input type="password" id="reg-password" class="auth-sheet-input" placeholder="${t('auth.setPassword', '设置密码')}" data-i18n-placeholder="auth.setPassword" autocomplete="new-password" required>
-                                        </label>
+                                            ${buildPortaledInputControlHTML({
+                                                id: 'reg-password',
+                                                type: 'password',
+                                                placeholder: t('auth.setPassword', '设置密码'),
+                                                placeholderKey: 'auth.setPassword',
+                                                inputAttributes: 'autocomplete="new-password" data-auth-form="registerForm" required'
+                                            })}
+                                        </div>
 
                                         <label class="auth-sheet-check auth-sheet-check--start">
                                             <input type="checkbox" id="privacyConsent">
@@ -249,10 +319,16 @@
                                     <p class="auth-sheet-note" data-i18n="auth.resetSubtitle">请输入您的注册邮箱以重置密码</p>
 
                                     <form id="resetForm" class="auth-sheet-form" novalidate>
-                                        <label class="auth-sheet-field">
+                                        <div class="auth-sheet-field">
                                             <span class="auth-sheet-label">Email</span>
-                                            <input type="email" id="reset-email" class="auth-sheet-input" placeholder="${t('auth.emailPlaceholder', '邮箱地址')}" data-i18n-placeholder="auth.emailPlaceholder" autocomplete="email" required>
-                                        </label>
+                                            ${buildPortaledInputControlHTML({
+                                                id: 'reset-email',
+                                                type: 'email',
+                                                placeholder: t('auth.emailPlaceholder', '邮箱地址'),
+                                                placeholderKey: 'auth.emailPlaceholder',
+                                                inputAttributes: 'autocomplete="email" data-auth-form="resetForm" required'
+                                            })}
+                                        </div>
                                     </form>
 
                                     <button type="submit" class="auth-sheet-submit login-submit-btn" data-auth-submit="reset" form="resetForm" data-i18n="auth.recover">找回</button>
@@ -265,6 +341,7 @@
                         </div>
                     </section>
                 </div>
+                <div id="authInputPlane" class="auth-input-plane" aria-hidden="true"></div>
             </div>
         `;
     }
@@ -404,7 +481,8 @@
             tabs: overlay?.querySelector('#authSheetTabs') || null,
             title: overlay?.querySelector('#authSheetTitle') || null,
             message: overlay?.querySelector('#authSheetMessage') || null,
-            body: overlay?.querySelector('.auth-sheet-body') || null
+            body: overlay?.querySelector('.auth-sheet-body') || null,
+            plane: overlay?.querySelector('#authInputPlane') || null
         };
     }
 
@@ -417,6 +495,169 @@
 
     function isEditableAuthField(target) {
         return !!target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName);
+    }
+
+    function getProxyForInputId(inputId) {
+        const { overlay } = getSheetElements();
+        return overlay?.querySelector(`[data-auth-proxy-for="${inputId}"]`) || null;
+    }
+
+    function getProxyDisplayValue(input) {
+        if (!input) return '';
+        if (input.type === 'password') {
+            return input.value ? '•'.repeat(input.value.length) : '';
+        }
+        return input.value || '';
+    }
+
+    function updateInputProxyDisplay(input) {
+        if (!input?.id) return;
+        const proxy = getProxyForInputId(input.id);
+        if (!proxy) return;
+
+        const valueNode = proxy.querySelector('[data-auth-proxy-value]');
+        const hasValue = !!input.value;
+
+        if (valueNode) {
+            valueNode.textContent = getProxyDisplayValue(input);
+        }
+
+        proxy.classList.toggle('is-filled', hasValue);
+    }
+
+    function syncAllInputProxyDisplays() {
+        document.querySelectorAll('#loginModal [data-auth-canonical-input]').forEach((input) => {
+            updateInputProxyDisplay(input);
+        });
+    }
+
+    function clearPortalLayoutRaf() {
+        if (portalState.layoutRafId) {
+            window.cancelAnimationFrame(portalState.layoutRafId);
+            portalState.layoutRafId = 0;
+        }
+    }
+
+    function resetPortaledInputStyles(input) {
+        if (!input) return;
+        input.style.removeProperty('position');
+        input.style.removeProperty('left');
+        input.style.removeProperty('top');
+        input.style.removeProperty('width');
+        input.style.removeProperty('height');
+        input.style.removeProperty('margin');
+        input.style.removeProperty('z-index');
+        input.style.removeProperty('pointer-events');
+    }
+
+    function syncActivePortaledInputPosition() {
+        if (!portalState.activeId || !portalState.input || !portalState.proxy) return;
+
+        const rect = portalState.proxy.getBoundingClientRect();
+        const input = portalState.input;
+        input.style.position = 'fixed';
+        input.style.left = `${rect.left}px`;
+        input.style.top = `${rect.top}px`;
+        input.style.width = `${rect.width}px`;
+        input.style.height = `${rect.height}px`;
+        input.style.margin = '0';
+        input.style.zIndex = '12091';
+        input.style.pointerEvents = 'auto';
+    }
+
+    function scheduleActivePortaledInputPosition() {
+        if (!portalState.activeId || portalState.layoutRafId) return;
+        portalState.layoutRafId = window.requestAnimationFrame(() => {
+            portalState.layoutRafId = 0;
+            syncActivePortaledInputPosition();
+        });
+    }
+
+    function deactivateActivePortaledInput(options = {}) {
+        if (!portalState.activeId || !portalState.input) return;
+
+        const { blur = true } = options;
+        const { plane } = getSheetElements();
+        const { input, proxy, originParent, originNextSibling } = portalState;
+
+        clearPortalLayoutRaf();
+
+        if (blur && document.activeElement === input) {
+            input.blur();
+        }
+
+        resetPortaledInputStyles(input);
+
+        if (originParent) {
+            if (originNextSibling && originNextSibling.parentNode === originParent) {
+                originParent.insertBefore(input, originNextSibling);
+            } else {
+                originParent.appendChild(input);
+            }
+        }
+
+        input.classList.add('auth-sheet-input--parked');
+        input.setAttribute('aria-hidden', 'true');
+        input.setAttribute('tabindex', '-1');
+
+        proxy?.classList.remove('is-active');
+        updateInputProxyDisplay(input);
+
+        plane?.classList.remove('is-active');
+        plane?.setAttribute('aria-hidden', 'true');
+
+        portalState.activeId = null;
+        portalState.input = null;
+        portalState.proxy = null;
+        portalState.originParent = null;
+        portalState.originNextSibling = null;
+    }
+
+    function activatePortaledInputById(inputId, options = {}) {
+        const { plane } = getSheetElements();
+        const input = document.getElementById(inputId);
+        const proxy = getProxyForInputId(inputId);
+        if (!plane || !input || !proxy) return;
+
+        if (portalState.activeId === inputId) {
+            plane.classList.add('is-active');
+            plane.setAttribute('aria-hidden', 'false');
+            scheduleActivePortaledInputPosition();
+            if (options.focus !== false && document.activeElement !== input) {
+                input.focus({ preventScroll: true });
+            }
+            return;
+        }
+
+        deactivateActivePortaledInput({ blur: false });
+
+        portalState.activeId = inputId;
+        portalState.input = input;
+        portalState.proxy = proxy;
+        portalState.originParent = input.parentNode;
+        portalState.originNextSibling = input.nextSibling;
+
+        input.classList.remove('auth-sheet-input--parked');
+        input.removeAttribute('aria-hidden');
+        input.removeAttribute('tabindex');
+
+        plane.classList.add('is-active');
+        plane.setAttribute('aria-hidden', 'false');
+        plane.appendChild(input);
+        proxy.classList.add('is-active');
+
+        scheduleActivePortaledInputPosition();
+        updateInputProxyDisplay(input);
+
+        if (options.focus !== false) {
+            window.requestAnimationFrame(() => {
+                input.focus({ preventScroll: true });
+                if (typeof input.setSelectionRange === 'function' && input.type !== 'email') {
+                    const end = input.value.length;
+                    input.setSelectionRange(end, end);
+                }
+            });
+        }
     }
 
     function isKeyboardDockEnabled() {
@@ -440,56 +681,24 @@
         });
     }
 
-    function clearEditingExitTimer() {
-        if (keyboardState.exitEditTimer) {
-            window.clearTimeout(keyboardState.exitEditTimer);
-            keyboardState.exitEditTimer = 0;
-        }
-    }
-
-    function setSheetPresentation(mode) {
-        const { overlay } = getSheetElements();
-        if (!overlay) return;
-
-        const isEditing = mode === 'editing';
-        sheetState.presentation = isEditing ? 'editing' : 'preview';
-        overlay.classList.toggle('auth-sheet-editing', isEditing);
-        overlay.classList.toggle('auth-sheet-preview', !isEditing);
-
-        if (!isEditing) {
-            overlay.style.setProperty('--auth-sheet-keyboard-offset', '0px');
-        }
-    }
-
-    function enterEditingMode() {
-        if (!isKeyboardDockEnabled()) return;
-        clearEditingExitTimer();
-        if (sheetState.presentation === 'editing') return;
-        setSheetPresentation('editing');
-    }
-
-    function scheduleReturnToPreview(delay = 180) {
-        clearEditingExitTimer();
-        keyboardState.exitEditTimer = window.setTimeout(() => {
-            keyboardState.exitEditTimer = 0;
-            if (!getActiveAuthInput() && !keyboardState.isKeyboardOpen) {
-                setSheetPresentation('preview');
-            }
-        }, delay);
-    }
-
-    function ensureInputVisibleInSheet(input, scrollContainer) {
+    function ensureInputVisibleInSheet(input, scrollContainer, options = {}) {
         if (!input || !scrollContainer) return;
 
         const containerRect = scrollContainer.getBoundingClientRect();
         const inputRect = input.getBoundingClientRect();
         const topBuffer = 14;
         const bottomBuffer = 22;
+        const viewportTop = Number.isFinite(options.viewportTop)
+            ? Math.max(containerRect.top, options.viewportTop)
+            : containerRect.top;
+        const viewportBottom = Number.isFinite(options.viewportBottom)
+            ? Math.min(containerRect.bottom, options.viewportBottom)
+            : containerRect.bottom;
 
-        if (inputRect.bottom > containerRect.bottom - bottomBuffer) {
-            scrollContainer.scrollTop += Math.ceil(inputRect.bottom - (containerRect.bottom - bottomBuffer));
-        } else if (inputRect.top < containerRect.top + topBuffer) {
-            scrollContainer.scrollTop -= Math.ceil((containerRect.top + topBuffer) - inputRect.top);
+        if (inputRect.bottom > viewportBottom - bottomBuffer) {
+            scrollContainer.scrollTop += Math.ceil(inputRect.bottom - (viewportBottom - bottomBuffer));
+        } else if (inputRect.top < viewportTop + topBuffer) {
+            scrollContainer.scrollTop -= Math.ceil((viewportTop + topBuffer) - inputRect.top);
         }
     }
 
@@ -524,25 +733,24 @@
         const heightDiff = keyboardState.baseViewportHeight - vv.height;
         const activeInput = getActiveAuthInput();
         const isKeyboardOpen = heightDiff > 50 && !!activeInput;
-        if (activeInput) {
-            enterEditingMode();
-        }
         keyboardState.isKeyboardOpen = isKeyboardOpen;
         overlay.classList.toggle('auth-sheet-keyboard-open', isKeyboardOpen);
 
         if (isKeyboardOpen) {
             const actualOverlap = keyboardState.baseViewportHeight - (vv.height + vv.offsetTop);
             const bottomInset = Math.max(0, actualOverlap);
-            overlay.style.setProperty('--auth-sheet-keyboard-offset', `${bottomInset}px`);
+            overlay.style.setProperty('--auth-sheet-body-bottom-gap', `${bottomInset}px`);
             window.requestAnimationFrame(() => {
-                ensureInputVisibleInSheet(activeInput, body);
+                ensureInputVisibleInSheet(activeInput, body, {
+                    viewportTop: vv.offsetTop,
+                    viewportBottom: vv.offsetTop + vv.height
+                });
+                scheduleActivePortaledInputPosition();
             });
         } else {
-            overlay.style.setProperty('--auth-sheet-keyboard-offset', '0px');
+            overlay.style.setProperty('--auth-sheet-body-bottom-gap', '0px');
             keyboardState.baseViewportHeight = Math.max(keyboardState.baseViewportHeight, vv.height);
-            if (!activeInput) {
-                scheduleReturnToPreview(180);
-            }
+            scheduleActivePortaledInputPosition();
         }
     }
 
@@ -562,9 +770,6 @@
     function onSheetFocusOut() {
         window.setTimeout(() => {
             scheduleViewportChange();
-            if (!getActiveAuthInput()) {
-                scheduleReturnToPreview(180);
-            }
         }, 100);
     }
 
@@ -583,10 +788,8 @@
         }
 
         clearScheduledViewportChange();
-        clearEditingExitTimer();
-        overlay?.style.setProperty('--auth-sheet-keyboard-offset', '0px');
+        overlay?.style.setProperty('--auth-sheet-body-bottom-gap', '0px');
         sheet?.style.removeProperty('transform');
-        setSheetPresentation('preview');
         keyboardState.attached = false;
         keyboardState.baseViewportHeight = 0;
         keyboardState.isKeyboardOpen = false;
@@ -677,6 +880,8 @@
             view.hidden = !isActive;
             view.classList.toggle('is-active', isActive);
         });
+
+        deactivateActivePortaledInput({ blur: false });
 
         if (PRIMARY_VIEWS.has(viewId)) {
             sheetState.lastPrimaryView = viewId;
@@ -786,10 +991,10 @@
         overlay.style.removeProperty('display');
         overlay.style.removeProperty('visibility');
         overlay.style.removeProperty('opacity');
-        setSheetPresentation('preview');
         overlay.classList.remove('auth-sheet-keyboard-open');
-        overlay.style.setProperty('--auth-sheet-keyboard-offset', '0px');
+        overlay.style.setProperty('--auth-sheet-body-bottom-gap', '0px');
         await setAuthView(viewId, { clearMessage: true });
+        syncAllInputProxyDisplays();
         syncPrimaryViewHeights();
         syncTabIndicator(sheetState.view, { immediate: true });
 
@@ -818,6 +1023,7 @@
         const { overlay, sheet } = getSheetElements();
         if (!overlay) return;
 
+        deactivateActivePortaledInput();
         getActiveAuthInput()?.blur();
         clearAuthMessage();
         detachKeyboardDock();
@@ -833,7 +1039,7 @@
         window.setTimeout(() => {
             if (!overlay.classList.contains('active')) {
                 overlay.hidden = true;
-                overlay.style.setProperty('--auth-sheet-keyboard-offset', '0px');
+                overlay.style.setProperty('--auth-sheet-body-bottom-gap', '0px');
             }
         }, 280);
 
@@ -869,9 +1075,16 @@
         if (!overlay || overlay.dataset.bound === '1') return;
 
         overlay.addEventListener('click', (event) => {
+            const proxyTrigger = event.target.closest('[data-auth-proxy-for]');
+            if (proxyTrigger) {
+                activatePortaledInputById(proxyTrigger.dataset.authProxyFor);
+                return;
+            }
+
             const tabTrigger = event.target.closest('[data-auth-tab]');
             if (tabTrigger) {
                 runAfterKeyboardDismiss(() => {
+                    deactivateActivePortaledInput({ blur: false });
                     setAuthView(tabTrigger.dataset.authTab).catch((error) => {
                         console.warn('Failed to switch auth view:', error);
                     });
@@ -881,6 +1094,7 @@
 
             if (event.target.closest('[data-auth-reset]')) {
                 runAfterKeyboardDismiss(() => {
+                    deactivateActivePortaledInput({ blur: false });
                     setAuthView('reset').catch((error) => {
                         console.warn('Failed to open reset view:', error);
                     });
@@ -925,15 +1139,15 @@
             window.handlePasswordReset?.(event);
         });
 
-        overlay.addEventListener('touchstart', (event) => {
-            if (event.target.closest('input, textarea, select')) {
-                enterEditingMode();
-            }
-        }, { passive: true });
+        overlay.addEventListener('pointerdown', (event) => {
+            const proxyTrigger = event.target.closest('[data-auth-proxy-for]');
+            if (!proxyTrigger) return;
+            event.preventDefault();
+            activatePortaledInputById(proxyTrigger.dataset.authProxyFor, { focus: true });
+        });
 
         overlay.addEventListener('focusin', (event) => {
             if (!isEditableAuthField(event.target)) return;
-            enterEditingMode();
             scheduleViewportChange();
         });
 
@@ -941,6 +1155,42 @@
             if (!isEditableAuthField(event.target)) return;
             onSheetFocusOut();
         });
+
+        overlay.querySelectorAll('[data-auth-canonical-input]').forEach((input) => {
+            updateInputProxyDisplay(input);
+
+            input.addEventListener('input', () => {
+                syncAllInputProxyDisplays();
+                scheduleActivePortaledInputPosition();
+            });
+
+            input.addEventListener('change', () => {
+                syncAllInputProxyDisplays();
+                scheduleActivePortaledInputPosition();
+            });
+
+            input.addEventListener('keydown', (event) => {
+                if (event.key !== 'Enter' || event.shiftKey) return;
+                const formId = input.dataset.authForm;
+                if (!formId) return;
+                const form = document.getElementById(formId);
+                if (!form) return;
+                event.preventDefault();
+                form.requestSubmit?.();
+            });
+
+            input.addEventListener('blur', () => {
+                window.setTimeout(() => {
+                    if (portalState.input === input && document.activeElement !== input) {
+                        deactivateActivePortaledInput({ blur: false });
+                    }
+                }, 60);
+            });
+        });
+
+        overlay.querySelector('.auth-sheet-body')?.addEventListener('scroll', () => {
+            scheduleActivePortaledInputPosition();
+        }, { passive: true });
 
         const dragTargets = overlay.querySelectorAll('[data-auth-drag-zone], .auth-sheet-header');
         const resetDragState = () => {
@@ -1002,6 +1252,7 @@
 
         window.addEventListener('resize', () => {
             if (!overlay.classList.contains('active')) return;
+            scheduleActivePortaledInputPosition();
             if (keyboardState.isKeyboardOpen) return;
             syncPrimaryViewHeights();
             syncTabIndicator(sheetState.view);
