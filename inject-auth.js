@@ -159,6 +159,7 @@
                         </header>
 
                         <nav id="authSheetTabs" class="auth-sheet-tabs" aria-label="Authentication views">
+                            <span class="auth-sheet-tab-indicator" aria-hidden="true"></span>
                             <button type="button" class="auth-sheet-tab is-active" data-auth-tab="login" data-i18n="common.login">登录</button>
                             <button type="button" class="auth-sheet-tab" data-auth-tab="register" data-i18n="auth.register">注册</button>
                         </nav>
@@ -166,7 +167,7 @@
                         <div id="authSheetMessage" class="auth-sheet-message" hidden role="status" aria-live="polite"></div>
 
                         <div class="auth-sheet-body">
-                            <section id="loginView" class="auth-sheet-view is-active" data-auth-view="login">
+                            <section id="loginView" class="auth-sheet-view auth-sheet-view--primary is-active" data-auth-view="login">
                                 <button type="button" class="auth-sheet-google-btn google-login-btn" data-auth-google>
                                     <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" width="18" height="18">
                                     <span data-i18n="auth.googleLogin">使用 Google 登录</span>
@@ -199,7 +200,7 @@
                                 <button type="submit" class="auth-sheet-submit login-submit-btn" data-auth-submit="login" form="loginForm" data-i18n="common.login">登录</button>
                             </section>
 
-                            <section id="registerView" class="auth-sheet-view" data-auth-view="register" hidden>
+                            <section id="registerView" class="auth-sheet-view auth-sheet-view--primary" data-auth-view="register" hidden>
                                 <form id="registerForm" class="auth-sheet-form" autocomplete="off" novalidate>
                                     <label class="auth-sheet-field">
                                         <span class="auth-sheet-label" data-i18n="auth.usernamePlaceholder">用户名</span>
@@ -479,12 +480,56 @@
         if (tabs) tabs.hidden = viewId === 'reset';
     }
 
+    function syncTabIndicator(viewId) {
+        const tabs = document.getElementById('authSheetTabs');
+        const indicator = tabs?.querySelector('.auth-sheet-tab-indicator');
+        const activeButton = tabs?.querySelector(`[data-auth-tab="${viewId}"]`);
+        if (!tabs || !indicator || !activeButton || tabs.hidden) return;
+
+        window.requestAnimationFrame(() => {
+            indicator.style.width = `${activeButton.offsetWidth}px`;
+            indicator.style.transform = `translateX(${activeButton.offsetLeft}px)`;
+        });
+    }
+
+    function syncPrimaryViewHeights() {
+        const { overlay, body } = getSheetElements();
+        if (!overlay || !body) return;
+
+        const primaryViews = Array.from(overlay.querySelectorAll('.auth-sheet-view--primary'));
+        if (!primaryViews.length) return;
+
+        let maxHeight = 0;
+        primaryViews.forEach((view) => {
+            const clone = view.cloneNode(true);
+            clone.hidden = false;
+            clone.classList.add('is-active');
+            clone.style.position = 'absolute';
+            clone.style.left = '0';
+            clone.style.top = '0';
+            clone.style.width = '100%';
+            clone.style.visibility = 'hidden';
+            clone.style.pointerEvents = 'none';
+            clone.style.display = 'flex';
+            clone.style.minHeight = '0';
+            clone.querySelectorAll('[id]').forEach((node) => node.removeAttribute('id'));
+            body.appendChild(clone);
+            maxHeight = Math.max(maxHeight, Math.ceil(clone.getBoundingClientRect().height));
+            clone.remove();
+        });
+
+        if (maxHeight > 0) {
+            body.style.setProperty('--auth-primary-view-min-height', `${maxHeight}px`);
+        }
+    }
+
     function updateTabState(viewId) {
         document.querySelectorAll('#loginModal [data-auth-tab]').forEach((button) => {
             const isActive = button.dataset.authTab === viewId;
             button.classList.toggle('is-active', isActive);
             button.setAttribute('aria-selected', isActive ? 'true' : 'false');
         });
+        syncTabIndicator(viewId);
     }
 
     async function setAuthView(viewId, options = {}) {
@@ -515,7 +560,9 @@
         }
 
         sheetState.view = viewId;
+        overlay.classList.toggle('auth-sheet-primary-mode', PRIMARY_VIEWS.has(viewId));
         updateSheetCopy(viewId);
+        syncPrimaryViewHeights();
         updateTabState(viewId);
 
         if (clearMessage) {
@@ -800,6 +847,12 @@
             if (event.key === 'Escape' && overlay.classList.contains('active')) {
                 closeLoginModal();
             }
+        });
+
+        window.addEventListener('resize', () => {
+            if (!overlay.classList.contains('active')) return;
+            syncPrimaryViewHeights();
+            syncTabIndicator(sheetState.view);
         });
 
         overlay.dataset.bound = '1';
