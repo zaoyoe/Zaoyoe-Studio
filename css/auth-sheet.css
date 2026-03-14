@@ -257,7 +257,7 @@ body.auth-sheet-open {
     padding: 12px 14px;
     border-radius: 14px;
     border: 1px solid var(--auth-sheet-blue-border);
-    background: var(--auth-sheet-blue-soft);
+    background: rgba(255, 255, 255, 0.042);
     color: var(--auth-sheet-text);
     font-size: 16px;
     line-height: 1.35;
@@ -274,7 +274,7 @@ body.auth-sheet-open {
 
 .auth-sheet-input:focus {
     border-color: var(--auth-sheet-blue-bright);
-    background: var(--auth-sheet-blue-bright-soft);
+    background: rgba(255, 255, 255, 0.042);
     box-shadow: 0 0 0 3px rgba(139, 184, 232, 0.16);
 }
 
@@ -282,7 +282,7 @@ body.auth-sheet-open {
 .auth-sheet-input:-webkit-autofill:hover,
 .auth-sheet-input:-webkit-autofill:focus {
     -webkit-text-fill-color: var(--auth-sheet-text);
-    box-shadow: 0 0 0 1000px var(--auth-sheet-blue-soft) inset;
+    box-shadow: 0 0 0 1000px rgba(255, 255, 255, 0.042) inset;
     transition: background-color 9999s ease-in-out 0s;
 }
 
