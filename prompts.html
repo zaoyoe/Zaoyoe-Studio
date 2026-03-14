@@ -224,6 +224,34 @@
                 transform: none !important;
             }
         }
+
+        /* Prompts page: keep auth sheet title/tab size aligned with homepage modal */
+        #loginModal .auth-sheet-header,
+        #loginModal .auth-sheet-overline,
+        #loginModal .auth-sheet-title {
+            text-align: center;
+        }
+
+        #loginModal .auth-sheet-title {
+            width: 100%;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        #loginModal .auth-sheet-tabs {
+            width: min(100%, calc(100% - 40px));
+            margin-left: 20px;
+            margin-right: 20px;
+            padding: 3px;
+        }
+
+        #loginModal .auth-sheet-tab {
+            min-height: 34px;
+            padding: 8px 12px;
+            font-size: 12.5px;
+            line-height: 1.1;
+            border-radius: 999px;
+        }
     </style>
 </head>
 
