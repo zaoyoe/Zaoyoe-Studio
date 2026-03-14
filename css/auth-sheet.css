@@ -29,7 +29,7 @@
     --auth-sheet-blue-bright-soft: rgba(139, 184, 232, 0.2);
     --auth-sheet-danger: #d48a83;
     --auth-sheet-success: #94bba8;
-    --auth-sheet-mobile-bottom-inset: max(4px, env(safe-area-inset-bottom));
+    --auth-sheet-mobile-bottom-inset: max(0px, env(safe-area-inset-bottom));
 }
 
 body.auth-sheet-open {
