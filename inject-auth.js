@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260314_AUTH_SHEET_IOS_OVERLAY_30';
+    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260314_AUTH_SHEET_DRAG_HANDLE_31';
     const SUPPORT_SCRIPT_SRC = './script.js?v=20260314_AUTH_I18N_1';
     const EMAILJS_SRC = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
     const EMAILJS_PUBLIC_KEY = 'vawaxLVEzJMAVbut0';
@@ -1141,15 +1141,23 @@
         }, { passive: true });
 
         const dragTargets = overlay.querySelectorAll('[data-auth-drag-zone]');
+        const setDragHandleActive = (isActive) => {
+            dragTargets.forEach((target) => {
+                target.classList.toggle('is-close-armed', isActive);
+            });
+        };
         const resetDragState = () => {
             const { sheet } = getSheetElements();
             sheet?.style.removeProperty('transform');
+            setDragHandleActive(false);
             dragState.active = false;
             dragState.startY = 0;
             dragState.deltaY = 0;
         };
 
         const handleDragStart = (event) => {
+            const touch = event.touches?.[0];
+            if (event.type === 'touchstart' && !touch) return;
             if (event.touches.length !== 1) return;
 
             if (requestKeyboardDismiss()) {
@@ -1157,8 +1165,9 @@
             }
 
             dragState.active = true;
-            dragState.startY = event.touches[0].clientY;
+            dragState.startY = touch.clientY;
             dragState.deltaY = 0;
+            setDragHandleActive(true);
         };
 
         const handleDragMove = (event) => {
@@ -1179,6 +1188,7 @@
         const handleDragEnd = () => {
             if (!dragState.active) return;
             if (dragState.deltaY > 64) {
+                resetDragState();
                 closeLoginModal();
             } else {
                 resetDragState();
@@ -1190,6 +1200,9 @@
             target.addEventListener('touchmove', handleDragMove, { passive: true });
             target.addEventListener('touchend', handleDragEnd);
             target.addEventListener('touchcancel', resetDragState);
+            target.addEventListener('mousedown', () => setDragHandleActive(true));
+            target.addEventListener('mouseup', () => setDragHandleActive(false));
+            target.addEventListener('mouseleave', () => setDragHandleActive(false));
         });
 
         document.addEventListener('keydown', (event) => {
