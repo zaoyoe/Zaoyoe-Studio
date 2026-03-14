@@ -577,13 +577,18 @@
 
         if (body) {
             const bodyRect = body.getBoundingClientRect();
-            const visibleTop = Math.max(bodyRect.top, 0);
-            const visibleBottom = Math.min(bodyRect.bottom, window.innerHeight);
-            const visibleLeft = Math.max(bodyRect.left, 0);
-            const visibleRight = Math.min(bodyRect.right, window.innerWidth);
-            const visibleWidth = Math.min(rect.right, visibleRight) - Math.max(rect.left, visibleLeft);
-            const visibleHeight = Math.min(rect.bottom, visibleBottom) - Math.max(rect.top, visibleTop);
-            isVisible = visibleWidth > 16 && visibleHeight > 20;
+            const viewportTop = window.visualViewport?.offsetTop || 0;
+            const viewportLeft = window.visualViewport?.offsetLeft || 0;
+            const viewportWidth = window.visualViewport?.width || window.innerWidth;
+            const viewportHeight = window.visualViewport?.height || window.innerHeight;
+            const visibleTop = Math.max(bodyRect.top, viewportTop);
+            const visibleBottom = Math.min(bodyRect.bottom, viewportTop + viewportHeight);
+            const visibleLeft = Math.max(bodyRect.left, viewportLeft);
+            const visibleRight = Math.min(bodyRect.right, viewportLeft + viewportWidth);
+            const edgePadding = 8;
+            const fullyInsideVertical = rect.top >= visibleTop + edgePadding && rect.bottom <= visibleBottom - edgePadding;
+            const fullyInsideHorizontal = rect.left >= visibleLeft && rect.right <= visibleRight;
+            isVisible = fullyInsideVertical && fullyInsideHorizontal && rect.width > 16 && rect.height > 20;
         }
 
         input.style.position = 'fixed';
