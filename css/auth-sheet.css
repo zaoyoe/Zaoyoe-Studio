@@ -416,6 +416,7 @@ body.auth-sheet-open {
     appearance: none;
     touch-action: pan-y;
     box-sizing: border-box;
+    caret-color: var(--auth-sheet-accent-strong);
 }
 
 .auth-sheet-input--parked {
@@ -438,7 +439,7 @@ body.auth-sheet-open {
     background: transparent !important;
     border-color: transparent !important;
     box-shadow: none !important;
-    caret-color: var(--auth-sheet-blue-bright);
+    caret-color: var(--auth-sheet-accent-strong);
 }
 
 #loginModal .auth-sheet-input.auth-sheet-input--portaled::placeholder,
