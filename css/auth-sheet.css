@@ -357,6 +357,11 @@ body.auth-sheet-open {
     box-shadow: 0 0 0 3px rgba(139, 184, 232, 0.16);
 }
 
+.auth-sheet-input-proxy.is-portaled .auth-sheet-input-proxy-value,
+.auth-sheet-input-proxy.is-portaled .auth-sheet-input-proxy-placeholder {
+    opacity: 0;
+}
+
 .auth-sheet-input-proxy-value {
     display: none;
     min-width: 0;
@@ -406,6 +411,21 @@ body.auth-sheet-open {
     border: 0 !important;
     opacity: 0 !important;
     pointer-events: none !important;
+}
+
+#loginModal .auth-sheet-input.auth-sheet-input--portaled,
+.auth-sheet-input.auth-sheet-input--portaled,
+#loginModal .auth-sheet-input.auth-sheet-input--portaled:focus,
+.auth-sheet-input.auth-sheet-input--portaled:focus {
+    background: transparent !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
+    caret-color: var(--auth-sheet-blue-bright);
+}
+
+#loginModal .auth-sheet-input.auth-sheet-input--portaled::placeholder,
+.auth-sheet-input.auth-sheet-input--portaled::placeholder {
+    color: transparent;
 }
 
 .auth-sheet-input::placeholder {

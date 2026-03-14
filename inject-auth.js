@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260314_AUTH_SHEET_PORTAL_PLANE_1';
+    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260314_AUTH_SHEET_PORTAL_PLANE_2';
     const SUPPORT_SCRIPT_SRC = './script.js?v=20260313_PROFILE_MODAL_DOCK_1';
     const EMAILJS_SRC = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
     const EMAILJS_PUBLIC_KEY = 'vawaxLVEzJMAVbut0';
@@ -550,6 +550,21 @@
         input.style.removeProperty('pointer-events');
     }
 
+    function focusPortaledInput(input) {
+        if (!input) return;
+
+        try {
+            input.focus({ preventScroll: true });
+        } catch (error) {
+            input.focus();
+        }
+
+        if (typeof input.setSelectionRange === 'function' && !['email', 'number', 'date', 'time'].includes(input.type)) {
+            const end = input.value.length;
+            input.setSelectionRange(end, end);
+        }
+    }
+
     function syncActivePortaledInputPosition() {
         if (!portalState.activeId || !portalState.input || !portalState.proxy) return;
 
@@ -597,10 +612,12 @@
         }
 
         input.classList.add('auth-sheet-input--parked');
+        input.classList.remove('auth-sheet-input--portaled');
         input.setAttribute('aria-hidden', 'true');
         input.setAttribute('tabindex', '-1');
 
         proxy?.classList.remove('is-active');
+        proxy?.classList.remove('is-portaled');
         updateInputProxyDisplay(input);
 
         plane?.classList.remove('is-active');
@@ -638,6 +655,7 @@
         portalState.originNextSibling = input.nextSibling;
 
         input.classList.remove('auth-sheet-input--parked');
+        input.classList.add('auth-sheet-input--portaled');
         input.removeAttribute('aria-hidden');
         input.removeAttribute('tabindex');
 
@@ -645,18 +663,14 @@
         plane.setAttribute('aria-hidden', 'false');
         plane.appendChild(input);
         proxy.classList.add('is-active');
+        proxy.classList.add('is-portaled');
 
+        syncActivePortaledInputPosition();
         scheduleActivePortaledInputPosition();
         updateInputProxyDisplay(input);
 
         if (options.focus !== false) {
-            window.requestAnimationFrame(() => {
-                input.focus({ preventScroll: true });
-                if (typeof input.setSelectionRange === 'function' && input.type !== 'email') {
-                    const end = input.value.length;
-                    input.setSelectionRange(end, end);
-                }
-            });
+            focusPortaledInput(input);
         }
     }
 
@@ -1139,13 +1153,6 @@
             window.handlePasswordReset?.(event);
         });
 
-        overlay.addEventListener('pointerdown', (event) => {
-            const proxyTrigger = event.target.closest('[data-auth-proxy-for]');
-            if (!proxyTrigger) return;
-            event.preventDefault();
-            activatePortaledInputById(proxyTrigger.dataset.authProxyFor, { focus: true });
-        });
-
         overlay.addEventListener('focusin', (event) => {
             if (!isEditableAuthField(event.target)) return;
             scheduleViewportChange();
@@ -1189,6 +1196,7 @@
         });
 
         overlay.querySelector('.auth-sheet-body')?.addEventListener('scroll', () => {
+            syncActivePortaledInputPosition();
             scheduleActivePortaledInputPosition();
         }, { passive: true });
 
