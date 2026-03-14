@@ -70,7 +70,7 @@ body.auth-sheet-open {
 .auth-sheet {
     position: relative;
     width: min(100%, 480px);
-    max-height: min(74svh, 680px);
+    max-height: min(80svh, 760px);
     border-radius: 26px;
     overflow: hidden;
     background:
@@ -95,7 +95,7 @@ body.auth-sheet-open {
     position: relative;
     display: grid;
     grid-template-rows: auto auto auto auto minmax(0, 1fr);
-    max-height: min(74svh, 680px);
+    max-height: min(80svh, 760px);
     min-height: 0;
 }
 
@@ -538,12 +538,12 @@ body.auth-sheet-open {
 
     .auth-sheet {
         width: 100%;
-        max-height: calc(74svh - var(--auth-sheet-keyboard-offset, 0px));
+        max-height: calc(80svh - var(--auth-sheet-keyboard-offset, 0px));
         border-radius: 24px 24px 0 0;
     }
 
     .auth-sheet-shell {
-        max-height: calc(74svh - var(--auth-sheet-keyboard-offset, 0px));
+        max-height: calc(80svh - var(--auth-sheet-keyboard-offset, 0px));
     }
 
     .auth-sheet-header {
