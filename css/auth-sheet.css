@@ -816,17 +816,19 @@ body.auth-sheet-open {
     }
 
     .auth-sheet-overlay.auth-sheet-inline-inputs .auth-sheet-input-proxy {
-        display: none;
+        display: none !important;
     }
 
     .auth-sheet-overlay.auth-sheet-inline-inputs .auth-input-plane {
         display: none;
     }
 
+    .auth-sheet-overlay.auth-sheet-inline-inputs [data-auth-canonical-input],
     .auth-sheet-overlay.auth-sheet-inline-inputs .auth-sheet-input,
     .auth-sheet-overlay.auth-sheet-inline-inputs .auth-sheet-input.auth-sheet-input--parked,
     .auth-sheet-overlay.auth-sheet-inline-inputs .auth-sheet-input.auth-sheet-input--portaled,
     .auth-sheet-overlay.auth-sheet-inline-inputs .auth-sheet-input.auth-sheet-input--proxy-hidden {
+        display: block !important;
         position: relative !important;
         top: auto !important;
         left: auto !important;

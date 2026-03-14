@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260314_AUTH_SHEET_IOS_INLINE_27';
+    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260314_AUTH_SHEET_IOS_INLINE_28';
     const SUPPORT_SCRIPT_SRC = './script.js?v=20260314_AUTH_I18N_1';
     const EMAILJS_SRC = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
     const EMAILJS_PUBLIC_KEY = 'vawaxLVEzJMAVbut0';
@@ -575,6 +575,8 @@
         });
 
         overlay.querySelectorAll('[data-auth-proxy-for]').forEach((proxy) => {
+            proxy.hidden = useInlineInputs;
+            proxy.setAttribute('aria-hidden', useInlineInputs ? 'true' : 'false');
             proxy.classList.remove('is-active');
             proxy.classList.remove('is-portaled');
             proxy.classList.remove('is-proxy-hidden');
