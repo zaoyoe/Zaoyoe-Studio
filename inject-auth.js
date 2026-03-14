@@ -662,15 +662,19 @@
         const { overlay } = getSheetElements();
         if (!overlay) return;
 
-        await setAuthView(viewId, { clearMessage: true });
         overlay.hidden = false;
         overlay.style.removeProperty('display');
         overlay.style.removeProperty('visibility');
         overlay.style.removeProperty('opacity');
+        await setAuthView(viewId, { clearMessage: true });
 
         window.requestAnimationFrame(() => {
             overlay.classList.add('active');
             overlay.setAttribute('aria-hidden', 'false');
+            window.requestAnimationFrame(() => {
+                syncPrimaryViewHeights();
+                syncTabIndicator(sheetState.view);
+            });
         });
 
         document.body.classList.add('auth-sheet-open');
