@@ -7141,13 +7141,13 @@ body {
 
     /* Match profile modal width to the actual mobile login modal dimensions */
     .profile-modal {
-        width: calc(100% - 40px) !important;
+        width: 100% !important;
         max-width: 480px !important;
         box-sizing: border-box !important;
     }
 
     .profile-modal.wide {
-        width: calc(100% - 40px) !important;
+        width: 100% !important;
         max-width: 480px !important;
         box-sizing: border-box !important;
     }
@@ -7170,7 +7170,9 @@ body {
     #profileModal.ios-focus-lock .modal-content.profile-modal {
         top: var(--profile-modal-shift-y, 0px) !important;
         transform: none !important;
-        max-height: calc(100svh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px) !important;
+        height: min(90svh, calc(100svh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px)) !important;
+        min-height: min(90svh, calc(100svh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px)) !important;
+        max-height: min(90svh, calc(100svh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px)) !important;
         overflow: hidden !important;
     }
 
