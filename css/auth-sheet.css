@@ -251,13 +251,14 @@ body.auth-sheet-open {
     color: var(--auth-sheet-soft);
 }
 
+#loginModal .auth-sheet-input,
 .auth-sheet-input {
     width: 100%;
     min-height: 46px;
     padding: 12px 14px;
     border-radius: 14px;
-    border: 1px solid var(--auth-sheet-blue-border);
-    background: rgba(255, 255, 255, 0.042);
+    border: 1px solid var(--auth-sheet-blue-border) !important;
+    background: rgba(255, 255, 255, 0.042) !important;
     color: var(--auth-sheet-text);
     font-size: 16px;
     line-height: 1.35;
@@ -272,17 +273,21 @@ body.auth-sheet-open {
     color: rgba(231, 236, 242, 0.28);
 }
 
+#loginModal .auth-sheet-input:focus,
 .auth-sheet-input:focus {
-    border-color: var(--auth-sheet-blue-bright);
-    background: rgba(255, 255, 255, 0.042);
-    box-shadow: 0 0 0 3px rgba(139, 184, 232, 0.16);
+    border-color: var(--auth-sheet-blue-bright) !important;
+    background: rgba(255, 255, 255, 0.042) !important;
+    box-shadow: 0 0 0 3px rgba(139, 184, 232, 0.16) !important;
 }
 
+#loginModal .auth-sheet-input:-webkit-autofill,
+#loginModal .auth-sheet-input:-webkit-autofill:hover,
+#loginModal .auth-sheet-input:-webkit-autofill:focus,
 .auth-sheet-input:-webkit-autofill,
 .auth-sheet-input:-webkit-autofill:hover,
 .auth-sheet-input:-webkit-autofill:focus {
     -webkit-text-fill-color: var(--auth-sheet-text);
-    box-shadow: 0 0 0 1000px rgba(255, 255, 255, 0.042) inset;
+    box-shadow: 0 0 0 1000px rgba(255, 255, 255, 0.042) inset !important;
     transition: background-color 9999s ease-in-out 0s;
 }
 
@@ -484,6 +489,20 @@ body.auth-sheet-open {
     border-color: rgba(139, 184, 232, 0.42);
 }
 
+#loginModal .auth-sheet-inline-group--code .verify-code-btn,
+#loginModal .auth-sheet-inline-group--code .verify-code-btn:hover,
+#loginModal .auth-sheet-inline-group--code .verify-code-btn:active,
+#loginModal .auth-sheet-inline-group--code .verify-code-btn:focus-visible {
+    color: var(--auth-sheet-text) !important;
+}
+
+#loginModal .auth-sheet-inline-group--code .verify-code-btn:hover {
+    background: var(--auth-sheet-blue-soft-strong) !important;
+    border-color: rgba(139, 184, 232, 0.42) !important;
+}
+
+#loginModal .auth-sheet-inline-group--code .verify-code-btn:active,
+#loginModal .auth-sheet-inline-group--code .verify-code-btn:focus-visible,
 .auth-sheet-inline-group--code .auth-sheet-secondary:active,
 .auth-sheet-inline-group--code .auth-sheet-secondary:focus-visible {
     background: var(--auth-sheet-blue-bright-soft);
