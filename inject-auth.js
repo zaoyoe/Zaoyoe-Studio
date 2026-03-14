@@ -15,21 +15,15 @@
     const VIEW_META = {
         login: {
             titleKey: 'auth.welcomeBack',
-            titleFallback: '欢迎回来',
-            subtitleKey: 'auth.loginSubtitle',
-            subtitleFallback: '请输入您的账号信息以登录'
+            titleFallback: '欢迎回来'
         },
         register: {
             titleKey: 'auth.createAccount',
-            titleFallback: '创建账号',
-            subtitleKey: 'auth.registerSubtitle',
-            subtitleFallback: '加入我们以获取更多高级功能'
+            titleFallback: '创建账号'
         },
         reset: {
             titleKey: 'auth.resetPassword',
-            titleFallback: '找回密码',
-            subtitleKey: 'auth.resetSubtitle',
-            subtitleFallback: '请输入您的注册邮箱以重置密码'
+            titleFallback: '找回密码'
         }
     };
 
@@ -162,18 +156,6 @@
                         <header class="auth-sheet-header">
                             <p class="auth-sheet-overline">ZAOYOE STUDIO</p>
                             <h2 id="authSheetTitle" class="auth-sheet-title">${t('auth.welcomeBack', '欢迎回来')}</h2>
-                            <p id="authSheetSubtitle" class="auth-sheet-subtitle">${t('auth.loginSubtitle', '请输入您的账号信息以登录')}</p>
-
-                            <div class="auth-sheet-badges">
-                                <span class="auth-sheet-badge">
-                                    <i class="fas fa-shield-heart"></i>
-                                    <span data-i18n="security.title">安全设置</span>
-                                </span>
-                                <span class="auth-sheet-badge">
-                                    <i class="fas fa-box-open"></i>
-                                    <span data-i18n="wallet.myOrders">我的订单</span>
-                                </span>
-                            </div>
                         </header>
 
                         <nav id="authSheetTabs" class="auth-sheet-tabs" aria-label="Authentication views">
@@ -215,16 +197,9 @@
                                 </div>
 
                                 <button type="submit" class="auth-sheet-submit login-submit-btn" data-auth-submit="login" form="loginForm" data-i18n="common.login">登录</button>
-
-                                <p class="auth-sheet-switch">
-                                    <span data-i18n="auth.noAccountYet">还没有账号？</span>
-                                    <button type="button" class="auth-sheet-link auth-sheet-switch-link" data-auth-tab="register" data-i18n="auth.signUpNow">立即注册</button>
-                                </p>
                             </section>
 
                             <section id="registerView" class="auth-sheet-view" data-auth-view="register" hidden>
-                                <p class="auth-sheet-note" data-i18n="auth.registerSubtitle">加入我们以获取更多高级功能</p>
-
                                 <form id="registerForm" class="auth-sheet-form" autocomplete="off" novalidate>
                                     <label class="auth-sheet-field">
                                         <span class="auth-sheet-label" data-i18n="auth.usernamePlaceholder">用户名</span>
@@ -259,11 +234,6 @@
                                 </form>
 
                                 <button type="submit" class="auth-sheet-submit login-submit-btn" data-auth-submit="register" form="registerForm" data-i18n="auth.createAccount">创建账号</button>
-
-                                <p class="auth-sheet-switch">
-                                    <span data-i18n="auth.hasAccount">已有账号？</span>
-                                    <button type="button" class="auth-sheet-link auth-sheet-switch-link" data-auth-tab="login" data-i18n="auth.loginNow">直接登录</button>
-                                </p>
                             </section>
 
                             <section id="resetView" class="auth-sheet-view" data-auth-view="reset" hidden>
@@ -278,9 +248,9 @@
 
                                 <button type="submit" class="auth-sheet-submit login-submit-btn" data-auth-submit="reset" form="resetForm" data-i18n="auth.recover">找回</button>
 
-                                <p class="auth-sheet-switch">
-                                    <button type="button" class="auth-sheet-link auth-sheet-switch-link" data-auth-tab="login" data-i18n="auth.backToLogin">返回登录</button>
-                                </p>
+                                <div class="auth-sheet-inline-row auth-sheet-inline-row--center">
+                                    <button type="button" class="auth-sheet-link" data-auth-tab="login" data-i18n="auth.backToLogin">返回登录</button>
+                                </div>
                             </section>
                         </div>
                     </div>
@@ -414,7 +384,6 @@
             sheet: overlay?.querySelector('.auth-sheet') || null,
             tabs: overlay?.querySelector('#authSheetTabs') || null,
             title: overlay?.querySelector('#authSheetTitle') || null,
-            subtitle: overlay?.querySelector('#authSheetSubtitle') || null,
             message: overlay?.querySelector('#authSheetMessage') || null,
             body: overlay?.querySelector('.auth-sheet-body') || null
         };
@@ -505,9 +474,8 @@
 
     function updateSheetCopy(viewId) {
         const meta = VIEW_META[viewId] || VIEW_META.login;
-        const { title, subtitle, tabs } = getSheetElements();
+        const { title, tabs } = getSheetElements();
         if (title) title.textContent = t(meta.titleKey, meta.titleFallback);
-        if (subtitle) subtitle.textContent = t(meta.subtitleKey, meta.subtitleFallback);
         if (tabs) tabs.hidden = viewId === 'reset';
     }
 
