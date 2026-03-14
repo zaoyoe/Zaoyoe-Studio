@@ -259,13 +259,21 @@
         /* Prompts page: longer verify input (left) + get button right aligned */
         #loginModal #registerView .auth-sheet-inline-group--code {
             width: 100%;
-            grid-template-columns: minmax(0, 1fr) 104px;
-            justify-content: normal;
+            grid-template-columns: 168px 104px;
+            justify-content: space-between;
             gap: 6px;
         }
 
         #loginModal #registerView .auth-sheet-inline-group--code .verify-code-btn {
             justify-self: end;
+        }
+
+        /* Prompts page: brighter caret for better visibility */
+        #loginModal .auth-sheet-input,
+        #loginModal .auth-sheet-input:focus,
+        #loginModal .auth-sheet-input.auth-sheet-input--portaled,
+        #loginModal .auth-sheet-input.auth-sheet-input--portaled:focus {
+            caret-color: #f4f8ff !important;
         }
 
         /* Prompts page: plain gray rectangular action button (no gradient / no 3D outline) */
