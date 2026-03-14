@@ -308,7 +308,7 @@ body.auth-sheet-open {
 
 #loginView .auth-sheet-submit {
     width: min(100%, 82%);
-    margin: auto auto 0;
+    margin: 2px auto 0;
 }
 
 #registerView .auth-sheet-submit,
@@ -637,7 +637,7 @@ body.auth-sheet-open {
 .auth-sheet-divider::before,
 .auth-sheet-divider::after {
     content: "";
-    flex: 1;
+    flex: 0 0 46px;
     height: 1px;
     background: rgba(255, 255, 255, 0.08);
 }
