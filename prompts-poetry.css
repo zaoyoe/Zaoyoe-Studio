@@ -162,31 +162,6 @@ canvas#starryCanvas,
     box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
 }
 
-body.prompts-page #loginModal .auth-sheet-surface {
-    background: linear-gradient(180deg, rgba(12, 14, 18, 0.82) 0%, rgba(9, 11, 15, 0.92) 100%);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-top: 1px solid rgba(255, 255, 255, 0.14);
-    backdrop-filter: blur(18px) saturate(118%);
-    -webkit-backdrop-filter: blur(18px) saturate(118%);
-    box-shadow:
-        0 24px 56px rgba(0, 0, 0, 0.5),
-        inset 0 1px 0 rgba(255, 255, 255, 0.05);
-}
-
-body.prompts-page #loginModal.auth-sheet-overlay {
-    background: rgba(0, 0, 0, 0.36);
-    backdrop-filter: blur(10px) saturate(92%);
-    -webkit-backdrop-filter: blur(10px) saturate(92%);
-    transform: translateZ(0);
-    -webkit-transform: translateZ(0);
-    will-change: opacity, backdrop-filter;
-}
-
-body.prompts-page #loginModal .auth-sheet-backdrop {
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-}
-
 body.prompts-page.auth-sheet-open #ambientCanvas {
     opacity: 0.4 !important;
     transition: none !important;
