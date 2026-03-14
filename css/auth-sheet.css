@@ -368,8 +368,9 @@ body.auth-sheet-open {
     box-sizing: border-box;
 }
 
+#loginModal .auth-sheet-input-proxy.is-active,
 .auth-sheet-input-proxy.is-active {
-    border-color: var(--auth-sheet-blue-bright);
+    border-color: var(--auth-sheet-accent-strong) !important;
 }
 
 .auth-sheet-input-proxy.is-portaled .auth-sheet-input-proxy-value,
