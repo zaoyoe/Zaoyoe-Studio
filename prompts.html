@@ -259,38 +259,30 @@
         /* Prompts page: shorter verify code input, keep "get" button anchored on the right */
         #loginModal #registerView .auth-sheet-inline-group--code {
             grid-template-columns: minmax(0, 132px) 104px;
-            justify-content: end;
+            justify-content: start;
             gap: 6px;
         }
 
-        /* Prompts page: gray 3D capsule style for verify code action */
+        /* Prompts page: plain gray rectangular action button (no gradient / no 3D outline) */
         #loginModal #registerView .auth-sheet-inline-group--code .verify-code-btn {
-            border-radius: 999px;
-            background: linear-gradient(180deg, rgba(223, 230, 238, 0.18) 0%, rgba(196, 206, 218, 0.12) 100%) !important;
-            border: 1px solid rgba(231, 236, 242, 0.28) !important;
+            border-radius: 13px;
+            background: rgba(216, 224, 234, 0.12) !important;
+            border: 1px solid rgba(216, 224, 234, 0.18) !important;
             color: #e9eef4 !important;
-            box-shadow:
-                inset 0 1px 0 rgba(255, 255, 255, 0.22),
-                0 8px 16px rgba(0, 0, 0, 0.2),
-                0 1px 0 rgba(0, 0, 0, 0.28);
+            box-shadow: none !important;
             font-weight: 600;
         }
 
         #loginModal #registerView .auth-sheet-inline-group--code .verify-code-btn:hover {
-            transform: translateY(-1px);
-            background: linear-gradient(180deg, rgba(231, 236, 242, 0.24) 0%, rgba(201, 212, 224, 0.16) 100%) !important;
-            border-color: rgba(231, 236, 242, 0.36) !important;
-            box-shadow:
-                inset 0 1px 0 rgba(255, 255, 255, 0.28),
-                0 10px 20px rgba(0, 0, 0, 0.22),
-                0 1px 0 rgba(0, 0, 0, 0.32);
+            transform: none;
+            background: rgba(226, 233, 242, 0.18) !important;
+            border-color: rgba(226, 233, 242, 0.24) !important;
+            box-shadow: none !important;
         }
 
         #loginModal #registerView .auth-sheet-inline-group--code .verify-code-btn:active {
             transform: translateY(0);
-            box-shadow:
-                inset 0 1px 0 rgba(255, 255, 255, 0.16),
-                0 4px 10px rgba(0, 0, 0, 0.2);
+            box-shadow: none !important;
         }
     </style>
 </head>
