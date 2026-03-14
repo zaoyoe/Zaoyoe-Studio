@@ -94,7 +94,7 @@
     const loginModalHTML = `
     <!-- Login Modal -->
     <div class="modal-overlay login-overlay" id="loginModal" style="display: none; opacity: 0; visibility: hidden;">
-        <div class="login-card" onclick="event.stopPropagation()">
+        <div class="login-card">
             <!-- Mac Window Controls -->
             <div class="mac-controls">
                 <div class="mac-dot red" onclick="toggleLoginModal()">
@@ -1251,7 +1251,6 @@
                 if (overlay) {
                     overlay.scrollTop = 0;
                 }
-                if (scroller) scroller.scrollTop = 0;
                 if (card) {
                     card.scrollTop = 0;
                     card.style.transform = '';
@@ -1259,20 +1258,26 @@
             }
 
             function bindLoginModalOverlayDismiss() {
-                const { overlay, card } = getLoginModalElements();
+                const { overlay } = getLoginModalElements();
+                // Prevent duplicate bindings
                 if (!overlay || overlay.dataset.loginOverlayDismissBound === '1') return;
 
+                // Use a cleaner listener on the overlay itself
                 overlay.addEventListener('click', (event) => {
-                    // Prevent closing when clicking inside the card
-                    if (card && card.contains(event.target)) {
+                    // 1. Check if the click is inside the actual white card (.login-card)
+                    // If so, we intentionally DO NOT close it.
+                    if (event.target.closest('.login-card')) {
                         return;
                     }
 
+                    // 2. Debounce lock to prevent accidental immediate close after open
                     const now = Date.now();
                     if (now < overlayCloseDisabledUntil) {
                         return;
                     }
 
+                    // 3. If an input is focused, just dismiss the keyboard (blur input)
+                    // but DO NOT close the whole modal yet (better UX on mobile)
                     const activeInput = getActiveLoginModalInput();
                     if (activeInput) {
                         activeInput.blur();
@@ -1280,7 +1285,10 @@
                         return;
                     }
 
-                    window.closeLoginModal?.();
+                    // 4. Safe to close
+                    if (typeof window.closeLoginModal === 'function') {
+                        window.closeLoginModal();
+                    }
                 });
 
                 overlay.dataset.loginOverlayDismissBound = '1';

@@ -7121,8 +7121,7 @@ body {
 @media (max-width: 768px) {
 
     /* Fix all modal overlays on mobile */
-    /* Fix all modal overlays on mobile */
-    .modal-overlay.active {
+    .modal-overlay.active:not(.login-overlay):not(#guestbookModal) {
         align-items: center !important;
         /* Fixed: was flex-start causing top positioning */
         padding-top: calc(20px + env(safe-area-inset-top)) !important;
