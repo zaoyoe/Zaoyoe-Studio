@@ -28,7 +28,7 @@
     --auth-sheet-blue-bright-soft: rgba(139, 184, 232, 0.2);
     --auth-sheet-danger: #d48a83;
     --auth-sheet-success: #94bba8;
-    --auth-sheet-content-max-width: 364px;
+    --auth-sheet-content-max-width: 372px;
     --auth-sheet-tabs-max-width: 320px;
 }
 
@@ -284,8 +284,6 @@ body.auth-sheet-open {
     display: flex;
     flex-direction: column;
     gap: 12px;
-    width: min(100%, var(--auth-sheet-content-max-width));
-    margin: 0 auto;
 }
 
 .auth-sheet-view--primary {
@@ -321,6 +319,17 @@ body.auth-sheet-open {
     flex-direction: column;
     gap: 10px;
     width: 100%;
+}
+
+.auth-sheet-message,
+.auth-sheet-note,
+.auth-sheet-form,
+.auth-sheet-google-btn,
+.auth-sheet-submit,
+.auth-sheet-inline-row {
+    width: min(100%, var(--auth-sheet-content-max-width));
+    margin-left: auto;
+    margin-right: auto;
 }
 
 .auth-sheet-field {
@@ -736,8 +745,8 @@ body.auth-sheet-open {
 
 @media (max-width: 768px) {
     :root {
-        --auth-sheet-content-max-width: 334px;
-        --auth-sheet-tabs-max-width: 300px;
+        --auth-sheet-content-max-width: 346px;
+        --auth-sheet-tabs-max-width: 308px;
     }
 
     .top-right-nav {
