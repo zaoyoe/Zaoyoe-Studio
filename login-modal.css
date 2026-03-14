@@ -382,6 +382,9 @@
         align-items: flex-end;
         /* Align to bottom on mobile */
         padding: 0;
+        padding-bottom: var(--login-keyboard-offset, 0px);
+        box-sizing: border-box;
+        transition: padding-bottom 0.3s cubic-bezier(0.22, 1, 0.36, 1);
     }
 
     .login-overlay.active .login-card {
@@ -404,11 +407,25 @@
         border-bottom: none;
         box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.4);
 
-        /* Transition for bottom sheet sliding */
-        transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+        /* Make the card able to shrink when keyboard is up */
+        max-height: calc(100svh - var(--login-keyboard-offset, 0px) - 20px);
+        display: flex;
+        flex-direction: column;
 
-        /* Make sure it's at the very bottom */
-        margin: 0;
+        /* Transition for bottom sheet sliding */
+        transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), max-height 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    .login-card .form-view {
+        overflow-y: auto;
+        flex: 1 1 auto;
+        /* Hide scrollbar for cleaner look */
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+    }
+
+    .login-card .form-view::-webkit-scrollbar {
+        display: none;
     }
 
     .login-card .card-title {

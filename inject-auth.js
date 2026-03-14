@@ -704,6 +704,14 @@
                     border-radius: 20px 20px 0 0 !important;
                     border-bottom: none !important;
                     box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.4) !important;
+                    max-height: calc(100svh - var(--login-keyboard-offset, 0px) - 20px) !important;
+                    display: flex !important;
+                    flex-direction: column !important;
+                }
+                .login-modal-scroll,
+                #loginModal .login-modal-scroll {
+                    align-items: flex-end !important;
+                    height: 100% !important;
                 }
             }
 
@@ -1189,16 +1197,14 @@
                 if (isKeyboardUp) {
                     // Calculate the actual overlap of the keyboard with the layout viewport's bottom.
                     // vv.offsetTop tracks how much iOS Safari has already scrolled the layout viewport up.
-                    // Deducting vv.offsetTop prevents "double pushing" the popup.
                     const actualOverlap = loginModalKeyboardState.baseViewportHeight - (vv.height + vv.offsetTop);
-                    const finalPush = Math.max(0, actualOverlap);
+                    const bottomInset = Math.max(0, actualOverlap);
 
-                    // Limit the push so that the card's top is never pushed completely off-screen
-                    // Ensure at least 60px of the card remains visible
-                    const maxPushHeight = Math.max(0, loginModalKeyboardState.baseViewportHeight - 60);
-                    const safeHeightDiff = Math.min(finalPush, maxPushHeight);
+                    // Instead of pushing the card directly up and pushing it off screen, 
+                    // we allocate the keyboard space via a CSS variable.
+                    // The overlay takes padding-bottom, and the card shrinks its max-height, allowing internal scrolling.
+                    overlay.style.setProperty('--login-keyboard-offset', `${bottomInset}px`);
 
-                    card.style.transform = `translateY(-${safeHeightDiff}px)`;
                     // Ensure the card isn't completely hidden by scrolling if it's tall
                     setTimeout(() => {
                         const activeInput = getActiveLoginModalInput();
@@ -1207,7 +1213,7 @@
                         }
                     }, 50);
                 } else {
-                    card.style.transform = '';
+                    overlay.style.setProperty('--login-keyboard-offset', '0px');
                     loginModalKeyboardState.baseViewportHeight = Math.max(loginModalKeyboardState.baseViewportHeight, vv.height);
                 }
             }
