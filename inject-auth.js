@@ -236,12 +236,12 @@
                                         <input type="email" id="reg-email" class="auth-sheet-input" placeholder="${t('auth.emailPlaceholder', '邮箱地址')}" data-i18n-placeholder="auth.emailPlaceholder" autocomplete="off" required>
                                     </label>
 
-                                    <div class="auth-sheet-inline-group auth-sheet-inline-group--code">
-                                        <label class="auth-sheet-field">
-                                            <span class="auth-sheet-label" data-i18n="auth.enterVerifyCode">输入6位验证码</span>
-                                            <input type="text" id="reg-code" class="auth-sheet-input" placeholder="${t('auth.enterVerifyCode', '输入6位验证码')}" data-i18n-placeholder="auth.enterVerifyCode" maxlength="6" autocomplete="off" required>
-                                        </label>
-                                        <button type="button" class="auth-sheet-secondary verify-code-btn" id="sendBtn" data-auth-send-code data-i18n="auth.getVerifyCode">获取验证码</button>
+                                    <div class="auth-sheet-field auth-sheet-field--code">
+                                        <label for="reg-code" class="auth-sheet-label" data-i18n="auth.enterVerifyCode">输入6位验证码</label>
+                                        <div class="auth-sheet-inline-group auth-sheet-inline-group--code">
+                                            <input type="text" id="reg-code" class="auth-sheet-input auth-sheet-input--code" placeholder="${t('auth.enterVerifyCode', '输入6位验证码')}" data-i18n-placeholder="auth.enterVerifyCode" maxlength="6" autocomplete="off" required>
+                                            <button type="button" class="auth-sheet-secondary verify-code-btn" id="sendBtn" data-auth-send-code data-i18n="auth.getVerifyCode">获取验证码</button>
+                                        </div>
                                     </div>
 
                                     <label class="auth-sheet-field">

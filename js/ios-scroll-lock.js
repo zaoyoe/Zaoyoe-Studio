@@ -169,29 +169,26 @@
         }
 
         // === Explicit Textarea/Input Handling ===
-        // We handle inputs directly to prevent Safari scroll chaining (rubberbanding)
+        // If the input itself is scrollable (e.g. a textarea), keep boundary guards on the input.
+        // Plain inputs should be allowed to pass the gesture through so their scrollable parent
+        // (such as the auth sheet body) can continue handling vertical scrolling.
         const inputEl = target.closest('textarea, input');
         if (inputEl) {
-            // If it's not vertically scrollable, completely swallow the touchmove
-            if (Math.ceil(inputEl.scrollHeight) <= Math.ceil(inputEl.clientHeight) + 2) {
-                e.preventDefault();
+            if (Math.ceil(inputEl.scrollHeight) > Math.ceil(inputEl.clientHeight) + 2) {
+                const touchY = e.touches[0].clientY;
+                const deltaY = touchStartY - touchY;
+                const atTop = inputEl.scrollTop <= 0;
+                const atBottom = inputEl.scrollTop + inputEl.clientHeight >= inputEl.scrollHeight - 2;
+
+                if (atTop && deltaY < 0) {
+                    e.preventDefault(); // Trying to pull down at top
+                } else if (atBottom && deltaY > 0) {
+                    e.preventDefault(); // Trying to push up at bottom
+                } else {
+                    e.stopPropagation(); // Safe native scrolling area
+                }
                 return;
             }
-
-            // If it IS scrollable, check boundaries
-            const touchY = e.touches[0].clientY;
-            const deltaY = touchStartY - touchY;
-            const atTop = inputEl.scrollTop <= 0;
-            const atBottom = inputEl.scrollTop + inputEl.clientHeight >= inputEl.scrollHeight - 2;
-
-            if (atTop && deltaY < 0) {
-                e.preventDefault(); // Trying to pull down at top
-            } else if (atBottom && deltaY > 0) {
-                e.preventDefault(); // Trying to push up at bottom
-            } else {
-                e.stopPropagation(); // Safe native scrolling area
-            }
-            return;
         }
 
         // 在弹窗内，寻找最近的可滚动容器

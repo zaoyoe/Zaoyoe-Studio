@@ -70,7 +70,7 @@ body.auth-sheet-open {
 .auth-sheet {
     position: relative;
     width: min(100%, 480px);
-    max-height: min(84svh, 820px);
+    max-height: min(88svh, 860px);
     border-radius: 26px;
     overflow: hidden;
     background:
@@ -95,7 +95,7 @@ body.auth-sheet-open {
     position: relative;
     display: grid;
     grid-template-rows: auto auto auto auto minmax(0, 1fr);
-    max-height: min(84svh, 820px);
+    max-height: min(88svh, 860px);
     min-height: 0;
 }
 
@@ -238,6 +238,7 @@ body.auth-sheet-open {
     padding: 12px 20px 18px;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
 }
 
 .auth-sheet-view {
@@ -290,6 +291,7 @@ body.auth-sheet-open {
     transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
     -webkit-appearance: none;
     appearance: none;
+    touch-action: pan-y;
 }
 
 .auth-sheet-input::placeholder {
@@ -319,16 +321,23 @@ body.auth-sheet-open {
 
 .auth-sheet-inline-group--code {
     grid-template-columns: minmax(0, 1fr) 116px;
+    align-items: stretch;
 }
 
-.auth-sheet-inline-group--code .auth-sheet-field {
+.auth-sheet-field--code {
+    min-width: 0;
+}
+
+.auth-sheet-input--code {
     min-width: 0;
 }
 
 .auth-sheet-inline-group--code .auth-sheet-secondary {
     width: 116px;
+    min-height: 46px;
     padding-left: 12px;
     padding-right: 12px;
+    align-self: stretch;
 }
 
 .auth-sheet-inline-row {
@@ -552,12 +561,12 @@ body.auth-sheet-open {
 
     .auth-sheet {
         width: 100%;
-        max-height: calc(84svh - var(--auth-sheet-keyboard-offset, 0px));
+        max-height: calc(88svh - var(--auth-sheet-keyboard-offset, 0px));
         border-radius: 24px 24px 0 0;
     }
 
     .auth-sheet-shell {
-        max-height: calc(84svh - var(--auth-sheet-keyboard-offset, 0px));
+        max-height: calc(88svh - var(--auth-sheet-keyboard-offset, 0px));
     }
 
     .auth-sheet-header {
