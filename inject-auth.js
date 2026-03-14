@@ -236,7 +236,7 @@
                                         <input type="email" id="reg-email" class="auth-sheet-input" placeholder="${t('auth.emailPlaceholder', '邮箱地址')}" data-i18n-placeholder="auth.emailPlaceholder" autocomplete="off" required>
                                     </label>
 
-                                    <div class="auth-sheet-inline-group">
+                                    <div class="auth-sheet-inline-group auth-sheet-inline-group--code">
                                         <label class="auth-sheet-field">
                                             <span class="auth-sheet-label" data-i18n="auth.enterVerifyCode">输入6位验证码</span>
                                             <input type="text" id="reg-code" class="auth-sheet-input" placeholder="${t('auth.enterVerifyCode', '输入6位验证码')}" data-i18n-placeholder="auth.enterVerifyCode" maxlength="6" autocomplete="off" required>
