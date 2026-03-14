@@ -113,6 +113,8 @@ body.auth-sheet-open {
     position: relative;
     z-index: 1;
     min-height: 0;
+    width: min(100%, 426px);
+    margin: 0 auto;
     padding-bottom: 10px;
     transform: translateY(24px) scale(0.988);
     opacity: 0;
@@ -125,7 +127,9 @@ body.auth-sheet-open {
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
     min-height: 0;
-    padding: 12px 20px 18px;
+    width: min(100%, 426px);
+    margin: 0 auto;
+    padding: 10px 18px 16px;
     transform: translateY(18px);
     opacity: 0;
     transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.22s ease;
@@ -153,7 +157,7 @@ body.auth-sheet-open {
 }
 
 .auth-sheet-header {
-    padding: 0 20px 8px;
+    padding: 0 18px 6px;
 }
 
 .auth-sheet-overline {
@@ -179,8 +183,8 @@ body.auth-sheet-open {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 4px;
-    margin: 0 20px;
-    padding: 4px;
+    margin: 0 18px;
+    padding: 3px;
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.032);
     border: 1px solid rgba(255, 255, 255, 0.06);
@@ -194,8 +198,8 @@ body.auth-sheet-open {
 
 .auth-sheet-tab-indicator {
     position: absolute;
-    top: 4px;
-    bottom: 4px;
+    top: 3px;
+    bottom: 3px;
     left: 0;
     width: 0;
     border-radius: 999px;
@@ -211,7 +215,7 @@ body.auth-sheet-open {
     position: relative;
     z-index: 1;
     border-radius: 999px;
-    padding: 9px 12px;
+    padding: 8px 12px;
     background: transparent;
     color: var(--auth-sheet-soft);
     font-size: 12.5px;
@@ -231,9 +235,9 @@ body.auth-sheet-open {
 
 .auth-sheet-message {
     margin: 0 0 12px;
-    padding: 9px 11px;
-    border-radius: 13px;
-    font-size: 11.5px;
+    padding: 8px 10px;
+    border-radius: 12px;
+    font-size: 11px;
     line-height: 1.55;
     white-space: pre-line;
     border: 1px solid transparent;
@@ -284,12 +288,12 @@ body.auth-sheet-open {
 }
 
 #loginView.auth-sheet-view--primary {
-    gap: 14px;
-    padding-top: 4px;
+    gap: 12px;
+    padding-top: 2px;
 }
 
 #loginView .auth-sheet-form {
-    gap: 11px;
+    gap: 10px;
 }
 
 #loginView .auth-sheet-inline-row--spread {
@@ -310,14 +314,14 @@ body.auth-sheet-open {
 .auth-sheet-form {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 9px;
 }
 
 .auth-sheet-field {
     position: relative;
     display: flex;
     flex-direction: column;
-    gap: 5px;
+    gap: 4px;
 }
 
 .auth-sheet-label {
@@ -330,10 +334,10 @@ body.auth-sheet-open {
 #loginModal .auth-sheet-input-proxy,
 .auth-sheet-input-proxy {
     width: 100%;
-    min-height: 46px;
-    padding: 12px 14px;
-    border-radius: 14px;
-    border: 1px solid var(--auth-sheet-blue-border);
+    min-height: 44px;
+    padding: 11px 13px;
+    border-radius: 13px;
+    border: 1px solid var(--auth-sheet-border);
     background: rgba(255, 255, 255, 0.042);
     color: var(--auth-sheet-text);
     font-size: 16px;
@@ -382,10 +386,10 @@ body.auth-sheet-open {
 #loginModal .auth-sheet-input,
 .auth-sheet-input {
     width: 100%;
-    min-height: 46px;
-    padding: 12px 14px;
-    border-radius: 14px;
-    border: 1px solid var(--auth-sheet-blue-border) !important;
+    min-height: 44px;
+    padding: 11px 13px;
+    border-radius: 13px;
+    border: 1px solid var(--auth-sheet-border) !important;
     background: rgba(255, 255, 255, 0.042) !important;
     color: var(--auth-sheet-text);
     font-size: 16px;
@@ -460,12 +464,12 @@ body.auth-sheet-open {
 .auth-sheet-inline-group {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    gap: 7px;
+    gap: 6px;
     align-items: end;
 }
 
 .auth-sheet-inline-group--code {
-    grid-template-columns: minmax(0, 1fr) 116px;
+    grid-template-columns: minmax(0, 1fr) 110px;
     align-items: stretch;
 }
 
@@ -479,10 +483,10 @@ body.auth-sheet-open {
 }
 
 .auth-sheet-inline-group--code .auth-sheet-secondary {
-    width: 116px;
-    min-height: 46px;
-    padding-left: 12px;
-    padding-right: 12px;
+    width: 110px;
+    min-height: 44px;
+    padding-left: 10px;
+    padding-right: 10px;
     align-self: stretch;
     background: var(--auth-sheet-blue-soft);
     border-color: var(--auth-sheet-blue-border);
@@ -562,7 +566,7 @@ body.auth-sheet-open {
 .auth-sheet-google-btn {
     appearance: none;
     border: 1px solid transparent;
-    border-radius: 16px;
+    border-radius: 15px;
     cursor: pointer;
     transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease, background 0.22s ease;
 }
@@ -572,13 +576,13 @@ body.auth-sheet-open {
     align-items: center;
     justify-content: center;
     gap: 10px;
-    min-height: 46px;
+    min-height: 44px;
     width: 100%;
-    padding: 11px 15px;
+    padding: 10px 14px;
     background: rgba(255, 255, 255, 0.03);
     border-color: rgba(255, 255, 255, 0.08);
     color: var(--auth-sheet-text);
-    font-size: 13.5px;
+    font-size: 13px;
     font-weight: 600;
 }
 
@@ -623,14 +627,14 @@ body.auth-sheet-open {
     align-items: center;
     justify-content: center;
     gap: 10px;
-    min-height: 46px;
+    min-height: 44px;
     width: 100%;
-    padding: 12px 16px;
+    padding: 11px 15px;
     background: #eef2f6 !important;
     color: #0f1317 !important;
     border: 1px solid rgba(237, 241, 245, 0.78) !important;
     box-shadow: 0 10px 20px rgba(0, 0, 0, 0.22);
-    font-size: 14.5px;
+    font-size: 14px;
     font-weight: 700;
 }
 
@@ -652,12 +656,12 @@ body.auth-sheet-open {
 }
 
 .auth-sheet-secondary {
-    min-height: 46px;
-    padding: 0 14px;
+    min-height: 44px;
+    padding: 0 13px;
     background: rgba(255, 255, 255, 0.03);
     border-color: rgba(255, 255, 255, 0.08);
     color: var(--auth-sheet-text);
-    font-size: 12.5px;
+    font-size: 12px;
     font-weight: 600;
     white-space: nowrap;
 }
@@ -742,20 +746,20 @@ body.auth-sheet-open {
     }
 
     .auth-sheet-motion-shell {
-        padding-bottom: 8px;
+        padding-bottom: 7px;
     }
 
     .auth-sheet-form-core {
-        padding: 12px 18px calc(16px + env(safe-area-inset-bottom));
+        padding: 10px 16px calc(14px + env(safe-area-inset-bottom));
     }
 
     .auth-sheet-header {
-        padding: 0 18px 8px;
+        padding: 0 16px 6px;
     }
 
     .auth-sheet-tabs {
-        margin-left: 18px;
-        margin-right: 18px;
+        margin-left: 16px;
+        margin-right: 16px;
     }
 
     .auth-sheet-inline-group {
@@ -763,7 +767,7 @@ body.auth-sheet-open {
     }
 
     .auth-sheet-inline-group--code {
-        grid-template-columns: minmax(0, 1fr) 116px;
+        grid-template-columns: minmax(0, 1fr) 110px;
     }
 
     .auth-sheet-inline-row--spread {
