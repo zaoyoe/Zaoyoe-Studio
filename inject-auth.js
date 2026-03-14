@@ -693,6 +693,20 @@
                 box-sizing: border-box !important;
             }
 
+            @media (max-width: 768px) {
+                .login-card,
+                #loginModal .login-card {
+                    width: 95% !important;
+                    max-width: 95% !important;
+                    margin: 0 auto !important;
+                    padding: 24px 20px !important;
+                    padding-bottom: calc(24px + env(safe-area-inset-bottom)) !important;
+                    border-radius: 20px 20px 0 0 !important;
+                    border-bottom: none !important;
+                    box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.4) !important;
+                }
+            }
+
             .login-modal-scroll,
             #loginModal .login-modal-scroll {
                 width: 100% !important;
@@ -720,6 +734,17 @@
                 font-weight: 600 !important;
             }
             
+            @media (max-width: 768px) {
+                .login-submit-btn,
+                .login-card .login-submit-btn,
+                #loginView .login-submit-btn,
+                #registerView .login-submit-btn,
+                #resetView .login-submit-btn {
+                    width: 100% !important;
+                    max-width: none !important;
+                }
+            }
+
             /* Google Button - Full width within card */
             #loginModal .google-login-btn,
             #loginModal .login-card .google-login-btn {
@@ -1162,11 +1187,16 @@
                 loginModalKeyboardState.isKeyboardOpen = isKeyboardUp;
 
                 if (isKeyboardUp) {
-                    // Push the card up by the keyboard height
+                    // Calculate the actual overlap of the keyboard with the layout viewport's bottom.
+                    // vv.offsetTop tracks how much iOS Safari has already scrolled the layout viewport up.
+                    // Deducting vv.offsetTop prevents "double pushing" the popup.
+                    const actualOverlap = loginModalKeyboardState.baseViewportHeight - (vv.height + vv.offsetTop);
+                    const finalPush = Math.max(0, actualOverlap);
+
                     // Limit the push so that the card's top is never pushed completely off-screen
-                    // Ensure at least 60px of the card remains visible from the top of the visual viewport
+                    // Ensure at least 60px of the card remains visible
                     const maxPushHeight = Math.max(0, loginModalKeyboardState.baseViewportHeight - 60);
-                    const safeHeightDiff = Math.min(heightDiff, maxPushHeight);
+                    const safeHeightDiff = Math.min(finalPush, maxPushHeight);
 
                     card.style.transform = `translateY(-${safeHeightDiff}px)`;
                     // Ensure the card isn't completely hidden by scrolling if it's tall
