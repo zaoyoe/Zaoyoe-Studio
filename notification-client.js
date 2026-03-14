@@ -2,6 +2,12 @@
     // macOS-style Notification Center Styles
     const style = document.createElement('style');
     style.textContent = `
+        html.notif-scroll-locked,
+        body.notif-scroll-locked {
+            overflow: hidden !important;
+            overscroll-behavior: none !important;
+        }
+
         /* Blurred Backdrop when drawer is open */
         .notif-backdrop {
             position: fixed;
@@ -417,7 +423,122 @@
     let notifications = [];
     let unreadCount = 0;
     let isExpanded = false;
+    let notifScrollLocked = false;
+    let notifSavedScrollY = 0;
+    let notifTouchStartY = 0;
+    let notifPrevBodyStyle = null;
+    let notifPrevHtmlStyle = null;
     const MAX_COLLAPSED = 3;
+
+    function getDrawerListFromTarget(target) {
+        if (!target || typeof target.closest !== 'function') return null;
+        return target.closest('#notifDrawerList');
+    }
+
+    function canScrollInList(container, deltaY) {
+        if (!container) return false;
+        const maxScrollTop = container.scrollHeight - container.clientHeight;
+        if (maxScrollTop <= 0) return false;
+        if (deltaY < 0 && container.scrollTop <= 0) return false;
+        if (deltaY > 0 && container.scrollTop >= maxScrollTop - 1) return false;
+        return true;
+    }
+
+    function handleNotifTouchStart(e) {
+        if (!notifScrollLocked) return;
+        notifTouchStartY = e.touches?.[0]?.clientY ?? 0;
+    }
+
+    function handleNotifTouchMove(e) {
+        if (!notifScrollLocked) return;
+
+        const list = getDrawerListFromTarget(e.target);
+        if (!list) {
+            e.preventDefault();
+            return;
+        }
+
+        const currentY = e.touches?.[0]?.clientY ?? notifTouchStartY;
+        const deltaY = notifTouchStartY - currentY;
+        if (!canScrollInList(list, deltaY)) {
+            e.preventDefault();
+        }
+        notifTouchStartY = currentY;
+    }
+
+    function handleNotifWheel(e) {
+        if (!notifScrollLocked) return;
+
+        const list = getDrawerListFromTarget(e.target);
+        if (!list) {
+            e.preventDefault();
+            return;
+        }
+
+        if (!canScrollInList(list, e.deltaY)) {
+            e.preventDefault();
+        }
+    }
+
+    function lockNotificationBackgroundScroll() {
+        if (notifScrollLocked) return;
+
+        notifSavedScrollY = window.scrollY || window.pageYOffset || 0;
+        notifPrevBodyStyle = {
+            position: document.body.style.position,
+            top: document.body.style.top,
+            left: document.body.style.left,
+            right: document.body.style.right,
+            width: document.body.style.width,
+            overflow: document.body.style.overflow
+        };
+        notifPrevHtmlStyle = {
+            overflow: document.documentElement.style.overflow
+        };
+
+        document.documentElement.classList.add('notif-scroll-locked');
+        document.body.classList.add('notif-scroll-locked');
+        document.body.style.position = 'fixed';
+        document.body.style.top = `-${notifSavedScrollY}px`;
+        document.body.style.left = '0';
+        document.body.style.right = '0';
+        document.body.style.width = '100%';
+        document.body.style.overflow = 'hidden';
+        document.documentElement.style.overflow = 'hidden';
+
+        document.addEventListener('touchstart', handleNotifTouchStart, { passive: true });
+        document.addEventListener('touchmove', handleNotifTouchMove, { passive: false });
+        document.addEventListener('wheel', handleNotifWheel, { passive: false });
+
+        notifScrollLocked = true;
+    }
+
+    function unlockNotificationBackgroundScroll() {
+        if (!notifScrollLocked) return;
+
+        document.removeEventListener('touchstart', handleNotifTouchStart);
+        document.removeEventListener('touchmove', handleNotifTouchMove);
+        document.removeEventListener('wheel', handleNotifWheel);
+
+        document.documentElement.classList.remove('notif-scroll-locked');
+        document.body.classList.remove('notif-scroll-locked');
+
+        if (notifPrevBodyStyle) {
+            document.body.style.position = notifPrevBodyStyle.position || '';
+            document.body.style.top = notifPrevBodyStyle.top || '';
+            document.body.style.left = notifPrevBodyStyle.left || '';
+            document.body.style.right = notifPrevBodyStyle.right || '';
+            document.body.style.width = notifPrevBodyStyle.width || '';
+            document.body.style.overflow = notifPrevBodyStyle.overflow || '';
+        }
+
+        if (notifPrevHtmlStyle) {
+            document.documentElement.style.overflow = notifPrevHtmlStyle.overflow || '';
+        }
+
+        window.scrollTo(0, notifSavedScrollY);
+        notifScrollLocked = false;
+    }
 
     // Create Drawer HTML
     function createDrawerHTML() {
@@ -490,7 +611,9 @@
 
     // Toggle Drawer
     window.toggleNotifMenu = function (e) {
-        e.stopPropagation();
+        if (e && typeof e.stopPropagation === 'function') {
+            e.stopPropagation();
+        }
         createDrawerHTML();
 
         const drawer = document.getElementById('notifDrawer');
@@ -501,6 +624,7 @@
         } else {
             drawer.classList.add('active');
             backdrop.classList.add('active');
+            lockNotificationBackgroundScroll();
             isExpanded = false;
             renderNotifications();
         }
@@ -511,6 +635,7 @@
         const backdrop = document.getElementById('notifBackdrop');
         if (drawer) drawer.classList.remove('active');
         if (backdrop) backdrop.classList.remove('active');
+        unlockNotificationBackgroundScroll();
     }
 
     // Core Functions

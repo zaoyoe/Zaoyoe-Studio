@@ -1923,20 +1923,21 @@ a.nav-trigger.active {
 }
 
 .dropdown-notif-btn {
-    width: 34px;
-    height: 34px;
+    width: 36px;
+    height: 36px;
     padding: 0;
     position: relative;
-    flex: 0 0 34px;
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    background: rgba(255, 255, 255, 0.08);
-    color: rgba(255, 255, 255, 0.92);
-    border-radius: 10px;
-    display: inline-flex;
+    flex: 0 0 36px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.95);
+    border-radius: 50%;
+    display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .dropdown-notif-btn i {
@@ -1946,8 +1947,8 @@ a.nav-trigger.active {
 
 .dropdown-notif-badge {
     position: absolute;
-    top: 4px;
-    right: 4px;
+    top: 7px;
+    right: 7px;
     width: 8px;
     height: 8px;
     border-radius: 999px;
@@ -1986,24 +1987,24 @@ a.nav-trigger.active {
 
 .dropdown-lang-btn .lang-icon.lang-zh {
     opacity: 1;
-    transform: rotate(0deg) scale(1);
+    transform: translateY(0) scale(1);
     font-size: 0.9rem;
 }
 
 .dropdown-lang-btn .lang-icon.lang-en {
     opacity: 0;
-    transform: rotate(-90deg) scale(0.5);
+    transform: translateY(120%) scale(0.92);
     font-size: 0.82rem;
 }
 
 .dropdown-lang-btn[data-lang="en"] .lang-icon.lang-zh {
     opacity: 0;
-    transform: rotate(90deg) scale(0.5);
+    transform: translateY(-120%) scale(0.92);
 }
 
 .dropdown-lang-btn[data-lang="en"] .lang-icon.lang-en {
     opacity: 1;
-    transform: rotate(0deg) scale(1);
+    transform: translateY(0) scale(1);
 }
 
 .dropdown-lang-btn:hover {
@@ -2017,13 +2018,13 @@ a.nav-trigger.active {
 }
 
 .dropdown-notif-btn:hover {
-    background: rgba(255, 255, 255, 0.14);
-    border-color: rgba(255, 255, 255, 0.28);
-    transform: translateY(-1px);
+    transform: scale(1.1);
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.25);
 }
 
 .dropdown-notif-btn:active {
-    transform: scale(0.96);
+    transform: scale(0.95);
 }
 
 .identity-name {
