@@ -36,17 +36,6 @@ body.auth-sheet-open {
     overflow: hidden;
 }
 
-/* Stabilize animated homepage layers under Safari backdrop-filter while auth sheet opens/closes. */
-body.auth-sheet-open .background-blobs .blob,
-body.auth-sheet-open .ticker-track {
-    animation-play-state: paused !important;
-}
-
-body.auth-sheet-open .masonry-column {
-    transition: none !important;
-    will-change: auto !important;
-}
-
 .auth-sheet-overlay {
     position: fixed;
     inset: 0;
