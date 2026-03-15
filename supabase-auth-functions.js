@@ -2651,6 +2651,7 @@ function resetProfileModalViewState() {
 
     if (mobileEditor) {
         mobileEditor.style.display = 'none';
+        mobileEditor.classList.remove('is-entering');
     }
     if (mobileInput) {
         mobileInput.value = '';
@@ -3052,13 +3053,17 @@ function toggleNicknameEdit(show) {
         if (!mobileEditor || !mobileInput) return;
 
         if (show) {
+            mobileEditor.classList.remove('is-entering');
             mobileEditor.style.display = 'grid';
             mobileInput.value = currentNickname;
+            void mobileEditor.offsetWidth;
+            mobileEditor.classList.add('is-entering');
             window.setTimeout(() => {
                 mobileInput.focus();
                 mobileInput.select();
             }, 60);
         } else {
+            mobileEditor.classList.remove('is-entering');
             mobileEditor.style.display = 'none';
         }
         return;

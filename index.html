@@ -60,7 +60,7 @@
     <link rel="stylesheet" href="security-cards.css?v=20260315_PROFILE_MOBILE_REBUILD_6">
 
     <!-- Core Styles (for modals, profile, etc) -->
-    <link rel="stylesheet" href="style.css?v=20260315_PROFILE_MOBILE_REBUILD_9">
+    <link rel="stylesheet" href="style.css?v=20260315_PROFILE_MOBILE_REBUILD_10">
     <link rel="stylesheet" href="css/auth-sheet.css?v=20260314_AUTH_SHEET_DRAG_HANDLE_31">
     <link rel="stylesheet" href="avatar-fix.css?v=20260314_AVATAR_UNIFIED_1">
 
@@ -282,7 +282,7 @@
 
     <!-- Auth System (integrated from inject-auth.js) -->
     <script src="./js/avatar-uploader.js" defer></script>
-    <script src="./supabase-auth-functions.js?v=20260315_PROFILE_MOBILE_REBUILD_6" defer></script>
+    <script src="./supabase-auth-functions.js?v=20260315_PROFILE_MOBILE_REBUILD_7" defer></script>
     <script src="./js/ios-scroll-lock.js?v=20260314_SCROLL_LOCK_AUTH_SHEET_7" defer></script>
     <script src="./inject-auth.js?v=20260314_LOGIN_DRAG_HANDLE_28" defer></script>
     <script src="./notification-client.js?v=20260314_NOTIF_SCROLL_LOCK_1" defer></script>
@@ -1086,13 +1086,7 @@
                     <div class="profile-mobile-head-row">
                         <div class="profile-mobile-head-copy">
                             <div class="profile-mobile-title" id="profileMobileHeaderTitle">我的账户</div>
-                            <div class="profile-mobile-subtitle" id="profileMobileHeaderSubtitle">仅自己可见</div>
                         </div>
-                        <button type="button" class="profile-mobile-toolbar-btn"
-                            onclick="switchProfileTab('security')"
-                            aria-label="打开账户安全">
-                            <i class="fas fa-gear"></i>
-                        </button>
                     </div>
                     <div class="profile-mobile-tabs">
                         <div class="tab-item active" data-profile-tab="profile" onclick="switchProfileTab('profile')"
@@ -1178,15 +1172,6 @@
                                     <div class="profile-mobile-info-row">
                                         <div class="profile-mobile-info-key">注册时间</div>
                                         <div class="profile-mobile-info-value" id="profileMobileMemberSinceValue">加载中...</div>
-                                    </div>
-                                    <div class="profile-mobile-info-row">
-                                        <div class="profile-mobile-info-key">手机号</div>
-                                        <div class="profile-mobile-info-value profile-mobile-info-value--phone">
-                                            <span id="profileMobilePhoneStatus"
-                                                class="profile-mobile-status-pill profile-mobile-status-pill--warn">未绑定</span>
-                                            <button type="button" class="profile-mobile-inline-link"
-                                                onclick="switchProfileTab('security')">前往安全页</button>
-                                        </div>
                                     </div>
                                 </div>
                             </section>
