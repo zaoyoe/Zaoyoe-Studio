@@ -1960,30 +1960,6 @@ async function initializeAuthPageBoot() {
         }, 300);
     }
 
-    // 监听邮箱输入变化，自动填充密码
-    const loginEmailInput = document.getElementById('login-email');
-    if (loginEmailInput) {
-        loginEmailInput.addEventListener('input', function () {
-            const email = this.value.trim();
-
-            try {
-                const savedPasswordsStr = localStorage.getItem('saved_passwords');
-                if (savedPasswordsStr) {
-                    const savedPasswords = JSON.parse(savedPasswordsStr);
-                    if (savedPasswords[email]) {
-                        const loginPasswordInput = document.getElementById('login-password');
-                        if (loginPasswordInput) {
-                            loginPasswordInput.value = atob(savedPasswords[email]);
-                            console.log('✨ 已自动填充密码 for:', email);
-                        }
-                    }
-                }
-            } catch (e) {
-                console.error('自动填充密码失败:', e);
-            }
-        });
-    }
-
     // 全局点击监听器关闭下拉菜单
     document.addEventListener('click', function (event) {
         const dropdown = document.getElementById('userDropdown');

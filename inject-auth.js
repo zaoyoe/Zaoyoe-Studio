@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260315_AUTH_AUTOFILL_FIX_34';
+    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260315_AUTH_RESET_ON_OPEN_35';
     const SUPPORT_SCRIPT_SRC = './script.js?v=20260314_AUTH_I18N_1';
     const EMAILJS_SRC = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
     const EMAILJS_PUBLIC_KEY = 'vawaxLVEzJMAVbut0';
@@ -223,7 +223,7 @@
                                         <span data-i18n="auth.or">或者</span>
                                     </div>
 
-                                    <form id="loginForm" class="auth-sheet-form" autocomplete="on" novalidate>
+                                    <form id="loginForm" class="auth-sheet-form" autocomplete="off" novalidate>
                                         <div class="auth-sheet-field">
                                             <span class="auth-sheet-label" data-i18n="auth.emailLabel">邮箱</span>
                                             ${buildPortaledInputControlHTML({
@@ -231,7 +231,7 @@
                                                 type: 'email',
                                                 placeholder: t('auth.emailPlaceholder', '邮箱地址'),
                                                 placeholderKey: 'auth.emailPlaceholder',
-                                                inputAttributes: 'autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" data-auth-form="loginForm" required'
+                                                inputAttributes: 'autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-auth-form="loginForm" required'
                                             })}
                                         </div>
 
@@ -242,7 +242,7 @@
                                                 type: 'password',
                                                 placeholder: t('auth.passwordPlaceholder', '密码'),
                                                 placeholderKey: 'auth.passwordPlaceholder',
-                                                inputAttributes: 'autocomplete="current-password" data-auth-form="loginForm" required'
+                                                inputAttributes: 'autocomplete="new-password" data-auth-form="loginForm" required'
                                             })}
                                         </div>
                                     </form>
@@ -931,6 +931,46 @@
         message.classList.remove('is-error', 'is-success');
     }
 
+    function resetAuthSheetFields(options = {}) {
+        const { preserveView = false } = options;
+        const overlay = document.getElementById('loginModal');
+        if (!overlay) return;
+
+        deactivateActivePortaledInput({ blur: false });
+        getActiveAuthInput()?.blur();
+        clearAuthMessage();
+
+        overlay.querySelectorAll('form').forEach((form) => {
+            form.reset();
+        });
+
+        overlay.querySelectorAll('[data-auth-canonical-input]').forEach((input) => {
+            input.value = '';
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+
+        const rememberMe = overlay.querySelector('#rememberMe');
+        const privacyConsent = overlay.querySelector('#privacyConsent');
+        if (rememberMe) rememberMe.checked = false;
+        if (privacyConsent) privacyConsent.checked = false;
+
+        overlay.querySelectorAll('[data-auth-submit]').forEach((button) => {
+            if (button.dataset.originalHtml) {
+                button.innerHTML = button.dataset.originalHtml;
+                delete button.dataset.originalHtml;
+            }
+            button.disabled = false;
+        });
+
+        syncAllInputProxyDisplays();
+        syncAuthInputInteractionMode();
+
+        if (!preserveView) {
+            setAuthView('login', { clearMessage: true, ensureDependencies: false }).catch(() => { /* ignore */ });
+        }
+    }
+
     function setAuthFormLoading(formName, isLoading, label) {
         const button = document.querySelector(`#loginModal [data-auth-submit="${formName}"]`);
         if (!button) return;
@@ -993,6 +1033,7 @@
         if (!overlay) return;
 
         syncAuthInputInteractionMode();
+        resetAuthSheetFields({ preserveView: true });
 
         overlay.hidden = false;
         overlay.style.removeProperty('display');
@@ -1008,6 +1049,12 @@
             overlay.classList.add('active');
             overlay.setAttribute('aria-hidden', 'false');
         });
+
+        window.setTimeout(() => {
+            if (!overlay.classList.contains('active')) return;
+            resetAuthSheetFields({ preserveView: true });
+            setAuthView(viewId, { clearMessage: true, ensureDependencies: false }).catch(() => { /* ignore */ });
+        }, 80);
 
         document.body.classList.add('auth-sheet-open');
         if (typeof window.__forcePromptThemeColorBlack === 'function') {
@@ -1031,6 +1078,7 @@
         const { overlay, sheet } = getSheetElements();
         if (!overlay) return;
 
+        resetAuthSheetFields({ preserveView: true });
         deactivateActivePortaledInput();
         getActiveAuthInput()?.blur();
         clearAuthMessage();
