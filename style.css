@@ -7681,6 +7681,11 @@ body {
 }
 
 @media (max-width: 768px) {
+    #profileModal {
+        --profile-mobile-topbar-height: 124px;
+        --profile-mobile-topbar-inset: 4px;
+    }
+
     #profileModal .modal-content.profile-modal,
     #profileModal .modal-content.profile-modal.profile-modal.wide {
         border-radius: 34px !important;
@@ -7694,17 +7699,21 @@ body {
     #profileModal .profile-modal-scroll {
         position: relative !important;
         padding: 0 4px calc(18px + env(safe-area-inset-bottom)) !important;
-        scroll-padding-top: 180px !important;
+        padding-top: calc(var(--profile-mobile-topbar-height) + 10px) !important;
+        scroll-padding-top: calc(var(--profile-mobile-topbar-height) + 22px) !important;
         scroll-padding-bottom: 220px !important;
     }
 
     #profileModal .profile-mobile-topbar {
         display: block !important;
-        position: sticky;
+        position: absolute;
         top: 0;
+        left: var(--profile-mobile-topbar-inset);
+        right: var(--profile-mobile-topbar-inset);
         z-index: 30;
         padding-top: 0;
-        margin: -12px 0 16px;
+        margin: 0;
+        pointer-events: none;
     }
 
     #profileModal .profile-mobile-topbar-shell {
@@ -7718,10 +7727,11 @@ body {
     }
 
     #profileModal .profile-mobile-topbar-shell {
-        margin: 0 -4px;
+        margin: 0;
         padding: 18px 24px 16px;
         border-radius: 28px;
         overflow: hidden;
+        pointer-events: auto;
     }
 
     #profileModal .profile-mobile-head-row {
