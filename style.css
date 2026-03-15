@@ -7680,10 +7680,6 @@ body {
     display: none;
 }
 
-#profileModal .profile-mobile-art-layer {
-    display: none;
-}
-
 @media (max-width: 768px) {
     #profileModal .modal-content.profile-modal,
     #profileModal .modal-content.profile-modal.profile-modal.wide {
@@ -7702,85 +7698,29 @@ body {
         scroll-padding-bottom: 220px !important;
     }
 
-    #profileModal .profile-mobile-art-layer {
-        display: block;
-        position: absolute;
-        inset: 94px 22px 132px;
-        z-index: 0;
-        border-radius: 34px;
-        overflow: hidden;
-        pointer-events: none;
-        transform: rotate(-4deg) scale(1.03);
-        box-shadow: 0 34px 68px rgba(0, 0, 0, 0.34);
-    }
-
-    #profileModal .profile-mobile-art-block {
-        position: absolute;
-        border-radius: 30px;
-        filter: saturate(118%);
-    }
-
-    #profileModal .profile-mobile-art-block--a {
-        left: 0;
-        top: 0;
-        width: 72%;
-        height: 44%;
-        background: #ff6153;
-    }
-
-    #profileModal .profile-mobile-art-block--b {
-        right: 0;
-        top: 0;
-        width: 38%;
-        height: 100%;
-        background: #1db7de;
-    }
-
-    #profileModal .profile-mobile-art-block--c {
-        left: 12%;
-        bottom: 0;
-        width: 54%;
-        height: 34%;
-        background: #f0b550;
-    }
-
-    #profileModal .profile-mobile-art-block--d {
-        right: 8%;
-        bottom: 8%;
-        width: 30%;
-        height: 28%;
-        background: #6861c7;
-    }
-
-    #profileModal .profile-mobile-art-block--e {
-        left: 35%;
-        top: 36%;
-        width: 26%;
-        height: 18%;
-        border-radius: 999px;
-        background: #87b76d;
-    }
-
     #profileModal .profile-mobile-topbar {
         display: block !important;
         position: sticky;
         top: 0;
         z-index: 30;
-        padding-top: 0;
-        margin: 0 -12px 22px;
+        padding-top: 12px;
+        margin: 0 0 22px;
+    }
+
+    #profileModal .profile-mobile-topbar-shell,
+    #profileModal .profile-mobile-footer {
+        background: rgba(0, 0, 0, 0.65);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        box-shadow:
+            0 18px 36px rgba(0, 0, 0, 0.24),
+            inset 0 1px 0 rgba(255, 255, 255, 0.04);
     }
 
     #profileModal .profile-mobile-topbar-shell {
         padding: 18px 20px 12px;
-        border-radius: 0;
-        background: rgba(255, 255, 255, 0.04);
-        border-top: 0;
-        border-left: 0;
-        border-right: 0;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-        backdrop-filter: blur(20px) saturate(132%);
-        -webkit-backdrop-filter: blur(20px) saturate(132%);
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        border-radius: 28px;
         overflow: hidden;
     }
 
@@ -7926,7 +7866,7 @@ body {
         display: grid;
         gap: 14px;
         width: 100%;
-        padding-bottom: 116px;
+        padding-bottom: 134px;
     }
 
     #profileModal .profile-mobile-hero-card,
@@ -7939,8 +7879,13 @@ body {
         display: flex !important;
         align-items: center;
         gap: 14px;
-        padding: 4px 2px 18px;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        padding: 18px 16px;
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        border-radius: 22px;
+        background: rgba(16, 20, 25, 0.94);
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.04),
+            0 10px 24px rgba(0, 0, 0, 0.08);
     }
 
     #profileModal .profile-mobile-hero-avatar {
@@ -8265,33 +8210,23 @@ body {
 
     #profileModal .profile-mobile-footer {
         position: sticky;
-        left: 0;
-        right: 0;
-        bottom: calc(-18px - env(safe-area-inset-bottom));
+        bottom: calc(12px + env(safe-area-inset-bottom));
         z-index: 8;
-        width: auto;
-        max-width: none;
-        margin: 8px -12px calc(-18px - env(safe-area-inset-bottom));
-        padding: 12px 20px calc(14px + env(safe-area-inset-bottom));
-        display: grid;
-        grid-template-columns: 1fr 1.15fr;
-        gap: 10px;
-        background: rgba(255, 255, 255, 0.04);
-        border-top: 1px solid rgba(255, 255, 255, 0.05);
-        backdrop-filter: blur(20px) saturate(132%);
-        -webkit-backdrop-filter: blur(20px) saturate(132%);
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        width: 100%;
+        margin: 6px 0 0;
+        padding: 10px;
+        border-radius: 28px;
     }
 
     #profileModal .profile-mobile-footer-grid {
         display: grid;
-        grid-template-columns: 1fr 1.15fr;
-        gap: 10px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
     }
 
     #profileModal .profile-mobile-footer-btn {
-        min-height: 48px;
-        border-radius: 15px;
+        min-height: 52px;
+        border-radius: 18px;
         border: 1px solid rgba(255, 255, 255, 0.08);
         font-size: 14px;
         font-weight: 600;
