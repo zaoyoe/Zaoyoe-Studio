@@ -5303,6 +5303,204 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.67s backwards;
 }
 
+@media (min-width: 769px) {
+    #profileModal {
+        --profile-mobile-topbar-height: 108px;
+    }
+
+    #profileModal .modal-content.profile-modal {
+        width: min(920px, calc(100vw - 48px)) !important;
+        max-width: 920px !important;
+        min-height: min(720px, calc(100vh - 56px)) !important;
+        max-height: min(820px, calc(100vh - 56px)) !important;
+    }
+
+    #profileModal .profile-modal-scroll {
+        padding: 0 24px 28px !important;
+        padding-top: calc(var(--profile-mobile-topbar-height) + 18px) !important;
+        scroll-padding-top: calc(var(--profile-mobile-topbar-height) + 26px) !important;
+        scroll-padding-bottom: 36px !important;
+    }
+
+    #profileModal .profile-mobile-topbar-shell {
+        padding: 20px 28px 14px;
+    }
+
+    #profileModal .profile-mobile-tabs {
+        justify-content: flex-start;
+        gap: 34px;
+    }
+
+    #profileModal .profile-mobile-tabs .tab-item {
+        min-height: 38px;
+        padding-bottom: 12px;
+        font-size: 17px;
+    }
+
+    #profileModal .profile-flip-container,
+    #profileModal .profile-flip-inner {
+        min-height: 560px !important;
+    }
+
+    #profileModal .profile-front {
+        padding-bottom: 28px !important;
+    }
+
+    #profileModal .profile-mobile-sheet {
+        display: grid;
+        grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
+        gap: 20px;
+        align-items: start;
+        padding-bottom: 0;
+    }
+
+    #profileModal .profile-mobile-hero-card,
+    #profileModal .profile-mobile-card {
+        margin-bottom: 0;
+    }
+
+    #profileModal .profile-mobile-hero-card {
+        grid-column: 1;
+        grid-row: 1 / span 2;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        justify-content: flex-start;
+        gap: 18px;
+        min-height: 100%;
+        padding: 24px;
+    }
+
+    #profileModal .profile-mobile-hero-avatar {
+        width: 92px;
+        height: 92px;
+        grid-row: auto;
+        justify-self: flex-start;
+        align-self: flex-start;
+    }
+
+    #profileModal .profile-mobile-hero-main {
+        width: 100%;
+        padding-right: 0;
+        gap: 8px;
+    }
+
+    #profileModal .profile-mobile-hero-kicker {
+        font-size: 11px;
+        letter-spacing: 0.28em;
+    }
+
+    #profileModal .profile-mobile-hero-name {
+        font-size: 28px;
+        line-height: 1.04;
+    }
+
+    #profileModal .profile-mobile-hero-meta {
+        font-size: 14px;
+        line-height: 1.58;
+    }
+
+    #profileModal .profile-mobile-hero-actions {
+        position: static;
+        margin-top: 12px;
+        justify-content: flex-start;
+    }
+
+    #profileModal .profile-mobile-hero-edit-btn {
+        min-height: 38px;
+        padding: 0 14px;
+    }
+
+    #profileModal .profile-mobile-inline-editor {
+        grid-area: auto;
+        grid-column: auto;
+        width: 100%;
+        margin-top: 2px;
+    }
+
+    #profileModal .profile-mobile-card--essential {
+        grid-column: 2;
+        grid-row: 1;
+        padding: 22px 22px 18px;
+    }
+
+    #profileModal .profile-mobile-card--quick {
+        grid-column: 2;
+        grid-row: 2;
+        padding: 22px;
+    }
+
+    #profileModal .profile-mobile-section-head {
+        margin-bottom: 18px;
+    }
+
+    #profileModal .profile-mobile-section-title {
+        font-size: 16px;
+        letter-spacing: -0.18px;
+    }
+
+    #profileModal .profile-mobile-info-row {
+        min-height: 58px;
+        grid-template-columns: 110px 1fr;
+    }
+
+    #profileModal .profile-mobile-info-key {
+        font-size: 13px;
+    }
+
+    #profileModal .profile-mobile-info-value {
+        font-size: 15px;
+    }
+
+    #profileModal .profile-mobile-quick-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+    }
+
+    #profileModal .profile-mobile-quick-card {
+        min-height: 144px;
+        padding: 16px;
+    }
+
+    #profileModal .profile-mobile-quick-icon {
+        width: 42px;
+        height: 42px;
+        margin-bottom: 26px;
+    }
+
+    #profileModal .profile-mobile-quick-title {
+        font-size: 15px;
+    }
+
+    #profileModal .profile-mobile-quick-desc {
+        font-size: 12px;
+    }
+
+    #profileModal .mobile-security-layout {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 18px;
+        padding: 4px 0 0 !important;
+    }
+
+    #profileModal .mobile-security-section {
+        margin-bottom: 0;
+        padding: 22px;
+    }
+
+    #profileModal .mobile-security-section:last-child {
+        grid-column: 1 / -1;
+    }
+
+    #profileModal .mobile-section-title {
+        font-size: 16px;
+    }
+
+    #profileModal .mobile-section-desc {
+        font-size: 13px;
+    }
+}
+
 html.profile-modal-lock,
 body.profile-modal-lock {
     overflow: hidden !important;
