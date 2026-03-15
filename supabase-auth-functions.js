@@ -2611,6 +2611,7 @@ function resetProfileModalViewState() {
     const flipInner = document.querySelector('.profile-flip-inner');
     const profileFront = document.querySelector('.profile-front');
     const profileBack = document.querySelector('.profile-back');
+    const mobileHeroCard = document.querySelector('#profileModal .profile-mobile-hero-card');
     const nicknameDisplay = document.getElementById('nicknameDisplay');
     const nicknameEdit = document.getElementById('nicknameEdit');
     const mobileEditor = document.getElementById('profileMobileInlineEditor');
@@ -2651,6 +2652,9 @@ function resetProfileModalViewState() {
 
     if (mobileEditor) {
         mobileEditor.classList.remove('is-visible');
+    }
+    if (mobileHeroCard) {
+        mobileHeroCard.classList.remove('is-editing');
     }
     if (mobileInput) {
         mobileInput.value = '';
@@ -2919,7 +2923,7 @@ function switchProfileTab(tabName) {
         if (profileFront) profileFront.style.pointerEvents = 'auto';
         if (profileBack) profileBack.style.pointerEvents = 'none';
 
-        if (profileFront && !isMobileView) {
+        if (profileFront) {
             profileFront.classList.remove('animate-in');
             void profileFront.offsetWidth;
             profileFront.classList.add('animate-in');
@@ -3059,12 +3063,14 @@ function toggleNicknameEdit(show) {
     if (isMobileView) {
         const mobileEditor = document.getElementById('profileMobileInlineEditor');
         const mobileInput = document.getElementById('profileMobileNicknameInput');
+        const mobileHeroCard = document.querySelector('#profileModal .profile-mobile-hero-card');
 
         if (!mobileEditor || !mobileInput) return;
 
         if (show) {
             mobileInput.value = currentNickname;
             void mobileEditor.offsetWidth;
+            mobileHeroCard?.classList.add('is-editing');
             mobileEditor.classList.add('is-visible');
             window.setTimeout(() => {
                 try {
@@ -3076,6 +3082,7 @@ function toggleNicknameEdit(show) {
             }, 180);
         } else {
             mobileEditor.classList.remove('is-visible');
+            mobileHeroCard?.classList.remove('is-editing');
         }
         return;
     }

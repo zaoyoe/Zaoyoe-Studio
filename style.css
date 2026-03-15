@@ -7949,7 +7949,7 @@ body {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        transform: translateX(-50%);
+        transform: translateX(-50%) translateY(6px) scale(0.94);
         border-radius: 999px;
         background: rgba(10, 14, 19, 0.9);
         border: 1px solid rgba(255, 255, 255, 0.09);
@@ -7958,6 +7958,10 @@ body {
             inset 0 1px 0 rgba(255, 255, 255, 0.06);
         pointer-events: none;
         z-index: 2;
+        opacity: 0;
+        transition:
+            opacity 0.2s ease,
+            transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
     }
 
     #profileModal .profile-mobile-hero-avatar-editmark::before,
@@ -7983,6 +7987,11 @@ body {
         width: 8px;
         height: 1.6px;
         background: rgba(159, 202, 255, 0.92);
+    }
+
+    #profileModal .profile-mobile-hero-card.is-editing .profile-mobile-hero-avatar-editmark {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0) scale(1);
     }
 
     #profileModal .profile-mobile-hero-main {
@@ -8303,6 +8312,62 @@ body {
         right: 14px;
         color: rgba(212, 220, 228, 0.42);
         font-size: 16px;
+    }
+
+    #profileModal .profile-front.animate-in .profile-mobile-hero-avatar {
+        animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.1s backwards;
+    }
+
+    #profileModal .profile-front.animate-in .profile-mobile-hero-kicker {
+        animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.14s backwards;
+    }
+
+    #profileModal .profile-front.animate-in .profile-mobile-hero-name {
+        animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.19s backwards;
+    }
+
+    #profileModal .profile-front.animate-in .profile-mobile-hero-meta {
+        animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.24s backwards;
+    }
+
+    #profileModal .profile-front.animate-in .profile-mobile-hero-actions {
+        animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.29s backwards;
+    }
+
+    #profileModal .profile-front.animate-in .profile-mobile-card--essential .profile-mobile-section-head {
+        animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.34s backwards;
+    }
+
+    #profileModal .profile-front.animate-in .profile-mobile-card--essential .profile-mobile-info-row:nth-child(1) {
+        animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.39s backwards;
+    }
+
+    #profileModal .profile-front.animate-in .profile-mobile-card--essential .profile-mobile-info-row:nth-child(2) {
+        animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.44s backwards;
+    }
+
+    #profileModal .profile-front.animate-in .profile-mobile-card--essential .profile-mobile-info-row:nth-child(3) {
+        animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.49s backwards;
+    }
+
+    #profileModal .profile-front.animate-in .profile-mobile-card--quick .profile-mobile-section-head {
+        animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.54s backwards;
+    }
+
+    #profileModal .profile-front.animate-in .profile-mobile-card--quick .profile-mobile-quick-card:nth-child(1) {
+        animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.59s backwards;
+    }
+
+    #profileModal .profile-front.animate-in .profile-mobile-card--quick .profile-mobile-quick-card:nth-child(2) {
+        animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.64s backwards;
+    }
+
+    #profileModal .profile-front.animate-in .profile-mobile-card--quick .profile-mobile-quick-card:nth-child(3) {
+        animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.69s backwards;
+    }
+
+    #profileModal .profile-front.animate-in .profile-mobile-card--quick .profile-mobile-quick-card:nth-child(4) {
+        animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.74s backwards;
     }
 
     #profileModal .mobile-security-layout {
