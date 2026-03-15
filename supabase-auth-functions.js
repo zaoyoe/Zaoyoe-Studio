@@ -2650,8 +2650,7 @@ function resetProfileModalViewState() {
     }
 
     if (mobileEditor) {
-        mobileEditor.style.display = 'none';
-        mobileEditor.classList.remove('is-entering');
+        mobileEditor.classList.remove('is-visible');
     }
     if (mobileInput) {
         mobileInput.value = '';
@@ -3053,18 +3052,15 @@ function toggleNicknameEdit(show) {
         if (!mobileEditor || !mobileInput) return;
 
         if (show) {
-            mobileEditor.classList.remove('is-entering');
-            mobileEditor.style.display = 'grid';
             mobileInput.value = currentNickname;
             void mobileEditor.offsetWidth;
-            mobileEditor.classList.add('is-entering');
+            mobileEditor.classList.add('is-visible');
             window.setTimeout(() => {
                 mobileInput.focus();
                 mobileInput.select();
-            }, 60);
+            }, 180);
         } else {
-            mobileEditor.classList.remove('is-entering');
-            mobileEditor.style.display = 'none';
+            mobileEditor.classList.remove('is-visible');
         }
         return;
     }

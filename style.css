@@ -7853,15 +7853,15 @@ body {
 
     #profileModal .profile-mobile-hero-card {
         display: flex !important;
-        align-items: center;
+        align-items: flex-start;
         gap: 14px;
         padding: 18px 16px;
         border: 1px solid rgba(255, 255, 255, 0.06);
         border-radius: 22px;
         background: rgba(16, 20, 25, 0.94);
         box-shadow:
-            inset 0 1px 0 rgba(255, 255, 255, 0.04),
-            0 10px 24px rgba(0, 0, 0, 0.08);
+            inset 0 1px 0 rgba(255, 255, 255, 0.035),
+            0 6px 14px rgba(0, 0, 0, 0.05);
     }
 
     #profileModal .profile-mobile-hero-avatar {
@@ -7878,10 +7878,11 @@ body {
         color: rgba(236, 241, 247, 0.96);
         box-shadow:
             inset 0 1px 0 rgba(255, 255, 255, 0.06),
-            0 12px 20px rgba(0, 0, 0, 0.14);
+            0 6px 14px rgba(0, 0, 0, 0.06);
         overflow: hidden;
         -webkit-appearance: none;
         appearance: none;
+        flex-shrink: 0;
     }
 
     #profileModal #profileModalAvatarMobile {
@@ -7959,8 +7960,8 @@ body {
         border-radius: 22px;
         background: rgba(16, 20, 25, 0.94);
         box-shadow:
-            inset 0 1px 0 rgba(255, 255, 255, 0.04),
-            0 10px 24px rgba(0, 0, 0, 0.08);
+            inset 0 1px 0 rgba(255, 255, 255, 0.035),
+            0 6px 14px rgba(0, 0, 0, 0.05);
     }
 
     #profileModal .profile-mobile-sheet > :last-child {
@@ -8063,16 +8064,32 @@ body {
     #profileModal .profile-mobile-inline-editor {
         display: grid;
         gap: 10px;
-        margin-top: 14px;
-        padding-top: 14px;
-        border-top: 1px solid rgba(255, 255, 255, 0.05);
+        max-height: 0;
+        overflow: hidden;
+        margin-top: 0;
+        padding-top: 0;
+        border-top: 1px solid transparent;
         opacity: 0;
-        transform: translateY(10px) scale(0.985);
+        pointer-events: none;
+        transform: translateY(-6px);
         transform-origin: top center;
+        transition:
+            max-height 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+            opacity 0.22s ease,
+            transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+            margin-top 0.28s ease,
+            padding-top 0.28s ease,
+            border-color 0.28s ease;
     }
 
-    #profileModal .profile-mobile-inline-editor.is-entering {
-        animation: profileMobileInlineEditorIn 0.28s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    #profileModal .profile-mobile-inline-editor.is-visible {
+        max-height: 176px;
+        margin-top: 14px;
+        padding-top: 14px;
+        border-top-color: rgba(255, 255, 255, 0.05);
+        opacity: 1;
+        pointer-events: auto;
+        transform: translateY(0);
     }
 
     #profileModal .profile-mobile-inline-input {
@@ -8090,27 +8107,16 @@ body {
 
     #profileModal .profile-mobile-inline-input:focus,
     #profileModal .profile-mobile-inline-input:focus-visible {
-        outline: none;
-        border-color: #9fcaff;
-        background: rgba(255, 255, 255, 0.042);
-        box-shadow: none;
+        outline: none !important;
+        border-color: #9fcaff !important;
+        background: rgba(255, 255, 255, 0.042) !important;
+        box-shadow: none !important;
     }
 
     #profileModal .profile-mobile-inline-actions {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 10px;
-    }
-
-    @keyframes profileMobileInlineEditorIn {
-        from {
-            opacity: 0;
-            transform: translateY(10px) scale(0.985);
-        }
-        to {
-            opacity: 1;
-            transform: translateY(0) scale(1);
-        }
     }
 
     #profileModal .profile-mobile-editor-btn {
@@ -8158,7 +8164,9 @@ body {
         border: 1px solid rgba(255, 255, 255, 0.06);
         color: rgba(255, 255, 255, 0.94);
         text-align: left;
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.03),
+            0 4px 10px rgba(0, 0, 0, 0.04);
     }
 
     #profileModal .profile-mobile-quick-icon {
@@ -8206,8 +8214,8 @@ body {
         padding: 18px 16px !important;
         margin-bottom: 14px !important;
         box-shadow:
-            inset 0 1px 0 rgba(255, 255, 255, 0.04),
-            0 10px 24px rgba(0, 0, 0, 0.08) !important;
+            inset 0 1px 0 rgba(255, 255, 255, 0.035),
+            0 6px 14px rgba(0, 0, 0, 0.05) !important;
     }
 
     #profileModal .mobile-section-title {

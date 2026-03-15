@@ -60,7 +60,7 @@
     <link rel="stylesheet" href="security-cards.css?v=20260315_PROFILE_MOBILE_REBUILD_6">
 
     <!-- Core Styles (for modals, profile, etc) -->
-    <link rel="stylesheet" href="style.css?v=20260315_PROFILE_MOBILE_REBUILD_10">
+    <link rel="stylesheet" href="style.css?v=20260315_PROFILE_MOBILE_REBUILD_11">
     <link rel="stylesheet" href="css/auth-sheet.css?v=20260314_AUTH_SHEET_DRAG_HANDLE_31">
     <link rel="stylesheet" href="avatar-fix.css?v=20260314_AVATAR_UNIFIED_1">
 
@@ -282,7 +282,7 @@
 
     <!-- Auth System (integrated from inject-auth.js) -->
     <script src="./js/avatar-uploader.js" defer></script>
-    <script src="./supabase-auth-functions.js?v=20260315_PROFILE_MOBILE_REBUILD_7" defer></script>
+    <script src="./supabase-auth-functions.js?v=20260315_PROFILE_MOBILE_REBUILD_8" defer></script>
     <script src="./js/ios-scroll-lock.js?v=20260314_SCROLL_LOCK_AUTH_SHEET_7" defer></script>
     <script src="./inject-auth.js?v=20260314_LOGIN_DRAG_HANDLE_28" defer></script>
     <script src="./notification-client.js?v=20260314_NOTIF_SCROLL_LOCK_1" defer></script>
@@ -1127,13 +1127,13 @@
                         <div class="profile-mobile-sheet profile-mobile-only">
                             <section class="profile-mobile-hero-card">
                                 <button type="button" class="profile-mobile-hero-avatar" onclick="triggerAvatarUpload()"
-                                    aria-label="更换头像">
+                                    aria-label="更换头像" data-i18n-title="profile.changeAvatar">
                                     <img id="profileModalAvatarMobile" src="" alt="Avatar">
                                     <span id="profileModalAvatarMobileFallback"
                                         class="profile-mobile-hero-avatar-fallback">U</span>
                                 </button>
                                 <div class="profile-mobile-hero-main">
-                                    <div class="profile-mobile-hero-kicker">Account</div>
+                                    <div class="profile-mobile-hero-kicker" data-i18n="profile.accountKicker">账户</div>
                                     <div class="profile-mobile-hero-name" id="profileMobileHeroName">Loading...</div>
                                     <div class="profile-mobile-hero-meta">
                                         <span id="profileMobileHeroEmail">加载中...</span><br>
@@ -1141,11 +1141,11 @@
                                     </div>
                                     <div class="profile-mobile-hero-actions">
                                         <button type="button" class="profile-mobile-hero-edit-btn"
-                                            onclick="openProfileEditor(event)">编辑资料</button>
+                                            onclick="openProfileEditor(event)" data-i18n="profile.editProfile">编辑资料</button>
                                     </div>
-                                    <div id="profileMobileInlineEditor" class="profile-mobile-inline-editor" style="display: none;">
+                                    <div id="profileMobileInlineEditor" class="profile-mobile-inline-editor">
                                         <input type="text" id="profileMobileNicknameInput" class="profile-mobile-inline-input"
-                                            placeholder="输入新昵称">
+                                            placeholder="输入新昵称" data-i18n-placeholder="profile.enterNewNickname">
                                         <div class="profile-mobile-inline-actions">
                                             <button type="button" class="profile-mobile-editor-btn profile-mobile-editor-btn--ghost"
                                                 onclick="toggleNicknameEdit(false)" data-i18n="common.cancel">取消</button>
@@ -1158,19 +1158,19 @@
 
                             <section class="profile-mobile-card profile-mobile-card--essential">
                                 <div class="profile-mobile-section-head">
-                                    <div class="profile-mobile-section-title">必要资料</div>
+                                    <div class="profile-mobile-section-title" data-i18n="profile.essentialInfo">必要资料</div>
                                 </div>
                                 <div class="profile-mobile-info-rows">
                                     <div class="profile-mobile-info-row">
-                                        <div class="profile-mobile-info-key">昵称</div>
+                                        <div class="profile-mobile-info-key" data-i18n="profile.nicknameLabel">昵称</div>
                                         <div class="profile-mobile-info-value" id="profileMobileNicknameValue">Loading...</div>
                                     </div>
                                     <div class="profile-mobile-info-row">
-                                        <div class="profile-mobile-info-key">邮箱</div>
+                                        <div class="profile-mobile-info-key" data-i18n="profile.emailLabel">邮箱</div>
                                         <div class="profile-mobile-info-value" id="profileMobileEmailValue">加载中...</div>
                                     </div>
                                     <div class="profile-mobile-info-row">
-                                        <div class="profile-mobile-info-key">注册时间</div>
+                                        <div class="profile-mobile-info-key" data-i18n="profile.registeredAt">注册时间</div>
                                         <div class="profile-mobile-info-value" id="profileMobileMemberSinceValue">加载中...</div>
                                     </div>
                                 </div>
@@ -1178,36 +1178,36 @@
 
                             <section class="profile-mobile-card profile-mobile-card--quick">
                                 <div class="profile-mobile-section-head">
-                                    <div class="profile-mobile-section-title">快捷入口</div>
+                                    <div class="profile-mobile-section-title" data-i18n="profile.quickAccess">快捷入口</div>
                                 </div>
                                 <div class="profile-mobile-quick-grid">
                                     <button type="button" class="profile-mobile-quick-card"
                                         onclick="openProfileWalletView('balance', event)">
                                         <span class="profile-mobile-quick-arrow"><i class="fas fa-chevron-right"></i></span>
                                         <span class="profile-mobile-quick-icon"><i class="fas fa-wallet"></i></span>
-                                        <span class="profile-mobile-quick-title">积分钱包</span>
-                                        <span class="profile-mobile-quick-desc">余额、充值与兑换</span>
+                                        <span class="profile-mobile-quick-title" data-i18n="profile.pointsWallet">积分钱包</span>
+                                        <span class="profile-mobile-quick-desc" data-i18n="profile.pointsWalletDesc">余额、充值与兑换</span>
                                     </button>
                                     <button type="button" class="profile-mobile-quick-card"
                                         onclick="openProfileWalletView('orders', event)">
                                         <span class="profile-mobile-quick-arrow"><i class="fas fa-chevron-right"></i></span>
                                         <span class="profile-mobile-quick-icon"><i class="fas fa-receipt"></i></span>
-                                        <span class="profile-mobile-quick-title">交易记录</span>
-                                        <span class="profile-mobile-quick-desc">订单与提示词解锁</span>
+                                        <span class="profile-mobile-quick-title" data-i18n="wallet.transactionRecords">交易记录</span>
+                                        <span class="profile-mobile-quick-desc" data-i18n="profile.transactionRecordsDesc">订单与提示词解锁</span>
                                     </button>
                                     <button type="button" class="profile-mobile-quick-card"
                                         onclick="openProfileWalletView('affiliate', event)">
                                         <span class="profile-mobile-quick-arrow"><i class="fas fa-chevron-right"></i></span>
                                         <span class="profile-mobile-quick-icon"><i class="fas fa-bullhorn"></i></span>
-                                        <span class="profile-mobile-quick-title">推广中心</span>
-                                        <span class="profile-mobile-quick-desc">邀请人数与佣金</span>
+                                        <span class="profile-mobile-quick-title" data-i18n="profile.affiliateCenter">推广中心</span>
+                                        <span class="profile-mobile-quick-desc" data-i18n="profile.affiliateCenterDesc">邀请人数与佣金</span>
                                     </button>
                                     <button type="button" class="profile-mobile-quick-card"
                                         onclick="openProfileWalletView('checkin', event)">
                                         <span class="profile-mobile-quick-arrow"><i class="fas fa-chevron-right"></i></span>
                                         <span class="profile-mobile-quick-icon"><i class="fas fa-calendar-check"></i></span>
-                                        <span class="profile-mobile-quick-title">每日签到</span>
-                                        <span class="profile-mobile-quick-desc">连续天数与补签</span>
+                                        <span class="profile-mobile-quick-title" data-i18n="wallet.dailyCheckin">每日签到</span>
+                                        <span class="profile-mobile-quick-desc" data-i18n="profile.dailyCheckinDesc">连续天数与补签</span>
                                     </button>
                                 </div>
                             </section>
@@ -1241,46 +1241,46 @@
 
                         <div class="profile-quick-access-section profile-desktop-only">
                             <div class="profile-section-head">
-                                <div class="profile-section-title">快捷入口</div>
-                                <div class="profile-section-note">详情不重复展示</div>
+                                <div class="profile-section-title" data-i18n="profile.quickAccess">快捷入口</div>
+                                <div class="profile-section-note" data-i18n="profile.quickAccessNote">详情不重复展示</div>
                             </div>
                             <div class="profile-quick-grid">
                                 <button type="button" class="profile-quick-card"
                                     onclick="openProfileWalletView('balance', event)">
                                     <span class="profile-quick-arrow"><i class="fas fa-chevron-right"></i></span>
                                     <span class="profile-quick-icon"><i class="fas fa-wallet"></i></span>
-                                    <span class="profile-quick-title">积分钱包</span>
-                                    <span class="profile-quick-desc">余额、充值与兑换</span>
+                                    <span class="profile-quick-title" data-i18n="profile.pointsWallet">积分钱包</span>
+                                    <span class="profile-quick-desc" data-i18n="profile.pointsWalletDesc">余额、充值与兑换</span>
                                 </button>
                                 <button type="button" class="profile-quick-card"
                                     onclick="openProfileWalletView('orders', event)">
                                     <span class="profile-quick-arrow"><i class="fas fa-chevron-right"></i></span>
                                     <span class="profile-quick-icon"><i class="fas fa-receipt"></i></span>
-                                    <span class="profile-quick-title">交易记录</span>
-                                    <span class="profile-quick-desc">订单与提示词解锁</span>
+                                    <span class="profile-quick-title" data-i18n="wallet.transactionRecords">交易记录</span>
+                                    <span class="profile-quick-desc" data-i18n="profile.transactionRecordsDesc">订单与提示词解锁</span>
                                 </button>
                                 <button type="button" class="profile-quick-card"
                                     onclick="openProfileWalletView('affiliate', event)">
                                     <span class="profile-quick-arrow"><i class="fas fa-chevron-right"></i></span>
                                     <span class="profile-quick-icon"><i class="fas fa-bullhorn"></i></span>
-                                    <span class="profile-quick-title">推广中心</span>
-                                    <span class="profile-quick-desc">邀请人数与佣金</span>
+                                    <span class="profile-quick-title" data-i18n="profile.affiliateCenter">推广中心</span>
+                                    <span class="profile-quick-desc" data-i18n="profile.affiliateCenterDesc">邀请人数与佣金</span>
                                 </button>
                                 <button type="button" class="profile-quick-card"
                                     onclick="openProfileWalletView('checkin', event)">
                                     <span class="profile-quick-arrow"><i class="fas fa-chevron-right"></i></span>
                                     <span class="profile-quick-icon"><i class="fas fa-calendar-check"></i></span>
-                                    <span class="profile-quick-title">每日签到</span>
-                                    <span class="profile-quick-desc">连续天数与补签</span>
+                                    <span class="profile-quick-title" data-i18n="wallet.dailyCheckin">每日签到</span>
+                                    <span class="profile-quick-desc" data-i18n="profile.dailyCheckinDesc">连续天数与补签</span>
                                 </button>
                             </div>
                         </div>
 
                         <div class="profile-footer-actions profile-desktop-only">
                             <button type="button" class="profile-action-btn profile-action-btn--ghost"
-                                onclick="openProfileWalletView('balance', event)">前往钱包</button>
+                                onclick="openProfileWalletView('balance', event)" data-i18n="profile.goToWallet">前往钱包</button>
                             <button type="button" class="profile-action-btn profile-action-btn--primary"
-                                onclick="openProfileEditor(event)">编辑资料</button>
+                                onclick="openProfileEditor(event)" data-i18n="profile.editProfile">编辑资料</button>
                         </div>
                     </div>
 
