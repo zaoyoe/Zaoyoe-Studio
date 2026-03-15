@@ -7683,7 +7683,7 @@ body {
 @media (max-width: 768px) {
     #profileModal {
         --profile-mobile-topbar-height: 86px;
-        --profile-mobile-topbar-inset: 10px;
+        --profile-mobile-topbar-inset: 0px;
     }
 
     #profileModal .modal-content.profile-modal,
@@ -7724,9 +7724,9 @@ body {
         align-items: flex-end;
         justify-content: center;
         padding: 16px 18px 10px;
-        border-radius: 26px 26px 0 0;
+        border-radius: 34px 34px 0 0;
         background: rgba(12, 15, 19, 0.56);
-        border: 1px solid rgba(255, 255, 255, 0.06);
+        border: 0;
         border-bottom: 1px solid rgba(255, 255, 255, 0.08);
         backdrop-filter: blur(18px) saturate(140%);
         -webkit-backdrop-filter: blur(18px) saturate(140%);
