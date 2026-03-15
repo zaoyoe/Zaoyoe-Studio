@@ -557,9 +557,36 @@ body.auth-sheet-open {
 .auth-sheet-input:-webkit-autofill,
 .auth-sheet-input:-webkit-autofill:hover,
 .auth-sheet-input:-webkit-autofill:focus {
-    -webkit-text-fill-color: var(--auth-sheet-text);
+    -webkit-text-fill-color: var(--auth-sheet-text) !important;
+    caret-color: var(--auth-sheet-link-accent) !important;
+    border-color: var(--auth-sheet-border) !important;
+    -webkit-box-shadow: 0 0 0 1000px rgba(255, 255, 255, 0.042) inset !important;
     box-shadow: 0 0 0 1000px rgba(255, 255, 255, 0.042) inset !important;
-    transition: background-color 9999s ease-in-out 0s;
+    transition:
+        background-color 9999s ease-in-out 0s,
+        color 9999s ease-in-out 0s;
+}
+
+#loginModal .auth-sheet-input:-webkit-autofill:focus,
+#loginModal .auth-sheet-input:-webkit-autofill:focus-visible,
+.auth-sheet-input:-webkit-autofill:focus,
+.auth-sheet-input:-webkit-autofill:focus-visible {
+    border-color: var(--auth-sheet-link-accent) !important;
+    -webkit-box-shadow:
+        0 0 0 1000px rgba(255, 255, 255, 0.042) inset,
+        0 0 0 3px rgba(159, 202, 255, 0.14) !important;
+    box-shadow:
+        0 0 0 1000px rgba(255, 255, 255, 0.042) inset,
+        0 0 0 3px rgba(159, 202, 255, 0.14) !important;
+}
+
+#loginModal .auth-sheet-input:-moz-autofill,
+#loginModal .auth-sheet-input:-moz-autofill:focus,
+.auth-sheet-input:-moz-autofill,
+.auth-sheet-input:-moz-autofill:focus {
+    color: var(--auth-sheet-text) !important;
+    caret-color: var(--auth-sheet-link-accent) !important;
+    box-shadow: 0 0 0 1000px rgba(255, 255, 255, 0.042) inset !important;
 }
 
 .auth-sheet-inline-group {
