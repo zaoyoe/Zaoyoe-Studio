@@ -7558,7 +7558,8 @@ body {
 
 /* Move the 3 profile info cards down as one group */
 #profileModal .profile-front .profile-nickname-section {
-    margin-top: 16px;
+    margin-top: 32px;
+    /* Shift group significantly down from avatar (desktop) */
 }
 
 @media (max-width: 768px) {
@@ -7577,10 +7578,16 @@ body {
         --profile-info-card-height: 80px;
         max-width: 100%;
         padding: 14px 16px;
-        margin-bottom: 16px;
+        margin-bottom: 20px;
+        /* Equal spacing between all 3 elements */
         min-height: var(--profile-info-card-height);
         height: auto;
         border-radius: 9px;
+    }
+
+    #profileModal .profile-front .profile-nickname-section {
+        margin-top: 28px;
+        /* Shift group significantly down from avatar (mobile) */
     }
 
     #profileModal .profile-front .profile-member-since-section {
@@ -7588,7 +7595,9 @@ body {
         height: auto;
         padding: 4px 12px;
         margin-bottom: 0px;
-        margin-top: 4px;
+        /* Last element, no bottom margin needed */
+        margin-top: 0px;
+        /* spacing handled by email section's margin-bottom */
     }
 
     #profileModal .profile-front .profile-email-section label {
