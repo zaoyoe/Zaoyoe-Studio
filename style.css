@@ -7704,7 +7704,7 @@ body {
         top: 0;
         z-index: 30;
         padding-top: 0;
-        margin: 0 0 10px;
+        margin: -12px 0 8px;
     }
 
     #profileModal .profile-mobile-topbar-shell {
@@ -7718,7 +7718,7 @@ body {
     }
 
     #profileModal .profile-mobile-topbar-shell {
-        margin: 0 -8px;
+        margin: 0 -12px;
         padding: 18px 24px 16px;
         border-radius: 28px;
         overflow: hidden;
