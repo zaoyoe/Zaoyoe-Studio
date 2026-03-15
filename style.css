@@ -4966,7 +4966,7 @@ body.profile-modal-lock {
 /* --- Mobile Overrides for Flip Container (Fix Truncation) --- */
 @media (max-width: 768px) {
     .profile-flip-container {
-        min-height: 480px !important;
+        min-height: auto !important;
         /* Forces container to keep a base height */
         height: auto !important;
         overflow: visible !important;
@@ -4974,7 +4974,7 @@ body.profile-modal-lock {
     }
 
     .profile-flip-inner {
-        min-height: 480px !important;
+        min-height: auto !important;
         /* Force matching height between front and back views */
         height: auto !important;
         display: block !important;
