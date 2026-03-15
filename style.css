@@ -8370,6 +8370,54 @@ body {
         animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.74s backwards;
     }
 
+    #profileModal .profile-back.animate-in .mobile-security-section:nth-child(1) .mobile-section-title {
+        animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.12s backwards;
+    }
+
+    #profileModal .profile-back.animate-in .mobile-security-section:nth-child(1) .input-group:nth-of-type(1) {
+        animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.17s backwards;
+    }
+
+    #profileModal .profile-back.animate-in .mobile-security-section:nth-child(1) .input-group:nth-of-type(2) {
+        animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.22s backwards;
+    }
+
+    #profileModal .profile-back.animate-in .mobile-security-section:nth-child(1) .security-mobile-primary-btn {
+        animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.27s backwards;
+    }
+
+    #profileModal .profile-back.animate-in .mobile-security-section:nth-child(2) .mobile-section-title {
+        animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.32s backwards;
+    }
+
+    #profileModal .profile-back.animate-in .mobile-security-section:nth-child(2) .mobile-section-desc {
+        animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.37s backwards;
+    }
+
+    #profileModal .profile-back.animate-in .mobile-security-section:nth-child(2) .input-group:nth-of-type(1) {
+        animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.42s backwards;
+    }
+
+    #profileModal .profile-back.animate-in .mobile-security-section:nth-child(2) .input-group:nth-of-type(2) {
+        animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.47s backwards;
+    }
+
+    #profileModal .profile-back.animate-in .mobile-security-section:nth-child(2) .security-mobile-primary-btn {
+        animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.52s backwards;
+    }
+
+    #profileModal .profile-back.animate-in .mobile-security-section:nth-child(3) .mobile-section-title {
+        animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.57s backwards;
+    }
+
+    #profileModal .profile-back.animate-in .mobile-security-section:nth-child(3) .mobile-section-desc {
+        animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.62s backwards;
+    }
+
+    #profileModal .profile-back.animate-in .mobile-security-section:nth-child(3) .security-mobile-danger-btn {
+        animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.67s backwards;
+    }
+
     #profileModal .mobile-security-layout {
         display: block !important;
         padding: 0 0 12px !important;

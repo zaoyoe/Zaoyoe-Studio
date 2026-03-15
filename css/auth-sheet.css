@@ -151,6 +151,70 @@ body.auth-sheet-open {
     opacity: 1;
 }
 
+@keyframes authSheetStaggeredRise {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.auth-sheet-overlay.active .auth-sheet-header {
+    animation: authSheetStaggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.08s backwards;
+}
+
+.auth-sheet-overlay.active .auth-sheet-tabs:not([hidden]) {
+    animation: authSheetStaggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.13s backwards;
+}
+
+.auth-sheet-overlay.active .auth-sheet-message:not([hidden]) {
+    animation: authSheetStaggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.18s backwards;
+}
+
+.auth-sheet-overlay.active .auth-sheet-view.is-active > :not(.auth-sheet-form):nth-child(1) {
+    animation: authSheetStaggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.18s backwards;
+}
+
+.auth-sheet-overlay.active .auth-sheet-view.is-active > :not(.auth-sheet-form):nth-child(2) {
+    animation: authSheetStaggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.23s backwards;
+}
+
+.auth-sheet-overlay.active .auth-sheet-view.is-active > :not(.auth-sheet-form):nth-child(3) {
+    animation: authSheetStaggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.28s backwards;
+}
+
+.auth-sheet-overlay.active .auth-sheet-view.is-active > :not(.auth-sheet-form):nth-child(4) {
+    animation: authSheetStaggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.33s backwards;
+}
+
+.auth-sheet-overlay.active .auth-sheet-view.is-active > :not(.auth-sheet-form):nth-child(5) {
+    animation: authSheetStaggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.38s backwards;
+}
+
+.auth-sheet-overlay.active .auth-sheet-view.is-active .auth-sheet-form > :nth-child(1) {
+    animation: authSheetStaggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.24s backwards;
+}
+
+.auth-sheet-overlay.active .auth-sheet-view.is-active .auth-sheet-form > :nth-child(2) {
+    animation: authSheetStaggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.29s backwards;
+}
+
+.auth-sheet-overlay.active .auth-sheet-view.is-active .auth-sheet-form > :nth-child(3) {
+    animation: authSheetStaggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.34s backwards;
+}
+
+.auth-sheet-overlay.active .auth-sheet-view.is-active .auth-sheet-form > :nth-child(4) {
+    animation: authSheetStaggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.39s backwards;
+}
+
+.auth-sheet-overlay.active .auth-sheet-view.is-active .auth-sheet-form > :nth-child(5) {
+    animation: authSheetStaggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.44s backwards;
+}
+
 .auth-sheet-drag-zone {
     display: flex;
     justify-content: center;
