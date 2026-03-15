@@ -2492,13 +2492,12 @@ function resetProfileModalViewState() {
         flipInner.classList.remove('flipped');
     }
 
-    document.querySelectorAll('.tab-item').forEach((tab) => {
+    document.querySelectorAll('[data-profile-tab]').forEach((tab) => {
         tab.classList.remove('active');
     });
-    const profileTab = document.querySelector('.tab-item:first-child');
-    if (profileTab) {
-        profileTab.classList.add('active');
-    }
+    document.querySelectorAll('[data-profile-tab="profile"]').forEach((tab) => {
+        tab.classList.add('active');
+    });
 
     if (card) {
         card.classList.remove('wide');
@@ -2530,6 +2529,8 @@ function resetProfileModalViewState() {
         overlay.classList.remove('keyboard-active', 'keyboard-docked', 'ios-focus-lock');
         overlay.style.setProperty('--profile-modal-shift-y', '0px');
     }
+
+    updateProfileModalChrome('profile');
 }
 
 function cleanupProfileModalAfterClose(options = {}) {
@@ -2752,13 +2753,9 @@ function switchProfileTab(tabName) {
     const profileFront = document.querySelector('.profile-front');
     const profileBack = document.querySelector('.profile-back');
 
-    // Update tab buttons
-    document.querySelectorAll('.profile-tabs .tab-item').forEach(item => {
-        item.classList.remove('active');
-    });
+    updateProfileModalChrome(tabName);
 
     if (tabName === 'profile') {
-        document.querySelectorAll('.profile-tabs .tab-item')[0].classList.add('active');
         if (flipInner) flipInner.classList.remove('flipped');
         if (profileModal) profileModal.classList.remove('wide');
 
@@ -2772,8 +2769,6 @@ function switchProfileTab(tabName) {
         }
 
     } else if (tabName === 'security') {
-        // Now security is the 2nd tab (index 1) after removing orders
-        document.querySelectorAll('.profile-tabs .tab-item')[1].classList.add('active');
         if (flipInner) flipInner.classList.add('flipped');
         if (profileModal) profileModal.classList.add('wide');
 
@@ -2793,6 +2788,92 @@ function switchProfileTab(tabName) {
 }
 
 window.switchProfileTab = switchProfileTab;
+
+function getProfileModalChromeCopy(tabName = 'profile') {
+    const isEnglish = typeof window.i18n?.isEnglish === 'function' && window.i18n.isEnglish();
+
+    if (tabName === 'security') {
+        return isEnglish
+            ? { title: 'Account Security', subtitle: 'Critical settings and account protection' }
+            : { title: '账户安全', subtitle: '状态概览与关键操作' };
+    }
+
+    return isEnglish
+        ? { title: 'My Account', subtitle: 'Visible only to you' }
+        : { title: '我的账户', subtitle: '仅自己可见' };
+}
+
+function updateProfileModalChrome(tabName = 'profile') {
+    const { title, subtitle } = getProfileModalChromeCopy(tabName);
+    const titleEl = document.getElementById('profileMobileHeaderTitle');
+    const subtitleEl = document.getElementById('profileMobileHeaderSubtitle');
+
+    if (titleEl) titleEl.textContent = title;
+    if (subtitleEl) subtitleEl.textContent = subtitle;
+
+    document.querySelectorAll('[data-profile-tab]').forEach((tab) => {
+        tab.classList.toggle('active', tab.dataset.profileTab === tabName);
+    });
+}
+
+window.updateProfileModalChrome = updateProfileModalChrome;
+
+function openProfileWalletView(view = 'balance', event) {
+    if (event) {
+        if (typeof event.preventDefault === 'function') event.preventDefault();
+        if (typeof event.stopPropagation === 'function') event.stopPropagation();
+    }
+
+    const supportedViews = new Set(['balance', 'recharge', 'orders', 'affiliate', 'checkin']);
+    const targetView = supportedViews.has(view) ? view : 'balance';
+
+    if (typeof closeProfileModal === 'function') {
+        closeProfileModal();
+    }
+
+    window.setTimeout(() => {
+        if (window.WalletModal && typeof window.WalletModal.open === 'function') {
+            window.WalletModal.open(targetView);
+            return;
+        }
+
+        alert(window.i18n?.t('wallet.loading') || '钱包模块加载中，请稍后重试');
+    }, 180);
+}
+
+window.openProfileWalletView = openProfileWalletView;
+
+function openProfileEditor(event) {
+    if (event) {
+        if (typeof event.preventDefault === 'function') event.preventDefault();
+        if (typeof event.stopPropagation === 'function') event.stopPropagation();
+    }
+
+    switchProfileTab('profile');
+
+    const nicknameSection = document.querySelector('#profileModal .profile-nickname-section');
+    if (nicknameSection) {
+        nicknameSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    const nicknameEdit = document.getElementById('nicknameEdit');
+    const nicknameInput = document.getElementById('nicknameInput');
+    const isEditing = nicknameEdit && window.getComputedStyle(nicknameEdit).display !== 'none';
+
+    if (!isEditing && typeof toggleNicknameEdit === 'function') {
+        toggleNicknameEdit(true);
+        return;
+    }
+
+    if (nicknameInput) {
+        window.setTimeout(() => {
+            nicknameInput.focus();
+            nicknameInput.select();
+        }, 60);
+    }
+}
+
+window.openProfileEditor = openProfileEditor;
 
 // ==================== 昵称修改功能 ====================
 function toggleNicknameEdit(show) {

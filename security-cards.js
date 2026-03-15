@@ -259,35 +259,49 @@ async function changePassword(source = 'desktop') {
         return;
     }
 
-    const currentUser = AV.User.current();
-    if (!currentUser) {
+    const supabase = window.supabaseClient;
+    if (!supabase?.auth) {
+        alert('系统错误，请刷新页面后重试');
+        return;
+    }
+
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user?.email) {
         alert('请先登录');
         return;
     }
 
     try {
-        // LeanCloud requires updating password via updatePassword(old, new)
-        await currentUser.updatePassword(oldPassword, newPassword);
-        alert('密码修改成功！请重新登录。');
+        const { error: verifyError } = await supabase.auth.signInWithPassword({
+            email: user.email,
+            password: oldPassword
+        });
+
+        if (verifyError) throw verifyError;
+
+        const { error: updateError } = await supabase.auth.updateUser({
+            password: newPassword
+        });
+
+        if (updateError) throw updateError;
+
+        alert('密码修改成功，请使用新密码继续登录。');
 
         // Clear inputs
         oldPassInput.value = '';
         newPassInput.value = '';
-
-        // Logout and redirect to login
-        if (typeof handleLogout === 'function') {
-            handleLogout();
-        }
     } catch (error) {
         console.error('❌ Password change failed:', error);
 
         let errorMsg = '密码修改失败';
 
-        // Handle specific LeanCloud errors
-        if (error.code === 210 || (error.message && error.message.includes('mismatch'))) {
+        if (
+            error?.message?.includes('Invalid login credentials') ||
+            error?.message?.includes('invalid_credentials')
+        ) {
             errorMsg = '当前密码不正确，请检查后重试。';
-        } else if (error.code === 1) {
-            errorMsg = '操作过于频繁，请稍后再试。';
+        } else if (error?.message?.includes('Password should be at least')) {
+            errorMsg = '新密码至少需要6位。';
         } else if (error.message) {
             errorMsg = '密码修改失败: ' + error.message;
         }

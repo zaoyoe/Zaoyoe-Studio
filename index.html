@@ -1081,6 +1081,27 @@
     <div class="modal-overlay" id="profileModal" onmousedown="closeModal(event)" onmouseup="closeModal(event)">
         <div class="modal-content profile-modal" onclick="event.stopPropagation()">
             <div class="profile-modal-scroll">
+            <div class="profile-mobile-topbar">
+                <div class="profile-mobile-topbar-shell">
+                    <div class="profile-mobile-head-row">
+                        <div class="profile-mobile-head-copy">
+                            <div class="profile-mobile-title" id="profileMobileHeaderTitle">我的账户</div>
+                            <div class="profile-mobile-subtitle" id="profileMobileHeaderSubtitle">仅自己可见</div>
+                        </div>
+                        <button type="button" class="profile-mobile-close"
+                            onclick="window.closeProfileModal ? window.closeProfileModal() : document.getElementById('profileModal').classList.remove('active')"
+                            aria-label="关闭个人资料">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div class="profile-mobile-tabs">
+                        <div class="tab-item active" data-profile-tab="profile" onclick="switchProfileTab('profile')"
+                            data-i18n="profile.profileTab">资料</div>
+                        <div class="tab-item" data-profile-tab="security" onclick="switchProfileTab('security')"
+                            data-i18n="profile.securityTab">安全</div>
+                    </div>
+                </div>
+            </div>
             <div class="mac-controls">
                 <div class="mac-dot red" onclick="window.closeProfileModal ? window.closeProfileModal() : document.getElementById('profileModal').classList.remove('active')"><i
                         class="fas fa-times"></i></div>
@@ -1089,9 +1110,9 @@
             </div>
 
             <div class="profile-tabs">
-                <div class="tab-item active" onclick="switchProfileTab('profile')" data-i18n="profile.profileTab">资料
+                <div class="tab-item active" data-profile-tab="profile" onclick="switchProfileTab('profile')" data-i18n="profile.profileTab">资料
                 </div>
-                <div class="tab-item" onclick="switchProfileTab('security')" data-i18n="profile.securityTab">安全</div>
+                <div class="tab-item" data-profile-tab="security" onclick="switchProfileTab('security')" data-i18n="profile.securityTab">安全</div>
             </div>
 
             <div class="profile-flip-container">
@@ -1133,6 +1154,50 @@
                         <div class="profile-member-since-section">
                             <label data-i18n="profile.memberSince">注册时间</label>
                             <div id="profileMemberSince" class="profile-member-since-display">加载中...</div>
+                        </div>
+
+                        <div class="profile-quick-access-section">
+                            <div class="profile-section-head">
+                                <div class="profile-section-title">快捷入口</div>
+                                <div class="profile-section-note">打开钱包对应页面</div>
+                            </div>
+                            <div class="profile-quick-grid">
+                                <button type="button" class="profile-quick-card"
+                                    onclick="openProfileWalletView('balance', event)">
+                                    <span class="profile-quick-arrow"><i class="fas fa-chevron-right"></i></span>
+                                    <span class="profile-quick-icon"><i class="fas fa-wallet"></i></span>
+                                    <span class="profile-quick-title">积分钱包</span>
+                                    <span class="profile-quick-desc">余额、充值与兑换</span>
+                                </button>
+                                <button type="button" class="profile-quick-card"
+                                    onclick="openProfileWalletView('orders', event)">
+                                    <span class="profile-quick-arrow"><i class="fas fa-chevron-right"></i></span>
+                                    <span class="profile-quick-icon"><i class="fas fa-receipt"></i></span>
+                                    <span class="profile-quick-title">交易记录</span>
+                                    <span class="profile-quick-desc">订单与提示词解锁</span>
+                                </button>
+                                <button type="button" class="profile-quick-card"
+                                    onclick="openProfileWalletView('affiliate', event)">
+                                    <span class="profile-quick-arrow"><i class="fas fa-chevron-right"></i></span>
+                                    <span class="profile-quick-icon"><i class="fas fa-bullhorn"></i></span>
+                                    <span class="profile-quick-title">推广中心</span>
+                                    <span class="profile-quick-desc">邀请人数与佣金</span>
+                                </button>
+                                <button type="button" class="profile-quick-card"
+                                    onclick="openProfileWalletView('checkin', event)">
+                                    <span class="profile-quick-arrow"><i class="fas fa-chevron-right"></i></span>
+                                    <span class="profile-quick-icon"><i class="fas fa-calendar-check"></i></span>
+                                    <span class="profile-quick-title">每日签到</span>
+                                    <span class="profile-quick-desc">连续天数与补签</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="profile-footer-actions">
+                            <button type="button" class="profile-action-btn profile-action-btn--ghost"
+                                onclick="openProfileWalletView('balance', event)">前往钱包</button>
+                            <button type="button" class="profile-action-btn profile-action-btn--primary"
+                                onclick="openProfileEditor(event)">编辑资料</button>
                         </div>
                     </div>
 

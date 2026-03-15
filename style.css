@@ -5050,6 +5050,14 @@ body.profile-modal-lock {
     animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.3s backwards;
 }
 
+.profile-front.animate-in .profile-quick-access-section {
+    animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.35s backwards;
+}
+
+.profile-front.animate-in .profile-footer-actions {
+    animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.4s backwards;
+}
+
 /* 安全页面 - 使用与资料页面相同的动画 */
 .profile-back.animate-in .modal-title {
     animation: staggeredRise 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.1s backwards;
@@ -5080,6 +5088,10 @@ body.profile-modal-lock {
 }
 
 /* Profile Tabs */
+.profile-mobile-topbar {
+    display: none;
+}
+
 .profile-tabs {
     display: flex;
     justify-content: center;
@@ -5184,6 +5196,7 @@ body.profile-modal-lock {
     margin-bottom: 12px;
     outline: none;
     letter-spacing: 0.3px;
+    caret-color: #9fcaff;
     transition: all 0.3s ease;
 }
 
@@ -5205,9 +5218,9 @@ body.profile-modal-lock {
 
 .security-input:focus {
     outline: none;
-    border-color: rgba(155, 93, 229, 0.7);
-    background: rgba(0, 0, 0, 0.5) !important;
-    box-shadow: 0 0 0 3px rgba(155, 93, 229, 0.15), 0 0 20px rgba(168, 85, 247, 0.12);
+    border-color: #9fcaff;
+    background: rgba(255, 255, 255, 0.042) !important;
+    box-shadow: none;
 }
 
 /* Profile Security - keep phone bind row consistent with login modal controls */
@@ -5231,15 +5244,15 @@ body.profile-modal-lock {
 }
 
 #profileModal .security-detail-content .security-input.glass-input:focus {
-    border-color: rgba(155, 93, 229, 0.75) !important;
-    background: rgba(0, 0, 0, 0.5) !important;
-    box-shadow: 0 0 0 3px rgba(155, 93, 229, 0.18), 0 0 20px rgba(168, 85, 247, 0.14) !important;
+    border-color: #9fcaff !important;
+    background: rgba(255, 255, 255, 0.042) !important;
+    box-shadow: none !important;
 }
 
 #profileModal .security-detail-content .input-group.input-with-action .security-input.glass-input:focus {
-    border-color: rgba(155, 93, 229, 0.75) !important;
-    background: rgba(0, 0, 0, 0.5) !important;
-    box-shadow: 0 0 0 3px rgba(155, 93, 229, 0.18), 0 0 20px rgba(168, 85, 247, 0.14) !important;
+    border-color: #9fcaff !important;
+    background: rgba(255, 255, 255, 0.042) !important;
+    box-shadow: none !important;
 }
 
 #profileModal #sendPhoneCodeBtn.verify-code-btn,
@@ -5311,9 +5324,9 @@ body.profile-modal-lock {
 }
 
 #profileModal .mobile-security-layout .security-input.glass-input:focus {
-    border-color: rgba(155, 93, 229, 0.75) !important;
-    background: rgba(0, 0, 0, 0.5) !important;
-    box-shadow: 0 0 0 3px rgba(155, 93, 229, 0.18), 0 0 20px rgba(168, 85, 247, 0.14) !important;
+    border-color: #9fcaff !important;
+    background: rgba(255, 255, 255, 0.042) !important;
+    box-shadow: none !important;
 }
 
 .danger-zone {
@@ -7566,7 +7579,311 @@ body {
     /* Shift group significantly down from avatar (desktop) */
 }
 
+#profileModal .profile-flip-container {
+    min-height: 760px;
+}
+
+#profileModal .profile-flip-inner {
+    min-height: 720px;
+}
+
+#profileModal .profile-front .profile-quick-access-section {
+    width: 100%;
+    max-width: 304px;
+    margin: 0 auto 16px;
+    padding: 16px 14px;
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.32);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow:
+        0 1px 6px rgba(0, 0, 0, 0.26),
+        inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+#profileModal .profile-front .profile-section-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+    text-align: left;
+}
+
+#profileModal .profile-front .profile-section-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.96);
+}
+
+#profileModal .profile-front .profile-section-note {
+    font-size: 11px;
+    line-height: 1.4;
+    color: rgba(255, 255, 255, 0.48);
+    text-align: right;
+}
+
+#profileModal .profile-front .profile-quick-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+#profileModal .profile-front .profile-quick-card {
+    position: relative;
+    -webkit-appearance: none;
+    appearance: none;
+    min-height: 118px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+    padding: 14px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    background: rgba(17, 21, 27, 0.96);
+    color: rgba(255, 255, 255, 0.94);
+    text-align: left;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    transition:
+        border-color 0.22s ease,
+        background 0.22s ease,
+        transform 0.22s ease,
+        box-shadow 0.22s ease;
+    cursor: pointer;
+}
+
+#profileModal .profile-front .profile-quick-card:hover,
+#profileModal .profile-front .profile-quick-card:focus-visible {
+    border-color: rgba(159, 202, 255, 0.42);
+    background: rgba(19, 24, 31, 0.98);
+    transform: translateY(-1px);
+    box-shadow:
+        0 8px 18px rgba(0, 0, 0, 0.16),
+        inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    outline: none;
+}
+
+#profileModal .profile-front .profile-quick-icon {
+    width: 36px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 18px;
+    border-radius: 11px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    color: rgba(240, 245, 251, 0.86);
+    font-size: 14px;
+}
+
+#profileModal .profile-front .profile-quick-title {
+    margin-bottom: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.35;
+}
+
+#profileModal .profile-front .profile-quick-desc {
+    font-size: 11px;
+    line-height: 1.5;
+    color: rgba(255, 255, 255, 0.58);
+}
+
+#profileModal .profile-front .profile-quick-arrow {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.34);
+}
+
+#profileModal .profile-front .profile-footer-actions {
+    width: 100%;
+    max-width: 304px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin: 0 auto 14px;
+}
+
+#profileModal .profile-front .profile-action-btn {
+    -webkit-appearance: none;
+    appearance: none;
+    min-height: 46px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.1px;
+    transition:
+        border-color 0.22s ease,
+        background 0.22s ease,
+        transform 0.22s ease,
+        box-shadow 0.22s ease;
+    cursor: pointer;
+}
+
+#profileModal .profile-front .profile-action-btn:hover,
+#profileModal .profile-front .profile-action-btn:focus-visible {
+    transform: translateY(-1px);
+    outline: none;
+}
+
+#profileModal .profile-front .profile-action-btn--ghost {
+    background: rgba(255, 255, 255, 0.04);
+    color: rgba(255, 255, 255, 0.92);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+#profileModal .profile-front .profile-action-btn--ghost:hover,
+#profileModal .profile-front .profile-action-btn--ghost:focus-visible {
+    border-color: rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.06);
+}
+
+#profileModal .profile-front .profile-action-btn--primary {
+    background: rgba(229, 235, 241, 0.94);
+    color: #0f141a;
+    border-color: rgba(255, 255, 255, 0.18);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.46);
+}
+
+#profileModal .profile-front .profile-action-btn--primary:hover,
+#profileModal .profile-front .profile-action-btn--primary:focus-visible {
+    background: rgba(236, 241, 247, 0.98);
+}
+
 @media (max-width: 768px) {
+    #profileModal .modal-content.profile-modal,
+    #profileModal .modal-content.profile-modal.profile-modal.wide {
+        border-radius: 34px !important;
+        background: rgba(12, 15, 19, 0.92) !important;
+        border: 1px solid rgba(255, 255, 255, 0.08) !important;
+        box-shadow:
+            0 26px 56px rgba(0, 0, 0, 0.32),
+            inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+    }
+
+    #profileModal .profile-modal-scroll {
+        position: relative !important;
+        padding: 0 12px calc(18px + env(safe-area-inset-bottom)) !important;
+        scroll-padding-top: 180px !important;
+        scroll-padding-bottom: 220px !important;
+    }
+
+    #profileModal .profile-mobile-topbar {
+        display: block !important;
+        position: sticky;
+        top: 0;
+        z-index: 30;
+        padding-top: 12px;
+        margin-bottom: 12px;
+    }
+
+    #profileModal .profile-mobile-topbar-shell {
+        padding: 18px 18px 14px;
+        border-radius: 28px;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        backdrop-filter: blur(20px) saturate(132%);
+        -webkit-backdrop-filter: blur(20px) saturate(132%);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        overflow: hidden;
+    }
+
+    #profileModal .profile-mobile-head-row {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 14px;
+        margin-bottom: 12px;
+    }
+
+    #profileModal .profile-mobile-head-copy {
+        min-width: 0;
+    }
+
+    #profileModal .profile-mobile-title {
+        font-size: 18px;
+        font-weight: 600;
+        letter-spacing: -0.25px;
+        color: rgba(255, 255, 255, 0.98);
+    }
+
+    #profileModal .profile-mobile-subtitle {
+        margin-top: 4px;
+        font-size: 12px;
+        color: rgba(212, 220, 228, 0.52);
+    }
+
+    #profileModal .profile-mobile-close {
+        width: 38px;
+        height: 38px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(255, 255, 255, 0.04);
+        color: rgba(255, 255, 255, 0.72);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        backdrop-filter: blur(20px) saturate(132%);
+        -webkit-backdrop-filter: blur(20px) saturate(132%);
+        -webkit-appearance: none;
+        appearance: none;
+    }
+
+    #profileModal .profile-mobile-tabs {
+        display: flex;
+        gap: 18px;
+        align-items: center;
+        padding-top: 4px;
+    }
+
+    #profileModal .profile-mobile-tabs .tab-item {
+        position: relative;
+        padding: 0 0 8px;
+        border-radius: 0;
+        background: transparent !important;
+        font-size: 14px;
+        font-weight: 500;
+        color: rgba(212, 220, 228, 0.52);
+    }
+
+    #profileModal .profile-mobile-tabs .tab-item:hover {
+        color: rgba(255, 255, 255, 0.82);
+        background: transparent !important;
+    }
+
+    #profileModal .profile-mobile-tabs .tab-item.active {
+        color: rgba(255, 255, 255, 0.98);
+        font-weight: 600;
+    }
+
+    #profileModal .profile-mobile-tabs .tab-item.active::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 2px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.8);
+    }
+
+    #profileModal .mac-controls,
+    #profileModal .profile-tabs,
+    #profileModal .profile-view > .modal-title {
+        display: none !important;
+    }
+
+    #profileModal .profile-front {
+        justify-content: flex-start !important;
+        gap: 12px !important;
+        padding-bottom: 20px !important;
+    }
+
     #profileModal .profile-avatar-section {
         width: 92px;
         height: 92px;
@@ -7603,6 +7920,92 @@ body {
         /* Last element, no bottom margin needed */
         margin-top: 0px;
         /* spacing handled by email section's margin-bottom */
+    }
+
+    #profileModal .profile-front .profile-quick-access-section,
+    #profileModal .profile-front .profile-footer-actions {
+        max-width: 100%;
+    }
+
+    #profileModal .profile-front .profile-quick-access-section {
+        padding: 15px 14px;
+    }
+
+    #profileModal .profile-front .profile-quick-card {
+        min-height: 112px;
+    }
+
+    #profileModal .mobile-security-layout {
+        display: block !important;
+        padding: 0 0 12px !important;
+    }
+
+    #profileModal .mobile-security-section {
+        background: rgba(16, 20, 25, 0.94) !important;
+        border: 1px solid rgba(255, 255, 255, 0.06) !important;
+        border-radius: 22px !important;
+        padding: 18px 16px !important;
+        margin-bottom: 14px !important;
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.04),
+            0 10px 24px rgba(0, 0, 0, 0.08) !important;
+    }
+
+    #profileModal .mobile-section-title {
+        margin-bottom: 14px !important;
+        font-size: 15px !important;
+        color: rgba(255, 255, 255, 0.96) !important;
+    }
+
+    #profileModal .mobile-section-title::before {
+        width: 2px !important;
+        height: 14px !important;
+        background: rgba(255, 255, 255, 0.24) !important;
+    }
+
+    #profileModal .mobile-section-title.danger::before {
+        background: rgba(193, 149, 149, 0.72) !important;
+    }
+
+    #profileModal .mobile-section-desc {
+        margin-bottom: 14px !important;
+        font-size: 12px !important;
+        line-height: 1.5 !important;
+        color: rgba(255, 255, 255, 0.48) !important;
+    }
+
+    #profileModal .mobile-security-layout .code-btn {
+        background: rgba(255, 255, 255, 0.04) !important;
+        border: 1px solid rgba(255, 255, 255, 0.08) !important;
+        border-radius: 14px !important;
+        color: rgba(255, 255, 255, 0.9) !important;
+        height: 46px !important;
+        padding: 0 14px !important;
+    }
+
+    #profileModal .mobile-security-layout .gradient-btn,
+    #profileModal .mobile-security-layout .danger-btn {
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: none !important;
+        margin: 6px 0 0 !important;
+        height: 46px !important;
+        border-radius: 14px !important;
+        padding: 0 16px !important;
+    }
+
+    #profileModal .mobile-security-layout .gradient-btn {
+        background: rgba(229, 235, 241, 0.94) !important;
+        border: 1px solid rgba(255, 255, 255, 0.18) !important;
+        color: #0f141a !important;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.46) !important;
+    }
+
+    #profileModal .mobile-security-layout .danger-btn {
+        background: rgba(193, 149, 149, 0.14) !important;
+        border: 1px solid rgba(193, 149, 149, 0.18) !important;
+        color: #ead7d7 !important;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03) !important;
     }
 
     #profileModal .profile-front .profile-email-section label {
