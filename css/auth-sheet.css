@@ -871,6 +871,19 @@ body.auth-sheet-open {
         background: rgba(255, 255, 255, 0.042) !important;
     }
 
+    #loginModal .auth-sheet-input.auth-sheet-input--canonical:focus,
+    #loginModal .auth-sheet-input.auth-sheet-input--canonical:focus-visible,
+    .auth-sheet-input.auth-sheet-input--canonical:focus,
+    .auth-sheet-input.auth-sheet-input--canonical:focus-visible,
+    #loginModal .auth-sheet-input.auth-sheet-input--canonical.auth-sheet-input--parked:focus,
+    #loginModal .auth-sheet-input.auth-sheet-input--canonical.auth-sheet-input--parked:focus-visible,
+    .auth-sheet-input.auth-sheet-input--canonical.auth-sheet-input--parked:focus,
+    .auth-sheet-input.auth-sheet-input--canonical.auth-sheet-input--parked:focus-visible {
+        border-color: var(--auth-sheet-link-accent) !important;
+        background: rgba(255, 255, 255, 0.042) !important;
+        box-shadow: 0 0 0 3px rgba(159, 202, 255, 0.14) !important;
+    }
+
     .auth-input-plane {
         display: none;
     }
