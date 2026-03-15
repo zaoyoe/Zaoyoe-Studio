@@ -7704,7 +7704,7 @@ body {
         top: 0;
         z-index: 30;
         padding-top: 0;
-        margin: 0 0 12px;
+        margin: 0 -4px 10px;
     }
 
     #profileModal .profile-mobile-topbar-shell {
@@ -7718,7 +7718,7 @@ body {
     }
 
     #profileModal .profile-mobile-topbar-shell {
-        padding: 16px 20px 12px;
+        padding: 18px 24px 16px;
         border-radius: 28px;
         overflow: hidden;
     }
@@ -7726,15 +7726,15 @@ body {
     #profileModal .profile-mobile-head-row {
         display: flex;
         align-items: flex-start;
-        justify-content: center;
+        justify-content: flex-start;
         gap: 0;
-        margin-bottom: 14px;
+        margin-bottom: 16px;
     }
 
     #profileModal .profile-mobile-head-copy {
         min-width: 0;
-        width: 100%;
-        text-align: center;
+        width: auto;
+        text-align: left;
     }
 
     #profileModal .profile-mobile-title {
@@ -7746,6 +7746,7 @@ body {
 
     #profileModal .profile-mobile-tabs {
         display: flex;
+        justify-content: center;
         gap: 18px;
         align-items: center;
         position: relative;
