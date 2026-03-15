@@ -2486,7 +2486,7 @@
                     backdrop-filter: blur(40px) !important; -webkit-backdrop-filter: blur(40px) !important;
                     border: 1px solid rgba(255, 255, 255, 0.12) !important;
                     border-top: 1px solid rgba(255, 255, 255, 0.25) !important;
-                    border-radius: 24px !important;
+                    border-radius: 20px !important;
                     box-shadow: 0 40px 80px -20px rgba(0, 0, 0, 0.7) !important;
                     overflow: hidden !important;
                     display: flex !important; flex-direction: column !important;

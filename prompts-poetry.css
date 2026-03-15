@@ -3788,7 +3788,7 @@ body.modal-open .prompt-card {
 
     .modal-inner {
         flex-direction: column;
-        border-radius: 16px;
+        border-radius: 20px;
         overflow-y: auto;
         /* Let layout flow naturally */
     }
@@ -3938,6 +3938,7 @@ body.modal-open .prompt-card {
     /* Match announcement modal width to the mobile prompt card modal */
     .announcement-modal {
         width: 95%;
+        border-radius: 20px;
     }
 
     /* Scale announcement modal height-related spacing by the same 95/90 ratio */

@@ -1746,7 +1746,7 @@ body.no-scroll {
         padding: 20px !important;
         padding-bottom: 20px !important;
         /* Reduced padding, relying on spacer now */
-        border-radius: 16px !important;
+        border-radius: 20px !important;
         margin: auto !important;
         position: relative !important;
         top: auto !important;
@@ -1946,7 +1946,7 @@ body.no-scroll {
     .glass-box {
         padding: 16px 10px !important;
         margin-bottom: 0 !important;
-        border-radius: 16px !important;
+        border-radius: 20px !important;
     }
 
     /* Optimize typography for mobile */
@@ -7370,12 +7370,12 @@ body {
         min-height: 300px;
         max-height: calc(var(--guestbook-modal-overlay-height, 100svh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px);
         padding: 14px 16px calc(16px + env(safe-area-inset-bottom)) !important;
-        border-radius: 16px !important;
+        border-radius: 20px !important;
     }
 
     #commentModal .comment-modal-content,
     #commentModal.active .comment-modal-content {
-        border-radius: 16px !important;
+        border-radius: 20px !important;
     }
 
     #guestbookModal.active:focus-within .guestbook-composer-sheet>*,
@@ -7687,7 +7687,7 @@ body {
 
 @media (max-width: 768px) {
     #profileModal {
-        --profile-mobile-modal-radius: 16px;
+        --profile-mobile-modal-radius: 20px;
         --profile-mobile-topbar-height: 86px;
         --profile-mobile-topbar-inset: 0px;
     }
