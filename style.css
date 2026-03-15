@@ -4602,7 +4602,9 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     transition:
         top 180ms cubic-bezier(0.22, 1, 0.36, 1),
         opacity 0.3s ease-out,
-        max-height 180ms cubic-bezier(0.22, 1, 0.36, 1);
+        max-height 180ms cubic-bezier(0.22, 1, 0.36, 1),
+        width 220ms cubic-bezier(0.22, 1, 0.36, 1),
+        max-width 220ms cubic-bezier(0.22, 1, 0.36, 1);
     will-change: top, opacity;
     overflow: hidden !important;
 }
@@ -4722,6 +4724,10 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
         transform 0.3s cubic-bezier(0.22, 1, 0.36, 1),
         width 0.3s cubic-bezier(0.22, 1, 0.36, 1);
     pointer-events: none;
+}
+
+#profileModal .profile-security-desktop-layout {
+    display: none;
 }
 
 #profileModal .profile-flip-container {
@@ -5309,14 +5315,21 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     }
 
     #profileModal .modal-content.profile-modal {
-        width: min(760px, calc(100vw - 88px)) !important;
-        max-width: 760px !important;
-        min-height: min(620px, calc(100vh - 88px)) !important;
-        max-height: min(700px, calc(100vh - 88px)) !important;
+        width: min(500px, calc(100vw - 108px)) !important;
+        max-width: 500px !important;
+        min-height: min(650px, calc(100vh - 88px)) !important;
+        max-height: min(760px, calc(100vh - 88px)) !important;
+    }
+
+    #profileModal[data-profile-tab="security"] .modal-content.profile-modal {
+        width: min(960px, calc(100vw - 108px)) !important;
+        max-width: 960px !important;
+        min-height: min(650px, calc(100vh - 88px)) !important;
+        max-height: min(740px, calc(100vh - 88px)) !important;
     }
 
     #profileModal .profile-modal-scroll {
-        padding: 0 20px 24px !important;
+        padding: 0 22px 24px !important;
         padding-top: calc(var(--profile-mobile-topbar-height) + 18px) !important;
         scroll-padding-top: calc(var(--profile-mobile-topbar-height) + 24px) !important;
         scroll-padding-bottom: 28px !important;
@@ -5331,7 +5344,7 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
 
     #profileModal .profile-mobile-topbar-shell {
         width: fit-content;
-        min-width: 232px;
+        min-width: 220px;
         margin: 0 auto;
         padding: 12px 22px 10px;
         border-radius: 18px;
@@ -5344,7 +5357,7 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     #profileModal .profile-mobile-tabs {
         width: auto;
         justify-content: center;
-        gap: 30px;
+        gap: 28px;
         padding-bottom: 2px;
     }
 
@@ -5357,25 +5370,28 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
 
     #profileModal .profile-flip-container,
     #profileModal .profile-flip-inner {
-        min-height: 440px !important;
+        min-height: 460px !important;
     }
 
     #profileModal .profile-front,
     #profileModal .profile-back {
-        padding-bottom: 14px !important;
+        padding-bottom: 12px !important;
     }
 
     #profileModal .profile-mobile-sheet {
-        display: grid;
-        grid-template-columns: minmax(0, 1.06fr) minmax(260px, 0.94fr);
-        gap: 16px;
-        align-items: start;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        max-width: 420px;
+        margin: 0 auto;
         padding-bottom: 0;
     }
 
     #profileModal .profile-mobile-hero-card,
     #profileModal .profile-mobile-card {
-        margin-bottom: 0;
+        width: 100%;
+        max-width: 100%;
+        margin: 0;
         border-radius: 18px;
         background: rgba(14, 18, 23, 0.94);
         border-color: rgba(255, 255, 255, 0.055);
@@ -5385,68 +5401,55 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     }
 
     #profileModal .profile-mobile-hero-card {
-        grid-column: 1 / -1;
-        grid-row: 1;
         display: grid !important;
-        grid-template-columns: 88px minmax(0, 1fr);
+        grid-template-columns: 76px minmax(0, 1fr);
         grid-template-areas:
             "avatar main"
             "avatar editor";
-        column-gap: 18px;
+        column-gap: 16px;
         row-gap: 14px;
         align-items: center;
-        padding: 22px 24px;
+        padding: 20px 18px;
     }
 
     #profileModal .profile-mobile-hero-avatar {
-        width: 88px;
-        height: 88px;
+        width: 76px;
+        height: 76px;
         grid-row: 1 / span 2;
         justify-self: start;
         align-self: center;
     }
 
     #profileModal .profile-mobile-hero-main {
-        width: 100%;
+        grid-area: main;
         min-width: 0;
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
-        grid-template-areas:
-            "kicker action"
-            "name action"
-            "meta action";
-        align-items: end;
-        gap: 4px 16px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 6px;
         padding-right: 0;
     }
 
     #profileModal .profile-mobile-hero-kicker {
-        grid-area: kicker;
-        margin-bottom: 0;
         font-size: 10px;
         letter-spacing: 0.24em;
     }
 
     #profileModal .profile-mobile-hero-name {
-        grid-area: name;
-        font-size: 24px;
-        line-height: 1.02;
-        letter-spacing: -0.48px;
+        font-size: 22px;
+        line-height: 1.04;
+        letter-spacing: -0.42px;
     }
 
     #profileModal .profile-mobile-hero-meta {
-        grid-area: meta;
-        margin-top: 2px;
         font-size: 13px;
         line-height: 1.5;
     }
 
     #profileModal .profile-mobile-hero-actions {
-        grid-area: action;
         position: static;
-        align-self: end;
         justify-content: flex-end;
-        margin: 0;
+        margin-top: 8px;
     }
 
     #profileModal .profile-mobile-hero-edit-btn {
@@ -5457,21 +5460,13 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     }
 
     #profileModal .profile-mobile-inline-editor {
-        grid-column: 2;
-        width: min(100%, 430px);
+        grid-column: 1 / -1;
+        width: 100%;
         margin-top: -2px;
     }
 
-    #profileModal .profile-mobile-card--essential {
-        grid-column: 1;
-        grid-row: 2;
-        padding: 18px 20px 14px;
-    }
-
-    #profileModal .profile-mobile-card--quick {
-        grid-column: 2;
-        grid-row: 2;
-        padding: 18px;
+    #profileModal .profile-mobile-card {
+        padding: 18px 18px 16px;
     }
 
     #profileModal .profile-mobile-section-head {
@@ -5503,7 +5498,7 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     }
 
     #profileModal .profile-mobile-quick-card {
-        min-height: 116px;
+        min-height: 112px;
         padding: 14px;
         border-radius: 16px;
     }
@@ -5529,30 +5524,214 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
         right: 12px;
     }
 
-    #profileModal .mobile-security-layout {
+    #profileModal .profile-security-desktop-layout {
         display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 16px;
-        padding: 2px 0 0 !important;
+        grid-template-columns: 228px minmax(0, 1fr);
+        gap: 18px;
+        min-height: 468px;
+        align-items: stretch;
     }
 
-    #profileModal .mobile-security-section {
-        margin-bottom: 0;
-        padding: 18px 18px 16px;
-        border-radius: 18px !important;
-        background: rgba(14, 18, 23, 0.94) !important;
-        border: 1px solid rgba(255, 255, 255, 0.055) !important;
+    #profileModal .profile-security-desktop-sidebar {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 4px 0;
+    }
+
+    #profileModal .profile-security-desktop-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 14px 15px;
+        border-radius: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        background: rgba(255, 255, 255, 0.025);
+        color: rgba(232, 238, 244, 0.72);
+        cursor: pointer;
+        transition:
+            border-color 0.22s ease,
+            background 0.22s ease,
+            color 0.22s ease,
+            transform 0.22s ease;
+        text-align: left;
+    }
+
+    #profileModal .profile-security-desktop-item:hover {
+        background: rgba(255, 255, 255, 0.045);
+        color: rgba(248, 251, 255, 0.9);
+        transform: translateX(2px);
+    }
+
+    #profileModal .profile-security-desktop-item.active {
+        background: rgba(255, 255, 255, 0.08);
+        border-color: rgba(159, 202, 255, 0.26);
+        color: rgba(248, 251, 255, 0.98);
+    }
+
+    #profileModal .profile-security-desktop-item--danger.active {
+        border-color: rgba(223, 98, 98, 0.24);
+        background: rgba(166, 48, 48, 0.14);
+        color: #ffe5e5;
+    }
+
+    #profileModal .profile-security-desktop-item-icon {
+        width: 36px;
+        height: 36px;
+        display: grid;
+        place-items: center;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.055);
+        color: inherit;
+        flex-shrink: 0;
+    }
+
+    #profileModal .profile-security-desktop-item-title {
+        font-size: 14px;
+        font-weight: 600;
+        letter-spacing: -0.12px;
+    }
+
+    #profileModal .profile-security-desktop-content {
+        position: relative;
+        min-height: 468px;
+        padding: 30px 32px;
+        border-radius: 20px;
+        background: rgba(14, 18, 23, 0.94);
+        border: 1px solid rgba(255, 255, 255, 0.055);
         box-shadow:
             inset 0 1px 0 rgba(255, 255, 255, 0.03),
-            0 8px 18px rgba(0, 0, 0, 0.04) !important;
+            0 10px 24px rgba(0, 0, 0, 0.05);
+        overflow: hidden;
     }
 
-    #profileModal .mobile-security-section:last-child {
-        grid-column: 1 / -1;
+    #profileModal .profile-security-desktop-panel {
+        display: none;
+        width: min(100%, 420px);
+        min-height: 100%;
+        flex-direction: column;
+        justify-content: center;
+        gap: 14px;
     }
 
-    #profileModal .mobile-section-desc {
-        font-size: 12px;
+    #profileModal .profile-security-desktop-panel.is-active {
+        display: flex;
+    }
+
+    #profileModal .profile-security-desktop-panel.is-entering > :nth-child(1) {
+        animation: staggeredRise 0.48s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.04s backwards;
+    }
+
+    #profileModal .profile-security-desktop-panel.is-entering > :nth-child(2) {
+        animation: staggeredRise 0.48s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.1s backwards;
+    }
+
+    #profileModal .profile-security-desktop-panel.is-entering > :nth-child(3) {
+        animation: staggeredRise 0.48s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.16s backwards;
+    }
+
+    #profileModal .profile-security-desktop-panel.is-entering > :nth-child(4) {
+        animation: staggeredRise 0.48s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.22s backwards;
+    }
+
+    #profileModal .profile-security-desktop-title {
+        margin: 0 0 4px;
+        font-size: 22px;
+        font-weight: 600;
+        letter-spacing: -0.44px;
+        color: rgba(248, 251, 255, 0.98);
+    }
+
+    #profileModal .profile-security-desktop-title--danger {
+        color: #ffe2e2;
+    }
+
+    #profileModal .profile-security-desktop-desc {
+        margin: 0 0 4px;
+        font-size: 13px;
+        line-height: 1.6;
+        color: rgba(232, 238, 244, 0.56);
+    }
+
+    #profileModal .profile-security-desktop-desc--danger {
+        color: rgba(255, 224, 224, 0.78);
+    }
+
+    #profileModal .profile-security-desktop-panel .input-group {
+        margin: 0;
+    }
+
+    #profileModal .profile-security-desktop-panel .security-input,
+    #profileModal .profile-security-desktop-panel .security-input.glass-input {
+        background: rgba(10, 14, 18, 0.88) !important;
+        border: 1px solid rgba(255, 255, 255, 0.08) !important;
+        border-radius: 14px !important;
+        color: rgba(255, 255, 255, 0.96) !important;
+        min-height: 46px !important;
+        padding: 10px 16px !important;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03) !important;
+        margin-bottom: 0 !important;
+    }
+
+    #profileModal .profile-security-desktop-panel .security-input:focus,
+    #profileModal .profile-security-desktop-panel .security-input.glass-input:focus {
+        border-color: #9fcaff !important;
+        background: rgba(255, 255, 255, 0.042) !important;
+        box-shadow: none !important;
+    }
+
+    #profileModal .profile-security-desktop-code-row {
+        display: flex;
+        gap: 12px;
+        align-items: stretch;
+    }
+
+    #profileModal .profile-security-desktop-code-row .security-input {
+        flex: 1;
+    }
+
+    #profileModal .profile-security-desktop-code-btn,
+    #profileModal .profile-security-desktop-primary-btn,
+    #profileModal .profile-security-desktop-danger-btn {
+        min-height: 46px;
+        border-radius: 14px;
+        padding: 0 18px;
+        font-family: "SF Pro Display", "PingFang SC", "Helvetica Neue", sans-serif;
+        font-size: 14px;
+        font-weight: 600;
+        letter-spacing: 0.08px;
+        border: 1px solid transparent;
+    }
+
+    #profileModal .profile-security-desktop-code-btn {
+        min-width: 120px;
+        background: rgba(255, 255, 255, 0.04);
+        border-color: rgba(255, 255, 255, 0.08);
+        color: rgba(255, 255, 255, 0.9);
+    }
+
+    #profileModal .profile-security-desktop-primary-btn {
+        align-self: flex-start;
+        min-width: 138px;
+        background: rgba(229, 235, 241, 0.94);
+        border-color: rgba(255, 255, 255, 0.18);
+        color: #0f141a;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.46);
+    }
+
+    #profileModal .profile-security-desktop-danger-btn {
+        align-self: flex-start;
+        min-width: 138px;
+        background: rgba(166, 48, 48, 0.3);
+        border-color: rgba(223, 98, 98, 0.34);
+        color: #ffe1e1;
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.05),
+            0 4px 10px rgba(72, 12, 12, 0.12);
+    }
+
+    #profileModal .mobile-security-layout {
+        display: none !important;
     }
 }
 

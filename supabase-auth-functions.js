@@ -2600,9 +2600,14 @@ function resetProfileModalViewState() {
     if (overlay) {
         overlay.classList.remove('keyboard-active', 'keyboard-docked', 'ios-focus-lock');
         overlay.style.setProperty('--profile-modal-shift-y', '0px');
+        overlay.dataset.profileTab = 'profile';
+        overlay.dataset.securityPanel = 'change-password';
     }
 
     updateProfileModalChrome('profile');
+    if (typeof window.switchProfileSecurityPanel === 'function') {
+        window.switchProfileSecurityPanel('change-password');
+    }
 }
 
 function cleanupProfileModalAfterClose(options = {}) {
@@ -2830,12 +2835,22 @@ function switchProfileTab(tabName) {
         if (profileFront) profileFront.style.pointerEvents = 'none';
         if (profileBack) profileBack.style.pointerEvents = 'auto';
 
+        if (typeof window.switchProfileSecurityPanel === 'function') {
+            const overlay = document.getElementById('profileModal');
+            const targetPanel = overlay?.dataset.securityPanel || 'change-password';
+            window.switchProfileSecurityPanel(targetPanel);
+        }
+
         if (profileBack) {
             profileBack.classList.remove('animate-in');
             void profileBack.offsetWidth;
             profileBack.classList.add('animate-in');
         }
     }
+
+    window.requestAnimationFrame(() => {
+        scheduleProfileModalLayout({ settled: true });
+    });
 }
 
 window.switchProfileTab = switchProfileTab;
@@ -2863,6 +2878,11 @@ if (!window.__profileMobileTabIndicatorBound) {
 }
 
 function updateProfileModalChrome(tabName = 'profile') {
+    const overlay = document.getElementById('profileModal');
+    if (overlay) {
+        overlay.dataset.profileTab = tabName;
+    }
+
     document.querySelectorAll('[data-profile-tab]').forEach((tab) => {
         tab.classList.toggle('active', tab.dataset.profileTab === tabName);
     });

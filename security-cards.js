@@ -1,6 +1,66 @@
 // Profile security actions for the unified profile modal layout
 let phoneCooldownSeconds = 0;
 
+function getExistingElements(ids) {
+    return ids
+        .map((id) => document.getElementById(id))
+        .filter(Boolean);
+}
+
+function getVisibleElementByIds(ids) {
+    const elements = getExistingElements(ids);
+    return elements.find((element) => element.offsetParent !== null) || elements[0] || null;
+}
+
+function getActivePhoneElements() {
+    return {
+        phoneInput: getVisibleElementByIds(['desktop_phoneNumberInput', 'mobile_phoneNumberInput']),
+        codeInput: getVisibleElementByIds(['desktop_phoneCodeInput', 'mobile_phoneCodeInput']),
+        sendButton: getVisibleElementByIds(['desktop_sendPhoneCodeBtn', 'mobile_sendPhoneCodeBtn'])
+    };
+}
+
+function getActivePasswordElements() {
+    return {
+        oldPasswordInput: getVisibleElementByIds(['desktop_oldPassword', 'mobile_oldPassword']),
+        newPasswordInput: getVisibleElementByIds(['desktop_newPassword', 'mobile_newPassword'])
+    };
+}
+
+function setPhoneButtonsState() {
+    getExistingElements(['desktop_sendPhoneCodeBtn', 'mobile_sendPhoneCodeBtn']).forEach((button) => {
+        updatePhoneButtonCountdown(button, '获取验证码');
+    });
+}
+
+function switchProfileSecurityPanel(panelKey = 'change-password', event) {
+    if (event) {
+        if (typeof event.preventDefault === 'function') event.preventDefault();
+        if (typeof event.stopPropagation === 'function') event.stopPropagation();
+    }
+
+    const overlay = document.getElementById('profileModal');
+    const layout = overlay?.querySelector('.profile-security-desktop-layout');
+    if (!overlay || !layout) return;
+
+    overlay.dataset.securityPanel = panelKey;
+
+    layout.querySelectorAll('.profile-security-desktop-item').forEach((item) => {
+        item.classList.toggle('active', item.dataset.securityPanel === panelKey);
+    });
+
+    layout.querySelectorAll('.profile-security-desktop-panel').forEach((panel) => {
+        const isTarget = panel.dataset.securityPanel === panelKey;
+        panel.classList.remove('is-entering');
+        panel.classList.toggle('is-active', isTarget);
+
+        if (isTarget) {
+            void panel.offsetWidth;
+            panel.classList.add('is-entering');
+        }
+    });
+}
+
 function sanitizePhoneDigits(value) {
     return String(value || '').replace(/\D/g, '').slice(0, 11);
 }
@@ -19,7 +79,7 @@ function bindPhoneDigitFilter(input) {
 }
 
 function initializePhoneDigitFilters() {
-    ['mobile_phoneNumberInput'].forEach((id) => {
+    ['mobile_phoneNumberInput', 'desktop_phoneNumberInput'].forEach((id) => {
         const input = document.getElementById(id);
         if (!input) return;
 
@@ -33,8 +93,7 @@ function initializePhoneDigitFilters() {
 }
 
 function sendPhoneVerificationCode() {
-    const phoneInput = document.getElementById('mobile_phoneNumberInput');
-    const sendBtn = document.getElementById('mobile_sendPhoneCodeBtn');
+    const { phoneInput, sendButton: sendBtn } = getActivePhoneElements();
 
     if (!phoneInput || !sendBtn) return;
 
@@ -61,12 +120,12 @@ function sendPhoneVerificationCode() {
     window.requestPhoneBindCode(phoneNumber).then((success) => {
         if (success) {
             phoneCooldownSeconds = 60;
-            updatePhoneButtonCountdown(sendBtn, '获取验证码');
+            setPhoneButtonsState();
             return;
         }
 
-        sendBtn.disabled = false;
-        sendBtn.textContent = '获取验证码';
+        phoneCooldownSeconds = 0;
+        setPhoneButtonsState();
     });
 }
 
@@ -82,25 +141,18 @@ function updatePhoneButtonCountdown(button, originalText) {
 }
 
 setInterval(() => {
-    const button = document.getElementById('mobile_sendPhoneCodeBtn');
-    if (!button) return;
+    const buttons = getExistingElements(['desktop_sendPhoneCodeBtn', 'mobile_sendPhoneCodeBtn']);
+    if (buttons.length === 0) return;
 
     if (phoneCooldownSeconds > 0) {
         phoneCooldownSeconds -= 1;
-        button.textContent = `${phoneCooldownSeconds}s`;
-        button.disabled = true;
-        return;
     }
 
-    if (button.disabled && button.textContent.includes('s')) {
-        button.textContent = '获取验证码';
-        button.disabled = false;
-    }
+    setPhoneButtonsState();
 }, 1000);
 
 function bindPhone() {
-    const phoneInput = document.getElementById('mobile_phoneNumberInput');
-    const codeInput = document.getElementById('mobile_phoneCodeInput');
+    const { phoneInput, codeInput } = getActivePhoneElements();
 
     if (!phoneInput || !codeInput) return;
 
@@ -120,15 +172,19 @@ function bindPhone() {
 
     window.bindPhoneNumber(phoneNumber, code).then((success) => {
         if (!success) return;
-        phoneInput.value = '';
-        codeInput.value = '';
+        getExistingElements(['desktop_phoneNumberInput', 'mobile_phoneNumberInput']).forEach((input) => {
+            input.value = '';
+        });
+        getExistingElements(['desktop_phoneCodeInput', 'mobile_phoneCodeInput']).forEach((input) => {
+            input.value = '';
+        });
         phoneCooldownSeconds = 0;
+        setPhoneButtonsState();
     });
 }
 
 async function changePassword() {
-    const oldPassInput = document.getElementById('mobile_oldPassword');
-    const newPassInput = document.getElementById('mobile_newPassword');
+    const { oldPasswordInput: oldPassInput, newPasswordInput: newPassInput } = getActivePasswordElements();
 
     if (!oldPassInput || !newPassInput) {
         console.error('❌ Password inputs not found');
@@ -176,8 +232,12 @@ async function changePassword() {
         if (updateError) throw updateError;
 
         alert('密码修改成功，请使用新密码继续登录。');
-        oldPassInput.value = '';
-        newPassInput.value = '';
+        getExistingElements(['desktop_oldPassword', 'mobile_oldPassword']).forEach((input) => {
+            input.value = '';
+        });
+        getExistingElements(['desktop_newPassword', 'mobile_newPassword']).forEach((input) => {
+            input.value = '';
+        });
     } catch (error) {
         console.error('❌ Password change failed:', error);
 
@@ -256,9 +316,16 @@ window.sendPhoneVerificationCode = sendPhoneVerificationCode;
 window.bindPhone = bindPhone;
 window.changePassword = changePassword;
 window.deleteAccount = deleteAccount;
+window.switchProfileSecurityPanel = switchProfileSecurityPanel;
 
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initializePhoneDigitFilters);
+    document.addEventListener('DOMContentLoaded', () => {
+        initializePhoneDigitFilters();
+        switchProfileSecurityPanel('change-password');
+        setPhoneButtonsState();
+    });
 } else {
     initializePhoneDigitFilters();
+    switchProfileSecurityPanel('change-password');
+    setPhoneButtonsState();
 }
