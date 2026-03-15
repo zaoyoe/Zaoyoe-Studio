@@ -7682,7 +7682,8 @@ body {
 
 @media (max-width: 768px) {
     #profileModal {
-        --profile-mobile-topbar-height: 126px;
+        --profile-mobile-topbar-height: 86px;
+        --profile-mobile-topbar-inset: 10px;
     }
 
     #profileModal .modal-content.profile-modal,
@@ -7707,8 +7708,8 @@ body {
         display: block !important;
         position: absolute;
         top: 0;
-        left: 0;
-        right: 0;
+        left: var(--profile-mobile-topbar-inset);
+        right: var(--profile-mobile-topbar-inset);
         z-index: 30;
         height: var(--profile-mobile-topbar-height);
         margin: 0;
@@ -7719,10 +7720,13 @@ body {
         margin: 0;
         position: relative;
         height: 100%;
-        padding: 18px 22px 14px;
-        border-radius: 34px 34px 24px 24px;
-        background: rgba(12, 15, 19, 0.42);
-        border: 0;
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+        padding: 16px 18px 10px;
+        border-radius: 26px 26px 0 0;
+        background: rgba(12, 15, 19, 0.56);
+        border: 1px solid rgba(255, 255, 255, 0.06);
         border-bottom: 1px solid rgba(255, 255, 255, 0.08);
         backdrop-filter: blur(18px) saturate(140%);
         -webkit-backdrop-filter: blur(18px) saturate(140%);
@@ -7732,34 +7736,26 @@ body {
     }
 
     #profileModal .profile-mobile-head-row {
-        display: flex;
-        align-items: flex-start;
-        justify-content: flex-start;
-        gap: 0;
-        margin-bottom: 16px;
+        display: none;
     }
 
     #profileModal .profile-mobile-head-copy {
-        min-width: 0;
-        width: auto;
-        text-align: left;
+        display: none;
     }
 
     #profileModal .profile-mobile-title {
-        font-size: 18px;
-        font-weight: 600;
-        letter-spacing: -0.25px;
-        color: rgba(255, 255, 255, 0.98);
+        display: none;
     }
 
     #profileModal .profile-mobile-tabs {
         display: flex;
+        width: 100%;
         justify-content: center;
-        gap: 18px;
-        align-items: center;
+        gap: 28px;
+        align-items: flex-end;
         position: relative;
         padding-top: 0;
-        padding-bottom: 2px;
+        padding-bottom: 4px;
     }
 
     #profileModal .profile-mobile-tabs .tab-item {
@@ -7767,13 +7763,14 @@ body {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        min-height: 28px;
-        padding: 0 0 8px;
+        min-height: 34px;
+        padding: 0 0 10px;
         border-radius: 0;
         background: transparent !important;
-        font-size: 14px;
-        font-weight: 500;
-        color: rgba(212, 220, 228, 0.52);
+        font-size: 16px;
+        font-weight: 600;
+        letter-spacing: -0.18px;
+        color: rgba(212, 220, 228, 0.56);
     }
 
     #profileModal .profile-mobile-tabs .tab-item:hover {

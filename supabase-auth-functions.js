@@ -2946,20 +2946,6 @@ function switchProfileTab(tabName) {
 
 window.switchProfileTab = switchProfileTab;
 
-function getProfileModalChromeCopy(tabName = 'profile') {
-    const isEnglish = typeof window.i18n?.isEnglish === 'function' && window.i18n.isEnglish();
-
-    if (tabName === 'security') {
-        return isEnglish
-            ? { title: 'Account Security', subtitle: 'Critical settings and account protection' }
-            : { title: '账户安全', subtitle: '状态概览与关键操作' };
-    }
-
-    return isEnglish
-        ? { title: 'My Account', subtitle: 'Visible only to you' }
-        : { title: '我的账户', subtitle: '仅自己可见' };
-}
-
 function syncProfileMobileTabIndicator() {
     const tabsWrap = document.querySelector('#profileModal .profile-mobile-tabs');
     if (!tabsWrap) return;
@@ -2983,13 +2969,6 @@ if (!window.__profileMobileTabIndicatorBound) {
 }
 
 function updateProfileModalChrome(tabName = 'profile') {
-    const { title, subtitle } = getProfileModalChromeCopy(tabName);
-    const titleEl = document.getElementById('profileMobileHeaderTitle');
-    const subtitleEl = document.getElementById('profileMobileHeaderSubtitle');
-
-    if (titleEl) titleEl.textContent = title;
-    if (subtitleEl) subtitleEl.textContent = subtitle;
-
     document.querySelectorAll('[data-profile-tab]').forEach((tab) => {
         tab.classList.toggle('active', tab.dataset.profileTab === tabName);
     });
