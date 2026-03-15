@@ -7693,7 +7693,7 @@ body {
 
     #profileModal .profile-modal-scroll {
         position: relative !important;
-        padding: 0 12px calc(18px + env(safe-area-inset-bottom)) !important;
+        padding: 0 8px calc(18px + env(safe-area-inset-bottom)) !important;
         scroll-padding-top: 180px !important;
         scroll-padding-bottom: 220px !important;
     }
@@ -7718,7 +7718,7 @@ body {
     }
 
     #profileModal .profile-mobile-topbar-shell {
-        margin: 0 -14px;
+        margin: 0 -8px;
         padding: 18px 24px 16px;
         border-radius: 28px;
         overflow: hidden;
