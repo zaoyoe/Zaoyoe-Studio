@@ -3022,7 +3022,9 @@ function openProfileEditor(event) {
     const nicknameInput = isMobileView
         ? document.getElementById('profileMobileNicknameInput')
         : document.getElementById('nicknameInput');
-    const isEditing = nicknameEdit && window.getComputedStyle(nicknameEdit).display !== 'none';
+    const isEditing = isMobileView
+        ? !!nicknameEdit?.classList.contains('is-visible')
+        : !!(nicknameEdit && window.getComputedStyle(nicknameEdit).display !== 'none');
 
     if (!isEditing && typeof toggleNicknameEdit === 'function') {
         toggleNicknameEdit(true);
