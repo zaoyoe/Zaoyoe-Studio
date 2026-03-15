@@ -7863,7 +7863,7 @@ body {
         position: relative;
         z-index: 1;
         display: grid;
-        gap: 18px;
+        gap: 24px;
         width: 100%;
         padding-bottom: 24px;
     }
@@ -7984,6 +7984,10 @@ body {
         box-shadow:
             inset 0 1px 0 rgba(255, 255, 255, 0.04),
             0 10px 24px rgba(0, 0, 0, 0.08);
+    }
+
+    #profileModal .profile-mobile-sheet > .profile-mobile-card {
+        margin-top: 2px;
     }
 
     #profileModal .profile-mobile-section-head {
