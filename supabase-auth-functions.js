@@ -2662,9 +2662,9 @@ async function openProfileModal(event) {
                 const isEnglish = window.i18n?.isEnglish?.();
                 if (isEnglish) {
                     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-                    memberSinceSpan.textContent = `Member since ${monthNames[month - 1]} ${day}, ${year}`;
+                    memberSinceSpan.textContent = `${monthNames[month - 1]} ${day}, ${year}`;
                 } else {
-                    memberSinceSpan.textContent = `注册于 ${year}年${month}月${day}日`;
+                    memberSinceSpan.textContent = `${year}年${month}月${day}日`;
                 }
             }
 

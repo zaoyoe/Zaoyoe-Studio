@@ -7523,7 +7523,7 @@ body {
     padding: 12px 14px;
     margin-bottom: 16px;
     min-height: var(--profile-info-card-height);
-    height: var(--profile-info-card-height);
+    height: auto;
     border-radius: 10px;
     display: flex;
     flex-direction: column;
@@ -7531,6 +7531,12 @@ body {
     box-shadow:
         0 1px 6px rgba(0, 0, 0, 0.26),
         inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+#profileModal .profile-front .profile-member-since-section {
+    --profile-info-card-height: 60px;
+    min-height: var(--profile-info-card-height);
+    padding: 8px 12px;
 }
 
 #profileModal .profile-front .profile-nickname-section:hover,
@@ -7586,13 +7592,20 @@ body {
     #profileModal .profile-front .profile-nickname-section,
     #profileModal .profile-front .profile-email-section,
     #profileModal .profile-front .profile-member-since-section {
-        --profile-info-card-height: 90px;
+        --profile-info-card-height: 80px;
         max-width: 100%;
-        padding: 10px 12px;
-        margin-bottom: 14px;
+        padding: 14px 16px;
+        margin-bottom: 16px;
         min-height: var(--profile-info-card-height);
-        height: var(--profile-info-card-height);
+        height: auto;
         border-radius: 9px;
+    }
+
+    #profileModal .profile-front .profile-member-since-section {
+        --profile-info-card-height: 54px;
+        min-height: var(--profile-info-card-height);
+        padding: 10px 14px;
+        margin-bottom: 0px;
     }
 
     #profileModal .profile-front .profile-nickname-section {
