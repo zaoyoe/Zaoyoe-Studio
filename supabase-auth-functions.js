@@ -2960,6 +2960,28 @@ function getProfileModalChromeCopy(tabName = 'profile') {
         : { title: '我的账户', subtitle: '仅自己可见' };
 }
 
+function syncProfileMobileTabIndicator() {
+    const tabsWrap = document.querySelector('#profileModal .profile-mobile-tabs');
+    if (!tabsWrap) return;
+
+    const activeTab = tabsWrap.querySelector('.tab-item.active');
+    if (!activeTab) return;
+
+    tabsWrap.style.setProperty('--profile-tab-indicator-width', `${activeTab.offsetWidth}px`);
+    tabsWrap.style.setProperty('--profile-tab-indicator-x', `${activeTab.offsetLeft}px`);
+}
+
+window.syncProfileMobileTabIndicator = syncProfileMobileTabIndicator;
+
+if (!window.__profileMobileTabIndicatorBound) {
+    window.addEventListener('resize', () => {
+        window.requestAnimationFrame(() => {
+            syncProfileMobileTabIndicator();
+        });
+    });
+    window.__profileMobileTabIndicatorBound = true;
+}
+
 function updateProfileModalChrome(tabName = 'profile') {
     const { title, subtitle } = getProfileModalChromeCopy(tabName);
     const titleEl = document.getElementById('profileMobileHeaderTitle');
@@ -2970,6 +2992,10 @@ function updateProfileModalChrome(tabName = 'profile') {
 
     document.querySelectorAll('[data-profile-tab]').forEach((tab) => {
         tab.classList.toggle('active', tab.dataset.profileTab === tabName);
+    });
+
+    window.requestAnimationFrame(() => {
+        syncProfileMobileTabIndicator();
     });
 }
 
