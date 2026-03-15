@@ -4966,14 +4966,16 @@ body.profile-modal-lock {
 /* --- Mobile Overrides for Flip Container (Fix Truncation) --- */
 @media (max-width: 768px) {
     .profile-flip-container {
-        min-height: auto !important;
+        min-height: 480px !important;
+        /* Forces container to keep a base height */
         height: auto !important;
         overflow: visible !important;
         /* Allow content to overflow naturally */
     }
 
     .profile-flip-inner {
-        min-height: auto !important;
+        min-height: 480px !important;
+        /* Force matching height between front and back views */
         height: auto !important;
         display: block !important;
     }
@@ -7287,29 +7289,38 @@ body {
 
 /* Profile Member Since Section - plain text label layout */
 .profile-member-since-section {
-    margin: 0 0 24px 0;
-    padding: 0;
-    width: 100%;
-    max-width: 320px;
-    background: transparent;
-    border: none;
-    box-shadow: none;
+    margin: 0 auto 24px auto;
+    padding: 6px 14px;
+    width: fit-content;
+    background: rgba(255, 255, 255, 0.05);
+    /* very subtle background */
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    /* light pill border */
+    border-radius: 20px;
+    /* capsule shape */
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
     position: relative;
     overflow: hidden;
     flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
 }
 
 .profile-member-since-section label {
-    display: block;
-    font-size: 12px;
+    display: inline-block;
+    font-size: 11px;
     color: rgba(255, 255, 255, 0.4);
-    margin-bottom: 4px;
+    margin-bottom: 0px;
+    line-height: 1;
 }
 
 .profile-member-since-display {
-    font-size: 14px;
-    color: rgba(255, 255, 255, 0.6);
-    font-weight: 400;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.7);
+    font-weight: 500;
+    line-height: 1;
 }
 
 /* Animation for member since section */
@@ -7575,22 +7586,26 @@ body {
     #profileModal .profile-front .profile-member-since-section {
         min-height: 0;
         height: auto;
-        padding: 0;
+        padding: 4px 12px;
         margin-bottom: 0px;
+        margin-top: 4px;
     }
 
-    #profileModal .profile-front .profile-nickname-section {
-        margin-top: 18px;
-    }
-
-    #profileModal .profile-front .profile-email-section label,
-    #profileModal .profile-front .profile-member-since-section label {
+    #profileModal .profile-front .profile-email-section label {
         font-size: 10px;
         margin-bottom: 4px;
     }
 
-    #profileModal .profile-front .profile-email-display,
-    #profileModal .profile-front .profile-member-since-display {
+    #profileModal .profile-front .profile-member-since-section label {
+        font-size: 10px;
+        margin-bottom: 0px;
+    }
+
+    #profileModal .profile-front .profile-email-display {
         font-size: 13px;
+    }
+
+    #profileModal .profile-front .profile-member-since-display {
+        font-size: 12px;
     }
 }
