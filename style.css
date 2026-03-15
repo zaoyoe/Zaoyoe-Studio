@@ -4966,7 +4966,7 @@ body.profile-modal-lock {
 /* --- Mobile Overrides for Flip Container (Fix Truncation) --- */
 @media (max-width: 768px) {
     .profile-flip-container {
-        min-height: auto !important;
+        min-height: 480px !important;
         /* Forces container to keep a base height */
         height: auto !important;
         overflow: visible !important;
@@ -4974,7 +4974,7 @@ body.profile-modal-lock {
     }
 
     .profile-flip-inner {
-        min-height: auto !important;
+        min-height: 480px !important;
         /* Force matching height between front and back views */
         height: auto !important;
         display: block !important;
@@ -4992,7 +4992,11 @@ body.profile-modal-lock {
 
     /* Manually manage visibility since we aren't using absolute positioning */
     .profile-front {
-        display: block !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: space-evenly !important;
+        /* Distribute items equally across 480px height */
+        padding-bottom: 0px !important;
     }
 
     .profile-back {
@@ -7566,7 +7570,8 @@ body {
     #profileModal .profile-avatar-section {
         width: 92px;
         height: 92px;
-        margin: 10px auto 12px;
+        margin: 0px auto 0px;
+        /* Margins handled by space-evenly */
     }
 
     #profileModal #profileModalNickname {
@@ -7578,16 +7583,16 @@ body {
         --profile-info-card-height: 80px;
         max-width: 100%;
         padding: 14px 16px;
-        margin-bottom: 20px;
-        /* Equal spacing between all 3 elements */
+        margin-bottom: 0px;
+        /* Spacing handled by space-evenly now */
         min-height: var(--profile-info-card-height);
         height: auto;
         border-radius: 9px;
     }
 
     #profileModal .profile-front .profile-nickname-section {
-        margin-top: 28px;
-        /* Shift group significantly down from avatar (mobile) */
+        margin-top: 0px;
+        /* Spacing handled by space-evenly now */
     }
 
     #profileModal .profile-front .profile-member-since-section {
