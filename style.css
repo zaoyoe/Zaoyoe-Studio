@@ -4963,59 +4963,6 @@ body.profile-modal-lock {
     visibility: visible;
 }
 
-/* --- Mobile Overrides for Flip Container (Fix Truncation) --- */
-@media (max-width: 768px) {
-    .profile-flip-container {
-        min-height: 480px !important;
-        /* Forces container to keep a base height */
-        height: auto !important;
-        overflow: visible !important;
-        /* Allow content to overflow naturally */
-    }
-
-    .profile-flip-inner {
-        min-height: 480px !important;
-        /* Force matching height between front and back views */
-        height: auto !important;
-        display: block !important;
-    }
-
-    .profile-view {
-        position: relative !important;
-        /* Stack naturally, no absolute positioning */
-        height: auto !important;
-        opacity: 1 !important;
-        visibility: visible !important;
-        transition: none !important;
-        /* Remove transition to prevent glitches */
-    }
-
-    /* Manually manage visibility since we aren't using absolute positioning */
-    .profile-front {
-        display: flex !important;
-        flex-direction: column !important;
-        justify-content: space-evenly !important;
-        /* Distribute items equally across 480px height */
-        padding-bottom: 0px !important;
-    }
-
-    .profile-back {
-        display: none !important;
-    }
-
-    /* When flipped, hide front and show back */
-    .profile-flip-inner.flipped .profile-front {
-        display: none !important;
-    }
-
-    .profile-flip-inner.flipped .profile-back {
-        display: block !important;
-        opacity: 1 !important;
-        pointer-events: auto !important;
-        visibility: visible !important;
-    }
-}
-
 /* 错落上升动画关键帧 */
 @keyframes staggeredRise {
     from {
@@ -5255,8 +5202,7 @@ body.profile-modal-lock {
     box-shadow: none !important;
 }
 
-#profileModal #sendPhoneCodeBtn.verify-code-btn,
-#profileModal #mobile_sendPhoneCodeBtn.code-btn {
+#profileModal #sendPhoneCodeBtn.verify-code-btn {
     width: auto !important;
     min-width: 118px !important;
     white-space: nowrap !important;
@@ -5281,22 +5227,18 @@ body.profile-modal-lock {
     transition: all 0.3s ease !important;
 }
 
-#profileModal #sendPhoneCodeBtn.verify-code-btn:hover,
-#profileModal #mobile_sendPhoneCodeBtn.code-btn:hover {
+#profileModal #sendPhoneCodeBtn.verify-code-btn:hover {
     background: rgba(155, 93, 229, 0.3) !important;
     border-color: rgba(155, 93, 229, 0.5) !important;
 }
 
-#profileModal #sendPhoneCodeBtn.verify-code-btn:disabled,
-#profileModal #mobile_sendPhoneCodeBtn.code-btn:disabled {
+#profileModal #sendPhoneCodeBtn.verify-code-btn:disabled {
     opacity: 0.5 !important;
     cursor: not-allowed !important;
 }
 
 #profileModal .security-detail-content .gradient-btn,
-#profileModal .security-detail-content .danger-btn,
-#profileModal .mobile-security-layout .gradient-btn,
-#profileModal .mobile-security-layout .danger-btn {
+#profileModal .security-detail-content .danger-btn {
     width: fit-content !important;
     min-width: 168px !important;
     max-width: 220px !important;
@@ -5307,26 +5249,6 @@ body.profile-modal-lock {
     margin-right: auto !important;
     padding-left: 28px !important;
     padding-right: 28px !important;
-}
-
-#profileModal .mobile-security-layout .gradient-btn,
-#profileModal .mobile-security-layout .danger-btn {
-    margin-top: 8px !important;
-}
-
-#profileModal .mobile-security-layout .security-input.glass-input {
-    background: rgba(0, 0, 0, 0.4) !important;
-    border: 1px solid rgba(155, 93, 229, 0.5) !important;
-    border-radius: 12px !important;
-    color: #ffffff !important;
-    padding: 10px 16px !important;
-    height: auto !important;
-}
-
-#profileModal .mobile-security-layout .security-input.glass-input:focus {
-    border-color: #9fcaff !important;
-    background: rgba(255, 255, 255, 0.042) !important;
-    box-shadow: none !important;
 }
 
 .danger-zone {
@@ -7878,6 +7800,41 @@ body {
         display: none !important;
     }
 
+    #profileModal .profile-flip-container {
+        min-height: 480px !important;
+        height: auto !important;
+        overflow: visible !important;
+    }
+
+    #profileModal .profile-flip-inner {
+        min-height: 480px !important;
+        height: auto !important;
+        display: block !important;
+    }
+
+    #profileModal .profile-view {
+        position: relative !important;
+        height: auto !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+        transition: none !important;
+    }
+
+    #profileModal .profile-back {
+        display: none !important;
+    }
+
+    #profileModal .profile-flip-inner.flipped .profile-front {
+        display: none !important;
+    }
+
+    #profileModal .profile-flip-inner.flipped .profile-back {
+        display: block !important;
+        opacity: 1 !important;
+        pointer-events: auto !important;
+        visibility: visible !important;
+    }
+
     #profileModal .profile-front {
         justify-content: flex-start !important;
         gap: 12px !important;
@@ -7887,8 +7844,7 @@ body {
     #profileModal .profile-avatar-section {
         width: 92px;
         height: 92px;
-        margin: 0px auto 0px;
-        /* Margins handled by space-evenly */
+        margin: 0 auto;
     }
 
     #profileModal #profileModalNickname {
@@ -7900,26 +7856,22 @@ body {
         --profile-info-card-height: 80px;
         max-width: 100%;
         padding: 14px 16px;
-        margin-bottom: 0px;
-        /* Spacing handled by space-evenly now */
+        margin-bottom: 0;
         min-height: var(--profile-info-card-height);
         height: auto;
         border-radius: 9px;
     }
 
     #profileModal .profile-front .profile-nickname-section {
-        margin-top: 0px;
-        /* Spacing handled by space-evenly now */
+        margin-top: 0;
     }
 
     #profileModal .profile-front .profile-member-since-section {
         min-height: 0;
         height: auto;
         padding: 4px 12px;
-        margin-bottom: 0px;
-        /* Last element, no bottom margin needed */
-        margin-top: 0px;
-        /* spacing handled by email section's margin-bottom */
+        margin-bottom: 0;
+        margin-top: 0;
     }
 
     #profileModal .profile-front .profile-quick-access-section,
@@ -7972,6 +7924,25 @@ body {
         font-size: 12px !important;
         line-height: 1.5 !important;
         color: rgba(255, 255, 255, 0.48) !important;
+    }
+
+    #profileModal .mobile-security-layout .security-input,
+    #profileModal .mobile-security-layout .security-input.glass-input {
+        background: rgba(10, 14, 18, 0.88) !important;
+        border: 1px solid rgba(255, 255, 255, 0.08) !important;
+        border-radius: 14px !important;
+        color: rgba(255, 255, 255, 0.96) !important;
+        min-height: 46px !important;
+        height: auto !important;
+        padding: 10px 16px !important;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03) !important;
+    }
+
+    #profileModal .mobile-security-layout .security-input:focus,
+    #profileModal .mobile-security-layout .security-input.glass-input:focus {
+        border-color: #9fcaff !important;
+        background: rgba(255, 255, 255, 0.042) !important;
+        box-shadow: none !important;
     }
 
     #profileModal .mobile-security-layout .code-btn {

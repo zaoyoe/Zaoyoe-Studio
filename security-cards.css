@@ -320,8 +320,7 @@
     .mobile-security-layout {
         display: block !important;
         padding: 0;
-        padding-bottom: 0px;
-        /* Removed padding completely */
+        padding-bottom: 0;
     }
 
     /* Hide the large "Security Settings" title on mobile to save space */
@@ -329,122 +328,8 @@
         display: none;
     }
 
-    .mobile-security-section {
-        background: rgba(255, 255, 255, 0.03);
-        border: 1px solid rgba(255, 255, 255, 0.05);
-        border-radius: 16px;
-        padding: 16px;
-        margin-bottom: 12px;
-    }
-
-    .mobile-section-title {
-        font-size: 16px;
-        font-weight: 600;
-        margin-bottom: 12px;
-        color: rgba(255, 255, 255, 0.9);
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }
-
-    .mobile-section-title::before {
-        content: '';
-        display: block;
-        width: 3px;
-        height: 14px;
-        background: #9b5de5;
-        border-radius: 2px;
-    }
-
-    .mobile-section-title.danger::before {
-        background: #ff4757;
-    }
-
-    .mobile-section-desc {
-        font-size: 12px;
-        color: rgba(255, 255, 255, 0.5);
-        margin-bottom: 12px;
-        line-height: 1.4;
-    }
-
     .mobile-security-layout .input-group {
         margin-bottom: 10px;
-    }
-
-    .mobile-security-layout .security-input {
-        width: 100%;
-        background: transparent;
-        border: 1px solid rgba(155, 93, 229, 0.3);
-        border-radius: 10px;
-        padding: 10px 12px;
-        color: #fff;
-        font-size: 16px !important;
-        line-height: 1.35 !important;
-        transition: all 0.3s ease;
-        height: 42px;
-        /* Fixed height */
-    }
-
-    .mobile-security-layout .security-input:focus {
-        border-color: rgba(155, 93, 229, 0.7);
-        background: transparent !important;
-        outline: none;
-        box-shadow: 0 0 0 3px rgba(155, 93, 229, 0.12);
-    }
-
-    .mobile-security-layout .code-btn {
-        background: rgba(255, 255, 255, 0.1);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 10px;
-        color: #fff;
-        padding: 0 12px;
-        font-size: 13px;
-        white-space: nowrap;
-        cursor: pointer;
-        height: 42px;
-        /* Match input height */
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: all 0.2s ease;
-    }
-
-    .mobile-security-layout .code-btn:hover {
-        background: rgba(255, 255, 255, 0.2);
-        border-color: rgba(255, 255, 255, 0.25);
-        transform: translateY(-1px);
-    }
-
-    .mobile-security-layout .gradient-btn {
-        width: 100%;
-        padding: 10px;
-        border-radius: 10px;
-        background: linear-gradient(135deg, #9b5de5, #f15bb5);
-        border: none;
-        color: #fff;
-        font-weight: 600;
-        font-size: 14px;
-        margin-top: 5px;
-        height: 40px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .mobile-security-layout .danger-btn {
-        width: 100%;
-        padding: 10px;
-        border-radius: 10px;
-        background: rgba(255, 71, 87, 0.1);
-        border: 1px solid rgba(255, 71, 87, 0.3);
-        color: #ff4757;
-        font-weight: 600;
-        font-size: 14px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-        height: 40px;
     }
 
     /* iOS Safari: disable staged section animation on mobile to avoid focus/caret drift */
