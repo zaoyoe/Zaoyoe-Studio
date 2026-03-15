@@ -880,33 +880,144 @@ function isUsableAvatarUrl(url) {
     return false;
 }
 
+function setTextContent(id, value) {
+    const el = document.getElementById(id);
+    if (!el || value === undefined || value === null || value === '') return;
+    el.textContent = value;
+}
+
+function getProfileDisplayInitial(seed) {
+    const source = String(seed || 'U').trim();
+    return source ? source.charAt(0).toUpperCase() : 'U';
+}
+
+function getShortProfileAccountId(rawId) {
+    if (!rawId) return '-';
+    return String(rawId).replace(/-/g, '').slice(0, 6).toUpperCase() || '-';
+}
+
+function resolveProfilePhone(user, profile) {
+    return (
+        profile?.phone ||
+        profile?.phone_number ||
+        user?.phone ||
+        user?.user_metadata?.phone ||
+        user?.user_metadata?.phone_number ||
+        ''
+    );
+}
+
+function formatProfilePhone(phone) {
+    const digits = String(phone || '').replace(/\D/g, '');
+    if (!digits) return '';
+    if (digits.length >= 7) {
+        return `${digits.slice(0, 3)}****${digits.slice(-4)}`;
+    }
+    return digits;
+}
+
+function updateProfileMobileSummary(data = {}) {
+    const {
+        nickname,
+        email,
+        memberSince,
+        userId,
+        phone
+    } = data;
+
+    if (nickname) {
+        setTextContent('profileMobileHeroName', nickname);
+        setTextContent('profileMobileNicknameValue', nickname);
+    }
+
+    if (email) {
+        setTextContent('profileMobileHeroEmail', email);
+        setTextContent('profileMobileEmailValue', email);
+    }
+
+    if (memberSince) {
+        setTextContent('profileMobileMemberSinceValue', memberSince);
+    }
+
+    if (userId) {
+        setTextContent('profileMobileHeroId', `ID ${getShortProfileAccountId(userId)}`);
+    }
+
+    if (phone !== undefined) {
+        const phoneStatus = document.getElementById('profileMobilePhoneStatus');
+        if (phoneStatus) {
+            const hasPhone = !!String(phone || '').trim();
+            phoneStatus.textContent = hasPhone ? formatProfilePhone(phone) || '已绑定' : '未绑定';
+            phoneStatus.classList.toggle('profile-mobile-status-pill--safe', hasPhone);
+            phoneStatus.classList.toggle('profile-mobile-status-pill--warn', !hasPhone);
+        }
+    }
+
+    const avatarFallback = document.getElementById('profileModalAvatarMobileFallback');
+    if (avatarFallback && (nickname || email)) {
+        avatarFallback.textContent = getProfileDisplayInitial(nickname || email);
+    }
+}
+
 function setProfileModalAvatar(avatarUrl, fallbackSeed = 'User', options = {}) {
     const { preferImmediate = false, keepCurrentOnEmpty = true } = options;
-    const profileModalAvatar = document.getElementById('profileModalAvatar');
-    if (!profileModalAvatar) return;
+    const avatarTargets = Array.from(document.querySelectorAll('#profileModalAvatar, #profileModalAvatarMobile'));
+    if (!avatarTargets.length) return;
 
     const fallbackUrl = getAvatarFallbackUrl(fallbackSeed);
-    const currentRaw = profileModalAvatar.getAttribute('src') || profileModalAvatar.src || '';
+    const currentRaw = avatarTargets[0].getAttribute('src') || avatarTargets[0].src || '';
     const incomingUrl = isUsableAvatarUrl(avatarUrl) ? String(avatarUrl).trim() : '';
+    const avatarFallback = document.getElementById('profileModalAvatarMobileFallback');
+    if (avatarFallback) {
+        avatarFallback.textContent = getProfileDisplayInitial(fallbackSeed);
+    }
+
+    const syncMobileAvatarVisibility = (showImage) => {
+        const mobileAvatar = document.getElementById('profileModalAvatarMobile');
+        if (mobileAvatar) {
+            mobileAvatar.style.display = showImage ? 'block' : 'none';
+        }
+        if (avatarFallback) {
+            avatarFallback.style.display = showImage ? 'none' : 'grid';
+        }
+    };
+
     if (!incomingUrl) {
         if (keepCurrentOnEmpty) return;
-        profileModalAvatar.src = fallbackUrl;
+        avatarTargets.forEach((avatar) => {
+            avatar.src = fallbackUrl;
+        });
+        syncMobileAvatarVisibility(true);
         return;
     }
 
     const targetUrl = incomingUrl;
     const currentBase = normalizeAvatarUrl(currentRaw);
     const targetBase = normalizeAvatarUrl(targetUrl);
-    if (currentBase && currentBase === targetBase) return;
+    const allTargetsAligned = currentBase && targetBase && avatarTargets.every((avatar) => {
+        const avatarRaw = avatar.getAttribute('src') || avatar.src || '';
+        return normalizeAvatarUrl(avatarRaw) === targetBase;
+    });
+    if (allTargetsAligned) {
+        syncMobileAvatarVisibility(true);
+        return;
+    }
 
     const applySrc = (url) => {
-        profileModalAvatar.onerror = function () {
-            const failedBase = normalizeAvatarUrl(this.src || '');
-            const fallbackBase = normalizeAvatarUrl(fallbackUrl);
-            if (failedBase === fallbackBase) return;
-            this.src = fallbackUrl;
-        };
-        profileModalAvatar.src = url;
+        avatarTargets.forEach((avatar) => {
+            avatar.onerror = function () {
+                const failedBase = normalizeAvatarUrl(this.src || '');
+                const fallbackBase = normalizeAvatarUrl(fallbackUrl);
+                if (failedBase === fallbackBase) {
+                    syncMobileAvatarVisibility(false);
+                    return;
+                }
+                this.src = fallbackUrl;
+                syncMobileAvatarVisibility(true);
+            };
+            avatar.src = url;
+        });
+        syncMobileAvatarVisibility(true);
     };
 
     if (preferImmediate || !currentRaw) {
@@ -918,7 +1029,10 @@ function setProfileModalAvatar(avatarUrl, fallbackSeed = 'User', options = {}) {
     probe.onload = () => applySrc(targetUrl);
     probe.onerror = () => {
         if (keepCurrentOnEmpty) return;
-        applySrc(fallbackUrl);
+        avatarTargets.forEach((avatar) => {
+            avatar.src = fallbackUrl;
+        });
+        syncMobileAvatarVisibility(true);
     };
     probe.src = targetUrl;
 }
@@ -1018,6 +1132,12 @@ function updateUserUI(user, options = {}) {
         if (authBtn) authBtn.classList.add('logged-in');
 
         if (profileModalEmail) profileModalEmail.textContent = user.email || '未绑定邮箱';
+        updateProfileMobileSummary({
+            nickname: user.nickname || user.username || 'User',
+            email: user.email || '',
+            userId: user.objectId || user.id || '',
+            phone: user.phone || user.phone_number || ''
+        });
         setProfileModalAvatar(
             user.avatarUrl,
             user.email || user.username || user.nickname || 'User'
@@ -2472,6 +2592,12 @@ function hydrateProfileModalFromCache() {
         if (cachedEmail && emailDiv) {
             emailDiv.textContent = cachedEmail;
         }
+        updateProfileMobileSummary({
+            nickname: cachedNickname,
+            email: cachedEmail,
+            userId: cached.objectId || cached.id || '',
+            phone: cached.phone || cached.phone_number || ''
+        });
         if (cached.avatarUrl || cachedEmail || cachedNickname) {
             setProfileModalAvatar(cached.avatarUrl, cachedEmail || cachedNickname || 'User');
         }
@@ -2487,6 +2613,8 @@ function resetProfileModalViewState() {
     const profileBack = document.querySelector('.profile-back');
     const nicknameDisplay = document.getElementById('nicknameDisplay');
     const nicknameEdit = document.getElementById('nicknameEdit');
+    const mobileEditor = document.getElementById('profileMobileInlineEditor');
+    const mobileInput = document.getElementById('profileMobileNicknameInput');
 
     if (flipInner) {
         flipInner.classList.remove('flipped');
@@ -2519,6 +2647,13 @@ function resetProfileModalViewState() {
         nicknameEdit.style.display = 'none';
         nicknameDisplay.style.display = 'flex';
         nicknameDisplay.classList.remove('hiding', 'showing');
+    }
+
+    if (mobileEditor) {
+        mobileEditor.style.display = 'none';
+    }
+    if (mobileInput) {
+        mobileInput.value = '';
     }
 
     if (typeof resetSecurityCards === 'function') {
@@ -2653,6 +2788,12 @@ async function openProfileModal(event) {
             const optimisticNickname = user.user_metadata?.full_name || user.email.split('@')[0];
             if (emailDiv) emailDiv.textContent = user.email;
             if (nicknameSpan) nicknameSpan.textContent = optimisticNickname;
+            updateProfileMobileSummary({
+                nickname: optimisticNickname,
+                email: user.email,
+                userId: user.id,
+                phone: resolveProfilePhone(user)
+            });
             setProfileModalAvatar(user.user_metadata?.avatar_url, user.email || optimisticNickname);
 
             if (memberSinceSpan) {
@@ -2667,6 +2808,9 @@ async function openProfileModal(event) {
                 } else {
                     memberSinceSpan.textContent = `${year}年${month}月${day}日`;
                 }
+                updateProfileMobileSummary({
+                    memberSince: memberSinceSpan.textContent
+                });
             }
 
             // 获取 profile
@@ -2687,11 +2831,24 @@ async function openProfileModal(event) {
             if (nicknameSpan) {
                 nicknameSpan.textContent = resolvedNickname;
             }
+            updateProfileMobileSummary({
+                nickname: resolvedNickname,
+                email: user.email,
+                userId: user.id,
+                phone: resolveProfilePhone(user, profile),
+                memberSince: memberSinceSpan ? memberSinceSpan.textContent : ''
+            });
         } catch (error) {
             console.error('Error loading profile:', error);
             if (nicknameSpan) nicknameSpan.textContent = '加载失败';
             if (emailDiv) emailDiv.textContent = '加载失败';
             if (memberSinceSpan) memberSinceSpan.textContent = '加载失败';
+            updateProfileMobileSummary({
+                nickname: '加载失败',
+                email: '加载失败',
+                memberSince: '加载失败',
+                phone: ''
+            });
         } finally {
             setTimeout(() => {
                 profileModalOpenLock = false;
@@ -2851,13 +3008,20 @@ function openProfileEditor(event) {
 
     switchProfileTab('profile');
 
-    const nicknameSection = document.querySelector('#profileModal .profile-nickname-section');
+    const isMobileView = window.innerWidth <= 768;
+    const nicknameSection = document.querySelector(isMobileView
+        ? '#profileModal .profile-mobile-essential-card'
+        : '#profileModal .profile-nickname-section');
     if (nicknameSection) {
         nicknameSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
-    const nicknameEdit = document.getElementById('nicknameEdit');
-    const nicknameInput = document.getElementById('nicknameInput');
+    const nicknameEdit = isMobileView
+        ? document.getElementById('profileMobileInlineEditor')
+        : document.getElementById('nicknameEdit');
+    const nicknameInput = isMobileView
+        ? document.getElementById('profileMobileNicknameInput')
+        : document.getElementById('nicknameInput');
     const isEditing = nicknameEdit && window.getComputedStyle(nicknameEdit).display !== 'none';
 
     if (!isEditing && typeof toggleNicknameEdit === 'function') {
@@ -2877,10 +3041,32 @@ window.openProfileEditor = openProfileEditor;
 
 // ==================== 昵称修改功能 ====================
 function toggleNicknameEdit(show) {
+    const isMobileView = window.innerWidth <= 768;
+    const currentNickname = document.getElementById('profileModalNickname')?.textContent ||
+        document.getElementById('profileMobileNicknameValue')?.textContent || '';
+
+    if (isMobileView) {
+        const mobileEditor = document.getElementById('profileMobileInlineEditor');
+        const mobileInput = document.getElementById('profileMobileNicknameInput');
+
+        if (!mobileEditor || !mobileInput) return;
+
+        if (show) {
+            mobileEditor.style.display = 'grid';
+            mobileInput.value = currentNickname;
+            window.setTimeout(() => {
+                mobileInput.focus();
+                mobileInput.select();
+            }, 60);
+        } else {
+            mobileEditor.style.display = 'none';
+        }
+        return;
+    }
+
     const display = document.getElementById('nicknameDisplay');
     const edit = document.getElementById('nicknameEdit');
     const input = document.getElementById('nicknameInput');
-    const currentNickname = document.getElementById('profileModalNickname').textContent;
 
     if (show) {
         display.classList.add('hiding');
@@ -2911,7 +3097,11 @@ window.toggleNicknameEdit = toggleNicknameEdit;
 
 // ==================== 保存昵称 (Supabase 版本) ====================
 async function saveNickname() {
-    const input = document.getElementById('nicknameInput');
+    const isMobileView = window.innerWidth <= 768;
+    const input = isMobileView
+        ? document.getElementById('profileMobileNicknameInput')
+        : document.getElementById('nicknameInput');
+    if (!input) return;
     const newNickname = input.value.trim();
 
     if (!newNickname) return;
@@ -2929,6 +3119,7 @@ async function saveNickname() {
 
             // Update UI
             document.getElementById('profileModalNickname').textContent = newNickname;
+            updateProfileMobileSummary({ nickname: newNickname });
 
             const { data: profile } = await window.supabaseClient
                 .from('profiles')
