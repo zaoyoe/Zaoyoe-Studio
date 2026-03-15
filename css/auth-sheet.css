@@ -349,10 +349,6 @@ body.auth-sheet-open {
     touch-action: pan-y;
 }
 
-.auth-sheet-overlay.auth-sheet-input-active .auth-sheet-body {
-    padding-bottom: calc(min(360px, 42svh) + env(safe-area-inset-bottom));
-}
-
 .auth-sheet-view {
     display: none;
 }
@@ -442,7 +438,7 @@ body.auth-sheet-open {
     display: flex;
     align-items: center;
     gap: 8px;
-    cursor: text;
+    cursor: text !important;
     position: relative;
     overflow: hidden;
     touch-action: manipulation;
@@ -500,6 +496,7 @@ body.auth-sheet-open {
     touch-action: pan-y;
     box-sizing: border-box;
     caret-color: var(--auth-sheet-link-accent) !important;
+    cursor: text;
 }
 
 .auth-sheet-input--parked {
@@ -828,12 +825,62 @@ body.auth-sheet-open {
         width: min(100%, 480px);
     }
 
+    .auth-sheet-drag-zone {
+        display: none;
+    }
+
     .auth-sheet {
         border-radius: 28px;
+    }
+
+    .auth-sheet-motion-shell {
+        padding-bottom: 0;
+    }
+
+    .auth-sheet-header {
+        padding-top: 18px;
+    }
+
+    .auth-sheet-overlay.auth-sheet-input-active .auth-sheet-body {
+        padding-bottom: 0;
+    }
+
+    #loginModal .auth-sheet-input-proxy,
+    .auth-sheet-input-proxy.auth-sheet-input-proxy--desktop-hidden {
+        display: none;
+    }
+
+    #loginModal .auth-sheet-input.auth-sheet-input--canonical,
+    .auth-sheet-input.auth-sheet-input--canonical,
+    #loginModal .auth-sheet-input.auth-sheet-input--canonical.auth-sheet-input--parked,
+    .auth-sheet-input.auth-sheet-input--canonical.auth-sheet-input--parked {
+        position: static !important;
+        top: auto !important;
+        left: auto !important;
+        right: auto !important;
+        bottom: auto !important;
+        width: 100% !important;
+        height: 44px !important;
+        min-height: 44px !important;
+        margin: 0 !important;
+        padding: 11px 13px !important;
+        opacity: 1 !important;
+        pointer-events: auto !important;
+        z-index: auto !important;
+        border: 1px solid var(--auth-sheet-border) !important;
+        background: rgba(255, 255, 255, 0.042) !important;
+    }
+
+    .auth-input-plane {
+        display: none;
     }
 }
 
 @media (max-width: 768px) {
+    .auth-sheet-overlay.auth-sheet-input-active .auth-sheet-body {
+        padding-bottom: calc(min(360px, 42svh) + env(safe-area-inset-bottom));
+    }
+
     .top-right-nav {
         top: 20px;
         right: 16px;

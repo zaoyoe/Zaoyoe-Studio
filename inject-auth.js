@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260314_AUTH_SHEET_DRAG_HANDLE_31';
+    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260315_AUTH_DESKTOP_FIX_32';
     const SUPPORT_SCRIPT_SRC = './script.js?v=20260314_AUTH_I18N_1';
     const EMAILJS_SRC = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
     const EMAILJS_PUBLIC_KEY = 'vawaxLVEzJMAVbut0';
@@ -55,6 +55,10 @@
 
     function shouldUseInPlaceAuthInput() {
         return isIOSMobile() && window.matchMedia('(max-width: 768px)').matches;
+    }
+
+    function shouldUseDesktopNativeAuthInput() {
+        return window.matchMedia('(min-width: 769px)').matches;
     }
     function t(key, fallback) {
         return window.i18n?.t(key, fallback) || fallback;
@@ -535,6 +539,46 @@
         });
     }
 
+    function syncAuthInputInteractionMode() {
+        const overlay = document.getElementById('loginModal');
+        if (!overlay) return;
+
+        const desktopNativeInputs = shouldUseDesktopNativeAuthInput();
+        if (desktopNativeInputs && portalState.activeId) {
+            deactivateActivePortaledInput({ blur: false });
+        }
+
+        overlay.querySelectorAll('[data-auth-canonical-input]').forEach((input) => {
+            resetPortaledInputStyles(input);
+
+            if (desktopNativeInputs) {
+                input.classList.remove('auth-sheet-input--parked', 'auth-sheet-input--portaled', 'auth-sheet-input--proxy-hidden');
+                input.removeAttribute('aria-hidden');
+                input.removeAttribute('tabindex');
+                return;
+            }
+
+            if (portalState.input === input) return;
+
+            input.classList.add('auth-sheet-input--parked');
+            input.classList.remove('auth-sheet-input--portaled', 'auth-sheet-input--proxy-hidden');
+            input.setAttribute('aria-hidden', 'true');
+            input.setAttribute('tabindex', '-1');
+        });
+
+        overlay.querySelectorAll('[data-auth-proxy-for]').forEach((proxy) => {
+            proxy.classList.toggle('auth-sheet-input-proxy--desktop-hidden', desktopNativeInputs);
+        });
+
+        if (desktopNativeInputs) {
+            const plane = document.getElementById('authInputPlane');
+            plane?.classList.remove('is-active');
+            plane?.setAttribute('aria-hidden', 'true');
+        }
+
+        syncAuthInputActiveState();
+    }
+
     function clearPortalLayoutRaf() {
         if (portalState.layoutRafId) {
             window.cancelAnimationFrame(portalState.layoutRafId);
@@ -948,6 +992,8 @@
         const { overlay } = getSheetElements();
         if (!overlay) return;
 
+        syncAuthInputInteractionMode();
+
         overlay.hidden = false;
         overlay.style.removeProperty('display');
         overlay.style.removeProperty('visibility');
@@ -1213,6 +1259,7 @@
 
         window.addEventListener('resize', () => {
             if (!overlay.classList.contains('active')) return;
+            syncAuthInputInteractionMode();
             scheduleActivePortaledInputPosition();
             syncPrimaryViewHeights();
             syncTabIndicator(sheetState.view);
