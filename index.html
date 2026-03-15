@@ -57,10 +57,10 @@
 
     <!-- Framer Home Styles -->
     <link rel="stylesheet" href="./css/framer_home.css?v=NAV_UNIFIED_V9">
-    <link rel="stylesheet" href="security-cards.css?v=20260315_PROFILE_MOBILE_REBUILD_2">
+    <link rel="stylesheet" href="security-cards.css?v=20260315_PROFILE_MOBILE_REBUILD_5">
 
     <!-- Core Styles (for modals, profile, etc) -->
-    <link rel="stylesheet" href="style.css?v=20260315_PROFILE_MOBILE_REBUILD_2">
+    <link rel="stylesheet" href="style.css?v=20260315_PROFILE_MOBILE_REBUILD_5">
     <link rel="stylesheet" href="css/auth-sheet.css?v=20260314_AUTH_SHEET_DRAG_HANDLE_31">
     <link rel="stylesheet" href="avatar-fix.css?v=20260314_AVATAR_UNIFIED_1">
 
@@ -282,7 +282,7 @@
 
     <!-- Auth System (integrated from inject-auth.js) -->
     <script src="./js/avatar-uploader.js" defer></script>
-    <script src="./supabase-auth-functions.js?v=20260315_PROFILE_MOBILE_REBUILD_2" defer></script>
+    <script src="./supabase-auth-functions.js?v=20260315_PROFILE_MOBILE_REBUILD_5" defer></script>
     <script src="./js/ios-scroll-lock.js?v=20260314_SCROLL_LOCK_AUTH_SHEET_7" defer></script>
     <script src="./inject-auth.js?v=20260314_LOGIN_DRAG_HANDLE_28" defer></script>
     <script src="./notification-client.js?v=20260314_NOTIF_SCROLL_LOCK_1" defer></script>
@@ -1095,10 +1095,10 @@
                             <div class="profile-mobile-title" id="profileMobileHeaderTitle">我的账户</div>
                             <div class="profile-mobile-subtitle" id="profileMobileHeaderSubtitle">仅自己可见</div>
                         </div>
-                        <button type="button" class="profile-mobile-close"
-                            onclick="window.closeProfileModal ? window.closeProfileModal() : document.getElementById('profileModal').classList.remove('active')"
-                            aria-label="关闭个人资料">
-                            <i class="fas fa-times"></i>
+                        <button type="button" class="profile-mobile-toolbar-btn"
+                            onclick="switchProfileTab('security')"
+                            aria-label="打开账户安全">
+                            <i class="fas fa-gear"></i>
                         </button>
                     </div>
                     <div class="profile-mobile-tabs">
@@ -1137,66 +1137,105 @@
                         <input type="file" id="avatarUpload" accept="image/*" style="display: none;"
                             onchange="handleAvatarUpload(event)">
 
-                        <section class="profile-mobile-hero-card profile-mobile-only">
-                            <button type="button" class="profile-mobile-hero-avatar" onclick="triggerAvatarUpload()"
-                                aria-label="更换头像">
-                                <img id="profileModalAvatarMobile" src="" alt="Avatar">
-                                <span id="profileModalAvatarMobileFallback"
-                                    class="profile-mobile-hero-avatar-fallback">U</span>
-                            </button>
-                            <div class="profile-mobile-hero-main">
-                                <div class="profile-mobile-hero-kicker">Account</div>
-                                <div class="profile-mobile-hero-name" id="profileMobileHeroName">Loading...</div>
-                                <div class="profile-mobile-hero-meta">
-                                    <span id="profileMobileHeroEmail">加载中...</span><br>
-                                    <span id="profileMobileHeroId">ID -</span>
-                                </div>
-                                <div class="profile-mobile-hero-tags">
-                                    <span class="profile-mobile-glass-tag profile-mobile-glass-tag--safe">资料仅自己可见</span>
-                                    <span class="profile-mobile-glass-tag">账户设置入口</span>
-                                </div>
-                            </div>
-                        </section>
-
-                        <section class="profile-mobile-essential-card profile-mobile-only">
-                            <div class="profile-section-head">
-                                <div class="profile-section-title">必要资料</div>
-                                <div class="profile-section-note">只保留需要确认和编辑的字段</div>
-                            </div>
-                            <div class="profile-mobile-info-rows">
-                                <div class="profile-mobile-info-row">
-                                    <div class="profile-mobile-info-key">昵称</div>
-                                    <div class="profile-mobile-info-value" id="profileMobileNicknameValue">Loading...</div>
-                                </div>
-                                <div class="profile-mobile-info-row">
-                                    <div class="profile-mobile-info-key">邮箱</div>
-                                    <div class="profile-mobile-info-value" id="profileMobileEmailValue">加载中...</div>
-                                </div>
-                                <div class="profile-mobile-info-row">
-                                    <div class="profile-mobile-info-key">注册时间</div>
-                                    <div class="profile-mobile-info-value" id="profileMobileMemberSinceValue">加载中...</div>
-                                </div>
-                                <div class="profile-mobile-info-row">
-                                    <div class="profile-mobile-info-key">手机号</div>
-                                    <div class="profile-mobile-info-value profile-mobile-info-value--phone">
-                                        <span id="profileMobilePhoneStatus"
-                                            class="profile-mobile-status-pill profile-mobile-status-pill--warn">未绑定</span>
-                                        <button type="button" class="profile-mobile-inline-link"
-                                            onclick="switchProfileTab('security')">前往安全页</button>
+                        <div class="profile-mobile-sheet profile-mobile-only">
+                            <section class="profile-mobile-hero-card">
+                                <button type="button" class="profile-mobile-hero-avatar" onclick="triggerAvatarUpload()"
+                                    aria-label="更换头像">
+                                    <img id="profileModalAvatarMobile" src="" alt="Avatar">
+                                    <span id="profileModalAvatarMobileFallback"
+                                        class="profile-mobile-hero-avatar-fallback">U</span>
+                                </button>
+                                <div class="profile-mobile-hero-main">
+                                    <div class="profile-mobile-hero-kicker">Account</div>
+                                    <div class="profile-mobile-hero-name" id="profileMobileHeroName">Loading...</div>
+                                    <div class="profile-mobile-hero-meta">
+                                        <span id="profileMobileHeroEmail">加载中...</span><br>
+                                        <span id="profileMobileHeroId">ID -</span>
+                                    </div>
+                                    <div class="profile-mobile-hero-tags">
+                                        <span class="profile-mobile-glass-tag profile-mobile-glass-tag--safe">资料仅自己可见</span>
+                                        <span class="profile-mobile-glass-tag">账户设置入口</span>
                                     </div>
                                 </div>
-                            </div>
-                            <div id="profileMobileInlineEditor" class="profile-mobile-inline-editor" style="display: none;">
-                                <input type="text" id="profileMobileNicknameInput" class="profile-mobile-inline-input"
-                                    placeholder="输入新昵称">
-                                <div class="profile-mobile-inline-actions">
-                                    <button class="cancel-btn" onclick="toggleNicknameEdit(false)"
-                                        data-i18n="common.cancel">取消</button>
-                                    <button class="save-btn" onclick="saveNickname()"
-                                        data-i18n="common.save">保存</button>
+                            </section>
+
+                            <section class="profile-mobile-card profile-mobile-card--essential">
+                                <div class="profile-mobile-section-head">
+                                    <div class="profile-mobile-section-title">必要资料</div>
+                                    <div class="profile-mobile-section-note">只保留需要确认和编辑的字段</div>
                                 </div>
-                            </div>
-                        </section>
+                                <div class="profile-mobile-info-rows">
+                                    <div class="profile-mobile-info-row">
+                                        <div class="profile-mobile-info-key">昵称</div>
+                                        <div class="profile-mobile-info-value" id="profileMobileNicknameValue">Loading...</div>
+                                    </div>
+                                    <div class="profile-mobile-info-row">
+                                        <div class="profile-mobile-info-key">邮箱</div>
+                                        <div class="profile-mobile-info-value" id="profileMobileEmailValue">加载中...</div>
+                                    </div>
+                                    <div class="profile-mobile-info-row">
+                                        <div class="profile-mobile-info-key">注册时间</div>
+                                        <div class="profile-mobile-info-value" id="profileMobileMemberSinceValue">加载中...</div>
+                                    </div>
+                                    <div class="profile-mobile-info-row">
+                                        <div class="profile-mobile-info-key">手机号</div>
+                                        <div class="profile-mobile-info-value profile-mobile-info-value--phone">
+                                            <span id="profileMobilePhoneStatus"
+                                                class="profile-mobile-status-pill profile-mobile-status-pill--warn">未绑定</span>
+                                            <button type="button" class="profile-mobile-inline-link"
+                                                onclick="switchProfileTab('security')">前往安全页</button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div id="profileMobileInlineEditor" class="profile-mobile-inline-editor" style="display: none;">
+                                    <input type="text" id="profileMobileNicknameInput" class="profile-mobile-inline-input"
+                                        placeholder="输入新昵称">
+                                    <div class="profile-mobile-inline-actions">
+                                        <button type="button" class="profile-mobile-editor-btn profile-mobile-editor-btn--ghost"
+                                            onclick="toggleNicknameEdit(false)" data-i18n="common.cancel">取消</button>
+                                        <button type="button" class="profile-mobile-editor-btn profile-mobile-editor-btn--primary"
+                                            onclick="saveNickname()" data-i18n="common.save">保存</button>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section class="profile-mobile-card profile-mobile-card--quick">
+                                <div class="profile-mobile-section-head">
+                                    <div class="profile-mobile-section-title">快捷入口</div>
+                                    <div class="profile-mobile-section-note">详情不重复展示</div>
+                                </div>
+                                <div class="profile-mobile-quick-grid">
+                                    <button type="button" class="profile-mobile-quick-card"
+                                        onclick="openProfileWalletView('balance', event)">
+                                        <span class="profile-mobile-quick-arrow"><i class="fas fa-chevron-right"></i></span>
+                                        <span class="profile-mobile-quick-icon"><i class="fas fa-wallet"></i></span>
+                                        <span class="profile-mobile-quick-title">积分钱包</span>
+                                        <span class="profile-mobile-quick-desc">余额、充值与兑换</span>
+                                    </button>
+                                    <button type="button" class="profile-mobile-quick-card"
+                                        onclick="openProfileWalletView('orders', event)">
+                                        <span class="profile-mobile-quick-arrow"><i class="fas fa-chevron-right"></i></span>
+                                        <span class="profile-mobile-quick-icon"><i class="fas fa-receipt"></i></span>
+                                        <span class="profile-mobile-quick-title">交易记录</span>
+                                        <span class="profile-mobile-quick-desc">订单与提示词解锁</span>
+                                    </button>
+                                    <button type="button" class="profile-mobile-quick-card"
+                                        onclick="openProfileWalletView('affiliate', event)">
+                                        <span class="profile-mobile-quick-arrow"><i class="fas fa-chevron-right"></i></span>
+                                        <span class="profile-mobile-quick-icon"><i class="fas fa-bullhorn"></i></span>
+                                        <span class="profile-mobile-quick-title">推广中心</span>
+                                        <span class="profile-mobile-quick-desc">邀请人数与佣金</span>
+                                    </button>
+                                    <button type="button" class="profile-mobile-quick-card"
+                                        onclick="openProfileWalletView('checkin', event)">
+                                        <span class="profile-mobile-quick-arrow"><i class="fas fa-chevron-right"></i></span>
+                                        <span class="profile-mobile-quick-icon"><i class="fas fa-calendar-check"></i></span>
+                                        <span class="profile-mobile-quick-title">每日签到</span>
+                                        <span class="profile-mobile-quick-desc">连续天数与补签</span>
+                                    </button>
+                                </div>
+                            </section>
+                        </div>
 
                         <div class="profile-nickname-section profile-desktop-only">
                             <div id="nicknameDisplay" class="nickname-display">
@@ -1224,7 +1263,7 @@
                             <div id="profileMemberSince" class="profile-member-since-display">加载中...</div>
                         </div>
 
-                        <div class="profile-quick-access-section">
+                        <div class="profile-quick-access-section profile-desktop-only">
                             <div class="profile-section-head">
                                 <div class="profile-section-title">快捷入口</div>
                                 <div class="profile-section-note">详情不重复展示</div>
@@ -1261,11 +1300,20 @@
                             </div>
                         </div>
 
-                        <div class="profile-footer-actions">
+                        <div class="profile-footer-actions profile-desktop-only">
                             <button type="button" class="profile-action-btn profile-action-btn--ghost"
                                 onclick="openProfileWalletView('balance', event)">前往钱包</button>
                             <button type="button" class="profile-action-btn profile-action-btn--primary"
                                 onclick="openProfileEditor(event)">编辑资料</button>
+                        </div>
+
+                        <div class="profile-mobile-footer profile-mobile-only">
+                            <div class="profile-mobile-footer-grid">
+                                <button type="button" class="profile-mobile-footer-btn profile-mobile-footer-btn--ghost"
+                                    onclick="openProfileWalletView('balance', event)">前往钱包</button>
+                                <button type="button" class="profile-mobile-footer-btn profile-mobile-footer-btn--primary"
+                                    onclick="openProfileEditor(event)">编辑资料</button>
+                            </div>
                         </div>
                     </div>
 
@@ -1389,7 +1437,7 @@
                                         placeholder="新密码 (至少6位)" autocomplete="new-password"
                                         data-i18n-placeholder="security.newPassword">
                                 </div>
-                                <button class="gradient-btn" onclick="changePassword('mobile')"
+                                <button class="security-mobile-primary-btn" onclick="changePassword('mobile')"
                                     data-i18n="security.updatePassword">更新密码</button>
                             </div>
 
@@ -1406,11 +1454,11 @@
                                     <input type="text" id="mobile_phoneCodeInput" class="security-input glass-input"
                                         placeholder="输入6位验证码" style="flex: 1;"
                                         data-i18n-placeholder="security.enterVerifyCode">
-                                    <button class="code-btn" id="mobile_sendPhoneCodeBtn"
+                                    <button class="security-mobile-code-btn" id="mobile_sendPhoneCodeBtn"
                                         onclick="sendPhoneVerificationCode('mobile')"
                                         data-i18n="security.getVerifyCode">获取验证码</button>
                                 </div>
-                                <button class="gradient-btn" onclick="bindPhone('mobile')"
+                                <button class="security-mobile-primary-btn" onclick="bindPhone('mobile')"
                                     data-i18n="security.bindPhone">绑定手机号</button>
                             </div>
 
@@ -1420,7 +1468,7 @@
                                 <p class="mobile-section-desc" data-i18n="security.deleteWarning">⚠️
                                     此操作不可恢复，您的所有数据将被永久删除。
                                 </p>
-                                <button class="danger-btn" onclick="deleteAccount()">
+                                <button class="security-mobile-danger-btn" onclick="deleteAccount()">
                                     <i class="fas fa-trash-alt"></i>
                                     <span data-i18n="security.confirmDelete">确认注销</span>
                                 </button>

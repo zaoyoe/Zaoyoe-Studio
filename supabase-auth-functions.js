@@ -3010,7 +3010,7 @@ function openProfileEditor(event) {
 
     const isMobileView = window.innerWidth <= 768;
     const nicknameSection = document.querySelector(isMobileView
-        ? '#profileModal .profile-mobile-essential-card'
+        ? '#profileModal .profile-mobile-card--essential'
         : '#profileModal .profile-nickname-section');
     if (nicknameSection) {
         nicknameSection.scrollIntoView({ behavior: 'smooth', block: 'center' });

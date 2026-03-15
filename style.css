@@ -7766,15 +7766,18 @@ body {
         position: sticky;
         top: 0;
         z-index: 30;
-        padding-top: 12px;
-        margin-bottom: 22px;
+        padding-top: 0;
+        margin: 0 -12px 22px;
     }
 
     #profileModal .profile-mobile-topbar-shell {
-        padding: 18px 18px 14px;
-        border-radius: 28px;
+        padding: 18px 20px 12px;
+        border-radius: 0;
         background: rgba(255, 255, 255, 0.04);
-        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-top: 0;
+        border-left: 0;
+        border-right: 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
         backdrop-filter: blur(20px) saturate(132%);
         -webkit-backdrop-filter: blur(20px) saturate(132%);
         box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
@@ -7806,7 +7809,7 @@ body {
         color: rgba(212, 220, 228, 0.52);
     }
 
-    #profileModal .profile-mobile-close {
+    #profileModal .profile-mobile-toolbar-btn {
         width: 38px;
         height: 38px;
         display: inline-flex;
@@ -7917,8 +7920,17 @@ body {
         display: none !important;
     }
 
+    #profileModal .profile-mobile-sheet {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        gap: 14px;
+        width: 100%;
+        padding-bottom: 116px;
+    }
+
     #profileModal .profile-mobile-hero-card,
-    #profileModal .profile-mobile-essential-card {
+    #profileModal .profile-mobile-card {
         width: 100%;
         max-width: 100%;
     }
@@ -8025,7 +8037,7 @@ body {
         color: #dce8e1;
     }
 
-    #profileModal .profile-mobile-essential-card {
+    #profileModal .profile-mobile-card {
         padding: 18px 16px;
         border: 1px solid rgba(255, 255, 255, 0.06);
         border-radius: 22px;
@@ -8035,8 +8047,26 @@ body {
             0 10px 24px rgba(0, 0, 0, 0.08);
     }
 
-    #profileModal .profile-mobile-essential-card .profile-section-head {
+    #profileModal .profile-mobile-section-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
         margin-bottom: 14px;
+    }
+
+    #profileModal .profile-mobile-section-title {
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: -0.12px;
+        color: rgba(255, 255, 255, 0.96);
+    }
+
+    #profileModal .profile-mobile-section-note {
+        font-size: 12px;
+        color: rgba(212, 220, 228, 0.42);
+        text-align: right;
+        line-height: 1.4;
     }
 
     #profileModal .profile-mobile-info-rows {
@@ -8152,50 +8182,135 @@ body {
         gap: 10px;
     }
 
-    #profileModal .profile-avatar-section {
-        width: 92px;
-        height: 92px;
-        margin: 0 auto;
+    #profileModal .profile-mobile-editor-btn {
+        -webkit-appearance: none;
+        appearance: none;
+        min-height: 44px;
+        border-radius: 14px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        font-size: 14px;
+        font-weight: 600;
+        letter-spacing: 0.1px;
     }
 
-    #profileModal #profileModalNickname {
+    #profileModal .profile-mobile-editor-btn--ghost {
+        background: rgba(255, 255, 255, 0.04);
+        color: rgba(255, 255, 255, 0.92);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    }
+
+    #profileModal .profile-mobile-editor-btn--primary {
+        background: rgba(229, 235, 241, 0.94);
+        color: #0f141a;
+        border-color: rgba(255, 255, 255, 0.18);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.46);
+    }
+
+    #profileModal .profile-mobile-quick-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+    }
+
+    #profileModal .profile-mobile-quick-card {
+        position: relative;
+        -webkit-appearance: none;
+        appearance: none;
+        min-height: 126px;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0;
+        padding: 14px;
+        border-radius: 18px;
+        background: rgba(20, 24, 30, 0.92);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        color: rgba(255, 255, 255, 0.94);
+        text-align: left;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    }
+
+    #profileModal .profile-mobile-quick-icon {
+        width: 38px;
+        height: 38px;
+        display: grid;
+        place-items: center;
+        margin-bottom: 22px;
+        border-radius: 12px;
+        background: rgba(20, 24, 30, 0.92);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        color: rgba(236, 241, 247, 0.84);
+    }
+
+    #profileModal .profile-mobile-quick-title {
+        margin-bottom: 6px;
+        font-size: 14px;
+        font-weight: 600;
+        line-height: 1.35;
+    }
+
+    #profileModal .profile-mobile-quick-desc {
+        font-size: 12px;
+        line-height: 1.46;
+        color: rgba(227, 234, 242, 0.72);
+    }
+
+    #profileModal .profile-mobile-quick-arrow {
+        position: absolute;
+        top: 14px;
+        right: 14px;
+        color: rgba(212, 220, 228, 0.42);
         font-size: 16px;
     }
 
-    #profileModal .profile-front .profile-nickname-section,
-    #profileModal .profile-front .profile-email-section {
-        --profile-info-card-height: 80px;
-        max-width: 100%;
-        padding: 14px 16px;
-        margin-bottom: 0;
-        min-height: var(--profile-info-card-height);
-        height: auto;
-        border-radius: 9px;
+    #profileModal .profile-mobile-footer {
+        position: sticky;
+        left: 0;
+        right: 0;
+        bottom: calc(-18px - env(safe-area-inset-bottom));
+        z-index: 8;
+        width: auto;
+        max-width: none;
+        margin: 8px -12px calc(-18px - env(safe-area-inset-bottom));
+        padding: 12px 20px calc(14px + env(safe-area-inset-bottom));
+        display: grid;
+        grid-template-columns: 1fr 1.15fr;
+        gap: 10px;
+        background: rgba(255, 255, 255, 0.04);
+        border-top: 1px solid rgba(255, 255, 255, 0.05);
+        backdrop-filter: blur(20px) saturate(132%);
+        -webkit-backdrop-filter: blur(20px) saturate(132%);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
     }
 
-    #profileModal .profile-front .profile-nickname-section {
-        margin-top: 0;
+    #profileModal .profile-mobile-footer-grid {
+        display: grid;
+        grid-template-columns: 1fr 1.15fr;
+        gap: 10px;
     }
 
-    #profileModal .profile-front .profile-member-since-section {
-        min-height: 0;
-        height: auto;
-        padding: 4px 12px;
-        margin-bottom: 0;
-        margin-top: 0;
+    #profileModal .profile-mobile-footer-btn {
+        min-height: 48px;
+        border-radius: 15px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        font-size: 14px;
+        font-weight: 600;
+        letter-spacing: 0.1px;
+        -webkit-appearance: none;
+        appearance: none;
     }
 
-    #profileModal .profile-front .profile-quick-access-section,
-    #profileModal .profile-front .profile-footer-actions {
-        max-width: 100%;
+    #profileModal .profile-mobile-footer-btn--ghost {
+        background: rgba(255, 255, 255, 0.04);
+        color: rgba(255, 255, 255, 0.92);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
     }
 
-    #profileModal .profile-front .profile-quick-access-section {
-        padding: 15px 14px;
-    }
-
-    #profileModal .profile-front .profile-quick-card {
-        min-height: 112px;
+    #profileModal .profile-mobile-footer-btn--primary {
+        background: rgba(229, 235, 241, 0.94);
+        color: #0f141a;
+        border-color: rgba(255, 255, 255, 0.18);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.46);
     }
 
     #profileModal .mobile-security-layout {
@@ -8256,7 +8371,7 @@ body {
         box-shadow: none !important;
     }
 
-    #profileModal .mobile-security-layout .code-btn {
+    #profileModal .mobile-security-layout .security-mobile-code-btn {
         background: rgba(255, 255, 255, 0.04) !important;
         border: 1px solid rgba(255, 255, 255, 0.08) !important;
         border-radius: 14px !important;
@@ -8265,8 +8380,8 @@ body {
         padding: 0 14px !important;
     }
 
-    #profileModal .mobile-security-layout .gradient-btn,
-    #profileModal .mobile-security-layout .danger-btn {
+    #profileModal .mobile-security-layout .security-mobile-primary-btn,
+    #profileModal .mobile-security-layout .security-mobile-danger-btn {
         width: 100% !important;
         min-width: 0 !important;
         max-width: none !important;
@@ -8276,35 +8391,18 @@ body {
         padding: 0 16px !important;
     }
 
-    #profileModal .mobile-security-layout .gradient-btn {
+    #profileModal .mobile-security-layout .security-mobile-primary-btn {
         background: rgba(229, 235, 241, 0.94) !important;
         border: 1px solid rgba(255, 255, 255, 0.18) !important;
         color: #0f141a !important;
         box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.46) !important;
     }
 
-    #profileModal .mobile-security-layout .danger-btn {
+    #profileModal .mobile-security-layout .security-mobile-danger-btn {
         background: rgba(193, 149, 149, 0.14) !important;
         border: 1px solid rgba(193, 149, 149, 0.18) !important;
         color: #ead7d7 !important;
         box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03) !important;
     }
 
-    #profileModal .profile-front .profile-email-section label {
-        font-size: 10px;
-        margin-bottom: 4px;
-    }
-
-    #profileModal .profile-front .profile-member-since-section label {
-        font-size: 10px;
-        margin-bottom: 0px;
-    }
-
-    #profileModal .profile-front .profile-email-display {
-        font-size: 13px;
-    }
-
-    #profileModal .profile-front .profile-member-since-display {
-        font-size: 12px;
-    }
 }
