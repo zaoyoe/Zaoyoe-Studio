@@ -7862,16 +7862,16 @@ body {
     #profileModal .profile-mobile-sheet {
         position: relative;
         z-index: 1;
-        display: grid;
-        gap: 24px;
+        display: block;
         width: 100%;
-        padding-bottom: 24px;
+        padding-bottom: 10px;
     }
 
     #profileModal .profile-mobile-hero-card,
     #profileModal .profile-mobile-card {
         width: 100%;
         max-width: 100%;
+        margin-bottom: 14px;
     }
 
     #profileModal .profile-mobile-hero-card {
@@ -7986,8 +7986,8 @@ body {
             0 10px 24px rgba(0, 0, 0, 0.08);
     }
 
-    #profileModal .profile-mobile-sheet > .profile-mobile-card {
-        margin-top: 2px;
+    #profileModal .profile-mobile-sheet > :last-child {
+        margin-bottom: 0;
     }
 
     #profileModal .profile-mobile-section-head {
