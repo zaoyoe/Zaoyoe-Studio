@@ -7703,8 +7703,8 @@ body {
         position: sticky;
         top: 0;
         z-index: 30;
-        padding-top: 12px;
-        margin: 0 0 22px;
+        padding-top: 6px;
+        margin: 0 0 18px;
     }
 
     #profileModal .profile-mobile-topbar-shell {
@@ -7718,7 +7718,7 @@ body {
     }
 
     #profileModal .profile-mobile-topbar-shell {
-        padding: 18px 20px 12px;
+        padding: 16px 20px 12px;
         border-radius: 28px;
         overflow: hidden;
     }
@@ -7906,12 +7906,21 @@ body {
         min-width: 0;
         flex: 1;
         text-align: left;
-        display: flex;
-        flex-direction: column;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-areas:
+            "kicker kicker"
+            "name name"
+            "meta actions"
+            "editor editor";
+        column-gap: 12px;
+        row-gap: 6px;
+        align-items: end;
     }
 
     #profileModal .profile-mobile-hero-kicker {
-        margin-bottom: 6px;
+        grid-area: kicker;
+        margin-bottom: 0;
         color: rgba(255, 255, 255, 0.42);
         font-size: 12px;
         letter-spacing: 0.24px;
@@ -7919,6 +7928,7 @@ body {
     }
 
     #profileModal .profile-mobile-hero-name {
+        grid-area: name;
         font-size: 22px;
         font-weight: 600;
         line-height: 1.1;
@@ -7927,21 +7937,25 @@ body {
     }
 
     #profileModal .profile-mobile-hero-meta {
-        margin-top: 6px;
+        grid-area: meta;
+        margin-top: 0;
         font-size: 14px;
         line-height: 1.48;
         color: rgba(227, 234, 242, 0.72);
+        align-self: end;
     }
 
     #profileModal .profile-mobile-hero-actions {
+        grid-area: actions;
         display: flex;
         justify-content: flex-end;
-        margin-top: 16px;
+        align-self: end;
+        margin-top: 0;
     }
 
     #profileModal .profile-mobile-hero-edit-btn {
         min-height: 36px;
-        padding: 0 14px;
+        padding: 0 12px;
         border-radius: 999px;
         border: 1px solid rgba(255, 255, 255, 0.08);
         background: rgba(255, 255, 255, 0.04);
@@ -8062,6 +8076,7 @@ body {
     }
 
     #profileModal .profile-mobile-inline-editor {
+        grid-area: editor;
         display: grid;
         gap: 10px;
         max-height: 0;

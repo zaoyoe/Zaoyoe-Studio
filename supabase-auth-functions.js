@@ -3012,7 +3012,7 @@ function openProfileEditor(event) {
     const nicknameSection = document.querySelector(isMobileView
         ? '#profileModal .profile-mobile-hero-card'
         : '#profileModal .profile-nickname-section');
-    if (nicknameSection) {
+    if (nicknameSection && !isMobileView) {
         nicknameSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
@@ -3033,7 +3033,11 @@ function openProfileEditor(event) {
 
     if (nicknameInput) {
         window.setTimeout(() => {
-            nicknameInput.focus();
+            try {
+                nicknameInput.focus({ preventScroll: true });
+            } catch (_) {
+                nicknameInput.focus();
+            }
             nicknameInput.select();
         }, 60);
     }
@@ -3058,7 +3062,11 @@ function toggleNicknameEdit(show) {
             void mobileEditor.offsetWidth;
             mobileEditor.classList.add('is-visible');
             window.setTimeout(() => {
-                mobileInput.focus();
+                try {
+                    mobileInput.focus({ preventScroll: true });
+                } catch (_) {
+                    mobileInput.focus();
+                }
                 mobileInput.select();
             }, 180);
         } else {
