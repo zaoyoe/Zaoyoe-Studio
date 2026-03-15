@@ -57,10 +57,8 @@
 
     <!-- Framer Home Styles -->
     <link rel="stylesheet" href="./css/framer_home.css?v=NAV_UNIFIED_V9">
-    <link rel="stylesheet" href="security-cards.css?v=20260315_PROFILE_MOBILE_REBUILD_6">
-
     <!-- Core Styles (for modals, profile, etc) -->
-    <link rel="stylesheet" href="style.css?v=20260315_PROFILE_MOBILE_REBUILD_33">
+    <link rel="stylesheet" href="style.css?v=20260315_PROFILE_MODAL_REWRITE_35">
     <link rel="stylesheet" href="css/auth-sheet.css?v=20260315_AUTH_SHEET_RADIUS_33">
     <link rel="stylesheet" href="avatar-fix.css?v=20260314_AVATAR_UNIFIED_1">
 
@@ -282,7 +280,7 @@
 
     <!-- Auth System (integrated from inject-auth.js) -->
     <script src="./js/avatar-uploader.js" defer></script>
-    <script src="./supabase-auth-functions.js?v=20260315_PROFILE_MOBILE_REBUILD_13" defer></script>
+    <script src="./supabase-auth-functions.js?v=20260315_PROFILE_MODAL_REWRITE_15" defer></script>
     <script src="./js/ios-scroll-lock.js?v=20260314_SCROLL_LOCK_AUTH_SHEET_7" defer></script>
     <script src="./inject-auth.js?v=20260314_LOGIN_DRAG_HANDLE_28" defer></script>
     <script src="./notification-client.js?v=20260314_NOTIF_SCROLL_LOCK_1" defer></script>
@@ -1077,7 +1075,7 @@
         })();
     </script>
     <!-- Profile Modal (for user profile/security settings) -->
-    <script src="security-cards.js?v=20260313_PHONE_TEXT_INPUT_1" defer></script>
+    <script src="security-cards.js?v=20260315_PROFILE_MODAL_REWRITE_3" defer></script>
     <div class="modal-overlay" id="profileModal" onmousedown="closeModal(event)" onmouseup="closeModal(event)">
         <div class="modal-content profile-modal" onclick="event.stopPropagation()">
             <div class="profile-mobile-topbar">
@@ -1092,355 +1090,155 @@
                 </div>
             </div>
             <div class="profile-modal-scroll">
-            <div class="mac-controls">
-                <div class="mac-dot red" onclick="window.closeProfileModal ? window.closeProfileModal() : document.getElementById('profileModal').classList.remove('active')"><i
-                        class="fas fa-times"></i></div>
-                <div class="mac-dot yellow"></div>
-                <div class="mac-dot green"></div>
-            </div>
+                <div class="profile-flip-container">
+                    <div class="profile-flip-inner">
+                        <div id="view-profile" class="profile-view profile-front">
+                            <input type="file" id="avatarUpload" accept="image/*" style="display: none;"
+                                onchange="handleAvatarUpload(event)">
 
-            <div class="profile-tabs">
-                <div class="tab-item active" data-profile-tab="profile" onclick="switchProfileTab('profile')" data-i18n="profile.profileTab">资料
-                </div>
-                <div class="tab-item" data-profile-tab="security" onclick="switchProfileTab('security')" data-i18n="profile.securityTab">安全</div>
-            </div>
-
-            <div class="profile-flip-container">
-                <div class="profile-flip-inner">
-                    <!-- View 1: Profile -->
-                    <div id="view-profile" class="profile-view profile-front">
-                        <div class="modal-title" data-i18n="profile.title">个人资料</div>
-                        <div class="profile-avatar-section profile-desktop-only" onclick="triggerAvatarUpload()">
-                            <img id="profileModalAvatar" src="" alt="Avatar">
-                            <div class="avatar-upload-hint">
-                                <i class="fas fa-camera"></i>
-                                <span data-i18n="profile.changeAvatar">更换头像</span>
-                            </div>
-                        </div>
-                        <input type="file" id="avatarUpload" accept="image/*" style="display: none;"
-                            onchange="handleAvatarUpload(event)">
-
-                        <div class="profile-mobile-sheet profile-mobile-only">
-                            <section class="profile-mobile-hero-card">
-                                <button type="button" class="profile-mobile-hero-avatar" onclick="triggerAvatarUpload()"
-                                    aria-label="更换头像" data-i18n-title="profile.changeAvatar">
-                                    <img id="profileModalAvatarMobile" src="" alt="Avatar">
-                                    <span id="profileModalAvatarMobileFallback"
-                                        class="profile-mobile-hero-avatar-fallback">U</span>
-                                    <span class="profile-mobile-hero-avatar-editmark" aria-hidden="true"></span>
-                                </button>
-                                <div class="profile-mobile-hero-main">
-                                    <div class="profile-mobile-hero-kicker" data-i18n="profile.accountKicker">账户</div>
-                                    <div class="profile-mobile-hero-name" id="profileMobileHeroName">Loading...</div>
-                                    <div class="profile-mobile-hero-meta">
-                                        <span id="profileMobileHeroEmail">加载中...</span><br>
-                                        <span id="profileMobileHeroId">ID -</span>
-                                    </div>
-                                    <div class="profile-mobile-hero-actions">
-                                        <button type="button" class="profile-mobile-hero-edit-btn"
-                                            onclick="openProfileEditor(event)" data-i18n="profile.editShort">编辑</button>
-                                    </div>
-                                </div>
-                                <div id="profileMobileInlineEditor" class="profile-mobile-inline-editor">
-                                    <input type="text" id="profileMobileNicknameInput" class="profile-mobile-inline-input"
-                                        placeholder="输入新昵称" data-i18n-placeholder="profile.enterNewNickname">
-                                    <div class="profile-mobile-inline-actions">
-                                        <button type="button" class="profile-mobile-editor-btn profile-mobile-editor-btn--ghost"
-                                            onclick="toggleNicknameEdit(false)" data-i18n="common.cancel">取消</button>
-                                        <button type="button" class="profile-mobile-editor-btn profile-mobile-editor-btn--primary"
-                                            onclick="saveNickname()" data-i18n="common.save">保存</button>
-                                    </div>
-                                </div>
-                            </section>
-
-                            <section class="profile-mobile-card profile-mobile-card--essential">
-                                <div class="profile-mobile-section-head">
-                                    <div class="profile-mobile-section-title" data-i18n="profile.essentialInfo">必要资料</div>
-                                </div>
-                                <div class="profile-mobile-info-rows">
-                                    <div class="profile-mobile-info-row">
-                                        <div class="profile-mobile-info-key" data-i18n="profile.nicknameLabel">昵称</div>
-                                        <div class="profile-mobile-info-value" id="profileMobileNicknameValue">Loading...</div>
-                                    </div>
-                                    <div class="profile-mobile-info-row">
-                                        <div class="profile-mobile-info-key" data-i18n="profile.emailLabel">邮箱</div>
-                                        <div class="profile-mobile-info-value" id="profileMobileEmailValue">加载中...</div>
-                                    </div>
-                                    <div class="profile-mobile-info-row">
-                                        <div class="profile-mobile-info-key" data-i18n="profile.registeredAt">注册时间</div>
-                                        <div class="profile-mobile-info-value" id="profileMobileMemberSinceValue">加载中...</div>
-                                    </div>
-                                </div>
-                            </section>
-
-                            <section class="profile-mobile-card profile-mobile-card--quick">
-                                <div class="profile-mobile-section-head">
-                                    <div class="profile-mobile-section-title" data-i18n="profile.quickAccess">快捷入口</div>
-                                </div>
-                                <div class="profile-mobile-quick-grid">
-                                    <button type="button" class="profile-mobile-quick-card"
-                                        onclick="openProfileWalletView('balance', event)">
-                                        <span class="profile-mobile-quick-arrow"><i class="fas fa-chevron-right"></i></span>
-                                        <span class="profile-mobile-quick-icon"><i class="fas fa-wallet"></i></span>
-                                        <span class="profile-mobile-quick-title" data-i18n="profile.pointsWallet">积分钱包</span>
-                                        <span class="profile-mobile-quick-desc" data-i18n="profile.pointsWalletDesc">余额、充值与兑换</span>
+                            <div class="profile-mobile-sheet">
+                                <section class="profile-mobile-hero-card">
+                                    <button type="button" class="profile-mobile-hero-avatar" onclick="triggerAvatarUpload()"
+                                        aria-label="更换头像" data-i18n-title="profile.changeAvatar">
+                                        <img id="profileModalAvatarMobile" src="" alt="Avatar">
+                                        <span id="profileModalAvatarMobileFallback"
+                                            class="profile-mobile-hero-avatar-fallback">U</span>
+                                        <span class="profile-mobile-hero-avatar-editmark" aria-hidden="true"></span>
                                     </button>
-                                    <button type="button" class="profile-mobile-quick-card"
-                                        onclick="openProfileWalletView('orders', event)">
-                                        <span class="profile-mobile-quick-arrow"><i class="fas fa-chevron-right"></i></span>
-                                        <span class="profile-mobile-quick-icon"><i class="fas fa-receipt"></i></span>
-                                        <span class="profile-mobile-quick-title" data-i18n="wallet.transactionRecords">交易记录</span>
-                                        <span class="profile-mobile-quick-desc" data-i18n="profile.transactionRecordsDesc">订单与提示词解锁</span>
-                                    </button>
-                                    <button type="button" class="profile-mobile-quick-card"
-                                        onclick="openProfileWalletView('affiliate', event)">
-                                        <span class="profile-mobile-quick-arrow"><i class="fas fa-chevron-right"></i></span>
-                                        <span class="profile-mobile-quick-icon"><i class="fas fa-bullhorn"></i></span>
-                                        <span class="profile-mobile-quick-title" data-i18n="profile.affiliateCenter">推广中心</span>
-                                        <span class="profile-mobile-quick-desc" data-i18n="profile.affiliateCenterDesc">邀请人数与佣金</span>
-                                    </button>
-                                    <button type="button" class="profile-mobile-quick-card"
-                                        onclick="openProfileWalletView('checkin', event)">
-                                        <span class="profile-mobile-quick-arrow"><i class="fas fa-chevron-right"></i></span>
-                                        <span class="profile-mobile-quick-icon"><i class="fas fa-calendar-check"></i></span>
-                                        <span class="profile-mobile-quick-title" data-i18n="wallet.dailyCheckin">每日签到</span>
-                                        <span class="profile-mobile-quick-desc" data-i18n="profile.dailyCheckinDesc">连续天数与补签</span>
-                                    </button>
-                                </div>
-                            </section>
-                        </div>
-
-                        <div class="profile-nickname-section profile-desktop-only">
-                            <div id="nicknameDisplay" class="nickname-display">
-                                <span id="profileModalNickname">Loading...</span>
-                                <i class="fas fa-pen edit-icon" onclick="toggleNicknameEdit(true)"></i>
-                            </div>
-                            <div id="nicknameEdit" class="nickname-edit" style="display: none;">
-                                <input type="text" id="nicknameInput" placeholder="输入新昵称">
-                                <div class="edit-actions">
-                                    <button class="cancel-btn" onclick="toggleNicknameEdit(false)"
-                                        data-i18n="common.cancel">取消</button>
-                                    <button class="save-btn" onclick="saveNickname()"
-                                        data-i18n="common.save">保存</button>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="profile-email-section profile-desktop-only">
-                            <label data-i18n="profile.emailAddress">邮箱地址</label>
-                            <div id="profileModalEmail" class="profile-email-display"></div>
-                        </div>
-
-                        <div class="profile-member-since-section profile-desktop-only">
-                            <label data-i18n="profile.memberSince">注册时间</label>
-                            <div id="profileMemberSince" class="profile-member-since-display">加载中...</div>
-                        </div>
-
-                        <div class="profile-quick-access-section profile-desktop-only">
-                            <div class="profile-section-head">
-                                <div class="profile-section-title" data-i18n="profile.quickAccess">快捷入口</div>
-                                <div class="profile-section-note" data-i18n="profile.quickAccessNote">详情不重复展示</div>
-                            </div>
-                            <div class="profile-quick-grid">
-                                <button type="button" class="profile-quick-card"
-                                    onclick="openProfileWalletView('balance', event)">
-                                    <span class="profile-quick-arrow"><i class="fas fa-chevron-right"></i></span>
-                                    <span class="profile-quick-icon"><i class="fas fa-wallet"></i></span>
-                                    <span class="profile-quick-title" data-i18n="profile.pointsWallet">积分钱包</span>
-                                    <span class="profile-quick-desc" data-i18n="profile.pointsWalletDesc">余额、充值与兑换</span>
-                                </button>
-                                <button type="button" class="profile-quick-card"
-                                    onclick="openProfileWalletView('orders', event)">
-                                    <span class="profile-quick-arrow"><i class="fas fa-chevron-right"></i></span>
-                                    <span class="profile-quick-icon"><i class="fas fa-receipt"></i></span>
-                                    <span class="profile-quick-title" data-i18n="wallet.transactionRecords">交易记录</span>
-                                    <span class="profile-quick-desc" data-i18n="profile.transactionRecordsDesc">订单与提示词解锁</span>
-                                </button>
-                                <button type="button" class="profile-quick-card"
-                                    onclick="openProfileWalletView('affiliate', event)">
-                                    <span class="profile-quick-arrow"><i class="fas fa-chevron-right"></i></span>
-                                    <span class="profile-quick-icon"><i class="fas fa-bullhorn"></i></span>
-                                    <span class="profile-quick-title" data-i18n="profile.affiliateCenter">推广中心</span>
-                                    <span class="profile-quick-desc" data-i18n="profile.affiliateCenterDesc">邀请人数与佣金</span>
-                                </button>
-                                <button type="button" class="profile-quick-card"
-                                    onclick="openProfileWalletView('checkin', event)">
-                                    <span class="profile-quick-arrow"><i class="fas fa-chevron-right"></i></span>
-                                    <span class="profile-quick-icon"><i class="fas fa-calendar-check"></i></span>
-                                    <span class="profile-quick-title" data-i18n="wallet.dailyCheckin">每日签到</span>
-                                    <span class="profile-quick-desc" data-i18n="profile.dailyCheckinDesc">连续天数与补签</span>
-                                </button>
-                            </div>
-                        </div>
-
-                        <div class="profile-footer-actions profile-desktop-only">
-                            <button type="button" class="profile-action-btn profile-action-btn--ghost"
-                                onclick="openProfileWalletView('balance', event)" data-i18n="profile.goToWallet">前往钱包</button>
-                            <button type="button" class="profile-action-btn profile-action-btn--primary"
-                                onclick="openProfileEditor(event)" data-i18n="profile.editProfile">编辑资料</button>
-                        </div>
-                    </div>
-
-                    <!-- View 2: Security -->
-                    <div id="view-security" class="profile-view profile-back">
-                        <div class="modal-title" data-i18n="security.title">安全设置</div>
-
-                        <div class="security-cards-layout">
-                            <!-- Left: Security Menu Cards -->
-                            <div class="security-menu">
-                                <div class="security-card active"
-                                    onclick="expandSecurityCard(event, 'change-password')">
-                                    <div class="security-card-icon"><i class="fas fa-key"></i></div>
-                                    <div class="security-card-content">
-                                        <div class="security-card-title" data-i18n="security.changePassword">修改密码</div>
-                                    </div>
-                                    <i class="fas fa-chevron-right security-card-arrow"></i>
-                                </div>
-
-                                <div class="security-card" onclick="expandSecurityCard(event, 'bind-phone')">
-                                    <div class="security-card-icon"><i class="fas fa-mobile-alt"></i></div>
-                                    <div class="security-card-content">
-                                        <div class="security-card-title" data-i18n="security.bindPhone">绑定手机号</div>
-                                    </div>
-                                    <i class="fas fa-chevron-right security-card-arrow"></i>
-                                </div>
-
-                                <div class="security-card danger-card"
-                                    onclick="expandSecurityCard(event, 'delete-account')">
-                                    <div class="security-card-icon danger"><i class="fas fa-exclamation-triangle"></i>
-                                    </div>
-                                    <div class="security-card-content">
-                                        <div class="security-card-title danger" data-i18n="security.deleteAccount">注销账号
+                                    <div class="profile-mobile-hero-main">
+                                        <div class="profile-mobile-hero-kicker" data-i18n="profile.accountKicker">账户</div>
+                                        <div class="profile-mobile-hero-name" id="profileMobileHeroName">Loading...</div>
+                                        <div class="profile-mobile-hero-meta">
+                                            <span id="profileMobileHeroEmail">加载中...</span><br>
+                                            <span id="profileMobileHeroId">ID -</span>
+                                        </div>
+                                        <div class="profile-mobile-hero-actions">
+                                            <button type="button" class="profile-mobile-hero-edit-btn"
+                                                onclick="openProfileEditor(event)" data-i18n="profile.editShort">编辑</button>
                                         </div>
                                     </div>
-                                    <i class="fas fa-chevron-right security-card-arrow"></i>
-                                </div>
-                            </div>
-
-                            <!-- Right: Expanded Content Area -->
-                            <div class="security-detail-panel" id="securityDetailPanel">
-                                <!-- Default Security Overview Panel -->
-                                <div class="security-detail-content" id="detail-security-overview"
-                                    style="display: block;">
-                                    <div
-                                        style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%;">
-                                        <div class="security-overview-icon-container"
-                                            style="width: 80px; height: 80px; background: rgba(155, 93, 229, 0.1); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-bottom: 24px; box-shadow: 0 0 30px rgba(155, 93, 229, 0.2);">
-                                            <i class="fas fa-shield-alt" style="font-size: 36px; color: #9b5de5;"></i>
-                                        </div>
-                                        <h3 class="detail-title" data-i18n="security.securityCenter">账号安全中心</h3>
-                                        <p class="detail-desc" data-i18n="security.accountProtected">您的账号当前处于安全保护中</p>
-                                        <div
-                                            style="margin-top: 20px; padding: 12px 20px; background: rgba(255, 255, 255, 0.05); border-radius: 12px; font-size: 13px; color: rgba(255, 255, 255, 0.5); display: flex; align-items: center; gap: 8px;">
-                                            <i class="fas fa-info-circle"></i>
-                                            <span data-i18n="security.selectFromLeft">请从左侧选择项目进行安全设置</span>
+                                    <div id="profileMobileInlineEditor" class="profile-mobile-inline-editor">
+                                        <input type="text" id="profileMobileNicknameInput" class="profile-mobile-inline-input"
+                                            placeholder="输入新昵称" data-i18n-placeholder="profile.enterNewNickname">
+                                        <div class="profile-mobile-inline-actions">
+                                            <button type="button" class="profile-mobile-editor-btn profile-mobile-editor-btn--ghost"
+                                                onclick="toggleNicknameEdit(false)" data-i18n="common.cancel">取消</button>
+                                            <button type="button" class="profile-mobile-editor-btn profile-mobile-editor-btn--primary"
+                                                onclick="saveNickname()" data-i18n="common.save">保存</button>
                                         </div>
                                     </div>
-                                </div>
+                                </section>
 
-                                <!-- Change Password Panel -->
-                                <div class="security-detail-content" id="detail-change-password" style="display: none;">
-                                    <h3 class="detail-title" data-i18n="security.changePassword">修改密码</h3>
-                                    <input type="password" id="oldPasswordInput" placeholder="当前密码"
-                                        class="security-input glass-input" autocomplete="new-password"
-                                        data-i18n-placeholder="security.currentPassword">
-                                    <input type="password" id="newPasswordInput" placeholder="新密码 (至少6位)"
-                                        class="security-input glass-input" autocomplete="new-password"
-                                        data-i18n-placeholder="security.newPassword">
-                                    <button class="gradient-btn" onclick="changePassword()"
+                                <section class="profile-mobile-card profile-mobile-card--essential">
+                                    <div class="profile-mobile-section-head">
+                                        <div class="profile-mobile-section-title" data-i18n="profile.essentialInfo">必要资料</div>
+                                    </div>
+                                    <div class="profile-mobile-info-rows">
+                                        <div class="profile-mobile-info-row">
+                                            <div class="profile-mobile-info-key" data-i18n="profile.nicknameLabel">昵称</div>
+                                            <div class="profile-mobile-info-value" id="profileMobileNicknameValue">Loading...</div>
+                                        </div>
+                                        <div class="profile-mobile-info-row">
+                                            <div class="profile-mobile-info-key" data-i18n="profile.emailLabel">邮箱</div>
+                                            <div class="profile-mobile-info-value" id="profileMobileEmailValue">加载中...</div>
+                                        </div>
+                                        <div class="profile-mobile-info-row">
+                                            <div class="profile-mobile-info-key" data-i18n="profile.registeredAt">注册时间</div>
+                                            <div class="profile-mobile-info-value" id="profileMobileMemberSinceValue">加载中...</div>
+                                        </div>
+                                    </div>
+                                </section>
+
+                                <section class="profile-mobile-card profile-mobile-card--quick">
+                                    <div class="profile-mobile-section-head">
+                                        <div class="profile-mobile-section-title" data-i18n="profile.quickAccess">快捷入口</div>
+                                    </div>
+                                    <div class="profile-mobile-quick-grid">
+                                        <button type="button" class="profile-mobile-quick-card"
+                                            onclick="openProfileWalletView('balance', event)">
+                                            <span class="profile-mobile-quick-arrow"><i class="fas fa-chevron-right"></i></span>
+                                            <span class="profile-mobile-quick-icon"><i class="fas fa-wallet"></i></span>
+                                            <span class="profile-mobile-quick-title" data-i18n="profile.pointsWallet">积分钱包</span>
+                                            <span class="profile-mobile-quick-desc" data-i18n="profile.pointsWalletDesc">余额、充值与兑换</span>
+                                        </button>
+                                        <button type="button" class="profile-mobile-quick-card"
+                                            onclick="openProfileWalletView('orders', event)">
+                                            <span class="profile-mobile-quick-arrow"><i class="fas fa-chevron-right"></i></span>
+                                            <span class="profile-mobile-quick-icon"><i class="fas fa-receipt"></i></span>
+                                            <span class="profile-mobile-quick-title" data-i18n="wallet.transactionRecords">交易记录</span>
+                                            <span class="profile-mobile-quick-desc" data-i18n="profile.transactionRecordsDesc">订单与提示词解锁</span>
+                                        </button>
+                                        <button type="button" class="profile-mobile-quick-card"
+                                            onclick="openProfileWalletView('affiliate', event)">
+                                            <span class="profile-mobile-quick-arrow"><i class="fas fa-chevron-right"></i></span>
+                                            <span class="profile-mobile-quick-icon"><i class="fas fa-bullhorn"></i></span>
+                                            <span class="profile-mobile-quick-title" data-i18n="profile.affiliateCenter">推广中心</span>
+                                            <span class="profile-mobile-quick-desc" data-i18n="profile.affiliateCenterDesc">邀请人数与佣金</span>
+                                        </button>
+                                        <button type="button" class="profile-mobile-quick-card"
+                                            onclick="openProfileWalletView('checkin', event)">
+                                            <span class="profile-mobile-quick-arrow"><i class="fas fa-chevron-right"></i></span>
+                                            <span class="profile-mobile-quick-icon"><i class="fas fa-calendar-check"></i></span>
+                                            <span class="profile-mobile-quick-title" data-i18n="wallet.dailyCheckin">每日签到</span>
+                                            <span class="profile-mobile-quick-desc" data-i18n="profile.dailyCheckinDesc">连续天数与补签</span>
+                                        </button>
+                                    </div>
+                                </section>
+                            </div>
+                        </div>
+
+                        <div id="view-security" class="profile-view profile-back">
+                            <div class="mobile-security-layout profile-security-layout">
+                                <div class="mobile-security-section">
+                                    <h3 class="mobile-section-title" data-i18n="security.changePassword">修改密码</h3>
+                                    <div class="input-group">
+                                        <input type="password" id="mobile_oldPassword" class="security-input glass-input"
+                                            placeholder="当前密码" autocomplete="new-password"
+                                            data-i18n-placeholder="security.currentPassword">
+                                    </div>
+                                    <div class="input-group">
+                                        <input type="password" id="mobile_newPassword" class="security-input glass-input"
+                                            placeholder="新密码 (至少6位)" autocomplete="new-password"
+                                            data-i18n-placeholder="security.newPassword">
+                                    </div>
+                                    <button class="security-mobile-primary-btn" onclick="changePassword()"
                                         data-i18n="security.updatePassword">更新密码</button>
                                 </div>
 
-                                <!-- Bind Phone Panel -->
-                                <div class="security-detail-content" id="detail-bind-phone" style="display: none;">
-                                    <h3 class="detail-title" data-i18n="security.bindPhone">绑定手机号</h3>
-                                    <p class="detail-desc" data-i18n="security.bindPhoneDesc">绑定手机号可以增强账户安全性</p>
-                                    <div class="input-group input-with-action"
-                                        style="max-width: 100%; margin-bottom: 12px;">
-                                        <input type="text" id="phoneNumberInput" placeholder="输入手机号"
-                                            class="security-input glass-input" maxlength="11"
+                                <div class="mobile-security-section">
+                                    <h3 class="mobile-section-title" data-i18n="security.bindPhone">绑定手机号</h3>
+                                    <p class="mobile-section-desc" data-i18n="security.bindPhoneDesc">绑定手机号可以增强账户安全性</p>
+                                    <div class="input-group">
+                                        <input type="text" id="mobile_phoneNumberInput" class="security-input glass-input"
+                                            placeholder="输入手机号" maxlength="11"
                                             data-i18n-placeholder="security.enterPhone">
-                                        <button type="button" class="verify-code-btn" id="sendPhoneCodeBtn"
+                                    </div>
+                                    <div class="input-group" style="display: flex; gap: 10px;">
+                                        <input type="text" id="mobile_phoneCodeInput" class="security-input glass-input"
+                                            placeholder="输入6位验证码" style="flex: 1;"
+                                            data-i18n-placeholder="security.enterVerifyCode">
+                                        <button class="security-mobile-code-btn" id="mobile_sendPhoneCodeBtn"
                                             onclick="sendPhoneVerificationCode()"
                                             data-i18n="security.getVerifyCode">获取验证码</button>
                                     </div>
-                                    <input type="text" id="phoneCodeInput" placeholder="输入6位验证码"
-                                        class="security-input glass-input" maxlength="6"
-                                        data-i18n-placeholder="security.enterVerifyCode">
-                                    <button class="gradient-btn" onclick="bindPhone()"
+                                    <button class="security-mobile-primary-btn" onclick="bindPhone()"
                                         data-i18n="security.bindPhone">绑定手机号</button>
                                 </div>
 
-                                <!-- Delete Account Panel -->
-                                <div class="security-detail-content" id="detail-delete-account">
-                                    <h3 class="detail-title danger" data-i18n="security.deleteAccount">注销账号</h3>
-                                    <p class="detail-desc" data-i18n="security.deleteWarning">⚠️ 此操作不可恢复，您的所有数据将被永久删除。
+                                <div class="mobile-security-section">
+                                    <h3 class="mobile-section-title danger" data-i18n="security.deleteAccount">注销账号</h3>
+                                    <p class="mobile-section-desc" data-i18n="security.deleteWarning">⚠️
+                                        此操作不可恢复，您的所有数据将被永久删除。
                                     </p>
-                                    <div class="danger-zone">
-                                        <button class="danger-btn" onclick="deleteAccount()">
-                                            <i class="fas fa-trash-alt"></i>
-                                            <span data-i18n="security.confirmDelete">确认注销</span>
-                                        </button>
-                                    </div>
+                                    <button class="security-mobile-danger-btn" onclick="deleteAccount()">
+                                        <i class="fas fa-trash-alt"></i>
+                                        <span data-i18n="security.confirmDelete">确认注销</span>
+                                    </button>
                                 </div>
-                            </div>
-                        </div>
-
-                        <!-- Mobile Security Layout (Visible only on mobile) -->
-                        <div class="mobile-security-layout">
-                            <!-- Section 1: Change Password -->
-                            <div class="mobile-security-section">
-                                <h3 class="mobile-section-title" data-i18n="security.changePassword">修改密码</h3>
-                                <div class="input-group">
-                                    <input type="password" id="mobile_oldPassword" class="security-input glass-input"
-                                        placeholder="当前密码" autocomplete="new-password"
-                                        data-i18n-placeholder="security.currentPassword">
-                                </div>
-                                <div class="input-group">
-                                    <input type="password" id="mobile_newPassword" class="security-input glass-input"
-                                        placeholder="新密码 (至少6位)" autocomplete="new-password"
-                                        data-i18n-placeholder="security.newPassword">
-                                </div>
-                                <button class="security-mobile-primary-btn" onclick="changePassword('mobile')"
-                                    data-i18n="security.updatePassword">更新密码</button>
-                            </div>
-
-                            <!-- Section 2: Bind Phone -->
-                            <div class="mobile-security-section">
-                                <h3 class="mobile-section-title" data-i18n="security.bindPhone">绑定手机号</h3>
-                                <p class="mobile-section-desc" data-i18n="security.bindPhoneDesc">绑定手机号可以增强账户安全性</p>
-                                <div class="input-group">
-                                    <input type="text" id="mobile_phoneNumberInput" class="security-input glass-input"
-                                        placeholder="输入手机号" maxlength="11"
-                                        data-i18n-placeholder="security.enterPhone">
-                                </div>
-                                <div class="input-group" style="display: flex; gap: 10px;">
-                                    <input type="text" id="mobile_phoneCodeInput" class="security-input glass-input"
-                                        placeholder="输入6位验证码" style="flex: 1;"
-                                        data-i18n-placeholder="security.enterVerifyCode">
-                                    <button class="security-mobile-code-btn" id="mobile_sendPhoneCodeBtn"
-                                        onclick="sendPhoneVerificationCode('mobile')"
-                                        data-i18n="security.getVerifyCode">获取验证码</button>
-                                </div>
-                                <button class="security-mobile-primary-btn" onclick="bindPhone('mobile')"
-                                    data-i18n="security.bindPhone">绑定手机号</button>
-                            </div>
-
-                            <!-- Section 3: Delete Account -->
-                            <div class="mobile-security-section">
-                                <h3 class="mobile-section-title danger" data-i18n="security.deleteAccount">注销账号</h3>
-                                <p class="mobile-section-desc" data-i18n="security.deleteWarning">⚠️
-                                    此操作不可恢复，您的所有数据将被永久删除。
-                                </p>
-                                <button class="security-mobile-danger-btn" onclick="deleteAccount()">
-                                    <i class="fas fa-trash-alt"></i>
-                                    <span data-i18n="security.confirmDelete">确认注销</span>
-                                </button>
                             </div>
                         </div>
                     </div>
                 </div>
-            </div>
             </div>
         </div>
     </div>

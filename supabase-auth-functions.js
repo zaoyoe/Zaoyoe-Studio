@@ -896,33 +896,12 @@ function getShortProfileAccountId(rawId) {
     return String(rawId).replace(/-/g, '').slice(0, 6).toUpperCase() || '-';
 }
 
-function resolveProfilePhone(user, profile) {
-    return (
-        profile?.phone ||
-        profile?.phone_number ||
-        user?.phone ||
-        user?.user_metadata?.phone ||
-        user?.user_metadata?.phone_number ||
-        ''
-    );
-}
-
-function formatProfilePhone(phone) {
-    const digits = String(phone || '').replace(/\D/g, '');
-    if (!digits) return '';
-    if (digits.length >= 7) {
-        return `${digits.slice(0, 3)}****${digits.slice(-4)}`;
-    }
-    return digits;
-}
-
 function updateProfileMobileSummary(data = {}) {
     const {
         nickname,
         email,
         memberSince,
-        userId,
-        phone
+        userId
     } = data;
 
     if (nickname) {
@@ -942,26 +921,31 @@ function updateProfileMobileSummary(data = {}) {
     if (userId) {
         setTextContent('profileMobileHeroId', `ID ${getShortProfileAccountId(userId)}`);
     }
-
-    if (phone !== undefined) {
-        const phoneStatus = document.getElementById('profileMobilePhoneStatus');
-        if (phoneStatus) {
-            const hasPhone = !!String(phone || '').trim();
-            phoneStatus.textContent = hasPhone ? formatProfilePhone(phone) || '已绑定' : '未绑定';
-            phoneStatus.classList.toggle('profile-mobile-status-pill--safe', hasPhone);
-            phoneStatus.classList.toggle('profile-mobile-status-pill--warn', !hasPhone);
-        }
-    }
-
     const avatarFallback = document.getElementById('profileModalAvatarMobileFallback');
     if (avatarFallback && (nickname || email)) {
         avatarFallback.textContent = getProfileDisplayInitial(nickname || email);
     }
 }
 
+function formatProfileMemberSince(dateLike) {
+    const date = dateLike instanceof Date ? dateLike : new Date(dateLike);
+    if (Number.isNaN(date.getTime())) return '';
+
+    const year = date.getFullYear();
+    const month = date.getMonth() + 1;
+    const day = date.getDate();
+
+    if (window.i18n?.isEnglish?.()) {
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        return `${monthNames[month - 1]} ${day}, ${year}`;
+    }
+
+    return `${year}年${month}月${day}日`;
+}
+
 function setProfileModalAvatar(avatarUrl, fallbackSeed = 'User', options = {}) {
     const { preferImmediate = false, keepCurrentOnEmpty = true } = options;
-    const avatarTargets = Array.from(document.querySelectorAll('#profileModalAvatar, #profileModalAvatarMobile'));
+    const avatarTargets = Array.from(document.querySelectorAll('#profileModalAvatarMobile'));
     if (!avatarTargets.length) return;
 
     const fallbackUrl = getAvatarFallbackUrl(fallbackSeed);
@@ -1043,7 +1027,6 @@ function updateUserUI(user, options = {}) {
     const navAvatar = document.getElementById('navUserAvatar');
     const btnText = document.getElementById('authBtnText');
     const userDropdown = document.getElementById('userDropdown');
-    const profileModalEmail = document.getElementById('profileModalEmail');
     const enterStudioBtn = document.getElementById('enterStudioBtn');
 
     if (user) {
@@ -1131,7 +1114,6 @@ function updateUserUI(user, options = {}) {
         const authBtn = document.getElementById('authBtn');
         if (authBtn) authBtn.classList.add('logged-in');
 
-        if (profileModalEmail) profileModalEmail.textContent = user.email || '未绑定邮箱';
         updateProfileMobileSummary({
             nickname: user.nickname || user.username || 'User',
             email: user.email || '',
@@ -2573,9 +2555,6 @@ function detachProfileModalViewportHandlers() {
 }
 
 function hydrateProfileModalFromCache() {
-    const nicknameSpan = document.getElementById('profileModalNickname');
-    const emailDiv = document.getElementById('profileModalEmail');
-
     try {
         const cachedRaw = localStorage.getItem('cached_user_profile');
         if (!cachedRaw) return;
@@ -2586,17 +2565,10 @@ function hydrateProfileModalFromCache() {
         const cachedNickname = cached.nickname || cached.username || cached.email?.split('@')[0] || '';
         const cachedEmail = cached.email || '';
 
-        if (cachedNickname && nicknameSpan) {
-            nicknameSpan.textContent = cachedNickname;
-        }
-        if (cachedEmail && emailDiv) {
-            emailDiv.textContent = cachedEmail;
-        }
         updateProfileMobileSummary({
             nickname: cachedNickname,
             email: cachedEmail,
-            userId: cached.objectId || cached.id || '',
-            phone: cached.phone || cached.phone_number || ''
+            userId: cached.objectId || cached.id || ''
         });
         if (cached.avatarUrl || cachedEmail || cachedNickname) {
             setProfileModalAvatar(cached.avatarUrl, cachedEmail || cachedNickname || 'User');
@@ -2612,8 +2584,6 @@ function resetProfileModalViewState() {
     const profileFront = document.querySelector('.profile-front');
     const profileBack = document.querySelector('.profile-back');
     const mobileHeroCard = document.querySelector('#profileModal .profile-mobile-hero-card');
-    const nicknameDisplay = document.getElementById('nicknameDisplay');
-    const nicknameEdit = document.getElementById('nicknameEdit');
     const mobileEditor = document.getElementById('profileMobileInlineEditor');
     const mobileInput = document.getElementById('profileMobileNicknameInput');
 
@@ -2628,9 +2598,6 @@ function resetProfileModalViewState() {
         tab.classList.add('active');
     });
 
-    if (card) {
-        card.classList.remove('wide');
-    }
     if (scroller) {
         scroller.scrollTop = 0;
     }
@@ -2644,12 +2611,6 @@ function resetProfileModalViewState() {
         profileBack.classList.remove('animate-in');
     }
 
-    if (nicknameDisplay && nicknameEdit) {
-        nicknameEdit.style.display = 'none';
-        nicknameDisplay.style.display = 'flex';
-        nicknameDisplay.classList.remove('hiding', 'showing');
-    }
-
     if (mobileEditor) {
         mobileEditor.classList.remove('is-visible');
     }
@@ -2658,10 +2619,6 @@ function resetProfileModalViewState() {
     }
     if (mobileInput) {
         mobileInput.value = '';
-    }
-
-    if (typeof resetSecurityCards === 'function') {
-        resetSecurityCards();
     }
 
     if (overlay) {
@@ -2774,10 +2731,6 @@ async function openProfileModal(event) {
     });
 
     // 保持当前数据，避免每次打开先闪“加载中...”
-    const nicknameSpan = document.getElementById('profileModalNickname');
-    const emailDiv = document.getElementById('profileModalEmail');
-    const memberSinceSpan = document.getElementById('profileMemberSince');
-
     // 异步加载数据（不阻塞UI）
     (async () => {
         try {
@@ -2790,32 +2743,14 @@ async function openProfileModal(event) {
             }
 
             const optimisticNickname = user.user_metadata?.full_name || user.email.split('@')[0];
-            if (emailDiv) emailDiv.textContent = user.email;
-            if (nicknameSpan) nicknameSpan.textContent = optimisticNickname;
+            const memberSinceText = formatProfileMemberSince(user.created_at);
             updateProfileMobileSummary({
                 nickname: optimisticNickname,
                 email: user.email,
                 userId: user.id,
-                phone: resolveProfilePhone(user)
+                memberSince: memberSinceText
             });
             setProfileModalAvatar(user.user_metadata?.avatar_url, user.email || optimisticNickname);
-
-            if (memberSinceSpan) {
-                const createdAt = new Date(user.created_at);
-                const year = createdAt.getFullYear();
-                const month = createdAt.getMonth() + 1;
-                const day = createdAt.getDate();
-                const isEnglish = window.i18n?.isEnglish?.();
-                if (isEnglish) {
-                    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-                    memberSinceSpan.textContent = `${monthNames[month - 1]} ${day}, ${year}`;
-                } else {
-                    memberSinceSpan.textContent = `${year}年${month}月${day}日`;
-                }
-                updateProfileMobileSummary({
-                    memberSince: memberSinceSpan.textContent
-                });
-            }
 
             // 获取 profile
             const { data: profile } = await window.supabaseClient
@@ -2827,31 +2762,18 @@ async function openProfileModal(event) {
             const resolvedNickname = profile?.username || optimisticNickname;
             const resolvedAvatar = profile?.avatar_url || user.user_metadata?.avatar_url || getAvatarFallbackUrl(user.email);
             setProfileModalAvatar(resolvedAvatar, user.email || resolvedNickname);
-
-            if (emailDiv) {
-                emailDiv.textContent = user.email;
-            }
-
-            if (nicknameSpan) {
-                nicknameSpan.textContent = resolvedNickname;
-            }
             updateProfileMobileSummary({
                 nickname: resolvedNickname,
                 email: user.email,
                 userId: user.id,
-                phone: resolveProfilePhone(user, profile),
-                memberSince: memberSinceSpan ? memberSinceSpan.textContent : ''
+                memberSince: memberSinceText
             });
         } catch (error) {
             console.error('Error loading profile:', error);
-            if (nicknameSpan) nicknameSpan.textContent = '加载失败';
-            if (emailDiv) emailDiv.textContent = '加载失败';
-            if (memberSinceSpan) memberSinceSpan.textContent = '加载失败';
             updateProfileMobileSummary({
                 nickname: '加载失败',
                 email: '加载失败',
-                memberSince: '加载失败',
-                phone: ''
+                memberSince: '加载失败'
             });
         } finally {
             setTimeout(() => {
@@ -2908,7 +2830,6 @@ window.handleSwitchAccount = handleSwitchAccount;
 function switchProfileTab(tabName) {
     console.log('🔄 Switching profile tab to:', tabName);
 
-    const profileModal = document.querySelector('.profile-modal');
     const flipInner = document.querySelector('.profile-flip-inner');
     const profileFront = document.querySelector('.profile-front');
     const profileBack = document.querySelector('.profile-back');
@@ -2917,7 +2838,6 @@ function switchProfileTab(tabName) {
 
     if (tabName === 'profile') {
         if (flipInner) flipInner.classList.remove('flipped');
-        if (profileModal) profileModal.classList.remove('wide');
 
         if (profileFront) profileFront.style.pointerEvents = 'auto';
         if (profileBack) profileBack.style.pointerEvents = 'none';
@@ -2930,14 +2850,9 @@ function switchProfileTab(tabName) {
 
     } else if (tabName === 'security') {
         if (flipInner) flipInner.classList.add('flipped');
-        if (profileModal) profileModal.classList.add('wide');
 
         if (profileFront) profileFront.style.pointerEvents = 'none';
         if (profileBack) profileBack.style.pointerEvents = 'auto';
-
-        if (typeof resetSecurityCards === 'function') {
-            resetSecurityCards();
-        }
 
         if (profileBack) {
             profileBack.classList.remove('animate-in');
@@ -3016,23 +2931,9 @@ function openProfileEditor(event) {
 
     switchProfileTab('profile');
 
-    const isMobileView = window.innerWidth <= 768;
-    const nicknameSection = document.querySelector(isMobileView
-        ? '#profileModal .profile-mobile-hero-card'
-        : '#profileModal .profile-nickname-section');
-    if (nicknameSection && !isMobileView) {
-        nicknameSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-
-    const nicknameEdit = isMobileView
-        ? document.getElementById('profileMobileInlineEditor')
-        : document.getElementById('nicknameEdit');
-    const nicknameInput = isMobileView
-        ? document.getElementById('profileMobileNicknameInput')
-        : document.getElementById('nicknameInput');
-    const isEditing = isMobileView
-        ? !!nicknameEdit?.classList.contains('is-visible')
-        : !!(nicknameEdit && window.getComputedStyle(nicknameEdit).display !== 'none');
+    const nicknameEdit = document.getElementById('profileMobileInlineEditor');
+    const nicknameInput = document.getElementById('profileMobileNicknameInput');
+    const isEditing = !!nicknameEdit?.classList.contains('is-visible');
 
     if (!isEditing && typeof toggleNicknameEdit === 'function') {
         toggleNicknameEdit(true);
@@ -3055,74 +2956,39 @@ window.openProfileEditor = openProfileEditor;
 
 // ==================== 昵称修改功能 ====================
 function toggleNicknameEdit(show) {
-    const isMobileView = window.innerWidth <= 768;
-    const currentNickname = document.getElementById('profileModalNickname')?.textContent ||
+    const currentNickname = document.getElementById('profileMobileHeroName')?.textContent ||
         document.getElementById('profileMobileNicknameValue')?.textContent || '';
+    const mobileEditor = document.getElementById('profileMobileInlineEditor');
+    const mobileInput = document.getElementById('profileMobileNicknameInput');
+    const mobileHeroCard = document.querySelector('#profileModal .profile-mobile-hero-card');
 
-    if (isMobileView) {
-        const mobileEditor = document.getElementById('profileMobileInlineEditor');
-        const mobileInput = document.getElementById('profileMobileNicknameInput');
-        const mobileHeroCard = document.querySelector('#profileModal .profile-mobile-hero-card');
+    if (!mobileEditor || !mobileInput) return;
 
-        if (!mobileEditor || !mobileInput) return;
-
-        if (show) {
-            mobileInput.value = currentNickname;
-            void mobileEditor.offsetWidth;
-            mobileHeroCard?.classList.add('is-editing');
-            mobileEditor.classList.add('is-visible');
-            window.setTimeout(() => {
-                try {
-                    mobileInput.focus({ preventScroll: true });
-                } catch (_) {
-                    mobileInput.focus();
-                }
-                mobileInput.select();
-            }, 180);
-        } else {
-            mobileEditor.classList.remove('is-visible');
-            mobileHeroCard?.classList.remove('is-editing');
-        }
+    if (show) {
+        mobileInput.value = currentNickname;
+        void mobileEditor.offsetWidth;
+        mobileHeroCard?.classList.add('is-editing');
+        mobileEditor.classList.add('is-visible');
+        window.setTimeout(() => {
+            try {
+                mobileInput.focus({ preventScroll: true });
+            } catch (_) {
+                mobileInput.focus();
+            }
+            mobileInput.select();
+        }, 180);
         return;
     }
 
-    const display = document.getElementById('nicknameDisplay');
-    const edit = document.getElementById('nicknameEdit');
-    const input = document.getElementById('nicknameInput');
-
-    if (show) {
-        display.classList.add('hiding');
-        display.classList.remove('showing');
-        setTimeout(() => {
-            display.style.display = 'none';
-            edit.style.display = 'flex';
-            input.value = currentNickname;
-            void edit.offsetWidth;
-            setTimeout(() => {
-                input.focus();
-                input.select();
-            }, 100);
-        }, 300);
-    } else {
-        edit.style.display = 'none';
-        display.style.display = 'flex';
-        display.classList.remove('hiding');
-        void display.offsetWidth;
-        display.classList.add('showing');
-        setTimeout(() => {
-            display.classList.remove('showing');
-        }, 400);
-    }
+    mobileEditor.classList.remove('is-visible');
+    mobileHeroCard?.classList.remove('is-editing');
 }
 
 window.toggleNicknameEdit = toggleNicknameEdit;
 
 // ==================== 保存昵称 (Supabase 版本) ====================
 async function saveNickname() {
-    const isMobileView = window.innerWidth <= 768;
-    const input = isMobileView
-        ? document.getElementById('profileMobileNicknameInput')
-        : document.getElementById('nicknameInput');
+    const input = document.getElementById('profileMobileNicknameInput');
     if (!input) return;
     const newNickname = input.value.trim();
 
@@ -3140,7 +3006,6 @@ async function saveNickname() {
             if (error) throw error;
 
             // Update UI
-            document.getElementById('profileModalNickname').textContent = newNickname;
             updateProfileMobileSummary({ nickname: newNickname });
 
             const { data: profile } = await window.supabaseClient
