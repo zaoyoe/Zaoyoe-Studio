@@ -7166,8 +7166,8 @@ body {
     #profileModal.ios-focus-lock .modal-content.profile-modal {
         top: var(--profile-modal-shift-y, 0px) !important;
         transform: none !important;
-        height: min(90svh, calc(100% - 128px)) !important;
-        min-height: min(90svh, calc(100% - 128px)) !important;
+        height: auto !important;
+        min-height: auto !important;
         max-height: min(90svh, calc(100% - 128px)) !important;
         overflow: hidden !important;
     }
@@ -7285,56 +7285,31 @@ body {
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3) !important;
 }
 
-/* Profile Member Since Section - Matching email section style */
+/* Profile Member Since Section - plain text label layout */
 .profile-member-since-section {
     margin: 0 0 24px 0;
-    padding: 18px;
+    padding: 0;
     width: 100%;
     max-width: 320px;
-    /* 与安全页面模块风格一致 */
-    background: rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 12px;
-    box-shadow:
-        0 2px 8px rgba(0, 0, 0, 0.3),
-        inset 0 1px 0 rgba(255, 255, 255, 0.05);
-    transition: all 0.3s ease;
+    background: transparent;
+    border: none;
+    box-shadow: none;
     position: relative;
     overflow: hidden;
     flex-shrink: 0;
 }
 
-/* 注册时间区块左侧装饰条 */
-.profile-member-since-section::before {
-    content: '';
-    position: absolute;
-    left: 0;
-    top: 0;
-    bottom: 0;
-    width: 3px;
-    background: linear-gradient(180deg, rgba(59, 130, 246, 0.6), rgba(139, 92, 246, 0.6));
-    border-radius: 12px 0 0 12px;
-}
-
-.profile-member-since-section:hover {
-    border-color: rgba(255, 255, 255, 0.18);
-    box-shadow:
-        0 4px 12px rgba(0, 0, 0, 0.4),
-        inset 0 1px 0 rgba(255, 255, 255, 0.08);
-    transform: translateY(-2px);
-}
-
 .profile-member-since-section label {
     display: block;
     font-size: 12px;
-    color: rgba(255, 255, 255, 0.6);
-    margin-bottom: 8px;
+    color: rgba(255, 255, 255, 0.4);
+    margin-bottom: 4px;
 }
 
 .profile-member-since-display {
-    font-size: 15px;
-    color: rgba(255, 255, 255, 0.95);
-    font-weight: 500;
+    font-size: 14px;
+    color: rgba(255, 255, 255, 0.6);
+    font-weight: 400;
 }
 
 /* Animation for member since section */
@@ -7516,8 +7491,7 @@ body {
 }
 
 #profileModal .profile-front .profile-nickname-section,
-#profileModal .profile-front .profile-email-section,
-#profileModal .profile-front .profile-member-since-section {
+#profileModal .profile-front .profile-email-section {
     --profile-info-card-height: 86px;
     max-width: 304px;
     padding: 12px 14px;
@@ -7534,14 +7508,13 @@ body {
 }
 
 #profileModal .profile-front .profile-member-since-section {
-    --profile-info-card-height: 60px;
-    min-height: var(--profile-info-card-height);
-    padding: 8px 12px;
+    min-height: 0;
+    padding: 0;
+    margin-bottom: 16px;
 }
 
 #profileModal .profile-front .profile-nickname-section:hover,
-#profileModal .profile-front .profile-email-section:hover,
-#profileModal .profile-front .profile-member-since-section:hover {
+#profileModal .profile-front .profile-email-section:hover {
     transform: translateY(-1px);
     box-shadow:
         0 4px 10px rgba(0, 0, 0, 0.32),
@@ -7549,8 +7522,7 @@ body {
 }
 
 #profileModal .profile-front .profile-nickname-section::before,
-#profileModal .profile-front .profile-email-section::before,
-#profileModal .profile-front .profile-member-since-section::before {
+#profileModal .profile-front .profile-email-section::before {
     width: 2px;
     border-radius: 10px 0 0 10px;
 }
@@ -7590,8 +7562,7 @@ body {
     }
 
     #profileModal .profile-front .profile-nickname-section,
-    #profileModal .profile-front .profile-email-section,
-    #profileModal .profile-front .profile-member-since-section {
+    #profileModal .profile-front .profile-email-section {
         --profile-info-card-height: 80px;
         max-width: 100%;
         padding: 14px 16px;
@@ -7602,9 +7573,9 @@ body {
     }
 
     #profileModal .profile-front .profile-member-since-section {
-        --profile-info-card-height: 54px;
-        min-height: var(--profile-info-card-height);
-        padding: 10px 14px;
+        min-height: 0;
+        height: auto;
+        padding: 0;
         margin-bottom: 0px;
     }
 
