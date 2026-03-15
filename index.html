@@ -60,7 +60,7 @@
     <link rel="stylesheet" href="security-cards.css?v=20260315_PROFILE_MOBILE_REBUILD_6">
 
     <!-- Core Styles (for modals, profile, etc) -->
-    <link rel="stylesheet" href="style.css?v=20260315_PROFILE_MOBILE_REBUILD_6">
+    <link rel="stylesheet" href="style.css?v=20260315_PROFILE_MOBILE_REBUILD_7">
     <link rel="stylesheet" href="css/auth-sheet.css?v=20260314_AUTH_SHEET_DRAG_HANDLE_31">
     <link rel="stylesheet" href="avatar-fix.css?v=20260314_AVATAR_UNIFIED_1">
 
@@ -282,7 +282,7 @@
 
     <!-- Auth System (integrated from inject-auth.js) -->
     <script src="./js/avatar-uploader.js" defer></script>
-    <script src="./supabase-auth-functions.js?v=20260315_PROFILE_MOBILE_REBUILD_5" defer></script>
+    <script src="./supabase-auth-functions.js?v=20260315_PROFILE_MOBILE_REBUILD_6" defer></script>
     <script src="./js/ios-scroll-lock.js?v=20260314_SCROLL_LOCK_AUTH_SHEET_7" defer></script>
     <script src="./inject-auth.js?v=20260314_LOGIN_DRAG_HANDLE_28" defer></script>
     <script src="./notification-client.js?v=20260314_NOTIF_SCROLL_LOCK_1" defer></script>
@@ -1145,9 +1145,19 @@
                                         <span id="profileMobileHeroEmail">加载中...</span><br>
                                         <span id="profileMobileHeroId">ID -</span>
                                     </div>
-                                    <div class="profile-mobile-hero-tags">
-                                        <span class="profile-mobile-glass-tag profile-mobile-glass-tag--safe">资料仅自己可见</span>
-                                        <span class="profile-mobile-glass-tag">账户设置入口</span>
+                                    <div class="profile-mobile-hero-actions">
+                                        <button type="button" class="profile-mobile-hero-edit-btn"
+                                            onclick="openProfileEditor(event)">编辑资料</button>
+                                    </div>
+                                    <div id="profileMobileInlineEditor" class="profile-mobile-inline-editor" style="display: none;">
+                                        <input type="text" id="profileMobileNicknameInput" class="profile-mobile-inline-input"
+                                            placeholder="输入新昵称">
+                                        <div class="profile-mobile-inline-actions">
+                                            <button type="button" class="profile-mobile-editor-btn profile-mobile-editor-btn--ghost"
+                                                onclick="toggleNicknameEdit(false)" data-i18n="common.cancel">取消</button>
+                                            <button type="button" class="profile-mobile-editor-btn profile-mobile-editor-btn--primary"
+                                                onclick="saveNickname()" data-i18n="common.save">保存</button>
+                                        </div>
                                     </div>
                                 </div>
                             </section>
@@ -1155,7 +1165,6 @@
                             <section class="profile-mobile-card profile-mobile-card--essential">
                                 <div class="profile-mobile-section-head">
                                     <div class="profile-mobile-section-title">必要资料</div>
-                                    <div class="profile-mobile-section-note">只保留需要确认和编辑的字段</div>
                                 </div>
                                 <div class="profile-mobile-info-rows">
                                     <div class="profile-mobile-info-row">
@@ -1180,22 +1189,11 @@
                                         </div>
                                     </div>
                                 </div>
-                                <div id="profileMobileInlineEditor" class="profile-mobile-inline-editor" style="display: none;">
-                                    <input type="text" id="profileMobileNicknameInput" class="profile-mobile-inline-input"
-                                        placeholder="输入新昵称">
-                                    <div class="profile-mobile-inline-actions">
-                                        <button type="button" class="profile-mobile-editor-btn profile-mobile-editor-btn--ghost"
-                                            onclick="toggleNicknameEdit(false)" data-i18n="common.cancel">取消</button>
-                                        <button type="button" class="profile-mobile-editor-btn profile-mobile-editor-btn--primary"
-                                            onclick="saveNickname()" data-i18n="common.save">保存</button>
-                                    </div>
-                                </div>
                             </section>
 
                             <section class="profile-mobile-card profile-mobile-card--quick">
                                 <div class="profile-mobile-section-head">
                                     <div class="profile-mobile-section-title">快捷入口</div>
-                                    <div class="profile-mobile-section-note">详情不重复展示</div>
                                 </div>
                                 <div class="profile-mobile-quick-grid">
                                     <button type="button" class="profile-mobile-quick-card"
@@ -1298,15 +1296,6 @@
                                 onclick="openProfileWalletView('balance', event)">前往钱包</button>
                             <button type="button" class="profile-action-btn profile-action-btn--primary"
                                 onclick="openProfileEditor(event)">编辑资料</button>
-                        </div>
-
-                        <div class="profile-mobile-footer profile-mobile-only">
-                            <div class="profile-mobile-footer-grid">
-                                <button type="button" class="profile-mobile-footer-btn profile-mobile-footer-btn--ghost"
-                                    onclick="openProfileWalletView('balance', event)">前往钱包</button>
-                                <button type="button" class="profile-mobile-footer-btn profile-mobile-footer-btn--primary"
-                                    onclick="openProfileEditor(event)">编辑资料</button>
-                            </div>
                         </div>
                     </div>
 
