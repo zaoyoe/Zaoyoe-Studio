@@ -1746,7 +1746,7 @@ body.no-scroll {
         padding: 20px !important;
         padding-bottom: 20px !important;
         /* Reduced padding, relying on spacer now */
-        border-radius: 20px !important;
+        border-radius: 16px !important;
         margin: auto !important;
         position: relative !important;
         top: auto !important;
@@ -7370,7 +7370,12 @@ body {
         min-height: 300px;
         max-height: calc(var(--guestbook-modal-overlay-height, 100svh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px);
         padding: 14px 16px calc(16px + env(safe-area-inset-bottom)) !important;
-        border-radius: 30px !important;
+        border-radius: 16px !important;
+    }
+
+    #commentModal .comment-modal-content,
+    #commentModal.active .comment-modal-content {
+        border-radius: 16px !important;
     }
 
     #guestbookModal.active:focus-within .guestbook-composer-sheet>*,
@@ -7682,13 +7687,14 @@ body {
 
 @media (max-width: 768px) {
     #profileModal {
+        --profile-mobile-modal-radius: 16px;
         --profile-mobile-topbar-height: 86px;
         --profile-mobile-topbar-inset: 0px;
     }
 
     #profileModal .modal-content.profile-modal,
     #profileModal .modal-content.profile-modal.profile-modal.wide {
-        border-radius: 34px !important;
+        border-radius: var(--profile-mobile-modal-radius) !important;
         background: rgba(12, 15, 19, 0.92) !important;
         border: 1px solid rgba(255, 255, 255, 0.08) !important;
         box-shadow:
@@ -7724,7 +7730,7 @@ body {
         align-items: flex-end;
         justify-content: center;
         padding: 16px 18px 10px;
-        border-radius: 34px 34px 0 0;
+        border-radius: var(--profile-mobile-modal-radius) var(--profile-mobile-modal-radius) 0 0;
         background: rgba(12, 15, 19, 0.56);
         border: 0;
         border-bottom: 1px solid rgba(255, 255, 255, 0.08);

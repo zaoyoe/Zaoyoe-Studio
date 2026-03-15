@@ -3788,6 +3788,7 @@ body.modal-open .prompt-card {
 
     .modal-inner {
         flex-direction: column;
+        border-radius: 16px;
         overflow-y: auto;
         /* Let layout flow naturally */
     }
