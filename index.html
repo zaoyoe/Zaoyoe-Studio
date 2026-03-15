@@ -57,10 +57,10 @@
 
     <!-- Framer Home Styles -->
     <link rel="stylesheet" href="./css/framer_home.css?v=NAV_UNIFIED_V9">
-    <link rel="stylesheet" href="security-cards.css?v=20260315_PROFILE_MOBILE_REBUILD_1">
+    <link rel="stylesheet" href="security-cards.css?v=20260315_PROFILE_MOBILE_REBUILD_2">
 
     <!-- Core Styles (for modals, profile, etc) -->
-    <link rel="stylesheet" href="style.css?v=20260315_PROFILE_MOBILE_REBUILD_1">
+    <link rel="stylesheet" href="style.css?v=20260315_PROFILE_MOBILE_REBUILD_2">
     <link rel="stylesheet" href="css/auth-sheet.css?v=20260314_AUTH_SHEET_DRAG_HANDLE_31">
     <link rel="stylesheet" href="avatar-fix.css?v=20260314_AVATAR_UNIFIED_1">
 
@@ -282,7 +282,7 @@
 
     <!-- Auth System (integrated from inject-auth.js) -->
     <script src="./js/avatar-uploader.js" defer></script>
-    <script src="./supabase-auth-functions.js?v=20260315_PROFILE_MOBILE_REBUILD_1" defer></script>
+    <script src="./supabase-auth-functions.js?v=20260315_PROFILE_MOBILE_REBUILD_2" defer></script>
     <script src="./js/ios-scroll-lock.js?v=20260314_SCROLL_LOCK_AUTH_SHEET_7" defer></script>
     <script src="./inject-auth.js?v=20260314_LOGIN_DRAG_HANDLE_28" defer></script>
     <script src="./notification-client.js?v=20260314_NOTIF_SCROLL_LOCK_1" defer></script>
@@ -1081,6 +1081,13 @@
     <div class="modal-overlay" id="profileModal" onmousedown="closeModal(event)" onmouseup="closeModal(event)">
         <div class="modal-content profile-modal" onclick="event.stopPropagation()">
             <div class="profile-modal-scroll">
+            <div class="profile-mobile-art-layer" aria-hidden="true">
+                <span class="profile-mobile-art-block profile-mobile-art-block--a"></span>
+                <span class="profile-mobile-art-block profile-mobile-art-block--b"></span>
+                <span class="profile-mobile-art-block profile-mobile-art-block--c"></span>
+                <span class="profile-mobile-art-block profile-mobile-art-block--d"></span>
+                <span class="profile-mobile-art-block profile-mobile-art-block--e"></span>
+            </div>
             <div class="profile-mobile-topbar">
                 <div class="profile-mobile-topbar-shell">
                     <div class="profile-mobile-head-row">

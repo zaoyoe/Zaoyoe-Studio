@@ -7680,6 +7680,10 @@ body {
     display: none;
 }
 
+#profileModal .profile-mobile-art-layer {
+    display: none;
+}
+
 @media (max-width: 768px) {
     #profileModal .modal-content.profile-modal,
     #profileModal .modal-content.profile-modal.profile-modal.wide {
@@ -7698,13 +7702,72 @@ body {
         scroll-padding-bottom: 220px !important;
     }
 
+    #profileModal .profile-mobile-art-layer {
+        display: block;
+        position: absolute;
+        inset: 94px 22px 132px;
+        z-index: 0;
+        border-radius: 34px;
+        overflow: hidden;
+        pointer-events: none;
+        transform: rotate(-4deg) scale(1.03);
+        box-shadow: 0 34px 68px rgba(0, 0, 0, 0.34);
+    }
+
+    #profileModal .profile-mobile-art-block {
+        position: absolute;
+        border-radius: 30px;
+        filter: saturate(118%);
+    }
+
+    #profileModal .profile-mobile-art-block--a {
+        left: 0;
+        top: 0;
+        width: 72%;
+        height: 44%;
+        background: #ff6153;
+    }
+
+    #profileModal .profile-mobile-art-block--b {
+        right: 0;
+        top: 0;
+        width: 38%;
+        height: 100%;
+        background: #1db7de;
+    }
+
+    #profileModal .profile-mobile-art-block--c {
+        left: 12%;
+        bottom: 0;
+        width: 54%;
+        height: 34%;
+        background: #f0b550;
+    }
+
+    #profileModal .profile-mobile-art-block--d {
+        right: 8%;
+        bottom: 8%;
+        width: 30%;
+        height: 28%;
+        background: #6861c7;
+    }
+
+    #profileModal .profile-mobile-art-block--e {
+        left: 35%;
+        top: 36%;
+        width: 26%;
+        height: 18%;
+        border-radius: 999px;
+        background: #87b76d;
+    }
+
     #profileModal .profile-mobile-topbar {
         display: block !important;
         position: sticky;
         top: 0;
         z-index: 30;
         padding-top: 12px;
-        margin-bottom: 12px;
+        margin-bottom: 22px;
     }
 
     #profileModal .profile-mobile-topbar-shell {
@@ -7842,6 +7905,7 @@ body {
     #profileModal .profile-front {
         justify-content: flex-start !important;
         gap: 12px !important;
+        padding-top: 8px !important;
         padding-bottom: 20px !important;
     }
 
