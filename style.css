@@ -5331,8 +5331,8 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     #profileModal[data-profile-tab="security"] .modal-content.profile-modal {
         width: min(724px, calc(100vw - 92px)) !important;
         max-width: 724px !important;
-        min-height: min(748px, calc(100vh - 88px)) !important;
-        max-height: min(748px, calc(100vh - 88px)) !important;
+        min-height: auto !important;
+        max-height: min(656px, calc(100vh - 104px)) !important;
     }
 
     #profileModal .profile-modal-scroll {
@@ -5636,6 +5636,7 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     #profileModal .profile-security-desktop-sidebar {
         display: flex;
         flex-direction: column;
+        justify-content: center;
         gap: 16px;
         padding: 8px 0;
     }
