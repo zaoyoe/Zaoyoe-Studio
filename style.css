@@ -5322,23 +5322,23 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     }
 
     #profileModal[data-profile-tab="security"] .modal-content.profile-modal {
-        width: min(960px, calc(100vw - 108px)) !important;
-        max-width: 960px !important;
+        width: min(880px, calc(100vw - 92px)) !important;
+        max-width: 880px !important;
         min-height: min(650px, calc(100vh - 88px)) !important;
         max-height: min(740px, calc(100vh - 88px)) !important;
     }
 
     #profileModal .profile-modal-scroll {
-        padding: 0 22px 24px !important;
+        padding: 0 14px 22px !important;
         padding-top: calc(var(--profile-mobile-topbar-height) + 18px) !important;
         scroll-padding-top: calc(var(--profile-mobile-topbar-height) + 24px) !important;
         scroll-padding-bottom: 28px !important;
     }
 
     #profileModal .profile-mobile-topbar {
-        top: 18px;
-        left: 20px;
-        right: 20px;
+        top: 14px;
+        left: 14px;
+        right: 14px;
         height: 56px;
     }
 
@@ -5526,9 +5526,9 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
 
     #profileModal .profile-security-desktop-layout {
         display: grid;
-        grid-template-columns: 228px minmax(0, 1fr);
-        gap: 18px;
-        min-height: 468px;
+        grid-template-columns: 196px minmax(0, 1fr);
+        gap: 14px;
+        min-height: 438px;
         align-items: stretch;
     }
 
@@ -5594,24 +5594,28 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
 
     #profileModal .profile-security-desktop-content {
         position: relative;
-        min-height: 468px;
-        padding: 30px 32px;
-        border-radius: 20px;
+        min-height: 438px;
+        padding: 24px 22px;
+        border-radius: 18px;
         background: rgba(14, 18, 23, 0.94);
         border: 1px solid rgba(255, 255, 255, 0.055);
         box-shadow:
             inset 0 1px 0 rgba(255, 255, 255, 0.03),
             0 10px 24px rgba(0, 0, 0, 0.05);
         overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
     }
 
     #profileModal .profile-security-desktop-panel {
         display: none;
-        width: min(100%, 420px);
+        width: min(100%, 360px);
         min-height: 100%;
         flex-direction: column;
         justify-content: center;
         gap: 14px;
+        margin: 0 auto;
     }
 
     #profileModal .profile-security-desktop-panel.is-active {
@@ -5640,6 +5644,7 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
         font-weight: 600;
         letter-spacing: -0.44px;
         color: rgba(248, 251, 255, 0.98);
+        text-align: center;
     }
 
     #profileModal .profile-security-desktop-title--danger {
@@ -5651,6 +5656,7 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
         font-size: 13px;
         line-height: 1.6;
         color: rgba(232, 238, 244, 0.56);
+        text-align: center;
     }
 
     #profileModal .profile-security-desktop-desc--danger {
@@ -5711,8 +5717,8 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     }
 
     #profileModal .profile-security-desktop-primary-btn {
-        align-self: flex-start;
-        min-width: 138px;
+        align-self: center;
+        min-width: 152px;
         background: rgba(229, 235, 241, 0.94);
         border-color: rgba(255, 255, 255, 0.18);
         color: #0f141a;
@@ -5720,8 +5726,8 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     }
 
     #profileModal .profile-security-desktop-danger-btn {
-        align-self: flex-start;
-        min-width: 138px;
+        align-self: center;
+        min-width: 152px;
         background: rgba(166, 48, 48, 0.3);
         border-color: rgba(223, 98, 98, 0.34);
         color: #ffe1e1;
