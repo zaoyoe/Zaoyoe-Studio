@@ -5352,11 +5352,14 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
         left: auto;
         right: auto;
         margin: 0;
-        height: 12px;
+        height: 8px;
         flex: 0 0 auto;
+        overflow: visible;
     }
 
     #profileModal .profile-mobile-topbar-shell {
+        height: auto;
+        min-height: 56px;
         width: min(100%, 284px);
         min-width: 0;
         margin: 0 auto;
