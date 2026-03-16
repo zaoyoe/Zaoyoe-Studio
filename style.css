@@ -5343,13 +5343,10 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
         scroll-padding-bottom: 0 !important;
     }
 
-    #profileModal[data-profile-tab="profile"] .profile-modal-scroll {
-        padding-top: 82px !important;
-        scroll-padding-top: 82px !important;
-    }
-
     #profileModal[data-profile-tab="security"] .profile-modal-scroll {
+        padding-top: 82px !important;
         overflow: hidden !important;
+        scroll-padding-top: 82px !important;
         scroll-padding-bottom: 0 !important;
     }
 
