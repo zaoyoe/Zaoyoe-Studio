@@ -57,7 +57,7 @@
 }
 
 .wallet-modal {
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0) 26%), var(--wallet-sheet-panel);
+    background: var(--wallet-sheet-panel);
     border-radius: 26px;
     box-sizing: border-box;
     max-width: 700px;
@@ -90,7 +90,7 @@
     z-index: 0;
     pointer-events: none;
     border-radius: inherit;
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 28%);
+    background: none;
 }
 
 .wallet-modal > * {
@@ -127,7 +127,7 @@
 .wallet-header {
     padding: 24px 24px 16px;
     border-bottom: 1px solid var(--wallet-sheet-border);
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.022), rgba(255, 255, 255, 0));
+    background: transparent;
 }
 
 .wallet-header h2 {
@@ -161,7 +161,7 @@
     flex-shrink: 0;
     padding: 16px;
     border-right: 1px solid var(--wallet-sheet-border);
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.024), rgba(255, 255, 255, 0.008));
+    background: transparent;
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -241,7 +241,7 @@
     overflow-y: auto;
     min-height: 350px;
     overscroll-behavior: contain;
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.012), rgba(255, 255, 255, 0));
+    background: transparent;
 }
 
 /* Views */
@@ -1918,7 +1918,7 @@
 }
 
 .wallet-order-modal {
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0) 28%), var(--wallet-sheet-panel);
+    background: var(--wallet-sheet-panel);
     border: 1px solid var(--wallet-sheet-border);
     border-radius: 22px;
     min-width: 320px;
@@ -1941,7 +1941,7 @@
     z-index: 0;
     pointer-events: none;
     border-radius: inherit;
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 28%);
+    background: none;
 }
 
 .wallet-order-modal > * {
@@ -1955,7 +1955,7 @@
     align-items: center;
     padding: 20px 24px;
     border-bottom: 1px solid var(--wallet-sheet-border);
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.022), rgba(255, 255, 255, 0));
+    background: transparent;
 }
 
 .wallet-order-modal-title {

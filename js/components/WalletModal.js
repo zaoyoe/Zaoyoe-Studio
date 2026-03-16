@@ -18,7 +18,7 @@
         const link = document.createElement('link');
         link.id = 'wallet-modal-css';
         link.rel = 'stylesheet';
-        link.href = 'css/wallet.css?v=20260316_WALLET_AUTH_MATERIAL_2';
+        link.href = 'css/wallet.css?v=20260316_WALLET_AUTH_MATERIAL_3';
         document.head.appendChild(link);
     }
 
@@ -2483,7 +2483,7 @@
                 }
                 .wallet-order-modal {
                     width: 92% !important; max-width: 360px !important;
-                    background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0) 28%), var(--auth-sheet-panel, rgba(12, 14, 18, 0.98)) !important;
+                    background: var(--auth-sheet-panel, rgba(12, 14, 18, 0.98)) !important;
                     border: 1px solid var(--auth-sheet-border, rgba(255, 255, 255, 0.08)) !important;
                     border-radius: 22px !important;
                     box-shadow: 0 26px 70px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
@@ -2503,7 +2503,7 @@
                     z-index: 0 !important;
                     pointer-events: none !important;
                     border-radius: inherit !important;
-                    background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 28%) !important;
+                    background: none !important;
                 }
                 .wallet-order-modal > * {
                     position: relative !important;
@@ -2512,7 +2512,7 @@
                 .wallet-order-modal-header {
                     padding: 16px 20px 12px;
                     border-bottom: 1px solid var(--auth-sheet-border, rgba(255, 255, 255, 0.08));
-                    background: linear-gradient(180deg, rgba(255, 255, 255, 0.022), rgba(255, 255, 255, 0));
+                    background: transparent;
                     display: flex; justify-content: space-between; align-items: center;
                 }
                 .wallet-order-modal-title {
