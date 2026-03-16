@@ -5318,7 +5318,7 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     #profileModal .modal-content.profile-modal {
         display: grid !important;
         grid-template-rows: auto minmax(0, 1fr);
-        row-gap: 12px;
+        row-gap: 0;
         padding: 12px !important;
         width: min(432px, calc(100vw - 120px)) !important;
         max-width: 432px !important;
@@ -5352,7 +5352,7 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
         left: auto;
         right: auto;
         margin: 0;
-        height: 56px;
+        height: 12px;
         flex: 0 0 auto;
     }
 
