@@ -15,6 +15,39 @@
     --font-display: 'Outfit', sans-serif;
 }
 
+/*
+  Auth-sheet backdrop override:
+  some pages load style.css after auth-sheet.css, and legacy .login-overlay
+  rules here can otherwise re-darken the new login modal. Keep the shared
+  login-overlay hooks, but force #loginModal back to the lighter chat-style
+  backdrop material.
+*/
+#loginModal.auth-sheet-overlay,
+#loginModal.auth-sheet-overlay.active,
+#loginModal.auth-sheet-overlay.login-overlay,
+#loginModal.auth-sheet-overlay.login-overlay.active {
+    background: rgba(7, 9, 12, 0.28) !important;
+    backdrop-filter: blur(14px) saturate(108%) !important;
+    -webkit-backdrop-filter: blur(14px) saturate(108%) !important;
+}
+
+#loginModal.auth-sheet-overlay:not(.active):not(.closing),
+#loginModal.auth-sheet-overlay.login-overlay:not(.active):not(.closing),
+#loginModal.auth-sheet-overlay.closing,
+#loginModal.auth-sheet-overlay.login-overlay.closing {
+    background: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+#loginModal.auth-sheet-overlay .auth-sheet-backdrop,
+#loginModal.auth-sheet-overlay.login-overlay .auth-sheet-backdrop {
+    background: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    opacity: 0 !important;
+}
+
 * {
     margin: 0;
     padding: 0;

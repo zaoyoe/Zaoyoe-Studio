@@ -9,7 +9,8 @@
 }
 
 :root {
-    --auth-sheet-overlay: rgba(0, 0, 0, 0.78);
+    --auth-sheet-overlay: rgba(7, 9, 12, 0.28);
+    --auth-sheet-overlay-filter: blur(14px) saturate(108%);
     --auth-sheet-backdrop-glow: rgba(0, 0, 0, 0);
     --auth-sheet-panel: rgba(12, 14, 18, 0.98);
     --auth-sheet-panel-strong: rgba(15, 18, 22, 0.995);
@@ -44,9 +45,9 @@ body.auth-sheet-open {
     align-items: flex-end;
     justify-content: center;
     padding: max(40px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
-    background: rgba(0, 0, 0, 0.36);
-    backdrop-filter: blur(10px) saturate(92%);
-    -webkit-backdrop-filter: blur(10px) saturate(92%);
+    background: var(--auth-sheet-overlay);
+    backdrop-filter: var(--auth-sheet-overlay-filter);
+    -webkit-backdrop-filter: var(--auth-sheet-overlay-filter);
     transform: translateZ(0);
     -webkit-transform: translateZ(0);
     will-change: opacity, backdrop-filter;
@@ -66,12 +67,35 @@ body.auth-sheet-open {
     pointer-events: auto;
 }
 
+/*
+  Legacy login-overlay compatibility:
+  the new auth sheet still carries .login-overlay for shared close handlers,
+  but older global stylesheets force a darker overlay with !important.
+  Lock #loginModal back to the auth-sheet material values here so the backdrop
+  stays consistent with the chat widget on every page.
+*/
+#loginModal.auth-sheet-overlay,
+#loginModal.auth-sheet-overlay.active,
+#loginModal.auth-sheet-overlay.login-overlay,
+#loginModal.auth-sheet-overlay.login-overlay.active {
+    background: var(--auth-sheet-overlay) !important;
+    backdrop-filter: var(--auth-sheet-overlay-filter) !important;
+    -webkit-backdrop-filter: var(--auth-sheet-overlay-filter) !important;
+}
+
+#loginModal.auth-sheet-overlay:not(.active):not(.closing),
+#loginModal.auth-sheet-overlay.login-overlay:not(.active):not(.closing),
+#loginModal.auth-sheet-overlay.closing,
+#loginModal.auth-sheet-overlay.login-overlay.closing {
+    background: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
 .auth-sheet-backdrop {
     position: absolute;
     inset: 0;
-    background:
-        radial-gradient(circle at top, var(--auth-sheet-backdrop-glow) 0%, transparent 36%),
-        linear-gradient(180deg, rgba(0, 0, 0, 0.24) 0%, var(--auth-sheet-overlay) 100%);
+    background: transparent;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
     opacity: 0;
@@ -79,7 +103,15 @@ body.auth-sheet-open {
 }
 
 .auth-sheet-overlay.active .auth-sheet-backdrop {
-    opacity: 1;
+    opacity: 0;
+}
+
+#loginModal.auth-sheet-overlay .auth-sheet-backdrop,
+#loginModal.auth-sheet-overlay.login-overlay .auth-sheet-backdrop {
+    background: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    opacity: 0 !important;
 }
 
 .auth-sheet-stage {
@@ -109,14 +141,24 @@ body.auth-sheet-open {
     z-index: 0;
     pointer-events: none;
     border-radius: inherit;
-    background: linear-gradient(180deg, rgba(12, 14, 18, 0.82) 0%, rgba(9, 11, 15, 0.92) 100%);
+    background: rgba(11, 14, 20, 0.94);
     border: 1px solid rgba(255, 255, 255, 0.08);
-    border-top: 1px solid rgba(255, 255, 255, 0.14);
-    backdrop-filter: blur(18px) saturate(118%);
-    -webkit-backdrop-filter: blur(18px) saturate(118%);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
     box-shadow:
-        0 24px 56px rgba(0, 0, 0, 0.5),
-        inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        0 26px 70px rgba(0, 0, 0, 0.28),
+        inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+#loginModal.auth-sheet-overlay .auth-sheet-surface,
+#loginModal.auth-sheet-overlay.login-overlay .auth-sheet-surface {
+    background: rgba(11, 14, 20, 0.94) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    box-shadow:
+        0 26px 70px rgba(0, 0, 0, 0.28),
+        inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
 }
 
 .auth-sheet-motion-shell {
