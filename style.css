@@ -5316,24 +5316,29 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     }
 
     #profileModal .modal-content.profile-modal {
+        display: grid !important;
+        grid-template-rows: auto minmax(0, 1fr);
+        row-gap: 12px;
+        padding: 12px !important;
         width: min(432px, calc(100vw - 120px)) !important;
         max-width: 432px !important;
-        min-height: min(640px, calc(100vh - 88px)) !important;
+        min-height: auto !important;
         max-height: min(748px, calc(100vh - 88px)) !important;
     }
 
     #profileModal[data-profile-tab="security"] .modal-content.profile-modal {
         width: min(724px, calc(100vw - 92px)) !important;
         max-width: 724px !important;
-        min-height: min(578px, calc(100vh - 104px)) !important;
+        min-height: auto !important;
         max-height: min(656px, calc(100vh - 104px)) !important;
     }
 
     #profileModal .profile-modal-scroll {
         scrollbar-gutter: auto;
-        padding: 12px 12px 12px !important;
-        scroll-padding-top: 12px !important;
-        scroll-padding-bottom: 12px !important;
+        min-height: 0 !important;
+        padding: 0 !important;
+        scroll-padding-top: 0 !important;
+        scroll-padding-bottom: 0 !important;
     }
 
     #profileModal[data-profile-tab="security"] .profile-modal-scroll {
@@ -5346,7 +5351,7 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
         top: auto;
         left: auto;
         right: auto;
-        margin: 14px 14px 0;
+        margin: 0;
         height: 56px;
         flex: 0 0 auto;
     }
