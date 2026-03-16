@@ -14,7 +14,7 @@
     console.log('[WalletModal] ✅ Initializing...');
 
     // Inject CSS if not already present
-    const walletCssHref = 'css/wallet.css?v=20260316_WALLET_CONTINUOUS_DOCK_1';
+    const walletCssHref = 'css/wallet.css?v=20260316_WALLET_STABLE_BASE_1';
     const existingWalletCss = document.getElementById('wallet-modal-css');
     if (existingWalletCss) {
         existingWalletCss.href = walletCssHref;
@@ -80,6 +80,17 @@
             width: Math.max(320, Math.round(vv?.width || window.innerWidth || docEl.clientWidth || 0)),
             height: Math.max(260, Math.round(vv?.height || window.innerHeight || docEl.clientHeight || 0))
         };
+    }
+
+    function getWalletModalStableViewportHeight() {
+        const vv = window.visualViewport;
+        const docEl = document.documentElement;
+        return Math.max(
+            320,
+            Math.round(window.innerHeight || 0),
+            Math.round(docEl.clientHeight || 0),
+            Math.round(vv?.height || 0)
+        );
     }
 
     function getActiveWalletModalInput() {
@@ -204,11 +215,11 @@
     }
 
     function captureWalletModalOverlayBaseHeight(force = false) {
-        const { height } = measureWalletModalViewport();
-        if (!height) return;
+        const stableHeight = getWalletModalStableViewportHeight();
+        if (!stableHeight) return;
 
-        if (force || height > walletModalState.overlayBaseHeight) {
-            walletModalState.overlayBaseHeight = height;
+        if (force || Math.abs(stableHeight - walletModalState.overlayBaseHeight) > 2) {
+            walletModalState.overlayBaseHeight = stableHeight;
         }
     }
 
@@ -343,7 +354,8 @@
             captureWalletModalOverlayBaseHeight();
         }
 
-        const baseViewportHeight = Math.max(walletModalState.overlayBaseHeight || 0, viewportMetrics.height);
+        const stableViewportHeight = getWalletModalStableViewportHeight();
+        const baseViewportHeight = Math.max(walletModalState.overlayBaseHeight || 0, stableViewportHeight, viewportMetrics.height);
         const keyboardInset = Math.max(0, baseViewportHeight - viewportMetrics.height);
         const wasKeyboardActive = overlay.classList.contains('keyboard-active') || overlay.classList.contains('ios-focus-lock');
         const keyboardActive = holdDuringFocusTransfer || (wasKeyboardActive ? keyboardInset > 24 : keyboardInset > WALLET_MODAL_KEYBOARD_THRESHOLD);
