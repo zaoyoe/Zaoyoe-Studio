@@ -842,6 +842,7 @@
             #shopSuccessModal.has-usage-instructions .modal-content.shop-success-modal {
                 display: flex;
                 flex-direction: column;
+                position: relative;
                 height: min(760px, calc(100vh - 72px)) !important;
                 max-height: min(760px, calc(100vh - 72px)) !important;
                 overflow: hidden;
@@ -852,11 +853,70 @@
                 overflow-y: auto;
                 padding-right: 6px;
                 margin-right: -6px;
+                padding-bottom: 128px;
             }
 
             #shopSuccessModal.has-usage-instructions .shop-success-content-shell {
                 max-height: none !important;
                 overflow: visible !important;
+            }
+
+            #shopSuccessModal.has-usage-instructions .shop-success-actions {
+                position: absolute;
+                left: 0;
+                right: 0;
+                bottom: 34px;
+                width: 248px;
+                max-width: calc(100% - 104px);
+                margin-left: auto;
+                margin-right: auto;
+                z-index: 3;
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 8px;
+                margin-top: 0;
+                align-items: end;
+            }
+
+            #shopSuccessModal.has-usage-instructions .shop-success-actions .shop-btn {
+                min-width: 0;
+                min-height: 38px;
+                padding: 8px 12px;
+                border-radius: 999px;
+                box-shadow:
+                    0 14px 26px rgba(0, 0, 0, 0.24),
+                    0 3px 8px rgba(0, 0, 0, 0.14),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+            }
+
+            #shopSuccessModal.has-usage-instructions .shop-success-actions .shop-btn i {
+                font-size: 12px;
+            }
+
+            #shopSuccessModal.has-usage-instructions .shop-success-actions .shop-btn span {
+                font-size: 12px;
+            }
+
+            #shopSuccessModal.has-usage-instructions #copyContentBtn {
+                box-shadow:
+                    0 14px 28px rgba(0, 0, 0, 0.18),
+                    0 4px 12px rgba(74, 222, 128, 0.28),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+            }
+
+            #shopSuccessModal.has-usage-instructions #exportContentBtn {
+                background: #ffffff !important;
+                color: #111827 !important;
+                border: 1px solid rgba(255, 255, 255, 0.95) !important;
+                box-shadow:
+                    0 14px 28px rgba(0, 0, 0, 0.16),
+                    0 4px 10px rgba(255, 255, 255, 0.28),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.96);
+            }
+
+            #shopSuccessModal.has-usage-instructions #exportContentBtn i,
+            #shopSuccessModal.has-usage-instructions #exportContentBtn span {
+                color: inherit !important;
             }
 
             #shopSuccessModal.has-usage-instructions .shop-success-usage-card {
