@@ -5321,6 +5321,7 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
         grid-template-rows: auto minmax(0, 1fr);
         row-gap: 0;
         padding: 12px !important;
+        position: relative;
         width: min(432px, calc(100vw - 120px)) !important;
         max-width: 432px !important;
         min-height: auto !important;
@@ -5348,14 +5349,15 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     }
 
     #profileModal .profile-mobile-topbar {
-        position: relative;
-        top: auto;
-        left: auto;
-        right: auto;
+        position: absolute;
+        top: 12px;
+        left: 12px;
+        right: 12px;
         margin: 0;
-        height: auto;
-        flex: 0 0 auto;
+        height: 0;
+        flex: 0 0 0;
         overflow: visible;
+        z-index: 5;
     }
 
     #profileModal .profile-mobile-topbar-shell {
