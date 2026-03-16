@@ -781,7 +781,7 @@
                 position: absolute;
                 left: 0;
                 right: 0;
-                bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+                bottom: calc(34px + env(safe-area-inset-bottom, 0px));
                 width: 248px;
                 max-width: calc(100% - 104px);
                 margin-left: auto;
@@ -799,7 +799,10 @@
                 min-height: 38px;
                 padding: 8px 12px;
                 border-radius: 999px;
-                box-shadow: 0 8px 20px rgba(0, 0, 0, 0.24);
+                box-shadow:
+                    0 14px 26px rgba(0, 0, 0, 0.24),
+                    0 3px 8px rgba(0, 0, 0, 0.14),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.18);
             }
 
             #shopSuccessModal .shop-success-actions .shop-btn i {
@@ -814,7 +817,10 @@
                 background: #ffffff !important;
                 color: #111827 !important;
                 border: 1px solid rgba(255, 255, 255, 0.95) !important;
-                box-shadow: 0 8px 22px rgba(255, 255, 255, 0.2), 0 8px 20px rgba(0, 0, 0, 0.18);
+                box-shadow:
+                    0 14px 28px rgba(0, 0, 0, 0.16),
+                    0 4px 10px rgba(255, 255, 255, 0.28),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.96);
             }
 
             #shopSuccessModal #exportContentBtn i,
