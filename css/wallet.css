@@ -141,9 +141,9 @@ body.wallet-modal-lock {
 .wallet-overlay.keyboard-active .wallet-modal,
 .wallet-overlay.active:focus-within .wallet-modal,
 .wallet-overlay.ios-focus-lock .wallet-modal {
-    transform: none;
+    transform: translate3d(0, var(--wallet-modal-translate-y, 0px), 0) scale(1);
     transition: opacity 0.2s ease;
-    will-change: auto;
+    will-change: transform, height;
 }
 
 .wallet-overlay.keyboard-docked .wallet-modal,
@@ -1528,10 +1528,6 @@ body.wallet-modal-lock {
         -webkit-overflow-scrolling: auto;
     }
 
-    .wallet-overlay.keyboard-active .wallet-viewport {
-        align-items: flex-start;
-    }
-
     .wallet-modal {
         width: min(calc(100vw - 24px), 700px);
         height: min(500px, calc(var(--wallet-modal-overlay-height, 100svh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px));
@@ -1749,10 +1745,6 @@ body.wallet-modal-lock {
     .wallet-viewport {
         padding: 8px;
         align-items: center;
-    }
-
-    .wallet-overlay.keyboard-active .wallet-viewport {
-        align-items: flex-start;
     }
 
     .wallet-modal {

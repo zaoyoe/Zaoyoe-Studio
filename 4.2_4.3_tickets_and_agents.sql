@@ -69,13 +69,16 @@ DECLARE
     
     v_agent_price INT := NULL;
     v_agent_markup INT := 0;
+
+    v_usage_instructions TEXT;
+    v_show_usage_instructions BOOLEAN;
 BEGIN
     IF p_quantity < 1 THEN
         RETURN jsonb_build_object('success', false, 'message', '购买数量必须大于0');
     END IF;
 
     -- A. Check Product
-    SELECT id, price_points, name, quantity_rules, flash_sale_end, flash_sale_price, delivery_type, webhook_target 
+    SELECT id, price_points, name, quantity_rules, flash_sale_end, flash_sale_price, delivery_type, webhook_target, usage_instructions, show_usage_instructions
     INTO v_product
     FROM shop_products
     WHERE id = p_product_id AND is_active = true;
@@ -291,7 +294,9 @@ BEGIN
             'content', array_to_string(v_contents, E'\n----\n'),
             'order_id', v_order_id,
             'product_name', v_product.name,
-            'remaining_points', GREATEST(0, v_user_balance - v_total_price)
+            'remaining_points', GREATEST(0, v_user_balance - v_total_price),
+            'usage_instructions', CASE WHEN v_product.show_usage_instructions THEN v_product.usage_instructions ELSE NULL END,
+            'show_usage_instructions', COALESCE(v_product.show_usage_instructions, false)
         )
     );
 

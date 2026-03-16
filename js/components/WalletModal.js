@@ -14,7 +14,7 @@
     console.log('[WalletModal] ✅ Initializing...');
 
     // Inject CSS if not already present
-    const walletCssHref = 'css/wallet.css?v=20260316_WALLET_VIEWPORT_RELEASE_1';
+    const walletCssHref = 'css/wallet.css?v=20260316_WALLET_CONTINUOUS_DOCK_1';
     const existingWalletCss = document.getElementById('wallet-modal-css');
     if (existingWalletCss) {
         existingWalletCss.href = walletCssHref;
@@ -343,32 +343,33 @@
             captureWalletModalOverlayBaseHeight();
         }
 
-        const keyboardInset = Math.max(0, walletModalState.overlayBaseHeight - viewportMetrics.height);
-        const previousKeyboardInset = Math.max(0, walletModalState.overlayBaseHeight - walletModalState.lastViewportHeight);
+        const baseViewportHeight = Math.max(walletModalState.overlayBaseHeight || 0, viewportMetrics.height);
+        const keyboardInset = Math.max(0, baseViewportHeight - viewportMetrics.height);
         const wasKeyboardActive = overlay.classList.contains('keyboard-active') || overlay.classList.contains('ios-focus-lock');
-        const keyboardLikelyVisible = wasKeyboardActive
-            ? keyboardInset > 24
-            : keyboardInset > WALLET_MODAL_KEYBOARD_THRESHOLD;
-        const keyboardReleasing = wasKeyboardActive
-            && previousKeyboardInset > 24
-            && keyboardInset + 16 < previousKeyboardInset;
-        const keyboardActive = holdDuringFocusTransfer || (keyboardLikelyVisible && !keyboardReleasing);
-        const modalMaxHeight = Math.max(260, viewportMetrics.height - 24);
+        const keyboardActive = holdDuringFocusTransfer || (wasKeyboardActive ? keyboardInset > 24 : keyboardInset > WALLET_MODAL_KEYBOARD_THRESHOLD);
+        const modalMaxHeight = Math.max(260, (keyboardActive ? viewportMetrics.height : baseViewportHeight) - 24);
         const modalHeight = Math.min(500, modalMaxHeight);
+        const centeredTop = Math.max(12, Math.round((baseViewportHeight - modalHeight) / 2));
+        const keyboardTop = Math.max(0, baseViewportHeight - keyboardInset);
+        const dockedTop = Math.max(
+            12,
+            Math.min(centeredTop, Math.round(keyboardTop - 12 - modalHeight))
+        );
+        const translateY = keyboardActive ? (dockedTop - centeredTop) : 0;
 
         viewportEl.style.setProperty('--wallet-modal-viewport-top', `${viewportMetrics.top}px`);
         viewportEl.style.setProperty('--wallet-modal-viewport-left', `${viewportMetrics.left}px`);
         viewportEl.style.setProperty('--wallet-modal-viewport-width', `${viewportMetrics.width}px`);
-        viewportEl.style.setProperty('--wallet-modal-overlay-height', `${viewportMetrics.height}px`);
-        viewportEl.style.setProperty('--wallet-modal-translate-y', '0px');
+        viewportEl.style.setProperty('--wallet-modal-overlay-height', `${baseViewportHeight}px`);
+        viewportEl.style.setProperty('--wallet-modal-translate-y', `${translateY}px`);
         overlay.classList.toggle('keyboard-active', keyboardActive);
-        overlay.classList.toggle('ios-focus-lock', keyboardActive);
+        overlay.classList.toggle('ios-focus-lock', keyboardActive || !!activeInput || holdDuringFocusTransfer);
         card.style.maxHeight = `${modalMaxHeight}px`;
         card.style.height = `${modalHeight}px`;
         card.style.minHeight = `${Math.min(400, modalHeight)}px`;
         if (scroller) {
             scroller.style.scrollPaddingTop = `${isWalletModalIOSMode() ? 84 : 24}px`;
-            scroller.style.scrollPaddingBottom = `${keyboardActive ? Math.max(168, Math.round(viewportMetrics.height * 0.32)) : 96}px`;
+            scroller.style.scrollPaddingBottom = `${keyboardActive ? Math.max(144, Math.round(keyboardInset + 72)) : 96}px`;
         }
         walletModalState.lastViewportHeight = viewportMetrics.height;
 
