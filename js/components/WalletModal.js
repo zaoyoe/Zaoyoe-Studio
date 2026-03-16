@@ -257,11 +257,10 @@
         const { overlay, scroller } = getWalletModalElements();
         const cue = overlay?.querySelector('.wallet-recharge-scroll-cue');
         const rechargeView = overlay?.querySelector('#view-recharge');
-        const afdianSection = overlay?.querySelector('.afdian-section');
 
         if (!cue) return;
 
-        if (!overlay || !scroller || !rechargeView || !afdianSection || !overlay.classList.contains('active')) {
+        if (!overlay || !scroller || !rechargeView || !overlay.classList.contains('active')) {
             cue.classList.remove('visible');
             return;
         }
@@ -279,12 +278,10 @@
             return;
         }
 
-        const scrollerRect = scroller.getBoundingClientRect();
-        const afdianRect = afdianSection.getBoundingClientRect();
-        const afdianPeekVisible = afdianRect.top < (scrollerRect.bottom - 8);
-        const reachedBottom = scroller.scrollTop >= (overflowAmount - 16);
+        const nearTop = scroller.scrollTop <= 18;
+        const keyboardActive = overlay.classList.contains('keyboard-active') || overlay.classList.contains('ios-focus-lock');
 
-        cue.classList.toggle('visible', !afdianPeekVisible && !reachedBottom);
+        cue.classList.toggle('visible', nearTop && !keyboardActive);
     }
 
     function requestWalletRechargeScrollCueUpdate() {
@@ -1241,7 +1238,18 @@
                             </div>
                         </div>
                         <div class="wallet-recharge-scroll-cue" aria-hidden="true">
-                            <span class="wallet-recharge-scroll-cue-icon">⌄</span>
+                            <span class="wallet-recharge-scroll-cue-icon">
+                                <svg viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <defs>
+                                        <linearGradient id="walletScrollCueGradient" x1="14" y1="5" x2="14" y2="23" gradientUnits="userSpaceOnUse">
+                                            <stop offset="0%" stop-color="#d8ecff" />
+                                            <stop offset="100%" stop-color="#6b9ece" />
+                                        </linearGradient>
+                                    </defs>
+                                    <path d="M8 10.5L14 16.5L20 10.5" stroke="url(#walletScrollCueGradient)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+                                    <path d="M8 16.5L14 22.5L20 16.5" stroke="url(#walletScrollCueGradient)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" opacity="0.78"/>
+                                </svg>
+                            </span>
                         </div>
                     </div>
                 </div>

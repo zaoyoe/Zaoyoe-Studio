@@ -216,11 +216,17 @@ body.wallet-modal-lock {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    color: var(--wallet-sheet-link-accent);
-    font-size: 24px;
-    line-height: 1;
+    width: 28px;
+    height: 28px;
     text-shadow: 0 6px 18px rgba(0, 0, 0, 0.36);
     animation: wallet-recharge-cue-bob 1.18s ease-in-out infinite;
+}
+
+.wallet-recharge-scroll-cue-icon svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+    filter: drop-shadow(0 6px 16px rgba(107, 158, 206, 0.22));
 }
 
 @keyframes wallet-recharge-cue-bob {
