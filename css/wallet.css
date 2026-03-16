@@ -84,7 +84,7 @@ body.wallet-modal-lock {
     padding: max(24px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom));
     overscroll-behavior: contain;
     box-sizing: border-box;
-    overflow: hidden;
+    overflow: visible;
     -webkit-overflow-scrolling: auto;
 }
 
@@ -1524,7 +1524,7 @@ body.wallet-modal-lock {
         justify-content: center;
         height: var(--wallet-modal-overlay-height, 100dvh);
         min-height: var(--wallet-modal-overlay-height, 100dvh);
-        overflow: hidden;
+        overflow: visible;
         -webkit-overflow-scrolling: auto;
     }
 

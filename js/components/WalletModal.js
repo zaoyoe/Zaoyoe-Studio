@@ -14,7 +14,7 @@
     console.log('[WalletModal] ✅ Initializing...');
 
     // Inject CSS if not already present
-    const walletCssHref = 'css/wallet.css?v=20260316_WALLET_BACKDROP_ONLY_1';
+    const walletCssHref = 'css/wallet.css?v=20260316_WALLET_KEYBOARD_RELEASE_FIX_1';
     const existingWalletCss = document.getElementById('wallet-modal-css');
     if (existingWalletCss) {
         existingWalletCss.href = walletCssHref;
@@ -345,7 +345,7 @@
 
         const keyboardLikelyVisible = walletModalState.overlayBaseHeight > 0
             && walletModalState.overlayBaseHeight - viewportMetrics.height > WALLET_MODAL_KEYBOARD_THRESHOLD;
-        const keyboardActive = !!activeInput || holdDuringFocusTransfer || keyboardLikelyVisible;
+        const keyboardActive = holdDuringFocusTransfer || keyboardLikelyVisible;
         const modalMaxHeight = Math.max(260, viewportMetrics.height - 24);
         const modalHeight = Math.min(500, modalMaxHeight);
 
@@ -365,7 +365,7 @@
         }
         walletModalState.lastViewportHeight = viewportMetrics.height;
 
-        if (!activeInput) {
+        if (!activeInput || !keyboardActive) {
             if (!holdDuringFocusTransfer) walletModalState.lastFocusAnchor = null;
             return;
         }
@@ -422,9 +422,11 @@
             walletModalState.blurTimer = setTimeout(() => {
                 walletModalState.blurTimer = null;
                 if (!getActiveWalletModalInput()) {
-                    scheduleWalletModalLayout({ settled: true });
+                    walletModalState.focusTransferUntil = 0;
+                    walletModalState.lastFocusAnchor = null;
+                    scheduleWalletModalLayout();
                 }
-            }, 120);
+            }, 0);
         });
 
         input.addEventListener('click', () => {
@@ -466,8 +468,17 @@
         const vv = window.visualViewport;
         const handleViewportChange = () => {
             stabilizeWalletModalViewport();
-            if (!getActiveWalletModalInput()) captureWalletModalOverlayBaseHeight();
-            scheduleWalletModalLayout({ settled: true });
+            const viewportMetrics = measureWalletModalViewport();
+            const keyboardClosing = walletModalState.lastViewportHeight > 0
+                && viewportMetrics.height > walletModalState.lastViewportHeight + 16;
+            if (!getActiveWalletModalInput()) {
+                captureWalletModalOverlayBaseHeight();
+            }
+            if (keyboardClosing) {
+                walletModalState.focusTransferUntil = 0;
+                walletModalState.lastFocusAnchor = null;
+            }
+            scheduleWalletModalLayout({ settled: !keyboardClosing });
         };
 
         const handleRootScroll = () => {
