@@ -5313,6 +5313,7 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
 @media (min-width: 769px) {
     #profileModal {
         --profile-mobile-topbar-height: 72px;
+        --profile-desktop-inline-editor-offset: 148px;
     }
 
     #profileModal .modal-content.profile-modal {
@@ -5351,7 +5352,7 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
         top: auto;
         left: auto;
         right: auto;
-        margin: 0 0 48px;
+        margin: 0 0 60px;
         height: 8px;
         flex: 0 0 auto;
         overflow: visible;
@@ -5459,6 +5460,8 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
         row-gap: 14px;
         align-items: center;
         padding: 20px 18px;
+        position: relative;
+        overflow: visible;
     }
 
     #profileModal .profile-mobile-hero-avatar {
@@ -5509,13 +5512,27 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     }
 
     #profileModal .profile-mobile-inline-editor {
-        grid-column: 1 / -1;
-        width: 100%;
-        margin-top: -2px;
+        position: absolute;
+        top: calc(100% - 6px);
+        left: calc(18px + 76px + 16px);
+        right: 18px;
+        grid-column: auto;
+        width: auto;
+        margin-top: 0;
+        z-index: 4;
     }
 
     #profileModal .profile-mobile-card {
         padding: 18px 18px 16px;
+    }
+
+    #profileModal .profile-mobile-card--essential,
+    #profileModal .profile-mobile-card--quick {
+        transition: margin-top 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    #profileModal .profile-mobile-sheet.is-editing-desktop .profile-mobile-card--essential {
+        margin-top: var(--profile-desktop-inline-editor-offset);
     }
 
     #profileModal .profile-mobile-section-head {

@@ -2572,6 +2572,7 @@ function resetProfileModalViewState() {
     const profileFront = document.querySelector('.profile-front');
     const profileBack = document.querySelector('.profile-back');
     const mobileHeroCard = document.querySelector('#profileModal .profile-mobile-hero-card');
+    const mobileSheet = document.querySelector('#profileModal .profile-mobile-sheet');
     const mobileEditor = document.getElementById('profileMobileInlineEditor');
     const mobileInput = document.getElementById('profileMobileNicknameInput');
 
@@ -2604,6 +2605,9 @@ function resetProfileModalViewState() {
     }
     if (mobileHeroCard) {
         mobileHeroCard.classList.remove('is-editing');
+    }
+    if (mobileSheet) {
+        mobileSheet.classList.remove('is-editing-desktop');
     }
     if (mobileInput) {
         mobileInput.value = '';
@@ -2937,7 +2941,11 @@ function openProfileEditor(event) {
         if (typeof event.stopPropagation === 'function') event.stopPropagation();
     }
 
-    switchProfileTab('profile');
+    const overlay = document.getElementById('profileModal');
+    const currentTab = overlay?.dataset.profileTab || 'profile';
+    if (currentTab !== 'profile') {
+        switchProfileTab('profile');
+    }
 
     const nicknameEdit = document.getElementById('profileMobileInlineEditor');
     const nicknameInput = document.getElementById('profileMobileNicknameInput');
@@ -2969,6 +2977,8 @@ function toggleNicknameEdit(show) {
     const mobileEditor = document.getElementById('profileMobileInlineEditor');
     const mobileInput = document.getElementById('profileMobileNicknameInput');
     const mobileHeroCard = document.querySelector('#profileModal .profile-mobile-hero-card');
+    const mobileSheet = document.querySelector('#profileModal .profile-mobile-sheet');
+    const isDesktopLayout = window.matchMedia('(min-width: 769px)').matches;
 
     if (!mobileEditor || !mobileInput) return;
 
@@ -2976,6 +2986,9 @@ function toggleNicknameEdit(show) {
         mobileInput.value = currentNickname;
         void mobileEditor.offsetWidth;
         mobileHeroCard?.classList.add('is-editing');
+        if (isDesktopLayout) {
+            mobileSheet?.classList.add('is-editing-desktop');
+        }
         mobileEditor.classList.add('is-visible');
         window.setTimeout(() => {
             try {
@@ -2990,6 +3003,7 @@ function toggleNicknameEdit(show) {
 
     mobileEditor.classList.remove('is-visible');
     mobileHeroCard?.classList.remove('is-editing');
+    mobileSheet?.classList.remove('is-editing-desktop');
 }
 
 window.toggleNicknameEdit = toggleNicknameEdit;
