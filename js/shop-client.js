@@ -1187,10 +1187,12 @@ const ShopClient = {
                 ? 'display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%;'
                 : 'display: flex; flex-direction: column; gap: 8px; width: 100%;';
 
-            const createCardMsg = (text) => {
+            const createCardMsg = (text, hidden = false) => {
                 const escaped = this.escapeHtml(text).replace(/`/g, '\\`');
+                const hiddenStyle = hidden ? 'display: none;' : '';
+                const hiddenAttr = hidden ? 'data-expandable-item="1"' : '';
                 return `
-                <div class="content-card" style="margin-bottom: 0 !important; cursor: pointer; transition: all 0.2s; padding: 10px 6px !important; display: flex; align-items: center; justify-content: center; border-radius: 10px !important;" onclick="navigator.clipboard.writeText(\`${escaped}\`).then(() => { if(window.WalletModal && window.WalletModal.showToast){ window.WalletModal.showToast(window.i18n?.t('common.copied') || '已复制', 'success'); } else { const t = document.getElementById('shopSuccessToast'); if(t){ t.textContent='已复制'; t.style.opacity=1; setTimeout(()=>t.style.opacity=0, 1500); } } })" title="${window.i18n?.t('wallet.clickToCopy') || '点击复制'}" onmouseover="this.style.borderColor='rgba(107, 158, 206, 0.5)'; this.style.background='rgba(255, 255, 255, 0.08)';" onmouseout="this.style.borderColor='rgba(255, 255, 255, 0.1)'; this.style.background='rgba(255, 255, 255, 0.05)';">
+                <div class="content-card" ${hiddenAttr} style="margin-bottom: 0 !important; cursor: pointer; transition: all 0.2s; padding: 10px 6px !important; display: flex; align-items: center; justify-content: center; border-radius: 10px !important; ${hiddenStyle}" onclick="navigator.clipboard.writeText(\`${escaped}\`).then(() => { if(window.WalletModal && window.WalletModal.showToast){ window.WalletModal.showToast(window.i18n?.t('common.copied') || '已复制', 'success'); } else { const t = document.getElementById('shopSuccessToast'); if(t){ t.textContent='已复制'; t.style.opacity=1; setTimeout(()=>t.style.opacity=0, 1500); } } })" title="${window.i18n?.t('wallet.clickToCopy') || '点击复制'}" onmouseover="this.style.borderColor='rgba(107, 158, 206, 0.5)'; this.style.background='rgba(255, 255, 255, 0.08)';" onmouseout="this.style.borderColor='rgba(255, 255, 255, 0.1)'; this.style.background='rgba(255, 255, 255, 0.05)';">
                     <div class="item-content-box" style="padding: 0 !important; width: 100%; background: transparent !important; border-radius: 0 !important;">
                         <div class="item-text" style="text-align: center; font-size: 13px; letter-spacing: 0.5px; line-height: 1.3;">${this.escapeHtml(text)}</div>
                     </div>
@@ -1209,12 +1211,12 @@ const ShopClient = {
             } else {
                 // More than 2 items: show first 2, collapse rest
                 const visibleHTML = items.slice(0, 2).map(createCardMsg).join('');
-                const hiddenHTML = items.slice(2).map(createCardMsg).join('');
+                const hiddenHTML = items.slice(2).map(item => createCardMsg(item, true)).join('');
                 const hiddenCount = totalItems - 2;
 
                 const expandBtn = `
                 <div style="margin-top:12px;text-align:center;">
-                    <span id="expandContentBtn" onclick="ShopClient.toggleExpandContent()"
+                    <span id="expandContentBtn" data-hidden-count="${hiddenCount}" onclick="ShopClient.toggleExpandContent()"
                         style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;
                                font-size:12px;color:rgba(255,255,255,0.6);background:rgba(255,255,255,0.1);
                                padding:8px 16px;border-radius:20px;transition:all 0.2s;">
@@ -1223,9 +1225,7 @@ const ShopClient = {
                     </span>
                 </div>`;
 
-                const hiddenSection = `<div id="hiddenContent" style="display:none;margin-top:8px;">${hiddenHTML}</div>`;
-
-                contentBox.innerHTML = `<div style="${gridStyle}">${visibleHTML}${hiddenSection}</div>${expandBtn}${toastEl}`;
+                contentBox.innerHTML = `<div id="expandedContentGrid" style="${gridStyle}">${visibleHTML}${hiddenHTML}</div>${expandBtn}${toastEl}`;
             }
 
             // Handle Warning
@@ -1271,15 +1271,19 @@ const ShopClient = {
     },
 
     toggleExpandContent: function () {
-        const hiddenContent = document.getElementById('hiddenContent');
         const expandBtn = document.getElementById('expandContentBtn');
+        const expandableItems = Array.from(document.querySelectorAll('#expandedContentGrid [data-expandable-item="1"]'));
 
-        if (hiddenContent && expandBtn) {
-            const isHidden = hiddenContent.style.display === 'none';
-            hiddenContent.style.display = isHidden ? 'block' : 'none';
+        if (expandBtn && expandableItems.length > 0) {
+            const isHidden = expandableItems[0].style.display === 'none';
+            expandableItems.forEach((item) => {
+                item.style.display = isHidden ? 'flex' : 'none';
+            });
+
+            const hiddenCount = expandBtn.dataset.hiddenCount || expandableItems.length;
             expandBtn.innerHTML = isHidden
                 ? `<span>${window.i18n?.t('shop.collapse') || '收起'}</span><i class="fas fa-chevron-up" style="font-size: 10px;"></i>`
-                : `<span>${window.i18n?.t('shop.expandMore') || '展开其余'}</span><i class="fas fa-chevron-down" style="font-size: 10px;"></i>`;
+                : `<span>${window.i18n?.t('shop.expandMore') || '展开其余'} ${hiddenCount} ${window.i18n?.t('shop.items') || '个'}</span><i class="fas fa-chevron-down" style="font-size: 10px;"></i>`;
         }
     },
 
