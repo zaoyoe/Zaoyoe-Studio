@@ -14,18 +14,26 @@
     console.log('[WalletModal] ✅ Initializing...');
 
     // Inject CSS if not already present
-    if (!document.getElementById('wallet-modal-css')) {
+    const walletCssHref = 'css/wallet.css?v=20260316_WALLET_KEYBOARD_REWRITE_1';
+    const existingWalletCss = document.getElementById('wallet-modal-css');
+    if (existingWalletCss) {
+        existingWalletCss.href = walletCssHref;
+    } else {
         const link = document.createElement('link');
         link.id = 'wallet-modal-css';
         link.rel = 'stylesheet';
-        link.href = 'css/wallet.css?v=20260316_WALLET_INTERNAL_SCROLL_1';
+        link.href = walletCssHref;
         document.head.appendChild(link);
     }
 
-    const WALLET_MODAL_KEYBOARD_SETTLE_MS = 100;
+    const WALLET_MODAL_KEYBOARD_SETTLE_MS = 120;
     const WALLET_MODAL_SCROLL_STATE_CLEAR_MS = 320;
+    const WALLET_MODAL_KEYBOARD_THRESHOLD = 120;
     const walletModalState = {
         overlayBaseHeight: 0,
+        baseScrollY: 0,
+        pageFrozen: false,
+        usingLegacyScrollLock: false,
         layoutRafId: 0,
         settleTimer: null,
         blurTimer: null,
@@ -34,8 +42,8 @@
         scrollAnimationTarget: null,
         focusTransferUntil: 0,
         lastFocusAnchor: null,
-        preserveLayoutDuringFocusTransfer: false,
-        viewportCleanup: null
+        viewportCleanup: null,
+        lastViewportHeight: 0
     };
 
     function isWalletModalIOSMode() {
@@ -53,6 +61,18 @@
             inputs: overlay
                 ? Array.from(overlay.querySelectorAll('input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]):not([readonly]):not([disabled]), textarea:not([readonly]):not([disabled]), select:not([disabled])'))
                 : []
+        };
+    }
+
+    function measureWalletModalViewport() {
+        const vv = window.visualViewport;
+        const docEl = document.documentElement;
+
+        return {
+            top: Math.max(0, Math.round(vv?.offsetTop || 0)),
+            left: Math.max(0, Math.round(vv?.offsetLeft || 0)),
+            width: Math.max(320, Math.round(vv?.width || window.innerWidth || docEl.clientWidth || 0)),
+            height: Math.max(260, Math.round(vv?.height || window.innerHeight || docEl.clientHeight || 0))
         };
     }
 
@@ -77,6 +97,57 @@
             clearTimeout(walletModalState.blurTimer);
             walletModalState.blurTimer = null;
         }
+    }
+
+    function freezeWalletModalPage() {
+        if (walletModalState.pageFrozen || !isWalletModalIOSMode()) return;
+
+        walletModalState.baseScrollY = Math.max(0, Math.round(window.scrollY || window.pageYOffset || 0));
+        document.documentElement.classList.add('wallet-modal-lock');
+        document.body.classList.add('wallet-modal-lock');
+        document.documentElement.style.overflow = 'hidden';
+        document.body.style.position = 'fixed';
+        document.body.style.top = `-${walletModalState.baseScrollY}px`;
+        document.body.style.left = '0';
+        document.body.style.right = '0';
+        document.body.style.width = '100%';
+        document.body.style.overflow = 'hidden';
+        walletModalState.pageFrozen = true;
+        stabilizeWalletModalViewport();
+    }
+
+    function unfreezeWalletModalPage() {
+        if (!walletModalState.pageFrozen) return;
+
+        const restoreScrollY = walletModalState.baseScrollY;
+        document.documentElement.classList.remove('wallet-modal-lock');
+        document.body.classList.remove('wallet-modal-lock');
+        document.documentElement.style.overflow = '';
+        document.body.style.position = '';
+        document.body.style.top = '';
+        document.body.style.left = '';
+        document.body.style.right = '';
+        document.body.style.width = '';
+        document.body.style.overflow = '';
+        walletModalState.pageFrozen = false;
+        walletModalState.baseScrollY = 0;
+
+        requestAnimationFrame(() => {
+            window.scrollTo(0, restoreScrollY);
+        });
+    }
+
+    function stabilizeWalletModalViewport() {
+        if (!walletModalState.pageFrozen) return;
+
+        document.body.style.top = `-${walletModalState.baseScrollY}px`;
+
+        if ((window.scrollY || window.pageYOffset || 0) !== 0) {
+            window.scrollTo(0, 0);
+        }
+
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
     }
 
     function clearWalletModalScrollAnimationState() {
@@ -111,30 +182,27 @@
         overlay.classList.remove('keyboard-active', 'keyboard-docked', 'ios-focus-lock');
         overlay.style.setProperty('--wallet-modal-translate-y', '0px');
         overlay.style.removeProperty('--wallet-modal-overlay-height');
+        overlay.style.removeProperty('--wallet-modal-viewport-top');
+        overlay.style.removeProperty('--wallet-modal-viewport-left');
+        overlay.style.removeProperty('--wallet-modal-viewport-width');
         card.style.removeProperty('max-height');
+        card.style.removeProperty('height');
+        card.style.removeProperty('min-height');
         scroller?.style.removeProperty('scroll-padding-bottom');
         walletModalState.overlayBaseHeight = 0;
         walletModalState.focusTransferUntil = 0;
         walletModalState.lastFocusAnchor = null;
-        walletModalState.preserveLayoutDuringFocusTransfer = false;
+        walletModalState.lastViewportHeight = 0;
         clearWalletModalScrollAnimationState();
     }
 
     function captureWalletModalOverlayBaseHeight(force = false) {
-        const { overlay } = getWalletModalElements();
-        if (!overlay) return;
+        const { height } = measureWalletModalViewport();
+        if (!height) return;
 
-        const measuredHeight = Math.max(
-            Math.round(window.innerHeight || 0),
-            Math.round(document.documentElement.clientHeight || 0),
-            Math.round(window.visualViewport?.height || 0)
-        );
-
-        if (!measuredHeight) return;
-        if (!force && walletModalState.overlayBaseHeight >= measuredHeight) return;
-
-        walletModalState.overlayBaseHeight = measuredHeight;
-        overlay.style.setProperty('--wallet-modal-overlay-height', `${measuredHeight}px`);
+        if (force || height > walletModalState.overlayBaseHeight) {
+            walletModalState.overlayBaseHeight = height;
+        }
     }
 
     function getWalletModalFocusAnchor(input = getActiveWalletModalInput()) {
@@ -234,13 +302,8 @@
     }
 
     function markWalletModalFocusTransfer(nextInput = null) {
-        const nextAnchor = getWalletModalFocusAnchor(nextInput);
         walletModalState.focusTransferUntil = Date.now() + 260;
-        walletModalState.preserveLayoutDuringFocusTransfer = !!(
-            nextAnchor &&
-            walletModalState.lastFocusAnchor &&
-            nextAnchor === walletModalState.lastFocusAnchor
-        );
+        walletModalState.lastFocusAnchor = getWalletModalFocusAnchor(nextInput) || walletModalState.lastFocusAnchor;
     }
 
     function applyWalletModalLayout() {
@@ -248,43 +311,59 @@
         if (!overlay || !card || !overlay.classList.contains('active')) return;
 
         if (!isWalletModalIOSMode()) {
+            overlay.style.removeProperty('--wallet-modal-overlay-height');
+            overlay.style.removeProperty('--wallet-modal-viewport-top');
+            overlay.style.removeProperty('--wallet-modal-viewport-left');
+            overlay.style.removeProperty('--wallet-modal-viewport-width');
             card.style.removeProperty('max-height');
-            if (scroller) {
-                scroller.style.removeProperty('scroll-padding-bottom');
-            }
+            card.style.removeProperty('height');
+            card.style.removeProperty('min-height');
+            scroller?.style.removeProperty('scroll-padding-bottom');
             overlay.style.setProperty('--wallet-modal-translate-y', '0px');
             overlay.classList.remove('keyboard-active', 'keyboard-docked', 'ios-focus-lock');
-            walletModalState.lastFocusAnchor = getWalletModalFocusAnchor(getActiveWalletModalInput()) || null;
-            walletModalState.preserveLayoutDuringFocusTransfer = false;
+            walletModalState.lastViewportHeight = 0;
             return;
         }
 
-        const visibleHeight = Math.max(
-            320,
-            Math.round(window.visualViewport?.height || window.innerHeight || document.documentElement.clientHeight || 0)
-        );
-        const activeInput = getActiveWalletModalInput();
-        const activeAnchor = getWalletModalFocusAnchor(activeInput);
-        const holdDuringFocusTransfer = !activeInput && walletModalState.focusTransferUntil > Date.now();
+        stabilizeWalletModalViewport();
 
-        card.style.maxHeight = `${Math.max(320, visibleHeight - 24)}px`;
-        if (scroller) {
-            scroller.style.scrollPaddingBottom = `${activeInput || holdDuringFocusTransfer ? 144 : 96}px`;
+        const viewport = measureWalletModalViewport();
+        const activeInput = getActiveWalletModalInput();
+        const holdDuringFocusTransfer = !activeInput && walletModalState.focusTransferUntil > Date.now();
+        if (!activeInput) {
+            captureWalletModalOverlayBaseHeight();
         }
+
+        const keyboardLikelyVisible = walletModalState.overlayBaseHeight > 0
+            && walletModalState.overlayBaseHeight - viewport.height > WALLET_MODAL_KEYBOARD_THRESHOLD;
+        const keyboardActive = !!activeInput || holdDuringFocusTransfer || keyboardLikelyVisible;
+        const modalMaxHeight = Math.max(260, viewport.height - 24);
+        const modalHeight = Math.min(500, modalMaxHeight);
+
+        overlay.style.setProperty('--wallet-modal-viewport-top', `${viewport.top}px`);
+        overlay.style.setProperty('--wallet-modal-viewport-left', `${viewport.left}px`);
+        overlay.style.setProperty('--wallet-modal-viewport-width', `${viewport.width}px`);
+        overlay.style.setProperty('--wallet-modal-overlay-height', `${viewport.height}px`);
         overlay.style.setProperty('--wallet-modal-translate-y', '0px');
-        overlay.classList.toggle('keyboard-active', !!activeInput || holdDuringFocusTransfer);
+        overlay.classList.toggle('keyboard-active', keyboardActive);
+        overlay.classList.toggle('ios-focus-lock', keyboardActive);
+        card.style.maxHeight = `${modalMaxHeight}px`;
+        card.style.height = `${modalHeight}px`;
+        card.style.minHeight = `${Math.min(400, modalHeight)}px`;
+        if (scroller) {
+            scroller.style.scrollPaddingBottom = `${keyboardActive ? Math.max(168, Math.round(viewport.height * 0.32)) : 96}px`;
+        }
+        walletModalState.lastViewportHeight = viewport.height;
 
         if (!activeInput) {
-            if (!holdDuringFocusTransfer) {
-                walletModalState.lastFocusAnchor = null;
-                walletModalState.preserveLayoutDuringFocusTransfer = false;
-            }
+            if (!holdDuringFocusTransfer) walletModalState.lastFocusAnchor = null;
             return;
         }
 
-        ensureWalletModalInputVisible(activeInput);
-        walletModalState.lastFocusAnchor = activeAnchor || null;
-        walletModalState.preserveLayoutDuringFocusTransfer = false;
+        requestAnimationFrame(() => {
+            ensureWalletModalInputVisible(activeInput);
+        });
+        walletModalState.lastFocusAnchor = getWalletModalFocusAnchor(activeInput) || null;
     }
 
     function scheduleWalletModalLayout({ settled = false, deferOnly = false } = {}) {
@@ -317,20 +396,13 @@
     function bindWalletModalInputBehavior(input) {
         if (!input || input.dataset.walletInputManaged === '1') return;
 
-        const gesture = {
-            startX: 0,
-            startY: 0,
-            startScrollTop: 0,
-            mode: 'idle'
-        };
-
         input.addEventListener('focus', () => {
             markWalletModalFocusTransfer(input);
             if (walletModalState.blurTimer) {
                 clearTimeout(walletModalState.blurTimer);
                 walletModalState.blurTimer = null;
             }
-            scheduleWalletModalLayout();
+            scheduleWalletModalLayout({ settled: true });
         });
 
         input.addEventListener('blur', () => {
@@ -340,81 +412,27 @@
             walletModalState.blurTimer = setTimeout(() => {
                 walletModalState.blurTimer = null;
                 if (!getActiveWalletModalInput()) {
-                    scheduleWalletModalLayout({ settled: true, deferOnly: true });
+                    scheduleWalletModalLayout({ settled: true });
                 }
             }, 120);
         });
 
         input.addEventListener('click', () => {
-            if (document.activeElement === input) return;
             markWalletModalFocusTransfer(input);
-            scheduleWalletModalLayout();
+            scheduleWalletModalLayout({ settled: true });
         });
-
-        input.addEventListener('touchstart', (event) => {
-            const { overlay, card, scroller } = getWalletModalElements();
-            const scrollHost = scroller || card;
-            if (!overlay?.classList.contains('active') || !scrollHost) return;
-            cancelWalletModalScrollAnimation();
-
-            const touch = event.touches[0];
-            gesture.startX = touch?.clientX || 0;
-            gesture.startY = touch?.clientY || 0;
-            gesture.startScrollTop = scrollHost.scrollTop;
-            gesture.mode = 'pending';
-            markWalletModalFocusTransfer(input);
-        }, { passive: true });
-
-        input.addEventListener('touchmove', (event) => {
-            const { overlay, card, scroller } = getWalletModalElements();
-            const scrollHost = scroller || card;
-            if (!overlay?.classList.contains('active') || !scrollHost) return;
-            if (document.activeElement !== input) return;
-            cancelWalletModalScrollAnimation();
-
-            const touch = event.touches[0];
-            const deltaX = (touch?.clientX || 0) - gesture.startX;
-            const deltaY = (touch?.clientY || 0) - gesture.startY;
-
-            if (gesture.mode === 'pending') {
-                if (Math.abs(deltaY) < 8 || Math.abs(deltaY) <= Math.abs(deltaX)) {
-                    return;
-                }
-                gesture.mode = 'scroll';
-            }
-
-            if (gesture.mode !== 'scroll') return;
-
-            const maxScrollTop = Math.max(0, scrollHost.scrollHeight - scrollHost.clientHeight);
-            const nextScrollTop = Math.max(0, Math.min(gesture.startScrollTop - deltaY, maxScrollTop));
-
-            if (nextScrollTop !== scrollHost.scrollTop) {
-                scrollHost.scrollTop = nextScrollTop;
-            }
-
-            if (event.cancelable) {
-                event.preventDefault();
-            }
-        }, { passive: false });
 
         input.addEventListener('touchend', (event) => {
-            if (isWalletModalIOSMode() && gesture.mode === 'pending' && document.activeElement !== input) {
-                if (event.cancelable) {
-                    event.preventDefault();
-                }
-                try {
-                    input.focus({ preventScroll: true });
-                } catch (_) {
-                    input.focus();
-                }
-                scheduleWalletModalLayout();
+            if (!isWalletModalIOSMode() || document.activeElement === input) return;
+            if (event.cancelable) event.preventDefault();
+            markWalletModalFocusTransfer(input);
+            try {
+                input.focus({ preventScroll: true });
+            } catch (_) {
+                input.focus();
             }
-            gesture.mode = 'idle';
-        });
-
-        input.addEventListener('touchcancel', () => {
-            gesture.mode = 'idle';
-        });
+            scheduleWalletModalLayout({ settled: true });
+        }, { passive: false });
 
         input.dataset.walletInputManaged = '1';
     }
@@ -425,43 +443,41 @@
     }
 
     function attachWalletModalViewportHandlers() {
+        detachWalletModalViewportHandlers();
         bindWalletModalInputs();
+        captureWalletModalOverlayBaseHeight(true);
 
         if (!isWalletModalIOSMode()) {
-            captureWalletModalOverlayBaseHeight(true);
-            scheduleWalletModalLayout();
+            scheduleWalletModalLayout({ settled: true });
             return;
         }
 
+        freezeWalletModalPage();
         const vv = window.visualViewport;
-        if (!vv) return;
-
-        detachWalletModalViewportHandlers();
-        captureWalletModalOverlayBaseHeight(true);
-
         const handleViewportChange = () => {
-            if (!getActiveWalletModalInput()) {
-                captureWalletModalOverlayBaseHeight();
-            }
-            scheduleWalletModalLayout({ settled: true, deferOnly: true });
+            stabilizeWalletModalViewport();
+            if (!getActiveWalletModalInput()) captureWalletModalOverlayBaseHeight();
+            scheduleWalletModalLayout({ settled: true });
         };
 
-        vv.addEventListener('resize', handleViewportChange, { passive: true });
-        vv.addEventListener('scroll', handleViewportChange, { passive: true });
-        getWalletModalElements().inputs.forEach((input) => {
-            input.addEventListener('focus', handleViewportChange);
-            input.addEventListener('blur', handleViewportChange);
-        });
+        const handleRootScroll = () => {
+            stabilizeWalletModalViewport();
+        };
+
+        vv?.addEventListener('resize', handleViewportChange, { passive: true });
+        vv?.addEventListener('scroll', handleViewportChange, { passive: true });
+        window.addEventListener('scroll', handleRootScroll, { passive: true });
+        window.addEventListener('resize', handleViewportChange, { passive: true });
 
         walletModalState.viewportCleanup = () => {
-            vv.removeEventListener('resize', handleViewportChange);
-            vv.removeEventListener('scroll', handleViewportChange);
-            getWalletModalElements().inputs.forEach((input) => {
-                input.removeEventListener('focus', handleViewportChange);
-                input.removeEventListener('blur', handleViewportChange);
-            });
+            vv?.removeEventListener('resize', handleViewportChange);
+            vv?.removeEventListener('scroll', handleViewportChange);
+            window.removeEventListener('scroll', handleRootScroll);
+            window.removeEventListener('resize', handleViewportChange);
             walletModalState.viewportCleanup = null;
         };
+
+        scheduleWalletModalLayout({ settled: true });
     }
 
     function detachWalletModalViewportHandlers() {
@@ -476,7 +492,6 @@
         if (!overlay) return;
 
         resetWalletModalVisualState();
-        captureWalletModalOverlayBaseHeight(true);
         attachWalletModalViewportHandlers();
         scheduleWalletModalLayout({ settled: true });
     }
@@ -541,16 +556,21 @@
             this.isOpen = true;
             this.ordersLoaded = false; // Reset loaded flag for new session
 
+            if (isWalletModalIOSMode()) {
+                freezeWalletModalPage();
+            }
+
             // Render UI immediately so there's zero delay for the user
             this.render();
             prepareWalletModalOpenState();
 
             const { card, overlay } = getWalletModalElements();
             if (window.iOSScrollLock) {
-                if (isWalletModalIOSMode()) {
-                    window.iOSScrollLock.lock(card || overlay);
-                } else {
+                if (!isWalletModalIOSMode()) {
                     window.iOSScrollLock.lockLight(card || overlay);
+                    walletModalState.usingLegacyScrollLock = true;
+                } else {
+                    walletModalState.usingLegacyScrollLock = false;
                 }
             }
 
@@ -600,7 +620,11 @@
             if (scroller) {
                 scroller.scrollTop = 0;
             }
-            if (window.iOSScrollLock) window.iOSScrollLock.unlock(); // Unlock body scroll
+            if (walletModalState.usingLegacyScrollLock && window.iOSScrollLock) {
+                window.iOSScrollLock.unlock();
+            }
+            walletModalState.usingLegacyScrollLock = false;
+            unfreezeWalletModalPage();
             this.isOpen = false;
             this.ordersLoaded = false;
             this._prefetched = false; // Allow prefetch on next dropdown open

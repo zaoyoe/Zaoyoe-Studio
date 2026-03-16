@@ -29,9 +29,14 @@ body.wallet-modal-lock {
 /* Overlay */
 .wallet-overlay {
     --wallet-modal-overlay-height: 100dvh;
+    --wallet-modal-viewport-top: 0px;
+    --wallet-modal-viewport-left: 0px;
+    --wallet-modal-viewport-width: 100vw;
     --wallet-modal-translate-y: 0px;
     position: fixed;
-    inset: 0;
+    top: var(--wallet-modal-viewport-top);
+    left: var(--wallet-modal-viewport-left);
+    width: var(--wallet-modal-viewport-width);
     background: var(--wallet-sheet-overlay);
     backdrop-filter: var(--wallet-sheet-overlay-filter);
     -webkit-backdrop-filter: var(--wallet-sheet-overlay-filter);
@@ -96,6 +101,14 @@ body.wallet-modal-lock {
 .wallet-overlay.active .wallet-modal {
     transform: translate3d(0, var(--wallet-modal-translate-y, 0px), 0) scale(1);
     opacity: 1;
+}
+
+.wallet-overlay.keyboard-active .wallet-modal,
+.wallet-overlay.active:focus-within .wallet-modal,
+.wallet-overlay.ios-focus-lock .wallet-modal {
+    transform: none;
+    transition: opacity 0.2s ease;
+    will-change: auto;
 }
 
 .wallet-overlay.keyboard-docked .wallet-modal,
