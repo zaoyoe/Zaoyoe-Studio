@@ -1207,10 +1207,10 @@ const ShopClient = {
 
             if (totalItems <= 2) {
                 // 2 or fewer items: show directly in grid
-                contentBox.innerHTML = `<div style="${gridStyle}">${items.map(createCardMsg).join('')}</div>${toastEl}`;
+                contentBox.innerHTML = `<div style="${gridStyle}">${items.map(item => createCardMsg(item)).join('')}</div>${toastEl}`;
             } else {
                 // More than 2 items: show first 2, collapse rest
-                const visibleHTML = items.slice(0, 2).map(createCardMsg).join('');
+                const visibleHTML = items.slice(0, 2).map(item => createCardMsg(item)).join('');
                 const hiddenHTML = items.slice(2).map(item => createCardMsg(item, true)).join('');
                 const hiddenCount = totalItems - 2;
 
