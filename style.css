@@ -5316,30 +5316,30 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     }
 
     #profileModal .modal-content.profile-modal {
-        width: min(448px, calc(100vw - 120px)) !important;
-        max-width: 448px !important;
-        min-height: min(588px, calc(100vh - 104px)) !important;
-        max-height: min(676px, calc(100vh - 104px)) !important;
+        width: min(432px, calc(100vw - 120px)) !important;
+        max-width: 432px !important;
+        min-height: min(604px, calc(100vh - 104px)) !important;
+        max-height: min(692px, calc(100vh - 104px)) !important;
     }
 
     #profileModal[data-profile-tab="security"] .modal-content.profile-modal {
-        width: min(760px, calc(100vw - 96px)) !important;
-        max-width: 760px !important;
-        min-height: min(560px, calc(100vh - 104px)) !important;
-        max-height: min(640px, calc(100vh - 104px)) !important;
+        width: min(724px, calc(100vw - 92px)) !important;
+        max-width: 724px !important;
+        min-height: min(578px, calc(100vh - 104px)) !important;
+        max-height: min(656px, calc(100vh - 104px)) !important;
     }
 
     #profileModal .profile-modal-scroll {
         scrollbar-gutter: auto;
-        padding: 0 12px 12px !important;
-        padding-top: calc(var(--profile-mobile-topbar-height) + 10px) !important;
-        scroll-padding-top: calc(var(--profile-mobile-topbar-height) + 16px) !important;
-        scroll-padding-bottom: 12px !important;
+        padding: 0 12px 18px !important;
+        padding-top: calc(var(--profile-mobile-topbar-height) + 18px) !important;
+        scroll-padding-top: calc(var(--profile-mobile-topbar-height) + 24px) !important;
+        scroll-padding-bottom: 18px !important;
     }
 
     #profileModal[data-profile-tab="security"] .profile-modal-scroll {
-        overflow-y: hidden !important;
-        padding-bottom: 10px !important;
+        overflow: hidden !important;
+        padding-bottom: 18px !important;
         scroll-padding-bottom: 0 !important;
     }
 
@@ -5542,7 +5542,7 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
         display: grid;
         grid-template-columns: 172px minmax(0, 1fr);
         gap: 10px;
-        min-height: 380px;
+        min-height: 392px;
         align-items: stretch;
     }
 
@@ -5608,7 +5608,7 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
 
     #profileModal .profile-security-desktop-content {
         position: relative;
-        min-height: 380px;
+        min-height: 392px;
         padding: 16px 14px;
         border-radius: 18px;
         background: rgba(14, 18, 23, 0.94);

@@ -2305,6 +2305,18 @@ function applyProfileModalLayout() {
     const { overlay, card, scroller } = getProfileModalElements();
     if (!overlay || !card || !overlay.classList.contains('active')) return;
 
+    if (!isProfileModalIOSMode()) {
+        card.style.removeProperty('max-height');
+        if (scroller) {
+            scroller.style.removeProperty('scroll-padding-bottom');
+        }
+        overlay.style.setProperty('--profile-modal-shift-y', '0px');
+        overlay.classList.remove('keyboard-active', 'keyboard-docked', 'ios-focus-lock');
+        profileModalState.lastFocusAnchor = getProfileModalFocusAnchor(getActiveProfileModalInput()) || null;
+        profileModalState.preserveLayoutDuringFocusTransfer = false;
+        return;
+    }
+
     const visibleHeight = Math.max(
         320,
         Math.round(window.visualViewport?.height || window.innerHeight || document.documentElement.clientHeight || 0)
