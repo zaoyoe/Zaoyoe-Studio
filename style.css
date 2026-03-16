@@ -5318,8 +5318,8 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     #profileModal .modal-content.profile-modal {
         width: min(432px, calc(100vw - 120px)) !important;
         max-width: 432px !important;
-        min-height: min(604px, calc(100vh - 104px)) !important;
-        max-height: min(692px, calc(100vh - 104px)) !important;
+        min-height: min(640px, calc(100vh - 88px)) !important;
+        max-height: min(748px, calc(100vh - 88px)) !important;
     }
 
     #profileModal[data-profile-tab="security"] .modal-content.profile-modal {
@@ -5331,23 +5331,24 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
 
     #profileModal .profile-modal-scroll {
         scrollbar-gutter: auto;
-        padding: 0 12px 18px !important;
-        padding-top: calc(var(--profile-mobile-topbar-height) + 18px) !important;
-        scroll-padding-top: calc(var(--profile-mobile-topbar-height) + 24px) !important;
-        scroll-padding-bottom: 18px !important;
+        padding: 12px 12px 12px !important;
+        scroll-padding-top: 12px !important;
+        scroll-padding-bottom: 12px !important;
     }
 
     #profileModal[data-profile-tab="security"] .profile-modal-scroll {
         overflow: hidden !important;
-        padding-bottom: 18px !important;
         scroll-padding-bottom: 0 !important;
     }
 
     #profileModal .profile-mobile-topbar {
-        top: 14px;
-        left: 14px;
-        right: 14px;
+        position: relative;
+        top: auto;
+        left: auto;
+        right: auto;
+        margin: 14px 14px 0;
         height: 56px;
+        flex: 0 0 auto;
     }
 
     #profileModal .profile-mobile-topbar-shell {
@@ -5382,12 +5383,38 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
 
     #profileModal .profile-flip-container,
     #profileModal .profile-flip-inner {
-        min-height: 460px !important;
+        min-height: 0 !important;
+        height: auto !important;
+        overflow: visible !important;
+    }
+
+    #profileModal .profile-view {
+        position: relative !important;
+        height: auto !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+        transition: none !important;
+        align-items: stretch !important;
+    }
+
+    #profileModal .profile-back {
+        display: none !important;
+    }
+
+    #profileModal .profile-flip-inner.flipped .profile-front {
+        display: none !important;
+    }
+
+    #profileModal .profile-flip-inner.flipped .profile-back {
+        display: block !important;
+        opacity: 1 !important;
+        pointer-events: auto !important;
+        visibility: visible !important;
     }
 
     #profileModal .profile-front,
     #profileModal .profile-back {
-        padding-bottom: 12px !important;
+        padding-bottom: 0 !important;
     }
 
     #profileModal .profile-mobile-sheet {
