@@ -5352,7 +5352,7 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
         top: auto;
         left: auto;
         right: auto;
-        margin: 0 0 12px;
+        margin: 0;
         height: auto;
         flex: 0 0 auto;
         overflow: visible;
