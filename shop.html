@@ -754,8 +754,50 @@
                     max-height 200ms cubic-bezier(0.22, 1, 0.36, 1) !important;
             }
 
-            .shop-success-actions {
+            #shopSuccessModal .modal-content.shop-success-modal {
+                display: flex;
                 flex-direction: column;
+                position: relative;
+                height: min(720px, calc(100dvh - 24px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))) !important;
+                max-height: calc(100dvh - 24px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important;
+                overflow: hidden;
+            }
+
+            #shopSuccessModal .shop-success-scroll {
+                flex: 1;
+                overflow-y: auto;
+                min-height: 0;
+                padding-right: 4px;
+                margin-right: -4px;
+                padding-bottom: calc(108px + env(safe-area-inset-bottom, 0px));
+            }
+
+            #shopSuccessModal .shop-success-content-shell {
+                max-height: none !important;
+                overflow: visible !important;
+            }
+
+            #shopSuccessModal .shop-success-actions {
+                position: absolute;
+                left: 20px;
+                right: 20px;
+                bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+                z-index: 3;
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 10px;
+                margin-top: 0;
+                padding-top: 18px;
+                background: linear-gradient(180deg,
+                        rgba(30, 41, 59, 0) 0%,
+                        rgba(30, 41, 59, 0.78) 28%,
+                        rgba(30, 41, 59, 0.96) 100%);
+                backdrop-filter: blur(10px);
+                -webkit-backdrop-filter: blur(10px);
+            }
+
+            #shopSuccessModal .shop-success-actions .shop-btn {
+                min-width: 0;
             }
         }
 
