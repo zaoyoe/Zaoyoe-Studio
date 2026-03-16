@@ -7,6 +7,7 @@
 const ShopClient = {
     currentAgentId: null,
     currentAgentName: null,
+    successUsageWheelCleanup: null,
     purchaseModalKeyboardViewportCleanup: null,
     purchaseModalKeyboardViewportRafId: null,
     purchaseModalKeyboardBaseViewportHeight: 0,
@@ -1089,6 +1090,44 @@ const ShopClient = {
         document.head.appendChild(style);
     },
 
+    clearSuccessUsageWheelIsolation: function () {
+        if (typeof this.successUsageWheelCleanup === 'function') {
+            this.successUsageWheelCleanup();
+            this.successUsageWheelCleanup = null;
+        }
+    },
+
+    bindSuccessUsageWheelIsolation: function () {
+        this.clearSuccessUsageWheelIsolation();
+
+        if (!window.matchMedia('(min-width: 769px)').matches) return;
+
+        const modal = document.getElementById('shopSuccessModal');
+        const usageCard = modal?.querySelector('.shop-success-usage-card');
+        if (!modal || !usageCard || !modal.classList.contains('has-usage-instructions')) return;
+
+        const onWheel = (event) => {
+            if (usageCard.scrollHeight <= usageCard.clientHeight + 1) return;
+
+            const deltaY = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;
+            const maxScrollTop = Math.max(0, usageCard.scrollHeight - usageCard.clientHeight);
+            const nextScrollTop = Math.min(maxScrollTop, Math.max(0, usageCard.scrollTop + deltaY));
+
+            if (nextScrollTop === usageCard.scrollTop) {
+                event.preventDefault();
+                return;
+            }
+
+            usageCard.scrollTop = nextScrollTop;
+            event.preventDefault();
+        };
+
+        usageCard.addEventListener('wheel', onWheel, { passive: false });
+        this.successUsageWheelCleanup = () => {
+            usageCard.removeEventListener('wheel', onWheel);
+        };
+    },
+
     showSuccessModal: function (content, warning, usageInstructions) {
         this.injectPremiumStyles();
         const modal = document.getElementById('shopSuccessModal');
@@ -1101,6 +1140,8 @@ const ShopClient = {
             ? usageInstructions.trim()
             : '';
         const hasUsageInstructions = normalizedUsageInstructions.length > 0;
+
+        this.clearSuccessUsageWheelIsolation();
 
         if (modal) {
             modal.classList.toggle('has-usage-instructions', hasUsageInstructions);
@@ -1206,6 +1247,7 @@ const ShopClient = {
             if (hasUsageInstructions) {
                 uiContent.innerHTML = this.linkifyText(this.escapeHtml(normalizedUsageInstructions));
                 uiBox.style.display = 'block';
+                this.bindSuccessUsageWheelIsolation();
             } else {
                 uiBox.style.display = 'none';
                 uiContent.innerHTML = '';
