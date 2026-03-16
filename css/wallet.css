@@ -1034,7 +1034,22 @@ body.wallet-modal-lock {
 }
 
 .afdian-icon {
-    font-size: 16px;
+    width: 28px;
+    height: 28px;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(180deg, rgba(255, 99, 132, 0.18), rgba(255, 99, 132, 0.06));
+    border: 1px solid rgba(255, 99, 132, 0.22);
+    box-shadow: 0 10px 22px rgba(255, 83, 127, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.afdian-icon svg {
+    width: 16px;
+    height: 16px;
+    display: block;
+    filter: drop-shadow(0 2px 4px rgba(255, 83, 127, 0.18));
 }
 
 .afdian-hint {
@@ -1692,14 +1707,6 @@ body.wallet-modal-lock {
         min-height: max-content;
     }
 
-    #view-recharge {
-        padding-bottom: 12px;
-    }
-
-    #view-recharge .view-title {
-        margin-bottom: 14px;
-    }
-
     .wallet-overlay input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]),
     .wallet-overlay textarea,
     .wallet-overlay select {
@@ -1783,19 +1790,6 @@ body.wallet-modal-lock {
     .pkg-price {
         font-size: 13px;
         padding: 5px 14px;
-    }
-
-    #view-recharge .afdian-section {
-        margin-top: 18px;
-        padding-top: 16px;
-    }
-
-    #view-recharge .afdian-header {
-        margin-bottom: 6px;
-    }
-
-    #view-recharge .afdian-hint {
-        margin-bottom: 10px;
     }
 
     /* History */

@@ -281,7 +281,7 @@
 
         const scrollerRect = scroller.getBoundingClientRect();
         const afdianRect = afdianSection.getBoundingClientRect();
-        const afdianPeekVisible = afdianRect.top <= (scrollerRect.bottom - 56);
+        const afdianPeekVisible = afdianRect.top < (scrollerRect.bottom - 8);
         const reachedBottom = scroller.scrollTop >= (overflowAmount - 16);
 
         cue.classList.toggle('visible', !afdianPeekVisible && !reachedBottom);
@@ -1103,7 +1103,18 @@
                                 <!-- Afdian Code Query Section -->
                                 <div class="afdian-section">
                                     <div class="afdian-header">
-                                        <span class="afdian-icon">❤️</span>
+                                        <span class="afdian-icon" aria-hidden="true">
+                                            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                <defs>
+                                                    <linearGradient id="walletAfdianHeartGradient" x1="5" y1="4" x2="19" y2="20" gradientUnits="userSpaceOnUse">
+                                                        <stop offset="0%" stop-color="#ff9ab2" />
+                                                        <stop offset="100%" stop-color="#ff537f" />
+                                                    </linearGradient>
+                                                </defs>
+                                                <path d="M12 20.4c-.24 0-.48-.08-.67-.23C6.9 16.88 4 14.1 4 9.98 4 7.42 5.96 5.5 8.4 5.5c1.46 0 2.83.67 3.6 1.81.77-1.14 2.14-1.81 3.6-1.81C18.04 5.5 20 7.42 20 9.98c0 4.12-2.9 6.9-7.33 10.19-.19.15-.43.23-.67.23Z" fill="url(#walletAfdianHeartGradient)"/>
+                                                <path d="M9.08 7.34c-.86 0-1.62.4-2.13 1.03-.18.23-.52.27-.75.08-.23-.19-.27-.53-.08-.76.72-.9 1.81-1.43 2.96-1.43.3 0 .54.24.54.54s-.24.54-.54.54Z" fill="rgba(255,255,255,0.72)"/>
+                                            </svg>
+                                        </span>
                                         <span>${window.i18n?.t('wallet.afdianQuery') || '爱发电订单查询'}</span>
                                     </div>
                                     <p class="afdian-hint">${window.i18n?.t('wallet.afdianHint') || '在爱发电支付后，输入订单号获取兑换码'}</p>
