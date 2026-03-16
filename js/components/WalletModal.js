@@ -54,6 +54,7 @@
         keyboardDocked: false,
         pendingUndockTimer: null,
         animationCleanupTimer: null,
+        scrollCueRafId: 0,
         lastKeyboardInset: 0,
         animatingUntil: 0
     };
@@ -80,6 +81,10 @@
                 ? Array.from(overlay.querySelectorAll('input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]):not([readonly]):not([disabled]), textarea:not([readonly]):not([disabled]), select:not([disabled])'))
                 : []
         };
+    }
+
+    function isWalletModalCompactMobile() {
+        return window.matchMedia('(max-width: 600px)').matches;
     }
 
     function measureWalletModalViewport() {
@@ -120,6 +125,10 @@
         if (walletModalState.viewportRafId) {
             cancelAnimationFrame(walletModalState.viewportRafId);
             walletModalState.viewportRafId = 0;
+        }
+        if (walletModalState.scrollCueRafId) {
+            cancelAnimationFrame(walletModalState.scrollCueRafId);
+            walletModalState.scrollCueRafId = 0;
         }
         cancelWalletModalScrollAnimation();
         if (walletModalState.settleTimer) {
@@ -225,6 +234,7 @@
         if (!overlay || !card) return;
 
         overlay.classList.remove('keyboard-active', 'keyboard-docked', 'ios-focus-lock');
+        overlay.querySelector('.wallet-recharge-scroll-cue')?.classList.remove('visible');
         viewport?.style.setProperty('--wallet-modal-translate-y', '0px');
         viewport?.style.removeProperty('--wallet-modal-overlay-height');
         viewport?.style.removeProperty('--wallet-modal-viewport-top');
@@ -241,6 +251,48 @@
         walletModalState.lastFocusAnchor = null;
         walletModalState.lastViewportHeight = 0;
         clearWalletModalScrollAnimationState();
+    }
+
+    function updateWalletRechargeScrollCue() {
+        const { overlay, scroller } = getWalletModalElements();
+        const cue = overlay?.querySelector('.wallet-recharge-scroll-cue');
+        const rechargeView = overlay?.querySelector('#view-recharge');
+        const afdianSection = overlay?.querySelector('.afdian-section');
+
+        if (!cue) return;
+
+        if (!overlay || !scroller || !rechargeView || !afdianSection || !overlay.classList.contains('active')) {
+            cue.classList.remove('visible');
+            return;
+        }
+
+        const isRechargeActive = rechargeView.classList.contains('active');
+        const isCompactMobile = isWalletModalCompactMobile();
+        if (!isRechargeActive || !isCompactMobile) {
+            cue.classList.remove('visible');
+            return;
+        }
+
+        const overflowAmount = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+        if (overflowAmount < 32) {
+            cue.classList.remove('visible');
+            return;
+        }
+
+        const scrollerRect = scroller.getBoundingClientRect();
+        const afdianRect = afdianSection.getBoundingClientRect();
+        const afdianPeekVisible = afdianRect.top <= (scrollerRect.bottom - 56);
+        const reachedBottom = scroller.scrollTop >= (overflowAmount - 16);
+
+        cue.classList.toggle('visible', !afdianPeekVisible && !reachedBottom);
+    }
+
+    function requestWalletRechargeScrollCueUpdate() {
+        if (walletModalState.scrollCueRafId) return;
+        walletModalState.scrollCueRafId = requestAnimationFrame(() => {
+            walletModalState.scrollCueRafId = 0;
+            updateWalletRechargeScrollCue();
+        });
     }
 
     function captureWalletModalOverlayBaseHeight(force = false) {
@@ -400,6 +452,7 @@
                 }
             }
             activeCard.classList.remove('wallet-modal-animating');
+            requestWalletRechargeScrollCueUpdate();
         };
 
         if (duration) {
@@ -443,6 +496,7 @@
         walletModalState.keyboardDocked = false;
         walletModalState.lastKeyboardInset = 0;
         walletModalState.lastViewportHeight = snapshot.height;
+        requestWalletRechargeScrollCueUpdate();
     }
 
     function scheduleWalletModalUndock() {
@@ -574,6 +628,7 @@
             walletModalState.lastViewportHeight = 0;
             walletModalState.keyboardDocked = false;
             walletModalState.lastKeyboardInset = 0;
+            requestWalletRechargeScrollCueUpdate();
             return;
         }
 
@@ -622,6 +677,7 @@
             ensureWalletModalInputVisible(activeInput);
         });
         walletModalState.lastFocusAnchor = getWalletModalFocusAnchor(activeInput) || null;
+        requestWalletRechargeScrollCueUpdate();
     }
 
     function scheduleWalletModalLayout({ settled = false, deferOnly = false } = {}) {
@@ -665,6 +721,7 @@
                 captureWalletModalOverlayBaseHeight();
             }
             applyWalletModalLayout();
+            requestWalletRechargeScrollCueUpdate();
         });
     }
 
@@ -746,6 +803,7 @@
         detachWalletModalViewportHandlers();
         bindWalletModalInputs();
         captureWalletModalOverlayBaseHeight(true);
+        requestWalletRechargeScrollCueUpdate();
 
         if (!isWalletModalIOSMode()) {
             scheduleWalletModalLayout();
@@ -754,6 +812,7 @@
 
         freezeWalletModalPage();
         const vv = window.visualViewport;
+        const { scroller } = getWalletModalElements();
         const handleViewportChange = () => {
             requestWalletModalViewportSync();
         };
@@ -762,16 +821,22 @@
             stabilizeWalletModalViewport();
         };
 
+        const handleContentScroll = () => {
+            requestWalletRechargeScrollCueUpdate();
+        };
+
         vv?.addEventListener('resize', handleViewportChange, { passive: true });
         vv?.addEventListener('scroll', handleViewportChange, { passive: true });
         window.addEventListener('scroll', handleRootScroll, { passive: true });
         window.addEventListener('resize', handleViewportChange, { passive: true });
+        scroller?.addEventListener('scroll', handleContentScroll, { passive: true });
 
         walletModalState.viewportCleanup = () => {
             vv?.removeEventListener('resize', handleViewportChange);
             vv?.removeEventListener('scroll', handleViewportChange);
             window.removeEventListener('scroll', handleRootScroll);
             window.removeEventListener('resize', handleViewportChange);
+            scroller?.removeEventListener('scroll', handleContentScroll);
             walletModalState.viewportCleanup = null;
         };
 
@@ -792,6 +857,7 @@
         resetWalletModalVisualState();
         attachWalletModalViewportHandlers();
         scheduleWalletModalLayout();
+        requestWalletRechargeScrollCueUpdate();
     }
 
     const WalletModal = {
@@ -1163,6 +1229,12 @@
                             </div>
                             </div>
                         </div>
+                        <div class="wallet-recharge-scroll-cue" aria-hidden="true">
+                            <div class="wallet-recharge-scroll-cue-pill">
+                                <span class="wallet-recharge-scroll-cue-label">${window.i18n?.isEnglish?.() ? 'Scroll for Afdian order lookup' : '下滑查看爱发电订单查询'}</span>
+                                <span class="wallet-recharge-scroll-cue-icon">⌄</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             `;
@@ -1219,6 +1291,7 @@
 
             if (this.isOpen) {
                 scheduleWalletModalLayout({ settled: true });
+                requestWalletRechargeScrollCueUpdate();
             }
         },
 
@@ -1456,6 +1529,7 @@
                             </div>
                         `}).join('');
                     }
+                    requestWalletRechargeScrollCueUpdate();
                 }
 
                 // Store packages & history data for reuse
