@@ -769,7 +769,7 @@
                 min-height: 0;
                 padding-right: 4px;
                 margin-right: -4px;
-                padding-bottom: calc(108px + env(safe-area-inset-bottom, 0px));
+                padding-bottom: calc(86px + env(safe-area-inset-bottom, 0px));
             }
 
             #shopSuccessModal .shop-success-content-shell {
@@ -781,23 +781,29 @@
                 position: absolute;
                 left: 20px;
                 right: 20px;
-                bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+                bottom: calc(14px + env(safe-area-inset-bottom, 0px));
                 z-index: 3;
                 display: grid;
                 grid-template-columns: repeat(2, minmax(0, 1fr));
                 gap: 10px;
                 margin-top: 0;
-                padding-top: 18px;
-                background: linear-gradient(180deg,
-                        rgba(30, 41, 59, 0) 0%,
-                        rgba(30, 41, 59, 0.78) 28%,
-                        rgba(30, 41, 59, 0.96) 100%);
-                backdrop-filter: blur(10px);
-                -webkit-backdrop-filter: blur(10px);
+                align-items: end;
             }
 
             #shopSuccessModal .shop-success-actions .shop-btn {
                 min-width: 0;
+                min-height: 42px;
+                padding: 10px 14px;
+                border-radius: 999px;
+                box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+            }
+
+            #shopSuccessModal .shop-success-actions .shop-btn i {
+                font-size: 13px;
+            }
+
+            #shopSuccessModal .shop-success-actions .shop-btn span {
+                font-size: 13px;
             }
         }
 
