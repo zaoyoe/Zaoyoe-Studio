@@ -1100,7 +1100,8 @@ const ShopClient = {
     bindSuccessUsageWheelIsolation: function () {
         this.clearSuccessUsageWheelIsolation();
 
-        if (!window.matchMedia('(min-width: 769px)').matches) return;
+        const supportsHoverWheel = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+        if (!supportsHoverWheel) return;
 
         const modal = document.getElementById('shopSuccessModal');
         const usageCard = modal?.querySelector('.shop-success-usage-card');
@@ -1115,16 +1116,18 @@ const ShopClient = {
 
             if (nextScrollTop === usageCard.scrollTop) {
                 event.preventDefault();
+                event.stopPropagation();
                 return;
             }
 
             usageCard.scrollTop = nextScrollTop;
             event.preventDefault();
+            event.stopPropagation();
         };
 
-        usageCard.addEventListener('wheel', onWheel, { passive: false });
+        usageCard.addEventListener('wheel', onWheel, { passive: false, capture: true });
         this.successUsageWheelCleanup = () => {
-            usageCard.removeEventListener('wheel', onWheel);
+            usageCard.removeEventListener('wheel', onWheel, true);
         };
     },
 
