@@ -28,29 +28,11 @@ body.wallet-modal-lock {
 
 /* Overlay */
 .wallet-overlay {
-    --wallet-modal-overlay-height: 100dvh;
-    --wallet-modal-viewport-top: 0px;
-    --wallet-modal-viewport-left: 0px;
-    --wallet-modal-viewport-width: 100vw;
-    --wallet-modal-translate-y: 0px;
     position: fixed;
-    top: var(--wallet-modal-viewport-top);
-    left: var(--wallet-modal-viewport-left);
-    width: var(--wallet-modal-viewport-width);
-    background: var(--wallet-sheet-overlay);
-    backdrop-filter: var(--wallet-sheet-overlay-filter);
-    -webkit-backdrop-filter: var(--wallet-sheet-overlay-filter);
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    inset: 0;
+    display: block;
     z-index: 10000;
-    padding: max(24px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom));
-    overscroll-behavior: contain;
-    height: var(--wallet-modal-overlay-height);
-    min-height: var(--wallet-modal-overlay-height);
-    box-sizing: border-box;
     overflow: hidden;
-    -webkit-overflow-scrolling: auto;
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
@@ -66,6 +48,38 @@ body.wallet-modal-lock {
 .wallet-overlay.loading {
     pointer-events: none;
     /* cursor: wait; - no opacity change for less intrusive loading */
+}
+
+.wallet-backdrop {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    background: var(--wallet-sheet-overlay);
+    backdrop-filter: var(--wallet-sheet-overlay-filter);
+    -webkit-backdrop-filter: var(--wallet-sheet-overlay-filter);
+}
+
+.wallet-viewport {
+    --wallet-modal-overlay-height: 100dvh;
+    --wallet-modal-viewport-top: 0px;
+    --wallet-modal-viewport-left: 0px;
+    --wallet-modal-viewport-width: 100vw;
+    --wallet-modal-translate-y: 0px;
+    position: absolute;
+    top: var(--wallet-modal-viewport-top);
+    left: var(--wallet-modal-viewport-left);
+    width: var(--wallet-modal-viewport-width);
+    height: var(--wallet-modal-overlay-height);
+    min-height: var(--wallet-modal-overlay-height);
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: max(24px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom));
+    overscroll-behavior: contain;
+    box-sizing: border-box;
+    overflow: hidden;
+    -webkit-overflow-scrolling: auto;
 }
 
 /* Ensure box-sizing is correct within modal (Critical for Prompts page) */
@@ -1483,7 +1497,7 @@ body.wallet-modal-lock {
 
 /* Mobile Responsive */
 @media (max-width: 600px) {
-    .wallet-overlay {
+    .wallet-viewport {
         padding: calc(env(safe-area-inset-top, 0px) + 12px) 12px calc(env(safe-area-inset-bottom, 0px) + 12px);
         align-items: center;
         justify-content: center;
@@ -1493,7 +1507,7 @@ body.wallet-modal-lock {
         -webkit-overflow-scrolling: auto;
     }
 
-    .wallet-overlay.keyboard-active {
+    .wallet-overlay.keyboard-active .wallet-viewport {
         align-items: flex-start;
     }
 
@@ -1711,12 +1725,12 @@ body.wallet-modal-lock {
 
 /* Extra small screens */
 @media (max-width: 360px) {
-    .wallet-overlay {
+    .wallet-viewport {
         padding: 8px;
         align-items: center;
     }
 
-    .wallet-overlay.keyboard-active {
+    .wallet-overlay.keyboard-active .wallet-viewport {
         align-items: flex-start;
     }
 

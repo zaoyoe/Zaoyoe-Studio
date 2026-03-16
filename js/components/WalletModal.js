@@ -14,7 +14,7 @@
     console.log('[WalletModal] ✅ Initializing...');
 
     // Inject CSS if not already present
-    const walletCssHref = 'css/wallet.css?v=20260316_WALLET_KEYBOARD_REWRITE_1';
+    const walletCssHref = 'css/wallet.css?v=20260316_WALLET_LAYER_SPLIT_1';
     const existingWalletCss = document.getElementById('wallet-modal-css');
     if (existingWalletCss) {
         existingWalletCss.href = walletCssHref;
@@ -54,10 +54,12 @@
 
     function getWalletModalElements() {
         const overlay = document.getElementById('wallet-modal-overlay');
+        const viewport = overlay?.querySelector('.wallet-viewport') || null;
         const layout = overlay?.querySelector('.wallet-layout') || null;
         const content = overlay?.querySelector('.wallet-content') || null;
         return {
             overlay,
+            viewport,
             card: overlay?.querySelector('.wallet-modal') || null,
             layout,
             content,
@@ -180,15 +182,15 @@
     }
 
     function resetWalletModalVisualState() {
-        const { overlay, card, scroller } = getWalletModalElements();
+        const { overlay, viewport, card, scroller } = getWalletModalElements();
         if (!overlay || !card) return;
 
         overlay.classList.remove('keyboard-active', 'keyboard-docked', 'ios-focus-lock');
-        overlay.style.setProperty('--wallet-modal-translate-y', '0px');
-        overlay.style.removeProperty('--wallet-modal-overlay-height');
-        overlay.style.removeProperty('--wallet-modal-viewport-top');
-        overlay.style.removeProperty('--wallet-modal-viewport-left');
-        overlay.style.removeProperty('--wallet-modal-viewport-width');
+        viewport?.style.setProperty('--wallet-modal-translate-y', '0px');
+        viewport?.style.removeProperty('--wallet-modal-overlay-height');
+        viewport?.style.removeProperty('--wallet-modal-viewport-top');
+        viewport?.style.removeProperty('--wallet-modal-viewport-left');
+        viewport?.style.removeProperty('--wallet-modal-viewport-width');
         card.style.removeProperty('max-height');
         card.style.removeProperty('height');
         card.style.removeProperty('min-height');
@@ -313,20 +315,20 @@
     }
 
     function applyWalletModalLayout() {
-        const { overlay, card, scroller } = getWalletModalElements();
-        if (!overlay || !card || !overlay.classList.contains('active')) return;
+        const { overlay, viewport: viewportEl, card, scroller } = getWalletModalElements();
+        if (!overlay || !viewportEl || !card || !overlay.classList.contains('active')) return;
 
         if (!isWalletModalIOSMode()) {
-            overlay.style.removeProperty('--wallet-modal-overlay-height');
-            overlay.style.removeProperty('--wallet-modal-viewport-top');
-            overlay.style.removeProperty('--wallet-modal-viewport-left');
-            overlay.style.removeProperty('--wallet-modal-viewport-width');
+            viewportEl.style.removeProperty('--wallet-modal-overlay-height');
+            viewportEl.style.removeProperty('--wallet-modal-viewport-top');
+            viewportEl.style.removeProperty('--wallet-modal-viewport-left');
+            viewportEl.style.removeProperty('--wallet-modal-viewport-width');
             card.style.removeProperty('max-height');
             card.style.removeProperty('height');
             card.style.removeProperty('min-height');
             scroller?.style.removeProperty('scroll-padding-bottom');
             scroller?.style.removeProperty('scroll-padding-top');
-            overlay.style.setProperty('--wallet-modal-translate-y', '0px');
+            viewportEl.style.setProperty('--wallet-modal-translate-y', '0px');
             overlay.classList.remove('keyboard-active', 'keyboard-docked', 'ios-focus-lock');
             walletModalState.lastViewportHeight = 0;
             return;
@@ -334,7 +336,7 @@
 
         stabilizeWalletModalViewport();
 
-        const viewport = measureWalletModalViewport();
+        const viewportMetrics = measureWalletModalViewport();
         const activeInput = getActiveWalletModalInput();
         const holdDuringFocusTransfer = !activeInput && walletModalState.focusTransferUntil > Date.now();
         if (!activeInput) {
@@ -342,16 +344,16 @@
         }
 
         const keyboardLikelyVisible = walletModalState.overlayBaseHeight > 0
-            && walletModalState.overlayBaseHeight - viewport.height > WALLET_MODAL_KEYBOARD_THRESHOLD;
+            && walletModalState.overlayBaseHeight - viewportMetrics.height > WALLET_MODAL_KEYBOARD_THRESHOLD;
         const keyboardActive = !!activeInput || holdDuringFocusTransfer || keyboardLikelyVisible;
-        const modalMaxHeight = Math.max(260, viewport.height - 24);
+        const modalMaxHeight = Math.max(260, viewportMetrics.height - 24);
         const modalHeight = Math.min(500, modalMaxHeight);
 
-        overlay.style.setProperty('--wallet-modal-viewport-top', `${viewport.top}px`);
-        overlay.style.setProperty('--wallet-modal-viewport-left', `${viewport.left}px`);
-        overlay.style.setProperty('--wallet-modal-viewport-width', `${viewport.width}px`);
-        overlay.style.setProperty('--wallet-modal-overlay-height', `${viewport.height}px`);
-        overlay.style.setProperty('--wallet-modal-translate-y', '0px');
+        viewportEl.style.setProperty('--wallet-modal-viewport-top', `${viewportMetrics.top}px`);
+        viewportEl.style.setProperty('--wallet-modal-viewport-left', `${viewportMetrics.left}px`);
+        viewportEl.style.setProperty('--wallet-modal-viewport-width', `${viewportMetrics.width}px`);
+        viewportEl.style.setProperty('--wallet-modal-overlay-height', `${viewportMetrics.height}px`);
+        viewportEl.style.setProperty('--wallet-modal-translate-y', '0px');
         overlay.classList.toggle('keyboard-active', keyboardActive);
         overlay.classList.toggle('ios-focus-lock', keyboardActive);
         card.style.maxHeight = `${modalMaxHeight}px`;
@@ -359,9 +361,9 @@
         card.style.minHeight = `${Math.min(400, modalHeight)}px`;
         if (scroller) {
             scroller.style.scrollPaddingTop = `${isWalletModalIOSMode() ? 84 : 24}px`;
-            scroller.style.scrollPaddingBottom = `${keyboardActive ? Math.max(168, Math.round(viewport.height * 0.32)) : 96}px`;
+            scroller.style.scrollPaddingBottom = `${keyboardActive ? Math.max(168, Math.round(viewportMetrics.height * 0.32)) : 96}px`;
         }
-        walletModalState.lastViewportHeight = viewport.height;
+        walletModalState.lastViewportHeight = viewportMetrics.height;
 
         if (!activeInput) {
             if (!holdDuringFocusTransfer) walletModalState.lastFocusAnchor = null;
@@ -624,7 +626,7 @@
                 this.modalEl.style.display = 'none';
                 this.modalEl.classList.remove('active', 'keyboard-active', 'keyboard-docked', 'ios-focus-lock');
             }
-            overlay?.style.setProperty('--wallet-modal-translate-y', '0px');
+            getWalletModalElements().viewport?.style.setProperty('--wallet-modal-translate-y', '0px');
             if (scroller) {
                 scroller.scrollTop = 0;
             }
@@ -645,7 +647,14 @@
         render() {
             let overlay = document.getElementById('wallet-modal-overlay');
             if (overlay) {
-                overlay.style.display = 'flex';
+                if (!overlay.querySelector('.wallet-backdrop') || !overlay.querySelector('.wallet-viewport')) {
+                    overlay.remove();
+                    overlay = null;
+                }
+            }
+
+            if (overlay) {
+                overlay.style.display = 'block';
                 // Trigger reflow for transition
                 void overlay.offsetWidth;
                 overlay.classList.add('active');
@@ -656,46 +665,48 @@
             overlay = document.createElement('div');
             overlay.id = 'wallet-modal-overlay';
             overlay.className = 'wallet-overlay active';
-            overlay.style.display = 'flex';
+            overlay.style.display = 'block';
             overlay.innerHTML = `
-                <div class="wallet-modal">
-                    <button class="wallet-close-btn" onclick="WalletModal.close()">✕</button>
-                    
-                    <div class="wallet-header">
-                        <h2>💰 ${window.i18n?.t('wallet.title') || '我的钱包'}</h2>
-                    </div>
-                    
-                    <div class="wallet-layout">
-                        <!-- Left Sidebar Menu -->
-                        <div class="wallet-sidebar">
-                            <div class="sidebar-indicator"></div>
-                            <div class="wallet-menu-item active" data-view="balance" onclick="WalletModal.switchView('balance')">
-                                <span class="menu-icon">💳</span>
-                                <span class="menu-text">${window.i18n?.t('wallet.balance') || '余额'}</span>
-                            </div>
-                            <div class="wallet-menu-item" data-view="recharge" onclick="WalletModal.switchView('recharge')">
-                                <span class="menu-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="boltGradientSidebar" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#fbbf24"/><stop offset="100%" style="stop-color:#f97316"/></linearGradient></defs><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z" fill="url(#boltGradientSidebar)"/></svg></span>
-                                <span class="menu-text">${window.i18n?.t('wallet.recharge') || '充值'}</span>
-                            </div>
-
-                            <div class="wallet-menu-item" data-view="orders" onclick="WalletModal.switchView('orders')">
-                                <span class="menu-icon">📋</span>
-                                <span class="menu-text">${window.i18n?.t('wallet.records') || '记录'}</span>
-                            </div>
-
-                            <div class="wallet-menu-item" data-view="affiliate" onclick="WalletModal.switchView('affiliate')">
-                                <span class="menu-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #10b981;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></span>
-                                <span class="menu-text">${window.i18n?.t('wallet.affiliate') || '推广'}</span>
-                            </div>
-
-                            <div class="wallet-menu-item" data-view="checkin" onclick="WalletModal.switchView('checkin')">
-                                <span class="menu-icon">🔖</span>
-                                <span class="menu-text">${window.i18n?.t('wallet.checkin') || '签到'}</span>
-                            </div>
+                <div class="wallet-backdrop" aria-hidden="true"></div>
+                <div class="wallet-viewport">
+                    <div class="wallet-modal">
+                        <button class="wallet-close-btn" onclick="WalletModal.close()">✕</button>
+                        
+                        <div class="wallet-header">
+                            <h2>💰 ${window.i18n?.t('wallet.title') || '我的钱包'}</h2>
                         </div>
                         
-                        <!-- Right Content Area -->
-                        <div class="wallet-content">
+                        <div class="wallet-layout">
+                            <!-- Left Sidebar Menu -->
+                            <div class="wallet-sidebar">
+                                <div class="sidebar-indicator"></div>
+                                <div class="wallet-menu-item active" data-view="balance" onclick="WalletModal.switchView('balance')">
+                                    <span class="menu-icon">💳</span>
+                                    <span class="menu-text">${window.i18n?.t('wallet.balance') || '余额'}</span>
+                                </div>
+                                <div class="wallet-menu-item" data-view="recharge" onclick="WalletModal.switchView('recharge')">
+                                    <span class="menu-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="boltGradientSidebar" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#fbbf24"/><stop offset="100%" style="stop-color:#f97316"/></linearGradient></defs><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z" fill="url(#boltGradientSidebar)"/></svg></span>
+                                    <span class="menu-text">${window.i18n?.t('wallet.recharge') || '充值'}</span>
+                                </div>
+
+                                <div class="wallet-menu-item" data-view="orders" onclick="WalletModal.switchView('orders')">
+                                    <span class="menu-icon">📋</span>
+                                    <span class="menu-text">${window.i18n?.t('wallet.records') || '记录'}</span>
+                                </div>
+
+                                <div class="wallet-menu-item" data-view="affiliate" onclick="WalletModal.switchView('affiliate')">
+                                    <span class="menu-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #10b981;"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></span>
+                                    <span class="menu-text">${window.i18n?.t('wallet.affiliate') || '推广'}</span>
+                                </div>
+
+                                <div class="wallet-menu-item" data-view="checkin" onclick="WalletModal.switchView('checkin')">
+                                    <span class="menu-icon">🔖</span>
+                                    <span class="menu-text">${window.i18n?.t('wallet.checkin') || '签到'}</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Right Content Area -->
+                            <div class="wallet-content">
                             <!-- Balance View (Default) -->
                             <div class="wallet-view active" id="view-balance">
                                 <div class="balance-card compact-premium-card">
@@ -865,6 +876,7 @@
                                     </button>
                                 </div>
                             </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -872,7 +884,13 @@
 
             // Close on overlay click
             overlay.addEventListener('click', (e) => {
-                if (e.target === overlay) this.close();
+                if (
+                    e.target === overlay ||
+                    e.target.classList?.contains('wallet-backdrop') ||
+                    e.target.classList?.contains('wallet-viewport')
+                ) {
+                    this.close();
+                }
             });
 
             document.body.appendChild(overlay);
