@@ -1230,10 +1230,7 @@
                             </div>
                         </div>
                         <div class="wallet-recharge-scroll-cue" aria-hidden="true">
-                            <div class="wallet-recharge-scroll-cue-pill">
-                                <span class="wallet-recharge-scroll-cue-label">${window.i18n?.isEnglish?.() ? 'Scroll for Afdian order lookup' : '下滑查看爱发电订单查询'}</span>
-                                <span class="wallet-recharge-scroll-cue-icon">⌄</span>
-                            </div>
+                            <span class="wallet-recharge-scroll-cue-icon">⌄</span>
                         </div>
                     </div>
                 </div>

@@ -184,8 +184,9 @@ body.wallet-modal-lock {
     left: 0;
     right: 0;
     bottom: 0;
-    padding: 52px 16px 14px;
+    padding: 56px 0 14px;
     justify-content: center;
+    align-items: flex-end;
     pointer-events: none;
     opacity: 0;
     transform: translateY(10px);
@@ -209,32 +210,16 @@ body.wallet-modal-lock {
     transform: translateY(0);
 }
 
-.wallet-recharge-scroll-cue-pill {
+.wallet-recharge-scroll-cue-icon {
     position: relative;
     z-index: 1;
     display: inline-flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 14px;
-    border-radius: 999px;
-    background: rgba(13, 17, 22, 0.88);
-    border: 1px solid rgba(107, 158, 206, 0.22);
-    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-}
-
-.wallet-recharge-scroll-cue-label {
-    font-size: 12px;
-    font-weight: 600;
-    color: rgba(242, 245, 248, 0.88);
-    letter-spacing: 0.01em;
-}
-
-.wallet-recharge-scroll-cue-icon {
+    justify-content: center;
     color: var(--wallet-sheet-link-accent);
-    font-size: 16px;
+    font-size: 24px;
     line-height: 1;
+    text-shadow: 0 6px 18px rgba(0, 0, 0, 0.36);
     animation: wallet-recharge-cue-bob 1.18s ease-in-out infinite;
 }
 
@@ -1789,21 +1774,6 @@ body.wallet-modal-lock {
     .packages-container {
         grid-template-columns: repeat(2, 1fr);
         gap: 8px;
-    }
-
-    #view-recharge .packages-container {
-        gap: 10px;
-        margin-bottom: 4px;
-    }
-
-    #view-recharge .package-item {
-        padding: 14px 10px;
-        border-radius: 14px;
-    }
-
-    #view-recharge .pkg-name {
-        font-size: 10px;
-        margin-bottom: 6px;
     }
 
     .pkg-points {
