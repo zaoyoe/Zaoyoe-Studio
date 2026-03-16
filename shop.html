@@ -769,7 +769,7 @@
                 min-height: 0;
                 padding-right: 4px;
                 margin-right: -4px;
-                padding-bottom: calc(86px + env(safe-area-inset-bottom, 0px));
+                padding-bottom: calc(112px + env(safe-area-inset-bottom, 0px));
             }
 
             #shopSuccessModal .shop-success-content-shell {
@@ -779,31 +779,45 @@
 
             #shopSuccessModal .shop-success-actions {
                 position: absolute;
-                left: 20px;
-                right: 20px;
-                bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+                left: 50%;
+                right: auto;
+                bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+                width: min(248px, calc(100% - 104px));
+                transform: translateX(-50%);
                 z-index: 3;
                 display: grid;
                 grid-template-columns: repeat(2, minmax(0, 1fr));
-                gap: 10px;
+                gap: 8px;
                 margin-top: 0;
                 align-items: end;
             }
 
             #shopSuccessModal .shop-success-actions .shop-btn {
                 min-width: 0;
-                min-height: 42px;
-                padding: 10px 14px;
+                min-height: 38px;
+                padding: 8px 12px;
                 border-radius: 999px;
-                box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+                box-shadow: 0 8px 20px rgba(0, 0, 0, 0.24);
             }
 
             #shopSuccessModal .shop-success-actions .shop-btn i {
-                font-size: 13px;
+                font-size: 12px;
             }
 
             #shopSuccessModal .shop-success-actions .shop-btn span {
-                font-size: 13px;
+                font-size: 12px;
+            }
+
+            #shopSuccessModal #exportContentBtn {
+                background: #ffffff !important;
+                color: #111827 !important;
+                border: 1px solid rgba(255, 255, 255, 0.95) !important;
+                box-shadow: 0 8px 22px rgba(255, 255, 255, 0.2), 0 8px 20px rgba(0, 0, 0, 0.18);
+            }
+
+            #shopSuccessModal #exportContentBtn i,
+            #shopSuccessModal #exportContentBtn span {
+                color: inherit !important;
             }
         }
 
