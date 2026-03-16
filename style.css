@@ -5329,8 +5329,8 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     #profileModal[data-profile-tab="security"] .modal-content.profile-modal {
         width: min(724px, calc(100vw - 92px)) !important;
         max-width: 724px !important;
-        min-height: auto !important;
-        max-height: min(656px, calc(100vh - 104px)) !important;
+        min-height: min(748px, calc(100vh - 88px)) !important;
+        max-height: min(748px, calc(100vh - 88px)) !important;
     }
 
     #profileModal .profile-modal-scroll {
@@ -5351,7 +5351,7 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
         top: auto;
         left: auto;
         right: auto;
-        margin: 0;
+        margin: 0 0 48px;
         height: 8px;
         flex: 0 0 auto;
         overflow: visible;
@@ -5550,6 +5550,31 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
         min-height: 112px;
         padding: 14px;
         border-radius: 16px;
+        cursor: pointer;
+        transition:
+            transform 0.22s ease,
+            background 0.22s ease,
+            border-color 0.22s ease,
+            box-shadow 0.22s ease;
+    }
+
+    #profileModal .profile-mobile-card--quick .profile-mobile-quick-card:hover {
+        transform: translateY(-3px);
+        background: rgba(23, 29, 36, 0.98);
+        border-color: rgba(159, 202, 255, 0.14);
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.04),
+            0 12px 28px rgba(0, 0, 0, 0.16);
+    }
+
+    #profileModal .profile-mobile-card--quick .profile-mobile-quick-card:hover .profile-mobile-quick-arrow {
+        transform: translateX(2px);
+        color: rgba(248, 251, 255, 0.88);
+    }
+
+    #profileModal .profile-mobile-card--quick .profile-mobile-quick-card:hover .profile-mobile-quick-icon {
+        border-color: rgba(159, 202, 255, 0.16);
+        color: rgba(248, 251, 255, 0.96);
     }
 
     #profileModal .profile-mobile-quick-icon {
