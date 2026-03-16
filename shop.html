@@ -841,9 +841,9 @@
         #shopSuccessModal.has-usage-instructions {
             --shop-success-action-bottom: calc(40px + env(safe-area-inset-bottom, 0px));
             --shop-success-action-width: 248px;
-            --shop-success-action-clearance: calc(98px + env(safe-area-inset-bottom, 0px));
-            --shop-success-usage-gap: 10px;
-            --shop-success-usage-max-height: 336px;
+            --shop-success-action-clearance: calc(clamp(98px, calc(18px + 7vw), 142px) + env(safe-area-inset-bottom, 0px));
+            --shop-success-usage-gap: clamp(10px, calc(-6px + 2vw), 24px);
+            --shop-success-usage-max-height: clamp(300px, calc(360px - 4vw), 336px);
         }
 
         #shopSuccessModal.has-usage-instructions .modal-content.shop-success-modal {
