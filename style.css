@@ -5329,16 +5329,16 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     }
 
     #profileModal .profile-modal-scroll {
-        padding: 0 14px 22px !important;
-        padding-top: calc(var(--profile-mobile-topbar-height) + 10px) !important;
-        scroll-padding-top: calc(var(--profile-mobile-topbar-height) + 18px) !important;
-        scroll-padding-bottom: 28px !important;
+        padding: 0 7px 11px !important;
+        padding-top: calc(var(--profile-mobile-topbar-height) + 5px) !important;
+        scroll-padding-top: calc(var(--profile-mobile-topbar-height) + 12px) !important;
+        scroll-padding-bottom: 14px !important;
     }
 
     #profileModal .profile-mobile-topbar {
-        top: 14px;
-        left: 14px;
-        right: 14px;
+        top: 7px;
+        left: 7px;
+        right: 7px;
         height: 56px;
     }
 
@@ -5386,9 +5386,9 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
         display: flex;
         flex-direction: column;
         gap: 14px;
-        max-width: 420px;
+        max-width: 446px;
         margin: 0 auto;
-        padding-top: 2px;
+        padding-top: 1px;
         padding-bottom: 0;
     }
 
