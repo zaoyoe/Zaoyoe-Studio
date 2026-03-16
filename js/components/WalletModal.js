@@ -18,7 +18,7 @@
         const link = document.createElement('link');
         link.id = 'wallet-modal-css';
         link.rel = 'stylesheet';
-        link.href = 'css/wallet.css';
+        link.href = 'css/wallet.css?v=20260316_WALLET_AUTH_MATERIAL_1';
         document.head.appendChild(link);
     }
 
@@ -2257,7 +2257,7 @@
             // Skeleton HTML - shows immediately with loading animation
             const t = (key, fallback) => window.i18n?.t(key) || fallback;
             detailOverlay.innerHTML = `
-                <div class="wallet-order-modal" style="display: flex; align-items: center; justify-content: center; min-height: 200px; background: rgba(30, 41, 59, 0.95);">
+                <div class="wallet-order-modal" style="display: flex; align-items: center; justify-content: center; min-height: 200px;">
                     <div style="text-align: center; color: #6b9ece;">
                         <i class="fas fa-circle-notch fa-spin" style="font-size: 32px; margin-bottom: 12px;"></i>
                         <div style="font-size: 13px; opacity: 0.8;">${t('wallet.loading', '加载详情...')}</div>
@@ -2474,50 +2474,69 @@
                 /* Modal Styles */
                 .wallet-order-modal-overlay {
                     position: fixed !important; top: 0 !important; left: 0 !important; width: 100% !important; height: 100% !important;
-                    background: rgba(0, 0, 0, 0.7) !important;
-                    backdrop-filter: blur(4px) !important; -webkit-backdrop-filter: blur(4px) !important;
+                    background: var(--auth-sheet-overlay, rgba(7, 9, 12, 0.28)) !important;
+                    backdrop-filter: var(--auth-sheet-overlay-filter, blur(14px) saturate(108%)) !important;
+                    -webkit-backdrop-filter: var(--auth-sheet-overlay-filter, blur(14px) saturate(108%)) !important;
                     z-index: 200000 !important;
                     display: flex !important; justify-content: center !important; align-items: center !important;
                     animation: fadeIn 0.3s ease-out;
                 }
                 .wallet-order-modal {
                     width: 92% !important; max-width: 360px !important;
-                    background: rgba(20, 20, 22, 0.75) !important;
-                    backdrop-filter: blur(40px) !important; -webkit-backdrop-filter: blur(40px) !important;
-                    border: 1px solid rgba(255, 255, 255, 0.12) !important;
-                    border-top: 1px solid rgba(255, 255, 255, 0.25) !important;
-                    border-radius: 20px !important;
-                    box-shadow: 0 40px 80px -20px rgba(0, 0, 0, 0.7) !important;
+                    background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0) 28%), var(--auth-sheet-panel, rgba(12, 14, 18, 0.98)) !important;
+                    border: 1px solid var(--auth-sheet-border, rgba(255, 255, 255, 0.08)) !important;
+                    border-radius: 22px !important;
+                    box-shadow: 0 26px 70px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
                     overflow: hidden !important;
                     display: flex !important; flex-direction: column !important;
                     max-height: 85vh !important;
-                    color: #fff !important;
+                    color: var(--auth-sheet-text, #f2f5f8) !important;
                     animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
                     opacity: 1;
+                    position: relative !important;
+                    isolation: isolate !important;
+                }
+                .wallet-order-modal::before {
+                    content: '' !important;
+                    position: absolute !important;
+                    inset: 0 !important;
+                    z-index: 0 !important;
+                    pointer-events: none !important;
+                    border-radius: inherit !important;
+                    background:
+                        radial-gradient(circle at top center, rgba(255, 255, 255, 0.08), transparent 38%),
+                        linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 28%) !important;
+                }
+                .wallet-order-modal > * {
+                    position: relative !important;
+                    z-index: 1 !important;
                 }
                 .wallet-order-modal-header {
                     padding: 16px 20px 12px;
-                    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+                    border-bottom: 1px solid var(--auth-sheet-border, rgba(255, 255, 255, 0.08));
+                    background: linear-gradient(180deg, rgba(255, 255, 255, 0.022), rgba(255, 255, 255, 0));
                     display: flex; justify-content: space-between; align-items: center;
                 }
                 .wallet-order-modal-title {
-                    font-size: 16px; font-weight: 700; color: #fff;
+                    font-size: 16px; font-weight: 700; color: var(--auth-sheet-text, #f2f5f8);
                     display: flex; align-items: center; gap: 8px;
                     letter-spacing: -0.5px;
                 }
                 .wallet-order-close-btn {
                     width: 28px; height: 28px;
                     border-radius: 50%;
-                    border: none;
+                    border: 1px solid var(--auth-sheet-border, rgba(255, 255, 255, 0.08));
                     background: rgba(255, 255, 255, 0.05);
-                    color: rgba(255, 255, 255, 0.6);
+                    color: var(--auth-sheet-muted, rgba(231, 236, 242, 0.62));
                     cursor: pointer;
                     display: flex; align-items: center; justify-content: center;
                     transition: all 0.2s;
+                    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
                 }
                 .wallet-order-close-btn:hover {
-                    background: rgba(255, 255, 255, 0.15);
-                    color: #fff;
+                    background: rgba(255, 255, 255, 0.09);
+                    border-color: rgba(255, 255, 255, 0.14);
+                    color: var(--auth-sheet-text, #f2f5f8);
                 }
                 .wallet-order-modal-body {
                     padding: 0 16px 12px;
