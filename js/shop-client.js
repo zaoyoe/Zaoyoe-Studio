@@ -1096,6 +1096,15 @@ const ShopClient = {
         const warningBox = document.getElementById('purchasedWarning');
         const warningText = document.getElementById('purchasedWarningText');
         const parentBox = contentBox.parentElement;
+        const scrollArea = modal?.querySelector('.shop-success-scroll');
+        const normalizedUsageInstructions = typeof usageInstructions === 'string'
+            ? usageInstructions.trim()
+            : '';
+        const hasUsageInstructions = normalizedUsageInstructions.length > 0;
+
+        if (modal) {
+            modal.classList.toggle('has-usage-instructions', hasUsageInstructions);
+        }
 
         // Reset parent box styles to be cleaner (remove padding if we want cards to flush, but padding is fine)
         // Ensure parent box is transparent to let cards stand out
@@ -1108,6 +1117,9 @@ const ShopClient = {
         }
 
         if (modal && contentBox) {
+            if (scrollArea) scrollArea.scrollTop = 0;
+            if (parentBox) parentBox.scrollTop = 0;
+
             // Split content by separator (----) to get individual items
             const items = content.split(/\n----\n/);
             const totalItems = items.length;
@@ -1191,8 +1203,8 @@ const ShopClient = {
         const uiBox = document.getElementById('usageInstructionsBox');
         const uiContent = document.getElementById('usageInstructionsContent');
         if (uiBox && uiContent) {
-            if (usageInstructions) {
-                uiContent.innerHTML = this.linkifyText(this.escapeHtml(usageInstructions));
+            if (hasUsageInstructions) {
+                uiContent.innerHTML = this.linkifyText(this.escapeHtml(normalizedUsageInstructions));
                 uiBox.style.display = 'block';
             } else {
                 uiBox.style.display = 'none';

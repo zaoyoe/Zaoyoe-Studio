@@ -613,6 +613,83 @@
             box-sizing: border-box;
         }
 
+        #shopSuccessModal .modal-content.shop-success-modal {
+            text-align: center;
+        }
+
+        .shop-success-scroll {
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+
+        .shop-success-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 16px;
+        }
+
+        .shop-success-actions .shop-btn {
+            flex: 1;
+        }
+
+        .shop-success-usage-card {
+            padding: 15px;
+            text-align: left;
+            line-height: 1.7;
+            justify-content: flex-start;
+            align-items: stretch;
+            cursor: text !important;
+            transition: none !important;
+            -webkit-user-select: text !important;
+            user-select: text !important;
+            -webkit-touch-callout: default !important;
+        }
+
+        .shop-success-usage-card,
+        .shop-success-usage-card *,
+        #usageInstructionsContent,
+        #usageInstructionsContent * {
+            -webkit-user-select: text !important;
+            user-select: text !important;
+        }
+
+        .shop-success-usage-card::before,
+        .shop-success-usage-card:hover::before {
+            opacity: 0 !important;
+        }
+
+        .shop-success-usage-card:hover {
+            transform: none !important;
+            background: rgba(255, 255, 255, 0.03) !important;
+            border-color: rgba(255, 255, 255, 0.08) !important;
+            border-top-color: rgba(255, 255, 255, 0.15) !important;
+            border-left-color: rgba(255, 255, 255, 0.15) !important;
+            box-shadow:
+                0 20px 40px -10px rgba(0, 0, 0, 0.4),
+                inset 0 1px 0 rgba(255, 255, 255, 0.1),
+                inset 0 0 20px rgba(255, 255, 255, 0.01) !important;
+        }
+
+        #usageInstructionsContent {
+            cursor: text;
+            -webkit-touch-callout: default;
+        }
+
+        #usageInstructionsContent a {
+            color: #60a5fa;
+            text-decoration: none;
+            font-weight: 500;
+            transition: color 0.2s ease, opacity 0.2s ease;
+            border-bottom: 1px solid transparent;
+            cursor: pointer;
+        }
+
+        #usageInstructionsContent a:hover {
+            color: #93c5fd;
+            opacity: 0.9;
+        }
+
         #shopPurchaseModal {
             --shop-purchase-translate-y: 0px;
             --shop-purchase-scale: 0.95;
@@ -675,6 +752,32 @@
                     transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
                     height 200ms cubic-bezier(0.22, 1, 0.36, 1),
                     max-height 200ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+            }
+
+            .shop-success-actions {
+                flex-direction: column;
+            }
+        }
+
+        @media (min-width: 769px) {
+            #shopSuccessModal.has-usage-instructions .modal-content.shop-success-modal {
+                display: flex;
+                flex-direction: column;
+                height: min(760px, calc(100vh - 72px)) !important;
+                max-height: min(760px, calc(100vh - 72px)) !important;
+                overflow: hidden;
+            }
+
+            #shopSuccessModal.has-usage-instructions .shop-success-scroll {
+                flex: 1;
+                overflow-y: auto;
+                padding-right: 6px;
+                margin-right: -6px;
+            }
+
+            #shopSuccessModal.has-usage-instructions .shop-success-content-shell {
+                max-height: none !important;
+                overflow: visible !important;
             }
         }
     </style>
@@ -1173,73 +1276,59 @@
         <!-- Success Modal (Re-used structure) -->
         <div class="modal-overlay" id="shopSuccessModal" style="z-index: 99999;"
             onclick="if(event.target === this) { document.getElementById('shopSuccessModal').classList.remove('active'); if(window.iOSScrollLock) window.iOSScrollLock.unlock(); }">
-            <div class="modal-content premium-modal" onclick="event.stopPropagation()" style="text-align: center;">
+            <div class="modal-content premium-modal shop-success-modal" onclick="event.stopPropagation()">
                 <div
                     style="width: 60px; height: 60px; background: rgba(56, 158, 13, 0.2); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px;">
                     <i class="fas fa-check" style="font-size: 30px; color: #389e0d;"></i>
                 </div>
                 <h2 class="card-title" data-i18n="shop.redeemSuccess">兑换成功!</h2>
 
-                <!-- Product content header with tooltip dot (outside overflow container) -->
-                <div
-                    style="font-size: 12px; color: rgba(255,255,255,0.5); margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
-                    <span data-i18n="shop.productContent">商品内容:</span>
-                    <span id="productNameDot" class="product-name-dot" data-tooltip="">
-                        <i class="fas fa-circle" style="font-size: 8px; color: #60a5fa;"></i>
-                    </span>
-                </div>
-
-                <div class="glass-box"
-                    style="margin-bottom: 20px; padding: 15px; word-break: break-all; user-select: text; text-align: left; max-height: 280px; overflow-y: auto;">
-                    <div id="purchasedContent"
-                        style="font-family: monospace; font-size: 14px; color: #fff; white-space: pre-wrap; overflow-x: auto;">
-                        <!-- Content Here -->
-                    </div>
-                </div>
-
-                <!-- Usage Instructions Box (Conditionally shown) -->
-                <div id="usageInstructionsBox" style="display: none; margin-bottom: 20px;">
+                <div class="shop-success-scroll">
+                    <!-- Product content header with tooltip dot (outside overflow container) -->
                     <div
-                        style="font-size: 12px; color: rgba(255,255,255,0.5); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
-                        <i class="fas fa-info-circle" style="color: #60a5fa;"></i>
-                        <span data-i18n="shop.usageInstructions">使用说明</span>
+                        style="font-size: 12px; color: rgba(255,255,255,0.5); margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+                        <span data-i18n="shop.productContent">商品内容:</span>
+                        <span id="productNameDot" class="product-name-dot" data-tooltip="">
+                            <i class="fas fa-circle" style="font-size: 8px; color: #60a5fa;"></i>
+                        </span>
                     </div>
-                    <div class="glass-box" style="padding: 15px; text-align: left; line-height: 1.7;">
-                        <div id="usageInstructionsContent"
-                            style="font-size: 13px; color: rgba(255,255,255,0.85); white-space: pre-wrap; word-break: break-word;">
+
+                    <div class="glass-box shop-success-content-shell"
+                        style="margin-bottom: 20px; padding: 15px; word-break: break-all; user-select: text; text-align: left; max-height: 280px; overflow-y: auto;">
+                        <div id="purchasedContent"
+                            style="font-family: monospace; font-size: 14px; color: #fff; white-space: pre-wrap; overflow-x: auto;">
+                            <!-- Content Here -->
+                        </div>
+                    </div>
+
+                    <!-- Usage Instructions Box (Conditionally shown) -->
+                    <div id="usageInstructionsBox" style="display: none; margin-bottom: 20px;">
+                        <div
+                            style="font-size: 12px; color: rgba(255,255,255,0.5); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                            <i class="fas fa-info-circle" style="color: #60a5fa;"></i>
+                            <span data-i18n="shop.usageInstructions">使用说明</span>
+                        </div>
+                        <div class="glass-box shop-success-usage-card">
+                            <div id="usageInstructionsContent"
+                                style="font-size: 13px; color: rgba(255,255,255,0.85); white-space: pre-wrap; word-break: break-word;">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Warning Box (Initially Hidden) -->
+                    <div id="purchasedWarning" class="glass-box"
+                        style="margin-bottom: 20px; padding: 12px; background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.3); text-align: left; display: none;">
+                        <div style="display: flex; gap: 10px; align-items: flex-start;">
+                            <i class="fas fa-exclamation-triangle" style="color: #fbbf24; margin-top: 3px;"></i>
+                            <div style="color: #fbbf24; font-size: 13px; line-height: 1.4;">
+                                <div style="font-weight: 600; margin-bottom: 2px;" data-i18n="shop.specialTip">特别提示</div>
+                                <div id="purchasedWarningText"></div>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                <style>
-                    /* Usage instructions link styles */
-                    #usageInstructionsContent a {
-                        color: #60a5fa;
-                        text-decoration: none;
-                        font-weight: 500;
-                        transition: color 0.2s ease, opacity 0.2s ease;
-                        border-bottom: 1px solid transparent;
-                    }
-
-                    #usageInstructionsContent a:hover {
-                        color: #93c5fd;
-                        opacity: 0.9;
-                    }
-                </style>
-
-                <!-- Warning Box (Initially Hidden) -->
-                <div id="purchasedWarning" class="glass-box"
-                    style="margin-bottom: 20px; padding: 12px; background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.3); text-align: left; display: none;">
-                    <div style="display: flex; gap: 10px; align-items: flex-start;">
-                        <i class="fas fa-exclamation-triangle" style="color: #fbbf24; margin-top: 3px;"></i>
-                        <div style="color: #fbbf24; font-size: 13px; line-height: 1.4;">
-                            <div style="font-weight: 600; margin-bottom: 2px;" data-i18n="shop.specialTip">特别提示</div>
-                            <div id="purchasedWarningText"></div>
-                        </div>
-                    </div>
-                </div>
-
-                <div style="display: flex; gap: 10px; margin-top: 16px;">
+                <div class="shop-success-actions">
                     <button id="copyContentBtn" onclick="ShopClient.copyContent()" class="shop-btn shop-btn-primary"
                         style="flex: 1;">
                         <i class="fas fa-copy"></i> <span data-i18n="common.copy">复制</span>
