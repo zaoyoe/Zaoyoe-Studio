@@ -164,6 +164,7 @@
 .wallet-layout {
     display: flex;
     flex: 1;
+    min-height: 0;
     overflow: hidden;
 }
 
@@ -251,12 +252,15 @@
 
 /* Right Content Area */
 .wallet-content {
-    flex: 1;
+    flex: 1 1 auto;
     padding: 24px;
     overflow-y: auto;
-    min-height: 350px;
+    min-height: 0;
     overscroll-behavior: contain;
     background: transparent;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+    scrollbar-gutter: stable both-edges;
 }
 
 /* Views */
@@ -1468,6 +1472,10 @@
         min-height: var(--wallet-modal-overlay-height, 100dvh);
         overflow: hidden;
         -webkit-overflow-scrolling: auto;
+    }
+
+    .wallet-overlay.keyboard-active {
+        align-items: flex-start;
     }
 
     .wallet-modal {
