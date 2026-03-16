@@ -1028,6 +1028,7 @@ function updateUserUI(user, options = {}) {
     const btnText = document.getElementById('authBtnText');
     const userDropdown = document.getElementById('userDropdown');
     const enterStudioBtn = document.getElementById('enterStudioBtn');
+    const authBtn = document.getElementById('authBtn');
 
     if (user) {
         console.log('👤 updateUserUI: 用户已登录', user);
@@ -1111,7 +1112,6 @@ function updateUserUI(user, options = {}) {
             if (isAdmin) dropdownUsername.innerHTML += ' <span style="color:#fbbf24;">✨</span>';
         }
 
-        const authBtn = document.getElementById('authBtn');
         if (authBtn) authBtn.classList.add('logged-in');
 
         updateProfileMobileSummary({
@@ -1164,10 +1164,18 @@ function updateUserUI(user, options = {}) {
             defaultIcon.className = 'fas fa-user-circle'; // Ensure spinner is cleared
             defaultIcon.style.display = 'inline';
         }
-        if (navAvatar) navAvatar.style.display = 'none';
+        if (navAvatar) {
+            navAvatar.style.display = 'none';
+            navAvatar.style.opacity = '0';
+            navAvatar.classList.remove('show', 'animate-in');
+        }
         if (btnText) btnText.textContent = 'Sign In';
         if (userDropdown) userDropdown.classList.remove('active');
         if (enterStudioBtn) enterStudioBtn.style.display = 'none';
+        if (authBtn) {
+            authBtn.classList.remove('logged-in');
+            authBtn.setAttribute('aria-expanded', 'false');
+        }
 
         if (clearCacheOnLogout) {
             localStorage.removeItem('cached_user_profile');

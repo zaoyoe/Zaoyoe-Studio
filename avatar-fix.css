@@ -5,6 +5,31 @@
     color: rgba(255, 255, 255, 0.55) !important;
 }
 
+/* Keep the auth slot width stable so logout does not reflow the nav */
+#auth-container {
+    width: 48px !important;
+    min-width: 48px !important;
+    flex: 0 0 48px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+#auth-container>.login-trigger-btn,
+#auth-container>#authBtn {
+    width: 48px !important;
+    min-width: 48px !important;
+    height: 48px !important;
+    min-height: 48px !important;
+    padding: 0 !important;
+    gap: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    flex: 0 0 48px !important;
+    border-radius: 50% !important;
+}
+
 /* 确保未登录时按钮也是透明背景，无正方形色块 */
 .login-trigger-btn,
 button.login-trigger-btn,
