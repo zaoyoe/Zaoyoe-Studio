@@ -22,6 +22,8 @@
 
 /* Overlay */
 .wallet-overlay {
+    --wallet-modal-overlay-height: 100dvh;
+    --wallet-modal-translate-y: 0px;
     position: fixed;
     inset: 0;
     background: var(--wallet-sheet-overlay);
@@ -33,6 +35,11 @@
     z-index: 10000;
     padding: max(24px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom));
     overscroll-behavior: contain;
+    height: var(--wallet-modal-overlay-height);
+    min-height: var(--wallet-modal-overlay-height);
+    box-sizing: border-box;
+    overflow: hidden;
+    -webkit-overflow-scrolling: auto;
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
@@ -73,14 +80,22 @@
     display: flex;
     flex-direction: column;
     color: var(--wallet-sheet-text);
-    transform: translateY(24px) scale(0.988);
+    max-height: calc(var(--wallet-modal-overlay-height, 100dvh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 40px);
+    transform: translate3d(0, calc(var(--wallet-modal-translate-y, 0px) + 24px), 0) scale(0.988);
     opacity: 0;
     transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.24s ease;
+    will-change: transform, height;
 }
 
 .wallet-overlay.active .wallet-modal {
-    transform: none;
+    transform: translate3d(0, var(--wallet-modal-translate-y, 0px), 0) scale(1);
     opacity: 1;
+}
+
+.wallet-overlay.keyboard-docked .wallet-modal,
+.wallet-overlay.keyboard-docked.active .wallet-modal {
+    transform: translate3d(0, var(--wallet-modal-translate-y, 0px), 0) scale(1);
+    will-change: transform, height;
 }
 
 .wallet-modal::before {
@@ -1446,15 +1461,20 @@
 /* Mobile Responsive */
 @media (max-width: 600px) {
     .wallet-overlay {
-        padding: 10px;
-        align-items: flex-start;
-        padding-top: 40px;
+        padding: calc(env(safe-area-inset-top, 0px) + 12px) 12px calc(env(safe-area-inset-bottom, 0px) + 12px);
+        align-items: center;
+        justify-content: center;
+        height: var(--wallet-modal-overlay-height, 100dvh);
+        min-height: var(--wallet-modal-overlay-height, 100dvh);
+        overflow: hidden;
+        -webkit-overflow-scrolling: auto;
     }
 
     .wallet-modal {
-        max-height: calc(100vh - 60px);
-        height: auto;
-        min-height: 400px;
+        width: min(calc(100vw - 24px), 700px);
+        height: min(500px, calc(var(--wallet-modal-overlay-height, 100svh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px));
+        min-height: min(400px, calc(var(--wallet-modal-overlay-height, 100svh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px));
+        max-height: calc(var(--wallet-modal-overlay-height, 100svh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px);
         border-radius: 20px;
     }
 
@@ -1635,7 +1655,7 @@
 @media (max-width: 360px) {
     .wallet-overlay {
         padding: 8px;
-        padding-top: 30px;
+        align-items: center;
     }
 
     .wallet-modal {
