@@ -20,6 +20,12 @@
     --wallet-sheet-blue-border: var(--auth-sheet-blue-border, rgba(107, 158, 206, 0.34));
 }
 
+html.wallet-modal-lock,
+body.wallet-modal-lock {
+    overflow: hidden !important;
+    overscroll-behavior: none !important;
+}
+
 /* Overlay */
 .wallet-overlay {
     --wallet-modal-overlay-height: 100dvh;
@@ -1548,8 +1554,8 @@
 
     .wallet-content {
         padding: 16px;
-        min-height: 250px;
-        flex: 1;
+        min-height: 0;
+        flex: 1 1 auto;
         overflow-y: auto;
     }
 
