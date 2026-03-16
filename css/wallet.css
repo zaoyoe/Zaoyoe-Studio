@@ -39,6 +39,12 @@ body.wallet-modal-lock {
     transition: opacity 0.28s ease, visibility 0.28s ease;
 }
 
+#wallet-modal-overlay.wallet-overlay {
+    background: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
 .wallet-overlay.active {
     opacity: 1;
     visibility: visible;
@@ -51,7 +57,7 @@ body.wallet-modal-lock {
 }
 
 .wallet-backdrop {
-    position: absolute;
+    position: fixed;
     inset: 0;
     z-index: 0;
     background: var(--wallet-sheet-overlay);
@@ -80,6 +86,21 @@ body.wallet-modal-lock {
     box-sizing: border-box;
     overflow: hidden;
     -webkit-overflow-scrolling: auto;
+}
+
+#wallet-modal-overlay .wallet-viewport {
+    background: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+#wallet-modal-overlay::before,
+#wallet-modal-overlay::after,
+#wallet-modal-overlay .wallet-viewport::before,
+#wallet-modal-overlay .wallet-viewport::after {
+    background: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
 }
 
 /* Ensure box-sizing is correct within modal (Critical for Prompts page) */
