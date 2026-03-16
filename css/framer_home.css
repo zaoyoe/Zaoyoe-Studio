@@ -2182,6 +2182,12 @@ a.nav-trigger.active {
 #auth-container {
     display: flex;
     align-items: center;
+    justify-content: center;
+    width: 48px;
+    min-width: 48px;
+    height: 48px;
+    min-height: 48px;
+    flex: 0 0 48px;
 }
 
 /* Ensure avatar dropdown positions correctly when in nav bar */

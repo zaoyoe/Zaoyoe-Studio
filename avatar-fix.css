@@ -9,6 +9,8 @@
 #auth-container {
     width: 48px !important;
     min-width: 48px !important;
+    height: 48px !important;
+    min-height: 48px !important;
     flex: 0 0 48px !important;
     display: flex !important;
     align-items: center !important;
