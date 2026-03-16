@@ -1569,7 +1569,33 @@ body.wallet-modal-lock {
         padding: 16px;
         min-height: 0;
         flex: 1 1 auto;
-        overflow-y: auto;
+        overflow-y: auto !important;
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch !important;
+        touch-action: pan-y !important;
+    }
+
+    .wallet-view,
+    #view-balance,
+    #view-balance.active,
+    .wallet-view.active,
+    .wallet-view.wallet-view-flex.active {
+        height: auto;
+        min-height: max-content;
+    }
+
+    .wallet-overlay input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]),
+    .wallet-overlay textarea,
+    .wallet-overlay select {
+        font-size: 16px !important;
+        line-height: 1.35 !important;
+    }
+
+    .redeem-input-row input,
+    .afdian-input-row input,
+    .date-picker-row input[type="date"] {
+        font-size: 16px !important;
+        transform: none !important;
     }
 
     /* Balance card mobile optimization */
@@ -1621,7 +1647,6 @@ body.wallet-modal-lock {
     }
 
     .redeem-input-row input {
-        font-size: 13px;
         padding: 10px 12px;
     }
 
@@ -1683,6 +1708,10 @@ body.wallet-modal-lock {
     .wallet-overlay {
         padding: 8px;
         align-items: center;
+    }
+
+    .wallet-overlay.keyboard-active {
+        align-items: flex-start;
     }
 
     .wallet-modal {
