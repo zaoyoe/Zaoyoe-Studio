@@ -1001,10 +1001,13 @@
         const rect = authBtn.getBoundingClientRect();
         const navBar = authBtn.closest('.nav-bar') || authBtn.closest('.framer-nav') || authBtn.closest('nav') || authBtn.closest('.top-right-nav');
         const navBottom = navBar ? navBar.getBoundingClientRect().bottom : rect.bottom + 8;
+        const navOverlap = parseFloat(
+            getComputedStyle(document.documentElement).getPropertyValue('--nav-dropdown-overlap')
+        ) || 1;
         const rightOffset = Math.max(10, window.innerWidth - rect.right);
 
         dropdown.style.setProperty('right', `${rightOffset}px`, 'important');
-        dropdown.style.setProperty('top', `${navBottom - 1}px`, 'important');
+        dropdown.style.setProperty('top', `${navBottom - navOverlap}px`, 'important');
         dropdown.classList.add('active');
         dropdown.setAttribute('aria-hidden', 'false');
         overlay?.classList.add('active');

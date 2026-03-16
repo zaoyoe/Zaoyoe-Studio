@@ -39,6 +39,11 @@ Inspired by Framer.com design aesthetics
     --spacing-xl: 80px;
     --spacing-2xl: 120px;
 
+    /* Navigation sizing */
+    --nav-vertical-padding: 8px;
+    --nav-auth-slot-size: 44px;
+    --nav-dropdown-overlap: 1px;
+
     /* Border Radius */
     --radius-sm: 8px;
     --radius-md: 12px;
@@ -148,7 +153,7 @@ h3 {
 .nav-container {
     max-width: 1400px;
     margin: 0 auto;
-    padding: 12px var(--spacing-lg);
+    padding: var(--nav-vertical-padding) var(--spacing-lg);
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -2183,11 +2188,11 @@ a.nav-trigger.active {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 48px;
-    min-width: 48px;
-    height: 48px;
-    min-height: 48px;
-    flex: 0 0 48px;
+    width: var(--nav-auth-slot-size);
+    min-width: var(--nav-auth-slot-size);
+    height: var(--nav-auth-slot-size);
+    min-height: var(--nav-auth-slot-size);
+    flex: 0 0 var(--nav-auth-slot-size);
 }
 
 /* Ensure avatar dropdown positions correctly when in nav bar */

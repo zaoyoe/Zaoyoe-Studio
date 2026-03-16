@@ -619,10 +619,13 @@ async function handleAuthClick(event) {
                     }
                     // Align dropdown right edge with avatar button right edge
                     const rightOffset = window.innerWidth - rect.right;
+                    const navOverlap = parseFloat(
+                        getComputedStyle(document.documentElement).getPropertyValue('--nav-dropdown-overlap')
+                    ) || 1;
                     // Use setProperty with !important to guarantee JS wins over any CSS rules
                     dropdown.style.setProperty('right', Math.max(10, rightOffset) + 'px', 'important');
-                    // Shift up by 1px to fuse seamlessly with nav bar (same as nav-dropdown-portal)
-                    dropdown.style.setProperty('top', (anchorBottom - 1) + 'px', 'important');
+                    // Shift up slightly to fuse seamlessly with the nav border.
+                    dropdown.style.setProperty('top', (anchorBottom - navOverlap) + 'px', 'important');
                 }
                 dropdown.classList.add('active');
                 if (overlay) overlay.classList.add('active');

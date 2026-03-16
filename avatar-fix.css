@@ -5,13 +5,13 @@
     color: rgba(255, 255, 255, 0.55) !important;
 }
 
-/* Keep the auth slot width stable so logout does not reflow the nav */
+/* Keep the auth slot size stable so logout does not reflow the nav */
 #auth-container {
-    width: 48px !important;
-    min-width: 48px !important;
-    height: 48px !important;
-    min-height: 48px !important;
-    flex: 0 0 48px !important;
+    width: var(--nav-auth-slot-size, 44px) !important;
+    min-width: var(--nav-auth-slot-size, 44px) !important;
+    height: var(--nav-auth-slot-size, 44px) !important;
+    min-height: var(--nav-auth-slot-size, 44px) !important;
+    flex: 0 0 var(--nav-auth-slot-size, 44px) !important;
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
@@ -19,16 +19,16 @@
 
 #auth-container>.login-trigger-btn,
 #auth-container>#authBtn {
-    width: 48px !important;
-    min-width: 48px !important;
-    height: 48px !important;
-    min-height: 48px !important;
+    width: var(--nav-auth-slot-size, 44px) !important;
+    min-width: var(--nav-auth-slot-size, 44px) !important;
+    height: var(--nav-auth-slot-size, 44px) !important;
+    min-height: var(--nav-auth-slot-size, 44px) !important;
     padding: 0 !important;
     gap: 0 !important;
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
-    flex: 0 0 48px !important;
+    flex: 0 0 var(--nav-auth-slot-size, 44px) !important;
     border-radius: 50% !important;
 }
 
@@ -63,8 +63,8 @@ button.login-trigger-btn.logged-in {
     /* Remove border that might show through */
     box-shadow: none !important;
     /* Remove any box shadow */
-    width: 48px !important;
-    height: 48px !important;
+    width: var(--nav-auth-slot-size, 44px) !important;
+    height: var(--nav-auth-slot-size, 44px) !important;
     border-radius: 50% !important;
 }
 

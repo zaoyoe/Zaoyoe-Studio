@@ -960,9 +960,12 @@ const FramerHome = {
         const triggerRect = trigger.getBoundingClientRect();
         dropdown.style.left = `${triggerRect.left + triggerRect.width / 2}px`;
 
-        // Shift up by 1 pixel to override the navigation bar's bottom border
-        // This ensures the glass panels fuse completely seamlessly without any horizontal line
-        dropdown.style.top = `${navRect.bottom - 1}px`;
+        const navOverlap = parseFloat(
+          getComputedStyle(document.documentElement).getPropertyValue('--nav-dropdown-overlap')
+        ) || 1;
+
+        // Shift up slightly to override the nav border so the glass panels stay fused.
+        dropdown.style.top = `${navRect.bottom - navOverlap}px`;
 
         // Highlight only this trigger
         trigger.classList.add('active');
