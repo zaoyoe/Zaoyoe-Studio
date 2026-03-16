@@ -18,7 +18,7 @@
         const link = document.createElement('link');
         link.id = 'wallet-modal-css';
         link.rel = 'stylesheet';
-        link.href = 'css/wallet.css?v=20260316_WALLET_AUTH_MATERIAL_1';
+        link.href = 'css/wallet.css?v=20260316_WALLET_AUTH_MATERIAL_2';
         document.head.appendChild(link);
     }
 
@@ -2503,9 +2503,7 @@
                     z-index: 0 !important;
                     pointer-events: none !important;
                     border-radius: inherit !important;
-                    background:
-                        radial-gradient(circle at top center, rgba(255, 255, 255, 0.08), transparent 38%),
-                        linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 28%) !important;
+                    background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 28%) !important;
                 }
                 .wallet-order-modal > * {
                     position: relative !important;
