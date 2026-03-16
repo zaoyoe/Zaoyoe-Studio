@@ -14,7 +14,7 @@
     console.log('[WalletModal] ✅ Initializing...');
 
     // Inject CSS if not already present
-    const walletCssHref = 'css/wallet.css?v=20260316_WALLET_KEYBOARD_RELEASE_FIX_1';
+    const walletCssHref = 'css/wallet.css?v=20260316_WALLET_KEYBOARD_RELEASE_FIX_2';
     const existingWalletCss = document.getElementById('wallet-modal-css');
     if (existingWalletCss) {
         existingWalletCss.href = walletCssHref;
@@ -345,7 +345,10 @@
 
         const keyboardLikelyVisible = walletModalState.overlayBaseHeight > 0
             && walletModalState.overlayBaseHeight - viewportMetrics.height > WALLET_MODAL_KEYBOARD_THRESHOLD;
-        const keyboardActive = holdDuringFocusTransfer || keyboardLikelyVisible;
+        const keyboardReleasing = !activeInput
+            && walletModalState.lastViewportHeight > 0
+            && viewportMetrics.height >= walletModalState.lastViewportHeight + 8;
+        const keyboardActive = holdDuringFocusTransfer || (keyboardLikelyVisible && !keyboardReleasing);
         const modalMaxHeight = Math.max(260, viewportMetrics.height - 24);
         const modalHeight = Math.min(500, modalMaxHeight);
 
@@ -379,6 +382,11 @@
     function scheduleWalletModalLayout({ settled = false, deferOnly = false } = {}) {
         if (walletModalState.layoutRafId) {
             cancelAnimationFrame(walletModalState.layoutRafId);
+        }
+
+        if (!settled && walletModalState.settleTimer) {
+            clearTimeout(walletModalState.settleTimer);
+            walletModalState.settleTimer = null;
         }
 
         const runLayout = () => {
