@@ -54,10 +54,14 @@
 
     function getWalletModalElements() {
         const overlay = document.getElementById('wallet-modal-overlay');
+        const layout = overlay?.querySelector('.wallet-layout') || null;
+        const content = overlay?.querySelector('.wallet-content') || null;
         return {
             overlay,
             card: overlay?.querySelector('.wallet-modal') || null,
-            scroller: overlay?.querySelector('.wallet-content') || null,
+            layout,
+            content,
+            scroller: isWalletModalIOSMode() ? (layout || content) : (content || layout),
             inputs: overlay
                 ? Array.from(overlay.querySelectorAll('input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]):not([readonly]):not([disabled]), textarea:not([readonly]):not([disabled]), select:not([disabled])'))
                 : []
@@ -189,6 +193,7 @@
         card.style.removeProperty('height');
         card.style.removeProperty('min-height');
         scroller?.style.removeProperty('scroll-padding-bottom');
+        scroller?.style.removeProperty('scroll-padding-top');
         walletModalState.overlayBaseHeight = 0;
         walletModalState.focusTransferUntil = 0;
         walletModalState.lastFocusAnchor = null;
@@ -280,7 +285,8 @@
             Math.min(anchorCenterInContent - preferredCenter, maxScrollTop)
         );
 
-        const topGuard = Math.max(64, Math.round(scrollHost.clientHeight * 0.18));
+        const topGuardBase = scrollHost.classList?.contains('wallet-layout') ? 112 : 64;
+        const topGuard = Math.max(topGuardBase, Math.round(scrollHost.clientHeight * 0.18));
         const bottomGuard = Math.max(120, Math.round(scrollHost.clientHeight * 0.28));
 
         if (inputRect.top < hostRect.top + topGuard) {
@@ -319,6 +325,7 @@
             card.style.removeProperty('height');
             card.style.removeProperty('min-height');
             scroller?.style.removeProperty('scroll-padding-bottom');
+            scroller?.style.removeProperty('scroll-padding-top');
             overlay.style.setProperty('--wallet-modal-translate-y', '0px');
             overlay.classList.remove('keyboard-active', 'keyboard-docked', 'ios-focus-lock');
             walletModalState.lastViewportHeight = 0;
@@ -351,6 +358,7 @@
         card.style.height = `${modalHeight}px`;
         card.style.minHeight = `${Math.min(400, modalHeight)}px`;
         if (scroller) {
+            scroller.style.scrollPaddingTop = `${isWalletModalIOSMode() ? 84 : 24}px`;
             scroller.style.scrollPaddingBottom = `${keyboardActive ? Math.max(168, Math.round(viewport.height * 0.32)) : 96}px`;
         }
         walletModalState.lastViewportHeight = viewport.height;

@@ -1524,6 +1524,11 @@ body.wallet-modal-lock {
     /* Switch to horizontal tab layout */
     .wallet-layout {
         flex-direction: column;
+        overflow-y: auto !important;
+        overflow-x: hidden;
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch !important;
+        touch-action: pan-y !important;
     }
 
     .wallet-sidebar {
@@ -1536,6 +1541,10 @@ body.wallet-modal-lock {
         justify-content: center;
         overflow-x: auto;
         flex-shrink: 0;
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        background: var(--wallet-sheet-panel);
     }
 
     .sidebar-indicator {
@@ -1567,12 +1576,9 @@ body.wallet-modal-lock {
 
     .wallet-content {
         padding: 16px;
-        min-height: 0;
-        flex: 1 1 auto;
-        overflow-y: auto !important;
-        overscroll-behavior: contain;
-        -webkit-overflow-scrolling: touch !important;
-        touch-action: pan-y !important;
+        min-height: auto;
+        flex: 0 0 auto;
+        overflow: visible !important;
     }
 
     .wallet-view,
