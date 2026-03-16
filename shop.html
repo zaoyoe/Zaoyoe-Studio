@@ -779,11 +779,13 @@
 
             #shopSuccessModal .shop-success-actions {
                 position: absolute;
-                left: 50%;
-                right: auto;
+                left: 0;
+                right: 0;
                 bottom: calc(24px + env(safe-area-inset-bottom, 0px));
-                width: min(248px, calc(100% - 104px));
-                transform: translateX(-50%);
+                width: 248px;
+                max-width: calc(100% - 104px);
+                margin-left: auto;
+                margin-right: auto;
                 z-index: 3;
                 display: grid;
                 grid-template-columns: repeat(2, minmax(0, 1fr));
