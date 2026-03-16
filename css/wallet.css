@@ -33,10 +33,9 @@ body.wallet-modal-lock {
     display: block;
     z-index: 10000;
     overflow: hidden;
-    opacity: 0;
     visibility: hidden;
     pointer-events: none;
-    transition: opacity 0.28s ease, visibility 0.28s ease;
+    transition: visibility 0s linear 0.28s;
 }
 
 #wallet-modal-overlay.wallet-overlay {
@@ -46,9 +45,9 @@ body.wallet-modal-lock {
 }
 
 .wallet-overlay.active {
-    opacity: 1;
     visibility: visible;
     pointer-events: auto;
+    transition-delay: 0s;
 }
 
 .wallet-overlay.loading {
@@ -63,6 +62,14 @@ body.wallet-modal-lock {
     background: var(--wallet-sheet-overlay);
     backdrop-filter: var(--wallet-sheet-overlay-filter);
     -webkit-backdrop-filter: var(--wallet-sheet-overlay-filter);
+    opacity: 0;
+    transform: translateZ(0);
+    will-change: opacity;
+    transition: opacity 0.28s ease;
+}
+
+.wallet-overlay.active .wallet-backdrop {
+    opacity: 1;
 }
 
 .wallet-viewport {
