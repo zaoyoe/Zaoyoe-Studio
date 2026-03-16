@@ -5364,7 +5364,7 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
         width: min(100%, 284px);
         min-width: 0;
         margin: 0 auto;
-        transform: translateY(-4px);
+        transform: translateY(-10px);
         padding: 12px 26px 10px;
         border-radius: 20px;
         border: 1px solid rgba(255, 255, 255, 0.08);
