@@ -1169,15 +1169,17 @@ class ChatWidget {
                 const userInfo = data.userId
                     ? userMapById.get(data.userId)
                     : userMapByEmail.get(normalizedGroupKey.toLowerCase()) || null;
+                const sessionIds = Array.from(data.sessionIds);
+                const resolvedEmail = this.resolveSessionEmail(userInfo, normalizedGroupKey, sessionIds);
 
                 // Determine display name: use username if available, else email username, else "访客" for guests
-                const displayNickname = this.resolveSessionNickname(userInfo, normalizedGroupKey);
+                const displayNickname = this.resolveSessionNickname(userInfo, normalizedGroupKey, resolvedEmail);
 
                 return {
                     id: normalizedGroupKey, // Use user_id or session_id as the identifier
-                    sessionIds: Array.from(data.sessionIds), // All session_ids for this user (for message loading)
+                    sessionIds, // All session_ids for this user (for message loading)
                     nickname: displayNickname,
-                    email: userInfo?.email || (normalizedGroupKey.includes && normalizedGroupKey.includes('@') ? normalizedGroupKey : null),
+                    email: resolvedEmail,
                     lastLogin: msg.created_at,
                     lastMessage: msg.message_type === 'image' ? this.t('chat.image', '[图片]') : msg.content,
                     lastTime: msg.created_at,
@@ -1280,15 +1282,26 @@ class ChatWidget {
         return Boolean(isAdminMessage) === Boolean(this.isAdmin) ? 'user' : 'admin';
     }
 
-    resolveSessionNickname(profile, fallbackKey = '') {
+    resolveSessionEmail(profile, fallbackKey = '', sessionIds = []) {
+        const email = typeof profile?.email === 'string' ? profile.email.trim() : '';
+        if (email) return email;
+
+        const normalizedFallback = typeof fallbackKey === 'string' ? fallbackKey.trim() : String(fallbackKey || '');
+        if (normalizedFallback.includes('@')) return normalizedFallback;
+
+        const emailSessionId = (Array.isArray(sessionIds) ? sessionIds : [])
+            .find(id => typeof id === 'string' && id.includes('@'));
+        return emailSessionId ? emailSessionId.trim() : '';
+    }
+
+    resolveSessionNickname(profile, fallbackKey = '', preferredEmail = '') {
         const displayName = typeof profile?.display_name === 'string' ? profile.display_name.trim() : '';
         const username = typeof profile?.username === 'string' ? profile.username.trim() : '';
-        const email = typeof profile?.email === 'string' ? profile.email.trim() : '';
         const normalizedFallback = typeof fallbackKey === 'string' ? fallbackKey.trim() : String(fallbackKey || '');
 
         if (displayName) return displayName;
         if (username) return username;
-        if (email && email.includes('@')) return email.split('@')[0];
+        if (preferredEmail && preferredEmail.includes('@')) return preferredEmail.split('@')[0];
         if (normalizedFallback.includes('@')) return normalizedFallback.split('@')[0];
         return this.t('chat.guest', '访客');
     }
@@ -1343,10 +1356,9 @@ class ChatWidget {
 
         // Update header with user info
         this.chatHeader.querySelector('.chat-user-name').textContent = sessionInfo.nickname;
-        // Show email if available, otherwise show session ID
-        const displayId = sessionInfo.email && !sessionInfo.email.startsWith('guest_')
-            ? sessionInfo.email
-            : (sessionInfo.id.includes('@') ? sessionInfo.id : sessionInfo.id);
+        // Prefer email in the header; only fall back when the session truly has no email.
+        const headerEmail = this.resolveSessionEmail(null, sessionInfo.email || sessionInfo.id, sessionInfo.sessionIds || []);
+        const displayId = headerEmail || sessionInfo.id;
         this.chatHeader.querySelector('.chat-user-id').textContent = displayId;
 
         // Update or add online status indicator
