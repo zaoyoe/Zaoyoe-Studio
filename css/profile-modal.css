@@ -846,6 +846,7 @@
 
 @media (min-width: 769px) {
     #profileModal {
+        --profile-mobile-modal-radius: 26px;
         --profile-mobile-topbar-height: 72px;
         --profile-desktop-inline-editor-offset: 148px;
     }
@@ -1087,6 +1088,11 @@
             background 0.22s ease,
             color 0.22s ease,
             transform 0.22s ease;
+        cursor: pointer;
+    }
+
+    #profileModal .profile-security-desktop-item * {
+        cursor: inherit;
     }
 
     #profileModal .profile-security-desktop-item:hover {
@@ -1303,5 +1309,11 @@ body.profile-modal-lock {
     to {
         opacity: 0;
         transform: scale(0.96) translateY(8px);
+    }
+}
+
+@media (max-width: 360px) {
+    #profileModal {
+        --profile-mobile-modal-radius: 16px;
     }
 }

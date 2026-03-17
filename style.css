@@ -5345,6 +5345,7 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
 
 @media (min-width: 769px) {
     #profileModal {
+        --profile-mobile-modal-radius: 26px;
         --profile-mobile-topbar-height: 72px;
         --profile-desktop-inline-editor-offset: 148px;
     }
@@ -5692,6 +5693,10 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
         text-align: left;
     }
 
+    #profileModal .profile-security-desktop-item * {
+        cursor: inherit;
+    }
+
     #profileModal .profile-security-desktop-item:hover {
         background: rgba(255, 255, 255, 0.045);
         color: rgba(248, 251, 255, 0.9);
@@ -5920,6 +5925,12 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
 
     #profileModal .mobile-security-layout {
         display: none !important;
+    }
+}
+
+@media (max-width: 360px) {
+    #profileModal {
+        --profile-mobile-modal-radius: 16px;
     }
 }
 
@@ -7256,6 +7267,14 @@ input[type="submit"],
 /* Ensure input areas have text cursor */
 .modal-content input,
 .modal-content textarea {
+    cursor: text !important;
+}
+
+#guestbookModal #guestMessage,
+#guestbookModal textarea,
+#guestbookModal input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="button"]):not([type="submit"]),
+#commentModal textarea,
+#commentModal input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="button"]):not([type="submit"]) {
     cursor: text !important;
 }
 
