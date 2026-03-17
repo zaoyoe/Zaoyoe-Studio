@@ -1114,7 +1114,7 @@ class ChatWidget {
             if (userIds.length > 0) {
                 const { data: profiles } = await this.supabase
                     .from('profiles')
-                    .select('id, email, username, avatar_url')
+                    .select('id, email, display_name, username, avatar_url')
                     .in('id', userIds);
 
                 if (profiles) {
@@ -1127,7 +1127,7 @@ class ChatWidget {
             if (emailSessionIds.length > 0) {
                 const { data: profilesByEmail } = await this.supabase
                     .from('profiles')
-                    .select('id, email, username, avatar_url')
+                    .select('id, email, display_name, username, avatar_url')
                     .in('email', emailSessionIds);
 
                 if (profilesByEmail) {
@@ -1171,16 +1171,7 @@ class ChatWidget {
                     : userMapByEmail.get(normalizedGroupKey.toLowerCase()) || null;
 
                 // Determine display name: use username if available, else email username, else "访客" for guests
-                let displayNickname;
-                if (userInfo?.username) {
-                    displayNickname = userInfo.username;
-                } else if (userInfo?.email) {
-                    displayNickname = userInfo.email.split('@')[0];
-                } else if (normalizedGroupKey.includes && normalizedGroupKey.includes('@')) {
-                    displayNickname = normalizedGroupKey.split('@')[0];
-                } else {
-                    displayNickname = this.t('chat.guest', '访客');
-                }
+                const displayNickname = this.resolveSessionNickname(userInfo, normalizedGroupKey);
 
                 return {
                     id: normalizedGroupKey, // Use user_id or session_id as the identifier
@@ -1287,6 +1278,19 @@ class ChatWidget {
 
     getMessageRenderType(isAdminMessage) {
         return Boolean(isAdminMessage) === Boolean(this.isAdmin) ? 'user' : 'admin';
+    }
+
+    resolveSessionNickname(profile, fallbackKey = '') {
+        const displayName = typeof profile?.display_name === 'string' ? profile.display_name.trim() : '';
+        const username = typeof profile?.username === 'string' ? profile.username.trim() : '';
+        const email = typeof profile?.email === 'string' ? profile.email.trim() : '';
+        const normalizedFallback = typeof fallbackKey === 'string' ? fallbackKey.trim() : String(fallbackKey || '');
+
+        if (displayName) return displayName;
+        if (username) return username;
+        if (email && email.includes('@')) return email.split('@')[0];
+        if (normalizedFallback.includes('@')) return normalizedFallback.split('@')[0];
+        return this.t('chat.guest', '访客');
     }
 
     getSessionAvatarInitial(session) {
@@ -1963,9 +1967,10 @@ class ChatWidget {
             }
 
             .chat-window:not(.admin-mode-layout) .message.admin {
-                background: var(--chat-panel-bg, rgba(255, 255, 255, 0.025)) !important;
-                border: 1px solid var(--chat-panel-border, rgba(255, 255, 255, 0.08)) !important;
-                box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), inset 0 -12px 24px rgba(0, 0, 0, 0.08) !important;
+                background: #007aff !important;
+                color: #ffffff !important;
+                border: none !important;
+                box-shadow: 0 10px 24px rgba(0, 122, 255, 0.24) !important;
             }
 
             body.chat-spotlight-suspended .spotlight-overlay,
