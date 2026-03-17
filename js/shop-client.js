@@ -803,10 +803,14 @@ const ShopClient = {
             btn.disabled = false;
         }
 
+        const modal = document.getElementById('shopPurchaseModal');
+        modal.classList.remove('active');
         this.renderPurchaseNotes();
 
+        // Flush the inactive layout first so newly revealed notes can join the stagger animation on first open.
+        void modal.offsetHeight;
+
         // Show Modal
-        const modal = document.getElementById('shopPurchaseModal');
         modal.classList.add('active');
         // Lock background scroll on mobile Safari
         if (window.iOSScrollLock) window.iOSScrollLock.lockLight(modal);
