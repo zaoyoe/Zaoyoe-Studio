@@ -7,6 +7,20 @@
     // Track currently focused input
     let currentFocusedInput = null;
 
+    function shouldBypassInputFix(input) {
+        return !!input?.closest?.(
+            '#commentModal, #guestbookModal, .comment-composer-editor, .guestbook-composer-editor'
+        );
+    }
+
+    function clearInlineFixStyles(input) {
+        input.style.removeProperty('background');
+        input.style.removeProperty('background-color');
+        input.style.removeProperty('border');
+        input.style.removeProperty('border-color');
+        input.style.removeProperty('box-shadow');
+    }
+
     function applyInputStyles() {
         // 获取所有输入框
         const inputs = document.querySelectorAll('input[type="email"], input[type="password"], input[type="text"], input[type="tel"], textarea, .glass-input, .security-input');
@@ -14,6 +28,11 @@
         console.log(`找到 ${inputs.length} 个输入框`);
 
         inputs.forEach((input, index) => {
+            if (shouldBypassInputFix(input)) {
+                clearInlineFixStyles(input);
+                return;
+            }
+
             // Check if this input is currently focused
             if (input === document.activeElement) {
                 applyFocusStyles(input);
@@ -45,6 +64,11 @@
     }
 
     function applyFocusStyles(input) {
+        if (shouldBypassInputFix(input)) {
+            clearInlineFixStyles(input);
+            return;
+        }
+
         input.style.setProperty('background', 'rgba(0, 0, 0, 0.4)', 'important');
         input.style.setProperty('background-color', 'rgba(0, 0, 0, 0.4)', 'important');
         input.style.setProperty('border', '1px solid rgba(155, 93, 229, 0.7)', 'important');
@@ -53,6 +77,11 @@
     }
 
     function applyBlurStyles(input) {
+        if (shouldBypassInputFix(input)) {
+            clearInlineFixStyles(input);
+            return;
+        }
+
         input.style.setProperty('background', 'rgba(0, 0, 0, 0.3)', 'important');
         input.style.setProperty('background-color', 'rgba(0, 0, 0, 0.3)', 'important');
         input.style.setProperty('border', '1px solid rgba(155, 93, 229, 0.3)', 'important');
