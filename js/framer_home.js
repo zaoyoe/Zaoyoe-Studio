@@ -1089,8 +1089,10 @@ const FramerHome = {
         <div class="hero-carousel-track">
           ${visibleEntries.map((entry, index) => `
             <a href="${entry.link}" class="entry-card" data-index="${index}" ${entry.action ? `data-action="${entry.action}"` : ''}>
-              <i class="fas ${entry.icon}" style="color: ${entry.color}"></i>
-              <span>${entry.text}</span>
+              <span class="entry-card-ui">
+                <i class="fas ${entry.icon}" style="color: ${entry.color}"></i>
+                <span>${entry.text}</span>
+              </span>
             </a>
           `).join('')}
         </div>
@@ -1549,8 +1551,9 @@ const FramerHome = {
       if (!hasUserInteracted) {
         // Initial state: all cards same size and dimmer opacity
         cards.forEach((card) => {
-          card.style.transform = 'scale(1)';
-          card.style.opacity = '0.7';
+          const cardUi = card.querySelector('.entry-card-ui') || card;
+          cardUi.style.transform = 'scale(1)';
+          cardUi.style.opacity = '0.7';
         });
         return;
       }
@@ -1563,14 +1566,15 @@ const FramerHome = {
         const cardCenter = rect.left + rect.width / 2;
         const distanceFromCenter = Math.abs(cardCenter - viewportCenter);
         const maxDistance = rect.width * 1.5;
+        const cardUi = card.querySelector('.entry-card-ui') || card;
 
         // Scale: 1.1 when centered, 0.85 when far (more dramatic effect)
         const scale = Math.max(0.85, 1.1 - (distanceFromCenter / maxDistance) * 0.25);
         // Opacity: 1.0 when centered, 0.5 when far
         const opacity = Math.max(0.5, 1 - (distanceFromCenter / maxDistance) * 0.5);
 
-        card.style.transform = `scale(${scale})`;
-        card.style.opacity = opacity;
+        cardUi.style.transform = `scale(${scale})`;
+        cardUi.style.opacity = opacity;
       });
     };
 

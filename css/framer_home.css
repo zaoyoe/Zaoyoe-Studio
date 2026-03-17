@@ -677,6 +677,7 @@ a.nav-trigger.active {
     padding: var(--spacing-2xl) var(--spacing-lg);
     position: relative;
     overflow: hidden;
+    isolation: isolate;
 }
 
 /* ========== Raycast Light Beams (Hero BG) =========== */
@@ -882,6 +883,9 @@ a.nav-trigger.active {
     /* Disabled by default for initial centering */
     scroll-padding-inline: calc(50vw - 90px);
     -webkit-overflow-scrolling: touch;
+    position: relative;
+    z-index: 3;
+    pointer-events: auto;
 }
 
 /* Enable scroll-snap only after user interaction */
@@ -899,36 +903,57 @@ a.nav-trigger.active {
     /* Padding = 50vw - half of card width (180/2 = 90) for centering */
     padding: 0 calc(50vw - 90px);
     width: fit-content;
+    position: relative;
+    z-index: 3;
 }
 
 .entry-card {
     flex-shrink: 0;
     width: 180px;
     height: 140px;
+    text-decoration: none;
+    color: var(--text-primary);
+    display: block;
+    scroll-snap-align: center;
+    position: relative;
+    z-index: 4;
+    pointer-events: auto;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    cursor: pointer;
+}
+
+.entry-card-ui {
+    width: 100%;
+    height: 100%;
     background: transparent;
     border: none;
     padding: var(--spacing-md);
     text-align: center;
-    text-decoration: none;
-    color: var(--text-primary);
     transition: transform 0.3s ease, opacity 0.3s ease;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    scroll-snap-align: center;
+    transform-origin: center center;
+    will-change: transform, opacity;
+    pointer-events: none;
 }
 
-.entry-card:hover {
+.entry-card-ui>* {
+    pointer-events: none;
+}
+
+.entry-card:hover .entry-card-ui {
     transform: scale(1.05);
 }
 
-.entry-card i {
+.entry-card-ui>i {
     font-size: 40px;
     margin-bottom: var(--spacing-sm);
 }
 
-.entry-card span {
+.entry-card-ui>span {
     display: block;
     font-size: 14px;
     color: var(--text-secondary);
@@ -1400,11 +1425,11 @@ a.nav-trigger.active {
         scroll-snap-align: center;
     }
 
-    .entry-card i {
+    .entry-card-ui>i {
         font-size: 40px;
     }
 
-    .entry-card span {
+    .entry-card-ui>span {
         font-size: 13px;
     }
 
@@ -1442,7 +1467,7 @@ a.nav-trigger.active {
 @media (hover: none) {
 
     .glass-card:hover,
-    .entry-card:hover,
+    .entry-card:hover .entry-card-ui,
     .btn:hover {
         transform: none;
     }
