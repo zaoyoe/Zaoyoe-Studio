@@ -5,7 +5,7 @@
     --chat-bg-dark: rgba(18, 18, 18, 0.85);
     --chat-glass-border: rgba(255, 255, 255, 0.1);
     --chat-text: #ffffff;
-    --chat-user-bubble: #667eea;
+    --chat-user-bubble: #95ec69;
     --chat-admin-bubble: rgba(255, 255, 255, 0.1);
     --chat-shell-bg: rgba(11, 14, 20, 0.94);
     --chat-shell-border: rgba(255, 255, 255, 0.08);
@@ -604,11 +604,10 @@
 
 .message.user {
     align-self: flex-end;
-    /* Classic blue bubble - like iMessage */
-    background: #007AFF;
-    color: white;
+    background: var(--chat-user-bubble);
+    color: #15210f;
     border-bottom-right-radius: 4px;
-    box-shadow: 0 2px 8px rgba(0, 122, 255, 0.3);
+    box-shadow: 0 10px 24px rgba(149, 236, 105, 0.24);
 }
 
 .message.admin {

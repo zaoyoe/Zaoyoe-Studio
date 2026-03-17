@@ -742,6 +742,16 @@ class ChatWidget {
                 font-size: 14px;
                 flex-shrink: 0;
             }
+            .session-avatar.has-image {
+                background: rgba(255, 255, 255, 0.08);
+                overflow: hidden;
+            }
+            .session-avatar img {
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+                display: block;
+            }
             
             .session-info {
                 flex: 1;
@@ -1080,7 +1090,7 @@ class ChatWidget {
             // Get all messages grouped by session, including user_id for lookup
             const { data: messages, error } = await this.supabase
                 .from('chat_messages')
-                .select('session_id, created_at, content, is_admin, user_id')
+                .select('session_id, created_at, content, is_admin, user_id, message_type')
                 .order('created_at', { ascending: false });
 
             if (error) throw error;
@@ -1090,19 +1100,41 @@ class ChatWidget {
 
             // Collect all user IDs from USER messages (for looking up guest sessions with logged-in users)
             const userIds = [...new Set(userMessages.filter(m => m.user_id).map(m => m.user_id))];
+            const emailSessionIds = [...new Set(
+                userMessages
+                    .filter(m => !m.user_id && typeof m.session_id === 'string' && m.session_id.includes('@'))
+                    .map(m => m.session_id.trim().toLowerCase())
+                    .filter(Boolean)
+            )];
 
             // Fetch user info from profiles table using user IDs
             let userMapById = new Map();
+            let userMapByEmail = new Map();
 
             if (userIds.length > 0) {
                 const { data: profiles } = await this.supabase
                     .from('profiles')
-                    .select('id, email, username')
+                    .select('id, email, username, avatar_url')
                     .in('id', userIds);
 
                 if (profiles) {
                     profiles.forEach(u => {
                         userMapById.set(u.id, u);
+                    });
+                }
+            }
+
+            if (emailSessionIds.length > 0) {
+                const { data: profilesByEmail } = await this.supabase
+                    .from('profiles')
+                    .select('id, email, username, avatar_url')
+                    .in('email', emailSessionIds);
+
+                if (profilesByEmail) {
+                    profilesByEmail.forEach(u => {
+                        if (u.email) {
+                            userMapByEmail.set(u.email.toLowerCase(), u);
+                        }
                     });
                 }
             }
@@ -1133,7 +1165,10 @@ class ChatWidget {
             // Build sessions with user info
             this.sessions = Array.from(userSessionMap.entries()).map(([groupKey, data]) => {
                 const msg = data.lastMsg;
-                const userInfo = data.userId ? userMapById.get(data.userId) : null;
+                const normalizedGroupKey = typeof groupKey === 'string' ? groupKey.trim() : String(groupKey || '');
+                const userInfo = data.userId
+                    ? userMapById.get(data.userId)
+                    : userMapByEmail.get(normalizedGroupKey.toLowerCase()) || null;
 
                 // Determine display name: use username if available, else email username, else "访客" for guests
                 let displayNickname;
@@ -1141,22 +1176,23 @@ class ChatWidget {
                     displayNickname = userInfo.username;
                 } else if (userInfo?.email) {
                     displayNickname = userInfo.email.split('@')[0];
-                } else if (groupKey.includes && groupKey.includes('@')) {
-                    displayNickname = groupKey.split('@')[0];
+                } else if (normalizedGroupKey.includes && normalizedGroupKey.includes('@')) {
+                    displayNickname = normalizedGroupKey.split('@')[0];
                 } else {
                     displayNickname = this.t('chat.guest', '访客');
                 }
 
                 return {
-                    id: groupKey, // Use user_id or session_id as the identifier
+                    id: normalizedGroupKey, // Use user_id or session_id as the identifier
                     sessionIds: Array.from(data.sessionIds), // All session_ids for this user (for message loading)
                     nickname: displayNickname,
-                    email: userInfo?.email || (groupKey.includes && groupKey.includes('@') ? groupKey : null),
+                    email: userInfo?.email || (normalizedGroupKey.includes && normalizedGroupKey.includes('@') ? normalizedGroupKey : null),
                     lastLogin: msg.created_at,
-                    lastMessage: msg.content,
+                    lastMessage: msg.message_type === 'image' ? this.t('chat.image', '[图片]') : msg.content,
                     lastTime: msg.created_at,
                     isAdmin: msg.is_admin,
-                    userId: data.userId
+                    userId: data.userId,
+                    avatarUrl: userInfo?.avatar_url || null
                 };
             });
 
@@ -1171,6 +1207,7 @@ class ChatWidget {
                 const item = document.createElement('div');
                 item.className = 'session-item';
                 item.dataset.sessionId = s.id;
+                item.classList.toggle('active', this.currentSessionId === s.id);
 
                 // Check if any of this user's session IDs are in unreadSessions
                 const sessionIds = s.sessionIds || [s.id];
@@ -1179,22 +1216,48 @@ class ChatWidget {
                     item.classList.add('unread');
                 }
 
-                const initials = s.id.startsWith('guest_') ? 'G' : s.nickname.charAt(0).toUpperCase();
-                const preview = s.lastMessage.length > 20 ? s.lastMessage.slice(0, 20) + '...' : s.lastMessage;
+                const previewText = s.lastMessage || '';
+                const preview = previewText.length > 20 ? previewText.slice(0, 20) + '...' : previewText;
                 const time = this.formatTime(s.lastTime);
                 const displayName = s.nickname.length > 12 ? s.nickname.slice(0, 12) + '...' : s.nickname;
-                const displayEmail = s.id.startsWith('guest_') ? '' : (s.email.length > 20 ? s.email.slice(0, 20) + '...' : s.email);
+                const displayEmail = s.id.startsWith('guest_')
+                    ? ''
+                    : ((s.email || '').length > 20 ? s.email.slice(0, 20) + '...' : (s.email || ''));
 
-                item.innerHTML = `
-                    <div class="session-avatar">${initials}</div>
-                    <div class="session-info">
-                        <div class="session-name">${displayName}</div>
-                        <div class="session-email">${displayEmail}</div>
-                        <div class="session-preview">${preview}</div>
-                    </div>
-                    <div class="session-time">${time}</div>
-                    ${hasUnread ? '<div class="unread-dot"></div>' : ''}
-                `;
+                const avatarEl = this.createSessionAvatarElement(s);
+
+                const infoEl = document.createElement('div');
+                infoEl.className = 'session-info';
+
+                const nameEl = document.createElement('div');
+                nameEl.className = 'session-name';
+                nameEl.textContent = displayName;
+
+                const emailEl = document.createElement('div');
+                emailEl.className = 'session-email';
+                emailEl.textContent = displayEmail;
+
+                const previewEl = document.createElement('div');
+                previewEl.className = 'session-preview';
+                previewEl.textContent = preview;
+
+                infoEl.appendChild(nameEl);
+                infoEl.appendChild(emailEl);
+                infoEl.appendChild(previewEl);
+
+                const timeEl = document.createElement('div');
+                timeEl.className = 'session-time';
+                timeEl.textContent = time;
+
+                item.appendChild(avatarEl);
+                item.appendChild(infoEl);
+                item.appendChild(timeEl);
+
+                if (hasUnread) {
+                    const unreadDot = document.createElement('div');
+                    unreadDot.className = 'unread-dot';
+                    item.appendChild(unreadDot);
+                }
 
                 item.addEventListener('click', () => this.selectSession(s.id, s));
                 this.sessionList.appendChild(item);
@@ -1220,6 +1283,43 @@ class ChatWidget {
 
         const isEnglish = window.i18n && window.i18n.isEnglish && window.i18n.isEnglish();
         return date.toLocaleDateString(isEnglish ? 'en-US' : 'zh-CN', { month: 'short', day: 'numeric' });
+    }
+
+    getMessageRenderType(isAdminMessage) {
+        return Boolean(isAdminMessage) === Boolean(this.isAdmin) ? 'user' : 'admin';
+    }
+
+    getSessionAvatarInitial(session) {
+        if (!session) return 'U';
+        if (session.id && session.id.startsWith('guest_')) return 'G';
+        const seed = session.nickname || session.email || session.id || 'U';
+        return String(seed).trim().charAt(0).toUpperCase() || 'U';
+    }
+
+    createSessionAvatarElement(session) {
+        const avatarEl = document.createElement('div');
+        avatarEl.className = 'session-avatar';
+
+        const fallbackInitial = this.getSessionAvatarInitial(session);
+        if (!session?.avatarUrl) {
+            avatarEl.textContent = fallbackInitial;
+            return avatarEl;
+        }
+
+        avatarEl.classList.add('has-image');
+        const img = document.createElement('img');
+        img.src = session.avatarUrl;
+        img.alt = `${session.nickname || session.email || session.id || 'user'} avatar`;
+        img.loading = 'lazy';
+        img.decoding = 'async';
+        img.referrerPolicy = 'no-referrer';
+        img.addEventListener('error', () => {
+            avatarEl.classList.remove('has-image');
+            avatarEl.textContent = fallbackInitial;
+            img.remove();
+        });
+        avatarEl.appendChild(img);
+        return avatarEl;
     }
 
     selectSession(sessionId, sessionInfo = null) {
@@ -1416,7 +1516,12 @@ class ChatWidget {
 
             // Batch render all messages (preload complete set before enabling scroll)
             data.forEach(msg => {
-                this.appendMessage(msg.content, msg.is_admin ? 'admin' : 'user', msg.message_type === 'image' ? 'image' : 'text', msg.created_at);
+                this.appendMessage(
+                    msg.content,
+                    this.getMessageRenderType(msg.is_admin),
+                    msg.message_type === 'image' ? 'image' : 'text',
+                    msg.created_at
+                );
             });
 
             // Remove min-height constraint after content is loaded
@@ -1592,7 +1697,7 @@ class ChatWidget {
         if (!text) return;
 
         // Optimistic UI update
-        this.appendMessage(text, 'admin');
+        this.appendMessage(text, this.getMessageRenderType(true), 'text');
         this.input.value = '';
         this.scrollToBottom();
 
@@ -1695,7 +1800,7 @@ class ChatWidget {
                     is_admin: true
                 });
 
-            this.appendMessage(imageUrl, 'admin', true);
+            this.appendMessage(imageUrl, this.getMessageRenderType(true), 'image');
             this.scrollToBottom();
 
         } catch (err) {
@@ -1719,14 +1824,21 @@ class ChatWidget {
                 // Must be: window open + selected this session + on mobile: must be in chat view (not list view)
                 const isMobile = window.innerWidth <= 700;
                 const isInChatView = !isMobile || (this.chatWindow && this.chatWindow.classList.contains('chat-active'));
+                const activeSessionIds = this.currentSessionIds || (this.currentSessionId ? [this.currentSessionId] : []);
                 const isViewingThisSession = this.isOpen &&
-                    this.currentSessionId &&
-                    msg.session_id === this.currentSessionId &&
+                    activeSessionIds.length > 0 &&
+                    activeSessionIds.includes(msg.session_id) &&
                     isInChatView;
 
                 if (isViewingThisSession) {
                     // Append message to current chat - with animation (isNewMessage=true)
-                    this.appendMessage(msg.content, 'user', msg.message_type === 'image' ? 'image' : 'text', null, true);
+                    this.appendMessage(
+                        msg.content,
+                        this.getMessageRenderType(msg.is_admin),
+                        msg.message_type === 'image' ? 'image' : 'text',
+                        msg.created_at,
+                        true
+                    );
                     this.scrollToBottom();
                 }
 
@@ -2007,6 +2119,8 @@ class ChatWidget {
     }
 
     renderUserMode() {
+        this.isAdmin = false;
+
         // Create Chat Window
         this.chatWindow = document.createElement('div');
         this.chatWindow.className = 'chat-window';
@@ -2983,7 +3097,7 @@ class ChatWidget {
         if (!text) return;
 
         // Optimistic UI update
-        this.appendMessage(text, 'user', 'text');
+        this.appendMessage(text, this.getMessageRenderType(false), 'text');
         this.input.value = '';
 
         try {
@@ -3078,7 +3192,7 @@ class ChatWidget {
                 .getPublicUrl(filePath);
 
             // Optimistic UI for Image
-            this.appendMessage(publicUrl, 'user', 'image');
+            this.appendMessage(publicUrl, this.getMessageRenderType(false), 'image');
 
             // Save to DB
             const { data: { user } } = await this.supabase.auth.getUser();
@@ -3172,7 +3286,13 @@ class ChatWidget {
                     // Or check if is_admin is true
                     if (payload.new.is_admin) {
                         // Real-time message - animate with isNewMessage=true
-                        this.appendMessage(payload.new.content, 'admin', payload.new.message_type, null, true);
+                        this.appendMessage(
+                            payload.new.content,
+                            this.getMessageRenderType(payload.new.is_admin),
+                            payload.new.message_type,
+                            payload.new.created_at,
+                            true
+                        );
 
                         // Show cute notification if chat is closed
                         const messageContent = payload.new.message_type === 'image' ? '📷 发送了一张图片' : payload.new.content;
@@ -3197,8 +3317,12 @@ class ChatWidget {
             if (data) {
                 // Batch render all history messages before enabling scroll
                 data.forEach(msg => {
-                    const type = msg.is_admin ? 'admin' : 'user';
-                    this.appendMessage(msg.content, type, msg.message_type);
+                    this.appendMessage(
+                        msg.content,
+                        this.getMessageRenderType(msg.is_admin),
+                        msg.message_type,
+                        msg.created_at
+                    );
                 });
 
                 // Scroll to bottom after all messages loaded
