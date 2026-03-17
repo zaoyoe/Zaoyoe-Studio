@@ -8,6 +8,9 @@ class ChatWidget {
         this.unreadCount = 0; // Track unread messages
         this.lastMessageTime = null; // Track last seen message
         this.unreadSessions = new Set(); // Track sessions with unread messages (admin mode)
+        this.sessionMessagesCache = new Map(); // Cache admin conversation payloads for faster switching
+        this._sessionLoadRequestId = 0;
+        this._sessionLoadingOverlayTimer = null;
 
         // Preload configuration - lock scroll until messages are loaded
         this.isPreloading = false;
@@ -1434,9 +1437,7 @@ class ChatWidget {
 
         // Clear unread status for this session
         const sessionIdsToMark = sessionInfo.sessionIds || [sessionId];
-        sessionIdsToMark.forEach(sid => this.unreadSessions.delete(sid));
-        // Refresh list to remove unread styling
-        this.loadAdminSessions();
+        this.clearSessionUnreadState(sessionId, sessionIdsToMark);
 
         // Load messages (pass all session IDs for merged sessions)
         this.loadSessionMessages(sessionInfo.sessionIds || [sessionId]);
@@ -1458,6 +1459,90 @@ class ChatWidget {
             this.messagesContainer.classList.remove('scroll-locked');
             this.messagesContainer.style.overflowY = '';
         }
+    }
+
+    getSessionCacheKey(sessionIds) {
+        const normalized = [...new Set((Array.isArray(sessionIds) ? sessionIds : [sessionIds]).filter(Boolean))];
+        return normalized.sort().join('|');
+    }
+
+    clearSessionLoadingOverlayTimer() {
+        if (this._sessionLoadingOverlayTimer) {
+            clearTimeout(this._sessionLoadingOverlayTimer);
+            this._sessionLoadingOverlayTimer = null;
+        }
+    }
+
+    ensureSessionLoadingOverlay() {
+        if (!this.messagesContainer) return null;
+
+        let loadingOverlay = this.messagesContainer.querySelector('.loading-overlay');
+        if (loadingOverlay) return loadingOverlay;
+
+        loadingOverlay = document.createElement('div');
+        loadingOverlay.className = 'loading-overlay';
+        loadingOverlay.innerHTML = '<div class="loading-spinner"></div><span>预加载消息中...</span>';
+        loadingOverlay.style.cssText = `
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(20, 20, 30, 0.85);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 14px;
+            z-index: 10;
+            backdrop-filter: blur(4px);
+        `;
+        this.messagesContainer.style.position = 'relative';
+        this.messagesContainer.appendChild(loadingOverlay);
+        return loadingOverlay;
+    }
+
+    removeSessionLoadingOverlay() {
+        this.clearSessionLoadingOverlayTimer();
+        if (!this.messagesContainer) return;
+        const loadingOverlay = this.messagesContainer.querySelector('.loading-overlay');
+        if (loadingOverlay) loadingOverlay.remove();
+    }
+
+    clearSessionUnreadState(sessionKey, sessionIds = []) {
+        const idsToClear = [...new Set((Array.isArray(sessionIds) ? sessionIds : [sessionIds]).filter(Boolean))];
+        idsToClear.forEach(sid => this.unreadSessions.delete(sid));
+
+        this.sessionList?.querySelectorAll('.session-item').forEach(item => {
+            if (item.dataset.sessionId !== sessionKey) return;
+            item.classList.remove('unread');
+            const unreadDot = item.querySelector('.unread-dot');
+            if (unreadDot) unreadDot.remove();
+        });
+    }
+
+    renderSessionMessages(messages = []) {
+        if (!this.messagesContainer) return;
+
+        this.removeSessionLoadingOverlay();
+        this.messagesContainer.innerHTML = '';
+        this.lastDisplayedTime = null;
+
+        if (!messages.length) {
+            this.messagesContainer.innerHTML = `<div class="message admin">${this.t('chat.noMessages', '暂无消息')}</div>`;
+            return;
+        }
+
+        messages.forEach(msg => {
+            this.appendMessage(
+                msg.content,
+                this.getMessageRenderType(msg.is_admin),
+                msg.message_type === 'image' ? 'image' : 'text',
+                msg.created_at
+            );
+        });
     }
 
     // HIGH REFRESH RATE OPTIMIZATION: Disable expensive effects during scroll
@@ -1509,71 +1594,49 @@ class ChatWidget {
 
     async loadSessionMessages(sessionIds) {
         // sessionIds can be an array (merged user) or will be converted to array
-        const sessionIdArray = Array.isArray(sessionIds) ? sessionIds : [sessionIds];
+        const sessionIdArray = [...new Set((Array.isArray(sessionIds) ? sessionIds : [sessionIds]).filter(Boolean))];
+        const cacheKey = this.getSessionCacheKey(sessionIdArray);
+        const requestId = ++this._sessionLoadRequestId;
         this.currentSessionIds = sessionIdArray;
         // Set currentSessionId for sending messages (use first one as the reply session)
         this.currentSessionId = sessionIdArray[0];
 
-        // PRELOAD STRATEGY: Lock scroll during message loading
-        this.lockScroll();
+        const cachedMessages = this.sessionMessagesCache.get(cacheKey);
+        if (Array.isArray(cachedMessages) && cachedMessages.length) {
+            this.renderSessionMessages(cachedMessages);
+            this.messagesContainer.style.minHeight = '';
+            this.unlockScroll();
+        } else {
+            // PRELOAD STRATEGY: Lock scroll during message loading
+            this.lockScroll();
 
-        // Preserve current scroll state and container height to prevent scroll jump
-        const currentHeight = this.messagesContainer.offsetHeight;
+            // Preserve current scroll state and container height to prevent scroll jump
+            const currentHeight = this.messagesContainer.offsetHeight;
 
-        // Set min-height to preserve layout during content swap
-        this.messagesContainer.style.minHeight = currentHeight + 'px';
+            // Set min-height to preserve layout during content swap
+            this.messagesContainer.style.minHeight = currentHeight + 'px';
 
-        // Add loading overlay instead of clearing content (prevents scroll position loss)
-        let loadingOverlay = this.messagesContainer.querySelector('.loading-overlay');
-        if (!loadingOverlay) {
-            loadingOverlay = document.createElement('div');
-            loadingOverlay.className = 'loading-overlay';
-            loadingOverlay.innerHTML = '<div class="loading-spinner"></div><span>预加载消息中...</span>';
-            loadingOverlay.style.cssText = `
-                position: absolute;
-                top: 0;
-                left: 0;
-                right: 0;
-                bottom: 0;
-                background: rgba(20, 20, 30, 0.85);
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                justify-content: center;
-                gap: 10px;
-                color: rgba(255, 255, 255, 0.7);
-                font-size: 14px;
-                z-index: 10;
-                backdrop-filter: blur(4px);
-            `;
-            // Ensure container has relative positioning for overlay
-            this.messagesContainer.style.position = 'relative';
-            this.messagesContainer.appendChild(loadingOverlay);
+            // Only show the blocking overlay when the request is actually slow.
+            this.clearSessionLoadingOverlayTimer();
+            this._sessionLoadingOverlayTimer = setTimeout(() => {
+                if (this._sessionLoadRequestId !== requestId) return;
+                this.ensureSessionLoadingOverlay();
+            }, 180);
         }
 
         try {
             const { data, error } = await this.supabase
                 .from('chat_messages')
-                .select('*')
+                .select('session_id, content, is_admin, message_type, created_at')
                 .in('session_id', sessionIdArray)
                 .order('created_at', { ascending: true });
 
             if (error) throw error;
+            if (requestId !== this._sessionLoadRequestId) return;
 
-            // Clear existing content first
-            this.messagesContainer.innerHTML = '';
-            // Reset smart time display for new session
-            this.lastDisplayedTime = null;
-
-            // Batch render all messages (preload complete set before enabling scroll)
-            data.forEach(msg => {
-                this.appendMessage(
-                    msg.content,
-                    this.getMessageRenderType(msg.is_admin),
-                    msg.message_type === 'image' ? 'image' : 'text',
-                    msg.created_at
-                );
-            });
+            const normalizedData = Array.isArray(data) ? data : [];
+            this.sessionMessagesCache.set(cacheKey, normalizedData);
+            this.renderSessionMessages(normalizedData);
 
             // Remove min-height constraint after content is loaded
             this.messagesContainer.style.minHeight = '';
@@ -1586,10 +1649,8 @@ class ChatWidget {
 
         } catch (err) {
             console.error('Failed to load messages:', err);
-            // Remove loading overlay on error
-            if (loadingOverlay && loadingOverlay.parentNode) {
-                loadingOverlay.remove();
-            }
+            if (requestId !== this._sessionLoadRequestId) return;
+            this.removeSessionLoadingOverlay();
             this.messagesContainer.style.minHeight = '';
             this.messagesContainer.innerHTML = '<div class="message admin">加载失败</div>';
             // Unlock scroll even on error
