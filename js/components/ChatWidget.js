@@ -483,6 +483,8 @@ class ChatWidget {
         // Two-column layout: Left = Session List, Right = Chat Area
         this.isAdmin = true;
         this.currentSessionId = null;
+        this.currentSessionKey = null;
+        this.currentSessionIds = [];
         this.sessions = [];
 
         this.chatWindow = document.createElement('div');
@@ -576,7 +578,7 @@ class ChatWidget {
 
         // Update chat header (if no session selected)
         const chatUserName = this.chatWindow.querySelector('.chat-user-name');
-        if (chatUserName && !this.currentSessionId) {
+        if (chatUserName && !this.currentSessionKey) {
             chatUserName.textContent = this.t('chat.selectConversation', '选择一个会话');
         }
 
@@ -1194,7 +1196,7 @@ class ChatWidget {
                 const item = document.createElement('div');
                 item.className = 'session-item';
                 item.dataset.sessionId = s.id;
-                item.classList.toggle('active', this.currentSessionId === s.id);
+                item.classList.toggle('active', this.currentSessionKey === s.id);
 
                 // Check if any of this user's session IDs are in unreadSessions
                 const sessionIds = s.sessionIds || [s.id];
@@ -1371,6 +1373,8 @@ class ChatWidget {
     }
 
     selectSession(sessionId, sessionInfo = null) {
+        this.currentSessionKey = sessionId;
+
         // Update active state
         this.sessionList.querySelectorAll('.session-item').forEach(item => {
             item.classList.toggle('active', item.dataset.sessionId === sessionId);
