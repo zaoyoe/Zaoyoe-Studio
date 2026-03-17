@@ -7626,6 +7626,8 @@ input[type="submit"],
     width: 42px;
     height: 4px;
     margin: 0 auto 4px;
+    position: relative;
+    overflow: visible;
     border-radius: 999px;
     background: rgba(107, 158, 206, 0.24);
     transform-origin: center;
@@ -7636,22 +7638,32 @@ input[type="submit"],
         transform 300ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+#guestbookModal .guestbook-composer-handle::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    opacity: 0;
+    pointer-events: none;
+    background: rgba(102, 224, 150, 0);
+    box-shadow: none;
+    transform: scaleX(1);
+}
+
 #guestbookModal:focus-within .guestbook-composer-handle,
 #guestbookModal.keyboard-docked .guestbook-composer-handle {
     background: rgba(126, 184, 239, 0.96);
     box-shadow: 0 0 0 1px rgba(126, 184, 239, 0.08), 0 0 18px rgba(126, 184, 239, 0.2);
 }
 
-@keyframes guestbookComposerHandleSuccessFlash {
+@keyframes guestbookComposerHandleSuccessGlow {
     0% {
-        background: rgba(95, 216, 143, 0.16);
-        box-shadow:
-            0 0 0 1px rgba(95, 216, 143, 0.03),
-            0 0 2px rgba(95, 216, 143, 0.05);
+        background: rgba(102, 224, 150, 0.04);
+        box-shadow: 0 0 0 rgba(102, 224, 150, 0);
         transform: scaleX(1);
-        opacity: 0.35;
+        opacity: 0;
     }
-    32% {
+    22% {
         background: rgba(102, 224, 150, 0.98);
         box-shadow:
             0 0 0 1px rgba(102, 224, 150, 0.18),
@@ -7659,19 +7671,19 @@ input[type="submit"],
         transform: scaleX(1.07);
         opacity: 1;
     }
-    62% {
-        background: rgba(120, 210, 197, 0.56);
+    58% {
+        background: rgba(102, 224, 150, 0.64);
         box-shadow:
-            0 0 0 1px rgba(120, 210, 197, 0.08),
-            0 0 10px rgba(120, 210, 197, 0.14);
+            0 0 0 1px rgba(102, 224, 150, 0.1),
+            0 0 12px rgba(102, 224, 150, 0.18);
         transform: scaleX(1.03);
-        opacity: 0.72;
+        opacity: 0.58;
     }
     100% {
-        background: rgba(107, 158, 206, 0.24);
-        box-shadow: none;
+        background: rgba(102, 224, 150, 0.02);
+        box-shadow: 0 0 0 rgba(102, 224, 150, 0);
         transform: scaleX(1);
-        opacity: 1;
+        opacity: 0;
     }
 }
 
@@ -7691,7 +7703,12 @@ input[type="submit"],
     background: rgba(107, 158, 206, 0.24);
     box-shadow: none;
     transform: scaleX(1);
-    animation: guestbookComposerHandleSuccessFlash 1000ms cubic-bezier(0.22, 1, 0.36, 1) 1 both;
+}
+
+#guestbookModal.guestbook-submit-success .guestbook-composer-handle::after,
+#guestbookModal.guestbook-submit-success:focus-within .guestbook-composer-handle::after,
+#guestbookModal.guestbook-submit-success.keyboard-docked .guestbook-composer-handle::after {
+    animation: guestbookComposerHandleSuccessGlow 1000ms cubic-bezier(0.22, 1, 0.36, 1) 1 both;
 }
 
 #guestbookModal .guestbook-composer-header {
