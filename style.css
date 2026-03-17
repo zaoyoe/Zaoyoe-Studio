@@ -9575,3 +9575,272 @@ body {
     }
 
 }
+
+/* =========================================
+   Guestbook Page Dedicated Overrides
+   Keep guestbook-only layout/color/skeleton rules in one source of truth.
+   ========================================= */
+
+body.guestbook-page .guestbook-main {
+    max-width: 100% !important;
+    width: 100% !important;
+    padding: 0 16px !important;
+    box-sizing: border-box !important;
+    overflow-x: hidden !important;
+}
+
+body.guestbook-page .message-container {
+    width: 100% !important;
+}
+
+body.guestbook-page .message-item {
+    background: rgba(255, 255, 255, 0.75);
+    break-inside: avoid !important;
+    -webkit-column-break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    margin-bottom: 20px !important;
+    width: 100% !important;
+}
+
+@keyframes guestbookPageFadeOutDown {
+    from {
+        opacity: 1;
+        transform: translateY(0);
+    }
+
+    to {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+}
+
+body.guestbook-page .page-exit {
+    animation: guestbookPageFadeOutDown 0.3s ease-in forwards;
+}
+
+body.guestbook-page .visually-hidden-h1 {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+body.guestbook-page .message-item .author-name {
+    color: rgba(0, 0, 0, 0.7) !important;
+}
+
+body.guestbook-page .message-item .message-time {
+    color: rgba(0, 0, 0, 0.4) !important;
+}
+
+body.guestbook-page .message-item .message-content {
+    color: rgba(0, 0, 0, 0.85) !important;
+}
+
+body.guestbook-page .message-item .action-btn,
+body.guestbook-page .message-item .like-btn,
+body.guestbook-page .message-item .comment-btn {
+    color: rgba(0, 0, 0, 0.5) !important;
+}
+
+body.guestbook-page .message-item .action-btn:hover,
+body.guestbook-page .message-item .like-btn:hover,
+body.guestbook-page .message-item .comment-btn:hover {
+    color: rgba(0, 0, 0, 0.75) !important;
+}
+
+body.guestbook-page .message-item .like-btn.active,
+body.guestbook-page .message-item .like-btn.active:hover {
+    color: #ef4444 !important;
+}
+
+body.guestbook-page .comment-item .comment-author {
+    color: rgba(0, 0, 0, 0.7) !important;
+}
+
+body.guestbook-page .comment-item .comment-time {
+    color: rgba(0, 0, 0, 0.4) !important;
+}
+
+body.guestbook-page .comment-item .comment-content {
+    color: rgba(0, 0, 0, 0.85) !important;
+}
+
+body.guestbook-page .comment-count-group,
+body.guestbook-page .comment-toggle-btn,
+body.guestbook-page .add-comment-trigger-btn {
+    color: rgba(0, 0, 0, 0.6) !important;
+}
+
+body.guestbook-page #notifBtn {
+    width: 36px !important;
+    height: 36px !important;
+    background: rgba(15, 23, 42, 0.6) !important;
+    backdrop-filter: blur(8px) !important;
+    -webkit-backdrop-filter: blur(8px) !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    border-radius: 50% !important;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
+    color: rgba(255, 255, 255, 0.9) !important;
+    transition: all 0.2s ease !important;
+}
+
+body.guestbook-page #notifBtn:hover {
+    background: rgba(15, 23, 42, 0.8) !important;
+    transform: scale(1.05) !important;
+}
+
+@keyframes guestbookSkeletonShimmer {
+    0% {
+        background-position: -200% 0;
+    }
+
+    100% {
+        background-position: 200% 0;
+    }
+}
+
+body.guestbook-page .skeleton {
+    background: linear-gradient(90deg,
+            rgba(0, 0, 0, 0.03) 25%,
+            rgba(0, 0, 0, 0.06) 50%,
+            rgba(0, 0, 0, 0.03) 75%);
+    background-size: 200% 100%;
+    animation: guestbookSkeletonShimmer 1.5s infinite;
+    border-radius: 8px;
+}
+
+body.guestbook-page .skeleton-message-card {
+    background: rgba(255, 255, 255, 0.75);
+    border-radius: 16px;
+    padding: 20px;
+    margin-bottom: 20px;
+    height: fit-content;
+}
+
+body.guestbook-page .skeleton-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+body.guestbook-page .skeleton-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+body.guestbook-page .skeleton-author {
+    height: 16px;
+    width: 100px;
+}
+
+body.guestbook-page .skeleton-time {
+    height: 12px;
+    width: 60px;
+    margin-left: auto;
+}
+
+body.guestbook-page .skeleton-content {
+    margin-bottom: 16px;
+}
+
+body.guestbook-page .skeleton-line {
+    height: 14px;
+    margin-bottom: 8px;
+}
+
+body.guestbook-page .skeleton-line-full {
+    width: 100%;
+}
+
+body.guestbook-page .skeleton-line-long {
+    width: 85%;
+}
+
+body.guestbook-page .skeleton-line-short {
+    width: 50%;
+}
+
+body.guestbook-page .skeleton-actions {
+    display: flex;
+    gap: 16px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+body.guestbook-page .skeleton-action-btn {
+    height: 20px;
+    width: 50px;
+    border-radius: 10px;
+}
+
+body.guestbook-page #skeletonContainer {
+    display: grid;
+    gap: 20px;
+    width: 100%;
+}
+
+body.guestbook-page #skeletonContainer.hidden {
+    display: none !important;
+}
+
+@media (max-width: 1024px) {
+    body.guestbook-page .guestbook-main {
+        padding: 0 15px !important;
+    }
+}
+
+@media (max-width: 768px) {
+    body.guestbook-page * {
+        -webkit-text-size-adjust: 100%;
+    }
+
+    body.guestbook-page .guestbook-main {
+        padding-top: 100px !important;
+    }
+
+    body.guestbook-page textarea,
+    body.guestbook-page input,
+    body.guestbook-page select,
+    body.guestbook-page input[type="text"],
+    body.guestbook-page input[type="email"],
+    body.guestbook-page input[type="password"] {
+        font-size: 16px !important;
+    }
+
+    body.guestbook-page #skeletonContainer {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+    body.guestbook-page #skeletonContainer {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (min-width: 1025px) and (max-width: 1600px) {
+    body.guestbook-page #skeletonContainer {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+@media (min-width: 1601px) and (max-width: 2400px) {
+    body.guestbook-page #skeletonContainer {
+        grid-template-columns: repeat(4, 1fr);
+    }
+}
+
+@media (min-width: 2401px) {
+    body.guestbook-page #skeletonContainer {
+        grid-template-columns: repeat(5, 1fr);
+    }
+}

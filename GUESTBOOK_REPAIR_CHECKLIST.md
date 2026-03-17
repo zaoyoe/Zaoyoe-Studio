@@ -53,7 +53,7 @@
 
 ## P2 - Maintainability And UX Stability
 
-- [ ] Move guestbook page overrides out of the large inline `<style>` block in `guestbook.html`
+- [x] Move guestbook page overrides out of the large inline `<style>` block in `guestbook.html`
   - Goal: consolidate guestbook styles into one source of truth and reduce cascade fights.
 
 - [ ] Reduce duplicate "force override" CSS around guestbook/comment composer
