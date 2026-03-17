@@ -617,10 +617,11 @@ class ChatWidget {
                 flex-direction: row;
                 border-radius: 20px;
                 overflow: hidden;
-                /* Glassmorphism effect - balanced transparency */
-                background: rgba(20, 20, 30, 0.7) !important;
-                backdrop-filter: blur(20px) saturate(150%) !important;
-                -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
+                /* Keep the visual weight, but avoid backdrop-filter on the scrolling shell.
+                   WebKit can desync native scrollbar paint inside blurred, clipped containers. */
+                background: linear-gradient(180deg, rgba(24, 24, 34, 0.96), rgba(18, 18, 28, 0.94)) !important;
+                backdrop-filter: none !important;
+                -webkit-backdrop-filter: none !important;
                 border: 1px solid rgba(255, 255, 255, 0.08) !important;
                 box-shadow: 
                     0 25px 50px -12px rgba(0, 0, 0, 0.6) !important;

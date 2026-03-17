@@ -527,7 +527,9 @@
     gap: 15px;
     scroll-behavior: auto !important;
     overscroll-behavior-y: contain;
-    scrollbar-gutter: stable;
+    scrollbar-gutter: stable both-edges;
+    scrollbar-width: auto;
+    scrollbar-color: auto;
     position: relative;
     background: var(--chat-panel-bg);
     box-shadow: var(--chat-panel-shadow);
@@ -548,24 +550,8 @@
     z-index: 5;
 }
 
-/* Native Scrollbar - Simple & Performant */
-.chat-messages::-webkit-scrollbar {
-    width: 6px;
-}
-
-.chat-messages::-webkit-scrollbar-track {
-    background: rgba(0, 0, 0, 0.1);
-    border-radius: 3px;
-}
-
-.chat-messages::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.3);
-    border-radius: 3px;
-}
-
-.chat-messages::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.5);
-}
+/* Use the browser's native scrollbar rendering here.
+   Custom WebKit scrollbars inside the chat modal could repaint late on macOS/WebKit. */
 
 .message {
     max-width: 80%;
