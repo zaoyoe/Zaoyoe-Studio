@@ -7403,6 +7403,11 @@ input[type="submit"],
     overscroll-behavior: none !important;
     transform: none !important;
     will-change: opacity !important;
+    isolation: isolate !important;
+}
+
+#guestbookModal.active {
+    pointer-events: auto !important;
 }
 
 @keyframes guestbookComposerSectionRise {
@@ -7471,6 +7476,12 @@ input[type="submit"],
     transition: none !important;
     pointer-events: auto !important;
     isolation: isolate !important;
+    z-index: 4 !important;
+}
+
+#guestbookModal.active .guestbook-composer-sheet,
+#guestbookModal.active .guestbook-composer-sheet * {
+    pointer-events: auto !important;
 }
 
 #guestbookModal.active .guestbook-composer-sheet,

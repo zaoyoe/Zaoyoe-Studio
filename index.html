@@ -58,7 +58,7 @@
     <!-- Framer Home Styles -->
     <link rel="stylesheet" href="./css/framer_home.css?v=20260317_HERO_HITAREA_FIX_1">
     <!-- Core Styles (for modals, profile, etc) -->
-    <link rel="stylesheet" href="style.css?v=20260317_GUESTBOOK_HITAREA_FIX_1">
+    <link rel="stylesheet" href="style.css?v=20260317_GUESTBOOK_HITAREA_FIX_2">
     <link rel="stylesheet" href="css/auth-sheet.css?v=20260316_AUTH_SHEET_CHAT_MATCH_36">
     <link rel="stylesheet" href="avatar-fix.css?v=20260316_AVATAR_NAV_STABLE_2">
 
@@ -430,6 +430,21 @@
                     el.style.removeProperty('opacity');
                     el.style.removeProperty('transform');
                     el.style.removeProperty('transition');
+                });
+            }
+
+            function syncGuestbookModalHitTargets(isOpen) {
+                const { overlay, card } = getGuestbookModalElements();
+                if (!overlay || !card) return;
+
+                const interactive = !!isOpen;
+                overlay.setAttribute('aria-hidden', interactive ? 'false' : 'true');
+                overlay.style.pointerEvents = interactive ? 'auto' : 'none';
+                card.style.pointerEvents = interactive ? 'auto' : 'none';
+                card.style.zIndex = interactive ? '4' : '1';
+
+                card.querySelectorAll('button, a, input, textarea, select, label, [role="button"]').forEach((el) => {
+                    el.style.pointerEvents = interactive ? 'auto' : 'none';
                 });
             }
 
@@ -856,6 +871,8 @@
 
             const guestbookInput = document.getElementById('guestMessage');
             const guestbookEditor = document.getElementById('guestbookComposerEditor');
+            const guestbookModal = document.getElementById('guestbookModal');
+            const guestbookSheet = guestbookModal?.querySelector('.guestbook-composer-sheet');
             guestbookInput?.addEventListener('input', syncGuestbookComposerEmptyState);
             guestbookInput?.addEventListener('focus', () => {
                 prepareGuestbookModalForInputFocus();
@@ -899,6 +916,8 @@
 
                 guestbookModalKeyboardState.ownsFullScrollLock = false;
                 guestbookModalKeyboardState.baseScrollY = 0;
+                overlay._overlayDown = false;
+                syncGuestbookModalHitTargets(false);
             };
 
             window.openGuestbookModal = function () {
@@ -922,8 +941,10 @@
                 modal.classList.remove('active');
                 void modal.offsetWidth;
                 modal.classList.add('active');
+                modal._overlayDown = false;
                 captureGuestbookModalOverlayBaseHeight(true);
                 playGuestbookComposerEntryAnimation(modal);
+                syncGuestbookModalHitTargets(true);
 
                 if (window.iOSScrollLock) {
                     window.iOSScrollLock.lockLight(modal);
@@ -939,18 +960,28 @@
                 syncGuestbookComposerImageState();
             };
 
-            document.getElementById('guestbookModal')?.addEventListener('mousedown', function (e) {
+            const swallowGuestbookSheetEvent = (event) => {
+                event.stopPropagation();
+            };
+
+            ['pointerdown', 'mousedown', 'mouseup', 'click'].forEach((eventName) => {
+                guestbookSheet?.addEventListener(eventName, swallowGuestbookSheetEvent);
+            });
+
+            guestbookModal?.addEventListener('mousedown', function (e) {
                 if (e.target === this) {
                     this._overlayDown = true;
                 }
             });
 
-            document.getElementById('guestbookModal')?.addEventListener('mouseup', function (e) {
+            guestbookModal?.addEventListener('mouseup', function (e) {
                 if (e.target === this && this._overlayDown) {
                     window.closeGuestbookModal?.();
                 }
                 this._overlayDown = false;
             });
+
+            syncGuestbookModalHitTargets(false);
         })();
     </script>
 
