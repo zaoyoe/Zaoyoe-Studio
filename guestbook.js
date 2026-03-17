@@ -4,6 +4,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const messageContainer = document.getElementById('messageContainer');
     const floatingBackBtn = document.querySelector('.floating-back-btn');
     const emptyState = document.getElementById('emptyState');
+    const commentForm = document.getElementById('commentForm');
+    const commentInput = document.getElementById('commentContent');
+    const commentEditor = document.getElementById('commentComposerEditor');
+    const commentCancelBtn = document.getElementById('commentComposerCancelBtn');
 
     // CRITICAL FIX: Clean up any modal state on page load
     document.body.classList.remove('modal-active');
@@ -729,6 +733,24 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
 
+    commentInput?.addEventListener('input', syncCommentComposerEmptyState);
+    commentInput?.addEventListener('focus', syncCommentComposerEmptyState);
+    commentInput?.addEventListener('blur', syncCommentComposerEmptyState);
+    commentEditor?.addEventListener('click', (event) => {
+        if (!commentInput) return;
+        if (event.target instanceof HTMLElement && event.target.closest('button, a')) return;
+        try {
+            commentInput.focus({ preventScroll: true });
+        } catch (_) {
+            commentInput.focus();
+        }
+    });
+    commentCancelBtn?.addEventListener('click', () => {
+        window.closeCommentModal();
+    });
+    syncCommentComposerEmptyState();
+    syncCommentModalHitTargets(false);
+
     // Handle Comment Submission
     if (commentForm) {
         commentForm.addEventListener('submit', async (e) => {
@@ -763,8 +785,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 // Close modal and reset form
-                document.getElementById('commentModal').classList.remove('active');
-                commentForm.reset();
+                window.closeCommentModal();
             }
         });
     }
@@ -857,6 +878,135 @@ document.addEventListener('DOMContentLoaded', () => {
     // Mobile highlight will be initialized by observeNewItems() when first batch renders
 });
 
+// --- Comment Composer Helpers ---
+let commentComposerEntryTimer = null;
+
+function getCommentModalElements() {
+    const overlay = document.getElementById('commentModal');
+    return {
+        overlay,
+        card: overlay?.querySelector('.comment-composer-sheet, .comment-modal-content') || null,
+        form: document.getElementById('commentForm'),
+        input: document.getElementById('commentContent'),
+        editor: document.getElementById('commentComposerEditor'),
+        title: document.getElementById('commentModalTitle'),
+        meta: document.getElementById('commentModalMeta'),
+        kicker: document.getElementById('commentModalKicker'),
+        submitText: document.getElementById('commentComposerSubmitText'),
+        placeholder: document.getElementById('commentComposerPlaceholder'),
+        messageIdInput: document.getElementById('commentMessageId'),
+        parentIdInput: document.getElementById('commentParentId')
+    };
+}
+
+function isEnglishDocument() {
+    return (document.documentElement.lang || '').toLowerCase().startsWith('en');
+}
+
+function truncateCommentComposerText(text, maxLength = 42) {
+    const normalized = (text || '').replace(/\s+/g, ' ').trim();
+    if (normalized.length <= maxLength) return normalized;
+    return `${normalized.slice(0, maxLength).trim()}...`;
+}
+
+function syncCommentComposerEmptyState() {
+    const { input, editor } = getCommentModalElements();
+    if (!input || !editor) return;
+    editor.classList.toggle('is-empty', !input.value.trim());
+}
+
+function syncCommentModalHitTargets(isOpen) {
+    const { overlay, card } = getCommentModalElements();
+    if (!overlay || !card) return;
+
+    const interactive = !!isOpen;
+    overlay.setAttribute('aria-hidden', interactive ? 'false' : 'true');
+    overlay.style.pointerEvents = interactive ? 'auto' : 'none';
+    card.style.pointerEvents = interactive ? 'auto' : 'none';
+    card.style.zIndex = interactive ? '4' : '1';
+
+    card.querySelectorAll('button, a, input, textarea, select, label, [role="button"]').forEach((el) => {
+        el.style.pointerEvents = interactive ? 'auto' : 'none';
+    });
+}
+
+function clearCommentComposerEntryTimer() {
+    if (commentComposerEntryTimer) {
+        clearTimeout(commentComposerEntryTimer);
+        commentComposerEntryTimer = null;
+    }
+}
+
+function playCommentComposerEntryAnimation() {
+    const { overlay } = getCommentModalElements();
+    if (!overlay) return;
+
+    clearCommentComposerEntryTimer();
+    overlay.classList.remove('comment-entrying');
+    void overlay.offsetWidth;
+    overlay.classList.add('comment-entrying');
+
+    commentComposerEntryTimer = setTimeout(() => {
+        overlay.classList.remove('comment-entrying');
+        commentComposerEntryTimer = null;
+    }, 760);
+}
+
+function buildCommentComposerContext(messageId, parentCommentId = null) {
+    const english = isEnglishDocument();
+
+    if (parentCommentId) {
+        const parentComment = document.querySelector(`[data-comment-id="${parentCommentId}"]`);
+        const authorName = parentComment?.querySelector('.comment-author')?.textContent?.trim() || '';
+        const contentPreview = truncateCommentComposerText(
+            parentComment?.querySelector('.comment-content')?.textContent || ''
+        );
+
+        return {
+            kicker: english ? 'REPLY' : '回复',
+            title: english ? 'Reply to Comment' : '回复评论',
+            meta: authorName
+                ? (english ? `Replying to @${authorName}${contentPreview ? ` · ${contentPreview}` : ''}` : `正在回复 @${authorName}${contentPreview ? ` · ${contentPreview}` : ''}`)
+                : (english ? 'Continue the conversation here.' : '在这里继续这段对话。'),
+            placeholder: authorName
+                ? (english ? `Reply to @${authorName}...` : `回复 @${authorName}...`)
+                : (english ? 'Write your reply...' : '写下您的回复...'),
+            submitText: english ? 'Reply' : '回复'
+        };
+    }
+
+    const messageCard = document.querySelector(`.message-item[data-message-id="${messageId}"]`);
+    const authorName = messageCard?.querySelector('.author-name')?.textContent?.trim() || '';
+    const contentPreview = truncateCommentComposerText(
+        messageCard?.querySelector('.message-content')?.textContent || ''
+    );
+
+    return {
+        kicker: english ? 'COMMENT' : '评论',
+        title: english ? 'Post Comment' : '发表评论',
+        meta: authorName
+            ? (english ? `Commenting on @${authorName}${contentPreview ? ` · ${contentPreview}` : ''}` : `评论 @${authorName} 的留言${contentPreview ? ` · ${contentPreview}` : ''}`)
+            : (english ? 'Share your thoughts with everyone here.' : '写下你的想法，和大家一起交流。'),
+        placeholder: english ? 'Write your comment...' : '写下您的评论...',
+        submitText: english ? 'Send' : '发送'
+    };
+}
+
+function applyCommentComposerContext(messageId, parentCommentId = null) {
+    const { title, meta, kicker, input, submitText, placeholder } = getCommentModalElements();
+    const context = buildCommentComposerContext(messageId, parentCommentId);
+
+    if (title) title.textContent = context.title;
+    if (meta) meta.textContent = context.meta;
+    if (kicker) kicker.textContent = context.kicker;
+    if (submitText) submitText.textContent = context.submitText;
+    if (placeholder) placeholder.textContent = context.placeholder;
+    if (input) {
+        input.placeholder = '';
+        input.setAttribute('aria-label', context.title);
+    }
+}
+
 // --- Global Modal Functions (Must be outside DOMContentLoaded) ---
 
 window.openCommentModal = async function (messageId, parentCommentId = null) {
@@ -886,9 +1036,13 @@ window.openCommentModal = async function (messageId, parentCommentId = null) {
         return;
     }
 
-    const modal = document.getElementById('commentModal');
-    const messageIdInput = document.getElementById('commentMessageId');
-    const parentIdInput = document.getElementById('commentParentId');
+    const {
+        overlay: modal,
+        form,
+        input: contentInput,
+        messageIdInput,
+        parentIdInput
+    } = getCommentModalElements();
 
     if (modal && messageIdInput) {
         // Reset inline styles
@@ -899,26 +1053,39 @@ window.openCommentModal = async function (messageId, parentCommentId = null) {
         modal.style.backdropFilter = '';
         modal.style.webkitBackdropFilter = '';
 
+        clearCommentComposerEntryTimer();
+        form?.reset();
+
         // Set messageId
         messageIdInput.value = messageId;
         if (parentIdInput) {
             parentIdInput.value = parentCommentId || '';
         }
 
+        applyCommentComposerContext(messageId, parentCommentId);
+        syncCommentComposerEmptyState();
+        syncCommentModalHitTargets(true);
+
         // Add body class
         document.body.classList.add('modal-active');
         if (window.iOSScrollLock) window.iOSScrollLock.lock(modal);
 
         // Add active class to trigger CSS animation
+        modal.classList.remove('active', 'comment-entrying');
+        void modal.offsetWidth;
         modal.classList.add('active');
         modal.classList.add('overlay-visible');
         modal.classList.remove('overlay-hidden');
+        playCommentComposerEntryAnimation();
 
         // Focus content input
         setTimeout(() => {
-            const contentInput = document.getElementById('commentContent');
             if (contentInput) {
-                contentInput.focus();
+                try {
+                    contentInput.focus({ preventScroll: true });
+                } catch (_) {
+                    contentInput.focus();
+                }
             }
         }, 100);
     } else {
@@ -927,41 +1094,36 @@ window.openCommentModal = async function (messageId, parentCommentId = null) {
 };
 
 window.closeCommentModal = function (event) {
-    if (event &&
-        (event.target.id === 'commentModal' ||
-            event.target.closest('.mac-dot.red') ||
-            event.target.closest('.close-btn'))) {
+    const { overlay: modal, form } = getCommentModalElements();
+    if (!modal) return;
 
-        const modal = document.getElementById('commentModal');
-        if (modal) {
-            // Remove body.modal-active class
-            document.body.classList.remove('modal-active');
-            if (window.iOSScrollLock) window.iOSScrollLock.unlock();
+    const shouldClose = !event ||
+        event.target === modal ||
+        event.currentTarget === modal ||
+        event.target?.closest?.('#commentComposerCancelBtn');
 
-            // Removed Restore Scroll
-            // document.body.style.position = '';
-            // document.body.style.top = '';
-            // document.body.style.width = '';
-            // if (window.savedScrollPosition !== undefined) {
-            //     window.scrollTo(0, window.savedScrollPosition);
-            // }
-
-            // Remove active class to trigger fade out
-            modal.classList.remove('active');
-
-            // Clear form
-            const form = document.getElementById('commentForm');
-            if (form) form.reset();
-
-            // After animation completes, clean up
-            setTimeout(() => {
-                // Don't set display:none, just remove from view
-                modal.style.visibility = 'hidden';
-                modal.style.opacity = '0';
-                modal.style.pointerEvents = 'none';
-            }, 300); // Match CSS transition duration
-        }
+    if (!shouldClose) {
+        return;
     }
+
+    clearCommentComposerEntryTimer();
+
+    document.body.classList.remove('modal-active');
+    if (window.iOSScrollLock) window.iOSScrollLock.unlock();
+
+    modal.classList.remove('active', 'comment-entrying', 'overlay-visible');
+    modal.classList.add('overlay-hidden');
+    syncCommentModalHitTargets(false);
+
+    form?.reset();
+    applyCommentComposerContext('', null);
+    syncCommentComposerEmptyState();
+
+    setTimeout(() => {
+        modal.style.visibility = 'hidden';
+        modal.style.opacity = '0';
+        modal.style.pointerEvents = 'none';
+    }, 300);
 };
 
 

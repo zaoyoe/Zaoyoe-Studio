@@ -7931,6 +7931,351 @@ html[lang^="zh"] #guestbookModal .guestbook-composer-kicker {
     pointer-events: auto !important;
 }
 
+/* Guestbook Page Comment Composer */
+#commentModal {
+    --comment-modal-overlay-height: 100dvh;
+    background: rgba(7, 9, 12, 0.28) !important;
+    backdrop-filter: blur(14px) saturate(108%) !important;
+    -webkit-backdrop-filter: blur(14px) saturate(108%) !important;
+    height: var(--comment-modal-overlay-height) !important;
+    min-height: var(--comment-modal-overlay-height) !important;
+    padding: 24px 18px 18px !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+    overscroll-behavior: none !important;
+    transform: none !important;
+    will-change: opacity !important;
+    isolation: isolate !important;
+}
+
+#commentModal.active {
+    pointer-events: auto !important;
+}
+
+#commentModal .comment-composer-sheet {
+    width: min(calc(100vw - 40px), 620px) !important;
+    max-width: 620px !important;
+    height: 420px;
+    min-height: 320px;
+    max-height: calc(100vh - 56px);
+    max-height: calc(100svh - 56px);
+    margin: 0 auto !important;
+    padding: 14px 18px calc(18px + env(safe-area-inset-bottom)) !important;
+    box-sizing: border-box !important;
+    position: relative !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 12px !important;
+    overflow: hidden !important;
+    text-align: left !important;
+    background: rgba(11, 14, 20, 0.94) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border-radius: 32px !important;
+    box-shadow:
+        0 26px 70px rgba(0, 0, 0, 0.28),
+        inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    transform: translate3d(0, 18px, 0) scale(0.985) !important;
+    opacity: 0 !important;
+    will-change: transform, opacity !important;
+    transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.26s ease !important;
+    pointer-events: auto !important;
+    isolation: isolate !important;
+    z-index: 4 !important;
+}
+
+#commentModal.active .comment-composer-sheet,
+#commentModal.active .comment-composer-sheet * {
+    pointer-events: auto !important;
+}
+
+#commentModal.active .comment-composer-sheet {
+    transform: translate3d(0, 0, 0) scale(1) !important;
+    opacity: 1 !important;
+}
+
+#commentModal.comment-entrying .comment-composer-sheet {
+    animation: guestbookComposerSheetFadeIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+#commentModal .comment-composer-sheet>* {
+    flex-shrink: 0;
+}
+
+#commentModal .guestbook-composer-handle,
+#commentModal .guestbook-composer-header,
+#commentModal .guestbook-composer-form,
+#commentModal .comment-composer-editor,
+#commentModal .comment-composer-actions {
+    position: relative;
+    z-index: 1;
+    pointer-events: auto !important;
+    backface-visibility: hidden;
+    will-change: transform, opacity;
+}
+
+#commentModal.comment-entrying .guestbook-composer-handle {
+    animation: guestbookComposerHandleRise 0.38s cubic-bezier(0.22, 1, 0.36, 1) 0.03s both;
+}
+
+#commentModal.comment-entrying .guestbook-composer-header {
+    animation: guestbookComposerSectionRise 0.42s cubic-bezier(0.22, 1, 0.36, 1) 0.08s both;
+}
+
+#commentModal.comment-entrying .comment-composer-editor {
+    animation: guestbookComposerSectionRise 0.46s cubic-bezier(0.22, 1, 0.36, 1) 0.14s both;
+}
+
+#commentModal.comment-entrying .comment-composer-actions {
+    animation: guestbookComposerSectionRise 0.48s cubic-bezier(0.22, 1, 0.36, 1) 0.2s both;
+}
+
+#commentModal .guestbook-composer-handle {
+    width: 42px;
+    height: 4px;
+    margin: 0 auto 4px;
+    border-radius: 999px;
+    background: rgba(107, 158, 206, 0.24);
+    transition: background-color 180ms ease, opacity 180ms ease, box-shadow 180ms ease;
+}
+
+#commentModal:focus-within .guestbook-composer-handle {
+    background: rgba(126, 184, 239, 0.96);
+    box-shadow: 0 0 0 1px rgba(126, 184, 239, 0.08), 0 0 18px rgba(126, 184, 239, 0.2);
+}
+
+#commentModal .guestbook-composer-header {
+    display: flex !important;
+    align-items: flex-start !important;
+    justify-content: flex-start !important;
+    gap: 16px !important;
+    margin: 0 !important;
+}
+
+#commentModal .guestbook-composer-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+#commentModal .guestbook-composer-kicker {
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.4);
+}
+
+html[lang^="zh"] #commentModal .guestbook-composer-kicker {
+    display: none;
+}
+
+#commentModal .guestbook-composer-title {
+    margin: 0;
+    font-size: clamp(1.04rem, 2.05vw, 1.22rem);
+    font-weight: 520;
+    letter-spacing: -0.02em;
+    color: rgba(241, 245, 249, 0.82);
+}
+
+#commentModal .comment-composer-meta {
+    min-height: 0;
+    margin: 0;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    color: rgba(200, 206, 216, 0.74);
+}
+
+#commentModal .comment-composer-form {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 12px !important;
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+}
+
+#commentModal .comment-composer-editor {
+    flex: 1 1 auto !important;
+    min-height: 168px !important;
+    margin: 0 !important;
+    padding: 18px 18px 18px !important;
+    position: relative !important;
+    display: flex !important;
+    align-items: stretch !important;
+    justify-content: stretch !important;
+    overflow: hidden !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border-radius: 24px !important;
+    background: rgba(255, 255, 255, 0.025) !important;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.04),
+        inset 0 -12px 24px rgba(0, 0, 0, 0.08) !important;
+    cursor: text !important;
+    z-index: 2;
+}
+
+#commentModal .comment-composer-editor:hover,
+#commentModal .comment-composer-editor:focus-within {
+    cursor: text !important;
+}
+
+#commentModal .comment-composer-empty-placeholder {
+    position: absolute;
+    inset: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 24px 20px;
+    text-align: center;
+    color: rgba(200, 206, 216, 0.46);
+    font-size: 15px;
+    line-height: 1.72;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0;
+    transition: opacity 160ms ease;
+}
+
+#commentModal .comment-composer-editor.is-empty .comment-composer-empty-placeholder {
+    opacity: 1;
+}
+
+#commentModal #commentContent {
+    width: 100% !important;
+    flex: 1 1 auto !important;
+    min-height: 100% !important;
+    max-height: 100% !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 0 12px 0 !important;
+    border: none !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    color: rgba(241, 245, 249, 0.96) !important;
+    font-size: 17px !important;
+    line-height: 1.82 !important;
+    resize: none !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    align-self: stretch !important;
+    position: relative;
+    z-index: 2;
+    cursor: text !important;
+    pointer-events: auto !important;
+}
+
+#commentModal #commentContent:hover,
+#commentModal #commentContent:focus {
+    cursor: text !important;
+}
+
+#commentModal #commentContent:focus {
+    outline: none !important;
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+#commentModal #commentContent::placeholder,
+#commentModal #commentContent::-webkit-input-placeholder,
+#commentModal #commentContent::-moz-placeholder,
+#commentModal #commentContent:-ms-input-placeholder {
+    color: transparent !important;
+}
+
+#commentModal .comment-composer-actions {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 12px !important;
+    padding-top: 6px !important;
+    margin-top: auto !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
+    z-index: 3;
+}
+
+#commentModal .comment-composer-cancel,
+#commentModal .comment-composer-cancel:visited {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    height: auto;
+    padding: 2px 4px 0 0;
+    border-radius: 0;
+    border: none !important;
+    background: transparent !important;
+    color: rgba(126, 184, 239, 0.96) !important;
+    font-size: 0.9rem;
+    font-weight: 560;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    text-decoration: none !important;
+    box-shadow: none !important;
+    opacity: 1;
+    transition: color 160ms ease, transform 160ms ease, opacity 160ms ease;
+    cursor: pointer !important;
+}
+
+#commentModal .comment-composer-cancel:hover,
+#commentModal .comment-composer-cancel:focus-visible {
+    background: transparent !important;
+    color: rgba(160, 206, 248, 0.98) !important;
+    transform: translateY(-1px);
+}
+
+#commentModal .comment-composer-send {
+    min-width: 108px;
+    height: 46px;
+    flex: 0 0 auto;
+    margin: 0 !important;
+    padding: 0 24px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border: none !important;
+    border-radius: 999px !important;
+    background: rgba(224, 230, 240, 0.92) !important;
+    color: #12161d !important;
+    font-size: 1rem !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.01em !important;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.14) !important;
+    position: relative;
+    z-index: 3;
+    pointer-events: auto !important;
+    cursor: pointer !important;
+    transition:
+        transform 180ms ease,
+        background-color 180ms ease,
+        box-shadow 180ms ease,
+        color 180ms ease,
+        opacity 180ms ease;
+}
+
+#commentModal .comment-composer-send span {
+    color: inherit !important;
+}
+
+#commentModal .comment-composer-send:hover,
+#commentModal .comment-composer-send:focus-visible {
+    transform: translateY(-1px);
+    background: rgba(238, 243, 250, 0.98) !important;
+    box-shadow:
+        0 14px 28px rgba(0, 0, 0, 0.18),
+        inset 0 1px 0 rgba(255, 255, 255, 0.6) !important;
+}
+
+#commentModal .comment-composer-send:active,
+#commentModal .comment-composer-cancel:active {
+    transform: translateY(0) scale(0.98);
+}
+
 /* Mobile Scroll Highlight Effect - 白色卡片版 */
 @media (max-width: 768px) {
     .message-item {
@@ -8270,9 +8615,60 @@ body {
         border-radius: 20px !important;
     }
 
-    #commentModal .comment-modal-content,
-    #commentModal.active .comment-modal-content {
+    #commentModal {
+        padding: calc(env(safe-area-inset-top, 0px) + 12px) 20px calc(env(safe-area-inset-bottom, 0px) + 12px) !important;
+        box-sizing: border-box !important;
+        height: var(--comment-modal-overlay-height, 100dvh) !important;
+        min-height: var(--comment-modal-overlay-height, 100dvh) !important;
+        overflow: hidden !important;
+        -webkit-overflow-scrolling: auto !important;
+    }
+
+    #commentModal.active {
+        overflow: hidden !important;
+        -webkit-overflow-scrolling: auto !important;
+    }
+
+    #commentModal .comment-composer-sheet,
+    #commentModal.active .comment-composer-sheet,
+    #commentModal.active:focus-within .comment-composer-sheet,
+    #commentModal.ios-focus-lock .comment-composer-sheet {
+        width: calc(100vw - 40px) !important;
+        max-width: 620px !important;
+        height: min(400px, calc(var(--comment-modal-overlay-height, 100svh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px));
+        min-height: 300px;
+        max-height: calc(var(--comment-modal-overlay-height, 100svh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px);
+        padding: 14px 16px calc(16px + env(safe-area-inset-bottom)) !important;
         border-radius: 20px !important;
+    }
+
+    #commentModal.active:focus-within .comment-composer-sheet>*,
+    #commentModal.ios-focus-lock .comment-composer-sheet>*,
+    #commentModal.active:focus-within .comment-composer-form>*,
+    #commentModal.ios-focus-lock .comment-composer-form>* {
+        opacity: 1 !important;
+        transform: none !important;
+        animation: none !important;
+        transition: none !important;
+        transition-delay: 0s !important;
+        will-change: auto !important;
+    }
+
+    #commentModal .guestbook-composer-header {
+        gap: 12px !important;
+    }
+
+    #commentModal .guestbook-composer-title {
+        font-size: clamp(1rem, 5vw, 1.18rem) !important;
+    }
+
+    #commentModal .comment-composer-editor {
+        min-height: 140px !important;
+    }
+
+    #commentModal #commentContent {
+        font-size: 16px !important;
+        line-height: 1.78 !important;
     }
 
     #guestbookModal.active:focus-within .guestbook-composer-sheet>*,

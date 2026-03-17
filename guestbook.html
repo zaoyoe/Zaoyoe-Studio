@@ -33,7 +33,7 @@
     <link rel="stylesheet" href="avatar-fix.css?v=20260316_AVATAR_NAV_STABLE_2">
     <!-- Custom CSS -->
     <link rel="stylesheet" href="capsule-styles.css?v=20260302_G_AUTH">
-    <link rel="stylesheet" href="style.css?v=20260316_PROFILE_MODAL_DESKTOP_LAYOUT_64">
+    <link rel="stylesheet" href="style.css?v=20260317_COMMENT_COMPOSER_MATCH_1">
     <!-- Unified Navigation CSS -->
     <link rel="stylesheet" href="css/framer_home.css?v=NAV_UNIFIED_V9">
     <!-- Prevent flash of wrong theme -->
@@ -612,24 +612,31 @@
     </main>
 
     <!-- Comment Modal -->
-    <div class="modal-overlay" id="commentModal" onclick="closeCommentModal(event)">
-        <div class="modal-content comment-modal-content">
-            <!-- Mac-style close button -->
-            <div class="mac-controls">
-                <div class="mac-dot red" onclick="closeCommentModal(event)">
-                    <i class="fas fa-times"></i>
+    <div class="modal-overlay" id="commentModal" onclick="closeCommentModal(event)" aria-hidden="true">
+        <div class="modal-content guestbook-content guestbook-composer-sheet comment-modal-content comment-composer-sheet"
+            onclick="event.stopPropagation()">
+            <div class="guestbook-composer-handle" aria-hidden="true"></div>
+            <div class="guestbook-composer-header comment-composer-header">
+                <div class="guestbook-composer-copy">
+                    <div class="guestbook-composer-kicker" id="commentModalKicker">COMMENT</div>
+                    <div class="guestbook-composer-title" id="commentModalTitle">发表评论</div>
+                    <p class="guestbook-composer-meta comment-composer-meta" id="commentModalMeta">写下你的想法，和大家一起交流。</p>
                 </div>
             </div>
 
-            <h2 class="modal-title" data-i18n="guestbook.postComment">发表评论</h2>
-
-            <form id="commentForm" class="add-comment-form">
+            <form id="commentForm" class="guestbook-form guestbook-composer-form comment-composer-form">
                 <input type="hidden" id="commentMessageId">
                 <input type="hidden" id="commentParentId">
-                <textarea id="commentContent" placeholder="写下您的评论..." rows="3" required></textarea>
-                <button type="submit" class="submit-btn">
-                    <span data-i18n="guestbook.submit">发送</span>
-                </button>
+                <div class="input-group relative-container guestbook-composer-editor comment-composer-editor" id="commentComposerEditor">
+                    <div class="guestbook-composer-empty-placeholder comment-composer-empty-placeholder" id="commentComposerPlaceholder" aria-hidden="true">写下您的评论...</div>
+                    <textarea id="commentContent" rows="4" required aria-label="评论内容"></textarea>
+                </div>
+                <div class="guestbook-composer-actions comment-composer-actions">
+                    <button type="button" class="guestbook-composer-more comment-composer-cancel" id="commentComposerCancelBtn">取消</button>
+                    <button type="submit" class="guestbook-submit-btn guestbook-composer-send comment-composer-send">
+                        <span id="commentComposerSubmitText" data-i18n="guestbook.submit">发送</span>
+                    </button>
+                </div>
             </form>
         </div>
     </div>
@@ -666,7 +673,7 @@
 
     <!-- 留言板 UI -->
     <script src="smooth-scroll.js"></script>
-    <script src="guestbook.js?v=AVATAR_FIX" defer></script>
+    <script src="guestbook.js?v=20260317_COMMENT_COMPOSER_MATCH_1" defer></script>
     <script src="guestbook-hover-effect.js" defer></script>
     <script src="js/i18n.js?v=1" defer></script>
     <script src="js/ios-scroll-lock.js?v=20260314_SCROLL_LOCK_AUTH_SHEET_7" defer></script>
