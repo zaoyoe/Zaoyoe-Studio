@@ -690,10 +690,23 @@
     box-shadow: none;
 }
 
-.chat-input:focus {
+.chat-input:focus,
+.chat-input:focus-visible {
     background: var(--chat-input-bg-focus);
     border-color: var(--chat-accent-blue);
     box-shadow: 0 0 0 3px var(--chat-accent-blue-soft);
+    outline: none;
+    caret-color: var(--chat-accent-blue);
+}
+
+.chat-window .chat-input:focus,
+.chat-window .chat-input:focus-visible,
+.chat-window .chat-input:-webkit-autofill:focus,
+.chat-window .chat-input:-webkit-autofill:focus-visible {
+    border-color: #9fcaff !important;
+    box-shadow: 0 0 0 3px rgba(159, 202, 255, 0.14) !important;
+    outline: none !important;
+    caret-color: #9fcaff !important;
 }
 
 .chat-send-btn {

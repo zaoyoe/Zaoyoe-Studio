@@ -680,6 +680,16 @@ class ChatWidget {
                 background: rgba(255, 255, 255, 0.042);
                 box-shadow: 0 0 0 3px rgba(159, 202, 255, 0.14);
             }
+            .admin-mode-layout .chat-input:focus,
+            .admin-mode-layout .chat-input:focus-visible,
+            .admin-mode-layout .chat-input:-webkit-autofill:focus,
+            .admin-mode-layout .chat-input:-webkit-autofill:focus-visible {
+                border-color: #9fcaff !important;
+                background: rgba(255, 255, 255, 0.042) !important;
+                box-shadow: 0 0 0 3px rgba(159, 202, 255, 0.14) !important;
+                outline: none !important;
+                caret-color: #9fcaff !important;
+            }
             .admin-search input::placeholder {
                 color: rgba(255, 255, 255, 0.4);
             }
