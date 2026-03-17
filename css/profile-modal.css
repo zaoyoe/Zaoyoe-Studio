@@ -727,7 +727,7 @@
 #profileModal .security-mobile-primary-btn,
 #profileModal .security-mobile-danger-btn {
     width: 100%;
-    margin-top: 6px;
+    margin-top: 12px;
 }
 
 #profileModal .security-mobile-danger-btn,
@@ -1111,6 +1111,7 @@
     #profileModal .profile-security-desktop-danger-btn {
         align-self: center;
         min-width: 152px;
+        margin-top: 12px;
     }
 
     #profileModal .mobile-security-layout {

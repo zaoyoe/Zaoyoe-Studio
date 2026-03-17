@@ -5214,7 +5214,7 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     width: 100%;
     min-width: 0;
     max-width: none;
-    margin: 6px 0 0;
+    margin: 12px 0 0;
     height: 46px;
     border-radius: 14px;
     padding: 0 16px;
@@ -5869,6 +5869,7 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     #profileModal .profile-security-desktop-primary-btn {
         align-self: center;
         min-width: 152px;
+        margin-top: 12px;
         background: rgba(229, 235, 241, 0.94);
         border-color: rgba(255, 255, 255, 0.18);
         color: #0f141a;
@@ -5878,6 +5879,7 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     #profileModal .profile-security-desktop-danger-btn {
         align-self: center;
         min-width: 152px;
+        margin-top: 12px;
         background: rgba(166, 48, 48, 0.3);
         border-color: rgba(223, 98, 98, 0.34);
         color: #ffe1e1;
@@ -8939,7 +8941,7 @@ body {
         width: 100% !important;
         min-width: 0 !important;
         max-width: none !important;
-        margin: 6px 0 0 !important;
+        margin: 12px 0 0 !important;
         height: 46px !important;
         border-radius: 14px !important;
         padding: 0 16px !important;
