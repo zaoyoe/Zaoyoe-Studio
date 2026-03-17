@@ -18,8 +18,8 @@
     --chat-input-bg: rgba(0, 0, 0, 0.2);
     --chat-input-bg-focus: rgba(0, 0, 0, 0.4);
     --chat-input-border: rgba(255, 255, 255, 0.1);
-    --chat-accent-blue: rgba(126, 184, 239, 0.96);
-    --chat-accent-blue-soft: rgba(126, 184, 239, 0.12);
+    --chat-accent-blue: #9fcaff;
+    --chat-accent-blue-soft: rgba(159, 202, 255, 0.14);
 }
 
 /* Floating Action Button */

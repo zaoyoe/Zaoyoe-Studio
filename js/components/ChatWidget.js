@@ -53,7 +53,17 @@ class ChatWidget {
     // i18n helper with fallback
     t(key, fallback) {
         if (window.i18n && typeof window.i18n.t === 'function') {
-            return window.i18n.t(key);
+            const value = window.i18n.t(key);
+            if (value === null || value === undefined) {
+                return fallback || key;
+            }
+            if (typeof value === 'string') {
+                const normalized = value.trim().toLowerCase();
+                if (!normalized || normalized === 'null' || normalized === 'undefined') {
+                    return fallback || key;
+                }
+            }
+            return value;
         }
         return fallback || key;
     }
@@ -664,6 +674,12 @@ class ChatWidget {
                 font-size: 13px;
                 box-sizing: border-box;
             }
+            .admin-search input:focus {
+                outline: none;
+                border-color: #9fcaff;
+                background: rgba(255, 255, 255, 0.042);
+                box-shadow: 0 0 0 3px rgba(159, 202, 255, 0.14);
+            }
             .admin-search input::placeholder {
                 color: rgba(255, 255, 255, 0.4);
             }
@@ -741,7 +757,7 @@ class ChatWidget {
                 width: 36px;
                 height: 36px;
                 border-radius: 50%;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                background: linear-gradient(135deg, rgba(159, 202, 255, 0.95) 0%, rgba(107, 158, 206, 0.92) 100%);
                 display: flex;
                 align-items: center;
                 justify-content: center;
