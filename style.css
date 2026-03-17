@@ -7645,7 +7645,7 @@ input[type="submit"],
     border-radius: inherit;
     opacity: 0;
     pointer-events: none;
-    background: rgba(102, 224, 150, 0);
+    background: rgba(102, 224, 150, 1);
     box-shadow: none;
     transform: scaleX(1);
 }
@@ -7658,30 +7658,21 @@ input[type="submit"],
 
 @keyframes guestbookComposerHandleSuccessGlow {
     0% {
-        background: rgba(102, 224, 150, 0.08);
         box-shadow: 0 0 0 rgba(102, 224, 150, 0);
         transform: scaleX(1);
         opacity: 0;
     }
     18% {
-        background: rgba(102, 224, 150, 0.98);
         box-shadow:
             0 0 0 1px rgba(102, 224, 150, 0.18),
             0 0 22px rgba(102, 224, 150, 0.34);
         transform: scaleX(1.05);
         opacity: 1;
     }
-    42% {
-        background: rgba(102, 224, 150, 0.58);
-        box-shadow:
-            0 0 0 1px rgba(102, 224, 150, 0.08),
-            0 0 10px rgba(102, 224, 150, 0.14);
-        transform: scaleX(1.02);
-        opacity: 0.62;
-    }
     100% {
-        background: rgba(102, 224, 150, 0.02);
-        box-shadow: 0 0 0 rgba(102, 224, 150, 0);
+        box-shadow:
+            0 0 0 1px rgba(102, 224, 150, 0),
+            0 0 0 rgba(102, 224, 150, 0);
         transform: scaleX(1);
         opacity: 0;
     }
