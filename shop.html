@@ -644,29 +644,18 @@
         }
 
         .shop-empty-state {
-            width: min(440px, 100%);
-            padding: 36px 32px;
-            border-radius: 28px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 14px;
             text-align: center;
-            background: linear-gradient(180deg, rgba(17, 24, 39, 0.82), rgba(15, 23, 42, 0.6));
-            border: 1px solid rgba(148, 163, 184, 0.16);
-            box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
-            backdrop-filter: blur(16px);
         }
 
         .shop-empty-icon {
-            width: 62px;
-            height: 62px;
-            margin: 0 auto 18px;
-            border-radius: 20px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            background: linear-gradient(135deg, rgba(107, 158, 206, 0.28), rgba(96, 165, 250, 0.12));
-            border: 1px solid rgba(147, 197, 253, 0.24);
             color: #93c5fd;
-            box-shadow: 0 18px 40px rgba(96, 165, 250, 0.12);
-            font-size: 1.4rem;
+            font-size: 2rem;
+            line-height: 1;
         }
 
         .shop-empty-title {
@@ -675,13 +664,6 @@
             font-size: clamp(1.6rem, 2vw, 2rem);
             font-weight: 700;
             letter-spacing: 0.02em;
-        }
-
-        .shop-empty-hint {
-            margin: 10px 0 0;
-            color: rgba(148, 163, 184, 0.92);
-            font-size: 0.98rem;
-            line-height: 1.7;
         }
 
         /* Responsive */
@@ -701,11 +683,6 @@
 
             .shop-grid.is-empty {
                 min-height: clamp(220px, 34vh, 320px);
-            }
-
-            .shop-empty-state {
-                padding: 28px 22px;
-                border-radius: 22px;
             }
         }
 
@@ -1831,7 +1808,7 @@
     <script src="js/components/WalletModal.js?v=20260316_WALLET_VIEWPORT_BOTTOM_INSET_FIX_1" defer></script>
 
     <!-- Shop Logic -->
-    <script src="js/shop-client.js?v=20260317_SHOP_EMPTY_STATE_V11" defer></script>
+    <script src="js/shop-client.js?v=20260317_SHOP_EMPTY_STATE_V12" defer></script>
 
     <!-- Background Animations -->
     <script src="starry-sky.js"></script>

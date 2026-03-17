@@ -279,7 +279,6 @@ const ShopClient = {
                     <i class="fas fa-box-open" aria-hidden="true"></i>
                 </div>
                 <h3 class="shop-empty-title" data-i18n="shop.noProducts">${window.i18n?.t('shop.noProducts') || '暂无商品上架'}</h3>
-                <p class="shop-empty-hint">${window.i18n?.t('shop.checkOtherCategories') || '当前分类还没有商品，试试切换到其它标签看看。'}</p>
             </div>
         `;
     },
