@@ -7628,7 +7628,12 @@ input[type="submit"],
     margin: 0 auto 4px;
     border-radius: 999px;
     background: rgba(107, 158, 206, 0.24);
-    transition: background-color 180ms ease, opacity 180ms ease, box-shadow 180ms ease;
+    transform-origin: center;
+    transition:
+        background-color 300ms cubic-bezier(0.22, 1, 0.36, 1),
+        opacity 220ms ease,
+        box-shadow 300ms cubic-bezier(0.22, 1, 0.36, 1),
+        transform 300ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 #guestbookModal:focus-within .guestbook-composer-handle,
@@ -7638,17 +7643,47 @@ input[type="submit"],
 }
 
 @keyframes guestbookComposerHandleSuccessFlash {
-    0%, 100% {
-        background: rgba(95, 216, 143, 0.98);
+    0% {
+        background: rgba(255, 167, 60, 0.96);
         box-shadow:
-            0 0 0 1px rgba(95, 216, 143, 0.16),
-            0 0 18px rgba(95, 216, 143, 0.34);
+            0 0 0 1px rgba(255, 167, 60, 0.12),
+            0 0 18px rgba(255, 167, 60, 0.28);
+        transform: scaleX(1);
     }
-    50% {
-        background: rgba(95, 216, 143, 0.22);
+    24% {
+        background: rgba(102, 224, 150, 0.98);
         box-shadow:
-            0 0 0 1px rgba(95, 216, 143, 0.04),
-            0 0 4px rgba(95, 216, 143, 0.08);
+            0 0 0 1px rgba(102, 224, 150, 0.18),
+            0 0 24px rgba(102, 224, 150, 0.4);
+        transform: scaleX(1.08);
+    }
+    44% {
+        background: rgba(95, 216, 143, 0.3);
+        box-shadow:
+            0 0 0 1px rgba(95, 216, 143, 0.06),
+            0 0 6px rgba(95, 216, 143, 0.1);
+        transform: scaleX(1.02);
+    }
+    68% {
+        background: rgba(102, 224, 150, 0.98);
+        box-shadow:
+            0 0 0 1px rgba(102, 224, 150, 0.18),
+            0 0 24px rgba(102, 224, 150, 0.4);
+        transform: scaleX(1.08);
+    }
+    84% {
+        background: rgba(95, 216, 143, 0.42);
+        box-shadow:
+            0 0 0 1px rgba(95, 216, 143, 0.08),
+            0 0 8px rgba(95, 216, 143, 0.12);
+        transform: scaleX(1.03);
+    }
+    100% {
+        background: rgba(95, 216, 143, 0.86);
+        box-shadow:
+            0 0 0 1px rgba(95, 216, 143, 0.12),
+            0 0 14px rgba(95, 216, 143, 0.2);
+        transform: scaleX(1);
     }
 }
 
@@ -7659,16 +7694,18 @@ input[type="submit"],
     box-shadow:
         0 0 0 1px rgba(255, 167, 60, 0.12),
         0 0 18px rgba(255, 167, 60, 0.28);
+    transform: scaleX(1.04);
 }
 
 #guestbookModal.guestbook-submit-success .guestbook-composer-handle,
 #guestbookModal.guestbook-submit-success:focus-within .guestbook-composer-handle,
 #guestbookModal.guestbook-submit-success.keyboard-docked .guestbook-composer-handle {
-    background: rgba(95, 216, 143, 0.98);
+    background: rgba(95, 216, 143, 0.86);
     box-shadow:
-        0 0 0 1px rgba(95, 216, 143, 0.16),
-        0 0 18px rgba(95, 216, 143, 0.34);
-    animation: guestbookComposerHandleSuccessFlash 0.32s ease-in-out 2;
+        0 0 0 1px rgba(95, 216, 143, 0.12),
+        0 0 14px rgba(95, 216, 143, 0.2);
+    transform: scaleX(1);
+    animation: guestbookComposerHandleSuccessFlash 760ms cubic-bezier(0.2, 0.8, 0.2, 1) 1 both;
 }
 
 #guestbookModal .guestbook-composer-header {

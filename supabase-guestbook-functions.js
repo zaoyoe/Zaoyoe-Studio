@@ -1471,7 +1471,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         if (state === 'success') {
-            return isZh ? '留言中...' : 'Posting...';
+            return window.i18n?.t('guestbook.submit') || (isZh ? '留言' : 'Post');
         }
 
         return window.i18n?.t('guestbook.submit') || (isZh ? '留言' : 'Post');
@@ -1662,15 +1662,14 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function showGuestbookSubmitSuccessState() {
-        setGuestbookComposerBusyState(false);
         setGuestbookComposerHandleState('success');
-        setGuestbookSubmitButtonState('success');
+        submitState.locked = false;
+        setGuestbookComposerBusyState(false);
+        setGuestbookSubmitButtonState('idle');
         submitState.resetTimer = setTimeout(() => {
             submitState.resetTimer = null;
-            submitState.locked = false;
             setGuestbookComposerHandleState('idle');
-            setGuestbookSubmitButtonState('idle');
-        }, 980);
+        }, 760);
     }
 
     if (guestbookForm) {
