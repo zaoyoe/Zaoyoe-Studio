@@ -1500,8 +1500,6 @@ const FramerHome = {
       const carouselRect = carousel.getBoundingClientRect();
       return carouselRect.left + carouselRect.width / 2;
     };
-    const shouldActivateCardDirectly = () =>
-      window.matchMedia?.('(hover: hover) and (pointer: fine)').matches ?? false;
     const triggerCardAction = (card, event) => {
       const action = card.getAttribute('data-action');
 
@@ -1659,11 +1657,6 @@ const FramerHome = {
 
     cards.forEach((card) => {
       card.addEventListener('click', (e) => {
-        if (shouldActivateCardDirectly()) {
-          triggerCardAction(card, e);
-          return;
-        }
-
         const viewportCenter = getCarouselViewportCenter();
         const rect = card.getBoundingClientRect();
         const cardCenter = rect.left + rect.width / 2;
