@@ -528,8 +528,8 @@
     scroll-behavior: auto !important;
     overscroll-behavior-y: contain;
     scrollbar-gutter: stable both-edges;
-    scrollbar-width: auto;
-    scrollbar-color: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 148, 148, 0.72) transparent;
     position: relative;
     background: var(--chat-panel-bg);
     box-shadow: var(--chat-panel-shadow);

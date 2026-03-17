@@ -672,9 +672,11 @@ class ChatWidget {
             .session-list {
                 flex: 1;
                 overflow-y: auto;
+                -webkit-overflow-scrolling: touch;
+                scrollbar-gutter: stable both-edges;
+                scrollbar-width: thin;
+                scrollbar-color: rgba(148, 148, 148, 0.72) transparent;
             }
-            .session-list::-webkit-scrollbar { width: 4px; }
-            .session-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
             
             .session-item {
                 display: flex;
