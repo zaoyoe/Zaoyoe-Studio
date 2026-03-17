@@ -25,6 +25,7 @@
     <link rel="icon" type="image/png" href="assets/favicon.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://unpkg.com" crossorigin>
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;700;800&display=swap"
         rel="stylesheet">
@@ -417,33 +418,6 @@
             height: fit-content;
         }
     </style>
-    <script>
-        // Handle back button with exit animation
-        document.addEventListener('DOMContentLoaded', function () {
-            const backBtn = document.querySelector('.floating-back-btn');
-
-            if (backBtn) {
-                backBtn.addEventListener('click', function (e) {
-                    e.preventDefault();
-                    const targetUrl = this.getAttribute('href');
-
-                    // Add exit animation to main container
-                    const mainContainer = document.querySelector('.guestbook-main');
-
-                    if (mainContainer) {
-                        mainContainer.classList.add('page-exit');
-                    }
-
-                    // Navigate after animation
-                    setTimeout(() => {
-                        window.location.href = targetUrl;
-                    }
-
-                        , 300);
-                });
-            }
-        });
-    </script>
 </head>
 
 <body class="guestbook-page">
@@ -643,15 +617,13 @@
 
 
     <!-- Supabase Client (使用国内可访问的CDN) -->
-    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
-    <script src="./supabase-client.js"></script>
+    <script src="https://unpkg.com/@supabase/supabase-js@2" defer></script>
+    <script src="./supabase-client.js" defer></script>
 
     <!-- Site Config (dual-site detection) -->
-    <script src="./js/site-config.js"></script>
+    <script src="./js/site-config.js" defer></script>
     <script src="./js/prefetch-home.js" defer></script>
-    <script src="./js/section-visibility.js"></script>
-    <script src="./js/ambient-light.js?v=20260317_GUESTBOOK_STARRY_BG_1"></script>
-    <script src="./starry-sky.js?v=20260317_GUESTBOOK_STARRY_BG_1"></script>
+    <script src="./js/section-visibility.js" defer></script>
 
     <!-- Notification Client (For Bell) -->
     <script src="notification-client.js?v=20260314_NOTIF_SCROLL_LOCK_1" defer></script>
@@ -684,17 +656,92 @@
     <script src="prevent-zoom.js?v=20251130" defer></script>
     <script src="image-zoom.js?v=20251130_FIX" defer></script>
 
-    <!-- System Announcement Loader -->
-    <script src="announcement-loader.js?v=8" defer></script>
-    <!-- Chat Widget -->
-    <link rel="stylesheet" href="css/chat-widget.css?v=20260313_CHAT_GUESTBOOK_MATERIAL_6">
-    <script src="js/components/ChatWidget.js?v=20260313_CHAT_GUESTBOOK_MATERIAL_6" defer></script>
+    <!-- Optional Guestbook Enhancements -->
     <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            if (typeof ChatWidget !== 'undefined') {
+        (function () {
+            const optionalResources = new Set();
+
+            function runWhenIdle(task, timeout = 1200) {
+                if ('requestIdleCallback' in window) {
+                    requestIdleCallback(task, { timeout });
+                    return;
+                }
+
+                setTimeout(task, 0);
+            }
+
+            function scheduleOptionalTask(delay, task, idleTimeout = 1200) {
+                setTimeout(() => {
+                    runWhenIdle(task, idleTimeout);
+                }, delay);
+            }
+
+            function hasResource(selector) {
+                return Boolean(document.querySelector(selector));
+            }
+
+            function loadScript(src, onload) {
+                if (optionalResources.has(src) || hasResource(`script[src="${src}"]`)) {
+                    if (typeof onload === 'function') onload();
+                    return;
+                }
+
+                optionalResources.add(src);
+                const script = document.createElement('script');
+                script.src = src;
+                script.async = true;
+                script.fetchPriority = 'low';
+
+                if (typeof onload === 'function') {
+                    script.addEventListener('load', onload, { once: true });
+                }
+
+                document.body.appendChild(script);
+            }
+
+            function loadStylesheet(href) {
+                if (optionalResources.has(href) || hasResource(`link[href="${href}"]`)) {
+                    return;
+                }
+
+                optionalResources.add(href);
+                const link = document.createElement('link');
+                link.rel = 'stylesheet';
+                link.href = href;
+                link.setAttribute('fetchpriority', 'low');
+                document.head.appendChild(link);
+            }
+
+            function initChatWidgetIfReady() {
+                if (window.chatWidget || typeof ChatWidget === 'undefined') {
+                    return;
+                }
+
                 window.chatWidget = new ChatWidget(window.supabaseClient);
             }
-        });
+
+            function scheduleOptionalGuestbookEnhancements() {
+                scheduleOptionalTask(250, () => {
+                    loadScript('./js/ambient-light.js?v=20260317_GUESTBOOK_STARRY_BG_1');
+                    loadScript('./starry-sky.js?v=20260317_GUESTBOOK_STARRY_BG_1');
+                }, 800);
+
+                scheduleOptionalTask(1400, () => {
+                    loadScript('announcement-loader.js?v=8');
+                }, 1800);
+
+                scheduleOptionalTask(2200, () => {
+                    loadStylesheet('css/chat-widget.css?v=20260313_CHAT_GUESTBOOK_MATERIAL_6');
+                    loadScript('js/components/ChatWidget.js?v=20260313_CHAT_GUESTBOOK_MATERIAL_6', initChatWidgetIfReady);
+                }, 2200);
+            }
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', scheduleOptionalGuestbookEnhancements, { once: true });
+            } else {
+                scheduleOptionalGuestbookEnhancements();
+            }
+        })();
     </script>
 
 </body>

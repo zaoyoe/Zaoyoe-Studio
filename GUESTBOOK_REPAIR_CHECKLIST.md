@@ -17,7 +17,7 @@
   - Current realtime formatter uses fields that do not match `createMessageCard()`, and references stale insertion hooks/selectors.
   - Goal: new remote messages insert correctly without reload and without broken author/avatar rendering.
 
-- [ ] Unify comment/reply immediate insertion behavior with the main renderer
+- [x] Unify comment/reply immediate insertion behavior with the main renderer
   - Current `insertCommentToDOM()` / `insertReplyToDOM()` manually build DOM and can drift from `createMessageCard()`.
   - Goal: optimistic UI stays visually and structurally consistent with full reload render.
 
@@ -31,7 +31,7 @@
   - Candidates include announcement/chat/supportive UI scripts that do not affect first message paint.
   - Goal: first contentful render is not blocked by unrelated widgets.
 
-- [ ] Audit synchronous script tags on `guestbook.html`
+- [x] Audit synchronous script tags on `guestbook.html`
   - Several scripts are loaded without `defer`, including the Supabase CDN, `supabase-client.js`, `smooth-scroll.js`, `announcement-loader.js`, and the chat widget script.
   - Goal: keep only true boot-critical code on the critical path.
 

@@ -612,17 +612,28 @@ async function addCommentToMessage(messageId, content) {
             .eq('id', user.id)
             .single();
 
+        const formattedComment = typeof formatCommentForUI === 'function'
+            ? formatCommentForUI({
+                ...data,
+                profiles: {
+                    username: profile?.username || 'Anonymous',
+                    avatar_url: profile?.avatar_url || null
+                },
+                replies: []
+            })
+            : {
+                id: data.id,
+                content: content,
+                name: profile?.username || 'Anonymous',
+                avatarUrl: profile?.avatar_url,
+                timestamp: '刚刚',
+                likes: 0,
+                isLiked: false,
+                replies: []
+            };
+
         // Insert comment into DOM immediately
-        insertCommentToDOM(messageId, {
-            id: data.id,
-            content: content,
-            name: profile?.username || 'Anonymous',
-            avatarUrl: profile?.avatar_url,
-            timestamp: '刚刚',
-            likes: 0,
-            isLiked: false,
-            replies: []
-        });
+        insertCommentToDOM(messageId, formattedComment);
 
         invalidateGuestbookCache();
         return true;
@@ -694,18 +705,30 @@ async function addReplyToComment(parentCommentId, messageId, content) {
         const parentComment = document.querySelector(`[data-comment-id="${parentCommentId}"]`);
         const parentAuthorName = parentComment?.querySelector('.comment-author')?.textContent || null;
 
+        const formattedReply = typeof formatCommentForUI === 'function'
+            ? formatCommentForUI({
+                ...data,
+                profiles: {
+                    username: profile?.username || 'Anonymous',
+                    avatar_url: profile?.avatar_url || null
+                },
+                parentUserName: parentAuthorName,
+                replies: []
+            })
+            : {
+                id: data.id,
+                content: content,
+                name: profile?.username || 'Anonymous',
+                avatarUrl: profile?.avatar_url,
+                timestamp: '刚刚',
+                likes: 0,
+                isLiked: false,
+                parentUserName: parentAuthorName,
+                replies: []
+            };
+
         // Insert reply into DOM immediately
-        insertReplyToDOM(messageId, parentCommentId, {
-            id: data.id,
-            content: content,
-            name: profile?.username || 'Anonymous',
-            avatarUrl: profile?.avatar_url,
-            timestamp: '刚刚',
-            likes: 0,
-            isLiked: false,
-            parentUserName: parentAuthorName,
-            replies: []
-        });
+        insertReplyToDOM(messageId, parentCommentId, formattedReply);
 
         invalidateGuestbookCache();
         return true;
@@ -1025,7 +1048,7 @@ function showRealtimeNotification(type, payload) {
     // Invalidate cache
     invalidateGuestbookCache();
 
-    // Auto-insert new content into DOM (like LeanCloud LiveQuery)
+    // Auto-insert new content into DOM for live updates
     if (payload.eventType === 'INSERT' && payload.new) {
         const newData = payload.new;
 
@@ -1186,17 +1209,26 @@ async function insertNewCommentFromRealtime(commentData) {
             .eq('id', commentData.user_id)
             .single();
 
-        const formattedComment = {
-            id: commentData.id,
-            content: commentData.content,
-            name: profile?.username || 'Anonymous',
-            avatarUrl: profile?.avatar_url,
-            timestamp: '刚刚',
-            likes: 0,
-            isLiked: false,
-            parentUserName: null,
-            replies: []
-        };
+        const formattedComment = typeof formatCommentForUI === 'function'
+            ? formatCommentForUI({
+                ...commentData,
+                profiles: {
+                    username: profile?.username || 'Anonymous',
+                    avatar_url: profile?.avatar_url || null
+                },
+                replies: []
+            })
+            : {
+                id: commentData.id,
+                content: commentData.content,
+                name: profile?.username || 'Anonymous',
+                avatarUrl: profile?.avatar_url,
+                timestamp: '刚刚',
+                likes: 0,
+                isLiked: false,
+                parentUserName: null,
+                replies: []
+            };
 
         // If it's a reply (has parent_id), insert after parent comment
         // Pass autoScroll=false to prevent auto-scrolling for Realtime events
@@ -1551,150 +1583,36 @@ document.addEventListener('DOMContentLoaded', function () {
 function insertCommentToDOM(messageId, comment, autoScroll = true) {
     console.log('📝 Inserting comment to DOM:', messageId, comment.id, 'autoScroll:', autoScroll);
 
-    // Find the message's comment list
-    const messageCard = document.querySelector(`[data-message-id="${messageId}"]`);
-    if (!messageCard) {
-        console.warn('❌ Message card not found:', messageId);
-        return;
-    }
-
-    const commentList = messageCard.querySelector('.comment-list');
-    if (!commentList) {
-        console.warn('❌ Comment list not found in message:', messageId);
-        return;
-    }
-
-    // Create comment HTML
-    const avatarHtml = comment.avatarUrl
-        ? `<img src="${comment.avatarUrl}" alt="${escapeHTML(comment.name)}" class="comment-avatar">`
-        : '<i class="fas fa-user-circle comment-avatar-placeholder"></i>';
-
-    const commentHtml = `
-        <div class="comment-item comment-item--clickable" 
-             data-comment-id="${comment.id}" 
-             data-message-id="${messageId}"
-             data-can-reply="true"
-             style="animation: slideIn 0.3s ease;">
-            <div class="comment-row">
-                <div class="comment-main">
-                    <div class="comment-header">
-                        <span class="comment-author">${escapeHTML(comment.name)}</span>
-                        <span class="comment-time">${comment.timestamp}</span>
-                    </div>
-                    <div class="comment-content">${escapeHTML(comment.content)}</div>
-                </div>
-                <div class="comment-like-wrapper">
-                    <button class="comment-like-btn" 
-                            onclick="handleLike('Comment', '${comment.id}', this)">
-                        <i class="far fa-heart"></i>
-                        <span class="like-count">0</span>
-                    </button>
-                </div>
-            </div>
-        </div>
-    `;
-
-    // Insert at the end of the comment list
-    commentList.insertAdjacentHTML('beforeend', commentHtml);
-
-    // Update comment count
-    const commentBtn = messageCard.querySelector('.comment-btn span');
-    if (commentBtn) {
-        const currentCount = parseInt(commentBtn.textContent) || 0;
-        commentBtn.textContent = currentCount + 1;
-    }
-
-    // If collapsed, expand to show new comment
-    if (commentList.classList.contains('collapsed')) {
-        commentList.classList.remove('collapsed');
-        const toggleBtn = messageCard.querySelector('.comment-toggle-btn');
-        if (toggleBtn) {
-            toggleBtn.querySelector('span').textContent = '收起';
-            toggleBtn.querySelector('i').className = 'fas fa-chevron-up';
+    if (typeof window.renderGuestbookCommentInsert === 'function') {
+        const inserted = window.renderGuestbookCommentInsert(messageId, comment, { autoScroll });
+        if (inserted) {
+            console.log('✅ Comment inserted through main renderer');
+            return;
         }
     }
 
-    // Scroll to show the new comment (only if autoScroll is true)
-    if (autoScroll) {
-        const newComment = commentList.lastElementChild;
-        if (newComment) {
-            setTimeout(() => {
-                newComment.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }, 100);
-        }
+    console.warn('⚠️ Main renderer comment insert unavailable, falling back to full reload');
+    if (typeof window.loadGuestbookMessages === 'function') {
+        window.loadGuestbookMessages(true, `msg-${messageId}`);
     }
-
-    console.log('✅ Comment inserted to DOM');
 }
 
 // ==================== 直接插入回复到 DOM (嵌套) ====================
 function insertReplyToDOM(messageId, parentCommentId, reply, autoScroll = true) {
     console.log('📝 Inserting reply to DOM:', parentCommentId, reply.id, 'autoScroll:', autoScroll);
 
-    // Find the parent comment
-    const parentComment = document.querySelector(`[data-comment-id="${parentCommentId}"]`);
-    if (!parentComment) {
-        console.warn('❌ Parent comment not found:', parentCommentId);
-        // Fallback: insert as top-level comment
-        insertCommentToDOM(messageId, reply, autoScroll);
-        return;
-    }
-
-    // Create @mention prefix
-    const mentionPrefix = reply.parentUserName
-        ? `<span class="comment-mention">@${escapeHTML(reply.parentUserName)}</span> `
-        : '';
-
-    // Create reply HTML
-    const replyHtml = `
-        <div class="comment-item comment-item--nested comment-item--clickable" 
-             style="margin-left: 10px; animation: slideIn 0.3s ease;"
-             data-comment-id="${reply.id}" 
-             data-message-id="${messageId}"
-             data-can-reply="true">
-            <div class="comment-row">
-                <div class="comment-main">
-                    <div class="comment-header">
-                        <span class="comment-author">${escapeHTML(reply.name)}</span>
-                        <span class="comment-time">${reply.timestamp}</span>
-                    </div>
-                    <div class="comment-content">${mentionPrefix}${escapeHTML(reply.content)}</div>
-                </div>
-                <div class="comment-like-wrapper">
-                    <button class="comment-like-btn" 
-                            onclick="handleLike('Comment', '${reply.id}', this)">
-                        <i class="far fa-heart"></i>
-                        <span class="like-count">0</span>
-                    </button>
-                </div>
-            </div>
-        </div>
-    `;
-
-    // Insert after the parent comment
-    parentComment.insertAdjacentHTML('afterend', replyHtml);
-
-    // Update comment count on the message
-    const messageCard = document.querySelector(`[data-message-id="${messageId}"]`);
-    if (messageCard) {
-        const commentBtn = messageCard.querySelector('.comment-btn span');
-        if (commentBtn) {
-            const currentCount = parseInt(commentBtn.textContent) || 0;
-            commentBtn.textContent = currentCount + 1;
+    if (typeof window.renderGuestbookReplyInsert === 'function') {
+        const inserted = window.renderGuestbookReplyInsert(messageId, parentCommentId, reply, { autoScroll });
+        if (inserted) {
+            console.log('✅ Reply inserted through main renderer');
+            return;
         }
     }
 
-    // Scroll to show the new reply (only if autoScroll is true)
-    if (autoScroll) {
-        const newReply = parentComment.nextElementSibling;
-        if (newReply) {
-            setTimeout(() => {
-                newReply.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }, 100);
-        }
+    console.warn('⚠️ Main renderer reply insert unavailable, falling back to full reload');
+    if (typeof window.loadGuestbookMessages === 'function') {
+        window.loadGuestbookMessages(true, `msg-${messageId}`);
     }
-
-    console.log('✅ Reply inserted to DOM');
 }
 
 // ==================== 挂载到 window ====================

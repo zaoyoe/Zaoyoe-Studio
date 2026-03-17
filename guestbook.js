@@ -20,6 +20,24 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     console.log('✅ Modal state cleaned up on page load');
 
+    if (floatingBackBtn) {
+        floatingBackBtn.addEventListener('click', (event) => {
+            event.preventDefault();
+            const targetUrl = floatingBackBtn.getAttribute('href');
+            const mainContainer = document.querySelector('.guestbook-main');
+
+            if (mainContainer) {
+                mainContainer.classList.add('page-exit');
+            }
+
+            setTimeout(() => {
+                if (targetUrl) {
+                    window.location.href = targetUrl;
+                }
+            }, 300);
+        });
+    }
+
     // 🔧 FIX: Declare these variables early to avoid ReferenceError
     let commentHandlersAttached = false;
     let mobileHighlightActive = false;
@@ -283,9 +301,6 @@ document.addEventListener('DOMContentLoaded', () => {
         // Trigger scroll highlight (Mobile)
         observeNewItems();
 
-        // ⚠️ DEPRECATED: syncUserAvatars uses LeanCloud (AV.User) which is no longer used
-        // Supabase already provides correct avatars via profiles.avatar_url on initial load
-        // syncUserAvatars();
     }
 
     // Handle Resize
@@ -448,7 +463,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return total;
         }
         const commentCount = msg.comments ? countAllComments(msg.comments) : 0;
-        const shouldCollapse = commentCount > 2;
+        const shouldCollapse = commentCount > 2 && !msg.forceExpanded;
 
         // Calculate delay based on item's actual DOM position (top-to-bottom)
         // This is calculated after rendering using element's offsetTop
@@ -653,6 +668,203 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         return card || element;
+    };
+
+    function getMessageIdentity(messageOrId) {
+        if (!messageOrId) return null;
+        if (typeof messageOrId === 'string') return messageOrId;
+        return messageOrId.id || messageOrId.objectId || null;
+    }
+
+    function findMessageState(messageId) {
+        const normalizedMessageId = getMessageIdentity(messageId);
+        return allMessages.find(msg => getMessageIdentity(msg) === normalizedMessageId) || null;
+    }
+
+    function findCommentState(comments, commentId) {
+        if (!Array.isArray(comments) || !commentId) return null;
+
+        for (const comment of comments) {
+            if (!comment) continue;
+
+            if (getMessageIdentity(comment) === commentId) {
+                return comment;
+            }
+
+            const nestedMatch = findCommentState(comment.replies, commentId);
+            if (nestedMatch) return nestedMatch;
+        }
+
+        return null;
+    }
+
+    function normalizeInsertedComment(comment, fallback = {}) {
+        const normalizedId = getMessageIdentity(comment);
+        const userId = comment?.userId || comment?.authorId || comment?.user_id || fallback.userId || fallback.authorId || '';
+        const createdAt = comment?.createdAt || comment?.created_at || fallback.createdAt || null;
+        const replies = Array.isArray(comment?.replies)
+            ? comment.replies.map(reply => normalizeInsertedComment(reply))
+            : [];
+
+        return {
+            ...comment,
+            id: normalizedId,
+            objectId: normalizedId,
+            content: comment?.content || '',
+            name: comment?.name || comment?.username || fallback.name || 'Anonymous',
+            username: comment?.username || comment?.name || fallback.username || fallback.name || 'Anonymous',
+            avatarUrl: comment?.avatarUrl || comment?.avatar_url || fallback.avatarUrl || null,
+            userId,
+            authorId: userId,
+            parentId: comment?.parentId || comment?.parentCommentId || comment?.parent_id || fallback.parentId || null,
+            parentCommentId: comment?.parentCommentId || comment?.parentId || comment?.parent_id || fallback.parentId || null,
+            parentUserName: comment?.parentUserName || comment?.parent_user_name || fallback.parentUserName || null,
+            likes: typeof comment?.likes === 'number' ? comment.likes : (comment?.like_count || 0),
+            isLiked: Boolean(comment?.isLiked),
+            createdAt,
+            timestamp: comment?.timestamp
+                || (typeof formatTime === 'function' && createdAt ? formatTime(createdAt) : '刚刚'),
+            replies
+        };
+    }
+
+    function flashInsertedComment(commentId, autoScroll = true) {
+        if (!commentId) return;
+
+        const targetComment = document.querySelector(`.comment-item[data-comment-id="${commentId}"]`);
+        if (!targetComment) return;
+
+        targetComment.classList.remove('highlight-flash');
+        void targetComment.offsetWidth;
+        targetComment.classList.add('highlight-flash');
+
+        if (autoScroll) {
+            setTimeout(() => {
+                targetComment.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 80);
+        }
+
+        setTimeout(() => {
+            targetComment.classList.remove('highlight-flash');
+        }, 3200);
+    }
+
+    function rerenderMessageCard(messageId) {
+        const normalizedMessageId = getMessageIdentity(messageId);
+        if (!normalizedMessageId) return null;
+
+        const messageState = findMessageState(normalizedMessageId);
+        if (!messageState) {
+            console.warn('⚠️ Message state not found for rerender:', normalizedMessageId);
+            return null;
+        }
+
+        const currentCard = document.querySelector(`.message-item[data-message-id="${normalizedMessageId}"]`);
+        if (!currentCard) return null;
+
+        const currentWrapper = currentCard.closest('.message-anim-wrapper') || currentCard;
+        const replacementElement = htmlToElement(createMessageCard(messageState, 0));
+        if (!replacementElement) return null;
+
+        const replacementCard = replacementElement.querySelector('.message-item');
+        if (!replacementCard) return null;
+
+        replacementCard.id = `msg-${normalizedMessageId}`;
+        replacementCard.setAttribute('data-message-id', normalizedMessageId);
+
+        if (currentCard.classList.contains('fetched-history')) {
+            replacementCard.classList.add('fetched-history');
+        }
+
+        if (currentCard.classList.contains('expanded')) {
+            replacementCard.classList.add('expanded');
+        }
+
+        if (currentWrapper.classList.contains('visible')) {
+            replacementElement.classList.add('visible');
+        }
+
+        currentWrapper.replaceWith(replacementElement);
+        attachCommentHandlers();
+
+        return replacementCard;
+    }
+
+    window.renderGuestbookCommentInsert = function (messageId, comment, options = {}) {
+        const normalizedMessageId = getMessageIdentity(messageId);
+        if (!normalizedMessageId || !comment) return false;
+
+        const messageState = findMessageState(normalizedMessageId);
+        if (!messageState) {
+            console.warn('⚠️ Unable to locate message state for comment insert:', normalizedMessageId);
+            return false;
+        }
+
+        if (!Array.isArray(messageState.comments)) {
+            messageState.comments = [];
+        }
+
+        const normalizedComment = normalizeInsertedComment(comment);
+        if (!normalizedComment.id) {
+            console.warn('⚠️ Skipping comment insert without id');
+            return false;
+        }
+
+        if (!findCommentState(messageState.comments, normalizedComment.id)) {
+            messageState.comments.push(normalizedComment);
+        }
+
+        messageState.forceExpanded = true;
+        rerenderMessageCard(normalizedMessageId);
+        flashInsertedComment(normalizedComment.id, options.autoScroll !== false);
+        return true;
+    };
+
+    window.renderGuestbookReplyInsert = function (messageId, parentCommentId, reply, options = {}) {
+        const normalizedMessageId = getMessageIdentity(messageId);
+        const normalizedParentId = getMessageIdentity(parentCommentId);
+        if (!normalizedMessageId || !normalizedParentId || !reply) return false;
+
+        const messageState = findMessageState(normalizedMessageId);
+        if (!messageState) {
+            console.warn('⚠️ Unable to locate message state for reply insert:', normalizedMessageId);
+            return false;
+        }
+
+        if (!Array.isArray(messageState.comments)) {
+            messageState.comments = [];
+        }
+
+        const normalizedReply = normalizeInsertedComment(reply, { parentId: normalizedParentId });
+        if (!normalizedReply.id) {
+            console.warn('⚠️ Skipping reply insert without id');
+            return false;
+        }
+
+        if (findCommentState(messageState.comments, normalizedReply.id)) {
+            flashInsertedComment(normalizedReply.id, options.autoScroll !== false);
+            return true;
+        }
+
+        const parentComment = findCommentState(messageState.comments, normalizedParentId);
+        if (!parentComment) {
+            console.warn('⚠️ Parent comment not found in state, falling back to top-level insert:', normalizedParentId);
+            return window.renderGuestbookCommentInsert(normalizedMessageId, normalizedReply, options);
+        }
+
+        if (!Array.isArray(parentComment.replies)) {
+            parentComment.replies = [];
+        }
+
+        if (!normalizedReply.parentUserName) {
+            normalizedReply.parentUserName = parentComment.name || null;
+        }
+
+        parentComment.replies.push(normalizedReply);
+        messageState.forceExpanded = true;
+        rerenderMessageCard(normalizedMessageId);
+        flashInsertedComment(normalizedReply.id, options.autoScroll !== false);
+        return true;
     };
 
 
@@ -1846,151 +2058,6 @@ window.showToast = function (message, type = 'info') {
         toast.classList.remove('active'); // Slide Up
         setTimeout(() => toast.remove(), 500); // Wait for transition then remove
     }, 3000);
-};
-
-/**
- * ✅ 头像同步功能
- * 页面加载后批量查询用户最新头像并更新 DOM
- */
-window.syncUserAvatars = async function () {
-    console.log('🔄 开始同步用户最新头像...');
-
-    try {
-        // 1. 首先处理当前登录用户的头像（最重要）
-        const currentUser = AV.User.current();
-        if (currentUser) {
-            const currentAvatarUrl = currentUser.get('avatarUrl');
-            const currentNickname = currentUser.get('nickname') || currentUser.get('username');
-            const currentUserId = currentUser.id;
-
-            if (currentAvatarUrl) {
-                let selfUpdatedCount = 0;
-
-                // 更新自己的所有留言头像（通过 data-author-id 匹配）
-                document.querySelectorAll(`.message-item[data-author-id="${currentUserId}"]`).forEach(item => {
-                    const avatarImg = item.querySelector('.author-avatar');
-                    if (avatarImg && avatarImg.src !== currentAvatarUrl) {
-                        avatarImg.src = currentAvatarUrl;
-                        selfUpdatedCount++;
-                    }
-                });
-
-                // 也通过用户名匹配（备用方案，用于旧数据）
-                document.querySelectorAll('.message-item').forEach(item => {
-                    const authorName = item.querySelector('.author-name');
-                    if (authorName && authorName.textContent === currentNickname) {
-                        const avatarImg = item.querySelector('.author-avatar');
-                        if (avatarImg && avatarImg.src !== currentAvatarUrl) {
-                            avatarImg.src = currentAvatarUrl;
-                            selfUpdatedCount++;
-                        }
-                    }
-                });
-
-                // 更新自己的所有评论头像
-                document.querySelectorAll(`.comment-item[data-author-id="${currentUserId}"]`).forEach(item => {
-                    const avatarImg = item.querySelector('.comment-avatar');
-                    if (avatarImg && avatarImg.src !== currentAvatarUrl) {
-                        avatarImg.src = currentAvatarUrl;
-                        selfUpdatedCount++;
-                    }
-                });
-
-                // 也通过评论作者名匹配
-                document.querySelectorAll('.comment-item').forEach(item => {
-                    const authorName = item.querySelector('.comment-author');
-                    if (authorName && authorName.textContent === currentNickname) {
-                        const avatarImg = item.querySelector('.comment-avatar');
-                        if (avatarImg && avatarImg.src !== currentAvatarUrl) {
-                            avatarImg.src = currentAvatarUrl;
-                            selfUpdatedCount++;
-                        }
-                    }
-                });
-
-                console.log(`✅ 已更新当前用户(${currentNickname})的 ${selfUpdatedCount} 个头像`);
-            }
-        }
-
-        // 2. 收集所有有 authorId 的留言/评论
-        const messageItems = document.querySelectorAll('.message-item[data-author-id]');
-        const commentItems = document.querySelectorAll('.comment-item[data-author-id]');
-
-        const userIds = new Set();
-
-        messageItems.forEach(item => {
-            const authorId = item.dataset.authorId;
-            if (authorId && authorId !== '' && authorId !== 'null') {
-                userIds.add(authorId);
-            }
-        });
-
-        commentItems.forEach(item => {
-            const authorId = item.dataset.authorId;
-            if (authorId && authorId !== '' && authorId !== 'null') {
-                userIds.add(authorId);
-            }
-        });
-
-        // 排除当前用户（已经处理过了）
-        if (currentUser) {
-            userIds.delete(currentUser.id);
-        }
-
-        if (userIds.size === 0) {
-            console.log('ℹ️ 没有其他用户需要同步头像');
-            return;
-        }
-
-        console.log(`📋 准备同步其他 ${userIds.size} 个用户的头像`);
-
-        // 3. 批量查询其他用户最新信息
-        const userQuery = new AV.Query('_User');
-        userQuery.containedIn('objectId', Array.from(userIds));
-        userQuery.select(['objectId', 'avatarUrl', 'username', 'nickname']);
-
-        const users = await userQuery.find();
-        console.log(`✅ 查询到 ${users.length} 个用户`);
-
-        // 4. 构建 userId -> avatarUrl 映射
-        const avatarMap = new Map();
-        users.forEach(user => {
-            const avatarUrl = user.get('avatarUrl');
-            if (avatarUrl) {
-                avatarMap.set(user.id, avatarUrl);
-            }
-        });
-
-        // 5. 更新 DOM 中的头像
-        let updatedCount = 0;
-
-        messageItems.forEach(item => {
-            const authorId = item.dataset.authorId;
-            if (authorId && avatarMap.has(authorId)) {
-                const avatarImg = item.querySelector('.author-avatar');
-                if (avatarImg && avatarImg.src !== avatarMap.get(authorId)) {
-                    avatarImg.src = avatarMap.get(authorId);
-                    updatedCount++;
-                }
-            }
-        });
-
-        commentItems.forEach(item => {
-            const authorId = item.dataset.authorId;
-            if (authorId && avatarMap.has(authorId)) {
-                const avatarImg = item.querySelector('.comment-avatar');
-                if (avatarImg && avatarImg.src !== avatarMap.get(authorId)) {
-                    avatarImg.src = avatarMap.get(authorId);
-                    updatedCount++;
-                }
-            }
-        });
-
-        console.log(`✅ 头像同步完成，更新了其他用户 ${updatedCount} 个头像`);
-
-    } catch (error) {
-        console.error('❌ 头像同步失败:', error);
-    }
 };
 
 // ==================== Language Change Handler ====================
