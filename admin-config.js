@@ -1515,7 +1515,7 @@ async function saveVerifyConfig() {
     const success = await saveConfig('verify_settings', config);
 
     if (success && typeof showToast === 'function') {
-        showToast('验证服务配置已保存', 'success');
+        showToast('Google One API 配置已保存', 'success');
     }
 
     // Update cache
@@ -1538,9 +1538,10 @@ async function checkVerifyQuota() {
         const data = await res.json();
 
         if (data.success) {
-            const credits = data.credits;
-            const color = credits > 5 ? '#27ae60' : credits > 0 ? '#f39c12' : '#e74c3c';
-            quotaEl.innerHTML = `<i class="fas fa-gem" style="color: ${color};"></i> <strong style="color: ${color};">${credits}</strong> 次`;
+            const balance = Number(data.balance ?? data.credits ?? 0);
+            const color = balance > 5 ? '#27ae60' : balance > 0 ? '#f39c12' : '#e74c3c';
+            const display = Number.isInteger(balance) ? balance : balance.toFixed(1);
+            quotaEl.innerHTML = `<i class="fas fa-gem" style="color: ${color};"></i> <strong style="color: ${color};">${display}</strong>`;
         } else {
             quotaEl.innerHTML = `<i class="fas fa-exclamation-triangle" style="color: #e74c3c;"></i> ${data.message || '查询失败'}`;
         }
@@ -1550,40 +1551,8 @@ async function checkVerifyQuota() {
 }
 
 async function redeemVerifyCard() {
-    const codeInput = document.getElementById('cfgRedeemCode');
-    if (!codeInput) return;
-
-    const code = codeInput.value.trim();
-    if (!code) {
-        if (typeof showToast === 'function') showToast('请输入卡密代码', 'error');
-        return;
-    }
-
-    // Validate format XXXX-XXXX-XXXX
-    if (!/^[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}$/.test(code)) {
-        if (typeof showToast === 'function') showToast('卡密格式错误，应为 XXXX-XXXX-XXXX', 'error');
-        return;
-    }
-
-    try {
-        const res = await fetch(`${VERIFY_SERVER_URL}/api/redeem`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ code })
-        });
-
-        const data = await res.json();
-
-        if (data.success) {
-            if (typeof showToast === 'function') showToast(`兑换成功！当前额度: ${data.credits_total}`, 'success');
-            codeInput.value = '';
-            // Refresh quota display
-            checkVerifyQuota();
-        } else {
-            if (typeof showToast === 'function') showToast(data.message || '兑换失败', 'error');
-        }
-    } catch (e) {
-        if (typeof showToast === 'function') showToast('网络错误，兑换失败', 'error');
+    if (typeof showToast === 'function') {
+        showToast('新版 Google One API 不支持卡密兑换，请到上游后台给当前 Key 充值。', 'error');
     }
 }
 

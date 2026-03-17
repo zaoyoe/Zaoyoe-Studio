@@ -1,6 +1,6 @@
 /**
- * Verification API Proxy Server
- * Proxies requests to lacedore.org:6789 Verification API
+ * Google One User API Proxy Server
+ * Proxies requests to the upstream Google One job API
  * Handles Supabase auth + points deduction
  */
 
@@ -12,8 +12,8 @@ const { createClient } = require('@supabase/supabase-js');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Verification API base URL
-const VERIFY_API_BASE = 'http://lacedore.org:6789';
+// Upstream API base URL
+const VERIFY_API_BASE = process.env.VERIFY_API_BASE_URL || 'https://iqless.icu';
 
 // Initialize Supabase
 const supabase = createClient(
@@ -39,12 +39,22 @@ app.use(cors({
 app.use(express.json());
 
 // Health check
-app.get('/health', (req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+app.get('/health', async (req, res) => {
+    try {
+        const upstream = await fetch(`${String(VERIFY_API_BASE).replace(/\/+$/, '')}/api/health`);
+        const payload = await upstream.json();
+        return res.status(upstream.status).json(payload);
+    } catch (error) {
+        return res.json({
+            status: 'degraded',
+            message: error.message,
+            timestamp: new Date().toISOString()
+        });
+    }
 });
 
 // =============================================
-// Helper: Get verify config from Supabase
+// Helpers
 // =============================================
 async function getVerifyConfig() {
     const { data: configData } = await supabase
@@ -55,14 +65,151 @@ async function getVerifyConfig() {
 
     const config = configData?.config_value || {};
     return {
-        pricePerVerify: config.price_per_verify || 10,
-        apiKey: config.verify_api_key || process.env.VERIFY_API_KEY || ''
+        pricePerVerify: Number(config.price_per_verify) || 10,
+        apiKey: String(config.verify_api_key || process.env.VERIFY_API_KEY || '').trim(),
+        apiBaseUrl: String(config.verify_api_base_url || process.env.VERIFY_API_BASE_URL || VERIFY_API_BASE).replace(/\/+$/, '')
     };
 }
 
-// =============================================
-// Helper: Validate user and check balance
-// =============================================
+function getCurrentSite(req, explicitSite) {
+    return explicitSite || (req.headers.origin?.includes('zaoyoe.xyz') ? 'intl' : 'cn');
+}
+
+function getApiErrorDetail(payload) {
+    if (!payload || typeof payload !== 'object') return null;
+    return (payload.detail && typeof payload.detail === 'object') ? payload.detail : null;
+}
+
+function getApiErrorCode(payload) {
+    const detail = getApiErrorDetail(payload);
+    return detail?.code || payload?.code || payload?.error || '';
+}
+
+function getApiErrorMessage(payload, fallback) {
+    const detail = getApiErrorDetail(payload);
+    return detail?.message || payload?.message || payload?.error || fallback;
+}
+
+function buildClientStatusMessage(job) {
+    const status = String(job?.status || '').toLowerCase();
+
+    if (status === 'queued') {
+        const queuePosition = Number(job?.queue_position);
+        const waitSeconds = Number(job?.estimated_wait_seconds);
+        const queueLabel = Number.isFinite(queuePosition) && queuePosition >= 0
+            ? `排队中（队列位置 ${queuePosition}）`
+            : '排队中';
+        return Number.isFinite(waitSeconds) && waitSeconds > 0
+            ? `${queueLabel}，预计等待 ${waitSeconds} 秒`
+            : queueLabel;
+    }
+
+    if (status === 'running') {
+        return job?.stage_label ? `当前阶段：${job.stage_label}` : '任务执行中';
+    }
+
+    if (status === 'success') {
+        return job?.url ? '链接获取成功' : '任务成功完成';
+    }
+
+    if (status === 'failed') {
+        return job?.error || '任务失败';
+    }
+
+    return job?.message || job?.status || '处理中';
+}
+
+function buildHistoryMessage(payload) {
+    return JSON.stringify({
+        kind: 'google_one_job',
+        ...payload
+    });
+}
+
+function parseHistoryMessage(message) {
+    if (typeof message !== 'string' || !message.trim().startsWith('{')) {
+        return null;
+    }
+
+    try {
+        const parsed = JSON.parse(message);
+        if (parsed?.kind === 'google_one_job') {
+            return parsed;
+        }
+    } catch (_) {
+        return null;
+    }
+
+    return null;
+}
+
+async function hasLoggedJobResult(userId, jobId, site = 'cn') {
+    if (!userId || !jobId) return false;
+
+    try {
+        const { data, error } = await supabase
+            .from('verification_logs')
+            .select('message')
+            .eq('user_id', userId)
+            .eq('site', site)
+            .order('created_at', { ascending: false })
+            .limit(50);
+
+        if (error) {
+            console.warn('[Verify] Failed to inspect history for dedupe:', error.message);
+            return false;
+        }
+
+        return (data || []).some((row) => parseHistoryMessage(row.message)?.job_id === jobId);
+    } catch (error) {
+        console.warn('[Verify] History dedupe check failed:', error.message);
+        return false;
+    }
+}
+
+async function logVerificationResult({
+    userId,
+    site = 'cn',
+    email,
+    jobId,
+    status,
+    url = '',
+    errorCode = '',
+    errorMessage = '',
+    stageLabel = '',
+    rawStatus = '',
+    pointsDeducted = 0
+}) {
+    if (!userId) return;
+
+    const message = buildHistoryMessage({
+        email: email || '',
+        job_id: jobId || '',
+        url: url || '',
+        error_code: errorCode || '',
+        error_message: errorMessage || '',
+        stage_label: stageLabel || '',
+        raw_status: rawStatus || status || '',
+        logged_at: new Date().toISOString()
+    });
+
+    try {
+        await supabase.from('verification_logs').insert({
+            user_id: userId,
+            verification_id: email || jobId || '--',
+            status,
+            message,
+            points_deducted: pointsDeducted,
+            batch_count: 1,
+            batch_success: status === 'success' ? 1 : 0,
+            batch_failed: status === 'success' ? 0 : 1,
+            site
+        });
+    } catch (error) {
+        console.warn('[Verify] Failed to log verification result:', error.message);
+    }
+}
+
 async function validateUserBalance(userId, requiredPoints, site = 'cn') {
     if (!userId) {
         return { valid: false, error: '请先登录', status: 400 };
@@ -92,65 +239,88 @@ async function validateUserBalance(userId, requiredPoints, site = 'cn') {
 }
 
 // =============================================
-// POST /api/verify — Submit single verification
-// Returns task_id for polling
+// POST /api/verify — Submit a Google One job
 // =============================================
 app.post('/api/verify', async (req, res) => {
-    const { verificationId, userId, site } = req.body;
+    const { email, password, totpSecret, totp_secret, priority, userId, site } = req.body;
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    const normalizedPassword = String(password || '');
+    const normalizedTotpSecret = String(totpSecret || totp_secret || '').trim();
+    const normalizedPriority = Number(priority) === 1 ? 1 : 0;
+    const currentSite = getCurrentSite(req, site);
 
-    if (!verificationId) {
-        return res.status(400).json({ success: false, message: '请提供验证ID' });
+    if (!normalizedEmail || !normalizedPassword || !normalizedTotpSecret) {
+        return res.status(400).json({
+            success: false,
+            message: '请提供邮箱、密码和 TOTP 密钥',
+            code: 'missing_fields'
+        });
     }
 
-    // Determine site from body or Origin header
-    const currentSite = site || (req.headers.origin?.includes('zaoyoe.xyz') ? 'intl' : 'cn');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+        return res.status(400).json({
+            success: false,
+            message: '邮箱格式无效',
+            code: 'invalid_email'
+        });
+    }
 
     try {
         const config = await getVerifyConfig();
 
         if (!config.apiKey) {
-            return res.status(500).json({ success: false, message: '验证服务未配置 API Key' });
+            return res.status(500).json({
+                success: false,
+                message: 'Google One API Key 未配置',
+                code: 'api_key_missing'
+            });
         }
 
-        // Check balance (need at least pricePerVerify)
         const balanceCheck = await validateUserBalance(userId, config.pricePerVerify, currentSite);
         if (!balanceCheck.valid) {
             return res.status(balanceCheck.status).json({ success: false, message: balanceCheck.error });
         }
 
-        console.log(`[Verify] Submitting single verification: ${verificationId}`);
+        console.log(`[Verify] Submitting Google One job: ${normalizedEmail}`);
 
-        // Forward to Verification API
-        const apiRes = await fetch(`${VERIFY_API_BASE}/verify`, {
+        const apiRes = await fetch(`${config.apiBaseUrl}/api/jobs`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'X-API-Key': config.apiKey
             },
-            body: JSON.stringify({ verification_id: verificationId })
+            body: JSON.stringify({
+                email: normalizedEmail,
+                password: normalizedPassword,
+                totp_secret: normalizedTotpSecret,
+                priority: normalizedPriority
+            })
         });
 
-        const apiData = await apiRes.json();
+        const apiData = await apiRes.json().catch(() => ({}));
 
         if (!apiRes.ok) {
             console.error('[Verify] API error:', apiData);
             return res.status(apiRes.status).json({
                 success: false,
-                message: apiData.detail || apiData.message || '验证请求失败'
+                message: getApiErrorMessage(apiData, '任务提交失败'),
+                code: getApiErrorCode(apiData)
             });
         }
 
-        console.log(`[Verify] Task created:`, apiData);
-
         return res.json({
             success: true,
-            task_id: apiData.task_id,
-            message: apiData.message || '验证任务已提交',
+            task_id: apiData.job_id,
+            job_id: apiData.job_id,
+            status: apiData.status || 'queued',
+            queue_position: apiData.queue_position ?? -1,
+            estimated_wait_seconds: apiData.estimated_wait_seconds ?? 0,
+            message: '任务已提交',
             pricePerVerify: config.pricePerVerify
         });
 
     } catch (error) {
-        console.error('[Verify] Error:', error);
+        console.error('[Verify] Submit error:', error);
         return res.status(500).json({
             success: false,
             message: error.message || '验证服务暂时不可用'
@@ -159,96 +329,91 @@ app.post('/api/verify', async (req, res) => {
 });
 
 // =============================================
-// GET /api/verify/status/:taskId — Poll task status
+// GET /api/verify/status/:taskId — Poll job status
 // =============================================
 app.get('/api/verify/status/:taskId', async (req, res) => {
     const { taskId } = req.params;
-    const { userId } = req.query;
+    const { userId, site, email } = req.query;
+    const currentSite = getCurrentSite(req, site);
 
     try {
         const config = await getVerifyConfig();
 
         if (!config.apiKey) {
-            return res.status(500).json({ success: false, message: '验证服务未配置' });
+            return res.status(500).json({ success: false, message: '验证服务未配置', code: 'api_key_missing' });
         }
 
-        const apiRes = await fetch(`${VERIFY_API_BASE}/verify/status/${taskId}`, {
+        const apiRes = await fetch(`${config.apiBaseUrl}/api/jobs/${taskId}`, {
             method: 'GET',
             headers: {
                 'X-API-Key': config.apiKey
             }
         });
 
-        const apiData = await apiRes.json();
+        const apiData = await apiRes.json().catch(() => ({}));
 
         if (!apiRes.ok) {
             return res.status(apiRes.status).json({
                 success: false,
-                message: apiData.detail || '查询状态失败'
+                message: getApiErrorMessage(apiData, '查询状态失败'),
+                code: getApiErrorCode(apiData)
             });
         }
 
-        // If task completed successfully, deduct points
-        if (apiData.status === 'completed' && apiData.success === true && userId) {
-            const alreadyDeducted = req.query.deducted === 'true';
+        let pointsDeducted = 0;
+        const terminal = apiData.status === 'success' || apiData.status === 'failed';
 
-            if (!alreadyDeducted) {
-                const pointsToDeduct = config.pricePerVerify;
+        if (terminal && userId) {
+            const alreadyLogged = await hasLoggedJobResult(userId, taskId, currentSite);
 
-                const { error: deductError } = await supabase.rpc('fn_deduct_points', {
-                    p_target_user_id: userId,
-                    p_amount: pointsToDeduct,
-                    p_reason: 'Gemini验证服务'
+            if (!alreadyLogged) {
+                if (apiData.status === 'success') {
+                    const pointsToDeduct = config.pricePerVerify;
+                    const { data: deductData, error: deductError } = await supabase.rpc('fn_deduct_points', {
+                        p_target_user_id: userId,
+                        p_amount: pointsToDeduct,
+                        p_reason: 'Google One 链接获取服务'
+                    });
+
+                    if (deductError) {
+                        console.error('[Verify] Failed to deduct points:', deductError);
+                    } else {
+                        pointsDeducted = deductData?.deducted ?? pointsToDeduct;
+                    }
+                }
+
+                await logVerificationResult({
+                    userId,
+                    site: currentSite,
+                    email: String(email || ''),
+                    jobId: taskId,
+                    status: apiData.status === 'success' ? 'success' : 'failed',
+                    url: apiData.url || '',
+                    errorCode: apiData.error || '',
+                    errorMessage: buildClientStatusMessage(apiData),
+                    stageLabel: apiData.stage_label || '',
+                    rawStatus: apiData.status || '',
+                    pointsDeducted
                 });
-
-                if (deductError) {
-                    console.error('[Verify] Failed to deduct points:', deductError);
-                } else {
-                    console.log(`[Verify] Deducted ${pointsToDeduct} points for user ${userId}`);
-                    apiData.pointsDeducted = pointsToDeduct;
-                }
-
-                // Log verification
-                try {
-                    await supabase.from('verification_logs').insert({
-                        user_id: userId,
-                        verification_id: apiData.verification_id || taskId,
-                        status: 'success',
-                        message: apiData.message || 'Verification completed',
-                        points_deducted: pointsToDeduct,
-                        batch_count: 1,
-                        batch_success: 1,
-                        batch_failed: 0
-                    });
-                } catch (logError) {
-                    console.warn('Failed to log verification:', logError);
-                }
             }
         }
 
-        // If task failed or already completed, log it (only once)
-        if (apiData.status === 'completed' && apiData.success === false && userId) {
-            const alreadyDeducted = req.query.deducted === 'true';
-            if (!alreadyDeducted) {
-                const isAlreadyCompleted = apiData.message && apiData.message.toLowerCase().includes('already completed');
-                try {
-                    await supabase.from('verification_logs').insert({
-                        user_id: userId,
-                        verification_id: apiData.verification_id || taskId,
-                        status: isAlreadyCompleted ? 'already_completed' : 'failed',
-                        message: apiData.message || 'Verification failed',
-                        points_deducted: 0,
-                        batch_count: 1,
-                        batch_success: isAlreadyCompleted ? 1 : 0,
-                        batch_failed: isAlreadyCompleted ? 0 : 1
-                    });
-                } catch (logError) {
-                    console.warn('Failed to log verification:', logError);
-                }
-            }
-        }
-
-        return res.json(apiData);
+        return res.json({
+            success: apiData.status === 'success',
+            job_id: apiData.job_id || taskId,
+            status: apiData.status,
+            stage: apiData.stage,
+            total_stages: apiData.total_stages,
+            stage_label: apiData.stage_label,
+            url: apiData.url || '',
+            error: apiData.error || '',
+            created_at: apiData.created_at,
+            elapsed_seconds: apiData.elapsed_seconds,
+            queue_position: apiData.queue_position,
+            estimated_wait_seconds: apiData.estimated_wait_seconds,
+            message: buildClientStatusMessage(apiData),
+            pointsDeducted
+        });
 
     } catch (error) {
         console.error('[Verify] Status check error:', error);
@@ -260,7 +425,7 @@ app.get('/api/verify/status/:taskId', async (req, res) => {
 });
 
 // =============================================
-// GET /api/quota — Check API credits remaining
+// GET /api/quota — Check current API key balance
 // =============================================
 app.get('/api/quota', async (req, res) => {
     try {
@@ -270,23 +435,28 @@ app.get('/api/quota', async (req, res) => {
             return res.status(500).json({ success: false, message: '验证服务未配置 API Key' });
         }
 
-        const apiRes = await fetch(`${VERIFY_API_BASE}/quota`, {
+        const apiRes = await fetch(`${config.apiBaseUrl}/api/balance`, {
             method: 'GET',
             headers: { 'X-API-Key': config.apiKey }
         });
 
-        const apiData = await apiRes.json();
+        const apiData = await apiRes.json().catch(() => ({}));
 
         if (!apiRes.ok) {
             return res.status(apiRes.status).json({
                 success: false,
-                message: apiData.detail || '查询额度失败'
+                message: getApiErrorMessage(apiData, '查询额度失败'),
+                code: getApiErrorCode(apiData)
             });
         }
 
         return res.json({
             success: true,
-            credits: apiData.credits || 0
+            credits: Number(apiData.balance || 0),
+            balance: Number(apiData.balance || 0),
+            total_used: apiData.total_used || 0,
+            cost_per_job: apiData.cost_per_job || 1,
+            key_name: apiData.name || ''
         });
 
     } catch (error) {
@@ -299,15 +469,9 @@ app.get('/api/quota', async (req, res) => {
 });
 
 // =============================================
-// POST /api/redeem — Redeem card code for API credits
+// GET /api/queue — Inspect upstream queue status
 // =============================================
-app.post('/api/redeem', async (req, res) => {
-    const { code } = req.body;
-
-    if (!code) {
-        return res.status(400).json({ success: false, message: '请提供卡密代码' });
-    }
-
+app.get('/api/queue', async (req, res) => {
     try {
         const config = await getVerifyConfig();
 
@@ -315,139 +479,52 @@ app.post('/api/redeem', async (req, res) => {
             return res.status(500).json({ success: false, message: '验证服务未配置 API Key' });
         }
 
-        console.log(`[Verify] Redeeming code: ${code.substring(0, 4)}****`);
-
-        const apiRes = await fetch(`${VERIFY_API_BASE}/redeem`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-API-Key': config.apiKey
-            },
-            body: JSON.stringify({ code })
+        const apiRes = await fetch(`${config.apiBaseUrl}/api/queue`, {
+            method: 'GET',
+            headers: { 'X-API-Key': config.apiKey }
         });
 
-        const apiData = await apiRes.json();
+        const apiData = await apiRes.json().catch(() => ({}));
 
         if (!apiRes.ok) {
             return res.status(apiRes.status).json({
                 success: false,
-                message: apiData.detail || '兑换失败'
+                message: getApiErrorMessage(apiData, '查询队列失败'),
+                code: getApiErrorCode(apiData)
             });
         }
 
-        console.log(`[Verify] Redeemed successfully:`, apiData);
-
-        return res.json({
-            success: true,
-            credits_total: apiData.credits_total || apiData.credits || 0,
-            message: apiData.message || '兑换成功'
-        });
+        return res.json({ success: true, ...apiData });
 
     } catch (error) {
-        console.error('[Verify] Redeem error:', error);
+        console.error('[Verify] Queue check error:', error);
         return res.status(500).json({
             success: false,
-            message: error.message || '兑换失败'
+            message: error.message || '查询队列失败'
         });
     }
 });
 
 // =============================================
-// POST /api/cancel — Cancel verification with safe final check
+// POST /api/redeem — Legacy endpoint kept for compatibility
+// =============================================
+app.post('/api/redeem', async (req, res) => {
+    return res.status(410).json({
+        success: false,
+        message: '新版 Google One API 不再支持卡密兑换，请在上游后台管理 API Key 余额。',
+        code: 'redeem_not_supported'
+    });
+});
+
+// =============================================
+// POST /api/cancel — Legacy endpoint kept for compatibility
 // =============================================
 app.post('/api/cancel', async (req, res) => {
-    const { verificationId, taskId, userId } = req.body;
-
-    if (!verificationId && !taskId) {
-        return res.status(400).json({ success: false, message: '请提供验证ID或任务ID' });
-    }
-
-    try {
-        const config = await getVerifyConfig();
-
-        if (!config.apiKey) {
-            return res.status(500).json({ success: false, message: '验证服务未配置' });
-        }
-
-        // Step 1: Try to cancel
-        let cancelSuccess = false;
-        try {
-            const cancelRes = await fetch(`${VERIFY_API_BASE}/cancel`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-API-Key': config.apiKey
-                },
-                body: JSON.stringify({ verification_id: verificationId || taskId })
-            });
-            const cancelData = await cancelRes.json();
-            cancelSuccess = cancelRes.ok;
-            console.log(`[Verify] Cancel attempt for ${verificationId || taskId}: ${cancelSuccess}`, cancelData);
-        } catch (cancelErr) {
-            console.warn('[Verify] Cancel request failed:', cancelErr.message);
-        }
-
-        // Step 2: Final status check (safe cancel — don't lose money)
-        if (taskId) {
-            try {
-                const statusRes = await fetch(`${VERIFY_API_BASE}/verify/status/${taskId}`, {
-                    method: 'GET',
-                    headers: { 'X-API-Key': config.apiKey }
-                });
-                const statusData = await statusRes.json();
-
-                // If task already completed successfully, deduct points
-                if (statusData.status === 'completed' && statusData.success === true && userId) {
-                    const pointsToDeduct = config.pricePerVerify;
-
-                    const { error: deductError } = await supabase.rpc('fn_deduct_points', {
-                        p_target_user_id: userId,
-                        p_amount: pointsToDeduct,
-                        p_reason: 'Gemini验证服务(取消时已完成)'
-                    });
-
-                    if (!deductError) {
-                        console.log(`[Verify] Cancel-time deduction: ${pointsToDeduct} pts for ${userId}`);
-                    }
-
-                    return res.json({
-                        success: true,
-                        alreadyCompleted: true,
-                        verificationSuccess: true,
-                        pointsDeducted: pointsToDeduct,
-                        message: statusData.message || '验证已完成',
-                        status: statusData.status
-                    });
-                }
-
-                // Task was cancelled or failed
-                return res.json({
-                    success: true,
-                    alreadyCompleted: false,
-                    verificationSuccess: false,
-                    message: cancelSuccess ? '验证已取消' : (statusData.message || '任务状态: ' + statusData.status),
-                    status: statusData.status
-                });
-
-            } catch (statusErr) {
-                console.warn('[Verify] Final status check failed:', statusErr.message);
-            }
-        }
-
-        return res.json({
-            success: cancelSuccess,
-            alreadyCompleted: false,
-            verificationSuccess: false,
-            message: cancelSuccess ? '验证已取消' : '取消请求已发送'
-        });
-
-    } catch (error) {
-        console.error('[Verify] Cancel error:', error);
-        return res.status(500).json({
-            success: false,
-            message: error.message || '取消失败'
-        });
-    }
+    return res.status(410).json({
+        success: false,
+        message: '新版 Google One API 不支持取消已提交任务，请等待任务结束。',
+        code: 'cancel_not_supported'
+    });
 });
 
 // =============================================

@@ -1356,7 +1356,7 @@
 
                         <!-- Verification Service -->
                         <div class="settings-section verify-service-section">
-                            <h3><i class="fas fa-shield-check"></i> 验证服务</h3>
+                            <h3><i class="fas fa-shield-check"></i> Google One API</h3>
                             <div class="config-item-row">
                                 <div class="config-label">
                                     <span>每次验证价格</span>
@@ -1375,10 +1375,10 @@
                                 style="flex-direction: column; align-items: stretch; gap: 8px;">
                                 <div class="config-label">
                                     <span>验证 API Key</span>
-                                    <span class="config-hint">lacedore.org 验证服务的 sk- 密钥</span>
+                                    <span class="config-hint">iqless.icu 用户 API 的 ak_ 密钥</span>
                                 </div>
                                 <input type="password" id="cfgVerifyApiKey" class="config-input"
-                                    placeholder="sk-XXXX-XXXX-XXXX-XXXX" autocomplete="new-password" readonly
+                                    placeholder="ak_XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX" autocomplete="new-password" readonly
                                     onfocus="this.removeAttribute('readonly');"
                                     onblur="this.setAttribute('readonly', 'readonly');"
                                     style="width: 100%; text-align: left; box-sizing: border-box;"
@@ -1399,8 +1399,8 @@
                             </div>
                             <div class="config-item-row">
                                 <div class="config-label">
-                                    <span>API 额度</span>
-                                    <span class="config-hint">进入页面自动刷新</span>
+                                    <span>API 余额</span>
+                                    <span class="config-hint">当前 API Key 的剩余额度</span>
                                 </div>
                                 <div class="config-value" style="display: flex; align-items: center; gap: 8px;">
                                     <span id="cfgVerifyQuota"
@@ -1415,21 +1415,13 @@
                                     </button>
                                 </div>
                             </div>
-                            <div class="config-item-row" style="flex-wrap: wrap; gap: 8px;">
-                                <div class="config-label" style="flex: 1; min-width: 140px;">
-                                    <span>兑换卡密</span>
-                                    <span class="config-hint">XXXX-XXXX-XXXX 格式卡密充值</span>
+                            <div class="config-item-row" style="align-items: flex-start;">
+                                <div class="config-label">
+                                    <span>充值说明</span>
+                                    <span class="config-hint">新版用户 API 已不再提供卡密兑换接口</span>
                                 </div>
-                                <div class="config-value"
-                                    style="display: flex; align-items: center; gap: 8px; flex: 1; min-width: 200px;">
-                                    <input type="text" id="cfgRedeemCode" class="config-input"
-                                        placeholder="XXXX-XXXX-XXXX"
-                                        style="flex: 1; font-family: monospace; text-align: left; min-width: 0;">
-                                    <button class="btn btn-sm btn-primary"
-                                        onclick="window.redeemVerifyCard && window.redeemVerifyCard()"
-                                        style="white-space: nowrap; flex-shrink: 0;">
-                                        <i class="fas fa-gift"></i> 兑换
-                                    </button>
+                                <div class="config-value" style="max-width: 420px; color: var(--text-secondary); line-height: 1.6;">
+                                    请在上游管理后台为当前 <code>ak_</code> Key 直接充值或更换新的 Key。这里仅用于保存 Key、查看余额和控制前台开关。
                                 </div>
                             </div>
                         </div>

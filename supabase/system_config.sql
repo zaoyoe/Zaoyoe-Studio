@@ -92,6 +92,16 @@ INSERT INTO public.system_config (config_key, config_value, description) VALUES
 }'::jsonb, '系统限制配置')
 ON CONFLICT (config_key) DO NOTHING;
 
+-- Google One 验证服务
+INSERT INTO public.system_config (config_key, config_value, description) VALUES
+('verify_settings', '{
+    "price_per_verify": 10,
+    "enabled": true,
+    "verify_api_key": "",
+    "verify_api_base_url": "https://iqless.icu"
+}'::jsonb, 'Google One 用户 API 配置')
+ON CONFLICT (config_key) DO NOTHING;
+
 -- ============================================
 -- RPC FUNCTIONS
 -- ============================================

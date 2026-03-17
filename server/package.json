@@ -1,7 +1,7 @@
 {
     "name": "zaoyoe-verify-server",
     "version": "2.0.0",
-    "description": "Gemini verification proxy server (lacedore.org API)",
+    "description": "Google One user API proxy server",
     "main": "index.js",
     "scripts": {
         "start": "node index.js",

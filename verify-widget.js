@@ -1,34 +1,67 @@
 /**
- * Batch Verifier Widget v2
- * Per-item polling with bilingual status + safe cancel
+ * Google One Job Widget
+ * Batch submit Google accounts and poll job status
  */
 
 (function () {
     'use strict';
 
-    // =============================================
-    // Configuration
-    // =============================================
     const CONFIG = {
         pricePerVerify: 10,
         enabled: true,
         nodeServerUrl: window.VERIFY_SERVER_URL || 'https://zaoyoe-verify-server-production.up.railway.app',
         containerId: 'verify-widget-container',
         pollInterval: 3000,
-        pollTimeout: 600000  // 10 minutes (review can take a while)
+        pollTimeout: 300000
     };
 
-    // State
     let currentUser = null;
     let userBalance = 0;
-    let apiCredits = -1; // -1 = not loaded, 0+ = loaded
+    let apiCredits = -1;
     let isLoading = false;
-    let batchStats = { success: 0, failed: 0, cancelled: 0, total: 0 };
-    let activeTasks = new Map(); // taskId -> { index, verificationId, timer, aborted }
-    let historyData = []; // Cached history for export
+    let batchStats = { success: 0, failed: 0, total: 0 };
+    let activeTasks = new Map(); // jobId -> { index, email, timer }
+    let historyData = [];
     let authBootstrapResolved = false;
     let hadOptimisticLogin = false;
     let authNullConfirmTimer = null;
+    let walletBalanceListenerBound = false;
+
+    const ERROR_CODE_MAP = {
+        invalid_api_key: { zh: 'API Key 无效或缺失', en: 'Invalid or missing API key' },
+        insufficient_balance: { zh: 'API Key 余额不足', en: 'Insufficient API key balance' },
+        already_queued: { zh: '该邮箱已在队列中', en: 'This email is already queued' },
+        already_processed: { zh: '该邮箱已经成功处理过', en: 'This email was already processed' },
+        service_paused: { zh: 'API 服务已暂停', en: 'API service is paused' },
+        job_not_found: { zh: '任务不存在', en: 'Job not found' },
+        sso_blocked: { zh: '不支持 SSO 域名邮箱', en: 'SSO domain accounts are not supported' },
+        no_devices: { zh: '当前没有可用设备', en: 'No devices available' },
+        missing_fields: { zh: '请填写邮箱、密码和 TOTP 密钥', en: 'Email, password, and TOTP secret are required' },
+        invalid_email: { zh: '邮箱格式不正确', en: 'Invalid email format' },
+        api_key_missing: { zh: '服务端未配置 API Key', en: 'API key is not configured on the server' },
+        redeem_not_supported: { zh: '新版 API 不支持卡密兑换', en: 'Redeem is not supported by the new API' },
+        cancel_not_supported: { zh: '新版 API 不支持取消任务', en: 'Cancel is not supported by the new API' },
+        INTERNAL_ERROR: { zh: '系统内部错误', en: 'Internal error' },
+        DEVICE_UNAVAILABLE: { zh: '设备不可用', en: 'Device unavailable' },
+        DEVICE_PREP_FAILED: { zh: '设备准备失败', en: 'Device preparation failed' },
+        PROXY_ERROR: { zh: '代理连接错误', en: 'Proxy connection error' },
+        PASSKEY_BLOCKED: { zh: '账号要求 Passkey 验证', en: 'Passkey verification is required' },
+        CAPTCHA: { zh: '遇到人机验证', en: 'Captcha encountered' },
+        ACCOUNT_DISABLED: { zh: '账号已被停用或锁定', en: 'Account disabled or locked' },
+        INVALID_EMAIL: { zh: '邮箱地址无效或不存在', en: 'Invalid or unavailable email address' },
+        WRONG_PASSWORD: { zh: '密码错误', en: 'Wrong password' },
+        TOTP_ERROR: { zh: 'TOTP 验证失败', en: 'Invalid TOTP code' },
+        NO_AUTHENTICATOR: { zh: '账号未启用 TOTP 验证器', en: 'No authenticator configured' },
+        SIGNIN_PAGE_FAILED: { zh: '登录页面加载失败', en: 'Failed to load sign-in page' },
+        TWOFACTOR_PAGE_ERROR: { zh: '两步验证页面异常', en: 'Two-factor page error' },
+        GOOGLE_LOGIN_ERROR: { zh: 'Google 登录过程异常', en: 'Google login error' },
+        GOOGLE_ONE_UNAVAILABLE: { zh: '该账号不可使用 Google One 试用', en: 'Google One trial unavailable' },
+        URL_CAPTURE_FAILED: { zh: '链接获取失败', en: 'Failed to capture the link' },
+        SIGNIN_FAILED: { zh: '登录失败', en: 'Sign-in failed' },
+        ACCOUNT_NOT_DETECTED: { zh: '登录后未检测到账号', en: 'Account was not detected after login' },
+        BROWSER_LOGIN_FAILED: { zh: '浏览器登录失败', en: 'Browser login failed' },
+        UNKNOWN_ERROR: { zh: '未知错误', en: 'Unknown error' }
+    };
 
     function getUserId(user) {
         return user?.id || user?.user_id || user?.objectId || null;
@@ -57,7 +90,7 @@
                 user_id: parsed.user_id || userId,
                 objectId: parsed.objectId || userId
             };
-        } catch (e) {
+        } catch (_) {
             return null;
         }
     }
@@ -104,283 +137,208 @@
         localStorage.setItem('cached_user_profile', JSON.stringify(merged));
     }
 
-    // =============================================
-    // Bilingual Status Messages (hardcoded)
-    // =============================================
-    const STATUS_MAP = {
-        // API status → { zh, en, icon, cssClass }
-        'Verification completed successfully': {
-            zh: '验证成功', en: 'Verified successfully', icon: '✅', css: 'success'
-        },
-        'Verification completed successfully!': {
-            zh: '验证成功', en: 'Verified successfully', icon: '✅', css: 'success'
-        },
-        'Waiting for review': {
-            zh: '等待人工审核中...', en: 'Under manual review...', icon: '⏳', css: 'processing'
-        },
-        'Waiting for review...': {
-            zh: '等待人工审核中...', en: 'Under manual review...', icon: '⏳', css: 'processing'
-        },
-        'Waiting in queue': {
-            zh: '排队等待中...', en: 'Waiting in queue...', icon: '⏳', css: 'processing'
-        },
-        'Failed to submit personal information': {
-            zh: '提交个人信息失败', en: 'Failed to submit personal info', icon: '❌', css: 'error'
-        },
-        'Failed to check verification status': {
-            zh: '查询验证状态失败', en: 'Status check failed', icon: '❌', css: 'error'
-        },
-        'Failed to select program': {
-            zh: '选择验证项目失败', en: 'Failed to select program', icon: '❌', css: 'error'
-        },
-        'Failed to upload document': {
-            zh: '上传文档失败', en: 'Failed to upload document', icon: '❌', css: 'error'
-        },
-        'Verification failed': {
-            zh: '验证失败', en: 'Verification failed', icon: '❌', css: 'error'
-        },
-        'Verification rejected': {
-            zh: '验证被拒绝', en: 'Verification rejected', icon: '❌', css: 'error'
-        },
-        'Already verified': {
-            zh: '已验证过', en: 'Already verified', icon: 'ℹ️', css: 'success'
-        },
-        'already completed': {
-            zh: '验证已完成', en: 'Already completed', icon: '✅', css: 'success'
-        },
-        'Invalid verification link': {
-            zh: '无效的验证链接', en: 'Invalid verification link', icon: '❌', css: 'error'
-        },
-        'Verification expired': {
-            zh: '验证已过期', en: 'Verification expired', icon: '❌', css: 'error'
-        },
-        'Cancelled': {
-            zh: '已取消', en: 'Cancelled', icon: '⚪', css: 'cancelled'
-        },
-        'copy sheerid link with right click': {
-            zh: '请用右键复制链接，不要在浏览器打开', en: 'Please copy link with right click, do not open in browser', icon: '❌', css: 'error'
-        },
-        'Unexpected verification step': {
-            zh: '验证步骤异常（链接已被使用，请重新获取）', en: 'Unexpected step (link already used, get a new one)', icon: '❌', css: 'error'
-        },
-        'job may have expired or failed': {
-            zh: '验证任务已过期或失败，请获取新链接', en: 'Job expired or failed, please get a new link', icon: '❌', css: 'error'
-        },
-        'expired or failed': {
-            zh: '已过期或失败，请获取新链接', en: 'Expired or failed, get a new link', icon: '❌', css: 'error'
-        },
-        '查询积分失败': {
-            zh: '查询积分失败，请稍后重试', en: 'Failed to query points', icon: '❌', css: 'error'
-        },
-        '积分不足': {
-            zh: '积分不足，请先充值', en: 'Insufficient points, please recharge', icon: '❌', css: 'error'
-        },
-        '验证服务未配置': {
-            zh: '验证服务未配置，请联系管理员', en: 'Verification service not configured', icon: '❌', css: 'error'
-        },
-        '验证服务暂时不可用': {
-            zh: '验证服务暂时不可用，请稍后重试', en: 'Service temporarily unavailable', icon: '❌', css: 'error'
-        },
-        '验证请求失败': {
-            zh: '验证请求失败', en: 'Verification request failed', icon: '❌', css: 'error'
-        },
-        '查询状态失败': {
-            zh: '查询状态失败', en: 'Status query failed', icon: '❌', css: 'error'
-        },
-        'get a new': {
-            zh: '请获取新的验证链接', en: 'Please get a new verification link', icon: '❌', css: 'error'
-        }
-    };
-
-    // Status by task status field
-    const TASK_STATUS_MAP = {
-        'pending': { zh: '排队等待中...', en: 'Queuing...', icon: '⏳' },
-        'queued': { zh: '排队等待中...', en: 'Queuing...', icon: '⏳' },
-        'processing': { zh: '正在验证...', en: 'Verifying...', icon: '🔄' },
-        'running': { zh: '正在验证...', en: 'Verifying...', icon: '🔄' },
-        'completed': { zh: '已完成', en: 'Completed', icon: '✅' },
-        'failed': { zh: '失败', en: 'Failed', icon: '❌' },
-        'error': { zh: '出错', en: 'Error', icon: '❌' },
-        'cancelled': { zh: '已取消', en: 'Cancelled', icon: '⚪' }
-    };
-
-    // Get current language helper
     function getLang() {
         return window.i18n?.getCurrentLanguage?.() || 'zh';
     }
 
-    /**
-     * Translate API message to localized string
-     */
-    function translateStatus(message, status) {
-        const lang = getLang();
-        // Try exact message match first
-        if (message) {
-            for (const [key, val] of Object.entries(STATUS_MAP)) {
-                if (message.toLowerCase().includes(key.toLowerCase())) {
-                    let text = val[lang] || val.zh;
-                    // Extract queue position if present (e.g., "Waiting in queue, position: 4")
-                    if (key === 'Waiting in queue') {
-                        const match = message.match(/position:\s*(\d+)/i);
-                        if (match && match[1]) {
-                            text = lang === 'zh' ? `排队等待中 (前面还有 ${match[1]} 人)...` : `Waiting in queue (${match[1]} ahead)...`;
-                        }
-                    }
-                    return text; // Removed emoji icon concatenation
-                }
-            }
-        }
-        // Try status field match — but check for error keywords in message first
-        if (status && TASK_STATUS_MAP[status]) {
-            const s = TASK_STATUS_MAP[status];
-            if (message && message !== status) {
-                // Don't use success icons for messages that contain error keywords
-                const lower = message.toLowerCase();
-                const errorKeywords = ['failed', 'error', 'rejected', 'expired', 'invalid', 'unexpected', 'upload'];
-                const isError = errorKeywords.some(k => lower.includes(k));
-                // For Chinese, show a generic error message; for English, show original
-                if (isError && lang === 'zh') {
-                    return `验证失败: ${message}`;
-                }
-                return message;
-            }
-            return s[lang] || s.zh;
-        }
-        // Fallback: show original message without icon
-        if (message) return message;
-        return lang === 'zh' ? '未知状态' : 'Unknown status';
-    }
-
-    /**
-     * Get CSS class from message/status
-     */
-    function getStatusCss(message, status) {
-        if (message) {
-            for (const [key, val] of Object.entries(STATUS_MAP)) {
-                if (message.toLowerCase().includes(key.toLowerCase())) {
-                    return val.css;
-                }
-            }
-            // Unrecognized message with a "completed" status — treat as error
-            // (prevents unknown server messages from showing green)
-            if (status === 'completed' || status === 'success') return 'error';
-        }
-        if (status === 'completed' || status === 'success') return 'success';
-        if (status === 'failed' || status === 'error') return 'error';
-        if (status === 'cancelled') return 'cancelled';
-        return 'processing';
-    }
-
-    /**
-     * Check if status is terminal (no more polling needed)
-     */
-    function isTerminalStatus(message, status) {
-        const terminalMessages = [
-            'completed successfully', 'failed to submit', 'failed to check',
-            'failed to select', 'verification failed', 'verification rejected',
-            'already verified', 'already completed', 'invalid verification', 'verification expired',
-            'copy sheerid link with right click', 'do not open in browser'
-        ];
-        const terminalStatuses = ['completed', 'failed', 'error', 'success', 'cancelled'];
-
-        if (message) {
-            const lower = message.toLowerCase();
-            if (lower.includes('queue')) return false; // Force non-terminal if in queue
-            if (terminalMessages.some(t => lower.includes(t))) return true;
-        }
-        if (status && terminalStatuses.includes(status)) return true;
-        return false;
-    }
-
-    /**
-     * Check if the result is a success
-     */
-    function isSuccessResult(message, status, successFlag) {
-        // Check message first — if it matches a known error, never treat as success
-        if (message) {
-            const lower = message.toLowerCase();
-            // Known error patterns take priority over successFlag/status
-            const errorPatterns = [
-                'failed', 'rejected', 'expired', 'invalid', 'unexpected',
-                'copy sheerid link', 'do not open in browser'
-            ];
-            if (errorPatterns.some(p => lower.includes(p))) return false;
-            // Known success patterns
-            if (lower.includes('completed successfully') || lower.includes('already verified') || lower.includes('already completed')) return true;
-        }
-        if (successFlag === true) return true;
-        if (status === 'success') return true;
-        return false;
-    }
-
-    // i18n helper
     function t(key, fallback) {
         if (window.i18n && typeof window.i18n.t === 'function') {
-            return window.i18n.t(key);
+            const translated = window.i18n.t(key);
+            if (translated && translated !== key) {
+                return translated;
+            }
         }
         return fallback || key;
     }
 
-    // =============================================
-    // Initialize
-    // =============================================
-    async function init() {
-        const container = document.getElementById(CONFIG.containerId);
-        if (!container) return;
+    function escapeHtml(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
 
-        await loadConfig();
+    function formatBalanceValue(value) {
+        const num = Number(value);
+        if (!Number.isFinite(num)) return '--';
+        return Number.isInteger(num) ? String(num) : num.toFixed(1);
+    }
 
-        let isLoggedIn = false;
-        const cachedUser = readCachedProfile();
-        if (cachedUser) {
-            currentUser = cachedUser;
-            isLoggedIn = true;
+    function formatStageLabel(stageLabel) {
+        return String(stageLabel || '').replace(/_/g, ' ').trim();
+    }
+
+    function formatWaitSeconds(seconds) {
+        const total = Math.max(0, Math.round(Number(seconds) || 0));
+        const lang = getLang();
+
+        if (total < 60) {
+            return lang === 'zh' ? `${total} 秒` : `${total}s`;
         }
-        hadOptimisticLogin = isLoggedIn;
 
-        if (!window.i18n || typeof window.i18n.t !== 'function') {
-            await new Promise(resolve => {
-                let count = 0;
-                const check = setInterval(() => {
-                    count++;
-                    if ((window.i18n && typeof window.i18n.t === 'function') || count > 20) {
-                        clearInterval(check);
-                        resolve();
-                    }
-                }, 100);
+        const minutes = Math.floor(total / 60);
+        const remain = total % 60;
+        if (lang === 'zh') {
+            return remain > 0 ? `${minutes} 分 ${remain} 秒` : `${minutes} 分钟`;
+        }
+        return remain > 0 ? `${minutes}m ${remain}s` : `${minutes}m`;
+    }
+
+    function getErrorLabel(code, fallback) {
+        const lang = getLang();
+        const raw = String(code || '').trim();
+        if (raw && ERROR_CODE_MAP[raw]) {
+            return ERROR_CODE_MAP[raw][lang] || ERROR_CODE_MAP[raw].zh;
+        }
+
+        const normalized = raw.toUpperCase();
+        if (normalized && ERROR_CODE_MAP[normalized]) {
+            return ERROR_CODE_MAP[normalized][lang] || ERROR_CODE_MAP[normalized].zh;
+        }
+
+        return fallback || raw || (lang === 'zh' ? '任务失败' : 'Job failed');
+    }
+
+    function serializeHistoryMessage(payload) {
+        try {
+            return JSON.stringify({
+                kind: 'google_one_job',
+                ...payload
             });
-        }
-
-        render(container, isLoggedIn);
-        setupAuthListener();
-        loadApiQuota();
-
-        // If verify service is disabled, apply maintenance state
-        if (CONFIG.enabled === false) {
-            applyMaintenanceState();
-        }
-
-        window.addEventListener('languageChanged', () => {
-            render(container, !!currentUser);
-            if (CONFIG.enabled === false) applyMaintenanceState();
-        });
-    }
-
-    function applyMaintenanceState() {
-        const submitBtn = document.getElementById('verifySubmitBtn');
-
-        if (submitBtn) {
-            submitBtn.disabled = false; // keep clickable so user sees the popup
-            submitBtn.style.background = 'rgba(239, 68, 68, 0.3)';
-            submitBtn.style.borderColor = 'rgba(239, 68, 68, 0.5)';
-            submitBtn.style.cursor = 'pointer';
-            submitBtn.innerHTML = `<i class="fas fa-tools"></i> 验证服务维护中`;
+        } catch (_) {
+            return payload?.error_message || payload?.url || '';
         }
     }
 
-    // =============================================
-    // Load Config
-    // =============================================
+    function parseHistoryMessage(message) {
+        if (typeof message !== 'string' || !message.trim().startsWith('{')) {
+            return null;
+        }
+
+        try {
+            const parsed = JSON.parse(message);
+            if (parsed?.kind === 'google_one_job') {
+                return parsed;
+            }
+        } catch (_) {
+            return null;
+        }
+
+        return null;
+    }
+
+    function getHistoryEmail(item) {
+        const payload = parseHistoryMessage(item?.message);
+        return payload?.email || item?.verification_id || '--';
+    }
+
+    function getHistoryDetail(item) {
+        const payload = parseHistoryMessage(item?.message);
+
+        if (payload?.url) {
+            return { type: 'url', text: payload.url, href: payload.url };
+        }
+
+        const errorText = payload?.error_message || getErrorLabel(payload?.error_code, '');
+        if (errorText) {
+            return { type: 'text', text: errorText };
+        }
+
+        const rawMessage = String(item?.message || '').trim();
+        return { type: 'text', text: rawMessage || '--' };
+    }
+
+    function getHistoryDetailText(item) {
+        return getHistoryDetail(item).text || '--';
+    }
+
+    function getResultDisplay(data) {
+        const lang = getLang();
+        const status = String(data?.status || '').toLowerCase();
+        const stageLabel = formatStageLabel(data?.stage_label);
+
+        if (status === 'queued') {
+            const segments = [lang === 'zh' ? '排队中' : 'Queued'];
+            const queuePosition = Number(data?.queue_position);
+            const waitSeconds = Number(data?.estimated_wait_seconds);
+
+            if (Number.isFinite(queuePosition) && queuePosition >= 0) {
+                segments.push(lang === 'zh' ? `队列位置 ${queuePosition}` : `Position ${queuePosition}`);
+            }
+
+            if (Number.isFinite(waitSeconds) && waitSeconds > 0) {
+                segments.push(lang === 'zh' ? `预计 ${formatWaitSeconds(waitSeconds)}` : `~${formatWaitSeconds(waitSeconds)}`);
+            }
+
+            return {
+                status: 'processing',
+                html: escapeHtml(segments.join(' · ')),
+                terminal: false,
+                success: false
+            };
+        }
+
+        if (status === 'running') {
+            const segments = [lang === 'zh' ? '执行中' : 'Running'];
+            if (stageLabel) {
+                segments.push(stageLabel);
+            }
+
+            const elapsed = Number(data?.elapsed_seconds);
+            if (Number.isFinite(elapsed) && elapsed > 0) {
+                segments.push(lang === 'zh'
+                    ? `已耗时 ${Math.round(elapsed)} 秒`
+                    : `${Math.round(elapsed)}s elapsed`);
+            }
+
+            return {
+                status: 'processing',
+                html: escapeHtml(segments.join(' · ')),
+                terminal: false,
+                success: false
+            };
+        }
+
+        if (status === 'success') {
+            const successText = lang === 'zh' ? '链接获取成功' : 'Link ready';
+            const safeUrl = String(data?.url || '').trim();
+
+            return {
+                status: 'success',
+                html: safeUrl
+                    ? `${escapeHtml(successText)}<div class="verify-result-link-row"><a class="verify-result-link" href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(safeUrl)}</a></div>`
+                    : escapeHtml(successText),
+                terminal: true,
+                success: true
+            };
+        }
+
+        if (status === 'failed') {
+            const errorText = getErrorLabel(data?.error, data?.message || (lang === 'zh' ? '任务失败' : 'Job failed'));
+            let html = escapeHtml(errorText);
+
+            if (stageLabel) {
+                html += `<div class="verify-result-subtle">${escapeHtml((lang === 'zh' ? '失败阶段: ' : 'Stage: ') + stageLabel)}</div>`;
+            }
+
+            return {
+                status: 'error',
+                html,
+                terminal: true,
+                success: false
+            };
+        }
+
+        return {
+            status: 'processing',
+            html: escapeHtml(data?.message || (lang === 'zh' ? '处理中' : 'Processing')),
+            terminal: false,
+            success: false
+        };
+    }
+
     async function loadConfig() {
         try {
             if (!window.supabaseClient) return;
@@ -389,31 +347,26 @@
                 .select('config_value')
                 .eq('config_key', 'verify_settings')
                 .single();
+
             if (!error && data?.config_value) {
-                CONFIG.pricePerVerify = data.config_value.price_per_verify || 10;
-                // Check if verify service is enabled (default true)
-                if (data.config_value.enabled === false) {
-                    CONFIG.enabled = false;
-                } else {
-                    CONFIG.enabled = true;
-                }
+                CONFIG.pricePerVerify = Number(data.config_value.price_per_verify) || 10;
+                CONFIG.enabled = data.config_value.enabled !== false;
             }
-        } catch (e) { /* ignored */ }
+        } catch (_) {
+            // ignore
+        }
     }
 
-    // =============================================
-    // Load API Quota
-    // =============================================
     async function loadApiQuota() {
         try {
             const res = await fetch(`${CONFIG.nodeServerUrl}/api/quota`);
             const data = await res.json();
             if (data.success) {
-                apiCredits = data.credits || 0;
+                apiCredits = Number(data.balance ?? data.credits ?? 0);
             } else {
                 apiCredits = -1;
             }
-        } catch (e) {
+        } catch (_) {
             apiCredits = -1;
         }
         updateQuotaDisplay();
@@ -429,7 +382,7 @@
                 quotaEl.innerHTML = '<i class="fas fa-question-circle"></i> --';
             } else {
                 const color = apiCredits > 5 ? '#27ae60' : apiCredits > 0 ? '#f39c12' : '#e74c3c';
-                quotaEl.innerHTML = `<i class="fas fa-gem" style="color: ${color}"></i> <span style="color: ${color}">${apiCredits}</span>`;
+                quotaEl.innerHTML = `<i class="fas fa-gem" style="color: ${color}"></i> <span style="color: ${color}">${escapeHtml(formatBalanceValue(apiCredits))}</span>`;
             }
         }
 
@@ -444,9 +397,6 @@
         }
     }
 
-    // =============================================
-    // Render
-    // =============================================
     function render(container, isLoggedIn = false) {
         const loginDisplay = isLoggedIn ? 'none' : 'block';
         const formDisplay = isLoggedIn ? 'block' : 'none';
@@ -461,11 +411,11 @@
                         </svg>
                     </div>
                     <div class="verify-widget-title">
-                        <h3>${t('verify.title', 'Gemini 验证')}</h3>
-                        <p>${t('verify.subtitle', '支持批量')}</p>
+                        <h3>${t('verify.title', 'Google One')}</h3>
+                        <p>${t('verify.subtitle', '自动获取试用链接')}</p>
                     </div>
                     <div class="verify-header-right">
-                        <div class="verify-api-quota" id="verifyApiQuota" title="可验证次数">
+                        <div class="verify-api-quota" id="verifyApiQuota" title="API 剩余额度">
                             <i class="fas fa-gem"></i> --
                         </div>
                         <div class="verify-balance" id="verifyBalance" style="display: ${balanceDisplay}; cursor: pointer;" onclick="WalletModal.open()" title="我的钱包">
@@ -477,7 +427,7 @@
 
                 <div class="verify-quota-warning" id="verifyQuotaWarning" style="display: none;">
                     <i class="fas fa-exclamation-triangle"></i>
-                    API 额度不足，无法提交验证。请联系管理员充值。
+                    ${t('verify.quotaExhausted', 'API 余额不足，暂时无法提交任务。')}
                 </div>
 
                 <div id="verifyContent">
@@ -491,16 +441,17 @@
 
                     <div id="verifyForm" style="display: ${formDisplay};">
                         <div class="verify-input-area">
-                            <textarea 
-                                class="verify-textarea" 
+                            <textarea
+                                class="verify-textarea"
                                 id="verifyIdInput"
-                                placeholder="${t('verify.placeholder', '输入 SheerID 验证链接，每行一个')}"
-                                rows="5"
+                                placeholder="${t('verify.placeholder', '每行一个账号，推荐格式:\\n邮箱----密码----TOTP密钥----优先级')}"
+                                rows="6"
                             ></textarea>
+                            <div class="verify-format-hint">${t('verify.formatHint', '推荐使用 email----password----totp_secret----priority，每行一个；也支持 Tab、英文逗号或竖线分隔。')}</div>
                             <div class="verify-batch-info">
                                 <div class="verify-batch-count">
                                     <i class="fas fa-list-ol"></i>
-                                    ${t('verify.pendingCount', '待验证')}: <span class="count" id="verifyLinkCount">0</span> ${t('verify.items', '个')}
+                                    ${t('verify.pendingCount', '待提交')}: <span class="count" id="verifyLinkCount">0</span> ${t('verify.items', '个')}
                                 </div>
                                 <div class="verify-price-info">
                                     <i class="fas fa-coins"></i>
@@ -509,12 +460,8 @@
                                 </div>
                             </div>
                             <button class="verify-submit-btn" id="verifySubmitBtn" onclick="VerifyWidget.submit()">
-                                <i class="fas fa-check-circle"></i>
-                                ${t('verify.startVerify', '开始验证')}
-                            </button>
-                            <button class="verify-cancel-btn" id="verifyCancelBtn" onclick="VerifyWidget.cancel()">
-                                <i class="fas fa-times-circle"></i>
-                                ${t('verify.cancelVerify', '取消验证')}
+                                <i class="fas fa-paper-plane"></i>
+                                ${t('verify.startVerify', '开始提交')}
                             </button>
                         </div>
                     </div>
@@ -524,7 +471,7 @@
                     <div class="verify-batch-results-header">
                         <div class="verify-batch-results-title">
                             <i class="fas fa-list-check"></i>
-                            ${t('verify.results', '验证结果')}
+                            ${t('verify.results', '任务结果')}
                         </div>
                         <div class="verify-batch-progress" id="verifyBatchProgress">
                             ${t('verify.progress', '进度')}: <span class="current">0</span>/<span class="total">0</span>
@@ -539,10 +486,6 @@
                         <div class="verify-batch-stat error">
                             <i class="fas fa-times-circle"></i>
                             ${t('verify.failed', '失败')}: <span id="failedCount">0</span>
-                        </div>
-                        <div class="verify-batch-stat cancelled">
-                            <i class="fas fa-ban"></i>
-                            ${t('verify.cancelled', '取消')}: <span id="cancelledCount">0</span>
                         </div>
                         <div class="verify-batch-stat total">
                             <i class="fas fa-list"></i>
@@ -564,10 +507,10 @@
                 <div class="verify-history-header">
                     <div class="verify-history-title">
                         <i class="fas fa-clock-rotate-left"></i>
-                        ${t('verify.history', '验证历史')}
+                        ${t('verify.history', '任务历史')}
                     </div>
                     <div class="verify-history-actions">
-                        <button class="verify-history-export" onclick="VerifyWidget.exportHistory()" title="导出 Excel">
+                        <button class="verify-history-export" onclick="VerifyWidget.exportHistory()" title="导出 CSV">
                             <i class="fas fa-file-export"></i>
                         </button>
                         <button class="verify-history-refresh" onclick="VerifyWidget.loadHistory()" title="刷新">
@@ -577,7 +520,7 @@
                 </div>
                 <div class="verify-history-list" id="verifyHistoryList">
                     <div class="verify-history-loading">
-                        <i class="fas fa-spinner fa-spin"></i> 加载中...
+                        <i class="fas fa-spinner fa-spin"></i> ${t('verify.loading', '加载中...')}
                     </div>
                 </div>
             </div>
@@ -588,21 +531,19 @@
         updateQuotaDisplay();
         loadHistory();
 
-        // Listen for wallet balance changes (e.g. after recharge)
-        window.addEventListener('walletBalanceUpdated', (e) => {
-            const newBalance = e.detail?.totalBalance;
-            if (typeof newBalance === 'number') {
-                userBalance = newBalance;
-                const el = document.getElementById('verifyBalanceValue');
-                if (el) el.textContent = newBalance;
-                console.log('[VerifyWidget] Balance updated from wallet:', newBalance);
-            }
-        });
+        if (!walletBalanceListenerBound) {
+            window.addEventListener('walletBalanceUpdated', (e) => {
+                const newBalance = e.detail?.totalBalance;
+                if (typeof newBalance === 'number') {
+                    userBalance = newBalance;
+                    const el = document.getElementById('verifyBalanceValue');
+                    if (el) el.textContent = newBalance;
+                }
+            });
+            walletBalanceListenerBound = true;
+        }
     }
 
-    // =============================================
-    // Auth
-    // =============================================
     function setupAuthListener() {
         if (!window.supabaseClient) return;
 
@@ -613,9 +554,7 @@
                 return;
             }
 
-            // Keep optimistic logged-in UI until session restore is confirmed.
             if (!authBootstrapResolved && hadOptimisticLogin) {
-                console.log(`[VerifyWidget] Skip transient null auth from ${source}`);
                 return;
             }
 
@@ -644,7 +583,6 @@
                     return;
                 }
 
-                // One delayed confirmation before downgrading optimistic login state.
                 authNullConfirmTimer = setTimeout(async () => {
                     if (authBootstrapResolved) return;
                     try {
@@ -676,6 +614,7 @@
     async function updateAuthState(user, options = {}) {
         const { clearCache = false } = options;
         currentUser = getUserId(user) ? user : null;
+
         const loginPrompt = document.getElementById('verifyLoginPrompt');
         const form = document.getElementById('verifyForm');
         const balanceEl = document.getElementById('verifyBalance');
@@ -690,14 +629,13 @@
             if (loginPrompt) loginPrompt.style.display = 'block';
             if (form) form.style.display = 'none';
             if (balanceEl) balanceEl.style.display = 'none';
-            if (clearCache) {
-                localStorage.removeItem('cached_user_profile');
-            }
+            if (clearCache) localStorage.removeItem('cached_user_profile');
         }
     }
 
     async function loadUserBalance() {
         if (!currentUser || !window.supabaseClient) return;
+
         try {
             let balance = 0;
             if (window.PointsService && typeof window.PointsService.getBalance === 'function') {
@@ -705,111 +643,172 @@
                 balance = result.total_balance || 0;
             } else {
                 const { data, error } = await window.supabaseClient
-                    .from('points_balance').select('total_balance')
+                    .from('points_balance')
+                    .select('total_balance')
                     .eq('user_id', currentUser.id)
                     .eq('site', window.SiteConfig?.site || 'cn')
                     .maybeSingle();
-                if (!error && data) balance = data.total_balance || 0;
+
+                if (!error && data) {
+                    balance = data.total_balance || 0;
+                }
             }
+
             userBalance = balance;
             const el = document.getElementById('verifyBalanceValue');
             if (el) el.textContent = userBalance;
-        } catch (e) { /* ignored */ }
+        } catch (_) {
+            // ignore
+        }
     }
 
-    // =============================================
-    // Input Helpers
-    // =============================================
+    function splitAccountParts(line) {
+        if (line.includes('----')) {
+            return line.split(/\s*----\s*/);
+        }
+        if (line.includes('\t')) {
+            return line.split(/\t+/);
+        }
+        if (line.includes('|')) {
+            return line.split(/\s*\|\s*/);
+        }
+        return line.split(/\s*[，,]\s*/);
+    }
+
+    function parseAccountLine(line, index) {
+        const raw = String(line || '').trim();
+        if (!raw) return null;
+
+        const parts = splitAccountParts(raw).map((part) => part.trim());
+        if (parts.length < 3) {
+            return {
+                valid: false,
+                index,
+                raw,
+                reason: t('verify.invalidAccountLine', '格式错误，请使用 邮箱----密码----TOTP密钥----优先级')
+            };
+        }
+
+        const [email, password, totpSecret, priorityRaw = '0'] = parts;
+
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            return {
+                valid: false,
+                index,
+                raw,
+                reason: t('verify.invalidEmail', '邮箱格式不正确')
+            };
+        }
+
+        if (!password || !totpSecret) {
+            return {
+                valid: false,
+                index,
+                raw,
+                reason: t('verify.invalidAccountLine', '格式错误，请使用 邮箱----密码----TOTP密钥----优先级')
+            };
+        }
+
+        const priority = priorityRaw === '' ? 0 : Number(priorityRaw);
+        if (!Number.isInteger(priority) || (priority !== 0 && priority !== 1)) {
+            return {
+                valid: false,
+                index,
+                raw,
+                reason: t('verify.invalidPriority', '优先级只能是 0 或 1')
+            };
+        }
+
+        return {
+            valid: true,
+            entry: {
+                index,
+                raw,
+                email: email.toLowerCase(),
+                password,
+                totpSecret,
+                priority
+            }
+        };
+    }
+
+    function parseAccountEntries(text) {
+        const entries = [];
+        const invalidLines = [];
+
+        String(text || '').split('\n').forEach((line, index) => {
+            const parsed = parseAccountLine(line, index);
+            if (!parsed) return;
+            if (parsed.valid) {
+                entries.push(parsed.entry);
+            } else {
+                invalidLines.push(parsed);
+            }
+        });
+
+        return { entries, invalidLines };
+    }
+
     function setupInputListener() {
         const input = document.getElementById('verifyIdInput');
-        if (input) input.addEventListener('input', updateLinkCount);
+        if (input) input.addEventListener('input', updateEntryCount);
     }
 
-    function updateLinkCount() {
+    function updateEntryCount() {
         const input = document.getElementById('verifyIdInput');
         const countEl = document.getElementById('verifyLinkCount');
         const costEl = document.getElementById('verifyTotalCost');
         if (!input || !countEl) return;
-        const links = parseLinks(input.value);
-        countEl.textContent = links.length;
-        if (costEl) costEl.textContent = links.length * CONFIG.pricePerVerify;
-    }
 
-    function parseLinks(text) {
-        if (!text.trim()) return [];
-        return text.split('\n').map(l => l.trim()).filter(l =>
-            l.includes('sheerid.com') || l.includes('verificationId') || (l.length > 20 && !l.includes(' '))
-        );
-    }
-
-    function extractVerificationId(input) {
-        input = input.trim();
-        if (input.includes('sheerid.com') || input.includes('services.sheerid')) return input;
-        if (!input.includes('/') && !input.includes('?')) return input;
-        try {
-            if (input.match(/\/verify\/([a-zA-Z0-9]+)/i)) return input;
-            const m = input.match(/verificationId[=\/]([a-zA-Z0-9_-]+)/i);
-            if (m) return m[1];
-            const vm = input.match(/vid_([a-zA-Z0-9]+)/i);
-            if (vm) return 'vid_' + vm[1];
-            return null;
-        } catch (e) { return null; }
+        const { entries } = parseAccountEntries(input.value);
+        countEl.textContent = entries.length;
+        if (costEl) costEl.textContent = entries.length * CONFIG.pricePerVerify;
     }
 
     function updatePriceDisplay() {
-        document.querySelectorAll('.per-price').forEach(el => {
+        document.querySelectorAll('.per-price').forEach((el) => {
             el.textContent = `（${CONFIG.pricePerVerify}${t('verify.perPrice', '积分/次')}）`;
         });
-        updateLinkCount();
+        updateEntryCount();
     }
 
-    // =============================================
-    // Log to History (client-side fallback)
-    // =============================================
-    async function logToHistory(verificationId, status, message, pointsDeducted = 0) {
-        if (!currentUser || !window.supabaseClient) {
-            console.warn('[VerifyHistory] Cannot log: no user or supabaseClient', { currentUser: !!currentUser, supabase: !!window.supabaseClient });
-            return;
-        }
+    async function logToHistory(email, status, payload = {}, pointsDeducted = 0) {
+        if (!currentUser || !window.supabaseClient) return;
+
         try {
-            console.log('[VerifyHistory] Inserting log:', { user_id: currentUser.id, verificationId, status });
-            const { data, error } = await window.supabaseClient.from('verification_logs').insert({
+            await window.supabaseClient.from('verification_logs').insert({
                 user_id: currentUser.id,
-                verification_id: verificationId || '--',
-                status: status,
-                message: message,
+                verification_id: email || payload.job_id || '--',
+                status,
+                message: serializeHistoryMessage({
+                    email: email || '',
+                    ...payload
+                }),
                 points_deducted: pointsDeducted,
                 batch_count: 1,
                 batch_success: status === 'success' ? 1 : 0,
                 batch_failed: status === 'success' ? 0 : 1,
                 site: window.SiteConfig?.site || 'cn'
             });
-            if (error) {
-                console.error('[VerifyHistory] INSERT failed:', error.message, error.code, error.details, error.hint);
-            } else {
-                console.log('[VerifyHistory] INSERT success');
-            }
-        } catch (e) {
-            console.error('[VerifyHistory] INSERT exception:', e.message);
+        } catch (error) {
+            console.warn('[VerifyHistory] Failed to write client-side history:', error.message);
         }
     }
 
-    // =============================================
-    // Submit: Per-item POST /verify + Parallel Polling
-    // =============================================
     async function submit() {
         if (isLoading) return;
 
-        // Block if service is under maintenance
         if (CONFIG.enabled === false) {
-            showSingleResult('error', '🔧 验证服务维护中',
-                '验证服务暂时关闭维护中，请稍后再试。如有疑问请联系管理员。');
+            showSingleResult(
+                'error',
+                t('verify.serviceUnavailable', '服务维护中'),
+                t('verify.serviceUnavailable', '服务维护中，请稍后再试')
+            );
             return;
         }
 
         const input = document.getElementById('verifyIdInput');
         const submitBtn = document.getElementById('verifySubmitBtn');
-        const cancelBtn = document.getElementById('verifyCancelBtn');
         const batchPanel = document.getElementById('verifyBatchResults');
         const singleResult = document.getElementById('verifyResult');
 
@@ -817,398 +816,323 @@
 
         const inputValue = input.value.trim();
         if (!inputValue) {
-            showSingleResult('error', '请输入内容 / Please enter content',
-                '请输入 SheerID 验证链接 / Please enter SheerID verification links');
+            showSingleResult(
+                'error',
+                t('verify.enterContent', '请输入账号信息'),
+                t('verify.invalidAccountLine', '格式错误，请使用 邮箱----密码----TOTP密钥----优先级')
+            );
             return;
         }
 
-        const links = parseLinks(inputValue);
-        if (links.length === 0) {
-            showSingleResult('error', '格式错误 / Invalid format',
-                '无法识别有效的验证链接 / No valid verification links found');
+        const { entries, invalidLines } = parseAccountEntries(inputValue);
+        const totalRows = entries.length + invalidLines.length;
+
+        if (totalRows === 0) {
+            showSingleResult(
+                'error',
+                t('verify.enterContent', '请输入账号信息'),
+                t('verify.invalidAccountLine', '格式错误，请使用 邮箱----密码----TOTP密钥----优先级')
+            );
             return;
         }
 
-        const totalCost = links.length * CONFIG.pricePerVerify;
+        if (entries.length === 0) {
+            showSingleResult(
+                'error',
+                t('verify.formatError', '格式错误'),
+                invalidLines[0]?.reason || t('verify.invalidAccountLine', '格式错误，请使用 邮箱----密码----TOTP密钥----优先级')
+            );
+            return;
+        }
+
+        const totalCost = entries.length * CONFIG.pricePerVerify;
         if (userBalance < totalCost) {
-            showSingleResult('error', '积分不足 / Insufficient points',
-                `需要 ${totalCost} 积分，当前余额: ${userBalance} / Need ${totalCost} pts, balance: ${userBalance}`);
+            showSingleResult(
+                'error',
+                t('verify.insufficientPoints', '积分不足'),
+                `${t('verify.needPoints', '需要积分')}: ${totalCost} / ${t('verify.remaining', '当前余额')}: ${userBalance}`
+            );
             return;
         }
 
-        // Check API quota
         if (apiCredits === 0) {
-            showSingleResult('error', 'API 额度不足 / Insufficient API quota',
-                '服务商额度已耗尽，请联系管理员充值 / API credits exhausted, contact admin to top up');
+            showSingleResult(
+                'error',
+                t('verify.quotaExhausted', 'API 余额不足'),
+                t('verify.quotaExhausted', 'API 余额不足，暂时无法提交任务。')
+            );
             return;
         }
 
-        // Hide single result, show batch panel
         if (singleResult) singleResult.classList.remove('show');
         if (batchPanel) batchPanel.classList.add('show');
 
-        // Reset state
-        batchStats = { success: 0, failed: 0, cancelled: 0, total: links.length };
+        batchStats = { success: 0, failed: 0, total: totalRows };
         activeTasks.clear();
         clearResultsList();
-        updateBatchProgress(0, links.length);
         hideBatchSummary();
 
-        // Validate links
-        const validLinks = [];
-        for (let i = 0; i < links.length; i++) {
-            const vId = extractVerificationId(links[i]);
-            if (!vId) {
-                addResultItem(i, links[i], 'error', '❌ 无效链接格式 / Invalid link format');
-                batchStats.failed++;
-            } else {
-                validLinks.push({ index: i, link: links[i], verificationId: vId });
-                addResultItem(i, links[i], 'processing', '⏳ 排队等待中... / Queuing...');
-            }
-        }
+        let completedCount = 0;
 
-        if (validLinks.length === 0) {
-            showBatchSummary();
-            return;
-        }
+        invalidLines.forEach((invalid) => {
+            addResultItem(invalid.index, invalid.raw, 'error', escapeHtml(invalid.reason));
+            batchStats.failed++;
+            completedCount++;
+        });
 
-        // Start loading UI
+        entries.forEach((entry) => {
+            addResultItem(entry.index, entry.email, 'processing', escapeHtml(t('verify.waiting', '等待提交...')));
+        });
+
+        updateBatchProgress(completedCount, totalRows);
+
         isLoading = true;
-        submitBtn.style.display = 'none';
-        if (cancelBtn) cancelBtn.style.display = 'flex';
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = `<div class="spinner"></div> ${t('verify.verifying', '提交中...')}`;
 
-        // Get user ID - use cached user first to prevent unnecessary network timeouts
         let userId = currentUser?.id || currentUser?.user_id;
 
         if (!userId) {
             try {
-                console.log('[VerifyWidget] Getting user ID from network...');
                 const userPromise = window.supabaseClient.auth.getUser();
                 const timeoutPromise = new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error('获取用户信息超时 / User auth timeout')), 5000)
+                    setTimeout(() => reject(new Error(t('verify.pleaseLogin', '请先登录'))), 5000)
                 );
                 const { data } = await Promise.race([userPromise, timeoutPromise]);
                 userId = data?.user?.id;
-
-                if (!userId) throw new Error('请先登录 / Please login first');
-                console.log('[VerifyWidget] User ID obtained:', userId.substring(0, 8) + '...');
-            } catch (e) {
-                console.error('[VerifyWidget] getUser failed:', e);
-                validLinks.forEach(({ index }) =>
-                    updateResultItem(index, 'error', '❌ ' + (e.message || '请先登录'))
-                );
-                batchStats.failed += validLinks.length;
+            } catch (error) {
+                const errorMessage = error.message || t('verify.pleaseLogin', '请先登录');
+                entries.forEach((entry) => {
+                    updateResultItem(entry.index, 'error', escapeHtml(errorMessage));
+                });
+                batchStats.failed += entries.length;
                 finishVerification();
                 return;
             }
         }
 
-        // Submit each item and start polling
-        let completedCount = 0;
-
-        for (const item of validLinks) {
-            // Check if cancelled
-            if (!isLoading) break;
-
+        for (const entry of entries) {
             try {
-                updateResultItem(item.index, 'processing', '🚀 提交中... / Submitting...');
-                console.log(`[VerifyWidget] Submitting #${item.index + 1}:`, item.verificationId.substring(0, 12) + '...');
+                updateResultItem(entry.index, 'processing', escapeHtml(t('verify.verifying', '提交中...')));
 
                 const controller = new AbortController();
-                const fetchTimeout = setTimeout(() => controller.abort(), 15000);
+                const timeoutId = setTimeout(() => controller.abort(), 15000);
                 const res = await fetch(`${CONFIG.nodeServerUrl}/api/verify`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ verificationId: item.verificationId, userId, site: window.SiteConfig?.site || 'cn' }),
+                    body: JSON.stringify({
+                        email: entry.email,
+                        password: entry.password,
+                        totpSecret: entry.totpSecret,
+                        priority: entry.priority,
+                        userId,
+                        site: window.SiteConfig?.site || 'cn'
+                    }),
                     signal: controller.signal
                 });
-                clearTimeout(fetchTimeout);
+                clearTimeout(timeoutId);
 
-                const data = await res.json();
-
-                // If user clicked cancel during this fetch, immediately abort UI updates for this task
-                if (!isLoading) {
-                    updateResultItem(item.index, 'cancelled', '⚪ 已取消 / Cancelled');
-                    break;
-                }
+                const data = await res.json().catch(() => ({}));
 
                 if (!res.ok || !data.success) {
-                    updateResultItem(item.index, 'error',
-                        translateStatus(data.message, 'failed'));
+                    const errorText = getErrorLabel(data.code, data.message || t('verify.loadFailed', '提交失败'));
+                    updateResultItem(entry.index, 'error', escapeHtml(errorText));
                     batchStats.failed++;
                     completedCount++;
-                    updateBatchProgress(completedCount, validLinks.length);
-                    // Log submit-stage failure to history
-                    logToHistory(item.verificationId, 'failed', data.message || 'Submit failed');
+                    updateBatchProgress(completedCount, totalRows);
+                    await logToHistory(entry.email, 'failed', {
+                        email: entry.email,
+                        error_code: data.code || '',
+                        error_message: errorText,
+                        raw_status: 'submit_failed'
+                    });
                     continue;
                 }
 
-                const taskId = data.task_id;
-                updateResultItem(item.index, 'processing', '🔄 正在验证... / Verifying...');
+                const jobId = data.job_id || data.task_id;
+                if (!jobId) {
+                    const errorText = t('verify.loadFailed', '提交失败');
+                    updateResultItem(entry.index, 'error', escapeHtml(errorText));
+                    batchStats.failed++;
+                    completedCount++;
+                    updateBatchProgress(completedCount, totalRows);
+                    await logToHistory(entry.email, 'failed', {
+                        email: entry.email,
+                        error_message: errorText,
+                        raw_status: 'missing_job_id'
+                    });
+                    continue;
+                }
 
-                // Store task info and start polling
-                activeTasks.set(taskId, {
-                    index: item.index,
-                    verificationId: item.verificationId,
-                    aborted: false
+                activeTasks.set(jobId, {
+                    index: entry.index,
+                    email: entry.email,
+                    timer: null
                 });
 
-                // Start async polling for this task
-                pollTask(taskId, userId, item.index).then(result => {
-                    completedCount++;
+                const display = getResultDisplay({
+                    status: data.status || 'queued',
+                    queue_position: data.queue_position,
+                    estimated_wait_seconds: data.estimated_wait_seconds
+                });
+                updateResultItem(entry.index, display.status, display.html);
 
+                pollTask(jobId, userId, entry).then((result) => {
+                    completedCount++;
                     if (result.success) {
                         batchStats.success++;
                         if (result.pointsDeducted) {
-                            userBalance -= result.pointsDeducted;
+                            userBalance = Math.max(0, userBalance - result.pointsDeducted);
                             const balEl = document.getElementById('verifyBalanceValue');
                             if (balEl) balEl.textContent = userBalance;
                         }
-                    } else if (result.cancelled) {
-                        batchStats.cancelled++;
                     } else {
                         batchStats.failed++;
                     }
 
-                    updateBatchProgress(completedCount, validLinks.length);
-
-                    // Check if all done
-                    if (completedCount >= validLinks.length) {
+                    updateBatchProgress(completedCount, totalRows);
+                    if (completedCount >= totalRows) {
                         finishVerification();
                     }
                 });
 
-                // Small delay between submissions to avoid overloading
-                if (validLinks.indexOf(item) < validLinks.length - 1) {
-                    await new Promise(r => setTimeout(r, 500));
+                if (entries.indexOf(entry) < entries.length - 1) {
+                    await new Promise((resolve) => setTimeout(resolve, 400));
                 }
 
-            } catch (err) {
-                updateResultItem(item.index, 'error',
-                    `❌ 提交失败 / Submit failed: ${err.message}`);
+            } catch (error) {
+                const errorText = error.message || t('verify.loadFailed', '提交失败');
+                updateResultItem(entry.index, 'error', escapeHtml(errorText));
                 batchStats.failed++;
                 completedCount++;
-                updateBatchProgress(completedCount, validLinks.length);
-                // Log network error to history
-                logToHistory(item.verificationId, 'error', err.message || 'Network error');
+                updateBatchProgress(completedCount, totalRows);
+                await logToHistory(entry.email, 'error', {
+                    email: entry.email,
+                    error_message: errorText,
+                    raw_status: 'submit_error'
+                });
             }
+        }
+
+        if (activeTasks.size === 0 && completedCount >= totalRows) {
+            finishVerification();
         }
     }
 
-    // =============================================
-    // Poll Single Task
-    // =============================================
-    function pollTask(taskId, userId, itemIndex) {
+    function pollTask(jobId, userId, entry) {
         return new Promise((resolve) => {
-            let deducted = false;
             const startTime = Date.now();
 
             const timer = setInterval(async () => {
-                const taskInfo = activeTasks.get(taskId);
-
-                // Check if aborted (cancelled)
-                if (!taskInfo || taskInfo.aborted) {
+                if (!activeTasks.has(jobId)) {
                     clearInterval(timer);
-                    resolve({ success: false, cancelled: true });
+                    resolve({ success: false, pointsDeducted: 0 });
                     return;
                 }
 
-                // Check timeout
                 if (Date.now() - startTime > CONFIG.pollTimeout) {
                     clearInterval(timer);
-                    activeTasks.delete(taskId);
-                    updateResultItem(itemIndex, 'error', '❌ 超时 / Timeout');
-                    logToHistory(taskInfo.verificationId, 'timeout', 'Verification timeout');
-                    resolve({ success: false });
+                    activeTasks.delete(jobId);
+                    const timeoutText = t('verify.timeout', '任务超时，请稍后重试');
+                    updateResultItem(entry.index, 'error', escapeHtml(timeoutText));
+                    await logToHistory(entry.email, 'timeout', {
+                        email: entry.email,
+                        job_id: jobId,
+                        error_message: timeoutText,
+                        raw_status: 'timeout'
+                    });
+                    resolve({ success: false, pointsDeducted: 0 });
                     return;
                 }
 
                 try {
-                    const url = `${CONFIG.nodeServerUrl}/api/verify/status/${taskId}?userId=${userId}&deducted=${deducted}`;
-                    const res = await fetch(url);
-                    const data = await res.json();
-
-                    // Check if user clicked cancel while waiting for network
-                    if (taskInfo.aborted) {
-                        resolve({ success: false, cancelled: true });
-                        return;
-                    }
+                    const site = encodeURIComponent(window.SiteConfig?.site || 'cn');
+                    const email = encodeURIComponent(entry.email);
+                    const res = await fetch(
+                        `${CONFIG.nodeServerUrl}/api/verify/status/${encodeURIComponent(jobId)}?userId=${encodeURIComponent(userId)}&site=${site}&email=${email}`
+                    );
+                    const data = await res.json().catch(() => ({}));
 
                     if (!res.ok) {
-                        // Don't abort if the backend throws an HTTP error (e.g. 429) but it's just waiting in queue
-                        if (data.message && data.message.toLowerCase().includes('queue')) {
-                            const translated = translateStatus(data.message, 'pending');
-                            updateResultItem(itemIndex, 'processing', translated);
-                            return; // Continue polling next interval
-                        }
-
                         clearInterval(timer);
-                        activeTasks.delete(taskId);
-                        updateResultItem(itemIndex, 'error',
-                            translateStatus(data.message, 'error'));
-                        logToHistory(taskInfo.verificationId, 'failed', data.message || 'Status check failed');
-                        resolve({ success: false });
-                        return;
-                    }
-
-                    // Update UI with translated status
-                    const translated = translateStatus(data.message, data.status);
-                    const cssClass = getStatusCss(data.message, data.status);
-                    updateResultItem(itemIndex, cssClass, translated);
-
-                    // Check if terminal
-                    if (isTerminalStatus(data.message, data.status)) {
-                        clearInterval(timer);
-                        activeTasks.delete(taskId);
-
-                        const success = isSuccessResult(data.message, data.status, data.success);
-
-                        if (data.pointsDeducted) deducted = true;
-
-                        if (success) {
-                            triggerAnimation('success');
-                        } else {
-                            triggerAnimation('error');
-                            // Log failures client-side (server may not have logged)
-                            logToHistory(taskInfo.verificationId, 'failed', data.message || 'Verification failed');
-                        }
-
-                        resolve({
-                            success,
-                            pointsDeducted: data.pointsDeducted || 0
+                        activeTasks.delete(jobId);
+                        const errorText = getErrorLabel(data.code, data.message || t('verify.loadFailed', '状态查询失败'));
+                        updateResultItem(entry.index, 'error', escapeHtml(errorText));
+                        await logToHistory(entry.email, 'failed', {
+                            email: entry.email,
+                            job_id: jobId,
+                            error_code: data.code || '',
+                            error_message: errorText,
+                            raw_status: 'status_error'
                         });
+                        resolve({ success: false, pointsDeducted: 0 });
                         return;
                     }
 
-                    // "Waiting for review" — continue polling (not terminal)
+                    const display = getResultDisplay(data);
+                    updateResultItem(entry.index, display.status, display.html);
 
-                } catch (err) {
-                    // Network error, continue polling
-                    console.warn('[VerifyWidget] Poll error (retrying):', err.message);
+                    if (display.terminal) {
+                        clearInterval(timer);
+                        activeTasks.delete(jobId);
+                        resolve({
+                            success: display.success,
+                            pointsDeducted: Number(data.pointsDeducted) || 0
+                        });
+                    }
+                } catch (error) {
+                    console.warn('[VerifyWidget] Poll error (retrying):', error.message);
                 }
             }, CONFIG.pollInterval);
 
-            // Store timer for cleanup
-            const taskInfo = activeTasks.get(taskId);
-            if (taskInfo) taskInfo.timer = timer;
+            const taskInfo = activeTasks.get(jobId);
+            if (taskInfo) {
+                taskInfo.timer = timer;
+            }
         });
     }
 
-    // =============================================
-    // Cancel: Safe cancel with final status check
-    // =============================================
-    async function cancel() {
-        if (!isLoading) return;
-
-        const submitBtn = document.getElementById('verifySubmitBtn');
-        const cancelBtn = document.getElementById('verifyCancelBtn');
-
-        // Disable cancel button during cancel process
-        if (cancelBtn) {
-            cancelBtn.disabled = true;
-            cancelBtn.innerHTML = '<div class="spinner"></div> 取消中... / Cancelling...';
-        }
-
-        let userId;
-        try {
-            const { data } = await window.supabaseClient.auth.getUser();
-            userId = data?.user?.id;
-        } catch (e) { /* ignored */ }
-
-        // Cancel each active task — immediately mark as cancelled, then try API cancel in background
-        for (const [taskId, taskInfo] of activeTasks.entries()) {
-            // Stop polling first
-            if (taskInfo.timer) clearInterval(taskInfo.timer);
-            taskInfo.aborted = true;
-
-            // Immediately update UI
-            updateResultItem(taskInfo.index, 'cancelled', '⚪ 已取消 / Cancelled');
-
-            // Log cancellation to history
-            logToHistory(taskInfo.verificationId, 'cancelled', 'User cancelled');
-
-            // Try to cancel on server (fire-and-forget with 5s timeout)
-            try {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-                fetch(`${CONFIG.nodeServerUrl}/api/cancel`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        verificationId: taskInfo.verificationId,
-                        taskId: taskId,
-                        userId: userId
-                    }),
-                    signal: controller.signal
-                }).then(r => r.json()).then(data => {
-                    clearTimeout(timeoutId);
-                    if (data.alreadyCompleted && data.verificationSuccess) {
-                        // Task already succeeded before cancel — update to success
-                        updateResultItem(taskInfo.index, 'success',
-                            '✅ 验证成功（取消前已完成）/ Verified (completed before cancel)');
-                        batchStats.success++;
-                        if (data.pointsDeducted) {
-                            userBalance -= data.pointsDeducted;
-                            const balEl = document.getElementById('verifyBalanceValue');
-                            if (balEl) balEl.textContent = userBalance;
-                        }
-                    }
-                }).catch(() => {
-                    clearTimeout(timeoutId);
-                    // Already marked as cancelled, nothing to do
-                });
-            } catch (e) {
-                // Ignore cancel API errors
-            }
-        }
-
-        // Clear all tasks and immediately reset UI
-        activeTasks.clear();
-        finishVerification();
+    function cancel() {
+        return false;
     }
 
-    // =============================================
-    // Finish Verification
-    // =============================================
     function finishVerification() {
         isLoading = false;
-        const submitBtn = document.getElementById('verifySubmitBtn');
-        const cancelBtn = document.getElementById('verifyCancelBtn');
 
+        const submitBtn = document.getElementById('verifySubmitBtn');
         if (submitBtn) {
-            submitBtn.style.display = 'flex';
             submitBtn.disabled = false;
-            submitBtn.innerHTML = `<i class="fas fa-check-circle"></i> ${t('verify.startVerify', '开始验证')}`;
-        }
-        if (cancelBtn) {
-            cancelBtn.style.display = 'none';
-            cancelBtn.disabled = false;
-            cancelBtn.innerHTML = `<i class="fas fa-times-circle"></i> ${t('verify.cancelVerify', '取消验证')}`;
+            submitBtn.innerHTML = `<i class="fas fa-paper-plane"></i> ${t('verify.startVerify', '开始提交')}`;
         }
 
         showBatchSummary();
-        loadUserBalance(); // Refresh balance
-        loadApiQuota();    // Refresh API quota
-        loadHistory();     // Refresh history
+        loadUserBalance();
+        loadApiQuota();
+        loadHistory();
+
+        if (CONFIG.enabled === false) {
+            applyMaintenanceState();
+        }
     }
 
-    // =============================================
-    // UI Helpers
-    // =============================================
     function clearResultsList() {
         const list = document.getElementById('verifyResultsList');
         if (list) list.innerHTML = '';
     }
 
-    function addResultItem(index, link, status, message) {
+    function addResultItem(index, label, status, messageHtml) {
         const list = document.getElementById('verifyResultsList');
         if (!list) return;
 
-        const shortLink = link.length > 55 ? link.substring(0, 55) + '...' : link;
+        const shortLabel = String(label || '').length > 55
+            ? String(label).substring(0, 55) + '...'
+            : String(label || '');
+
         const icons = {
-            success: 'fa-check', error: 'fa-times', cancelled: 'fa-ban',
-            processing: 'fa-spinner fa-spin', info: 'fa-info-circle'
+            success: 'fa-check',
+            error: 'fa-times',
+            processing: 'fa-spinner fa-spin',
+            info: 'fa-info-circle'
         };
 
         const item = document.createElement('div');
@@ -1219,49 +1143,52 @@
                 <i class="fas ${icons[status] || 'fa-spinner fa-spin'}"></i>
             </div>
             <div class="verify-result-item-content">
-                <div class="verify-result-item-id">#${index + 1}: ${shortLink}</div>
-                <div class="verify-result-item-message">${message}</div>
+                <div class="verify-result-item-id">#${index + 1}: ${escapeHtml(shortLabel)}</div>
+                <div class="verify-result-item-message">${messageHtml}</div>
             </div>
         `;
         list.appendChild(item);
     }
 
-    function updateResultItem(index, status, message) {
+    function updateResultItem(index, status, messageHtml) {
         const item = document.getElementById(`result-item-${index}`);
         if (!item) return;
 
         const icons = {
-            success: 'fa-check', error: 'fa-times', cancelled: 'fa-ban',
-            processing: 'fa-spinner fa-spin', info: 'fa-info-circle'
+            success: 'fa-check',
+            error: 'fa-times',
+            processing: 'fa-spinner fa-spin',
+            info: 'fa-info-circle'
         };
 
         item.className = `verify-result-item ${status}`;
         const iconEl = item.querySelector('.verify-result-item-icon i');
         if (iconEl) {
-            iconEl.className = '';
-            void iconEl.offsetWidth;
             iconEl.className = `fas ${icons[status] || 'fa-spinner fa-spin'}`;
         }
+
         const msgEl = item.querySelector('.verify-result-item-message');
-        if (msgEl) msgEl.innerHTML = message;
+        if (msgEl) msgEl.innerHTML = messageHtml;
     }
 
     function updateBatchProgress(current, total) {
         const el = document.getElementById('verifyBatchProgress');
-        if (el) el.innerHTML = `${t('verify.progress', '进度')}: <span class="current">${current}</span>/<span class="total">${total}</span>`;
+        if (el) {
+            el.innerHTML = `${t('verify.progress', '进度')}: <span class="current">${current}</span>/<span class="total">${total}</span>`;
+        }
     }
 
     function showBatchSummary() {
         const el = document.getElementById('verifyBatchSummary');
         if (el) el.style.display = 'flex';
-        const s = document.getElementById('successCount');
-        const f = document.getElementById('failedCount');
-        const tt = document.getElementById('totalCount');
-        if (s) s.textContent = batchStats.success;
-        if (f) f.textContent = batchStats.failed;
-        const c = document.getElementById('cancelledCount');
-        if (c) c.textContent = batchStats.cancelled;
-        if (tt) tt.textContent = batchStats.total;
+
+        const successEl = document.getElementById('successCount');
+        const failedEl = document.getElementById('failedCount');
+        const totalEl = document.getElementById('totalCount');
+
+        if (successEl) successEl.textContent = batchStats.success;
+        if (failedEl) failedEl.textContent = batchStats.failed;
+        if (totalEl) totalEl.textContent = batchStats.total;
     }
 
     function hideBatchSummary() {
@@ -1282,18 +1209,30 @@
         if (msgEl) msgEl.textContent = message;
     }
 
-    function triggerAnimation(type) {
-        const widget = document.querySelector('.verify-widget');
-        if (!widget) return;
-        widget.classList.remove('success-pulse', 'error-pulse');
-        void widget.offsetWidth;
-        widget.classList.add(type === 'success' ? 'success-pulse' : 'error-pulse');
-        setTimeout(() => widget.classList.remove('success-pulse', 'error-pulse'), 4500);
+    function getHistoryStatusCss(status) {
+        const normalized = String(status || '').toLowerCase();
+        if (normalized.includes('success') || normalized.includes('completed')) return 'success';
+        if (normalized.includes('queued') || normalized.includes('running') || normalized.includes('process')) return 'processing';
+        if (normalized.includes('fail') || normalized.includes('error') || normalized.includes('timeout')) return 'error';
+        return '';
     }
 
-    // =============================================
-    // Verification History
-    // =============================================
+    function getHistoryStatusText(status) {
+        const normalized = String(status || '').toLowerCase();
+
+        if (normalized.includes('success') || normalized.includes('completed')) {
+            return `<i class="fas fa-check-circle" style="color: #22c55e;"></i> ${t('verify.successText', '成功')}`;
+        }
+        if (normalized.includes('queued') || normalized.includes('running') || normalized.includes('process')) {
+            return `<i class="fas fa-sync fa-spin" style="color: #3498db;"></i> ${t('verify.processText', '处理中')}`;
+        }
+        if (normalized.includes('fail') || normalized.includes('error') || normalized.includes('timeout')) {
+            return `<i class="fas fa-times-circle" style="color: #ef4444;"></i> ${t('verify.failText', '失败')}`;
+        }
+
+        return escapeHtml(status || '--');
+    }
+
     async function loadHistory() {
         const listEl = document.getElementById('verifyHistoryList');
         if (!listEl) return;
@@ -1314,77 +1253,51 @@
                 .order('created_at', { ascending: false })
                 .limit(20);
 
-            if (error) {
-                console.error('[VerifyHistory] Supabase error:', error.message, error.code, error.details);
+            if (error || !data || data.length === 0) {
                 listEl.innerHTML = `<div class="verify-history-empty"><i class="fas fa-inbox"></i> ${t('verify.historyEmpty', '暂无历史记录')}</div>`;
+                historyData = [];
                 return;
             }
 
-            console.log('[VerifyHistory] Loaded', data?.length || 0, 'records for user', currentUser.id);
-
-            if (!data || data.length === 0) {
-                listEl.innerHTML = `<div class="verify-history-empty"><i class="fas fa-inbox"></i> ${t('verify.historyEmpty', '暂无历史记录')}</div>`;
-                return;
-            }
-
-            // Store data for export
             historyData = data;
 
-            listEl.innerHTML = data.map(item => {
+            listEl.innerHTML = data.map((item) => {
                 const time = new Date(item.created_at).toLocaleString('zh-CN', {
-                    month: '2-digit', day: '2-digit',
-                    hour: '2-digit', minute: '2-digit'
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit'
                 });
-                const vId = item.verification_id || '--';
-                const shortId = vId.length > 20 ? vId.substring(0, 20) + '...' : vId;
-                const statusCss = getHistoryStatusCss(item.status);
-                const statusText = getHistoryStatusText(item.status);
+                const email = getHistoryEmail(item);
+                const shortEmail = email.length > 28 ? email.substring(0, 28) + '...' : email;
+                const detail = getHistoryDetail(item);
+                const detailHtml = detail.type === 'url'
+                    ? `<a class="verify-history-link-text" href="${escapeHtml(detail.href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(detail.text)}</a>`
+                    : escapeHtml(detail.text || '--');
                 const cost = item.points_deducted || 0;
 
                 return `
-                    <div class="verify-history-item ${statusCss}">
+                    <div class="verify-history-item ${getHistoryStatusCss(item.status)}">
                         <div class="verify-history-item-time">${time}</div>
-                        <div class="verify-history-item-id" title="${t('verify.clickToCopy', '点击复制')}: ${vId}" data-vid="${vId}" onclick="VerifyWidget.copyId(this)">${shortId}</div>
-                        <div class="verify-history-item-status">${statusText}</div>
+                        <div class="verify-history-item-main">
+                            <div class="verify-history-item-id" title="${t('verify.clickToCopy', '点击复制')}: ${escapeHtml(email)}" data-copy="${escapeHtml(email)}" onclick="VerifyWidget.copyId(this)">${escapeHtml(shortEmail)}</div>
+                            <div class="verify-history-item-message">${detailHtml}</div>
+                        </div>
+                        <div class="verify-history-item-status">${getHistoryStatusText(item.status)}</div>
                         <div class="verify-history-item-cost">${cost > 0 ? '-' + cost : '--'}</div>
                     </div>
                 `;
             }).join('');
-
-        } catch (e) {
+        } catch (_) {
             listEl.innerHTML = `<div class="verify-history-empty">${t('verify.loadFailed', '加载失败')}</div>`;
         }
     }
 
-    function getHistoryStatusCss(status) {
-        if (!status) return '';
-        const s = status.toLowerCase();
-        if (s.includes('success') || s.includes('completed')) return 'success';
-        if (s.includes('fail') || s.includes('error') || s.includes('reject')) return 'error';
-        if (s.includes('cancel')) return 'cancelled';
-        if (s.includes('pending') || s.includes('processing') || s.includes('review')) return 'processing';
-        return '';
-    }
-
-    function getHistoryStatusText(status) {
-        if (!status) return '--';
-        const s = status.toLowerCase();
-        if (s.includes('success') || s.includes('completed')) return `<i class="fas fa-check-circle" style="color: #22c55e;"></i> ${t('verify.successText', '成功')}`;
-        if (s.includes('fail') || s.includes('error')) return `<i class="fas fa-times-circle" style="color: #ef4444;"></i> ${t('verify.failText', '失败')}`;
-        if (s.includes('reject')) return `<i class="fas fa-times-circle" style="color: #ef4444;"></i> ${t('verify.rejectText', '被拒')}`;
-        if (s.includes('cancel')) return `<i class="fas fa-ban" style="color: rgba(255,255,255,0.4);"></i> ${t('verify.cancelText', '取消')}`;
-        if (s.includes('review')) return `<i class="fas fa-hourglass-half" style="color: #f39c12;"></i> ${t('verify.reviewText', '审核中')}`;
-        if (s.includes('pending') || s.includes('processing')) return `<i class="fas fa-sync fa-spin" style="color: #3498db;"></i> ${t('verify.processText', '处理中')}`;
-        return status;
-    }
-
-    // =============================================
-    // Copy Verification ID
-    // =============================================
     function copyId(el) {
-        const vid = el.getAttribute('data-vid');
-        if (!vid || vid === '--') return;
-        navigator.clipboard.writeText(vid).then(() => {
+        const value = el.getAttribute('data-copy');
+        if (!value || value === '--') return;
+
+        navigator.clipboard.writeText(value).then(() => {
             const original = el.innerHTML;
             el.innerHTML = `<i class="fas fa-check" style="color: #22c55e;"></i> ${t('verify.copied', '已复制')}`;
             el.style.color = '#22c55e';
@@ -1393,63 +1306,57 @@
                 el.style.color = '';
             }, 1200);
         }).catch(() => {
-            // Fallback for older browsers
             const ta = document.createElement('textarea');
-            ta.value = vid;
+            ta.value = value;
             ta.style.position = 'fixed';
             ta.style.opacity = '0';
             document.body.appendChild(ta);
             ta.select();
             document.execCommand('copy');
             document.body.removeChild(ta);
-            const original = el.innerHTML;
-            el.innerHTML = `<i class="fas fa-check" style="color: #22c55e;"></i> 已复制`;
-            el.style.color = '#22c55e';
-            setTimeout(() => {
-                el.innerHTML = original;
-                el.style.color = '';
-            }, 1200);
         });
     }
 
-    // =============================================
-    // Export History to Excel (CSV)
-    // =============================================
     async function exportHistory() {
         let data = historyData;
 
-        // If no cached data, fetch from DB
         if (!data || data.length === 0) {
             if (!currentUser || !window.supabaseClient) {
-                alert('请先登录');
+                alert(t('verify.historyLoginPrompt', '登录后查看历史记录'));
                 return;
             }
+
             try {
                 const result = await window.supabaseClient
                     .from('verification_logs')
                     .select('*')
                     .eq('user_id', currentUser.id)
+                    .eq('site', window.SiteConfig?.site || 'cn')
                     .order('created_at', { ascending: false });
+
                 if (result.error || !result.data || result.data.length === 0) {
-                    alert('暂无记录可导出');
+                    alert(t('verify.historyEmpty', '暂无历史记录'));
                     return;
                 }
+
                 data = result.data;
-            } catch (e) {
-                alert('导出失败');
+            } catch (_) {
+                alert(t('verify.loadFailed', '加载失败'));
                 return;
             }
         }
 
-        // Build CSV with BOM for Excel
-        const headers = ['时间', '验证ID', '状态', '积分消耗'];
-        const rows = data.map(item => {
+        const headers = ['时间', '邮箱', '状态', '详情', '积分消耗'];
+        const rows = data.map((item) => {
             const time = new Date(item.created_at).toLocaleString('zh-CN');
-            const vId = item.verification_id || '--';
+            const email = getHistoryEmail(item);
             const statusText = getHistoryStatusText(item.status).replace(/<[^>]*>?/gm, '').trim();
+            const detailText = getHistoryDetailText(item);
             const cost = item.points_deducted || 0;
-            // Escape fields containing commas or quotes
-            return [time, vId, statusText, cost > 0 ? '-' + cost : '0'].map(f => `"${String(f).replace(/"/g, '""')}"`).join(',');
+
+            return [time, email, statusText, detailText, cost > 0 ? '-' + cost : '0']
+                .map((field) => `"${String(field).replace(/"/g, '""')}"`)
+                .join(',');
         });
 
         const csv = '\uFEFF' + headers.join(',') + '\n' + rows.join('\n');
@@ -1457,22 +1364,74 @@
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `验证记录_${new Date().toISOString().slice(0, 10)}.csv`;
+        a.download = `google_one_history_${new Date().toISOString().slice(0, 10)}.csv`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
     }
 
-    // =============================================
-    // Public API
-    // =============================================
+    async function init() {
+        const container = document.getElementById(CONFIG.containerId);
+        if (!container) return;
+
+        await loadConfig();
+
+        let isLoggedIn = false;
+        const cachedUser = readCachedProfile();
+        if (cachedUser) {
+            currentUser = cachedUser;
+            isLoggedIn = true;
+        }
+        hadOptimisticLogin = isLoggedIn;
+
+        if (!window.i18n || typeof window.i18n.t !== 'function') {
+            await new Promise((resolve) => {
+                let count = 0;
+                const check = setInterval(() => {
+                    count++;
+                    if ((window.i18n && typeof window.i18n.t === 'function') || count > 20) {
+                        clearInterval(check);
+                        resolve();
+                    }
+                }, 100);
+            });
+        }
+
+        render(container, isLoggedIn);
+        setupAuthListener();
+        loadApiQuota();
+
+        if (CONFIG.enabled === false) {
+            applyMaintenanceState();
+        }
+
+        window.addEventListener('languageChanged', () => {
+            render(container, !!currentUser);
+            if (CONFIG.enabled === false) applyMaintenanceState();
+        });
+    }
+
+    function applyMaintenanceState() {
+        const submitBtn = document.getElementById('verifySubmitBtn');
+        if (!submitBtn) return;
+
+        submitBtn.disabled = false;
+        submitBtn.style.background = 'rgba(239, 68, 68, 0.3)';
+        submitBtn.style.borderColor = 'rgba(239, 68, 68, 0.5)';
+        submitBtn.style.cursor = 'pointer';
+        submitBtn.innerHTML = `<i class="fas fa-tools"></i> ${t('verify.serviceUnavailable', '服务维护中')}`;
+    }
+
     window.VerifyWidget = {
-        init, submit, cancel, reload: loadConfig,
-        loadHistory, exportHistory, copyId,
-        refreshQuota: loadApiQuota,
-        debugSuccessAnimation: () => triggerAnimation('success'),
-        debugErrorAnimation: () => triggerAnimation('error')
+        init,
+        submit,
+        cancel,
+        reload: loadConfig,
+        loadHistory,
+        exportHistory,
+        copyId,
+        refreshQuota: loadApiQuota
     };
 
     if (document.readyState === 'loading') {

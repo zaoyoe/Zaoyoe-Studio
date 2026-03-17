@@ -603,6 +603,14 @@
     margin-top: 8px;
 }
 
+.verify-format-hint {
+    margin-top: 12px;
+    margin-bottom: 14px;
+    font-size: 0.78rem;
+    line-height: 1.6;
+    color: rgba(255, 255, 255, 0.5);
+}
+
 .verify-batch-count {
     display: flex;
     align-items: center;
@@ -768,6 +776,27 @@
 
 .verify-result-item.processing .verify-result-item-message {
     color: #a5b4fc;
+}
+
+.verify-result-link-row {
+    margin-top: 8px;
+}
+
+.verify-result-link {
+    color: #93c5fd;
+    text-decoration: none;
+    word-break: break-all;
+}
+
+.verify-result-link:hover {
+    color: #bfdbfe;
+    text-decoration: underline;
+}
+
+.verify-result-subtle {
+    margin-top: 6px;
+    font-size: 0.78rem;
+    color: rgba(255, 255, 255, 0.55);
 }
 
 /* Summary Stats */
@@ -1014,7 +1043,7 @@
 /* History Item Row */
 .verify-history-item {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 12px;
     padding: 10px 12px;
     border-radius: 8px;
@@ -1035,8 +1064,12 @@
     min-width: 80px;
 }
 
-.verify-history-item-id {
+.verify-history-item-main {
     flex: 1;
+    min-width: 0;
+}
+
+.verify-history-item-id {
     color: rgba(255, 255, 255, 0.6);
     font-family: monospace;
     font-size: 0.72rem;
@@ -1049,6 +1082,24 @@
 
 .verify-history-item-id:hover {
     color: rgba(255, 255, 255, 0.9);
+}
+
+.verify-history-item-message {
+    margin-top: 4px;
+    font-size: 0.75rem;
+    line-height: 1.45;
+    color: rgba(255, 255, 255, 0.48);
+    word-break: break-all;
+}
+
+.verify-history-link-text {
+    color: #93c5fd;
+    text-decoration: none;
+}
+
+.verify-history-link-text:hover {
+    color: #bfdbfe;
+    text-decoration: underline;
 }
 
 .verify-history-item-status {

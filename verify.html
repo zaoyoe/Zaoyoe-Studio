@@ -8,17 +8,17 @@
     <meta name="theme-color" content="#000000">
 
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-    <meta name="description" content="Gemini 学生验证服务页，支持验证链接处理与账号结果查询。">
-    <title data-i18n="verify.pageTitle">Gemini 验证 - Zaoyoe</title>
+    <meta name="description" content="Google One 自动任务页，支持提交 Google 账号并获取试用链接。">
+    <title data-i18n="verify.pageTitle">Google One - Zaoyoe</title>
     <link rel="canonical" href="https://zaoyoe.com/verify.html">
     <meta property="og:type" content="website">
-    <meta property="og:title" content="Gemini 验证 - Zaoyoe">
-    <meta property="og:description" content="Gemini 学生验证服务页，支持验证链接处理与账号结果查询。">
+    <meta property="og:title" content="Google One - Zaoyoe">
+    <meta property="og:description" content="Google One 自动任务页，支持提交 Google 账号并获取试用链接。">
     <meta property="og:url" content="https://zaoyoe.com/verify.html">
     <meta property="og:image" content="https://zaoyoe.com/assets/favicon.png">
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="Gemini 验证 - Zaoyoe">
-    <meta name="twitter:description" content="Gemini 学生验证服务页，支持验证链接处理与账号结果查询。">
+    <meta name="twitter:title" content="Google One - Zaoyoe">
+    <meta name="twitter:description" content="Google One 自动任务页，支持提交 Google 账号并获取试用链接。">
     <meta name="twitter:image" content="https://zaoyoe.com/assets/favicon.png">
     <link rel="icon" type="image/png" href="assets/favicon.png">
 
@@ -388,7 +388,7 @@
     </div>
 
     <main id="main-content" role="main">
-        <h1 class="visually-hidden-h1">Gemini 验证</h1>
+        <h1 class="visually-hidden-h1">Google One</h1>
 
         <!-- Main Container -->
         <div class="content-wrapper">
@@ -425,18 +425,12 @@
                 <div class="verify-instructions">
                     <h3><i class="fas fa-lightbulb"></i> <span data-i18n="verify.instructionsTitle">使用说明</span></h3>
                     <ol>
-                        <li data-i18n="verify.instruction1">直接右键复制 <code>verify eligibility</code> / <code>验证学生资格</code>
-                            蓝色按钮的链接（不在浏览器打开）成功率更高。</li>
-                        <li><span data-i18n="verify.instruction2">认证成功提示没有资格用这个链接进去:</span> <br><a
-                                href="https://one.google.com/ai-student?g1_landing_page=75&utm_source=antigravity&utm_campaign=argon_limit_reached"
-                                target="_blank" rel="noopener noreferrer"
-                                style="word-break: break-all; color: #6b9ece;">https://one.google.com/ai-student?g1_landing_page=75&utm_source=antigravity&utm_campaign=argon_limit_reached</a>
-                        </li>
-                        <li data-i18n="verify.instruction3">在 https://one.google.com/ai-student 的那个蓝色按钮上右键 别点进去
-                            直接右键复制链接出来!
-                            建议用无痕窗口登录账户获取！</li>
-                        <li data-i18n="verify.instruction4">如果你的验证链接中 verificationID 后面是空的：1.刷新网页再试。2.直接点进去重新获取。3.换号
-                        </li>
+                        <li data-i18n="verify.instruction1">每行一个账号，推荐格式：
+                            <code>email----password----totp_secret----priority</code></li>
+                        <li data-i18n="verify.instruction2">priority 可选，只能填 <code>0</code> 或 <code>1</code>；不填时默认
+                            <code>0</code>。</li>
+                        <li data-i18n="verify.instruction3">TOTP 需要填写验证器绑定时的 Base32 密钥，不是当前 6 位动态验证码。</li>
+                        <li data-i18n="verify.instruction4">系统只记录邮箱与结果，不保存密码和 TOTP 密钥；SSO 域名邮箱不受支持。</li>
                     </ol>
                 </div>
             </div>
@@ -464,7 +458,7 @@
     <script src="./starry-sky.js?v=1"></script>
 
     <!-- Verify Widget Script -->
-    <script src="./verify-widget.js?v=20260303_AUTH_BOOTSTRAP_FIX"></script>
+    <script src="./verify-widget.js?v=20260317_GOOGLE_ONE_API"></script>
 
     <!-- Load price from config -->
     <script>
