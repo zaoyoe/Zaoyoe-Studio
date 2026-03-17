@@ -2638,6 +2638,75 @@ button.upload-icon-btn {
     overflow-x: hidden;
 }
 
+body.guestbook-page #ambientCanvas,
+body.guestbook-page #starryCanvas {
+    transform: translateZ(0);
+    -webkit-transform: translateZ(0);
+    will-change: transform, opacity;
+    pointer-events: none;
+}
+
+body.guestbook-page #ambientCanvas {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -1;
+    opacity: 0.6;
+    transition: opacity 0.5s ease;
+}
+
+[data-theme="dark"] body.guestbook-page #ambientCanvas {
+    opacity: 0.4;
+}
+
+body.guestbook-page #starryCanvas {
+    position: fixed;
+    top: -10vh;
+    left: -10vw;
+    width: 120vw;
+    height: 120vh;
+    z-index: 0;
+    opacity: 0;
+    transition: opacity 1.5s ease;
+}
+
+[data-theme="dark"] body.guestbook-page #starryCanvas {
+    opacity: 1;
+}
+
+body.guestbook-page.auth-sheet-open #ambientCanvas {
+    opacity: 0.4 !important;
+    transition: none !important;
+}
+
+body.guestbook-page.auth-sheet-open #starryCanvas {
+    opacity: 1 !important;
+    transition: none !important;
+}
+
+body.guestbook-page.auth-sheet-open::before,
+body.guestbook-page.auth-sheet-open::after {
+    content: "";
+    position: fixed;
+    left: 0;
+    right: 0;
+    pointer-events: none;
+    z-index: 12040;
+}
+
+body.guestbook-page.auth-sheet-open::before {
+    top: calc(-1 * env(safe-area-inset-top, 0px));
+    height: calc(env(safe-area-inset-top, 0px) + 34px);
+    background: linear-gradient(180deg, #000000 0%, #000000 74%, rgba(0, 0, 0, 0.94) 100%);
+}
+
+body.guestbook-page.auth-sheet-open::after {
+    bottom: calc(-1 * env(safe-area-inset-bottom, 0px));
+    height: calc(env(safe-area-inset-bottom, 0px) + 96px);
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0.94) 0%, #000000 26px, #000000 100%);
+}
+
 /* Floating Back Button */
 .floating-back-btn {
     position: fixed;

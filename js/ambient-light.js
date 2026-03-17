@@ -1,12 +1,13 @@
 /**
- * Ambient Light System (Simplified for Shop)
- * Provides the "Bright Mode" living background
+ * Ambient Light System
+ * Shared "living background" used by prompt-like pages.
  */
 function initAmbientLight() {
     const canvas = document.getElementById('ambientCanvas');
     if (!canvas) return;
 
     const ctx = canvas.getContext('2d');
+    let animationId;
     let blobs = [];
 
     function resize() {
@@ -15,6 +16,38 @@ function initAmbientLight() {
     }
     resize();
     window.addEventListener('resize', resize);
+
+    function getConfiguredColors() {
+        const selector = canvas.dataset.colorSource;
+        if (!selector) {
+            return ['#9b5de5', '#8b5cf6', '#a78bfa'];
+        }
+
+        const sourceNodes = document.querySelectorAll(selector);
+        const colors = [];
+        const viewportHeight = window.innerHeight;
+
+        sourceNodes.forEach((node) => {
+            const rect = node.getBoundingClientRect();
+            if (rect.top >= viewportHeight || rect.bottom <= 0) {
+                return;
+            }
+
+            const dominantColors = node.dataset.dominantColors;
+            if (!dominantColors) {
+                return;
+            }
+
+            dominantColors
+                .split(',')
+                .map((color) => color.trim())
+                .filter(Boolean)
+                .slice(0, 2)
+                .forEach((color) => colors.push(color));
+        });
+
+        return colors.length > 0 ? colors : ['#9b5de5', '#8b5cf6', '#a78bfa'];
+    }
 
     // Blob class
     class Blob {
@@ -55,9 +88,16 @@ function initAmbientLight() {
         }
     }
 
-    // Initialize blobs with default purple/blue themes
-    const initialColors = ['#9b5de5', '#8b5cf6', '#a78bfa', '#c4b5fd', '#3b82f6'];
-    for (let i = 0; i < 5; i++) {
+    function updateBlobColors() {
+        const colors = getConfiguredColors();
+        blobs.forEach((blob, index) => {
+            blob.color = colors[index % colors.length] || blob.color;
+        });
+    }
+
+    // Initialize blobs with the same palette used by prompts
+    const initialColors = ['#9b5de5', '#8b5cf6', '#a78bfa', '#c4b5fd'];
+    for (let i = 0; i < 4; i++) {
         blobs.push(new Blob(initialColors[i % initialColors.length]));
     }
 
@@ -70,10 +110,28 @@ function initAmbientLight() {
             blob.draw();
         });
 
-        requestAnimationFrame(animate);
+        animationId = requestAnimationFrame(animate);
     }
 
     animate();
+
+    let scrollTimeout;
+    window.addEventListener('scroll', () => {
+        clearTimeout(scrollTimeout);
+        scrollTimeout = setTimeout(updateBlobColors, 100);
+    });
+
+    // Allow pages to trigger recoloring after async content arrives.
+    window.addEventListener('ambient-light:refresh', updateBlobColors);
+
+    // Initial color update after layout settles.
+    setTimeout(updateBlobColors, 1000);
+
+    window.addEventListener('beforeunload', () => {
+        if (animationId) {
+            cancelAnimationFrame(animationId);
+        }
+    });
 }
 
 // Auto-init

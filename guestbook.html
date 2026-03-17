@@ -33,7 +33,7 @@
     <link rel="stylesheet" href="avatar-fix.css?v=20260316_AVATAR_NAV_STABLE_2">
     <!-- Custom CSS -->
     <link rel="stylesheet" href="capsule-styles.css?v=20260302_G_AUTH">
-    <link rel="stylesheet" href="style.css?v=20260317_COMMENT_COMPOSER_MATCH_1">
+    <link rel="stylesheet" href="style.css?v=20260317_GUESTBOOK_STARRY_BG_1">
     <!-- Unified Navigation CSS -->
     <link rel="stylesheet" href="css/framer_home.css?v=NAV_UNIFIED_V9">
     <!-- Prevent flash of wrong theme -->
@@ -447,15 +447,13 @@
 </head>
 
 <body class="guestbook-page">
+    <!-- Ambient Light Canvas (Prompt Page Background System) -->
+    <canvas id="ambientCanvas"></canvas>
+    <!-- Starry Sky Canvas (Dark Mode Only) -->
+    <canvas id="starryCanvas"></canvas>
+
     <!-- Dropdown Blur Overlay -->
     <div class="dropdown-overlay" id="dropdownOverlay"></div>
-
-    <!-- Background Blobs -->
-    <div class="background-blobs">
-        <div class="blob blob-1"></div>
-        <div class="blob blob-2"></div>
-        <div class="blob blob-3"></div>
-    </div>
     <!-- Unified Navigation Bar -->
     <nav class="framer-nav">
         <div class="nav-container">
@@ -652,6 +650,8 @@
     <script src="./js/site-config.js"></script>
     <script src="./js/prefetch-home.js" defer></script>
     <script src="./js/section-visibility.js"></script>
+    <script src="./js/ambient-light.js?v=20260317_GUESTBOOK_STARRY_BG_1"></script>
+    <script src="./starry-sky.js?v=20260317_GUESTBOOK_STARRY_BG_1"></script>
 
     <!-- Notification Client (For Bell) -->
     <script src="notification-client.js?v=20260314_NOTIF_SCROLL_LOCK_1"></script>
