@@ -21,6 +21,18 @@ const ShopClient = {
     purchaseModalKeyboardStableViewportProbe: null,
     purchaseModalBaseScrollY: 0,
     purchaseModalOwnsFullScrollLock: false,
+    categoryProductsCache: {},
+    categoryProductsPromises: {},
+    allProductsCache: null,
+    allProductsPromise: null,
+    agentPricesCache: null,
+    agentPricesPromise: null,
+    availableCategories: [],
+    productsRequestToken: 0,
+    productsCacheEpoch: 0,
+    backgroundPrefetchScheduled: false,
+    backgroundPrefetchHandle: null,
+    lastSkeletonCount: 6,
 
     init: async function () {
         console.log('🛍️ Shop Client Initialized');
@@ -86,7 +98,8 @@ const ShopClient = {
                             sessionStorage.removeItem('shop_prefetch');
                             // Inject prefetched data into Cache for loadCategoryFilters / loadProducts to use
                             this._prefetchedCategories = prefetch.categories;
-                            this._prefetchedProducts = prefetch.products;
+                            this.availableCategories = Array.isArray(prefetch.categories) ? prefetch.categories : [];
+                            this.hydrateProductCaches(prefetch.products);
                             usedPrefetch = true;
                             console.log(`⚡ Using prefetched shop data (${Math.round(age / 1000)}s old)`);
                         }
@@ -99,7 +112,6 @@ const ShopClient = {
 
                 // Clear prefetch references
                 this._prefetchedCategories = null;
-                this._prefetchedProducts = null;
 
                 clearTimeout(fallbackTimer);
 
@@ -133,10 +145,264 @@ const ShopClient = {
 
     filterCategory: function (category, btn) {
         this.currentCategory = category;
+        const currentCards = document.querySelectorAll('#userShopGrid .shop-card').length;
+        if (currentCards > 0) {
+            this.lastSkeletonCount = Math.min(Math.max(currentCards, 3), 8);
+        }
         const tabs = document.querySelectorAll('#shopCategoryFilters .filter-tab');
         tabs.forEach(t => t.classList.remove('active'));
         btn.classList.add('active');
         this.loadProducts();
+    },
+
+    hasCategoryProductsCache: function (category) {
+        if (category === 'all') {
+            return Array.isArray(this.allProductsCache);
+        }
+
+        if (Array.isArray(this.allProductsCache)) {
+            return true;
+        }
+
+        return Object.prototype.hasOwnProperty.call(this.categoryProductsCache, category);
+    },
+
+    getCachedProductsForCategory: function (category) {
+        if (category === 'all') {
+            return Array.isArray(this.allProductsCache) ? this.allProductsCache : null;
+        }
+
+        if (Array.isArray(this.allProductsCache)) {
+            return this.categoryProductsCache[category] || [];
+        }
+
+        if (Object.prototype.hasOwnProperty.call(this.categoryProductsCache, category)) {
+            return this.categoryProductsCache[category] || [];
+        }
+
+        return null;
+    },
+
+    persistPrefetchedShopData: function () {
+        if (!Array.isArray(this.allProductsCache) || this.allProductsCache.length === 0) return;
+
+        try {
+            sessionStorage.setItem('shop_prefetch', JSON.stringify({
+                categories: this.availableCategories || [],
+                products: this.allProductsCache,
+                timestamp: Date.now()
+            }));
+        } catch (e) {
+            console.warn('Failed to persist shop prefetch:', e);
+        }
+    },
+
+    hydrateProductCaches: function (products) {
+        const safeProducts = Array.isArray(products)
+            ? [...products].sort((a, b) => (b.display_order || 0) - (a.display_order || 0))
+            : [];
+        const grouped = {};
+
+        safeProducts.forEach(product => {
+            const cacheKey = product.category || '__uncategorized__';
+            if (!grouped[cacheKey]) {
+                grouped[cacheKey] = [];
+            }
+            grouped[cacheKey].push(product);
+        });
+
+        this.allProductsCache = safeProducts;
+        this.categoryProductsCache = grouped;
+        this.persistPrefetchedShopData();
+    },
+
+    cacheCategoryProducts: function (category, products) {
+        this.categoryProductsCache[category] = Array.isArray(products) ? products : [];
+    },
+
+    invalidateProductCaches: function () {
+        this.productsCacheEpoch += 1;
+        this.categoryProductsCache = {};
+        this.categoryProductsPromises = {};
+        this.allProductsCache = null;
+        this.allProductsPromise = null;
+        this.backgroundPrefetchScheduled = false;
+
+        if (this.backgroundPrefetchHandle) {
+            if (typeof window.cancelIdleCallback === 'function') {
+                window.cancelIdleCallback(this.backgroundPrefetchHandle);
+            } else {
+                clearTimeout(this.backgroundPrefetchHandle);
+            }
+            this.backgroundPrefetchHandle = null;
+        }
+
+        try {
+            sessionStorage.removeItem('shop_prefetch');
+        } catch (e) {
+            console.warn('Failed to clear shop prefetch cache:', e);
+        }
+    },
+
+    renderProductSkeletons: function (count = this.lastSkeletonCount || 6) {
+        const container = document.getElementById('userShopGrid');
+        if (!container) return;
+
+        const safeCount = Math.min(Math.max(count, 3), 8);
+        this.lastSkeletonCount = safeCount;
+
+        container.innerHTML = Array.from({ length: safeCount }, () => `
+            <div class="skeleton-card">
+                <div class="skeleton skeleton-image"></div>
+                <div class="skeleton-content">
+                    <div class="skeleton skeleton-title"></div>
+                    <div class="skeleton skeleton-desc"></div>
+                    <div class="skeleton skeleton-desc-short"></div>
+                    <div class="skeleton-footer">
+                        <div class="skeleton skeleton-price"></div>
+                        <div class="skeleton skeleton-btn"></div>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    },
+
+    fetchProductsFromServer: async function (category = 'all') {
+        const client = window.supabaseClient || supabaseClient;
+        let query = client
+            .from('shop_products')
+            .select('*')
+            .eq('is_active', true)
+            .order('display_order', { ascending: false });
+
+        if (category !== 'all') {
+            query = query.eq('category', category);
+        }
+
+        const result = await query;
+        if (result.error) throw result.error;
+        return result.data || [];
+    },
+
+    getProductsForCategory: async function (category, { forceRefresh = false } = {}) {
+        if (!forceRefresh) {
+            const cachedProducts = this.getCachedProductsForCategory(category);
+            if (cachedProducts !== null) {
+                return cachedProducts;
+            }
+        }
+
+        const cacheEpoch = this.productsCacheEpoch;
+
+        if (category === 'all') {
+            if (!forceRefresh && this.allProductsPromise) {
+                return this.allProductsPromise;
+            }
+
+            const request = this.fetchProductsFromServer('all')
+                .then(products => {
+                    if (cacheEpoch === this.productsCacheEpoch) {
+                        this.hydrateProductCaches(products);
+                    }
+                    return products;
+                })
+                .finally(() => {
+                    if (this.allProductsPromise === request) {
+                        this.allProductsPromise = null;
+                    }
+                });
+
+            this.allProductsPromise = request;
+            return request;
+        }
+
+        if (!forceRefresh && this.categoryProductsPromises[category]) {
+            return this.categoryProductsPromises[category];
+        }
+
+        const request = this.fetchProductsFromServer(category)
+            .then(products => {
+                if (cacheEpoch === this.productsCacheEpoch) {
+                    this.cacheCategoryProducts(category, products);
+                }
+                return products;
+            })
+            .finally(() => {
+                if (this.categoryProductsPromises[category] === request) {
+                    delete this.categoryProductsPromises[category];
+                }
+            });
+
+        this.categoryProductsPromises[category] = request;
+        return request;
+    },
+
+    getAgentPrices: async function () {
+        if (!this.currentAgentId) return {};
+
+        if (this.agentPricesCache) {
+            return this.agentPricesCache;
+        }
+
+        if (this.agentPricesPromise) {
+            return this.agentPricesPromise;
+        }
+
+        const client = window.supabaseClient || supabaseClient;
+        const request = client
+            .from('agent_prices')
+            .select('product_id, custom_price')
+            .eq('agent_id', this.currentAgentId)
+            .then(({ data, error }) => {
+                if (error) throw error;
+
+                const agentPrices = {};
+                (data || []).forEach(ap => {
+                    agentPrices[ap.product_id] = ap.custom_price;
+                });
+
+                this.agentPricesCache = agentPrices;
+                return agentPrices;
+            })
+            .finally(() => {
+                if (this.agentPricesPromise === request) {
+                    this.agentPricesPromise = null;
+                }
+            });
+
+        this.agentPricesPromise = request;
+        return request;
+    },
+
+    prefetchAllProductsInBackground: async function () {
+        if (Array.isArray(this.allProductsCache) || this.allProductsPromise) return;
+
+        try {
+            await this.getProductsForCategory('all');
+            console.log('⚡ Background-prefetched all shop categories');
+        } catch (error) {
+            console.warn('Background shop prefetch failed:', error);
+        }
+    },
+
+    scheduleBackgroundProductPrefetch: function () {
+        if (Array.isArray(this.allProductsCache) || this.allProductsPromise || this.backgroundPrefetchScheduled) {
+            return;
+        }
+
+        this.backgroundPrefetchScheduled = true;
+
+        const runPrefetch = () => {
+            this.backgroundPrefetchScheduled = false;
+            this.backgroundPrefetchHandle = null;
+            this.prefetchAllProductsInBackground();
+        };
+
+        if (typeof window.requestIdleCallback === 'function') {
+            this.backgroundPrefetchHandle = window.requestIdleCallback(runPrefetch, { timeout: 1200 });
+        } else {
+            this.backgroundPrefetchHandle = window.setTimeout(runPrefetch, 180);
+        }
     },
 
     // Load categories from shop_categories table dynamically
@@ -169,6 +435,9 @@ const ShopClient = {
                 ];
             }
 
+            this.availableCategories = categories;
+            this.persistPrefetchedShopData();
+
             // Clear skeleton placeholders and rebuild all buttons
             container.innerHTML = '';
 
@@ -195,13 +464,20 @@ const ShopClient = {
         }
     },
 
-    loadProducts: async function () {
+    loadProducts: async function ({ forceRefresh = false } = {}) {
         const container = document.getElementById('userShopGrid');
         if (!container) return;
 
-        // Only show spinner if no prefetched data and no skeleton already visible
-        if (!this._prefetchedProducts && !container.querySelector('.skeleton')) {
-            container.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text-dim);"><i class="fas fa-spinner fa-spin"></i> ${window.i18n?.t('common.loading') || '加载中...'}</div>`;
+        const requestCategory = this.currentCategory;
+        const requestToken = ++this.productsRequestToken;
+        const hasCachedProducts = !forceRefresh && this.hasCategoryProductsCache(requestCategory);
+
+        if (forceRefresh) {
+            this.invalidateProductCaches();
+        }
+
+        if (!hasCachedProducts) {
+            this.renderProductSkeletons();
         }
 
         // Clear existing timer if any
@@ -211,52 +487,18 @@ const ShopClient = {
         }
 
         try {
-            let data;
+            const [data, agentPrices] = await Promise.all([
+                this.getProductsForCategory(requestCategory, { forceRefresh }),
+                this.getAgentPrices()
+            ]);
 
-            // Use prefetched data if available
-            if (this._prefetchedProducts) {
-                data = this._prefetchedProducts;
-                // Apply category filter client-side
-                if (this.currentCategory !== 'all') {
-                    data = data.filter(p => p.category === this.currentCategory);
-                }
-                console.log('⚡ Using prefetched products');
-            } else {
-                // Fetch ONLY active products
-                let query = supabaseClient
-                    .from('shop_products')
-                    .select('*')
-                    .eq('is_active', true)
-                    .order('display_order', { ascending: false });
-
-                if (this.currentCategory !== 'all') {
-                    query = query.eq('category', this.currentCategory);
-                }
-
-                const result = await query;
-                if (result.error) throw result.error;
-                data = result.data;
-            }
+            if (requestToken !== this.productsRequestToken) return;
 
             container.innerHTML = '';
             if (!data || data.length === 0) {
                 container.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text-dim);" data-i18n="shop.noProducts">${window.i18n?.t('shop.noProducts') || '暂无商品上架'}</div>`;
+                this.scheduleBackgroundProductPrefetch();
                 return;
-            }
-
-            // Fetch Agent Prices if available
-            let agentPrices = {};
-            if (this.currentAgentId) {
-                const { data: agentData } = await window.supabaseClient
-                    .from('agent_prices')
-                    .select('product_id, custom_price')
-                    .eq('agent_id', this.currentAgentId);
-
-                if (agentData) {
-                    agentData.forEach(ap => {
-                        agentPrices[ap.product_id] = ap.custom_price;
-                    });
-                }
             }
 
             data.forEach((p, index) => {
@@ -353,7 +595,11 @@ const ShopClient = {
                 container.appendChild(el);
             });
 
+            this.lastSkeletonCount = Math.min(Math.max(data.length, 3), 8);
+            this.scheduleBackgroundProductPrefetch();
+
         } catch (err) {
+            if (requestToken !== this.productsRequestToken) return;
             container.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:20px;color:#ff4d4f;">${window.i18n?.t('common.error') || '加载失败'}: ${err.message}</div>`;
         }
 
@@ -372,7 +618,7 @@ const ShopClient = {
                 if (now >= endTime) {
                     // Flash sale ended, reload products completely
                     clearInterval(this.flashSaleInterval);
-                    this.loadProducts();
+                    this.loadProducts({ forceRefresh: true });
                     return; // Stop processing further
                 } else {
                     activeFlashSales++;
@@ -1023,7 +1269,7 @@ const ShopClient = {
 
             // Handle Results
             this.closePurchaseModal();
-            await this.loadProducts(); // Always refresh stock first
+            await this.loadProducts({ forceRefresh: true }); // Always refresh stock first
 
             this.showSuccessModal(finalContent, null, usageInstructions);
 

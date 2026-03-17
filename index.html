@@ -983,7 +983,7 @@
                 try {
                     const [catResult, prodResult] = await Promise.all([
                         window.supabaseClient.from('shop_categories').select('*').order('sort_order'),
-                        window.supabaseClient.from('shop_products').select('*').eq('is_active', true).order('sort_order')
+                        window.supabaseClient.from('shop_products').select('*').eq('is_active', true).order('display_order', { ascending: false })
                     ]);
 
                     if (prodResult.data && prodResult.data.length > 0) {
