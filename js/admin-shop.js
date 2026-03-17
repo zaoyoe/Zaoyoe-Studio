@@ -15,6 +15,7 @@ const ShopAdmin = {
     deletedProductsForImport: [], // Cache for deleted products (recycle bin)
     isProductSelectionMode: false, // State for product multi-select mode
     editingProductSnapshot: null, // Original product row for resilient saves on existing items
+    purchaseNotesSchemaAvailable: null, // null = unknown, false = remote DB not migrated yet
 
     // ==================== Site-Context Editing ====================
     SITE_FIELD_MAP: {
@@ -1042,6 +1043,21 @@ Example output format:
         return upsertPayload;
     },
 
+    isPurchaseNotesSchemaError: function (err) {
+        const message = `${err?.message || ''} ${err?.details || ''} ${err?.hint || ''}`.toLowerCase();
+        return message.includes('purchase_notes') || message.includes('show_purchase_notes');
+    },
+
+    getFriendlySaveErrorMessage: function (err) {
+        if (this.isPurchaseNotesSchemaError(err)) {
+            this.purchaseNotesSchemaAvailable = false;
+            return '保存失败：当前 Supabase 数据库还没有“注意事项”字段。请先执行 `supabase/add_purchase_notes.sql`，再保存商品。';
+        }
+
+        const details = [err?.message, err?.details, err?.hint].filter(Boolean).join(' | ');
+        return `Save failed: ${details}`;
+    },
+
     // Toggle Custom Delivery Type Dropdown
     toggleDeliveryTypeDropdown: function (e) {
         if (e) e.stopPropagation();
@@ -1333,6 +1349,11 @@ Example output format:
 
             document.getElementById('prodSort').value = String(normalizedSort);
 
+            if (this.purchaseNotesSchemaAvailable === false && (showPurchaseNotes || normalizedPurchaseNotes)) {
+                alert('保存失败：当前 Supabase 数据库还没有“注意事项”字段。请先执行 `supabase/add_purchase_notes.sql`，再保存商品。');
+                return;
+            }
+
             const payload = {
                 [fields.name]: name,
                 [fields.price]: normalizedPrice,
@@ -1340,8 +1361,6 @@ Example output format:
                 icon_url: document.getElementById('prodIcon').value,
                 category: document.getElementById('prodCategory').value,
                 display_order: normalizedSort,
-                show_purchase_notes: showPurchaseNotes,
-                purchase_notes: showPurchaseNotes ? (normalizedPurchaseNotes || null) : null,
                 show_usage_instructions: showUsageInstructions,
                 usage_instructions: showUsageInstructions ? (normalizedUsageInstructions || null) : null,
                 delivery_type: normalizedDeliveryType,
@@ -1352,6 +1371,11 @@ Example output format:
                 flash_sale_price: null,
                 flash_sale_end: null
             };
+
+            if (this.purchaseNotesSchemaAvailable !== false) {
+                payload.show_purchase_notes = showPurchaseNotes;
+                payload.purchase_notes = showPurchaseNotes ? (normalizedPurchaseNotes || null) : null;
+            }
 
             // Parse marketing fields visually
             let quantityRulesRaw = null;
@@ -1460,13 +1484,11 @@ Example output format:
                 await this.renderProductCategoryFilters();
             } catch (err) {
                 console.error('[ShopAdmin] Save process completely failed:', err);
-                const details = [err.message, err.details, err.hint].filter(Boolean).join(' | ');
-                alert('Save failed: ' + details);
+                alert(this.getFriendlySaveErrorMessage(err));
             }
         } catch (err) {
             console.error('[ShopAdmin] Outer try-catch failed:', err);
-            const details = [err.message, err.details, err.hint].filter(Boolean).join(' | ');
-            alert('Save failed: ' + details);
+            alert(this.getFriendlySaveErrorMessage(err));
         }
     },
 

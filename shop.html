@@ -506,6 +506,89 @@
             font-size: 14px;
         }
 
+        #shopPurchaseModal .modal-content>.shop-purchase-stage,
+        #shopSuccessModal .shop-success-modal>.shop-success-stage,
+        #shopSuccessModal .shop-success-scroll>.shop-success-scroll-stage {
+            will-change: opacity, transform;
+        }
+
+        #shopSuccessModal .shop-success-modal>.shop-success-scroll {
+            opacity: 1 !important;
+            transform: none !important;
+            transition: none !important;
+            will-change: auto !important;
+        }
+
+        #shopSuccessModal .shop-success-scroll>.shop-success-scroll-stage {
+            transition: opacity 0.5s ease-out, transform 0.5s ease-out;
+        }
+
+        #shopPurchaseModal:not(.active) .modal-content>.shop-purchase-stage,
+        #shopSuccessModal:not(.active) .shop-success-modal>.shop-success-stage,
+        #shopSuccessModal:not(.active) .shop-success-scroll>.shop-success-scroll-stage {
+            opacity: 0 !important;
+            transform: translateY(20px) !important;
+        }
+
+        #shopPurchaseModal.active .modal-content>.shop-purchase-stage,
+        #shopSuccessModal.active .shop-success-modal>.shop-success-stage,
+        #shopSuccessModal.active .shop-success-scroll>.shop-success-scroll-stage {
+            opacity: 1 !important;
+            transform: translateY(0) !important;
+        }
+
+        #shopPurchaseModal.active .shop-purchase-stage-header {
+            transition-delay: 0.15s !important;
+        }
+
+        #shopPurchaseModal.active .shop-purchase-stage-quantity {
+            transition-delay: 0.22s !important;
+        }
+
+        #shopPurchaseModal.active .shop-purchase-stage-discount {
+            transition-delay: 0.29s !important;
+        }
+
+        #shopPurchaseModal.active .shop-purchase-stage-summary {
+            transition-delay: 0.36s !important;
+        }
+
+        #shopPurchaseModal.active .shop-purchase-stage-notes {
+            transition-delay: 0.46s !important;
+        }
+
+        #shopPurchaseModal.active .shop-purchase-stage-action {
+            transition-delay: 0.6s !important;
+        }
+
+        #shopSuccessModal.active .shop-success-stage-icon {
+            transition-delay: 0.08s !important;
+        }
+
+        #shopSuccessModal.active .shop-success-stage-title {
+            transition-delay: 0.16s !important;
+        }
+
+        #shopSuccessModal.active .shop-success-scroll-stage-meta {
+            transition-delay: 0.28s !important;
+        }
+
+        #shopSuccessModal.active .shop-success-scroll-stage-content {
+            transition-delay: 0.36s !important;
+        }
+
+        #shopSuccessModal.active .shop-success-scroll-stage-usage {
+            transition-delay: 0.46s !important;
+        }
+
+        #shopSuccessModal.active .shop-success-scroll-stage-warning {
+            transition-delay: 0.54s !important;
+        }
+
+        #shopSuccessModal.active .shop-success-stage-actions {
+            transition-delay: 0.64s !important;
+        }
+
         .shop-btn-secondary {
             background: rgba(255, 255, 255, 0.1);
             color: rgba(255, 255, 255, 0.8);
@@ -1524,7 +1607,7 @@
                     </div>
                 </div>
 
-                <div style="text-align: center; margin-bottom: 20px;">
+                <div class="shop-purchase-stage shop-purchase-stage-header" style="text-align: center; margin-bottom: 20px;">
                     <h3 class="card-title" style="font-size: 1.2rem; margin-bottom: 5px;"
                         data-i18n="shop.confirmRedeem">
                         确认兑换</h3>
@@ -1532,7 +1615,7 @@
                 </div>
 
                 <!-- Quantity Selector -->
-                <div class="shop-quantity-wrapper">
+                <div class="shop-quantity-wrapper shop-purchase-stage shop-purchase-stage-quantity">
                     <div class="shop-quantity-control">
                         <button class="shop-qty-btn" onclick="ShopClient.adjustQuantity(-1)">−</button>
                         <input type="number" id="purchaseQuantity" value="1" min="1" max="99" class="shop-qty-input"
@@ -1542,7 +1625,7 @@
                 </div>
 
                 <!-- Add Discount Code Input Here -->
-                <div style="margin: 15px 10px; text-align: left;">
+                <div class="shop-purchase-stage shop-purchase-stage-discount" style="margin: 15px 10px; text-align: left;">
                     <div style="font-size: 12px; color: rgba(255,255,255,0.4); margin-bottom: 5px;"
                         data-i18n="shop.discountCode">优惠码 (选填)</div>
                     <div style="display: flex; gap: 8px;">
@@ -1557,7 +1640,7 @@
                 </div>
 
                 <!-- Price Summary -->
-                <div
+                <div class="shop-purchase-stage shop-purchase-stage-summary"
                     style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 25px; padding: 0 10px;">
                     <div style="text-align: left;">
                         <div style="font-size: 12px; color: rgba(255,255,255,0.4); margin-bottom: 2px;"
@@ -1575,7 +1658,7 @@
                     </div>
                 </div>
 
-                <div id="purchaseNotesBox" style="display: none; margin: 0 10px 20px;">
+                <div id="purchaseNotesBox" class="shop-purchase-stage shop-purchase-stage-notes" style="display: none; margin: 0 10px 20px;">
                     <div
                         style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px; color: rgba(255,255,255,0.68); font-size: 0.96rem; text-align: left;">
                         <i class="fas fa-triangle-exclamation" style="color: #fbbf24;"></i>
@@ -1589,7 +1672,7 @@
                 </div>
 
                 <!-- Actions -->
-                <button id="confirmPurchaseBtn" onclick="ShopClient.confirmPurchase()" class="shop-btn shop-btn-primary"
+                <button id="confirmPurchaseBtn" onclick="ShopClient.confirmPurchase()" class="shop-btn shop-btn-primary shop-purchase-stage shop-purchase-stage-action"
                     style="width: 100%;">
                     <i class="fas fa-shopping-cart"></i> <span data-i18n="shop.confirmRedeem">确认兑换</span>
                 </button>
@@ -1600,15 +1683,15 @@
         <div class="modal-overlay" id="shopSuccessModal" style="z-index: 99999;"
             onclick="if(event.target === this) { document.getElementById('shopSuccessModal').classList.remove('active'); if(window.iOSScrollLock) window.iOSScrollLock.unlock(); }">
             <div class="modal-content premium-modal shop-success-modal" onclick="event.stopPropagation()">
-                <div
+                <div class="shop-success-stage shop-success-stage-icon"
                     style="width: 60px; height: 60px; background: rgba(56, 158, 13, 0.2); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px;">
                     <i class="fas fa-check" style="font-size: 30px; color: #389e0d;"></i>
                 </div>
-                <h2 class="card-title" data-i18n="shop.redeemSuccess">兑换成功!</h2>
+                <h2 class="card-title shop-success-stage shop-success-stage-title" data-i18n="shop.redeemSuccess">兑换成功!</h2>
 
                 <div class="shop-success-scroll">
                     <!-- Product content header with tooltip dot (outside overflow container) -->
-                    <div
+                    <div class="shop-success-scroll-stage shop-success-scroll-stage-meta"
                         style="font-size: 12px; color: rgba(255,255,255,0.5); margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
                         <span data-i18n="shop.productContent">商品内容:</span>
                         <span id="productNameDot" class="product-name-dot" data-tooltip="">
@@ -1616,7 +1699,7 @@
                         </span>
                     </div>
 
-                    <div class="glass-box shop-success-content-shell"
+                    <div class="glass-box shop-success-content-shell shop-success-scroll-stage shop-success-scroll-stage-content"
                         style="margin-bottom: 20px; padding: 15px; word-break: break-all; user-select: text; text-align: left; max-height: 280px; overflow-y: auto;">
                         <div id="purchasedContent"
                             style="font-family: monospace; font-size: 14px; color: #fff; white-space: pre-wrap; overflow-x: auto;">
@@ -1625,7 +1708,7 @@
                     </div>
 
                     <!-- Usage Instructions Box (Conditionally shown) -->
-                    <div id="usageInstructionsBox" style="display: none; margin-bottom: 20px;">
+                    <div id="usageInstructionsBox" class="shop-success-scroll-stage shop-success-scroll-stage-usage" style="display: none; margin-bottom: 20px;">
                         <div
                             style="font-size: 12px; color: rgba(255,255,255,0.5); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
                             <i class="fas fa-info-circle" style="color: #60a5fa;"></i>
@@ -1639,7 +1722,7 @@
                     </div>
 
                     <!-- Warning Box (Initially Hidden) -->
-                    <div id="purchasedWarning" class="glass-box"
+                    <div id="purchasedWarning" class="glass-box shop-success-scroll-stage shop-success-scroll-stage-warning"
                         style="margin-bottom: 20px; padding: 12px; background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.3); text-align: left; display: none;">
                         <div style="display: flex; gap: 10px; align-items: flex-start;">
                             <i class="fas fa-exclamation-triangle" style="color: #fbbf24; margin-top: 3px;"></i>
@@ -1651,7 +1734,7 @@
                     </div>
                 </div>
 
-                <div class="shop-success-actions">
+                <div class="shop-success-actions shop-success-stage shop-success-stage-actions">
                     <button id="copyContentBtn" onclick="ShopClient.copyContent()" class="shop-btn shop-btn-primary"
                         style="flex: 1;">
                         <i class="fas fa-copy"></i> <span data-i18n="common.copy">复制</span>
