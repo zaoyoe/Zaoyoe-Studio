@@ -1669,7 +1669,7 @@ document.addEventListener('DOMContentLoaded', function () {
         submitState.resetTimer = setTimeout(() => {
             submitState.resetTimer = null;
             setGuestbookComposerHandleState('idle');
-        }, 760);
+        }, 1000);
     }
 
     if (guestbookForm) {
