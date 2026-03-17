@@ -46,7 +46,7 @@
     <link rel="stylesheet" href="style.css?v=20260316_PROFILE_MODAL_DESKTOP_LAYOUT_64">
     <link rel="stylesheet" href="css/auth-sheet.css?v=20260316_AUTH_SHEET_CHAT_MATCH_36">
     <link rel="stylesheet" href="avatar-fix.css?v=20260316_AVATAR_NAV_STABLE_2">
-    <link rel="stylesheet" href="verify-widget.css?v=20260302_G_AUTH">
+    <link rel="stylesheet" href="verify-widget.css?v=20260317_VERIFY_CARD_INPUT">
     <!-- Unified Navigation CSS -->
     <link rel="stylesheet" href="css/framer_home.css?v=NAV_UNIFIED_V9">
 
@@ -141,7 +141,7 @@
         }
 
         .verify-page-header h1 i {
-            color: #667eea;
+            color: #6b9ece;
         }
 
         .verify-page-header p {
@@ -229,7 +229,7 @@
         }
 
         .verify-info-card.info i {
-            color: #667eea;
+            color: #6b9ece;
         }
 
         /* Usage Instructions */
@@ -425,12 +425,10 @@
                 <div class="verify-instructions">
                     <h3><i class="fas fa-lightbulb"></i> <span data-i18n="verify.instructionsTitle">使用说明</span></h3>
                     <ol>
-                        <li data-i18n="verify.instruction1">每行一个账号，推荐格式：
-                            <code>email----password----totp_secret----priority</code></li>
-                        <li data-i18n="verify.instruction2">priority 可选，只能填 <code>0</code> 或 <code>1</code>；不填时默认
-                            <code>0</code>。</li>
+                        <li data-i18n="verify.instruction1">按顺序填写 <code>Gmail</code>、<code>密码</code> 和 <code>2FA Base32 密钥</code>，每次提交 1 个账号。</li>
+                        <li data-i18n="verify.instruction2">勾选高优先级后会优先排队；不勾选则按普通队列提交。</li>
                         <li data-i18n="verify.instruction3">TOTP 需要填写验证器绑定时的 Base32 密钥，不是当前 6 位动态验证码。</li>
-                        <li data-i18n="verify.instruction4">系统只记录邮箱与结果，不保存密码和 TOTP 密钥；SSO 域名邮箱不受支持。</li>
+                        <li data-i18n="verify.instruction4">系统只记录邮箱与结果，不在历史记录中展示密码和 TOTP 密钥；SSO 域名邮箱不受支持。</li>
                     </ol>
                 </div>
             </div>
@@ -458,7 +456,7 @@
     <script src="./starry-sky.js?v=1"></script>
 
     <!-- Verify Widget Script -->
-    <script src="./verify-widget.js?v=20260317_GOOGLE_ONE_API"></script>
+    <script src="./verify-widget.js?v=20260317_VERIFY_CARD_INPUT"></script>
 
     <!-- Load price from config -->
     <script>

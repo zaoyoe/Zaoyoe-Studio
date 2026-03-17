@@ -1,6 +1,6 @@
 /**
  * Google One Job Widget
- * Batch submit Google accounts and poll job status
+ * Submit a single Google account job and poll job status
  */
 
 (function () {
@@ -404,6 +404,14 @@
 
         container.innerHTML = `
             <div class="verify-widget">
+                <div class="verify-widget-topline" aria-hidden="true">
+                    <div class="verify-orbit-lights">
+                        <span class="verify-orbit-light light-primary"></span>
+                        <span class="verify-orbit-light light-secondary"></span>
+                        <span class="verify-orbit-light light-accent"></span>
+                    </div>
+                    <div class="verify-orbit-trail"></div>
+                </div>
                 <div class="verify-widget-header">
                     <div class="verify-widget-icon">
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));">
@@ -440,29 +448,74 @@
                     </div>
 
                     <div id="verifyForm" style="display: ${formDisplay};">
-                        <div class="verify-input-area">
-                            <textarea
-                                class="verify-textarea"
-                                id="verifyIdInput"
-                                placeholder="${t('verify.placeholder', '每行一个账号，推荐格式:\\n邮箱----密码----TOTP密钥----优先级')}"
-                                rows="6"
-                            ></textarea>
-                            <div class="verify-format-hint">${t('verify.formatHint', '推荐使用 email----password----totp_secret----priority，每行一个；也支持 Tab、英文逗号或竖线分隔。')}</div>
-                            <div class="verify-batch-info">
-                                <div class="verify-batch-count">
-                                    <i class="fas fa-list-ol"></i>
-                                    ${t('verify.pendingCount', '待提交')}: <span class="count" id="verifyLinkCount">0</span> ${t('verify.items', '个')}
+                        <div class="verify-input-area verify-form-layout">
+                            <div class="verify-form-notice">
+                                <div class="verify-form-notice-icon">
+                                    <i class="fas fa-shield-alt"></i>
                                 </div>
-                                <div class="verify-price-info">
-                                    <i class="fas fa-coins"></i>
-                                    ${t('verify.totalCost', '共需')} <span class="price" id="verifyTotalCost">0</span> ${t('verify.points', '积分')}
-                                    <span class="per-price">（${CONFIG.pricePerVerify}${t('verify.perPrice', '积分/次')}）</span>
+                                <div class="verify-form-notice-copy">
+                                    <strong>${t('verify.noticeTitle', '提交账号信息')}</strong>
+                                    <span>${t('verify.noticeBody', '仅提交当前任务所需信息，密码与 2FA 密钥不会写入历史记录。')}</span>
                                 </div>
                             </div>
-                            <button class="verify-submit-btn" id="verifySubmitBtn" onclick="VerifyWidget.submit()">
-                                <i class="fas fa-paper-plane"></i>
-                                ${t('verify.startVerify', '开始提交')}
-                            </button>
+
+                            <label class="verify-form-field">
+                                <span class="verify-field-label">${t('verify.emailLabel', 'Gmail 地址')} <em>*</em></span>
+                                <input
+                                    class="verify-input"
+                                    id="verifyEmailInput"
+                                    type="email"
+                                    inputmode="email"
+                                    autocomplete="off"
+                                    placeholder="${t('verify.emailPlaceholder', 'your.account@gmail.com')}"
+                                />
+                            </label>
+
+                            <label class="verify-form-field">
+                                <span class="verify-field-label">${t('verify.passwordLabel', '账号密码')} <em>*</em></span>
+                                <input
+                                    class="verify-input"
+                                    id="verifyPasswordInput"
+                                    type="password"
+                                    autocomplete="new-password"
+                                    placeholder="${t('verify.passwordPlaceholder', '请输入 Google 账号密码')}"
+                                />
+                            </label>
+
+                            <label class="verify-form-field">
+                                <span class="verify-field-label">${t('verify.totpLabel', '2FA 密钥（Base32）')} <em>*</em></span>
+                                <input
+                                    class="verify-input"
+                                    id="verifyTotpInput"
+                                    type="text"
+                                    spellcheck="false"
+                                    autocapitalize="characters"
+                                    autocomplete="off"
+                                    placeholder="${t('verify.totpPlaceholder', '例如：JBSWY3DPEHPK3PXP')}"
+                                />
+                            </label>
+
+                            <div class="verify-form-meta">
+                                <label class="verify-priority-pill" for="verifyPriorityToggle">
+                                    <input id="verifyPriorityToggle" type="checkbox" />
+                                    <span>${t('verify.priorityLabel', '高优先级任务')}</span>
+                                </label>
+                                <div class="verify-price-info verify-form-price">
+                                    <i class="fas fa-coins"></i>
+                                    ${t('verify.singleCost', '本次提交消耗')} <span class="price" id="verifySingleCost">${CONFIG.pricePerVerify}</span> ${t('verify.points', '积分')}
+                                </div>
+                            </div>
+
+                            <div class="verify-form-actions">
+                                <button class="verify-reset-btn" id="verifyResetBtn" onclick="VerifyWidget.resetForm()">
+                                    <i class="fas fa-rotate-left"></i>
+                                    ${t('verify.resetForm', '清空')}
+                                </button>
+                                <button class="verify-submit-btn" id="verifySubmitBtn" onclick="VerifyWidget.submit()">
+                                    <i class="fas fa-paper-plane"></i>
+                                    ${t('verify.startVerify', '提交账号')}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -471,10 +524,10 @@
                     <div class="verify-batch-results-header">
                         <div class="verify-batch-results-title">
                             <i class="fas fa-list-check"></i>
-                            ${t('verify.results', '任务结果')}
+                            ${t('verify.results', '任务状态')}
                         </div>
                         <div class="verify-batch-progress" id="verifyBatchProgress">
-                            ${t('verify.progress', '进度')}: <span class="current">0</span>/<span class="total">0</span>
+                            ${t('verify.progress', '进度')}: <span class="current">0</span>/<span class="total">1</span>
                         </div>
                     </div>
                     <div id="verifyResultsList"></div>
@@ -662,69 +715,64 @@
         }
     }
 
-    function splitAccountParts(line) {
-        if (line.includes('----')) {
-            return line.split(/\s*----\s*/);
+    function setupInputListener() {
+        const emailInput = document.getElementById('verifyEmailInput');
+        const passwordInput = document.getElementById('verifyPasswordInput');
+        const totpInput = document.getElementById('verifyTotpInput');
+
+        [emailInput, passwordInput, totpInput].forEach((input) => {
+            if (!input) return;
+            input.addEventListener('input', () => {
+                const result = document.getElementById('verifyResult');
+                if (result) result.classList.remove('show');
+            });
+        });
+
+        if (totpInput) {
+            totpInput.addEventListener('input', () => {
+                totpInput.value = totpInput.value.toUpperCase().replace(/[^A-Z2-7]/g, '');
+            });
         }
-        if (line.includes('\t')) {
-            return line.split(/\t+/);
-        }
-        if (line.includes('|')) {
-            return line.split(/\s*\|\s*/);
-        }
-        return line.split(/\s*[，,]\s*/);
     }
 
-    function parseAccountLine(line, index) {
-        const raw = String(line || '').trim();
-        if (!raw) return null;
+    function readFormEntry() {
+        const emailInput = document.getElementById('verifyEmailInput');
+        const passwordInput = document.getElementById('verifyPasswordInput');
+        const totpInput = document.getElementById('verifyTotpInput');
+        const priorityToggle = document.getElementById('verifyPriorityToggle');
 
-        const parts = splitAccountParts(raw).map((part) => part.trim());
-        if (parts.length < 3) {
+        const email = String(emailInput?.value || '').trim().toLowerCase();
+        const password = String(passwordInput?.value || '').trim();
+        const totpSecret = String(totpInput?.value || '').trim().toUpperCase().replace(/[^A-Z2-7]/g, '');
+        const priority = priorityToggle?.checked ? 1 : 0;
+
+        if (!email || !password || !totpSecret) {
             return {
                 valid: false,
-                index,
-                raw,
-                reason: t('verify.invalidAccountLine', '格式错误，请使用 邮箱----密码----TOTP密钥----优先级')
+                reason: t('verify.missingRequired', '请完整填写邮箱、密码和 2FA 密钥')
             };
         }
-
-        const [email, password, totpSecret, priorityRaw = '0'] = parts;
 
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
             return {
                 valid: false,
-                index,
-                raw,
                 reason: t('verify.invalidEmail', '邮箱格式不正确')
             };
         }
 
-        if (!password || !totpSecret) {
+        if (!/^[A-Z2-7]{8,64}$/.test(totpSecret)) {
             return {
                 valid: false,
-                index,
-                raw,
-                reason: t('verify.invalidAccountLine', '格式错误，请使用 邮箱----密码----TOTP密钥----优先级')
-            };
-        }
-
-        const priority = priorityRaw === '' ? 0 : Number(priorityRaw);
-        if (!Number.isInteger(priority) || (priority !== 0 && priority !== 1)) {
-            return {
-                valid: false,
-                index,
-                raw,
-                reason: t('verify.invalidPriority', '优先级只能是 0 或 1')
+                reason: t('verify.invalidTotp', '2FA 密钥需要是 Base32 格式，只能包含 A-Z 和 2-7')
             };
         }
 
         return {
             valid: true,
             entry: {
-                index,
-                raw,
-                email: email.toLowerCase(),
+                index: 0,
+                raw: email,
+                email,
                 password,
                 totpSecret,
                 priority
@@ -732,44 +780,33 @@
         };
     }
 
-    function parseAccountEntries(text) {
-        const entries = [];
-        const invalidLines = [];
+    function resetForm() {
+        if (isLoading) return;
 
-        String(text || '').split('\n').forEach((line, index) => {
-            const parsed = parseAccountLine(line, index);
-            if (!parsed) return;
-            if (parsed.valid) {
-                entries.push(parsed.entry);
-            } else {
-                invalidLines.push(parsed);
-            }
-        });
+        const emailInput = document.getElementById('verifyEmailInput');
+        const passwordInput = document.getElementById('verifyPasswordInput');
+        const totpInput = document.getElementById('verifyTotpInput');
+        const priorityToggle = document.getElementById('verifyPriorityToggle');
+        const result = document.getElementById('verifyResult');
+        const batch = document.getElementById('verifyBatchResults');
 
-        return { entries, invalidLines };
-    }
-
-    function setupInputListener() {
-        const input = document.getElementById('verifyIdInput');
-        if (input) input.addEventListener('input', updateEntryCount);
-    }
-
-    function updateEntryCount() {
-        const input = document.getElementById('verifyIdInput');
-        const countEl = document.getElementById('verifyLinkCount');
-        const costEl = document.getElementById('verifyTotalCost');
-        if (!input || !countEl) return;
-
-        const { entries } = parseAccountEntries(input.value);
-        countEl.textContent = entries.length;
-        if (costEl) costEl.textContent = entries.length * CONFIG.pricePerVerify;
+        if (emailInput) emailInput.value = '';
+        if (passwordInput) passwordInput.value = '';
+        if (totpInput) totpInput.value = '';
+        if (priorityToggle) priorityToggle.checked = false;
+        if (result) result.classList.remove('show');
+        if (batch) batch.classList.remove('show');
+        clearResultsList();
+        hideBatchSummary();
     }
 
     function updatePriceDisplay() {
         document.querySelectorAll('.per-price').forEach((el) => {
             el.textContent = `（${CONFIG.pricePerVerify}${t('verify.perPrice', '积分/次')}）`;
         });
-        updateEntryCount();
+
+        const singleCost = document.getElementById('verifySingleCost');
+        if (singleCost) singleCost.textContent = CONFIG.pricePerVerify;
     }
 
     async function logToHistory(email, status, payload = {}, pointsDeducted = 0) {
@@ -807,45 +844,25 @@
             return;
         }
 
-        const input = document.getElementById('verifyIdInput');
         const submitBtn = document.getElementById('verifySubmitBtn');
+        const resetBtn = document.getElementById('verifyResetBtn');
         const batchPanel = document.getElementById('verifyBatchResults');
         const singleResult = document.getElementById('verifyResult');
 
-        if (!input || !submitBtn) return;
+        if (!submitBtn) return;
 
-        const inputValue = input.value.trim();
-        if (!inputValue) {
+        const parsed = readFormEntry();
+        if (!parsed.valid) {
             showSingleResult(
                 'error',
-                t('verify.enterContent', '请输入账号信息'),
-                t('verify.invalidAccountLine', '格式错误，请使用 邮箱----密码----TOTP密钥----优先级')
+                t('verify.formatError', '信息不完整'),
+                parsed.reason || t('verify.missingRequired', '请完整填写邮箱、密码和 2FA 密钥')
             );
             return;
         }
 
-        const { entries, invalidLines } = parseAccountEntries(inputValue);
-        const totalRows = entries.length + invalidLines.length;
-
-        if (totalRows === 0) {
-            showSingleResult(
-                'error',
-                t('verify.enterContent', '请输入账号信息'),
-                t('verify.invalidAccountLine', '格式错误，请使用 邮箱----密码----TOTP密钥----优先级')
-            );
-            return;
-        }
-
-        if (entries.length === 0) {
-            showSingleResult(
-                'error',
-                t('verify.formatError', '格式错误'),
-                invalidLines[0]?.reason || t('verify.invalidAccountLine', '格式错误，请使用 邮箱----密码----TOTP密钥----优先级')
-            );
-            return;
-        }
-
-        const totalCost = entries.length * CONFIG.pricePerVerify;
+        const entry = parsed.entry;
+        const totalCost = CONFIG.pricePerVerify;
         if (userBalance < totalCost) {
             showSingleResult(
                 'error',
@@ -867,28 +884,17 @@
         if (singleResult) singleResult.classList.remove('show');
         if (batchPanel) batchPanel.classList.add('show');
 
-        batchStats = { success: 0, failed: 0, total: totalRows };
+        batchStats = { success: 0, failed: 0, total: 1 };
         activeTasks.clear();
         clearResultsList();
         hideBatchSummary();
-
-        let completedCount = 0;
-
-        invalidLines.forEach((invalid) => {
-            addResultItem(invalid.index, invalid.raw, 'error', escapeHtml(invalid.reason));
-            batchStats.failed++;
-            completedCount++;
-        });
-
-        entries.forEach((entry) => {
-            addResultItem(entry.index, entry.email, 'processing', escapeHtml(t('verify.waiting', '等待提交...')));
-        });
-
-        updateBatchProgress(completedCount, totalRows);
+        addResultItem(0, entry.email, 'processing', escapeHtml(t('verify.waiting', '等待提交...')));
+        updateBatchProgress(0, 1);
 
         isLoading = true;
         submitBtn.disabled = true;
         submitBtn.innerHTML = `<div class="spinner"></div> ${t('verify.verifying', '提交中...')}`;
+        if (resetBtn) resetBtn.disabled = true;
 
         let userId = currentUser?.id || currentUser?.user_id;
 
@@ -902,119 +908,103 @@
                 userId = data?.user?.id;
             } catch (error) {
                 const errorMessage = error.message || t('verify.pleaseLogin', '请先登录');
-                entries.forEach((entry) => {
-                    updateResultItem(entry.index, 'error', escapeHtml(errorMessage));
-                });
-                batchStats.failed += entries.length;
+                updateResultItem(entry.index, 'error', escapeHtml(errorMessage));
+                batchStats.failed = 1;
                 finishVerification();
                 return;
             }
         }
 
-        for (const entry of entries) {
-            try {
-                updateResultItem(entry.index, 'processing', escapeHtml(t('verify.verifying', '提交中...')));
+        try {
+            updateResultItem(entry.index, 'processing', escapeHtml(t('verify.verifying', '提交中...')));
 
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 15000);
-                const res = await fetch(`${CONFIG.nodeServerUrl}/api/verify`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        email: entry.email,
-                        password: entry.password,
-                        totpSecret: entry.totpSecret,
-                        priority: entry.priority,
-                        userId,
-                        site: window.SiteConfig?.site || 'cn'
-                    }),
-                    signal: controller.signal
-                });
-                clearTimeout(timeoutId);
-
-                const data = await res.json().catch(() => ({}));
-
-                if (!res.ok || !data.success) {
-                    const errorText = getErrorLabel(data.code, data.message || t('verify.loadFailed', '提交失败'));
-                    updateResultItem(entry.index, 'error', escapeHtml(errorText));
-                    batchStats.failed++;
-                    completedCount++;
-                    updateBatchProgress(completedCount, totalRows);
-                    await logToHistory(entry.email, 'failed', {
-                        email: entry.email,
-                        error_code: data.code || '',
-                        error_message: errorText,
-                        raw_status: 'submit_failed'
-                    });
-                    continue;
-                }
-
-                const jobId = data.job_id || data.task_id;
-                if (!jobId) {
-                    const errorText = t('verify.loadFailed', '提交失败');
-                    updateResultItem(entry.index, 'error', escapeHtml(errorText));
-                    batchStats.failed++;
-                    completedCount++;
-                    updateBatchProgress(completedCount, totalRows);
-                    await logToHistory(entry.email, 'failed', {
-                        email: entry.email,
-                        error_message: errorText,
-                        raw_status: 'missing_job_id'
-                    });
-                    continue;
-                }
-
-                activeTasks.set(jobId, {
-                    index: entry.index,
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 15000);
+            const res = await fetch(`${CONFIG.nodeServerUrl}/api/verify`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
                     email: entry.email,
-                    timer: null
-                });
+                    password: entry.password,
+                    totpSecret: entry.totpSecret,
+                    priority: entry.priority,
+                    userId,
+                    site: window.SiteConfig?.site || 'cn'
+                }),
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
 
-                const display = getResultDisplay({
-                    status: data.status || 'queued',
-                    queue_position: data.queue_position,
-                    estimated_wait_seconds: data.estimated_wait_seconds
-                });
-                updateResultItem(entry.index, display.status, display.html);
+            const data = await res.json().catch(() => ({}));
 
-                pollTask(jobId, userId, entry).then((result) => {
-                    completedCount++;
-                    if (result.success) {
-                        batchStats.success++;
-                        if (result.pointsDeducted) {
-                            userBalance = Math.max(0, userBalance - result.pointsDeducted);
-                            const balEl = document.getElementById('verifyBalanceValue');
-                            if (balEl) balEl.textContent = userBalance;
-                        }
-                    } else {
-                        batchStats.failed++;
-                    }
-
-                    updateBatchProgress(completedCount, totalRows);
-                    if (completedCount >= totalRows) {
-                        finishVerification();
-                    }
-                });
-
-                if (entries.indexOf(entry) < entries.length - 1) {
-                    await new Promise((resolve) => setTimeout(resolve, 400));
-                }
-
-            } catch (error) {
-                const errorText = error.message || t('verify.loadFailed', '提交失败');
+            if (!res.ok || !data.success) {
+                const errorText = getErrorLabel(data.code, data.message || t('verify.loadFailed', '提交失败'));
                 updateResultItem(entry.index, 'error', escapeHtml(errorText));
-                batchStats.failed++;
-                completedCount++;
-                updateBatchProgress(completedCount, totalRows);
-                await logToHistory(entry.email, 'error', {
+                batchStats.failed = 1;
+                updateBatchProgress(1, 1);
+                await logToHistory(entry.email, 'failed', {
+                    email: entry.email,
+                    error_code: data.code || '',
+                    error_message: errorText,
+                    raw_status: 'submit_failed'
+                });
+                finishVerification();
+                return;
+            }
+
+            const jobId = data.job_id || data.task_id;
+            if (!jobId) {
+                const errorText = t('verify.loadFailed', '提交失败');
+                updateResultItem(entry.index, 'error', escapeHtml(errorText));
+                batchStats.failed = 1;
+                updateBatchProgress(1, 1);
+                await logToHistory(entry.email, 'failed', {
                     email: entry.email,
                     error_message: errorText,
-                    raw_status: 'submit_error'
+                    raw_status: 'missing_job_id'
                 });
+                finishVerification();
+                return;
             }
-        }
 
-        if (activeTasks.size === 0 && completedCount >= totalRows) {
+            activeTasks.set(jobId, {
+                index: entry.index,
+                email: entry.email,
+                timer: null
+            });
+
+            const display = getResultDisplay({
+                status: data.status || 'queued',
+                queue_position: data.queue_position,
+                estimated_wait_seconds: data.estimated_wait_seconds
+            });
+            updateResultItem(entry.index, display.status, display.html);
+
+            pollTask(jobId, userId, entry).then((result) => {
+                if (result.success) {
+                    batchStats.success = 1;
+                    if (result.pointsDeducted) {
+                        userBalance = Math.max(0, userBalance - result.pointsDeducted);
+                        const balEl = document.getElementById('verifyBalanceValue');
+                        if (balEl) balEl.textContent = userBalance;
+                    }
+                } else {
+                    batchStats.failed = 1;
+                }
+
+                updateBatchProgress(1, 1);
+                finishVerification();
+            });
+        } catch (error) {
+            const errorText = error.message || t('verify.loadFailed', '提交失败');
+            updateResultItem(entry.index, 'error', escapeHtml(errorText));
+            batchStats.failed = 1;
+            updateBatchProgress(1, 1);
+            await logToHistory(entry.email, 'error', {
+                email: entry.email,
+                error_message: errorText,
+                raw_status: 'submit_error'
+            });
             finishVerification();
         }
     }
@@ -1098,12 +1088,15 @@
 
     function finishVerification() {
         isLoading = false;
+        activeTasks.clear();
 
         const submitBtn = document.getElementById('verifySubmitBtn');
+        const resetBtn = document.getElementById('verifyResetBtn');
         if (submitBtn) {
             submitBtn.disabled = false;
-            submitBtn.innerHTML = `<i class="fas fa-paper-plane"></i> ${t('verify.startVerify', '开始提交')}`;
+            submitBtn.innerHTML = `<i class="fas fa-paper-plane"></i> ${t('verify.startVerify', '提交账号')}`;
         }
+        if (resetBtn) resetBtn.disabled = false;
 
         showBatchSummary();
         loadUserBalance();
@@ -1427,6 +1420,7 @@
         init,
         submit,
         cancel,
+        resetForm,
         reload: loadConfig,
         loadHistory,
         exportHistory,
