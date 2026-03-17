@@ -664,6 +664,10 @@ class ChatWidget {
             .admin-search {
                 padding: 10px 12px;
             }
+            .chat-window.admin-mode-layout .admin-search:focus-within {
+                border-color: transparent !important;
+                box-shadow: none !important;
+            }
             .admin-search input {
                 width: 100%;
                 padding: 8px 12px;
@@ -674,11 +678,15 @@ class ChatWidget {
                 font-size: 13px;
                 box-sizing: border-box;
             }
-            .admin-search input:focus {
+            .chat-window.admin-mode-layout .admin-search input:focus,
+            .chat-window.admin-mode-layout .admin-search input:focus-visible,
+            .chat-window.admin-mode-layout .admin-search input:-webkit-autofill:focus,
+            .chat-window.admin-mode-layout .admin-search input:-webkit-autofill:focus-visible {
                 outline: none;
-                border-color: #9fcaff;
-                background: rgba(255, 255, 255, 0.042);
-                box-shadow: 0 0 0 3px rgba(159, 202, 255, 0.14);
+                border-color: #9fcaff !important;
+                background: rgba(255, 255, 255, 0.042) !important;
+                box-shadow: 0 0 0 3px rgba(159, 202, 255, 0.14) !important;
+                caret-color: #9fcaff !important;
             }
             .admin-mode-layout .chat-input:focus,
             .admin-mode-layout .chat-input:focus-visible,
