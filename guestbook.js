@@ -559,6 +559,17 @@ function initGuestbookPage() {
            </div>`
             : '';
 
+        const commentSectionHtml = hasComments
+            ? `
+                    <div class="comment-section">
+                        <div class="comment-list ${shouldCollapse ? 'collapsed' : ''}" data-message-id="${msg.id}">
+                            ${commentsHtml}
+                        </div>
+                        ${toggleButtonHtml}
+                    </div>
+              `
+            : '';
+
         const messageHtml = `
             <div class="message-anim-wrapper" style="transition-delay: ${delay}s">
                 <div class="message-item" data-message-id="${msg.id}" data-author-id="${msg.authorId || ''}">
@@ -597,12 +608,7 @@ function initGuestbookPage() {
                     
                     
                     <!-- 5. Comment Section -->
-                    <div class="comment-section">
-                        <div class="comment-list ${shouldCollapse ? 'collapsed' : ''}" data-message-id="${msg.id}">
-                            ${commentsHtml}
-                        </div>
-                        ${toggleButtonHtml}
-                    </div>
+                    ${commentSectionHtml}
                 </div>
             </div>
         `;
