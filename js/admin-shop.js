@@ -14,6 +14,7 @@ const ShopAdmin = {
     allProductsForImport: [], // Cache for import list (active products)
     deletedProductsForImport: [], // Cache for deleted products (recycle bin)
     isProductSelectionMode: false, // State for product multi-select mode
+    editingProductSnapshot: null, // Original product row for resilient saves on existing items
 
     // ==================== Site-Context Editing ====================
     SITE_FIELD_MAP: {
@@ -1006,6 +1007,32 @@ Example output format:
         }
     },
 
+    buildExistingProductUpsertPayload: function (id, payload) {
+        const snapshot = this.editingProductSnapshot && this.editingProductSnapshot.id === id
+            ? this.editingProductSnapshot
+            : null;
+
+        const upsertPayload = { id, ...payload };
+
+        if (upsertPayload.name == null) {
+            const fallbackName = typeof snapshot?.name === 'string' ? snapshot.name.trim() : '';
+            if (!fallbackName) {
+                throw new Error('缺少商品基础名称，无法保存现有商品');
+            }
+            upsertPayload.name = fallbackName;
+        }
+
+        if (upsertPayload.price_points == null) {
+            const fallbackPrice = Number.parseInt(snapshot?.price_points, 10);
+            if (!Number.isFinite(fallbackPrice) || fallbackPrice < 0) {
+                throw new Error('缺少商品基础价格，无法保存现有商品');
+            }
+            upsertPayload.price_points = fallbackPrice;
+        }
+
+        return upsertPayload;
+    },
+
     // Toggle Custom Delivery Type Dropdown
     toggleDeliveryTypeDropdown: function (e) {
         if (e) e.stopPropagation();
@@ -1110,6 +1137,7 @@ Example output format:
         modal.style.zIndex = '9999';
 
         if (!isEdit) {
+            this.editingProductSnapshot = null;
             document.getElementById('editProductId').value = '';
             document.getElementById('prodName').value = '';
             document.getElementById('prodPrice').value = '';
@@ -1170,6 +1198,7 @@ Example output format:
     editProduct: async function (id) {
         const { data } = await supabaseClient.from('shop_products').select('*').eq('id', id).single();
         if (data) {
+            this.editingProductSnapshot = data;
             const fields = this.getFieldMap();
             const sortValue = Number.parseInt(data.display_order, 10);
             const normalizedDeliveryType = data.delivery_type === 'API' ? 'API' : 'KEY';
@@ -1374,11 +1403,18 @@ Example output format:
 
                 let error;
                 if (id) {
-                    const res = await supabaseClient.from('shop_products').update(payload).eq('id', id).select();
+                    const upsertPayload = this.buildExistingProductUpsertPayload(id, payload);
+                    const res = await supabaseClient
+                        .from('shop_products')
+                        .upsert(upsertPayload, { onConflict: 'id' })
+                        .select();
                     error = res.error;
-                    console.log('[ShopAdmin] Update result:', res);
+                    console.log('[ShopAdmin] Upsert result:', res);
                     if (!error && (!res.data || res.data.length === 0)) {
                         throw new Error('更新失败：没有权限修改此商品，请确认您已登录管理员账号。\n(RLS policy blocked the update)');
+                    }
+                    if (!error && Array.isArray(res.data) && res.data[0]) {
+                        this.editingProductSnapshot = res.data[0];
                     }
                 } else {
                     const res = await supabaseClient.from('shop_products').insert(payload).select();
