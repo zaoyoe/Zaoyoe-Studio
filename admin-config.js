@@ -845,83 +845,486 @@ function setupNotificationsEventListeners() {
 // WYSIWYG TOOLBAR FUNCTIONS
 // ============================================
 
-function applyFormat(command, value = null) {
-    const editor = document.getElementById('cfgAnnouncementContent');
-    if (!editor) return;
+const AdminRichTextEditor = (() => {
+    const instances = new Map();
+    const richTextTagPattern = /<\/?(?:a|b|strong|i|em|u|div|p|br|font|span|ul|ol|li)\b/i;
+    const defaultEmojis = ['🎉', '📢', '⚠️', '✨', '🔥', '💡', '🎁', '❤️', '👍', '🚀', '🌟', '💯'];
+    const defaultColors = [
+        { value: '#ffffff', label: '白色' },
+        { value: '#ffeb3b', label: '黄色' },
+        { value: '#ff9800', label: '橙色' },
+        { value: '#4caf50', label: '绿色' },
+        { value: '#e57373', label: '红色' },
+        { value: '#6b9ece', label: '蓝色' }
+    ];
+    const defaultSizes = [
+        { value: '2', label: '小', className: 'small' },
+        { value: '3', label: '中', className: 'medium' },
+        { value: '5', label: '大', className: 'large' }
+    ];
 
-    editor.focus();
-    document.execCommand(command, false, value);
-    updateAnnouncementPreview();
-}
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    function getInstance(key = 'announcement') {
+        return instances.get(key) || null;
+    }
+
+    function isEditorEmpty(editor) {
+        if (!editor) return true;
+        const text = (editor.textContent || '').replace(/\u00a0/g, ' ').trim();
+        return !text && !editor.querySelector('img, video, iframe, a, font, b, i, u, strong, em');
+    }
+
+    function serializeEditorHtml(editor) {
+        return isEditorEmpty(editor) ? '' : editor.innerHTML;
+    }
+
+    function normalizeStoredContent(value) {
+        if (typeof value !== 'string' || !value.trim()) return '';
+        if (richTextTagPattern.test(value)) return value;
+        return escapeHtml(value).replace(/\n/g, '<br>');
+    }
+
+    function placeCursorAtEnd(editor) {
+        if (!editor) return;
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(editor);
+        range.collapse(false);
+        selection.removeAllRanges();
+        selection.addRange(range);
+    }
+
+    function saveSelection(instance) {
+        if (!instance?.editor) return;
+        const selection = window.getSelection();
+        if (!selection || !selection.rangeCount) return;
+        const range = selection.getRangeAt(0);
+        if (instance.editor.contains(range.commonAncestorContainer)) {
+            instance.selection = range.cloneRange();
+        }
+    }
+
+    function restoreSelection(instance) {
+        if (!instance?.editor) return;
+        const selection = window.getSelection();
+        if (!selection) return;
+
+        selection.removeAllRanges();
+        if (instance.selection) {
+            selection.addRange(instance.selection);
+            return;
+        }
+
+        placeCursorAtEnd(instance.editor);
+    }
+
+    function syncHiddenInput(instance, invokeCallback = true) {
+        if (!instance) return;
+        if (instance.hiddenInput) {
+            instance.hiddenInput.value = serializeEditorHtml(instance.editor);
+        }
+        if (invokeCallback && typeof instance.onInput === 'function') {
+            instance.onInput(instance);
+        }
+    }
+
+    function closeDropdownElement(dropdown) {
+        if (!dropdown) return;
+        dropdown.querySelector('.dropdown-trigger, .toolbar-btn')?.classList.remove('active');
+        dropdown.querySelector('.dropdown-menu')?.classList.remove('show');
+    }
+
+    function closeFloatingPanels(exceptKey = null, exceptDropdownId = null) {
+        instances.forEach(instance => {
+            if (instance.key !== exceptKey) {
+                instance.emojiPicker?.classList.remove('active');
+                instance.alignPicker?.classList.remove('active');
+            }
+
+            Object.values(instance.dropdowns || {}).forEach(dropdown => {
+                if (!dropdown) return;
+                if (dropdown.id === exceptDropdownId) return;
+                closeDropdownElement(dropdown);
+            });
+        });
+    }
+
+    function bindToolbarMouseDown(instance) {
+        if (!instance?.toolbarRoot) return;
+        instance.toolbarRoot.querySelectorAll('button').forEach(button => {
+            if (button.dataset.rteMouseBound === '1') return;
+            button.dataset.rteMouseBound = '1';
+            button.addEventListener('mousedown', (event) => {
+                event.preventDefault();
+            });
+        });
+    }
+
+    function updateColorUI(instance, color) {
+        if (!instance) return;
+        if (instance.colorPreview) {
+            instance.colorPreview.style.background = color;
+        }
+        const colorDropdown = instance.dropdowns?.color;
+        colorDropdown?.querySelectorAll('.dropdown-item').forEach(item => {
+            item.classList.toggle('selected', item.dataset.colorOption === color);
+        });
+    }
+
+    function updateSizeUI(instance, size, sizeClass) {
+        if (!instance) return;
+        if (instance.sizePreview) {
+            instance.sizePreview.className = `size-indicator ${sizeClass}`;
+        }
+        const sizeDropdown = instance.dropdowns?.size;
+        sizeDropdown?.querySelectorAll('.dropdown-item').forEach(item => {
+            item.classList.toggle('selected', item.dataset.sizeOption === size);
+        });
+    }
+
+    function focusAndRestore(instance) {
+        if (!instance?.editor) return false;
+        instance.editor.focus();
+        restoreSelection(instance);
+        return true;
+    }
+
+    function execCommand(key, command, value = null) {
+        const instance = getInstance(key);
+        if (!focusAndRestore(instance)) return;
+
+        document.execCommand(command, false, value);
+        saveSelection(instance);
+        syncHiddenInput(instance);
+    }
+
+    function createMarkup(config) {
+        const colorItems = defaultColors.map(({ value, label }) => `
+            <button type="button" class="dropdown-item${value === '#6b9ece' ? ' selected' : ''}"
+                data-color-option="${value}"
+                onclick="AdminRichTextEditor.selectColor('${config.key}', '${value}')">
+                <span class="color-swatch" style="background:${value}"></span> ${label}
+            </button>
+        `).join('');
+
+        const sizeItems = defaultSizes.map(({ value, label, className }) => `
+            <button type="button" class="dropdown-item${value === '3' ? ' selected' : ''}"
+                data-size-option="${value}"
+                onclick="AdminRichTextEditor.selectFontSize('${config.key}', '${value}', '${className}')">
+                <span class="size-indicator ${className}">A</span> ${label}
+            </button>
+        `).join('');
+
+        const emojiItems = defaultEmojis.map(emoji => `
+            <button type="button" class="emoji-item"
+                onclick="AdminRichTextEditor.selectEmoji('${config.key}', '${emoji}')">${emoji}</button>
+        `).join('');
+
+        return `
+            <div class="announcement-toolbar" id="${config.toolbarRootId}">
+                <button type="button" class="toolbar-btn"
+                    onclick="AdminRichTextEditor.insertFormat('${config.key}', 'b')" title="加粗">
+                    <i class="fas fa-bold"></i>
+                </button>
+                <button type="button" class="toolbar-btn"
+                    onclick="AdminRichTextEditor.insertFormat('${config.key}', 'i')" title="斜体">
+                    <i class="fas fa-italic"></i>
+                </button>
+                <button type="button" class="toolbar-btn"
+                    onclick="AdminRichTextEditor.insertFormat('${config.key}', 'u')" title="下划线">
+                    <i class="fas fa-underline"></i>
+                </button>
+                <div class="align-picker-container">
+                    <button type="button" class="toolbar-btn" id="${config.alignButtonId}"
+                        onclick="AdminRichTextEditor.toggleAlignPicker('${config.key}')" title="对齐">
+                        <i class="fas fa-align-center"></i>
+                    </button>
+                    <div class="align-picker" id="${config.alignPickerId}">
+                        <button type="button" class="align-item"
+                            onclick="AdminRichTextEditor.applyTextAlign('${config.key}', 'left')" title="左对齐">
+                            <i class="fas fa-align-left"></i>
+                        </button>
+                        <button type="button" class="align-item"
+                            onclick="AdminRichTextEditor.applyTextAlign('${config.key}', 'center')" title="居中">
+                            <i class="fas fa-align-center"></i>
+                        </button>
+                        <button type="button" class="align-item"
+                            onclick="AdminRichTextEditor.applyTextAlign('${config.key}', 'right')" title="右对齐">
+                            <i class="fas fa-align-right"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="toolbar-divider"></div>
+                <button type="button" class="toolbar-btn"
+                    onclick="AdminRichTextEditor.insertLink('${config.key}')" title="链接">
+                    <i class="fas fa-link"></i>
+                </button>
+                <div class="emoji-picker-container">
+                    <button type="button" class="toolbar-btn" id="${config.emojiButtonId}"
+                        onclick="AdminRichTextEditor.toggleEmojiPicker('${config.key}')" title="表情">
+                        <i class="fas fa-smile"></i>
+                    </button>
+                    <div class="emoji-picker" id="${config.emojiPickerId}">
+                        <div class="emoji-picker-header">表情</div>
+                        <div class="emoji-grid">
+                            ${emojiItems}
+                        </div>
+                    </div>
+                </div>
+                <div class="toolbar-dropdown" id="${config.colorDropdownId}">
+                    <button type="button" class="toolbar-btn"
+                        onclick="AdminRichTextEditor.toggleDropdown('${config.key}', 'color')" title="文字颜色">
+                        <span class="color-swatch preview" id="${config.colorPreviewId}"
+                            style="background:#6b9ece"></span>
+                    </button>
+                    <div class="dropdown-menu">
+                        ${colorItems}
+                    </div>
+                </div>
+                <div class="toolbar-dropdown" id="${config.sizeDropdownId}">
+                    <button type="button" class="toolbar-btn"
+                        onclick="AdminRichTextEditor.toggleDropdown('${config.key}', 'size')" title="字号">
+                        <span class="size-indicator medium" id="${config.sizePreviewId}">A</span>
+                    </button>
+                    <div class="dropdown-menu">
+                        ${sizeItems}
+                    </div>
+                </div>
+            </div>
+            <div class="wysiwyg-editor" id="${config.editorId}" contenteditable="true"
+                data-placeholder="${escapeHtml(config.placeholder || '请输入内容...')}"></div>
+        `;
+    }
+
+    function register(config) {
+        if (!config?.key || !config.editorId) return null;
+
+        const existing = getInstance(config.key);
+        if (existing) {
+            Object.assign(existing, config);
+            return existing;
+        }
+
+        const instance = {
+            ...config,
+            editor: document.getElementById(config.editorId),
+            hiddenInput: config.hiddenInputId ? document.getElementById(config.hiddenInputId) : null,
+            toolbarRoot: config.toolbarRootId ? document.getElementById(config.toolbarRootId) : null,
+            emojiPicker: config.emojiPickerId ? document.getElementById(config.emojiPickerId) : null,
+            emojiButton: config.emojiButtonId ? document.getElementById(config.emojiButtonId) : null,
+            alignPicker: config.alignPickerId ? document.getElementById(config.alignPickerId) : null,
+            alignButton: config.alignButtonId ? document.getElementById(config.alignButtonId) : null,
+            colorPreview: config.colorPreviewId ? document.getElementById(config.colorPreviewId) : null,
+            sizePreview: config.sizePreviewId ? document.getElementById(config.sizePreviewId) : null,
+            dropdowns: {
+                color: config.colorDropdownId ? document.getElementById(config.colorDropdownId) : null,
+                size: config.sizeDropdownId ? document.getElementById(config.sizeDropdownId) : null
+            },
+            selection: null
+        };
+
+        if (!instance.editor) return null;
+
+        if (instance.hiddenInput) {
+            instance.hiddenInput.style.display = 'none';
+        }
+
+        bindToolbarMouseDown(instance);
+
+        instance.editor.addEventListener('input', () => {
+            saveSelection(instance);
+            syncHiddenInput(instance);
+        });
+
+        ['mouseup', 'keyup', 'focus'].forEach(eventName => {
+            instance.editor.addEventListener(eventName, () => saveSelection(instance));
+        });
+
+        instance.editor.addEventListener('blur', () => {
+            setTimeout(() => saveSelection(instance), 0);
+        });
+
+        instances.set(instance.key, instance);
+
+        if (instance.hiddenInput && !serializeEditorHtml(instance.editor) && instance.hiddenInput.value) {
+            setContent(instance.key, instance.hiddenInput.value, { syncHiddenInput: false });
+        }
+
+        return instance;
+    }
+
+    function ensureInjectedEditor(config) {
+        if (!config?.key || !config.hiddenInputId) return null;
+
+        const hiddenInput = document.getElementById(config.hiddenInputId);
+        if (!hiddenInput) return null;
+
+        if (!document.getElementById(config.editorId)) {
+            const shell = document.createElement('div');
+            shell.className = 'rich-text-editor-shell';
+            shell.innerHTML = createMarkup(config);
+            hiddenInput.parentNode.insertBefore(shell, hiddenInput);
+        }
+
+        return register(config);
+    }
+
+    function setContent(key, value, options = {}) {
+        const instance = getInstance(key);
+        if (!instance?.editor) return;
+
+        instance.editor.innerHTML = normalizeStoredContent(value || '');
+        instance.selection = null;
+
+        if (!options.syncHiddenInput && instance.hiddenInput && typeof value === 'string') {
+            instance.hiddenInput.value = value;
+        }
+
+        if (options.syncHiddenInput) {
+            syncHiddenInput(instance, options.invokeCallback !== false);
+        } else if (typeof instance.onRender === 'function') {
+            instance.onRender(instance);
+        }
+    }
+
+    function togglePicker(key, pickerType) {
+        const instance = getInstance(key);
+        const picker = pickerType === 'emoji' ? instance?.emojiPicker : instance?.alignPicker;
+        if (!picker) return;
+
+        const shouldOpen = !picker.classList.contains('active');
+        closeFloatingPanels(shouldOpen ? key : null);
+        picker.classList.toggle('active', shouldOpen);
+    }
+
+    function toggleDropdown(key, dropdownType) {
+        const instance = getInstance(key);
+        const dropdown = instance?.dropdowns?.[dropdownType];
+        if (!dropdown) return;
+
+        const trigger = dropdown.querySelector('.dropdown-trigger, .toolbar-btn');
+        const menu = dropdown.querySelector('.dropdown-menu');
+        const shouldOpen = !menu?.classList.contains('show');
+
+        closeFloatingPanels(shouldOpen ? key : null, shouldOpen ? dropdown.id : null);
+        trigger?.classList.toggle('active', shouldOpen);
+        menu?.classList.toggle('show', shouldOpen);
+    }
+
+    return {
+        register,
+        ensureInjectedEditor,
+        setContent,
+        getContent(key) {
+            const instance = getInstance(key);
+            return instance?.editor ? serializeEditorHtml(instance.editor) : '';
+        },
+        syncHiddenInput(key, invokeCallback = true) {
+            syncHiddenInput(getInstance(key), invokeCallback);
+        },
+        insertFormat(key, tag) {
+            execCommand(key, tag === 'b' ? 'bold' : tag === 'i' ? 'italic' : 'underline');
+        },
+        applyTextAlign(key, align) {
+            const commands = {
+                left: 'justifyLeft',
+                center: 'justifyCenter',
+                right: 'justifyRight'
+            };
+            execCommand(key, commands[align] || 'justifyCenter');
+            getInstance(key)?.alignPicker?.classList.remove('active');
+        },
+        toggleAlignPicker(key) {
+            togglePicker(key, 'align');
+        },
+        insertLink(key) {
+            let url = prompt('请输入链接地址:', 'https://');
+            if (!url) return;
+            url = url.trim();
+            if (!url || url === 'https://') return;
+            if (!/^https?:\/\//i.test(url)) {
+                url = `https://${url.replace(/^\/+/, '')}`;
+            }
+            execCommand(key, 'createLink', url);
+        },
+        selectEmoji(key, emoji) {
+            execCommand(key, 'insertText', emoji);
+            getInstance(key)?.emojiPicker?.classList.remove('active');
+        },
+        toggleEmojiPicker(key) {
+            togglePicker(key, 'emoji');
+        },
+        toggleDropdown,
+        selectColor(key, color) {
+            execCommand(key, 'foreColor', color);
+            const instance = getInstance(key);
+            updateColorUI(instance, color);
+            closeDropdownElement(instance?.dropdowns?.color);
+        },
+        selectFontSize(key, size, sizeClass) {
+            execCommand(key, 'fontSize', size);
+            const instance = getInstance(key);
+            updateSizeUI(instance, size, sizeClass);
+            closeDropdownElement(instance?.dropdowns?.size);
+        }
+    };
+})();
+
+window.AdminRichTextEditor = AdminRichTextEditor;
+
+AdminRichTextEditor.register({
+    key: 'announcement',
+    editorId: 'cfgAnnouncementContent',
+    toolbarRootId: 'announcementToolbar',
+    emojiPickerId: 'emojiPicker',
+    emojiButtonId: 'emojiPickerBtn',
+    alignPickerId: 'alignPicker',
+    alignButtonId: 'alignPickerBtn',
+    colorDropdownId: 'colorDropdown',
+    colorPreviewId: 'colorPreview',
+    sizeDropdownId: 'sizeDropdown',
+    sizePreviewId: 'sizePreview',
+    onInput: () => updateAnnouncementPreview()
+});
 
 function insertFormat(tag) {
-    applyFormat(tag === 'b' ? 'bold' : tag === 'i' ? 'italic' : 'underline');
+    AdminRichTextEditor.insertFormat('announcement', tag);
 }
 
 function applyTextColor(color) {
     if (!color) return;
-    applyFormat('foreColor', color);
-    document.getElementById('textColorSelect').value = '';
+    AdminRichTextEditor.selectColor('announcement', color);
 }
 
 function applyTextSize(size) {
     if (!size) return;
-    applyFormat('fontSize', size);
-    document.getElementById('textSizeSelect').value = '';
+    const sizeClass = size === '2' ? 'small' : size === '5' ? 'large' : 'medium';
+    AdminRichTextEditor.selectFontSize('announcement', size, sizeClass);
 }
 
 function applyTextAlign(align) {
-    const editor = document.getElementById('cfgAnnouncementContent');
-    if (!editor) return;
-
-    editor.focus();
-
-    // Map align to execCommand
-    const commands = {
-        'left': 'justifyLeft',
-        'center': 'justifyCenter',
-        'right': 'justifyRight'
-    };
-
-    document.execCommand(commands[align] || 'justifyCenter', false, null);
-    updateAnnouncementPreview();
-
-    // Close picker after selection
-    const picker = document.getElementById('alignPicker');
-    if (picker) picker.classList.remove('active');
+    AdminRichTextEditor.applyTextAlign('announcement', align);
 }
 
 function toggleAlignPicker() {
-    const picker = document.getElementById('alignPicker');
-    if (picker) {
-        picker.classList.toggle('active');
-    }
+    AdminRichTextEditor.toggleAlignPicker('announcement');
 }
 
 function insertLink() {
-    const url = prompt('请输入链接地址:', 'https://');
-    if (!url) return;
-    applyFormat('createLink', url);
+    AdminRichTextEditor.insertLink('announcement');
 }
 
 function selectEmoji(emoji) {
-    const editor = document.getElementById('cfgAnnouncementContent');
-    if (!editor) return;
-
-    editor.focus();
-    document.execCommand('insertText', false, emoji);
-    updateAnnouncementPreview();
-
-    // Close picker
-    const picker = document.getElementById('emojiPicker');
-    if (picker) picker.classList.remove('active');
+    AdminRichTextEditor.selectEmoji('announcement', emoji);
 }
 
 function toggleEmojiPicker() {
-    const picker = document.getElementById('emojiPicker');
-    if (picker) {
-        picker.classList.toggle('active');
-    }
+    AdminRichTextEditor.toggleEmojiPicker('announcement');
 }
 
 // ============================================
@@ -929,13 +1332,22 @@ function toggleEmojiPicker() {
 // ============================================
 
 function toggleDropdown(dropdownId) {
+    if (dropdownId === 'colorDropdown') {
+        AdminRichTextEditor.toggleDropdown('announcement', 'color');
+        return;
+    }
+    if (dropdownId === 'sizeDropdown') {
+        AdminRichTextEditor.toggleDropdown('announcement', 'size');
+        return;
+    }
+
     const dropdown = document.getElementById(dropdownId);
     if (!dropdown) return;
 
     const trigger = dropdown.querySelector('.dropdown-trigger, .toolbar-btn');
     const menu = dropdown.querySelector('.dropdown-menu');
+    const shouldOpen = !menu?.classList.contains('show');
 
-    // Close all other dropdowns first (both custom-dropdown and toolbar-dropdown)
     document.querySelectorAll('.custom-dropdown, .toolbar-dropdown').forEach(dd => {
         if (dd.id !== dropdownId) {
             dd.querySelector('.dropdown-trigger, .toolbar-btn')?.classList.remove('active');
@@ -943,83 +1355,35 @@ function toggleDropdown(dropdownId) {
         }
     });
 
-    // Toggle this dropdown
-    trigger?.classList.toggle('active');
-    menu?.classList.toggle('show');
+    trigger?.classList.toggle('active', shouldOpen);
+    menu?.classList.toggle('show', shouldOpen);
 }
 
 function selectColor(color) {
-    const editor = document.getElementById('cfgAnnouncementContent');
-    if (!editor) return;
-
-    // Apply color using execCommand
-    editor.focus();
-    document.execCommand('foreColor', false, color);
-    updateAnnouncementPreview();
-
-    // Update preview swatch
-    const preview = document.getElementById('colorPreview');
-    if (preview) preview.style.background = color;
-
-    // Update selected state
-    const dropdown = document.getElementById('colorDropdown');
-    dropdown.querySelectorAll('.dropdown-item').forEach(item => {
-        item.classList.remove('selected');
-        if (item.onclick.toString().includes(color)) {
-            item.classList.add('selected');
-        }
-    });
-
-    // Close dropdown
-    dropdown.querySelector('.dropdown-trigger, .toolbar-btn')?.classList.remove('active');
-    dropdown.querySelector('.dropdown-menu')?.classList.remove('show');
+    AdminRichTextEditor.selectColor('announcement', color);
 }
 
 function selectFontSize(size, sizeClass) {
-    const editor = document.getElementById('cfgAnnouncementContent');
-    if (!editor) return;
+    AdminRichTextEditor.selectFontSize('announcement', size, sizeClass);
+}
 
-    // Apply size using execCommand
-    editor.focus();
-    document.execCommand('fontSize', false, size);
-    updateAnnouncementPreview();
-
-    // Update indicator
-    const dropdown = document.getElementById('sizeDropdown');
-    const indicator = dropdown.querySelector('.toolbar-btn .size-indicator, .dropdown-trigger .size-indicator');
-    if (indicator) {
-        indicator.className = 'size-indicator ' + sizeClass;
-    }
-
-    // Update selected state
-    dropdown.querySelectorAll('.dropdown-item').forEach(item => {
-        item.classList.remove('selected');
-        if (item.onclick.toString().includes(size)) {
-            item.classList.add('selected');
+document.addEventListener('click', (e) => {
+    document.querySelectorAll('.emoji-picker-container').forEach(container => {
+        const picker = container.querySelector('.emoji-picker');
+        const btn = container.querySelector('.toolbar-btn');
+        if (picker && btn && !picker.contains(e.target) && !btn.contains(e.target)) {
+            picker.classList.remove('active');
         }
     });
 
-    // Close dropdown
-    dropdown.querySelector('.dropdown-trigger, .toolbar-btn')?.classList.remove('active');
-    dropdown.querySelector('.dropdown-menu')?.classList.remove('show');
-}
+    document.querySelectorAll('.align-picker-container').forEach(container => {
+        const picker = container.querySelector('.align-picker');
+        const btn = container.querySelector('.toolbar-btn');
+        if (picker && btn && !picker.contains(e.target) && !btn.contains(e.target)) {
+            picker.classList.remove('active');
+        }
+    });
 
-// Close emoji picker and custom dropdowns when clicking outside
-document.addEventListener('click', (e) => {
-    const picker = document.getElementById('emojiPicker');
-    const btn = document.getElementById('emojiPickerBtn');
-    if (picker && btn && !picker.contains(e.target) && !btn.contains(e.target)) {
-        picker.classList.remove('active');
-    }
-
-    // Also close align picker
-    const alignPicker = document.getElementById('alignPicker');
-    const alignBtn = document.getElementById('alignPickerBtn');
-    if (alignPicker && alignBtn && !alignPicker.contains(e.target) && !alignBtn.contains(e.target)) {
-        alignPicker.classList.remove('active');
-    }
-
-    // Close custom dropdowns and toolbar dropdowns
     document.querySelectorAll('.custom-dropdown, .toolbar-dropdown').forEach(dropdown => {
         if (!dropdown.contains(e.target)) {
             dropdown.querySelector('.dropdown-trigger, .toolbar-btn')?.classList.remove('active');

@@ -1437,7 +1437,7 @@ const ShopClient = {
         if (!notesBox || !notesContent) return;
 
         if (hasPurchaseNotes) {
-            notesContent.innerHTML = this.linkifyText(this.escapeHtml(normalizedPurchaseNotes));
+            notesContent.innerHTML = this.renderStoredRichText(normalizedPurchaseNotes);
             notesBox.style.display = 'block';
             this.bindPurchaseNotesWheelIsolation();
         } else {
@@ -1583,7 +1583,7 @@ const ShopClient = {
         const uiContent = document.getElementById('usageInstructionsContent');
         if (uiBox && uiContent) {
             if (hasUsageInstructions) {
-                uiContent.innerHTML = this.linkifyText(this.escapeHtml(normalizedUsageInstructions));
+                uiContent.innerHTML = this.renderStoredRichText(normalizedUsageInstructions);
                 uiBox.style.display = 'block';
                 this.bindSuccessUsageWheelIsolation();
             } else {
@@ -1593,10 +1593,131 @@ const ShopClient = {
         }
     },
 
+    renderStoredRichText: function (content) {
+        const normalized = typeof content === 'string' ? content.trim() : '';
+        if (!normalized) return '';
+
+        if (!this.looksLikeRichTextHtml(normalized)) {
+            return this.linkifyText(this.escapeHtml(normalized)).replace(/\n/g, '<br>');
+        }
+
+        return this.sanitizeRichTextHtml(normalized);
+    },
+
+    looksLikeRichTextHtml: function (content) {
+        return /<\/?(?:a|b|strong|i|em|u|div|p|br|font|span|ul|ol|li)\b/i.test(content || '');
+    },
+
+    sanitizeRichTextHtml: function (html) {
+        const template = document.createElement('template');
+        template.innerHTML = html;
+
+        const allowedTags = new Set(['A', 'B', 'STRONG', 'I', 'EM', 'U', 'BR', 'DIV', 'P', 'SPAN', 'FONT', 'UL', 'OL', 'LI']);
+        const allowedTextAlign = /^(left|center|right|justify)$/i;
+        const allowedColor = /^(#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})|rgba?\([^)]*\))$/i;
+        const allowedFontSize = /^([1-7]|\d+(\.\d+)?(px|em|rem|%)|xx-small|x-small|small|medium|large|x-large|xx-large)$/i;
+
+        const sanitizeStyle = (styleText = '') => {
+            const safeRules = [];
+            styleText.split(';').forEach((rule) => {
+                const [rawProp, rawValue] = rule.split(':');
+                if (!rawProp || !rawValue) return;
+
+                const prop = rawProp.trim().toLowerCase();
+                const value = rawValue.trim().replace(/\s*!important$/i, '');
+
+                if (prop === 'text-align' && allowedTextAlign.test(value)) {
+                    safeRules.push(`text-align: ${value.toLowerCase()}`);
+                }
+                if (prop === 'color' && allowedColor.test(value)) {
+                    safeRules.push(`color: ${value}`);
+                }
+                if (prop === 'font-size' && allowedFontSize.test(value)) {
+                    safeRules.push(`font-size: ${value}`);
+                }
+            });
+
+            return safeRules.join('; ');
+        };
+
+        const sanitizeHref = (href = '') => {
+            const value = href.trim();
+            return /^https?:\/\//i.test(value) ? value : '';
+        };
+
+        const sanitizeChildren = (parent) => {
+            Array.from(parent.childNodes).forEach((child) => {
+                if (child.nodeType === Node.COMMENT_NODE) {
+                    child.remove();
+                    return;
+                }
+
+                if (child.nodeType !== Node.ELEMENT_NODE) {
+                    return;
+                }
+
+                if (!allowedTags.has(child.tagName)) {
+                    while (child.firstChild) {
+                        parent.insertBefore(child.firstChild, child);
+                    }
+                    child.remove();
+                    sanitizeChildren(parent);
+                    return;
+                }
+
+                const attrs = {};
+                Array.from(child.attributes).forEach((attr) => {
+                    attrs[attr.name.toLowerCase()] = attr.value;
+                });
+                Array.from(child.attributes).forEach((attr) => child.removeAttribute(attr.name));
+
+                if (['DIV', 'P', 'SPAN'].includes(child.tagName)) {
+                    const safeStyle = sanitizeStyle(attrs.style || '');
+                    if (safeStyle) {
+                        child.setAttribute('style', safeStyle);
+                    }
+                }
+
+                if (child.tagName === 'FONT') {
+                    const color = (attrs.color || '').trim();
+                    const size = (attrs.size || '').trim();
+                    if (allowedColor.test(color)) {
+                        child.setAttribute('color', color);
+                    }
+                    if (allowedFontSize.test(size)) {
+                        child.setAttribute('size', size);
+                    }
+                }
+
+                if (child.tagName === 'A') {
+                    const safeHref = sanitizeHref(attrs.href || '');
+                    if (!safeHref) {
+                        while (child.firstChild) {
+                            parent.insertBefore(child.firstChild, child);
+                        }
+                        child.remove();
+                        sanitizeChildren(parent);
+                        return;
+                    }
+
+                    child.setAttribute('href', safeHref);
+                    child.setAttribute('target', '_blank');
+                    child.setAttribute('rel', 'noopener noreferrer');
+                    child.setAttribute('style', 'color: #6b9ece; text-decoration: underline; text-underline-offset: 2px;');
+                }
+
+                sanitizeChildren(child);
+            });
+        };
+
+        sanitizeChildren(template.content);
+        return template.innerHTML;
+    },
+
     // Convert URLs in text to clickable links
     linkifyText: function (text) {
         const urlRegex = /(https?:\/\/[^\s<]+)/g;
-        return text.replace(urlRegex, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
+        return text.replace(urlRegex, '<a href="$1" target="_blank" rel="noopener noreferrer" style="color: #6b9ece; text-decoration: underline; text-underline-offset: 2px;">$1</a>');
     },
 
     escapeHtml: function (text) {

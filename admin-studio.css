@@ -15359,6 +15359,11 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     margin-top: 0;
 }
 
+.announcement-toolbar+.wysiwyg-editor {
+    border-radius: 0 0 8px 8px;
+    margin-top: 0;
+}
+
 /* Font Size Selector */
 .font-size-selector {
     display: flex;

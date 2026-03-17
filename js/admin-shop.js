@@ -16,6 +16,7 @@ const ShopAdmin = {
     isProductSelectionMode: false, // State for product multi-select mode
     editingProductSnapshot: null, // Original product row for resilient saves on existing items
     purchaseNotesSchemaAvailable: null, // null = unknown, false = remote DB not migrated yet
+    richTextEditorsReady: false,
 
     // ==================== Site-Context Editing ====================
     SITE_FIELD_MAP: {
@@ -68,6 +69,85 @@ const ShopAdmin = {
                     : '🌍 Editing <strong>EN</strong> product info';
             }
         }
+    },
+
+    getProductRichTextConfigs() {
+        return [
+            {
+                key: 'productPurchaseNotes',
+                hiddenInputId: 'prodPurchaseNotes',
+                editorId: 'prodPurchaseNotesEditor',
+                toolbarRootId: 'prodPurchaseNotesToolbar',
+                emojiPickerId: 'prodPurchaseNotesEmojiPicker',
+                emojiButtonId: 'prodPurchaseNotesEmojiBtn',
+                alignPickerId: 'prodPurchaseNotesAlignPicker',
+                alignButtonId: 'prodPurchaseNotesAlignBtn',
+                colorDropdownId: 'prodPurchaseNotesColorDropdown',
+                colorPreviewId: 'prodPurchaseNotesColorPreview',
+                sizeDropdownId: 'prodPurchaseNotesSizeDropdown',
+                sizePreviewId: 'prodPurchaseNotesSizePreview',
+                placeholder: '输入确认兑换前展示的注意事项（支持链接，如 https://example.com）',
+                onInput: () => this.refreshFormSectionHeight('purchaseNotesWrapper'),
+                onRender: () => this.refreshFormSectionHeight('purchaseNotesWrapper')
+            },
+            {
+                key: 'productUsageInstructions',
+                hiddenInputId: 'prodUsageInstructions',
+                editorId: 'prodUsageInstructionsEditor',
+                toolbarRootId: 'prodUsageInstructionsToolbar',
+                emojiPickerId: 'prodUsageInstructionsEmojiPicker',
+                emojiButtonId: 'prodUsageInstructionsEmojiBtn',
+                alignPickerId: 'prodUsageInstructionsAlignPicker',
+                alignButtonId: 'prodUsageInstructionsAlignBtn',
+                colorDropdownId: 'prodUsageInstructionsColorDropdown',
+                colorPreviewId: 'prodUsageInstructionsColorPreview',
+                sizeDropdownId: 'prodUsageInstructionsSizeDropdown',
+                sizePreviewId: 'prodUsageInstructionsSizePreview',
+                placeholder: '输入使用说明 / 注意事项（支持链接，如 https://example.com）',
+                onInput: () => this.refreshFormSectionHeight('usageInstructionsWrapper'),
+                onRender: () => this.refreshFormSectionHeight('usageInstructionsWrapper')
+            }
+        ];
+    },
+
+    ensureRichTextEditors() {
+        if (this.richTextEditorsReady) return true;
+        if (!window.AdminRichTextEditor?.ensureInjectedEditor) return false;
+
+        const configs = this.getProductRichTextConfigs();
+        configs.forEach((config) => {
+            window.AdminRichTextEditor.ensureInjectedEditor(config);
+        });
+
+        this.richTextEditorsReady = configs.every(({ editorId }) => !!document.getElementById(editorId));
+        return this.richTextEditorsReady;
+    },
+
+    syncRichTextEditorsFromInputs() {
+        if (!this.ensureRichTextEditors()) return;
+
+        const purchaseNotesInput = document.getElementById('prodPurchaseNotes');
+        const usageInstructionsInput = document.getElementById('prodUsageInstructions');
+
+        window.AdminRichTextEditor.setContent('productPurchaseNotes', purchaseNotesInput?.value || '', {
+            syncHiddenInput: false
+        });
+        window.AdminRichTextEditor.setContent('productUsageInstructions', usageInstructionsInput?.value || '', {
+            syncHiddenInput: false
+        });
+    },
+
+    refreshFormSectionHeight(wrapperId) {
+        const wrapper = document.getElementById(wrapperId);
+        if (!wrapper) return;
+
+        const currentMaxHeight = Number.parseFloat(wrapper.style.maxHeight || '0');
+        if (currentMaxHeight <= 0 && wrapper.style.opacity !== '1') return;
+
+        requestAnimationFrame(() => {
+            const nextHeight = Math.max(wrapper.scrollHeight + 12, 220);
+            wrapper.style.maxHeight = `${nextHeight}px`;
+        });
     },
 
     // Translate Chinese text to English using Gemini API
@@ -232,6 +312,7 @@ Example output format:
         console.log('Admin Shop Init...');
         await this.renderProductCategoryFilters();
         await this.loadProducts();
+        this.ensureRichTextEditors();
 
         // Close dropdowns when clicking outside
         document.addEventListener('click', (e) => {
@@ -997,9 +1078,9 @@ Example output format:
         const wrapper = document.getElementById(wrapperId);
         if (!wrapper) return;
         if (show) {
-            wrapper.style.maxHeight = '200px';
             wrapper.style.opacity = '1';
             wrapper.style.marginTop = '8px';
+            requestAnimationFrame(() => this.refreshFormSectionHeight(wrapperId));
         } else {
             wrapper.style.maxHeight = '0';
             wrapper.style.opacity = '0';
@@ -1146,6 +1227,7 @@ Example output format:
         console.log('Opening Modal', isEdit); // Debug
         const modal = document.getElementById('productModal');
         if (!modal) { alert('Modal not found in DOM'); return; }
+        this.ensureRichTextEditors();
 
         // Populate category dropdown first
         await this.populateCategoryDropdown();
@@ -1220,6 +1302,9 @@ Example output format:
 
         // Update labels for current site context
         this.updateModalLabels();
+        this.syncRichTextEditorsFromInputs();
+        this.refreshFormSectionHeight('purchaseNotesWrapper');
+        this.refreshFormSectionHeight('usageInstructionsWrapper');
 
         // Trigger initial preview update
         this.updatePreview();
@@ -1284,7 +1369,7 @@ Example output format:
             document.getElementById('prodUsageInstructions').value = typeof data.usage_instructions === 'string' ? data.usage_instructions : '';
             this.toggleUsageInstructions(showUI);
 
-            this.openProductModal(true);
+            await this.openProductModal(true);
 
             // Set category value in custom dropdown (after modal opens and populates dropdown)
             const categoryName = data.category || 'other';
@@ -1339,6 +1424,10 @@ Example output format:
             const normalizedSort = Number.isFinite(parsedSort) ? parsedSort : 0;
             const deliveryTypeValue = document.getElementById('prodDeliveryType').value;
             const normalizedDeliveryType = deliveryTypeValue === 'API' ? 'API' : 'KEY';
+            if (window.AdminRichTextEditor?.syncHiddenInput) {
+                window.AdminRichTextEditor.syncHiddenInput('productPurchaseNotes', false);
+                window.AdminRichTextEditor.syncHiddenInput('productUsageInstructions', false);
+            }
             const rawUsageInstructions = document.getElementById('prodUsageInstructions').value || '';
             const normalizedUsageInstructions = rawUsageInstructions.replace(/\r\n/g, '\n').trim();
             const showUsageInstructions = document.getElementById('prodShowUsageInstructions').checked;

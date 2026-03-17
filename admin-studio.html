@@ -19,7 +19,7 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
-    <link rel="stylesheet" href="admin-studio.css?v=18">
+    <link rel="stylesheet" href="admin-studio.css?v=19">
     <link rel="stylesheet" href="admin-sidebar.css?v=10">
     <link rel="stylesheet" href="css/admin-chat.css">
 
@@ -1097,7 +1097,7 @@
                                 <!-- Content Editor -->
                                 <div class="editor-section">
                                     <div class="editor-section-label">公告内容</div>
-                                    <div class="announcement-toolbar">
+                                    <div class="announcement-toolbar" id="announcementToolbar">
                                         <button type="button" class="toolbar-btn" onclick="insertFormat('b')"
                                             title="加粗"><i class="fas fa-bold"></i></button>
                                         <button type="button" class="toolbar-btn" onclick="insertFormat('i')"
@@ -1169,26 +1169,32 @@
                                             </button>
                                             <div class="dropdown-menu">
                                                 <button type="button" class="dropdown-item"
+                                                    data-color-option="#ffffff"
                                                     onclick="selectColor('#ffffff')">
                                                     <span class="color-swatch" style="background:#ffffff"></span> 白色
                                                 </button>
                                                 <button type="button" class="dropdown-item"
+                                                    data-color-option="#ffeb3b"
                                                     onclick="selectColor('#ffeb3b')">
                                                     <span class="color-swatch" style="background:#ffeb3b"></span> 黄色
                                                 </button>
                                                 <button type="button" class="dropdown-item"
+                                                    data-color-option="#ff9800"
                                                     onclick="selectColor('#ff9800')">
                                                     <span class="color-swatch" style="background:#ff9800"></span> 橙色
                                                 </button>
                                                 <button type="button" class="dropdown-item"
+                                                    data-color-option="#4caf50"
                                                     onclick="selectColor('#4caf50')">
                                                     <span class="color-swatch" style="background:#4caf50"></span> 绿色
                                                 </button>
                                                 <button type="button" class="dropdown-item"
+                                                    data-color-option="#e57373"
                                                     onclick="selectColor('#e57373')">
                                                     <span class="color-swatch" style="background:#e57373"></span> 红色
                                                 </button>
-                                                <button type="button" class="dropdown-item"
+                                                <button type="button" class="dropdown-item selected"
+                                                    data-color-option="#6b9ece"
                                                     onclick="selectColor('#6b9ece')">
                                                     <span class="color-swatch" style="background:#6b9ece"></span> 蓝色
                                                 </button>
@@ -1202,14 +1208,17 @@
                                             </button>
                                             <div class="dropdown-menu">
                                                 <button type="button" class="dropdown-item"
+                                                    data-size-option="2"
                                                     onclick="selectFontSize('2', 'small')">
                                                     <span class="size-indicator small">A</span> 小
                                                 </button>
                                                 <button type="button" class="dropdown-item selected"
+                                                    data-size-option="3"
                                                     onclick="selectFontSize('3', 'medium')">
                                                     <span class="size-indicator medium">A</span> 中
                                                 </button>
                                                 <button type="button" class="dropdown-item"
+                                                    data-size-option="5"
                                                     onclick="selectFontSize('5', 'large')">
                                                     <span class="size-indicator large">A</span> 大
                                                 </button>
@@ -6670,13 +6679,13 @@
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/zh.js"></script>
     <script src="admin-comments.js"></script>
     <script src="admin-analytics.js"></script>
-    <script src="admin-config.js"></script>
+    <script src="admin-config.js?v=20260317_RTE_V1"></script>
     <script src="admin-homepage.js"></script>
     <script src="js/admin-studio-translate.js"></script>
     <script src="js/admin-site-filter.js"></script>
     <script src="js/admin-tickets.js"></script>
     <script src="admin-studio.js"></script>
-    <script src="js/admin-shop.js?v=CLICK_DYNAMIC_V13"></script>
+    <script src="js/admin-shop.js?v=CLICK_DYNAMIC_V14"></script>
 </body>
 
 <!-- Admin Chat Script -->
