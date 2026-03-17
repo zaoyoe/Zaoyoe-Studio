@@ -4778,6 +4778,10 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
     align-items: stretch !important;
 }
 
+#profileModal .profile-view[hidden] {
+    display: none !important;
+}
+
 #profileModal .profile-front {
     justify-content: flex-start !important;
     gap: 12px !important;
@@ -5665,6 +5669,9 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
         gap: 14px;
         min-height: 392px;
         align-items: stretch;
+        position: relative;
+        isolation: isolate;
+        z-index: 2;
     }
 
     #profileModal .profile-security-desktop-sidebar {
@@ -5673,6 +5680,8 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
         justify-content: center;
         gap: 16px;
         padding: 8px 0;
+        position: relative;
+        z-index: 3;
     }
 
     #profileModal .profile-security-desktop-item {
@@ -5746,6 +5755,7 @@ body:has(.user-dropdown.active) .dropdown-backdrop {
         display: flex;
         align-items: center;
         justify-content: center;
+        z-index: 2;
     }
 
     #profileModal .profile-security-desktop-panel {

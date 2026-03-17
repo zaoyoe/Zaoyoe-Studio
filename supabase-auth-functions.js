@@ -45,6 +45,24 @@ function setAuthLoading(formName, isLoading, label) {
     }
 }
 
+function setUserDropdownOpen(isOpen) {
+    const dropdown = document.getElementById('userDropdown');
+    const overlay = document.getElementById('dropdownOverlay');
+    const authBtn = document.getElementById('authBtn');
+    const nextState = !!isOpen;
+
+    dropdown?.classList.toggle('active', nextState);
+    dropdown?.setAttribute('aria-hidden', nextState ? 'false' : 'true');
+    overlay?.classList.toggle('active', nextState);
+    authBtn?.setAttribute('aria-expanded', nextState ? 'true' : 'false');
+}
+
+function closeUserDropdown() {
+    setUserDropdownOpen(false);
+}
+
+window.closeUserDropdown = closeUserDropdown;
+
 // ==================== 注册功能 (Supabase 版本) ====================
 async function handleRegister(event) {
     event.preventDefault();
@@ -538,12 +556,7 @@ async function handleLogout(event) {
         event.stopPropagation();
     }
 
-    // 关闭下拉菜单
-    const dropdown = document.getElementById('userDropdown');
-    const overlay = document.getElementById('dropdownOverlay');
-
-    if (dropdown) dropdown.classList.remove('active');
-    if (overlay) overlay.classList.remove('active');
+    closeUserDropdown();
 
     if (!confirm("确定要退出登录吗？")) return;
 
@@ -573,8 +586,7 @@ async function handleLogout(event) {
     const authBtn = document.getElementById('authBtn');
     if (authBtn) authBtn.classList.remove('logged-in');
 
-    const userDropdown = document.getElementById('userDropdown');
-    if (userDropdown) userDropdown.classList.remove('active');
+    closeUserDropdown();
 }
 
 window.handleLogout = handleLogout;
@@ -596,13 +608,11 @@ async function handleAuthClick(event) {
     if (isLoggedIn) {
         // User is logged in - toggle dropdown INSTANTLY
         const dropdown = document.getElementById('userDropdown');
-        const overlay = document.getElementById('dropdownOverlay');
 
         if (dropdown) {
             const isActive = dropdown.classList.contains('active');
             if (isActive) {
-                dropdown.classList.remove('active');
-                if (overlay) overlay.classList.remove('active');
+                closeUserDropdown();
             } else {
                 // 🆕 Dynamically position dropdown relative to nav bar bottom edge
                 const authBtn = document.getElementById('authBtn');
@@ -627,8 +637,7 @@ async function handleAuthClick(event) {
                     // Shift up slightly to fuse seamlessly with the nav border.
                     dropdown.style.setProperty('top', (anchorBottom - navOverlap) + 'px', 'important');
                 }
-                dropdown.classList.add('active');
-                if (overlay) overlay.classList.add('active');
+                setUserDropdownOpen(true);
 
                 // Pre-fetch wallet data so 'My Orders' opens instantly
                 if (window.WalletModal && window.WalletModal.prefetchData) {
@@ -1219,11 +1228,10 @@ function updateUserUI(user, options = {}) {
             navAvatar.classList.remove('show', 'animate-in');
         }
         if (btnText) btnText.textContent = 'Sign In';
-        if (userDropdown) userDropdown.classList.remove('active');
+        closeUserDropdown();
         if (enterStudioBtn) enterStudioBtn.style.display = 'none';
         if (authBtn) {
             authBtn.classList.remove('logged-in');
-            authBtn.setAttribute('aria-expanded', 'false');
         }
 
         if (clearCacheOnLogout) {
@@ -1870,10 +1878,7 @@ window.triggerAvatarUpload = triggerAvatarUpload;
 async function forceLogout(event) {
     if (event) event.stopPropagation();
 
-    const dropdown = document.getElementById('userDropdown');
-    const overlay = document.getElementById('dropdownOverlay');
-    if (dropdown) dropdown.classList.remove('active');
-    if (overlay) overlay.classList.remove('active');
+    closeUserDropdown();
 
     if (!confirm("确定要退出登录吗？")) return;
 
@@ -2017,17 +2022,29 @@ async function initializeAuthPageBoot() {
         }, 300);
     }
 
-    // 全局点击监听器关闭下拉菜单
-    document.addEventListener('click', function (event) {
-        const dropdown = document.getElementById('userDropdown');
-        const authBtn = document.getElementById('authBtn');
+    if (!window.__userDropdownDismissBound) {
+        document.addEventListener('pointerdown', (event) => {
+            const dropdown = document.getElementById('userDropdown');
+            const authBtn = document.getElementById('authBtn');
+            const target = event.target;
 
-        if (dropdown && authBtn &&
-            !authBtn.contains(event.target) &&
-            !dropdown.contains(event.target)) {
-            dropdown.classList.remove('active');
-        }
-    });
+            if (!dropdown?.classList.contains('active')) return;
+            if (authBtn?.contains(target) || dropdown.contains(target)) return;
+
+            closeUserDropdown();
+        }, true);
+
+        window.__userDropdownDismissBound = true;
+    }
+
+    const dropdownOverlay = document.getElementById('dropdownOverlay');
+    if (dropdownOverlay && dropdownOverlay.dataset.dismissBound !== '1') {
+        dropdownOverlay.addEventListener('pointerdown', (event) => {
+            event.preventDefault();
+            closeUserDropdown();
+        });
+        dropdownOverlay.dataset.dismissBound = '1';
+    }
 
     // 监听 Supabase Auth 状态变化
     // 使用标志位避免页面加载时的重复检查
@@ -2648,14 +2665,9 @@ function resetProfileModalViewState() {
         scroller.scrollTop = 0;
     }
 
-    if (profileFront) {
-        profileFront.style.pointerEvents = 'auto';
-        profileFront.classList.remove('animate-in');
-    }
-    if (profileBack) {
-        profileBack.style.pointerEvents = 'none';
-        profileBack.classList.remove('animate-in');
-    }
+    syncProfileModalViewLayers('profile', { profileFront, profileBack });
+    profileFront?.classList.remove('animate-in');
+    profileBack?.classList.remove('animate-in');
 
     if (mobileEditor) {
         mobileEditor.classList.remove('is-visible');
@@ -2681,6 +2693,25 @@ function resetProfileModalViewState() {
     if (typeof window.switchProfileSecurityPanel === 'function') {
         window.switchProfileSecurityPanel('change-password');
     }
+}
+
+function syncProfileModalViewLayers(activeTab = 'profile', providedViews = {}) {
+    const profileFront = providedViews.profileFront || document.querySelector('#profileModal .profile-front');
+    const profileBack = providedViews.profileBack || document.querySelector('#profileModal .profile-back');
+    const showFront = activeTab !== 'security';
+
+    [
+        { node: profileFront, visible: showFront, zIndex: 3 },
+        { node: profileBack, visible: !showFront, zIndex: 4 }
+    ].forEach(({ node, visible, zIndex }) => {
+        if (!node) return;
+
+        node.hidden = !visible;
+        node.toggleAttribute('inert', !visible);
+        node.setAttribute('aria-hidden', visible ? 'false' : 'true');
+        node.style.pointerEvents = visible ? 'auto' : 'none';
+        node.style.zIndex = visible ? String(zIndex) : '1';
+    });
 }
 
 function cleanupProfileModalAfterClose(options = {}) {
@@ -2739,10 +2770,7 @@ async function openProfileModal(event) {
     lastProfileModalOpenAt = now;
 
     // 关闭下拉菜单
-    const dropdown = document.getElementById('userDropdown');
-    const overlay = document.getElementById('dropdownOverlay');
-    if (dropdown) dropdown.classList.remove('active');
-    if (overlay) overlay.classList.remove('active');
+    closeUserDropdown();
 
     // 检查是否在主页
     const modal = document.getElementById('profileModal');
@@ -2859,8 +2887,7 @@ async function handleSwitchAccount(event) {
     }
 
     // 关闭下拉菜单
-    const dropdown = document.getElementById('userDropdown');
-    if (dropdown) dropdown.classList.remove('active');
+    closeUserDropdown();
 
     console.log('🔄 切换账户');
 
@@ -2905,9 +2932,7 @@ function switchProfileTab(tabName) {
 
     if (tabName === 'profile') {
         if (flipInner) flipInner.classList.remove('flipped');
-
-        if (profileFront) profileFront.style.pointerEvents = 'auto';
-        if (profileBack) profileBack.style.pointerEvents = 'none';
+        syncProfileModalViewLayers('profile', { profileFront, profileBack });
 
         if (profileFront) {
             profileFront.classList.remove('animate-in');
@@ -2917,9 +2942,7 @@ function switchProfileTab(tabName) {
 
     } else if (tabName === 'security') {
         if (flipInner) flipInner.classList.add('flipped');
-
-        if (profileFront) profileFront.style.pointerEvents = 'none';
-        if (profileBack) profileBack.style.pointerEvents = 'auto';
+        syncProfileModalViewLayers('security', { profileFront, profileBack });
 
         if (typeof window.switchProfileSecurityPanel === 'function') {
             const overlay = document.getElementById('profileModal');

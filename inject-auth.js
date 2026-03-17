@@ -1019,6 +1019,11 @@
     }
 
     function closeDropdown() {
+        if (typeof window.closeUserDropdown === 'function') {
+            window.closeUserDropdown();
+            return;
+        }
+
         const dropdown = document.getElementById('userDropdown');
         const overlay = document.getElementById('dropdownOverlay');
         const authBtn = document.getElementById('authBtn');

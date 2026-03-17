@@ -218,6 +218,10 @@
     padding-bottom: 20px;
 }
 
+#profileModal .profile-view[hidden] {
+    display: none !important;
+}
+
 #profileModal .profile-front {
     z-index: 2;
     opacity: 1;
@@ -1063,6 +1067,9 @@
         gap: 14px;
         min-height: 392px;
         align-items: stretch;
+        position: relative;
+        isolation: isolate;
+        z-index: 2;
     }
 
     #profileModal .profile-security-desktop-sidebar {
@@ -1071,6 +1078,8 @@
         justify-content: center;
         gap: 16px;
         padding: 8px 0;
+        position: relative;
+        z-index: 3;
     }
 
     #profileModal .profile-security-desktop-item {
@@ -1143,6 +1152,7 @@
         display: flex;
         align-items: center;
         justify-content: center;
+        z-index: 2;
     }
 
     #profileModal .profile-security-desktop-panel {

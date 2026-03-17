@@ -1496,6 +1496,23 @@ const FramerHome = {
     let currentIndex = 0;
     const cardCount = cards.length;
     let hasUserInteracted = false; // Track if user has scrolled/clicked
+    const getCarouselViewportCenter = () => {
+      const carouselRect = carousel.getBoundingClientRect();
+      return carouselRect.left + carouselRect.width / 2;
+    };
+    const shouldActivateCardDirectly = () =>
+      window.matchMedia?.('(hover: hover) and (pointer: fine)').matches ?? false;
+    const triggerCardAction = (card, event) => {
+      const action = card.getAttribute('data-action');
+
+      if (action && typeof window[action] === 'function') {
+        event.preventDefault();
+        window[action]();
+        return true;
+      }
+
+      return false;
+    };
 
     // Center a specific card
     const centerCard = (index) => {
@@ -1559,7 +1576,7 @@ const FramerHome = {
       }
 
       // Calculate which card is centered and apply scaling
-      const viewportCenter = window.innerWidth / 2;
+      const viewportCenter = getCarouselViewportCenter();
 
       cards.forEach((card) => {
         const rect = card.getBoundingClientRect();
@@ -1642,7 +1659,12 @@ const FramerHome = {
 
     cards.forEach((card) => {
       card.addEventListener('click', (e) => {
-        const viewportCenter = window.innerWidth / 2;
+        if (shouldActivateCardDirectly()) {
+          triggerCardAction(card, e);
+          return;
+        }
+
+        const viewportCenter = getCarouselViewportCenter();
         const rect = card.getBoundingClientRect();
         const cardCenter = rect.left + rect.width / 2;
         const distanceFromCenter = Math.abs(cardCenter - viewportCenter);
@@ -1663,11 +1685,7 @@ const FramerHome = {
           activateThumb();
         } else {
           // Card is centered — check for custom action (e.g. guestbook modal)
-          const action = card.getAttribute('data-action');
-          if (action && typeof window[action] === 'function') {
-            e.preventDefault();
-            window[action]();
-          }
+          triggerCardAction(card, e);
           // Otherwise let the click through to navigate normally
         }
       });
