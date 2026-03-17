@@ -1,6 +1,6 @@
 /* ==================== Guestbook Display Page JavaScript ==================== */
 
-document.addEventListener('DOMContentLoaded', () => {
+function initGuestbookPage() {
     const messageContainer = document.getElementById('messageContainer');
     const floatingBackBtn = document.querySelector('.floating-back-btn');
     const emptyState = document.getElementById('emptyState');
@@ -1158,7 +1158,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Mobile highlight will be initialized by observeNewItems() when first batch renders
-});
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initGuestbookPage, { once: true });
+} else {
+    initGuestbookPage();
+}
 
 // --- Comment Composer Helpers ---
 let commentComposerEntryTimer = null;

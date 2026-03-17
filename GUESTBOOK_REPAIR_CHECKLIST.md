@@ -35,11 +35,15 @@
   - Several scripts are loaded without `defer`, including the Supabase CDN, `supabase-client.js`, `smooth-scroll.js`, `announcement-loader.js`, and the chat widget script.
   - Goal: keep only true boot-critical code on the critical path.
 
+- [x] Start guestbook boot as soon as deferred scripts are ready
+  - Previous `guestbook.js` waited for `DOMContentLoaded`, which delayed message loading until every deferred page script finished executing.
+  - Goal: let the guestbook page start loading data immediately after its own prerequisites are available.
+
 - [x] Delay non-essential realtime setup until after first paint
   - Current page enables realtime shortly after boot from both `guestbook.js` and `supabase-guestbook-functions.js`.
   - Goal: prioritize initial content render, then attach realtime subscriptions.
 
-- [ ] Shorten the auth/session wait path for anonymous visitors
+- [x] Shorten the auth/session wait path for anonymous visitors
   - Current guestbook load path calls auth APIs even when the user may only be browsing.
   - Goal: initial public read path should not wait on avoidable auth work.
 

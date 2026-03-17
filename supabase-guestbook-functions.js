@@ -165,8 +165,9 @@ async function loadGuestbookMessages(forceRefresh = false, scrollTargetId = null
     try {
         const currentSite = window.SiteConfig?.site || 'cn';
 
-        // Get user session first (lightweight, usually cached)
-        const { data: { user } } = await window.supabaseClient.auth.getUser();
+        // Get cached session first to avoid an unnecessary auth round-trip for anonymous visitors
+        const { data: { session } = {} } = await window.supabaseClient.auth.getSession();
+        const currentUserId = session?.user?.id || null;
 
         // === FAST PATH: Single RPC call (1 round-trip) ===
         let rpcSuccess = false;
@@ -175,7 +176,7 @@ async function loadGuestbookMessages(forceRefresh = false, scrollTargetId = null
                 .rpc('fn_load_guestbook', {
                     p_site: currentSite,
                     p_limit: 50,
-                    p_user_id: user?.id || null
+                    p_user_id: currentUserId
                 });
 
             if (!rpcError && rpcData) {
@@ -246,11 +247,11 @@ async function loadGuestbookMessages(forceRefresh = false, scrollTargetId = null
                         .in('message_id', messageIds)
                         .order('created_at', { ascending: true })
                     : Promise.resolve({ data: [] }),
-                user
+                currentUserId
                     ? window.supabaseClient
                         .from('guestbook_likes')
                         .select('target_type, target_id')
-                        .eq('user_id', user.id)
+                        .eq('user_id', currentUserId)
                     : Promise.resolve({ data: [] })
             ]);
 
