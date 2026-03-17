@@ -1112,10 +1112,7 @@ class ChatWidget {
             let userMapByEmail = new Map();
 
             if (userIds.length > 0) {
-                const { data: profiles } = await this.supabase
-                    .from('profiles')
-                    .select('id, email, display_name, username, avatar_url')
-                    .in('id', userIds);
+                const profiles = await this.fetchChatProfiles('id', userIds);
 
                 if (profiles) {
                     profiles.forEach(u => {
@@ -1125,10 +1122,7 @@ class ChatWidget {
             }
 
             if (emailSessionIds.length > 0) {
-                const { data: profilesByEmail } = await this.supabase
-                    .from('profiles')
-                    .select('id, email, display_name, username, avatar_url')
-                    .in('email', emailSessionIds);
+                const profilesByEmail = await this.fetchChatProfiles('email', emailSessionIds);
 
                 if (profilesByEmail) {
                     profilesByEmail.forEach(u => {
@@ -1276,6 +1270,43 @@ class ChatWidget {
 
         const isEnglish = window.i18n && window.i18n.isEnglish && window.i18n.isEnglish();
         return date.toLocaleDateString(isEnglish ? 'en-US' : 'zh-CN', { month: 'short', day: 'numeric' });
+    }
+
+    async fetchChatProfiles(filterType, values = []) {
+        const uniqueValues = [...new Set((Array.isArray(values) ? values : []).filter(Boolean))];
+        if (!uniqueValues.length) return [];
+
+        const selectVariants = [
+            'id, email, display_name, username, avatar_url',
+            'id, email, username, avatar_url',
+            'id, username, avatar_url'
+        ];
+
+        let lastError = null;
+
+        for (const selectClause of selectVariants) {
+            try {
+                const query = this.supabase
+                    .from('profiles')
+                    .select(selectClause)
+                    .in(filterType, uniqueValues);
+
+                const { data, error } = await query;
+                if (error) {
+                    lastError = error;
+                    continue;
+                }
+
+                return Array.isArray(data) ? data : [];
+            } catch (error) {
+                lastError = error;
+            }
+        }
+
+        if (lastError) {
+            console.warn(`[ChatWidget] Failed to fetch profiles by ${filterType}:`, lastError);
+        }
+        return [];
     }
 
     getMessageRenderType(isAdminMessage) {
