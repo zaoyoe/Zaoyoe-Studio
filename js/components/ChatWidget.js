@@ -2072,10 +2072,10 @@ class ChatWidget {
             }
 
             .chat-window:not(.admin-mode-layout) .message.admin {
-                background: #007aff !important;
-                color: #ffffff !important;
-                border: none !important;
-                box-shadow: 0 10px 24px rgba(0, 122, 255, 0.24) !important;
+                background: rgba(255, 255, 255, 0.12) !important;
+                color: rgba(255, 255, 255, 0.92) !important;
+                border: 1px solid rgba(255, 255, 255, 0.08) !important;
+                box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), inset 0 -12px 24px rgba(0, 0, 0, 0.08) !important;
             }
 
             body.chat-spotlight-suspended .spotlight-overlay,
