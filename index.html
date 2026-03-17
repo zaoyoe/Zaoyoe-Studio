@@ -58,7 +58,7 @@
     <!-- Framer Home Styles -->
     <link rel="stylesheet" href="./css/framer_home.css?v=20260317_HERO_HITAREA_FIX_1">
     <!-- Core Styles (for modals, profile, etc) -->
-    <link rel="stylesheet" href="style.css?v=20260317_GUESTBOOK_HITAREA_FIX_2">
+    <link rel="stylesheet" href="style.css?v=20260317_GUESTBOOK_MODAL_SUBMIT_FIX_1">
     <link rel="stylesheet" href="css/auth-sheet.css?v=20260316_AUTH_SHEET_CHAT_MATCH_36">
     <link rel="stylesheet" href="avatar-fix.css?v=20260316_AVATAR_NAV_STABLE_2">
 
@@ -286,7 +286,7 @@
     <script src="./notification-client.js?v=20260314_NOTIF_SCROLL_LOCK_1" defer></script>
 
     <!-- Supabase Guestbook Functions (for modal form) -->
-    <script src="./supabase-guestbook-functions.js?v=HOMEPAGE_MODAL" defer></script>
+    <script src="./supabase-guestbook-functions.js?v=20260317_HOMEPAGE_GUESTBOOK_SUBMIT_FIX_1" defer></script>
 
     <!--  Framer Home Engine -->
     <script src="./js/framer_home.js?v=20260317_HERO_HITAREA_FIX_1"></script>
@@ -348,8 +348,8 @@
                         <i class="fas fa-comment-dots"></i>
                         <span data-i18n="guestbook.viewMore">查看更多</span>
                     </a>
-                    <button type="submit" class="guestbook-submit-btn guestbook-composer-send">
-                        <span data-i18n="guestbook.submit">留言</span>
+                    <button type="submit" class="guestbook-submit-btn guestbook-composer-send" id="guestbookSubmitBtn">
+                        <span class="guestbook-submit-label" id="guestbookSubmitBtnLabel" data-i18n="guestbook.submit">留言</span>
                     </button>
                 </div>
             </form>

@@ -21,6 +21,10 @@
   - Current `insertCommentToDOM()` / `insertReplyToDOM()` manually build DOM and can drift from `createMessageCard()`.
   - Goal: optimistic UI stays visually and structurally consistent with full reload render.
 
+- [x] Harden the homepage guestbook modal submit flow
+  - Current homepage modal can be clicked repeatedly during async submission, shows a toast instead of inline feedback, and leaves stale `guestbook_prefetch` data behind for immediate "查看更多" navigation.
+  - Goal: lock duplicate submissions, use an inline button success state, and sync homepage/guestbook caches right after posting.
+
 ## P1 - Slow Loading And Perceived Performance
 
 - [x] Create a dedicated `guestbook_prefetch` producer before entering the guestbook page

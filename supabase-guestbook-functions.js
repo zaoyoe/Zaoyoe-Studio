@@ -503,8 +503,19 @@ async function checkUserBlockStatus(userId, scope = 'guestbook') {
 }
 
 // ==================== 发送留言 (Supabase 版本) ====================
-async function addMessage(content, imageUrl = '') {
-    const { data: { user } } = await window.supabaseClient.auth.getUser();
+async function addMessage(content, imageUrl = '', options = {}) {
+    const providedUser = options?.user || null;
+    let user = providedUser;
+
+    if (!user) {
+        const sessionResult = await window.supabaseClient.auth.getSession();
+        user = sessionResult.data?.session?.user || null;
+    }
+
+    if (!user) {
+        const userResult = await window.supabaseClient.auth.getUser();
+        user = userResult.data?.user || null;
+    }
 
     if (!user) {
         alert('请先登录');
@@ -541,14 +552,34 @@ async function addMessage(content, imageUrl = '') {
                 image_url: imageUrl || null,
                 site: window.SiteConfig?.site || 'cn'
             })
-            .select()
+            .select(`
+                id,
+                content,
+                image_url,
+                like_count,
+                created_at,
+                user_id,
+                site,
+                profiles:user_id (
+                    username,
+                    avatar_url
+                )
+            `)
             .single();
 
         if (error) throw error;
 
         console.log('✅ Message added:', data.id);
         invalidateGuestbookCache();
-        return true;
+        window.Cache?.invalidateCache?.('guestbook_messages');
+        return {
+            ...data,
+            like_count: data.like_count || 0,
+            profiles: {
+                username: data.profiles?.username || user.user_metadata?.full_name || user.email?.split('@')[0] || '匿名用户',
+                avatar_url: data.profiles?.avatar_url || user.user_metadata?.avatar_url || null
+            }
+        };
 
     } catch (error) {
         console.error('❌ Error adding message:', error);
@@ -1410,43 +1441,280 @@ document.addEventListener('DOMContentLoaded', function () {
     console.log('📋 绑定留言板表单...');
 
     const guestbookForm = document.getElementById('guestbookForm');
+    const submitButton = document.getElementById('guestbookSubmitBtn');
+    const submitLabel = document.getElementById('guestbookSubmitBtnLabel') || submitButton?.querySelector('span');
+    const messageInput = document.getElementById('guestMessage');
+    const imageUpload = document.getElementById('imageUpload');
+    const uploadButton = document.getElementById('guestbookComposerUploadBtn');
+    const removeImageButton = document.getElementById('removeImageBtn');
+    const viewMoreLink = document.getElementById('guestbookViewMoreWrap');
+    const submitState = {
+        locked: false,
+        resetTimer: null,
+        viewMoreTabIndex: viewMoreLink?.getAttribute('tabindex') ?? ''
+    };
+
+    function clearGuestbookSubmitResetTimer() {
+        if (submitState.resetTimer) {
+            clearTimeout(submitState.resetTimer);
+            submitState.resetTimer = null;
+        }
+    }
+
+    function getGuestbookSubmitButtonText(state) {
+        const lang = window.i18n?.getCurrentLanguage?.() || 'zh';
+        const isZh = !lang || lang.startsWith('zh');
+
+        if (state === 'submitting') {
+            return isZh ? '留言中...' : 'Posting...';
+        }
+
+        if (state === 'success') {
+            return isZh ? '已留言' : 'Posted';
+        }
+
+        return window.i18n?.t('guestbook.submit') || (isZh ? '留言' : 'Post');
+    }
+
+    function setGuestbookSubmitButtonState(state) {
+        if (!submitButton || !submitLabel) return;
+
+        clearGuestbookSubmitResetTimer();
+
+        submitButton.classList.remove('is-submitting', 'is-success');
+        submitButton.dataset.state = state;
+        submitButton.disabled = state !== 'idle';
+        submitButton.setAttribute('aria-busy', state === 'submitting' ? 'true' : 'false');
+        submitButton.setAttribute('aria-disabled', state !== 'idle' ? 'true' : 'false');
+
+        if (state === 'submitting') {
+            submitButton.classList.add('is-submitting');
+            submitLabel.removeAttribute('data-i18n');
+        } else if (state === 'success') {
+            submitButton.classList.add('is-success');
+            submitLabel.removeAttribute('data-i18n');
+        } else {
+            submitLabel.setAttribute('data-i18n', 'guestbook.submit');
+        }
+
+        submitLabel.textContent = getGuestbookSubmitButtonText(state);
+    }
+
+    function setGuestbookComposerBusyState(isBusy) {
+        guestbookForm?.classList.toggle('is-submitting', isBusy);
+
+        if (messageInput) {
+            messageInput.readOnly = isBusy;
+            messageInput.setAttribute('aria-disabled', isBusy ? 'true' : 'false');
+        }
+
+        if (imageUpload) {
+            imageUpload.disabled = isBusy;
+        }
+
+        if (uploadButton) {
+            uploadButton.disabled = isBusy;
+            uploadButton.setAttribute('aria-disabled', isBusy ? 'true' : 'false');
+        }
+
+        if (removeImageButton) {
+            removeImageButton.disabled = isBusy;
+            removeImageButton.setAttribute('aria-disabled', isBusy ? 'true' : 'false');
+        }
+
+        if (viewMoreLink) {
+            viewMoreLink.classList.toggle('is-disabled', isBusy);
+            viewMoreLink.setAttribute('aria-disabled', isBusy ? 'true' : 'false');
+            if (isBusy) {
+                viewMoreLink.setAttribute('tabindex', '-1');
+            } else if (submitState.viewMoreTabIndex) {
+                viewMoreLink.setAttribute('tabindex', submitState.viewMoreTabIndex);
+            } else {
+                viewMoreLink.removeAttribute('tabindex');
+            }
+        }
+    }
+
+    function mergeGuestbookMessageList(messages, message, limit = 50) {
+        const safeMessages = Array.isArray(messages) ? messages : [];
+        const deduped = safeMessages.filter(item => item?.id !== message?.id);
+        return [message, ...deduped].slice(0, limit);
+    }
+
+    function syncHomepageGuestbookSection(message) {
+        const home = window.FramerHome;
+        if (!home?.cachedData) return;
+
+        const maxItems = Math.max(1, Number(home.config?.guestbook?.max_items) || 5);
+        home.cachedData.guestbook = mergeGuestbookMessageList(home.cachedData.guestbook, message, maxItems);
+
+        if (typeof home.renderGuestbook === 'function') {
+            home.renderGuestbook();
+        }
+    }
+
+    function syncHomepagePrefetchCache(message) {
+        try {
+            const raw = sessionStorage.getItem('homepage_prefetch');
+            if (!raw) return;
+
+            const parsed = JSON.parse(raw);
+            if (!parsed?.cachedData) return;
+
+            const maxItems = Math.max(1, Number(parsed.config?.guestbook?.max_items) || 5);
+            parsed.cachedData.guestbook = mergeGuestbookMessageList(parsed.cachedData.guestbook, message, maxItems);
+            parsed.timestamp = Date.now();
+            sessionStorage.setItem('homepage_prefetch', JSON.stringify(parsed));
+        } catch (error) {
+            console.warn('⚠️ Failed to sync homepage prefetch after guestbook post:', error.message);
+        }
+    }
+
+    function syncGuestbookPrefetchCache(message) {
+        const currentSite = window.SiteConfig?.site || 'cn';
+        let nextPrefetch = null;
+
+        try {
+            const raw = sessionStorage.getItem('guestbook_prefetch');
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                const sameSite = (parsed?.site || currentSite) === currentSite;
+                if (sameSite && parsed?.data && Array.isArray(parsed.data.messages)) {
+                    nextPrefetch = {
+                        data: {
+                            ...parsed.data,
+                            messages: mergeGuestbookMessageList(parsed.data.messages, message, 50)
+                        },
+                        timestamp: Date.now(),
+                        site: currentSite
+                    };
+                }
+            }
+        } catch (error) {
+            console.warn('⚠️ Failed to patch guestbook prefetch cache:', error.message);
+        }
+
+        sessionStorage.removeItem('guestbook_prefetch');
+
+        if (nextPrefetch) {
+            sessionStorage.setItem('guestbook_prefetch', JSON.stringify(nextPrefetch));
+        }
+    }
+
+    async function refreshGuestbookPrefetch(userId = null, optimisticMessage = null) {
+        try {
+            const currentSite = window.SiteConfig?.site || 'cn';
+            const { data, error } = await window.supabaseClient
+                .rpc('fn_load_guestbook', {
+                    p_site: currentSite,
+                    p_limit: 50,
+                    p_user_id: userId || null
+                });
+
+            if (error || !data) {
+                throw error || new Error('Empty guestbook prefetch response');
+            }
+
+            const nextData = optimisticMessage
+                ? {
+                    ...data,
+                    messages: mergeGuestbookMessageList(data.messages, optimisticMessage, 50)
+                }
+                : data;
+
+            sessionStorage.setItem('guestbook_prefetch', JSON.stringify({
+                data: nextData,
+                timestamp: Date.now(),
+                site: currentSite
+            }));
+        } catch (error) {
+            console.warn('⚠️ Failed to refresh guestbook prefetch after post:', error.message);
+        }
+    }
+
+    function syncHomepageGuestbookCaches(message, userId = null) {
+        syncHomepageGuestbookSection(message);
+        syncHomepagePrefetchCache(message);
+        syncGuestbookPrefetchCache(message);
+        window.Cache?.invalidateCache?.('guestbook_messages');
+        void refreshGuestbookPrefetch(userId, message);
+    }
+
+    function resetGuestbookSubmitFlow() {
+        clearGuestbookSubmitResetTimer();
+        submitState.locked = false;
+        setGuestbookComposerBusyState(false);
+        setGuestbookSubmitButtonState('idle');
+    }
+
+    function showGuestbookSubmitSuccessState() {
+        setGuestbookComposerBusyState(false);
+        setGuestbookSubmitButtonState('success');
+        submitState.resetTimer = setTimeout(() => {
+            submitState.resetTimer = null;
+            submitState.locked = false;
+            setGuestbookSubmitButtonState('idle');
+        }, 1400);
+    }
 
     if (guestbookForm) {
         guestbookForm.addEventListener('submit', async function (e) {
             e.preventDefault();
 
+            if (submitState.locked) {
+                return;
+            }
+
+            submitState.locked = true;
+            setGuestbookComposerBusyState(true);
+            setGuestbookSubmitButtonState('submitting');
+
             console.log('📝 提交留言表单');
 
-            // 检查登录状态 (Supabase)
-            const { data: { user } } = await window.supabaseClient.auth.getUser();
-            if (!user) {
-                alert('请先登录后再留言');
-                if (typeof toggleLoginModal === 'function') {
-                    toggleLoginModal();
+            try {
+                // 检查登录状态 (Supabase)
+                const sessionResult = await window.supabaseClient.auth.getSession();
+                let user = sessionResult.data?.session?.user || null;
+
+                if (!user) {
+                    const userResult = await window.supabaseClient.auth.getUser();
+                    user = userResult.data?.user || null;
                 }
-                return;
-            }
 
-            // 获取留言内容
-            const messageInput = document.getElementById('guestMessage');
-            const content = messageInput ? messageInput.value.trim() : '';
+                if (!user) {
+                    resetGuestbookSubmitFlow();
+                    alert('请先登录后再留言');
+                    if (typeof toggleLoginModal === 'function') {
+                        toggleLoginModal();
+                    }
+                    return;
+                }
 
-            // 获取图片数据（如果有）
-            const imageData = typeof window.getCurrentImageData === 'function' ? window.getCurrentImageData() : null;
+                // 获取留言内容
+                const content = messageInput ? messageInput.value.trim() : '';
 
-            // 至少需要有内容或图片
-            if (!content && !imageData) {
-                alert('请输入留言内容或上传图片');
-                return;
-            }
+                // 获取图片数据（如果有）
+                const imageData = typeof window.getCurrentImageData === 'function' ? window.getCurrentImageData() : null;
 
-            // 发送留言（传递图片数据）
-            const success = await addMessage(content, imageData || '');
+                // 至少需要有内容或图片
+                if (!content && !imageData) {
+                    resetGuestbookSubmitFlow();
+                    alert('请输入留言内容或上传图片');
+                    return;
+                }
 
-            if (success) {
+                // 发送留言（传递图片数据）
+                const createdMessage = await addMessage(content, imageData || '', { user });
+
+                if (!createdMessage) {
+                    resetGuestbookSubmitFlow();
+                    return;
+                }
+
                 // 清空输入框
                 if (messageInput) {
                     messageInput.value = '';
+                    messageInput.blur();
                 }
                 if (typeof window.syncGuestbookComposerEmptyState === 'function') {
                     window.syncGuestbookComposerEmptyState();
@@ -1457,32 +1725,54 @@ document.addEventListener('DOMContentLoaded', function () {
                     window.clearGuestbookImage();
                 }
 
-                // 关闭模态框
-                const modal = document.getElementById('guestbookModal');
-                if (modal) {
-                    if (typeof window.closeGuestbookModal === 'function') {
-                        window.closeGuestbookModal();
-                    } else {
-                        modal.classList.remove('active');
-                        document.body.classList.remove('no-scroll');
-                    }
-                }
-
-                // 如果在首页，不跳转，显示成功提示
+                // 如果在首页，不跳转，更新本地缓存并展示按钮成功态
                 const isHomepage = window.location.pathname === '/' || window.location.pathname === '/index.html';
                 if (isHomepage) {
-                    // 显示成功提示
-                    const toast = document.createElement('div');
-                    toast.textContent = window.i18n?.t('guestbook.postSuccess') || '留言成功！';
-                    toast.style.cssText = 'position:fixed;top:80px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;padding:12px 24px;border-radius:12px;z-index:10000;font-size:14px;font-weight:500;box-shadow:0 8px 32px rgba(0,0,0,0.3);animation:fadeInUp 0.3s ease';
-                    document.body.appendChild(toast);
-                    setTimeout(() => toast.remove(), 3000);
+                    syncHomepageGuestbookCaches(createdMessage, user.id);
+                    showGuestbookSubmitSuccessState();
                 } else {
-                    // 其他页面，跳转到留言板
                     window.location.href = 'guestbook.html';
+                    return;
+                }
+            } catch (error) {
+                console.error('❌ Error submitting guestbook form:', error);
+                resetGuestbookSubmitFlow();
+                if (error?.message) {
+                    alert('发送失败: ' + error.message);
+                } else {
+                    alert('发送失败，请稍后重试');
                 }
             }
         });
+
+        guestbookForm.addEventListener('reset', () => {
+            resetGuestbookSubmitFlow();
+        });
+
+        if (submitButton) {
+            submitButton.addEventListener('click', () => {
+                if (submitState.locked) {
+                    submitButton.blur();
+                }
+            });
+        }
+
+        const guestbookModal = document.getElementById('guestbookModal');
+        guestbookModal?.addEventListener('transitionend', () => {
+            if (guestbookModal.classList.contains('active')) {
+                return;
+            }
+
+            if (!submitState.locked) {
+                setGuestbookSubmitButtonState('idle');
+                setGuestbookComposerBusyState(false);
+            }
+        });
+
+        window.resetHomepageGuestbookSubmitFlow = resetGuestbookSubmitFlow;
+
+        setGuestbookSubmitButtonState('idle');
+        setGuestbookComposerBusyState(false);
 
         console.log('✅ 留言板表单绑定成功');
     }
