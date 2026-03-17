@@ -672,6 +672,21 @@ function hasCachedIdentity(profile) {
     return !!(profile.objectId || profile.id || profile.user_id || profile.email);
 }
 
+function getMatchedCachedProfile(user, cachedProfile = readCachedUserProfile()) {
+    if (!cachedProfile || !user) return null;
+
+    const cachedId = cachedProfile.objectId || cachedProfile.id || cachedProfile.user_id || '';
+    if (cachedId && user.id && cachedId === user.id) {
+        return cachedProfile;
+    }
+
+    if (cachedProfile.email && user.email && cachedProfile.email === user.email) {
+        return cachedProfile;
+    }
+
+    return null;
+}
+
 async function checkAuthState(options = {}) {
     const { allowSoftNull = true } = options;
     console.log('🔍 检查登录状态...');
@@ -887,6 +902,37 @@ function setTextContent(id, value) {
     const el = document.getElementById(id);
     if (!el || value === undefined || value === null || value === '') return;
     el.textContent = value;
+}
+
+function isProfilePlaceholderValue(value) {
+    const normalized = String(value || '').trim();
+    return !normalized ||
+        normalized === 'Loading...' ||
+        normalized === '加载中...' ||
+        normalized === '加载失败';
+}
+
+function readCurrentKnownNickname() {
+    const authBtnText = document.getElementById('authBtnText')?.textContent || '';
+    const dropdownUsername = document.getElementById('dropdownUsername');
+    const dropdownText = dropdownUsername
+        ? Array.from(dropdownUsername.childNodes)
+            .filter((node) => node.nodeType === Node.TEXT_NODE)
+            .map((node) => node.textContent)
+            .join(' ')
+        : '';
+    const modalHeroName = document.getElementById('profileMobileHeroName')?.textContent || '';
+    const modalNickname = document.getElementById('profileMobileNicknameValue')?.textContent || '';
+
+    const candidates = [authBtnText, dropdownText, modalHeroName, modalNickname];
+    for (const candidate of candidates) {
+        const normalized = String(candidate || '').trim();
+        if (!isProfilePlaceholderValue(normalized)) {
+            return normalized;
+        }
+    }
+
+    return '';
 }
 
 function getProfileDisplayInitial(seed) {
@@ -2750,15 +2796,28 @@ async function openProfileModal(event) {
                 return;
             }
 
-            const optimisticNickname = user.user_metadata?.full_name || user.email.split('@')[0];
+            const matchedCachedProfile = getMatchedCachedProfile(user);
+            const cachedNickname = matchedCachedProfile?.nickname ||
+                matchedCachedProfile?.username ||
+                matchedCachedProfile?.email?.split('@')[0] ||
+                '';
+            const stableNickname = cachedNickname || readCurrentKnownNickname();
+            const cachedAvatarUrl = isUsableAvatarUrl(matchedCachedProfile?.avatarUrl)
+                ? String(matchedCachedProfile.avatarUrl).trim()
+                : '';
+            const optimisticNickname = stableNickname || user.user_metadata?.full_name || user.email.split('@')[0];
             const memberSinceText = formatProfileMemberSince(user.created_at);
             updateProfileMobileSummary({
-                nickname: optimisticNickname,
+                nickname: stableNickname || undefined,
                 email: user.email,
                 userId: user.id,
                 memberSince: memberSinceText
             });
-            setProfileModalAvatar(user.user_metadata?.avatar_url, user.email || optimisticNickname);
+            if (cachedAvatarUrl) {
+                setProfileModalAvatar(cachedAvatarUrl, user.email || optimisticNickname, {
+                    preferImmediate: true
+                });
+            }
 
             // 获取 profile
             const { data: profile } = await window.supabaseClient
