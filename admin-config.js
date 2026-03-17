@@ -1550,14 +1550,7 @@ async function checkVerifyQuota() {
     }
 }
 
-async function redeemVerifyCard() {
-    if (typeof showToast === 'function') {
-        showToast('新版 Google One API 不支持卡密兑换，请到上游后台给当前 Key 充值。', 'error');
-    }
-}
-
 window.checkVerifyQuota = checkVerifyQuota;
-window.redeemVerifyCard = redeemVerifyCard;
 
 async function saveSensitiveWords() {
     const textarea = document.getElementById('cfgSensitiveWords');
