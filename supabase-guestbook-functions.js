@@ -442,7 +442,7 @@ function formatCommentForUI(comment) {
         authorId: comment.user_id,
         parentId: comment.parent_id,
         parentCommentId: comment.parent_id,
-        parentUserName: null, // Will need to be populated if needed
+        parentUserName: comment.parentUserName || comment.parent_user_name || null,
         likes: comment.like_count || 0,
         isLiked: isLiked('Comment', comment.id),
         createdAt: comment.created_at,
@@ -866,6 +866,11 @@ async function deleteMessage(messageId) {
 let realtimeChannel = null;
 
 function enableRealTimeUpdates() {
+    if (window.__guestbookRealtimeEnabled) {
+        console.log('🔌 Realtime already enabled');
+        return;
+    }
+
     if (realtimeChannel) {
         console.log('🔌 Realtime already subscribed');
         return;
@@ -918,6 +923,7 @@ function enableRealTimeUpdates() {
 
     // Mark as subscribed
     realtimeChannel = true;
+    window.__guestbookRealtimeEnabled = true;
 
     console.log('✅ Notifications enabled with automatic fallback');
     console.log('📊 Current mode:', window.NotificationManager.getMode());
@@ -1116,6 +1122,11 @@ async function insertNewMessageFromRealtime(msgData) {
     console.log('📨 Inserting new message from Realtime:', msgData.id);
 
     try {
+        if (document.querySelector(`.message-item[data-message-id="${msgData.id}"]`)) {
+            console.log('ℹ️ Message already exists in DOM, skipping realtime insert');
+            return;
+        }
+
         // Fetch user profile
         const { data: profile } = await window.supabaseClient
             .from('profiles')
@@ -1123,33 +1134,38 @@ async function insertNewMessageFromRealtime(msgData) {
             .eq('id', msgData.user_id)
             .single();
 
-        const formattedMsg = {
-            id: msgData.id,
-            content: msgData.content,
-            image: msgData.image_url,
-            authorName: profile?.username || 'Anonymous',
-            authorAvatar: profile?.avatar_url,
-            authorId: msgData.user_id,
-            likes: 0,
-            isLiked: false,
-            comments: [],
-            createdAt: msgData.created_at,
-            timestamp: formatTime(msgData.created_at)
-        };
+        const formattedMsg = typeof formatMessageForUI === 'function'
+            ? formatMessageForUI({
+                ...msgData,
+                profiles: {
+                    id: msgData.user_id,
+                    username: profile?.username || 'Anonymous',
+                    avatar_url: profile?.avatar_url || null
+                },
+                comments: []
+            })
+            : {
+                id: msgData.id,
+                objectId: msgData.id,
+                content: msgData.content,
+                image: msgData.image_url,
+                imageUrl: msgData.image_url,
+                name: profile?.username || 'Anonymous',
+                username: profile?.username || 'Anonymous',
+                avatarUrl: profile?.avatar_url || null,
+                userId: msgData.user_id,
+                authorId: msgData.user_id,
+                likes: msgData.like_count || 0,
+                isLiked: false,
+                comments: [],
+                createdAt: msgData.created_at,
+                timestamp: formatTime(msgData.created_at)
+            };
 
-        // Use existing renderMessages if available, or insert directly
         if (typeof window.insertMessageToDOM === 'function') {
-            window.insertMessageToDOM(formattedMsg);
-        } else if (typeof window.renderMessages === 'function') {
-            // Prepend to existing messages
-            const container = document.getElementById('guestbook-messages');
-            if (container) {
-                const tempDiv = document.createElement('div');
-                window.renderMessages([formattedMsg], tempDiv, true);
-                if (tempDiv.firstChild) {
-                    container.insertBefore(tempDiv.firstChild, container.firstChild);
-                }
-            }
+            window.insertMessageToDOM(formattedMsg, { position: 'prepend' });
+        } else {
+            console.warn('⚠️ window.insertMessageToDOM not found, skipping realtime insert');
         }
 
         console.log('✅ New message inserted from Realtime');
@@ -1199,20 +1215,18 @@ async function insertNewCommentFromRealtime(commentData) {
 
 function disableRealTimeUpdates() {
     if (realtimeChannel) {
-        window.supabaseClient.removeChannel(realtimeChannel);
+        if (realtimeChannel !== true) {
+            window.supabaseClient.removeChannel(realtimeChannel);
+        }
         realtimeChannel = null;
         console.log('🔌 Realtime disabled');
     }
+    window.__guestbookRealtimeEnabled = false;
 }
 
 // ==================== 页面初始化 ====================
 document.addEventListener('DOMContentLoaded', function () {
     console.log('📋 Supabase Guestbook functions loaded');
-
-    // Auto-enable realtime on guestbook page
-    if (window.location.pathname.includes('guestbook')) {
-        setTimeout(enableRealTimeUpdates, 1000);
-    }
 
     // Add capsule click handler
     const capsule = document.getElementById('smart-capsule');

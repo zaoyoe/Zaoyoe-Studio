@@ -39,13 +39,8 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log('✅ Supabase 已就绪，加载留言');
             loadGuestbookMessages();
 
-            // ✅ 启用实时推送（Supabase Realtime）
-            if (typeof enableRealTimeUpdates === 'function') {
-                console.log('🔌 准备启用 Supabase Realtime...');
-                setTimeout(enableRealTimeUpdates, 1000);
-            } else {
-                console.warn('⚠️ enableRealTimeUpdates 函数未找到');
-            }
+            console.log('🔌 首屏渲染后再启用 Supabase Realtime...');
+            scheduleRealtimeSetup();
         } else {
             console.log('⏳ 等待 Supabase 初始化...');
             setTimeout(waitForSupabase, 100);
@@ -67,6 +62,21 @@ document.addEventListener('DOMContentLoaded', () => {
     let renderedCount = 0;
     let isLoading = false;
     let infiniteScrollObserver = null;
+    let realtimeSetupTimer = null;
+
+    function scheduleRealtimeSetup(delay = 2500) {
+        if (realtimeSetupTimer || window.__guestbookRealtimeEnabled) return;
+
+        if (typeof enableRealTimeUpdates !== 'function') {
+            console.warn('⚠️ enableRealTimeUpdates 函数未找到');
+            return;
+        }
+
+        realtimeSetupTimer = setTimeout(() => {
+            realtimeSetupTimer = null;
+            enableRealTimeUpdates();
+        }, delay);
+    }
 
     // 🚨 状态重置函数（供loadGuestbookMessages调用）
     window.resetGuestbookState = function () {
@@ -149,6 +159,7 @@ document.addEventListener('DOMContentLoaded', () => {
         template.innerHTML = html;
         return template.content.firstChild;
     }
+    window.htmlToElement = htmlToElement;
 
     // Helper: Find shortest column
     function getShortestColumn() {
@@ -586,6 +597,64 @@ document.addEventListener('DOMContentLoaded', () => {
     // ✅ 暴露到全局作用域，供其他文件使用
     window.createMessageCard = createMessageCard;
 
+    window.insertMessageToDOM = function (msg, options = {}) {
+        if (!messageContainer || !msg) return null;
+
+        const { position = 'prepend', markFetchedHistory = false } = options;
+
+        if (masonryColumns.length === 0) {
+            currentColumnCount = 0;
+            initMasonry();
+        }
+
+        const html = createMessageCard(msg, 0);
+        const element = htmlToElement(html);
+        if (!element) return null;
+
+        const card = element.querySelector('.message-item');
+        const messageId = msg.id || msg.objectId || '';
+
+        if (card && messageId) {
+            card.id = `msg-${messageId}`;
+            card.setAttribute('data-message-id', messageId);
+
+            if (markFetchedHistory) {
+                card.classList.add('fetched-history');
+            }
+        }
+
+        let targetContainer = messageContainer;
+        const isMobile = window.matchMedia('(max-width: 768px)').matches;
+        if (!isMobile && masonryColumns.length > 0) {
+            targetContainer = position === 'prepend'
+                ? masonryColumns[0]
+                : getShortestColumn();
+        }
+
+        if (position === 'prepend' && targetContainer.firstChild) {
+            targetContainer.insertBefore(element, targetContainer.firstChild);
+        } else {
+            targetContainer.appendChild(element);
+        }
+
+        if (messageId && !allMessages.some(existing => existing.id === messageId)) {
+            if (position === 'prepend') {
+                allMessages.unshift(msg);
+            } else {
+                allMessages.push(msg);
+            }
+            renderedCount += 1;
+        }
+
+        attachCommentHandlers();
+
+        requestAnimationFrame(() => {
+            element.classList.add('visible');
+        });
+
+        return card || element;
+    };
+
 
     // Use event delegation for comment handlers to avoid duplicate listeners
 
@@ -731,6 +800,7 @@ document.addEventListener('DOMContentLoaded', () => {
             openCommentModal(messageId, commentId);
         });
     }
+    window.attachCommentHandlers = attachCommentHandlers;
 
 
     commentInput?.addEventListener('input', syncCommentComposerEmptyState);
@@ -1325,318 +1395,166 @@ async function fetchAndInsertSingleMessage(messageId, targetId = null, type = 'm
     try {
         console.log(`🎣 拉取单条留言: ${messageId}`);
 
-        // ✅ 首先检查是否已存在
-        const existingEarly = document.getElementById(`msg-${messageId}`);
+        const existingEarly = document.querySelector(`.message-item[data-message-id="${messageId}"]`);
         if (existingEarly) {
             console.warn(`⚠️ [早期检查] 留言已存在，直接返回: ${messageId}`);
             return true;
         }
 
-        // 1. 拉取留言本体
-        const messageQuery = new AV.Query('Message');
-        messageQuery.include('author');
-        messageQuery.descending('createdAt');
-        const avMessage = await messageQuery.get(messageId);
-
-        // 2. 拉取该留言的所有评论
-        console.log('📝 拉取评论数据...');
-        const commentQuery = new AV.Query('Comment');
-
-        // ✅ 修复：使用Pointer字段查询
-        const messagePointer = AV.Object.createWithoutData('Message', messageId);
-        commentQuery.equalTo('message', messagePointer);
-
-        commentQuery.include('author');
-        commentQuery.ascending('createdAt');
-        const avComments = await commentQuery.find();
-
-        console.log(`✅ 找到 ${avComments.length} 条评论`);
-
-        // 验证第一条评论的ID
-        if (avComments.length > 0) {
-            console.log('🔑 第一条评论 ID:', avComments[0].id);
+        if (!window.supabaseClient) {
+            console.error('❌ Supabase client not ready');
+            return false;
         }
 
-        // 3. 数据完整性处理 (Batch Likes & Tree Build) ---
+        const currentSite = window.SiteConfig?.site || 'cn';
+        const { data: { session } = {} } = await window.supabaseClient.auth.getSession();
+        const currentUserId = session?.user?.id || null;
 
-        // 3.1 收集所有 ID (留言 + 评论) 用于批量查询点赞
-        const allTargetIds = [messageId, ...avComments.map(c => c.id)];
-        const likeCounts = {};
-        const userLikedSet = new Set();
-        const currentUserId = AV.User.current()?.id;
+        const [messageResult, commentsResult] = await Promise.all([
+            window.supabaseClient
+                .from('guestbook_messages')
+                .select(`
+                    id,
+                    content,
+                    image_url,
+                    like_count,
+                    created_at,
+                    user_id,
+                    profiles:user_id (id, username, avatar_url)
+                `)
+                .eq('id', messageId)
+                .eq('site', currentSite)
+                .single(),
+            window.supabaseClient
+                .from('guestbook_comments')
+                .select(`
+                    id,
+                    message_id,
+                    parent_id,
+                    content,
+                    created_at,
+                    user_id,
+                    profiles:user_id (id, username, avatar_url)
+                `)
+                .eq('message_id', messageId)
+                .eq('site', currentSite)
+                .order('created_at', { ascending: true })
+        ]);
 
-        if (allTargetIds.length > 0) {
-            try {
-                const likeQuery = new AV.Query('Like');
-                likeQuery.containedIn('targetId', allTargetIds);
-                likeQuery.limit(1000); // Max limit
-                const allLikes = await likeQuery.find();
-
-                allLikes.forEach(like => {
-                    const tid = like.get('targetId');
-                    likeCounts[tid] = (likeCounts[tid] || 0) + 1;
-                    const likeUserId = like.get('userId') || like.get('user')?.id;
-                    if (currentUserId && likeUserId === currentUserId) {
-                        userLikedSet.add(tid);
-                    }
-                });
-                console.log(`✅ 批量获取点赞成功: ${allLikes.length} 条记录`);
-            } catch (e) {
-                console.warn('⚠️ 批量获取点赞失败:', e);
-            }
+        if (messageResult.error || !messageResult.data) {
+            throw messageResult.error || new Error('留言不存在');
         }
+        if (commentsResult.error) throw commentsResult.error;
 
-        // 3.2 格式化评论并构建树
-        const commentMap = new Map();
-        const topLevelComments = [];
+        const comments = commentsResult.data || [];
+        const commentIds = comments.map(comment => comment.id);
+        const allTargetIds = [messageId, ...commentIds];
 
-        avComments.forEach(c => {
-            // 处理 parentCommentId 为字符串 "null" 的情况
-            let pId = c.get('parentCommentId');
-            if (pId === 'null' || pId === 'undefined') pId = null;
+        const [commentLikesResult, userLikesResult] = await Promise.all([
+            commentIds.length > 0
+                ? window.supabaseClient
+                    .from('guestbook_likes')
+                    .select('target_id')
+                    .eq('target_type', 'comment')
+                    .in('target_id', commentIds)
+                : Promise.resolve({ data: [] }),
+            currentUserId && allTargetIds.length > 0
+                ? window.supabaseClient
+                    .from('guestbook_likes')
+                    .select('target_type, target_id')
+                    .eq('user_id', currentUserId)
+                    .in('target_id', allTargetIds)
+                : Promise.resolve({ data: [] })
+        ]);
 
-            const formattedComment = {
-                id: c.id,
-                name: c.get('userName') || '匿名用户',
-                avatarUrl: c.get('userAvatar') || null,
-                content: c.get('content') || '',
-                timestamp: c.createdAt ? c.createdAt.toLocaleString('zh-CN', {
-                    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
-                }) : '',
-                rawDate: c.createdAt, // ✅ 补充 rawDate
-                parentCommentId: pId,
-                parentUserName: c.get('parentUserName') || null,
-                likes: likeCounts[c.id] || 0, // ✅ 填充点赞数
-                isLiked: userLikedSet.has(c.id), // ✅ 填充点赞状态
-                replies: [] // 准备存放子评论
-            };
-            commentMap.set(c.id, formattedComment);
+        if (commentLikesResult.error) throw commentLikesResult.error;
+        if (userLikesResult.error) throw userLikesResult.error;
+
+        const commentLikeCounts = {};
+        (commentLikesResult.data || []).forEach(like => {
+            commentLikeCounts[like.target_id] = (commentLikeCounts[like.target_id] || 0) + 1;
         });
 
-        // 构建树
-        commentMap.forEach(comment => {
-            if (comment.parentCommentId && commentMap.has(comment.parentCommentId)) {
-                const parent = commentMap.get(comment.parentCommentId);
-                parent.replies.push(comment);
-                // 补充 parentUserName 如果缺失
-                if (!comment.parentUserName) comment.parentUserName = parent.name;
-            } else {
-                topLevelComments.push(comment);
-            }
+        const normalizedLikeKeys = (userLikesResult.data || []).map(like => {
+            const normalizedType = like.target_type.charAt(0).toUpperCase() + like.target_type.slice(1);
+            return `${normalizedType}_${like.target_id}`;
         });
 
-        console.log(`🌳 评论树构建完成: ${topLevelComments.length} 条顶级评论`);
-
-        // 检查留言是否已存在
-        const existing = document.querySelector(`.message-item[data-message-id="${messageId}"]`);
-        if (existing) {
-            console.log('✅ 留言已存在，跳过插入');
-            return true;
+        if (normalizedLikeKeys.length > 0 && window.guestbookCache?.userLikes) {
+            window.guestbookCache.userLikes = new Set([
+                ...window.guestbookCache.userLikes,
+                ...normalizedLikeKeys
+            ]);
         }
 
-        // 格式化留言对象，确保所有必要字段都存在
-        const author = avMessage.get('author');
-        const userName = avMessage.get('userName');
+        const commentMap = new Map(comments.map(comment => [comment.id, comment]));
+        const enrichedComments = comments.map(comment => ({
+            ...comment,
+            like_count: commentLikeCounts[comment.id] || 0,
+            parentUserName: comment.parent_id
+                ? commentMap.get(comment.parent_id)?.profiles?.username || null
+                : null
+        }));
 
-        const message = {
-            id: avMessage.id,
-            name: userName || '匿名用户',
-            avatarUrl: avMessage.get('userAvatar') || (author ? author.get('avatarUrl') : null),
-            email: author ? author.get('email') : null,
-            content: avMessage.get('content') || '',
-            image: avMessage.get('image') || avMessage.get('imageUrl') || null,
-            imageUrl: avMessage.get('imageUrl') || avMessage.get('image') || null,
-            timestamp: avMessage.createdAt ? avMessage.createdAt.toLocaleString('zh-CN', {
-                year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
-            }) : '',
-            rawDate: avMessage.createdAt, // ✅ 补充 rawDate
-            likes: likeCounts[avMessage.id] || 0, // ✅ 使用批量查询的结果
-            isLiked: userLikedSet.has(avMessage.id), // ✅ 填充点赞状态
-            likedBy: [], // 兼容旧逻辑
-            comments: topLevelComments // ✅ 传入构建好的顶级评论（包含嵌套子评论）
+        const buildLocalCommentTree = (items) => {
+            const localMap = {};
+            const roots = [];
+
+            items.forEach(item => {
+                localMap[item.id] = { ...item, replies: [] };
+            });
+
+            items.forEach(item => {
+                if (item.parent_id && localMap[item.parent_id]) {
+                    localMap[item.parent_id].replies.push(localMap[item.id]);
+                } else {
+                    roots.push(localMap[item.id]);
+                }
+            });
+
+            return roots;
         };
 
-        // 使用 createMessageCard 创建 HTML
-        const createMessageCard = window.createMessageCard;
-        if (!createMessageCard) {
-            console.error('❌ createMessageCard 函数不存在');
+        const messageRecord = {
+            ...messageResult.data,
+            comments: buildLocalCommentTree(enrichedComments)
+        };
+
+        const formattedMessage = typeof formatMessageForUI === 'function'
+            ? formatMessageForUI(messageRecord)
+            : {
+                id: messageRecord.id,
+                objectId: messageRecord.id,
+                content: messageRecord.content,
+                image: messageRecord.image_url,
+                imageUrl: messageRecord.image_url,
+                name: messageRecord.profiles?.username || 'Anonymous',
+                username: messageRecord.profiles?.username || 'Anonymous',
+                avatarUrl: messageRecord.profiles?.avatar_url || null,
+                userId: messageRecord.user_id,
+                authorId: messageRecord.user_id,
+                likes: messageRecord.like_count || 0,
+                timestamp: typeof formatTime === 'function' ? formatTime(messageRecord.created_at) : '',
+                comments: [],
+                isLiked: Boolean(window.guestbookCache?.userLikes?.has?.(`Message_${messageRecord.id}`))
+            };
+
+        const insertedCard = typeof window.insertMessageToDOM === 'function'
+            ? window.insertMessageToDOM(formattedMessage, {
+                position: 'prepend',
+                markFetchedHistory: true
+            })
+            : null;
+
+        if (!insertedCard) {
+            console.error('❌ 无法插入补拉留言到 DOM');
             return false;
         }
 
-        console.log('📝 生成HTML，留言对象:', message);
-        console.log('🔑 验证 message.id:', message.id, typeof message.id);
-        console.log('💬 评论数量:', message.comments?.length || 0);
-        const html = createMessageCard(message, 0);
-
-        // ✅ 立即验证 HTML 字符串
-        console.log('🧩 createMessageCard 返回类型:', typeof html);
-        if (typeof html === 'string') {
-            console.log('📊 HTML字符串总长度:', html.length);
-            console.log('🔍 包含 comment-section?', html.includes('comment-section'));
-            console.log('🔍 包含 comment-list?', html.includes('comment-list'));
-            console.log('🔍 预览 (0-200):', html.substring(0, 200));
-        } else {
-            console.log('⚠️ createMessageCard 返回的不是字符串！');
-        }
-
-        // 检查生成的HTML
-        if (typeof html === 'string') {
-            console.log('🔍 HTML片段:', html.substring(0, 300));
-            console.log(html.includes('data-message-id') ? '✅ 包含data-message-id' : '❌ 不包含data-message-id');
-            const commentCount = (html.match(/data-comment-id/g) || []).length;
-            console.log(`💬 HTML中的评论元素数: ${commentCount}`);
-        }
-
-        // 宽容处理：字符串转DOM，对象直接用
-        let element;
-        if (typeof html === 'string') {
-            console.log('📦 HTML字符串长度:', html.length);
-            console.log('🔍 HTML包含comment-section?', html.includes('comment-section'));
-            console.log('🔍 HTML包含comment-list?', html.includes('comment-list'));
-
-            element = window.htmlToElement ? window.htmlToElement(html) : (() => {
-                const div = document.createElement('div');
-                div.innerHTML = html.trim();
-                return div.firstElementChild;
-            })();
-
-            console.log('⚙️ 转换后元素:', element.tagName, element.className);
-            console.log('⚙️ 转换后innerHTML长度:', element.innerHTML?.length || 0);
-            console.log('🔍 转换后包含comment-section?', element.innerHTML?.includes('comment-section'));
-            console.log('🔍 转换后包含comment-list?', element.innerHTML?.includes('comment-list'));
-        } else if (html && typeof html === 'object') {
-            // ✅ 只要是对象就接受
-            element = html;
-        } else {
-            console.error('❌ createMessageCard 返回了不支持的类型:', typeof html);
-            return false;
-        }
-
-        if (!element) {
-            console.error('❌ 无法创建DOM元素');
-            return false;
-        }
-
-        // ✅ 关键修复：提取真正的 .message-item（去掉包装层）
-        console.log('🔍 原始元素:', element.tagName, element.className);
-        console.log('🔍 classList:', element.classList);
-        console.log('🔍 是否包含 message-anim-wrapper:', element.classList?.contains('message-anim-wrapper'));
-
-        let actualCard = element;
-        if (element.classList && element.classList.contains('message-anim-wrapper')) {
-            console.log('🔄 检测到包装层，提取内部 .message-item');
-            actualCard = element.querySelector('.message-item');
-            console.log('🔄 提取结果:', actualCard);
-
-            // 验证子元素
-            if (actualCard) {
-                const commentSection = actualCard.querySelector('.comment-section');
-                const commentList = actualCard.querySelector('.comment-list');
-                console.log('🔍 提取后验证 - .comment-section:', !!commentSection);
-                console.log('🔍 提取后验证 - .comment-list:', !!commentList);
-            }
-        } else {
-            console.log('✅ 不是包装层，直接使用');
-
-            // 直接使用的也验证一下
-            const commentSection = element.querySelector('.comment-section');
-            const commentList = element.querySelector('.comment-list');
-            console.log('🔍 直接使用验证 - .comment-section:', !!commentSection);
-            console.log('🔍 直接使用验证 - .comment-list:', !!commentList);
-        }
-
-        if (!actualCard) {
-            console.error('❌ 无法找到 .message-item');
-            return false;
-        }
-
-        // 使用提取出的卡片
-        element = actualCard;
-
-        // 🚨 关键修复：强制补全 data-message-id（双保险）
-        const safeId = message.id || messageId;
-        if (safeId && element) {
-            element.setAttribute('data-message-id', safeId);
-            element.id = 'msg-' + safeId;
-            console.log('🔧 [强制修复] 已补全 data-message-id:', safeId);
-        }
-
-        // 标记（移除highlight效果，因为评论已经有高亮）
-        if (element.classList) {
-            element.classList.add('fetched-history');
-            // element.classList.add('highlight-flash');  // ✅ 移除紫色光晕
-        }
-
-        // ✅ 防止重复插入：检查该留言卡片是否已存在
-        const existingCard = document.getElementById('msg-' + safeId);
-        if (existingCard) {
-            console.log('⚠️ 卡片已存在，跳过插入，直接使用现有卡片');
-            // 添加高亮效果
-            existingCard.classList.remove('highlight-flash');
-            void existingCard.offsetWidth;
-            existingCard.classList.add('highlight-flash');
-            return true; // 返回成功，使用现有卡片
-        }
-
-        // 插入到容器 - 优先使用已知存在的容器
-        console.log('🔍 开始查找容器...');
-        const grid = document.querySelector('.message-container')  // 优先：主容器
-            || document.querySelector('#messageContainer')          // 其次：ID选择器
-            || document.querySelector('.masonry-column')            // 第三：列容器
-            || document.querySelector('.grid');                     // 最后：通用网格
-
-        console.log('📦 找到的容器:', grid);
-
-        if (grid) {
-            // 如果容器有子容器（列），插入到第一列
-            const firstColumn = grid.querySelector('.masonry-column');
-            const targetContainer = firstColumn || grid;
-
-            console.log('🎯 目标容器:', targetContainer);
-            console.log('🔧 插入前验证 - 元素class:', element.className);
-            console.log('🔧 插入前验证 - data-message-id:', element.dataset.messageId || element.getAttribute('data-message-id'));
-
-            // 1. 先设置为不可见（防止闪烁）
-            element.style.opacity = '0';
-
-            // 2. 插入DOM
-            targetContainer.insertBefore(element, targetContainer.firstChild);
-
-            // 3. 🚨 立即通知 Masonry
-            if (typeof window.masonry !== 'undefined' && window.masonry.prepended) {
-                console.log('📐 通知 Masonry 接收新卡片...');
-                window.masonry.prepended(element);
-                window.masonry.layout();
-                console.log('✅ Masonry 布局完成');
-            } else {
-                element.style.opacity = '1';
-            }
-
-            // 4. 延迟验证元素是否存活
-            setTimeout(() => {
-                if (document.body.contains(element)) {
-                    console.log('✨ 卡片存活确认，ID:', element.id);
-                    element.style.opacity = '1';
-                    element.classList.add('visible');
-                } else {
-                    console.error('💀 卡片被删除了！');
-                }
-            }, 200);
-
-            // 绑定事件处理器
-            if (typeof window.attachCommentHandlers === 'function') {
-                window.attachCommentHandlers();
-            }
-
-            console.log('✅ 留言已插入到网格');
-            return true;
-        }
-
-        console.error('❌ 无法找到网格容器');
-        console.error('📍 当前页面URL:', window.location.href);
-        console.error('📍 messageContainer存在?', !!document.querySelector('#messageContainer'));
-        console.error('📍 .message-container存在?', !!document.querySelector('.message-container'));
-        return false;
+        insertedCard.classList.remove('highlight-flash');
+        void insertedCard.offsetWidth;
+        insertedCard.classList.add('highlight-flash');
+        return true;
     } catch (err) {
         console.error('❌ 拉取单条留言失败:', err);
         console.error('错误堆栈:', err.stack);

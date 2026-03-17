@@ -1,14 +1,9 @@
 /**
- * prefetch-home.js - Homepage Data Prefetch
- * 
- * Loaded on sub-pages. When user hovers over the site logo (which links to homepage),
- * ensures homepage data is ready in sessionStorage for instant loading.
- * 
- * Flow:
- * 1. Homepage loads normally → saves aggregated data to sessionStorage('homepage_prefetch')
- * 2. User navigates to sub-page → sessionStorage persists
- * 3. User hovers logo on sub-page → this script checks freshness, re-fetches if stale
- * 4. User clicks logo → homepage reads sessionStorage → instant render, no network delay
+ * prefetch-home.js - Cross-page prefetch helpers
+ *
+ * Loaded on sub-pages.
+ * 1. Hovering the site logo keeps homepage data warm.
+ * 2. Hovering / touching guestbook entry points warms guestbook data too.
  */
 (function () {
     'use strict';
@@ -17,6 +12,23 @@
     if (window.location.pathname === '/' || window.location.pathname === '/index.html') return;
 
     let prefetching = false;
+    let guestbookPrefetching = false;
+
+    function getCurrentSite() {
+        return window.SiteConfig?.site || 'cn';
+    }
+
+    function hasFreshPrefetch(storageKey, maxAgeMs = 300000) {
+        try {
+            const raw = sessionStorage.getItem(storageKey);
+            if (!raw) return false;
+
+            const data = JSON.parse(raw);
+            return Boolean(data?.timestamp && (Date.now() - data.timestamp < maxAgeMs));
+        } catch (e) {
+            return false;
+        }
+    }
 
     function checkAndPrefetch() {
         if (prefetching) return;
@@ -37,6 +49,39 @@
         // No fresh data — prefetch homepage config from Supabase
         prefetching = true;
         prefetchHomepageData().finally(() => { prefetching = false; });
+    }
+
+    async function prefetchGuestbookData() {
+        if (guestbookPrefetching || hasFreshPrefetch('guestbook_prefetch')) return;
+        guestbookPrefetching = true;
+
+        try {
+            if (!window.supabaseClient) return;
+
+            const { data: { session } = {} } = await window.supabaseClient.auth.getSession();
+            const userId = session?.user?.id || null;
+            const { data, error } = await window.supabaseClient
+                .rpc('fn_load_guestbook', {
+                    p_site: getCurrentSite(),
+                    p_limit: 50,
+                    p_user_id: userId
+                });
+
+            if (error) throw error;
+            if (!data) return;
+
+            sessionStorage.setItem('guestbook_prefetch', JSON.stringify({
+                data,
+                timestamp: Date.now(),
+                site: getCurrentSite()
+            }));
+
+            console.log('⚡ Guestbook data prefetched on sub-page hover');
+        } catch (e) {
+            console.warn('Guestbook prefetch failed:', e.message);
+        } finally {
+            guestbookPrefetching = false;
+        }
     }
 
     async function prefetchHomepageData() {
@@ -140,13 +185,32 @@
         }
     }
 
-    // Event delegation: trigger on logo hover (works for all sub-pages)
+    function shouldPrefetchGuestbook(target) {
+        return Boolean(target.closest(
+            'a[href="/guestbook.html"], a[href="guestbook.html"], a[href="#guestbook"], [onclick*="openGuestbookModal"]'
+        ));
+    }
+
+    // Event delegation: logo hover keeps homepage warm, guestbook entry hover warms guestbook data
     document.addEventListener('mouseover', (e) => {
+        if (shouldPrefetchGuestbook(e.target)) {
+            prefetchGuestbookData();
+            return;
+        }
+
         const logo = e.target.closest('a.nav-logo, a.back-link');
         if (logo) checkAndPrefetch();
     });
+
     document.addEventListener('touchstart', (e) => {
+        if (shouldPrefetchGuestbook(e.target)) {
+            prefetchGuestbookData();
+            return;
+        }
+
         const logo = e.target.closest('a.nav-logo, a.back-link');
         if (logo) checkAndPrefetch();
     }, { passive: true });
+
+    window._prefetchGuestbook = prefetchGuestbookData;
 })();

@@ -609,7 +609,15 @@ async function loadComments(view) {
 
             let query = client
                 .from('guestbook_messages')
-                .select('*')
+                .select(`
+                    id,
+                    content,
+                    user_id,
+                    created_at,
+                    image_url,
+                    like_count,
+                    profiles:user_id (username, avatar_url, email)
+                `)
                 .order('created_at', { ascending: false })
                 .limit(50);
 
@@ -638,17 +646,17 @@ async function loadComments(view) {
             data = (messages || []).map(msg => ({
                 id: msg.id,
                 type: 'guestbook',
-                content: msg.message,
-                author: msg.nickname || 'Guest',
-                email: '',
-                avatar: null,
+                content: msg.content || '',
+                author: msg.profiles?.username || '未知用户',
+                email: msg.profiles?.email || '',
+                avatar: msg.profiles?.avatar_url || null,
                 created_at: msg.created_at,
-                context: 'Guestbook',
+                context: '',
                 prompt_title: '',
-                likes: 0,
+                likes: msg.like_count || 0,
                 user_id: msg.user_id,
                 parent_id: null,
-                image_url: null
+                image_url: msg.image_url || null
             }));
 
         } else {
@@ -1508,5 +1516,4 @@ window.unblockUser = async function (userId, scope) {
         showToast('操作失败: ' + err.message, 'error');
     }
 };
-
 

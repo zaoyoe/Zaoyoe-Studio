@@ -997,8 +997,8 @@
 
             async function prefetchGuestbook() {
                 try {
-                    const sessionResult = await window.supabaseClient.auth.getUser();
-                    const userId = sessionResult.data?.user?.id || null;
+                    const sessionResult = await window.supabaseClient.auth.getSession();
+                    const userId = sessionResult.data?.session?.user?.id || null;
                     const { data, error } = await window.supabaseClient
                         .rpc('fn_load_guestbook', { p_site: site(), p_limit: 50, p_user_id: userId });
                     if (!error && data) {
