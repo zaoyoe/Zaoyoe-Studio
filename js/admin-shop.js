@@ -1171,13 +1171,15 @@ Example output format:
         const { data } = await supabaseClient.from('shop_products').select('*').eq('id', id).single();
         if (data) {
             const fields = this.getFieldMap();
+            const sortValue = Number.parseInt(data.display_order, 10);
+            const normalizedDeliveryType = data.delivery_type === 'API' ? 'API' : 'KEY';
 
             document.getElementById('editProductId').value = data.id;
             document.getElementById('prodName').value = data[fields.name] || '';
             document.getElementById('prodPrice').value = data[fields.price] != null ? data[fields.price] : '';
             document.getElementById('prodIcon').value = data.icon_url;
             document.getElementById('prodDesc').value = data[fields.desc] || '';
-            document.getElementById('prodSort').value = data.display_order;
+            document.getElementById('prodSort').value = Number.isFinite(sortValue) ? sortValue : 0;
 
             // Populate marketing fields (Phase 2)
             let parsedRules = [];
@@ -1202,7 +1204,7 @@ Example output format:
             }
 
             // Populate delivery fields
-            const deliveryType = data.delivery_type || 'KEY';
+            const deliveryType = normalizedDeliveryType;
             document.getElementById('prodDeliveryType').value = deliveryType;
             const typeName = deliveryType === 'API' ? '外部接口履约 (API Webhook)' : '卡密池发放 (KEY)';
             const nameLabel = document.getElementById('prodDeliveryTypeName');
@@ -1214,7 +1216,7 @@ Example output format:
             // Populate usage instructions
             const showUI = !!data.show_usage_instructions;
             document.getElementById('prodShowUsageInstructions').checked = showUI;
-            document.getElementById('prodUsageInstructions').value = data.usage_instructions || '';
+            document.getElementById('prodUsageInstructions').value = typeof data.usage_instructions === 'string' ? data.usage_instructions : '';
             this.toggleUsageInstructions(showUI);
 
             this.openProductModal(true);
@@ -1234,12 +1236,17 @@ Example output format:
         console.log('[ShopAdmin] saveProduct started');
         try {
             const id = document.getElementById('editProductId').value;
-            const name = document.getElementById('prodName').value;
+            const name = document.getElementById('prodName').value.trim();
             const price = document.getElementById('prodPrice').value;
             const description = document.getElementById('prodDesc').value;
             console.log('[ShopAdmin] Base fields read successfully');
 
             if (!name || !price) { alert('名称和价格必填'); return; }
+            const normalizedPrice = Number.parseInt(price, 10);
+            if (!Number.isFinite(normalizedPrice) || normalizedPrice < 0) {
+                alert('价格格式错误');
+                return;
+            }
 
             // Auto-translate to English if Gemini API is available
             let name_en = null, description_en = null;
@@ -1262,18 +1269,29 @@ Example output format:
 
             const fields = this.getFieldMap();
             const editSite = this.getEditSite();
+            const sortInput = document.getElementById('prodSort').value;
+            const parsedSort = Number.parseInt(sortInput, 10);
+            const normalizedSort = Number.isFinite(parsedSort) ? parsedSort : 0;
+            const deliveryTypeValue = document.getElementById('prodDeliveryType').value;
+            const normalizedDeliveryType = deliveryTypeValue === 'API' ? 'API' : 'KEY';
+            const rawUsageInstructions = document.getElementById('prodUsageInstructions').value || '';
+            const normalizedUsageInstructions = rawUsageInstructions.replace(/\r\n/g, '\n').trim();
+            const showUsageInstructions = document.getElementById('prodShowUsageInstructions').checked;
+            const webhookTargetValue = document.getElementById('prodWebhookTarget').value.trim();
+
+            document.getElementById('prodSort').value = String(normalizedSort);
 
             const payload = {
                 [fields.name]: name,
-                [fields.price]: parseInt(price),
+                [fields.price]: normalizedPrice,
                 [fields.desc]: description,
                 icon_url: document.getElementById('prodIcon').value,
                 category: document.getElementById('prodCategory').value,
-                display_order: parseInt(document.getElementById('prodSort').value),
-                show_usage_instructions: document.getElementById('prodShowUsageInstructions').checked,
-                usage_instructions: document.getElementById('prodUsageInstructions').value || null,
-                delivery_type: document.getElementById('prodDeliveryType').value,
-                webhook_target: document.getElementById('prodWebhookTarget').value || null,
+                display_order: normalizedSort,
+                show_usage_instructions: showUsageInstructions,
+                usage_instructions: showUsageInstructions ? (normalizedUsageInstructions || null) : null,
+                delivery_type: normalizedDeliveryType,
+                webhook_target: normalizedDeliveryType === 'API' ? (webhookTargetValue || null) : null,
 
                 // Marketing fields
                 quantity_rules: null,
@@ -1381,11 +1399,13 @@ Example output format:
                 await this.renderProductCategoryFilters();
             } catch (err) {
                 console.error('[ShopAdmin] Save process completely failed:', err);
-                alert('Save failed: ' + err.message);
+                const details = [err.message, err.details, err.hint].filter(Boolean).join(' | ');
+                alert('Save failed: ' + details);
             }
         } catch (err) {
             console.error('[ShopAdmin] Outer try-catch failed:', err);
-            alert('Save failed: ' + err.message);
+            const details = [err.message, err.details, err.hint].filter(Boolean).join(' | ');
+            alert('Save failed: ' + details);
         }
     },
 
@@ -4111,4 +4131,3 @@ Example output format:
 };
 
 window.ShopAdmin = ShopAdmin;
-
