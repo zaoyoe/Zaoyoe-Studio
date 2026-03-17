@@ -1548,48 +1548,8 @@ class ChatWidget {
     // HIGH REFRESH RATE OPTIMIZATION: Disable expensive effects during scroll
     // 240Hz and above monitors need frame times < 4.16ms, backdrop-filter can't keep up
     setupScrollOptimization() {
-        if (!this.messagesContainer) return;
-
-        // Target element: chatWindow for user mode, or find .chat-container for admin mode
-        const targetElement = this.chatWindow || document.querySelector('.chat-container');
-        if (!targetElement) return;
-
-        let scrollTimeout = null;
-        let isScrolling = false;
-
-        const onScroll = () => {
-            // Add is-scrolling class immediately when scroll starts
-            if (!isScrolling) {
-                isScrolling = true;
-                targetElement.classList.add('is-scrolling');
-
-                // Also add to chat-container if it exists (admin mode)
-                const chatContainer = document.querySelector('.chat-container');
-                if (chatContainer && chatContainer !== targetElement) {
-                    chatContainer.classList.add('is-scrolling');
-                }
-            }
-
-            // Clear existing timeout
-            if (scrollTimeout) {
-                clearTimeout(scrollTimeout);
-            }
-
-            // Remove is-scrolling class 150ms after scroll stops
-            scrollTimeout = setTimeout(() => {
-                isScrolling = false;
-                targetElement.classList.remove('is-scrolling');
-
-                // Also remove from chat-container
-                const chatContainer = document.querySelector('.chat-container');
-                if (chatContainer && chatContainer !== targetElement) {
-                    chatContainer.classList.remove('is-scrolling');
-                }
-            }, 150);
-        };
-
-        // Use passive listener for best scroll performance
-        this.messagesContainer.addEventListener('scroll', onScroll, { passive: true });
+        // Disabled: toggling extra classes during scroll caused style recalculation
+        // without any matching CSS benefit, which could desync native scrollbar paint.
     }
 
     async loadSessionMessages(sessionIds) {

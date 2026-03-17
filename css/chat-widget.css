@@ -520,21 +520,15 @@
 .chat-messages {
     flex: 1;
     padding: 20px;
-    overflow-y: scroll;
-    /* Force scrollbar visibility for consistency */
+    overflow-y: auto;
     -webkit-overflow-scrolling: touch;
-    /* iOS momentum scrolling */
     display: flex;
     flex-direction: column;
     gap: 15px;
     scroll-behavior: auto !important;
     overscroll-behavior-y: contain;
+    scrollbar-gutter: stable;
     position: relative;
-    /* Required for overlay positioning */
-
-    /* PERFORMANCE: GPU layer for smooth scroll, no contain (causes blank on fast scroll) */
-    transform: translateZ(0);
-    backface-visibility: hidden;
     background: var(--chat-panel-bg);
     box-shadow: var(--chat-panel-shadow);
 }
@@ -581,8 +575,6 @@
     line-height: 1.5;
     word-wrap: break-word;
     position: relative;
-    /* PERFORMANCE: Simple GPU layer (contain removed - causes blank on fast scroll) */
-    backface-visibility: hidden;
 }
 
 /* Only animate NEW messages, not on scroll */
@@ -593,12 +585,12 @@
 @keyframes fadeIn {
     from {
         opacity: 0;
-        transform: translateY(10px) translateZ(0);
+        transform: translateY(10px);
     }
 
     to {
         opacity: 1;
-        transform: translateY(0) translateZ(0);
+        transform: translateY(0);
     }
 }
 
