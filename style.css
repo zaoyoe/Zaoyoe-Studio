@@ -7637,6 +7637,40 @@ input[type="submit"],
     box-shadow: 0 0 0 1px rgba(126, 184, 239, 0.08), 0 0 18px rgba(126, 184, 239, 0.2);
 }
 
+@keyframes guestbookComposerHandleSuccessFlash {
+    0%, 100% {
+        background: rgba(95, 216, 143, 0.98);
+        box-shadow:
+            0 0 0 1px rgba(95, 216, 143, 0.16),
+            0 0 18px rgba(95, 216, 143, 0.34);
+    }
+    50% {
+        background: rgba(95, 216, 143, 0.22);
+        box-shadow:
+            0 0 0 1px rgba(95, 216, 143, 0.04),
+            0 0 4px rgba(95, 216, 143, 0.08);
+    }
+}
+
+#guestbookModal.guestbook-submit-pending .guestbook-composer-handle,
+#guestbookModal.guestbook-submit-pending:focus-within .guestbook-composer-handle,
+#guestbookModal.guestbook-submit-pending.keyboard-docked .guestbook-composer-handle {
+    background: rgba(255, 167, 60, 0.96);
+    box-shadow:
+        0 0 0 1px rgba(255, 167, 60, 0.12),
+        0 0 18px rgba(255, 167, 60, 0.28);
+}
+
+#guestbookModal.guestbook-submit-success .guestbook-composer-handle,
+#guestbookModal.guestbook-submit-success:focus-within .guestbook-composer-handle,
+#guestbookModal.guestbook-submit-success.keyboard-docked .guestbook-composer-handle {
+    background: rgba(95, 216, 143, 0.98);
+    box-shadow:
+        0 0 0 1px rgba(95, 216, 143, 0.16),
+        0 0 18px rgba(95, 216, 143, 0.34);
+    animation: guestbookComposerHandleSuccessFlash 0.32s ease-in-out 2;
+}
+
 #guestbookModal .guestbook-composer-header {
     display: flex !important;
     align-items: flex-start !important;
@@ -7961,21 +7995,6 @@ html[lang^="zh"] #guestbookModal .guestbook-composer-kicker {
     }
 }
 
-@keyframes guestbookSubmitSuccessBloom {
-    0% {
-        opacity: 0.4;
-        transform: scale(0.94);
-    }
-    58% {
-        opacity: 1;
-        transform: scale(1.05);
-    }
-    100% {
-        opacity: 1;
-        transform: scale(1);
-    }
-}
-
 #guestbookModal .guestbook-submit-btn.guestbook-composer-send[disabled] {
     cursor: default !important;
 }
@@ -7990,18 +8009,6 @@ html[lang^="zh"] #guestbookModal .guestbook-composer-kicker {
 
 #guestbookModal .guestbook-submit-btn.guestbook-composer-send.is-submitting .guestbook-submit-label {
     animation: guestbookSubmitLabelPulse 960ms ease-in-out infinite;
-}
-
-#guestbookModal .guestbook-submit-btn.guestbook-composer-send.is-success {
-    background: linear-gradient(135deg, rgba(209, 247, 223, 0.98), rgba(150, 227, 182, 0.98)) !important;
-    color: #0e3120 !important;
-    box-shadow:
-        0 14px 28px rgba(35, 83, 51, 0.18),
-        inset 0 1px 0 rgba(255, 255, 255, 0.44) !important;
-}
-
-#guestbookModal .guestbook-submit-btn.guestbook-composer-send.is-success .guestbook-submit-label {
-    animation: guestbookSubmitSuccessBloom 360ms cubic-bezier(0.2, 0.86, 0.26, 1.15);
 }
 
 #guestbookModal .guestbook-composer-more.is-disabled,

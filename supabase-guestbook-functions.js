@@ -1440,6 +1440,7 @@ document.addEventListener('DOMContentLoaded', function () {
 document.addEventListener('DOMContentLoaded', function () {
     console.log('📋 绑定留言板表单...');
 
+    const guestbookModal = document.getElementById('guestbookModal');
     const guestbookForm = document.getElementById('guestbookForm');
     const submitButton = document.getElementById('guestbookSubmitBtn');
     const submitLabel = document.getElementById('guestbookSubmitBtnLabel') || submitButton?.querySelector('span');
@@ -1470,10 +1471,25 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         if (state === 'success') {
-            return isZh ? '已留言' : 'Posted';
+            return isZh ? '留言中...' : 'Posting...';
         }
 
         return window.i18n?.t('guestbook.submit') || (isZh ? '留言' : 'Post');
+    }
+
+    function setGuestbookComposerHandleState(state) {
+        if (!guestbookModal) return;
+
+        guestbookModal.classList.remove('guestbook-submit-pending', 'guestbook-submit-success');
+
+        if (state === 'submitting') {
+            guestbookModal.classList.add('guestbook-submit-pending');
+            return;
+        }
+
+        if (state === 'success') {
+            guestbookModal.classList.add('guestbook-submit-success');
+        }
     }
 
     function setGuestbookSubmitButtonState(state) {
@@ -1487,11 +1503,8 @@ document.addEventListener('DOMContentLoaded', function () {
         submitButton.setAttribute('aria-busy', state === 'submitting' ? 'true' : 'false');
         submitButton.setAttribute('aria-disabled', state !== 'idle' ? 'true' : 'false');
 
-        if (state === 'submitting') {
+        if (state === 'submitting' || state === 'success') {
             submitButton.classList.add('is-submitting');
-            submitLabel.removeAttribute('data-i18n');
-        } else if (state === 'success') {
-            submitButton.classList.add('is-success');
             submitLabel.removeAttribute('data-i18n');
         } else {
             submitLabel.setAttribute('data-i18n', 'guestbook.submit');
@@ -1644,17 +1657,20 @@ document.addEventListener('DOMContentLoaded', function () {
         clearGuestbookSubmitResetTimer();
         submitState.locked = false;
         setGuestbookComposerBusyState(false);
+        setGuestbookComposerHandleState('idle');
         setGuestbookSubmitButtonState('idle');
     }
 
     function showGuestbookSubmitSuccessState() {
         setGuestbookComposerBusyState(false);
+        setGuestbookComposerHandleState('success');
         setGuestbookSubmitButtonState('success');
         submitState.resetTimer = setTimeout(() => {
             submitState.resetTimer = null;
             submitState.locked = false;
+            setGuestbookComposerHandleState('idle');
             setGuestbookSubmitButtonState('idle');
-        }, 1400);
+        }, 980);
     }
 
     if (guestbookForm) {
@@ -1667,6 +1683,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             submitState.locked = true;
             setGuestbookComposerBusyState(true);
+            setGuestbookComposerHandleState('submitting');
             setGuestbookSubmitButtonState('submitting');
 
             console.log('📝 提交留言表单');
@@ -1757,7 +1774,6 @@ document.addEventListener('DOMContentLoaded', function () {
             });
         }
 
-        const guestbookModal = document.getElementById('guestbookModal');
         guestbookModal?.addEventListener('transitionend', () => {
             if (guestbookModal.classList.contains('active')) {
                 return;
