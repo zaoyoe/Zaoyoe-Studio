@@ -250,6 +250,7 @@ const ShopClient = {
 
         const safeCount = Math.min(Math.max(count, 3), 8);
         this.lastSkeletonCount = safeCount;
+        container.classList.remove('is-empty');
 
         container.innerHTML = Array.from({ length: safeCount }, () => `
             <div class="skeleton-card">
@@ -265,6 +266,22 @@ const ShopClient = {
                 </div>
             </div>
         `).join('');
+    },
+
+    renderEmptyState: function () {
+        const container = document.getElementById('userShopGrid');
+        if (!container) return;
+
+        container.classList.add('is-empty');
+        container.innerHTML = `
+            <div class="shop-empty-state">
+                <div class="shop-empty-icon">
+                    <i class="fas fa-box-open" aria-hidden="true"></i>
+                </div>
+                <h3 class="shop-empty-title" data-i18n="shop.noProducts">${window.i18n?.t('shop.noProducts') || '暂无商品上架'}</h3>
+                <p class="shop-empty-hint">${window.i18n?.t('shop.checkOtherCategories') || '当前分类还没有商品，试试切换到其它标签看看。'}</p>
+            </div>
+        `;
     },
 
     fetchProductsFromServer: async function (category = 'all') {
@@ -494,9 +511,10 @@ const ShopClient = {
 
             if (requestToken !== this.productsRequestToken) return;
 
+            container.classList.remove('is-empty');
             container.innerHTML = '';
             if (!data || data.length === 0) {
-                container.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text-dim);" data-i18n="shop.noProducts">${window.i18n?.t('shop.noProducts') || '暂无商品上架'}</div>`;
+                this.renderEmptyState();
                 this.scheduleBackgroundProductPrefetch();
                 return;
             }
@@ -600,6 +618,7 @@ const ShopClient = {
 
         } catch (err) {
             if (requestToken !== this.productsRequestToken) return;
+            container.classList.remove('is-empty');
             container.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:20px;color:#ff4d4f;">${window.i18n?.t('common.error') || '加载失败'}: ${err.message}</div>`;
         }
 
