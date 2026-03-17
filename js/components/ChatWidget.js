@@ -725,8 +725,8 @@ class ChatWidget {
                 background: rgba(255, 255, 255, 0.08);
             }
             .session-item.active {
-                background: rgba(102, 126, 234, 0.2);
-                border-left: 3px solid #667eea;
+                background: rgba(159, 202, 255, 0.16);
+                border-left: 3px solid #9fcaff;
             }
             
             /* Unread session - attention-grabbing style */
