@@ -470,14 +470,25 @@
         /* Modal Confirm Button - Fast Response with Float */
         /* Explicitly match global entrance duration (0.5s) AND add delay (0.35s) for staggered effect */
         #confirmPurchaseBtn {
+            width: 100%;
+            min-height: 44px;
+            padding: 10px 16px;
+            border-radius: 999px;
+            box-shadow:
+                0 14px 28px rgba(0, 0, 0, 0.18),
+                0 4px 12px rgba(74, 222, 128, 0.28),
+                inset 0 1px 0 rgba(255, 255, 255, 0.22);
             transition: all 0.5s ease-out 0.35s;
         }
 
         /* On hover, switch to fast transition for snappy response */
         #confirmPurchaseBtn:hover {
             transform: translateY(-2px);
-            filter: brightness(1.15);
-            box-shadow: 0 6px 20px rgba(74, 222, 128, 0.5);
+            filter: brightness(1.08);
+            box-shadow:
+                0 16px 30px rgba(0, 0, 0, 0.2),
+                0 6px 16px rgba(74, 222, 128, 0.34),
+                inset 0 1px 0 rgba(255, 255, 255, 0.22);
             transition: all 0.1s ease;
         }
 
@@ -485,6 +496,14 @@
             transform: translateY(0);
             filter: brightness(0.95);
             transition: all 0.05s ease;
+        }
+
+        #confirmPurchaseBtn i {
+            font-size: 14px;
+        }
+
+        #confirmPurchaseBtn span {
+            font-size: 14px;
         }
 
         .shop-btn-secondary {
@@ -700,7 +719,9 @@
         .shop-success-usage-card,
         .shop-success-usage-card *,
         #usageInstructionsContent,
-        #usageInstructionsContent * {
+        #usageInstructionsContent *,
+        #purchaseNotesContent,
+        #purchaseNotesContent * {
             -webkit-user-select: text !important;
             user-select: text !important;
         }
@@ -737,9 +758,47 @@
             cursor: pointer;
         }
 
+        #purchaseNotesContent a {
+            color: #60a5fa;
+            text-decoration: none;
+            font-weight: 500;
+            transition: color 0.2s ease, opacity 0.2s ease;
+            border-bottom: 1px solid transparent;
+            cursor: pointer;
+        }
+
         #usageInstructionsContent a:hover {
             color: #93c5fd;
             opacity: 0.9;
+        }
+
+        #purchaseNotesContent a:hover {
+            color: #93c5fd;
+            opacity: 0.9;
+        }
+
+        #shopPurchaseModal .shop-success-usage-card {
+            max-height: min(32vh, 220px);
+            overflow-y: auto;
+            overscroll-behavior: contain;
+        }
+
+        #shopPurchaseModal .shop-success-usage-card::-webkit-scrollbar {
+            width: 7px;
+        }
+
+        #shopPurchaseModal .shop-success-usage-card::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 999px;
+        }
+
+        #shopPurchaseModal .shop-success-usage-card::-webkit-scrollbar-thumb {
+            background: rgba(107, 158, 206, 0.45);
+            border-radius: 999px;
+        }
+
+        #shopPurchaseModal .shop-success-usage-card::-webkit-scrollbar-thumb:hover {
+            background: rgba(107, 158, 206, 0.65);
         }
 
         #shopPurchaseModal {
@@ -885,6 +944,19 @@
             #shopSuccessModal #exportContentBtn i,
             #shopSuccessModal #exportContentBtn span {
                 color: inherit !important;
+            }
+
+            #confirmPurchaseBtn {
+                min-height: 38px;
+                padding: 8px 12px;
+            }
+
+            #confirmPurchaseBtn i {
+                font-size: 12px;
+            }
+
+            #confirmPurchaseBtn span {
+                font-size: 12px;
             }
         }
 
@@ -1499,6 +1571,19 @@
                         <div style="font-family: 'Outfit'; font-size: 1.4rem; color: #4ade80; font-weight: 700;">
                             <span id="modalTotalPrice">0</span> <span style="font-size: 0.9rem; font-weight: 500;"
                                 data-i18n="shop.points">积分</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="purchaseNotesBox" style="display: none; margin: 0 10px 20px;">
+                    <div
+                        style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px; color: rgba(255,255,255,0.68); font-size: 0.96rem; text-align: left;">
+                        <i class="fas fa-triangle-exclamation" style="color: #fbbf24;"></i>
+                        <span>注意事项</span>
+                    </div>
+                    <div id="purchaseNotesCard" class="glass-box shop-success-usage-card">
+                        <div id="purchaseNotesContent"
+                            style="white-space: pre-wrap; font-size: 13px; color: rgba(255,255,255,0.85); line-height: 1.75;">
                         </div>
                     </div>
                 </div>

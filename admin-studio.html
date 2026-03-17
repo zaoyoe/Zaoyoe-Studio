@@ -6481,6 +6481,40 @@
                         </div>
                     </div>
 
+                    <!-- Purchase Notes Toggle + Textarea -->
+                    <div class="modern-form-group">
+                        <div
+                            style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                            <label class="modern-label" style="margin-bottom: 0;">
+                                <i class="fas fa-triangle-exclamation"
+                                    style="color: #fbbf24; margin-right: 6px;"></i>注意事项
+                            </label>
+                            <label class="toggle-switch"
+                                style="position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0;">
+                                <input type="checkbox" id="prodShowPurchaseNotes"
+                                    onchange="ShopAdmin.togglePurchaseNotes(this.checked)"
+                                    style="opacity:0;width:0;height:0;">
+                                <span class="toggle-slider" style="
+                                    position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+                                    background: rgba(255,255,255,0.1); border-radius: 24px; transition: all 0.3s;
+                                "></span>
+                            </label>
+                        </div>
+                        <div id="purchaseNotesWrapper" style="
+                            max-height: 0; overflow: hidden; opacity: 0;
+                            transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease, margin 0.3s ease;
+                            margin-top: 0;
+                        ">
+                            <textarea id="prodPurchaseNotes" class="modern-input"
+                                placeholder="输入确认兑换前展示的注意事项（支持链接，如 https://example.com）"
+                                style="min-height: 100px;"></textarea>
+                            <small
+                                style="color: rgba(255,255,255,0.35); font-size: 11px; margin-top: 4px; display: block;">
+                                用户在点击“兑换”后的确认兑换弹窗里会看到此内容，支持输入链接
+                            </small>
+                        </div>
+                    </div>
+
                     <!-- Usage Instructions Toggle + Textarea -->
                     <div class="modern-form-group">
                         <div

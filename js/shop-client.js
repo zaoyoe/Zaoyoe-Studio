@@ -342,7 +342,7 @@ const ShopClient = {
                         
                         <div style="margin-top:auto; padding-top:20px; display:flex; justify-content:space-between; align-items:center;">
                             <div class="shop-card-price">${originalPriceHtml}${window.SiteConfig?.formatPrice(currentPrice) || currentPrice} <span data-i18n="shop.points">${window.SiteConfig?.getPointsLabel() || window.i18n?.t('shop.points') || '积分'}</span></div>
-                            <button onclick="ShopClient.buyProduct('${p.id}', '${p.name}', '${p.name_en || ''}', ${currentPrice}, '${qtyRulesStr}')"
+                            <button onclick="ShopClient.buyProduct('${p.id}', '${p.name}', '${p.name_en || ''}', ${currentPrice}, '${qtyRulesStr}', ${p.show_purchase_notes ? 'true' : 'false'}, '${encodeURIComponent(p.purchase_notes || '')}')"
                                 ${noStock ? 'disabled' : ''}
                                 class="shop-buy-btn ${buyBtnClass}">
                                 ${buyBtnText}
@@ -397,7 +397,7 @@ const ShopClient = {
     },
 
     // State for the purchase modal
-    currentPurchase: { productId: null, productName: null, productNameEn: null, basePrice: 0, unitPrice: 0, quantity: 1, orderId: null, rules: [], discountCode: null, discountAmount: 0 },
+    currentPurchase: { productId: null, productName: null, productNameEn: null, basePrice: 0, unitPrice: 0, quantity: 1, orderId: null, rules: [], discountCode: null, discountAmount: 0, purchaseNotes: '' },
 
     isPurchaseModalKeyboardDockEnabled: function () {
         const ua = navigator.userAgent || '';
@@ -740,10 +740,11 @@ const ShopClient = {
 
     // ---- New Purchase Flow via Modal ----
 
-    buyProduct: async function (productId, productName, productNameEn, price, rulesStr) {
+    buyProduct: async function (productId, productName, productNameEn, price, rulesStr, showPurchaseNotes = false, purchaseNotesEncoded = '') {
         const rules = rulesStr ? JSON.parse(decodeURIComponent(rulesStr)) : [];
+        const purchaseNotes = showPurchaseNotes ? decodeURIComponent(purchaseNotesEncoded || '') : '';
         // 1. Open Modal immediately for instant feedback
-        this.openPurchaseModal(productId, productName, productNameEn, price, rules);
+        this.openPurchaseModal(productId, productName, productNameEn, price, rules, purchaseNotes);
 
         // 2. Auth Check in background
         const { data: { user } } = await supabaseClient.auth.getUser();
@@ -758,8 +759,20 @@ const ShopClient = {
         }
     },
 
-    openPurchaseModal: function (productId, productName, productNameEn, price, rules) {
-        this.currentPurchase = { productId, productName, productNameEn, basePrice: price, unitPrice: price, quantity: 1, rules: rules, discountCode: null, discountAmount: 0 };
+    openPurchaseModal: function (productId, productName, productNameEn, price, rules, purchaseNotes = '') {
+        this.currentPurchase = {
+            productId,
+            productName,
+            productNameEn,
+            basePrice: price,
+            unitPrice: price,
+            quantity: 1,
+            orderId: null,
+            rules: rules,
+            discountCode: null,
+            discountAmount: 0,
+            purchaseNotes: typeof purchaseNotes === 'string' ? purchaseNotes.trim() : ''
+        };
         this.purchaseModalBaseScrollY = Math.max(0, Math.round(window.scrollY || window.pageYOffset || 0));
         this.purchaseModalOwnsFullScrollLock = false;
 
@@ -786,9 +799,11 @@ const ShopClient = {
         const btn = document.getElementById('confirmPurchaseBtn');
         if (btn) {
             const confirmText = window.i18n?.t('shop.confirmRedeem') || '确认兑换';
-            btn.innerHTML = `<i class="fas fa-shopping-cart"></i> ${confirmText}`;
+            btn.innerHTML = `<i class="fas fa-shopping-cart"></i> <span>${confirmText}</span>`;
             btn.disabled = false;
         }
+
+        this.renderPurchaseNotes();
 
         // Show Modal
         const modal = document.getElementById('shopPurchaseModal');
@@ -802,9 +817,11 @@ const ShopClient = {
         const modal = document.getElementById('shopPurchaseModal');
         const activeInput = this.getActivePurchaseModalInput();
         activeInput?.blur();
+        this.clearPurchaseNotesWheelIsolation();
         this.detachPurchaseModalKeyboardDock();
         this.resetPurchaseModalKeyboardDockState();
         modal.classList.remove('active');
+        modal.classList.remove('has-purchase-notes');
         // Unlock background scroll on mobile Safari
         if (window.iOSScrollLock) window.iOSScrollLock.unlock();
         this.purchaseModalOwnsFullScrollLock = false;
@@ -957,7 +974,7 @@ const ShopClient = {
         const btn = document.getElementById('confirmPurchaseBtn');
         const originalText = btn.innerHTML;
         const processingText = window.i18n?.t('shop.processing') || '处理中...';
-        btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${processingText}`;
+        btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> <span>${processingText}</span>`;
         btn.disabled = true;
 
         try {
@@ -1090,6 +1107,77 @@ const ShopClient = {
         document.head.appendChild(style);
     },
 
+    clearPurchaseNotesWheelIsolation: function () {
+        if (typeof this.purchaseNotesWheelCleanup === 'function') {
+            this.purchaseNotesWheelCleanup();
+            this.purchaseNotesWheelCleanup = null;
+        }
+    },
+
+    bindContainedWheelIsolation: function (scrollCard) {
+        const supportsHoverWheel = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+        if (!supportsHoverWheel || !scrollCard) return null;
+
+        const onWheel = (event) => {
+            if (scrollCard.scrollHeight <= scrollCard.clientHeight + 1) return;
+
+            const deltaY = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;
+            const maxScrollTop = Math.max(0, scrollCard.scrollHeight - scrollCard.clientHeight);
+            const nextScrollTop = Math.min(maxScrollTop, Math.max(0, scrollCard.scrollTop + deltaY));
+
+            if (nextScrollTop === scrollCard.scrollTop) {
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+            }
+
+            scrollCard.scrollTop = nextScrollTop;
+            event.preventDefault();
+            event.stopPropagation();
+        };
+
+        scrollCard.addEventListener('wheel', onWheel, { passive: false, capture: true });
+        return () => {
+            scrollCard.removeEventListener('wheel', onWheel, true);
+        };
+    },
+
+    bindPurchaseNotesWheelIsolation: function () {
+        this.clearPurchaseNotesWheelIsolation();
+        const notesCard = document.getElementById('purchaseNotesCard');
+        const cleanup = this.bindContainedWheelIsolation(notesCard);
+        if (cleanup) {
+            this.purchaseNotesWheelCleanup = cleanup;
+        }
+    },
+
+    renderPurchaseNotes: function () {
+        const modal = document.getElementById('shopPurchaseModal');
+        const notesBox = document.getElementById('purchaseNotesBox');
+        const notesContent = document.getElementById('purchaseNotesContent');
+        const normalizedPurchaseNotes = typeof this.currentPurchase?.purchaseNotes === 'string'
+            ? this.currentPurchase.purchaseNotes.trim()
+            : '';
+        const hasPurchaseNotes = normalizedPurchaseNotes.length > 0;
+
+        this.clearPurchaseNotesWheelIsolation();
+
+        if (modal) {
+            modal.classList.toggle('has-purchase-notes', hasPurchaseNotes);
+        }
+
+        if (!notesBox || !notesContent) return;
+
+        if (hasPurchaseNotes) {
+            notesContent.innerHTML = this.linkifyText(this.escapeHtml(normalizedPurchaseNotes));
+            notesBox.style.display = 'block';
+            this.bindPurchaseNotesWheelIsolation();
+        } else {
+            notesBox.style.display = 'none';
+            notesContent.innerHTML = '';
+        }
+    },
+
     clearSuccessUsageWheelIsolation: function () {
         if (typeof this.successUsageWheelCleanup === 'function') {
             this.successUsageWheelCleanup();
@@ -1100,35 +1188,14 @@ const ShopClient = {
     bindSuccessUsageWheelIsolation: function () {
         this.clearSuccessUsageWheelIsolation();
 
-        const supportsHoverWheel = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
-        if (!supportsHoverWheel) return;
-
         const modal = document.getElementById('shopSuccessModal');
         const usageCard = modal?.querySelector('.shop-success-usage-card');
         if (!modal || !usageCard || !modal.classList.contains('has-usage-instructions')) return;
 
-        const onWheel = (event) => {
-            if (usageCard.scrollHeight <= usageCard.clientHeight + 1) return;
-
-            const deltaY = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaY;
-            const maxScrollTop = Math.max(0, usageCard.scrollHeight - usageCard.clientHeight);
-            const nextScrollTop = Math.min(maxScrollTop, Math.max(0, usageCard.scrollTop + deltaY));
-
-            if (nextScrollTop === usageCard.scrollTop) {
-                event.preventDefault();
-                event.stopPropagation();
-                return;
-            }
-
-            usageCard.scrollTop = nextScrollTop;
-            event.preventDefault();
-            event.stopPropagation();
-        };
-
-        usageCard.addEventListener('wheel', onWheel, { passive: false, capture: true });
-        this.successUsageWheelCleanup = () => {
-            usageCard.removeEventListener('wheel', onWheel, true);
-        };
+        const cleanup = this.bindContainedWheelIsolation(usageCard);
+        if (cleanup) {
+            this.successUsageWheelCleanup = cleanup;
+        }
     },
 
     showSuccessModal: function (content, warning, usageInstructions) {

@@ -992,9 +992,8 @@ Example output format:
         dropdown.classList.remove('open');
     },
 
-    // Toggle usage instructions textarea visibility with animation
-    toggleUsageInstructions: function (show) {
-        const wrapper = document.getElementById('usageInstructionsWrapper');
+    toggleFormSection: function (wrapperId, show) {
+        const wrapper = document.getElementById(wrapperId);
         if (!wrapper) return;
         if (show) {
             wrapper.style.maxHeight = '200px';
@@ -1005,6 +1004,16 @@ Example output format:
             wrapper.style.opacity = '0';
             wrapper.style.marginTop = '0';
         }
+    },
+
+    // Toggle purchase notes textarea visibility with animation
+    togglePurchaseNotes: function (show) {
+        this.toggleFormSection('purchaseNotesWrapper', show);
+    },
+
+    // Toggle usage instructions textarea visibility with animation
+    toggleUsageInstructions: function (show) {
+        this.toggleFormSection('usageInstructionsWrapper', show);
     },
 
     buildExistingProductUpsertPayload: function (id, payload) {
@@ -1182,6 +1191,11 @@ Example output format:
             document.getElementById('prodWebhookTarget').value = '';
             this.toggleWebhookField('KEY');
 
+            // Reset purchase notes
+            document.getElementById('prodShowPurchaseNotes').checked = false;
+            document.getElementById('prodPurchaseNotes').value = '';
+            this.togglePurchaseNotes(false);
+
             // Reset usage instructions
             document.getElementById('prodShowUsageInstructions').checked = false;
             document.getElementById('prodUsageInstructions').value = '';
@@ -1241,6 +1255,12 @@ Example output format:
 
             document.getElementById('prodWebhookTarget').value = data.webhook_target || '';
             this.toggleWebhookField(deliveryType);
+
+            // Populate purchase notes
+            const showPurchaseNotes = !!data.show_purchase_notes;
+            document.getElementById('prodShowPurchaseNotes').checked = showPurchaseNotes;
+            document.getElementById('prodPurchaseNotes').value = typeof data.purchase_notes === 'string' ? data.purchase_notes : '';
+            this.togglePurchaseNotes(showPurchaseNotes);
 
             // Populate usage instructions
             const showUI = !!data.show_usage_instructions;
@@ -1306,6 +1326,9 @@ Example output format:
             const rawUsageInstructions = document.getElementById('prodUsageInstructions').value || '';
             const normalizedUsageInstructions = rawUsageInstructions.replace(/\r\n/g, '\n').trim();
             const showUsageInstructions = document.getElementById('prodShowUsageInstructions').checked;
+            const rawPurchaseNotes = document.getElementById('prodPurchaseNotes').value || '';
+            const normalizedPurchaseNotes = rawPurchaseNotes.replace(/\r\n/g, '\n').trim();
+            const showPurchaseNotes = document.getElementById('prodShowPurchaseNotes').checked;
             const webhookTargetValue = document.getElementById('prodWebhookTarget').value.trim();
 
             document.getElementById('prodSort').value = String(normalizedSort);
@@ -1317,6 +1340,8 @@ Example output format:
                 icon_url: document.getElementById('prodIcon').value,
                 category: document.getElementById('prodCategory').value,
                 display_order: normalizedSort,
+                show_purchase_notes: showPurchaseNotes,
+                purchase_notes: showPurchaseNotes ? (normalizedPurchaseNotes || null) : null,
                 show_usage_instructions: showUsageInstructions,
                 usage_instructions: showUsageInstructions ? (normalizedUsageInstructions || null) : null,
                 delivery_type: normalizedDeliveryType,
