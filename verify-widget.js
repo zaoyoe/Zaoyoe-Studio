@@ -751,7 +751,7 @@
                                         </div>
                                         <div class="verify-guide-item">
                                             <div class="verify-guide-item-title">${t('verify.guideFamilyTitle', '家庭组必须退出')}</div>
-                                            <div class="verify-guide-item-body">${t('verify.guideFamilyBody', '确保无订阅过')}</div>
+                                            <div class="verify-guide-item-body">${t('verify.guideFamilyBody', '确保该账号不存在其它可用的 pro 权限订阅')}</div>
                                         </div>
                                         <div class="verify-guide-item">
                                             <div class="verify-guide-item-title">${t('verify.guideAccountTitle', '账号建议')}</div>
@@ -772,9 +772,25 @@
                                             <span>${t('verify.guideNoteRegion', '不需要拥有学生资格才能订阅，所有符合支持地区的账号都可以进行订阅，按步骤操作即可。')}</span>
                                         </div>
                                         <div class="verify-guide-note verify-guide-note-privacy">
-                                            <div class="verify-guide-note-shield" aria-hidden="true">
-                                                <i class="fas fa-shield-halved"></i>
-                                            </div>
+                                            <span class="verify-guide-note-shield" aria-hidden="true">
+                                                <svg width="16" height="18" viewBox="0 0 16 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                    <path d="M8 0.85L13.6773 2.96565C14.2538 3.18038 14.6364 3.73107 14.6364 4.34626V8.10712C14.6364 12.2356 12.2037 15.9767 8.43275 17.6513C8.15639 17.774 7.84361 17.774 7.56725 17.6513C3.79625 15.9767 1.36364 12.2356 1.36364 8.10712V4.34626C1.36364 3.73107 1.74618 3.18038 2.32275 2.96565L8 0.85Z" fill="url(#shieldFill)"/>
+                                                    <path d="M8 2.15L12.7105 3.90532C12.9658 4.00048 13.1364 4.24434 13.1364 4.51679V8.02703C13.1364 11.6332 11.0948 14.9122 8 16.4101C4.90522 14.9122 2.86364 11.6332 2.86364 8.02703V4.51679C2.86364 4.24434 3.03421 4.00048 3.28948 3.90532L8 2.15Z" fill="url(#shieldInner)"/>
+                                                    <path d="M8 4.35C8.3866 4.35 8.7 4.6634 8.7 5.05V8.31195L10.4782 10.0902C10.7516 10.3636 10.7516 10.8068 10.4782 11.0802C10.2048 11.3536 9.76158 11.3536 9.48817 11.0802L7.50497 9.09703C7.3737 8.96576 7.3 8.78771 7.3 8.60205V5.05C7.3 4.6634 7.6134 4.35 8 4.35Z" fill="rgba(245,251,255,0.96)"/>
+                                                    <path d="M3.8 4.6L8 3L12.2 4.6" stroke="rgba(255,255,255,0.42)" stroke-width="0.8" stroke-linecap="round"/>
+                                                    <defs>
+                                                        <linearGradient id="shieldFill" x1="8" y1="0.85" x2="8" y2="17.7433" gradientUnits="userSpaceOnUse">
+                                                            <stop stop-color="#E3F5FF"/>
+                                                            <stop offset="0.42" stop-color="#8BC1E0"/>
+                                                            <stop offset="1" stop-color="#4E739D"/>
+                                                        </linearGradient>
+                                                        <linearGradient id="shieldInner" x1="8" y1="2.15" x2="8" y2="16.4101" gradientUnits="userSpaceOnUse">
+                                                            <stop stop-color="rgba(255,255,255,0.22)"/>
+                                                            <stop offset="1" stop-color="rgba(11,22,35,0.18)"/>
+                                                        </linearGradient>
+                                                    </defs>
+                                                </svg>
+                                            </span>
                                             <span class="verify-guide-note-privacy-body">${t('verify.guideNotePrivacy', '我们不会保存任何账户信息，提交的信息仅做订阅临时使用，订阅完成后自动销毁。为了账户安全，订阅完成后建议修改 2FA 码；不建议立即修改密码，以免触发封控。')}</span>
                                         </div>
                                         <div class="verify-guide-note verify-guide-note-success">

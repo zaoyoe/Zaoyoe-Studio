@@ -541,7 +541,7 @@
         "guideRegionBodyPrefix": "需在支持区域内，可",
         "guideViewRegions": "点击查看支持地区",
         "guideFamilyTitle": "家庭组必须退出",
-        "guideFamilyBody": "确保无订阅过。",
+        "guideFamilyBody": "确保该账号不存在其它可用的 pro 权限订阅。",
         "guideAccountTitle": "账号建议",
         "guideAccountBody": "建议使用老号，新号极其容易封控，导致账号无法登录。这不是认证的问题，而是账号本身的问题。",
         "guideNoteTitle": "注意",

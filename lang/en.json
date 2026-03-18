@@ -541,7 +541,7 @@
         "guideRegionBodyPrefix": "The account must be in a supported region. You can",
         "guideViewRegions": "view supported regions",
         "guideFamilyTitle": "Leave Family Group",
-        "guideFamilyBody": "Make sure the account has no prior subscription history.",
+        "guideFamilyBody": "Ensure the account does not already have any other active Pro subscription.",
         "guideAccountTitle": "Account Advice",
         "guideAccountBody": "Older accounts are strongly recommended. New accounts are far more likely to hit risk control and lose login access. That is an account issue, not a verification issue.",
         "guideNoteTitle": "Notes",
