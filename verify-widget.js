@@ -144,6 +144,10 @@
         return window.i18n?.getCurrentLanguage?.() || 'zh';
     }
 
+    function getLocale() {
+        return getLang() === 'zh' ? 'zh-CN' : 'en-US';
+    }
+
     function t(key, fallback) {
         if (window.i18n && typeof window.i18n.t === 'function') {
             const translated = window.i18n.t(key);
@@ -546,6 +550,9 @@
         const loginDisplay = isLoggedIn ? 'none' : 'block';
         const formDisplay = isLoggedIn ? 'block' : 'none';
         const balanceDisplay = isLoggedIn ? 'flex' : 'none';
+        const supportedRegionsUrl = getLang() === 'zh'
+            ? 'https://support.google.com/googleone/answer/9080668?hl=zh-Hans'
+            : 'https://support.google.com/googleone/answer/9080668?hl=en';
 
         container.innerHTML = `
             <div class="verify-widget ring-idle">
@@ -560,13 +567,13 @@
                     </div>
                     <div class="verify-widget-title">
                         <h3>${t('verify.title', 'Google One')}</h3>
-                        <p>${t('verify.subtitle', '自动获取试用链接')}</p>
+                        <p>${t('verify.subtitle', '获取 1年 pro 权限的试用链接')}</p>
                     </div>
                     <div class="verify-header-right">
-                        <div class="verify-api-quota" id="verifyApiQuota" title="API 剩余额度">
+                        <div class="verify-api-quota" id="verifyApiQuota" title="${t('verify.apiQuotaTitle', 'API 剩余额度')}">
                             <i class="fas fa-gem"></i> --
                         </div>
-                        <div class="verify-balance" id="verifyBalance" style="display: ${balanceDisplay}; cursor: pointer;" onclick="WalletModal.open()" title="我的钱包">
+                        <div class="verify-balance" id="verifyBalance" style="display: ${balanceDisplay}; cursor: pointer;" onclick="WalletModal.open()" title="${t('verify.walletTitle', '我的钱包')}">
                             <i class="fas fa-coins"></i>
                             <span id="verifyBalanceValue">0</span>
                         </div>
@@ -610,7 +617,7 @@
                                             id="verifyPasswordInput"
                                             type="password"
                                             autocomplete="new-password"
-                                            placeholder="${t('verify.passwordPlaceholder', '请输入 Google 账号密码')}"
+                                            placeholder="${t('verify.passwordPlaceholder', '密码')}"
                                         />
                                         <button
                                             class="verify-password-toggle"
@@ -634,7 +641,7 @@
                                         spellcheck="false"
                                         autocapitalize="characters"
                                         autocomplete="off"
-                                        placeholder="${t('verify.totpPlaceholder', '例如：JBSWY3DPEHPK3PXP')}"
+                                        placeholder="${t('verify.totpPlaceholder', '3r6cu37xch4ej6d5shgouvsknd7jmhoy')}"
                                     />
                                 </div>
 
@@ -691,10 +698,10 @@
                                             ${t('verify.history', '任务历史')}
                                         </div>
                                         <div class="verify-history-actions">
-                                            <button class="verify-history-export" onclick="VerifyWidget.exportHistory()" title="导出 CSV">
+                                            <button class="verify-history-export" onclick="VerifyWidget.exportHistory()" title="${t('verify.exportCsv', '导出 CSV')}">
                                                 <i class="fas fa-file-export"></i>
                                             </button>
-                                            <button class="verify-history-refresh" onclick="VerifyWidget.loadHistory()" title="刷新">
+                                            <button class="verify-history-refresh" onclick="VerifyWidget.loadHistory()" title="${t('verify.refreshHistory', '刷新')}">
                                                 <i class="fas fa-sync-alt"></i>
                                             </button>
                                         </div>
@@ -731,7 +738,7 @@
                                             <div class="verify-guide-item-title">${t('verify.guideRegionTitle', '地区')}</div>
                                             <div class="verify-guide-item-body">
                                                 ${t('verify.guideRegionBodyPrefix', '需在支持区域内')}
-                                                <a class="verify-guide-link" href="https://support.google.com/googleone/answer/9080668?hl=zh-Hans" target="_blank" rel="noopener noreferrer">${t('verify.guideViewRegions', '点击查看支持地区')}</a>
+                                                <a class="verify-guide-link" href="${supportedRegionsUrl}" target="_blank" rel="noopener noreferrer">${t('verify.guideViewRegions', '点击查看支持地区')}</a>
                                             </div>
                                         </div>
                                         <div class="verify-guide-item">
@@ -759,6 +766,10 @@
                                         <div class="verify-guide-note">
                                             <i class="fas fa-shield-halved"></i>
                                             <span>${t('verify.guideNotePrivacy', '我们不会保存任何账户信息，提交的信息仅做订阅临时使用，订阅完成后自动销毁。为了账户安全，订阅完成后建议修改 2FA 码；不建议立即修改密码，以免触发封控。')}</span>
+                                        </div>
+                                        <div class="verify-guide-note verify-guide-note-success">
+                                            <i class="fas fa-credit-card"></i>
+                                            <span>${t('verify.guideNoteSuccessPrefix', '✅ 成功后：自行打开链接绑卡订阅。无卡可前往')}<a class="verify-guide-link verify-guide-link-inline" href="/shop.html">${t('verify.guideShopLink', '商城')}</a>${t('verify.guideNoteSuccessSuffix', '购卡。')}</span>
                                         </div>
                                     </div>
                                 </div>
@@ -1557,7 +1568,7 @@
             historyData = data;
 
             listEl.innerHTML = data.map((item) => {
-                const time = new Date(item.created_at).toLocaleString('zh-CN', {
+                const time = new Date(item.created_at).toLocaleString(getLocale(), {
                     month: '2-digit',
                     day: '2-digit',
                     hour: '2-digit',
@@ -1641,9 +1652,15 @@
             }
         }
 
-        const headers = ['时间', '邮箱', '状态', '详情', '积分消耗'];
+        const headers = [
+            t('verify.exportHeaderTime', '时间'),
+            t('verify.exportHeaderEmail', '邮箱'),
+            t('verify.exportHeaderStatus', '状态'),
+            t('verify.exportHeaderDetail', '详情'),
+            t('verify.exportHeaderCost', '积分消耗')
+        ];
         const rows = data.map((item) => {
-            const time = new Date(item.created_at).toLocaleString('zh-CN');
+            const time = new Date(item.created_at).toLocaleString(getLocale());
             const email = getHistoryEmail(item);
             const statusText = getHistoryStatusText(item.status).replace(/<[^>]*>?/gm, '').trim();
             const detailText = getHistoryDetailText(item);

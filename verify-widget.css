@@ -591,6 +591,10 @@
     white-space: nowrap;
 }
 
+.verify-guide-link-inline {
+    margin-left: 0;
+}
+
 .verify-guide-link:hover,
 .verify-guide-link:focus-visible {
     color: #d1f5ff;
@@ -621,6 +625,10 @@
 
 .verify-guide-note:nth-child(3) i {
     color: #f3c76a;
+}
+
+.verify-guide-note-success i {
+    color: #34c759;
 }
 
 .verify-guide-note span {
