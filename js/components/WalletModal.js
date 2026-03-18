@@ -2591,6 +2591,13 @@
             window.requestAnimationFrame(step);
         },
 
+        invalidateOrderRecordsCache() {
+            this._prefetchedShopOrders = null;
+            this._prefetchedLedger = null;
+            this.ordersLoaded = false;
+            this.browseOrdersSnapshot = [];
+        },
+
         /**
          * Handle package purchase
          */
@@ -2612,10 +2619,11 @@
                 this.showToast('✅ 充值成功！', 'success');
 
                 // Refresh order data immediately so new recharge records appear without reopening the wallet
-                this._prefetchedShopOrders = null;
-                this._prefetchedLedger = null;
-                this.ordersLoaded = false;
-                this.loadOrders().catch(e => console.error('Order reload after recharge failed:', e));
+                this.invalidateOrderRecordsCache();
+                this.loadOrders({
+                    searchQuery: this.orderSearchActiveQuery || this.orderSearchQuery,
+                    ignorePrefetch: true
+                }).catch(e => console.error('Order reload after recharge failed:', e));
 
                 // Refresh data in background to show new balance
                 this.loadData();
@@ -2897,6 +2905,11 @@
                     }
 
                     // Refresh calendar and data
+                    this.invalidateOrderRecordsCache();
+                    this.loadOrders({
+                        searchQuery: this.orderSearchActiveQuery || this.orderSearchQuery,
+                        ignorePrefetch: true
+                    }).catch(e => console.error('Order reload after makeup failed:', e));
                     this.loadCheckinData();
                     this.loadData().catch(() => { });
                 } else {
