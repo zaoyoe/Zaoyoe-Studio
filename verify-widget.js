@@ -588,119 +588,178 @@
                     </div>
 
                     <div id="verifyForm" style="display: ${formDisplay};">
-                        <div class="verify-input-area verify-form-layout">
-                            <label class="verify-form-field">
-                                <span class="verify-field-label">${t('verify.emailLabel', 'Gmail 地址')} <em>*</em></span>
-                                <input
-                                    class="verify-input"
-                                    id="verifyEmailInput"
-                                    type="email"
-                                    inputmode="email"
-                                    autocomplete="off"
-                                    placeholder="${t('verify.emailPlaceholder', 'your.account@gmail.com')}"
-                                />
-                            </label>
-
-                            <label class="verify-form-field">
-                                <span class="verify-field-label">${t('verify.passwordLabel', '账号密码')} <em>*</em></span>
-                                <div class="verify-password-shell">
+                        <div class="verify-form-shell">
+                            <div class="verify-input-area verify-form-main">
+                                <label class="verify-form-field">
+                                    <span class="verify-field-label">${t('verify.emailLabel', 'Gmail 地址')} <em>*</em></span>
                                     <input
                                         class="verify-input"
-                                        id="verifyPasswordInput"
-                                        type="password"
-                                        autocomplete="new-password"
-                                        placeholder="${t('verify.passwordPlaceholder', '请输入 Google 账号密码')}"
+                                        id="verifyEmailInput"
+                                        type="email"
+                                        inputmode="email"
+                                        autocomplete="off"
+                                        placeholder="${t('verify.emailPlaceholder', 'your.account@gmail.com')}"
                                     />
-                                    <button
-                                        class="verify-password-toggle"
-                                        id="verifyPasswordToggle"
-                                        type="button"
-                                        onclick="VerifyWidget.togglePasswordVisibility()"
-                                        aria-label="${t('verify.showPassword', '显示密码')}"
-                                        title="${t('verify.showPassword', '显示密码')}"
-                                    >
-                                        <i class="fas fa-eye"></i>
-                                    </button>
-                                </div>
-                            </label>
-
-                            <div class="verify-form-field">
-                                <div class="verify-field-label verify-field-label-row">
-                                    <span class="verify-field-label-copy">${t('verify.totpLabel', '2FA 密钥（Base32）')} <em>*</em></span>
-                                    <a
-                                        class="verify-field-link"
-                                        href="https://zhuanlan.zhihu.com/p/1997015036741304912"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                    >
-                                        ${t('verify.totpEnableGuide', '2fa 开启方式')}
-                                    </a>
-                                </div>
-                                <input
-                                    class="verify-input"
-                                    id="verifyTotpInput"
-                                    type="text"
-                                    spellcheck="false"
-                                    autocapitalize="characters"
-                                    autocomplete="off"
-                                    placeholder="${t('verify.totpPlaceholder', '例如：JBSWY3DPEHPK3PXP')}"
-                                />
-                            </div>
-
-                            <div class="verify-form-meta">
-                                <label class="verify-priority-pill" for="verifyPriorityToggle">
-                                    <input id="verifyPriorityToggle" type="checkbox" />
-                                    <span>${t('verify.priorityLabel', '高优先级任务')}</span>
                                 </label>
-                                <div class="verify-price-info verify-form-price">
-                                    <i class="fas fa-coins"></i>
-                                    ${t('verify.singleCost', '本次提交消耗')} <span class="price" id="verifySingleCost">${CONFIG.pricePerVerify}</span> ${t('verify.points', '积分')}
-                                </div>
-                            </div>
 
-                            <div class="verify-form-actions">
-                                <button class="verify-reset-btn" id="verifyResetBtn" onclick="VerifyWidget.resetForm()">
-                                    <i class="fas fa-rotate-left"></i>
-                                    ${t('verify.resetForm', '清空')}
-                                </button>
-                                <button class="verify-submit-btn" id="verifySubmitBtn" onclick="VerifyWidget.submit()">
-                                    <i class="fas fa-paper-plane"></i>
-                                    ${t('verify.startVerify', '提交账号')}
-                                </button>
-                            </div>
-
-                            <div class="verify-preview-module">
-                                <div class="verify-preview-copy">
-                                    <strong>${t('verify.previewTitle', '预执行模块')}</strong>
-                                    <span>${t('verify.previewHint', '仅用于测试顶部星环和任务状态动效，不扣积分，也不会写入历史。')}</span>
-                                </div>
-                                <div class="verify-preview-toolbar">
-                                    <div class="verify-preview-mode" role="group" aria-label="${t('verify.previewModeLabel', '预执行结果')}">
+                                <label class="verify-form-field">
+                                    <span class="verify-field-label">${t('verify.passwordLabel', '账号密码')} <em>*</em></span>
+                                    <div class="verify-password-shell">
+                                        <input
+                                            class="verify-input"
+                                            id="verifyPasswordInput"
+                                            type="password"
+                                            autocomplete="new-password"
+                                            placeholder="${t('verify.passwordPlaceholder', '请输入 Google 账号密码')}"
+                                        />
                                         <button
-                                            class="verify-preview-mode-btn"
-                                            id="verifyPreviewModeSuccess"
+                                            class="verify-password-toggle"
+                                            id="verifyPasswordToggle"
                                             type="button"
-                                            data-mode="success"
-                                            onclick="VerifyWidget.setPreviewMode('success')"
+                                            onclick="VerifyWidget.togglePasswordVisibility()"
+                                            aria-label="${t('verify.showPassword', '显示密码')}"
+                                            title="${t('verify.showPassword', '显示密码')}"
                                         >
-                                            ${t('verify.previewSuccessMode', '成功')}
-                                        </button>
-                                        <button
-                                            class="verify-preview-mode-btn"
-                                            id="verifyPreviewModeError"
-                                            type="button"
-                                            data-mode="error"
-                                            onclick="VerifyWidget.setPreviewMode('error')"
-                                        >
-                                            ${t('verify.previewFailureMode', '失败')}
+                                            <i class="fas fa-eye"></i>
                                         </button>
                                     </div>
-                                    <button class="verify-preview-btn" id="verifyPreviewBtn" type="button" onclick="VerifyWidget.runPreviewExecution()">
-                                        <i class="fas fa-flask"></i>
-                                        ${t('verify.previewRun', '预执行')}
+                                </label>
+
+                                <div class="verify-form-field">
+                                    <div class="verify-field-label verify-field-label-row">
+                                        <span class="verify-field-label-copy">${t('verify.totpLabel', '2FA 密钥（Base32）')} <em>*</em></span>
+                                        <a
+                                            class="verify-field-link"
+                                            href="https://zhuanlan.zhihu.com/p/1997015036741304912"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                        >
+                                            ${t('verify.totpEnableGuide', '2fa 开启方式')}
+                                        </a>
+                                    </div>
+                                    <input
+                                        class="verify-input"
+                                        id="verifyTotpInput"
+                                        type="text"
+                                        spellcheck="false"
+                                        autocapitalize="characters"
+                                        autocomplete="off"
+                                        placeholder="${t('verify.totpPlaceholder', '例如：JBSWY3DPEHPK3PXP')}"
+                                    />
+                                </div>
+
+                                <div class="verify-form-meta">
+                                    <label class="verify-priority-pill" for="verifyPriorityToggle">
+                                        <input id="verifyPriorityToggle" type="checkbox" />
+                                        <span>${t('verify.priorityLabel', '高优先级任务')}</span>
+                                    </label>
+                                    <div class="verify-price-info verify-form-price">
+                                        <i class="fas fa-coins"></i>
+                                        ${t('verify.singleCost', '本次提交消耗')} <span class="price" id="verifySingleCost">${CONFIG.pricePerVerify}</span> ${t('verify.points', '积分')}
+                                    </div>
+                                </div>
+
+                                <div class="verify-form-actions">
+                                    <button class="verify-reset-btn" id="verifyResetBtn" onclick="VerifyWidget.resetForm()">
+                                        <i class="fas fa-rotate-left"></i>
+                                        ${t('verify.resetForm', '清空')}
+                                    </button>
+                                    <button class="verify-submit-btn" id="verifySubmitBtn" onclick="VerifyWidget.submit()">
+                                        <i class="fas fa-paper-plane"></i>
+                                        ${t('verify.startVerify', '提交账号')}
                                     </button>
                                 </div>
+
+                                <div class="verify-preview-module">
+                                    <div class="verify-preview-copy">
+                                        <strong>${t('verify.previewTitle', '预执行模块')}</strong>
+                                        <span>${t('verify.previewHint', '仅用于测试顶部星环和任务状态动效，不扣积分，也不会写入历史。')}</span>
+                                    </div>
+                                    <div class="verify-preview-toolbar">
+                                        <div class="verify-preview-mode" role="group" aria-label="${t('verify.previewModeLabel', '预执行结果')}">
+                                            <button
+                                                class="verify-preview-mode-btn"
+                                                id="verifyPreviewModeSuccess"
+                                                type="button"
+                                                data-mode="success"
+                                                onclick="VerifyWidget.setPreviewMode('success')"
+                                            >
+                                                ${t('verify.previewSuccessMode', '成功')}
+                                            </button>
+                                            <button
+                                                class="verify-preview-mode-btn"
+                                                id="verifyPreviewModeError"
+                                                type="button"
+                                                data-mode="error"
+                                                onclick="VerifyWidget.setPreviewMode('error')"
+                                            >
+                                                ${t('verify.previewFailureMode', '失败')}
+                                            </button>
+                                        </div>
+                                        <button class="verify-preview-btn" id="verifyPreviewBtn" type="button" onclick="VerifyWidget.runPreviewExecution()">
+                                            <i class="fas fa-flask"></i>
+                                            ${t('verify.previewRun', '预执行')}
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
+
+                            <aside class="verify-guide-card">
+                                <div class="verify-guide-head">
+                                    <div class="verify-guide-badge">
+                                        <i class="fas fa-book-open"></i>
+                                        ${t('verify.instructionsTitle', '使用说明')}
+                                    </div>
+                                    <h4>${t('verify.guideCardTitle', '提交前请先确认这些条件')}</h4>
+                                    <p>${t('verify.guideCardSubtitle', '准备好账号环境后再提交，可以明显减少失败与封控。')}</p>
+                                </div>
+
+                                <div class="verify-guide-section">
+                                    <div class="verify-guide-section-title">${t('verify.guideRequiredTitle', '必要条件')}</div>
+                                    <div class="verify-guide-list">
+                                        <div class="verify-guide-item">
+                                            <div class="verify-guide-item-title">${t('verify.guide2faTitle', '2FA 验证')}</div>
+                                            <div class="verify-guide-item-body">
+                                                ${t('verify.guide2faBodyPrefix', '必须开启')}
+                                                <a class="verify-guide-link" href="https://zhuanlan.zhihu.com/p/1997015036741304912" target="_blank" rel="noopener noreferrer">${t('verify.guideViewTutorial', '点击查看教程')}</a>
+                                            </div>
+                                        </div>
+                                        <div class="verify-guide-item">
+                                            <div class="verify-guide-item-title">${t('verify.guideRegionTitle', '地区')}</div>
+                                            <div class="verify-guide-item-body">
+                                                ${t('verify.guideRegionBodyPrefix', '需在支持区域内')}
+                                                <a class="verify-guide-link" href="https://support.google.com/googleone/answer/9080668?hl=zh-Hans" target="_blank" rel="noopener noreferrer">${t('verify.guideViewRegions', '点击查看支持地区')}</a>
+                                            </div>
+                                        </div>
+                                        <div class="verify-guide-item">
+                                            <div class="verify-guide-item-title">${t('verify.guideFamilyTitle', '家庭组必须退出')}</div>
+                                            <div class="verify-guide-item-body">${t('verify.guideFamilyBody', '确保无订阅过')}</div>
+                                        </div>
+                                        <div class="verify-guide-item">
+                                            <div class="verify-guide-item-title">${t('verify.guideAccountTitle', '账号建议')}</div>
+                                            <div class="verify-guide-item-body">${t('verify.guideAccountBody', '建议使用老号，新号极其容易封控，导致账号无法登录。这不是认证的问题，而是账号本身的问题。')}</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="verify-guide-section">
+                                    <div class="verify-guide-section-title">${t('verify.guideNoteTitle', '注意')}</div>
+                                    <div class="verify-guide-note-list">
+                                        <div class="verify-guide-note">
+                                            <i class="fas fa-clipboard-list"></i>
+                                            <span>${t('verify.guideNoteBrowser', '领取时浏览器须登录该 Google 账号。报错请换节点。')}</span>
+                                        </div>
+                                        <div class="verify-guide-note">
+                                            <i class="fas fa-earth-asia"></i>
+                                            <span>${t('verify.guideNoteRegion', '不需要拥有学生资格才能订阅，所有符合支持地区的账号都可以进行订阅，按步骤操作即可。')}</span>
+                                        </div>
+                                        <div class="verify-guide-note">
+                                            <i class="fas fa-shield-halved"></i>
+                                            <span>${t('verify.guideNotePrivacy', '我们不会保存任何账户信息，提交的信息仅做订阅临时使用，订阅完成后自动销毁。为了账户安全，订阅完成后建议修改 2FA 码；不建议立即修改密码，以免触发封控。')}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </aside>
                         </div>
                     </div>
                 </div>

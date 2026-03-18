@@ -46,7 +46,7 @@
     <link rel="stylesheet" href="style.css?v=20260316_PROFILE_MODAL_DESKTOP_LAYOUT_64">
     <link rel="stylesheet" href="css/auth-sheet.css?v=20260316_AUTH_SHEET_CHAT_MATCH_36">
     <link rel="stylesheet" href="avatar-fix.css?v=20260316_AVATAR_NAV_STABLE_2">
-    <link rel="stylesheet" href="verify-widget.css?v=20260318_VERIFY_RING_CLASSIC_8">
+    <link rel="stylesheet" href="verify-widget.css?v=20260318_VERIFY_GUIDE_CARD_1">
     <!-- Unified Navigation CSS -->
     <link rel="stylesheet" href="css/framer_home.css?v=NAV_UNIFIED_V9">
 
@@ -87,7 +87,7 @@
 
         .verify-page-container {
             width: 100%;
-            max-width: 520px;
+            max-width: 1100px;
             animation: fadeInUp 0.5s ease;
             position: relative;
             z-index: 10;
@@ -229,44 +229,6 @@
         }
 
         .verify-info-card.info i {
-            color: #6b9ece;
-        }
-
-        /* Usage Instructions */
-        .verify-instructions {
-            margin-top: 24px;
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 16px;
-            padding: 20px;
-        }
-
-        .verify-instructions h3 {
-            font-size: 1rem;
-            color: #fff;
-            margin: 0 0 16px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .verify-instructions h3 i {
-            color: #fbbf24;
-        }
-
-        .verify-instructions ol {
-            margin: 0;
-            padding-left: 20px;
-            color: rgba(255, 255, 255, 0.7);
-            font-size: 0.9rem;
-            line-height: 1.8;
-        }
-
-        .verify-instructions code {
-            background: rgba(107, 158, 206, 0.15);
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-family: monospace;
-            font-size: 0.85rem;
             color: #6b9ece;
         }
 
@@ -421,16 +383,6 @@
 
                 <!-- Info Cards removed as requested -->
 
-                <!-- Instructions -->
-                <div class="verify-instructions">
-                    <h3><i class="fas fa-lightbulb"></i> <span data-i18n="verify.instructionsTitle">使用说明</span></h3>
-                    <ol>
-                        <li data-i18n="verify.instruction1">按顺序填写 <code>Gmail</code>、<code>密码</code> 和 <code>2FA Base32 密钥</code>，每次提交 1 个账号。</li>
-                        <li data-i18n="verify.instruction2">勾选高优先级后会优先排队；不勾选则按普通队列提交。</li>
-                        <li data-i18n="verify.instruction3">TOTP 需要填写验证器绑定时的 Base32 密钥，不是当前 6 位动态验证码。</li>
-                        <li data-i18n="verify.instruction4">系统只记录邮箱与结果，不在历史记录中展示密码和 TOTP 密钥；SSO 域名邮箱不受支持。</li>
-                    </ol>
-                </div>
             </div>
         </div>
 
@@ -456,7 +408,7 @@
     <script src="./starry-sky.js?v=1"></script>
 
     <!-- Verify Widget Script -->
-    <script src="./verify-widget.js?v=20260318_VERIFY_RING_HOMEPOD_3"></script>
+    <script src="./verify-widget.js?v=20260318_VERIFY_GUIDE_CARD_1"></script>
 
     <!-- Load price from config -->
     <script>
