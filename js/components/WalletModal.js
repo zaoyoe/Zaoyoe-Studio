@@ -1237,6 +1237,7 @@
 
             // Render UI immediately so there's zero delay for the user
             this.render();
+            this.resetOrderFilters();
             this.syncOrderSearchUi();
             const ordersContainer = document.getElementById('wallet-orders');
             if (ordersContainer) {
@@ -2878,6 +2879,11 @@
 
         triggerOrderSearch(force = false) {
             const normalizedQuery = String(this.orderSearchQuery || '').trim();
+
+            if (normalizedQuery) {
+                this.resetOrderFilters();
+            }
+
             if (!force && normalizedQuery === this.orderSearchActiveQuery && this.ordersLoaded) {
                 this.applyOrderFilter();
                 return;
@@ -2902,6 +2908,28 @@
                 if (!key || seen.has(key)) return false;
                 seen.add(key);
                 return true;
+            });
+        },
+
+        resetOrderFilters() {
+            this.orderFilter = 'all';
+            this.orderTimeFilter = 'all';
+            this.orderCustomDateStart = null;
+            this.orderCustomDateEnd = null;
+
+            const allLabel = window.i18n?.t('wallet.all') || '全部';
+            const orderFilterLabel = document.getElementById('order-filter-label');
+            const orderTimeFilterLabel = document.getElementById('order-time-filter-label');
+
+            if (orderFilterLabel) orderFilterLabel.textContent = allLabel;
+            if (orderTimeFilterLabel) orderTimeFilterLabel.textContent = allLabel;
+
+            document.querySelectorAll('#order-filter-popup .filter-option').forEach((opt) => {
+                opt.classList.toggle('active', opt.dataset.value === 'all');
+            });
+
+            document.querySelectorAll('#order-time-filter-popup .filter-option').forEach((opt) => {
+                opt.classList.toggle('active', opt.dataset.value === 'all');
             });
         },
 
@@ -3116,7 +3144,7 @@
             const isUuidQuery = this.isUuid(trimmedQuery);
             const numericQuery = Number(trimmedQuery);
             const isPositiveAmountQuery = /^\d+$/.test(trimmedQuery) && Number.isFinite(numericQuery) && numericQuery > 0;
-            const shouldSearchVerifyEmail = this.looksLikeEmail(trimmedQuery) || trimmedQuery.includes('@');
+            const shouldSearchVerifyLogs = trimmedQuery.length >= 3;
 
             const shopRequests = [
                 supabase
@@ -3189,7 +3217,7 @@
                 .ilike('title', likeValue)
                 .limit(30);
 
-            const verifyLogRequests = shouldSearchVerifyEmail ? [
+            const verifyLogRequests = shouldSearchVerifyLogs ? [
                 supabase
                     .from('verification_logs')
                     .select('verification_id, status, message, points_deducted, created_at')
@@ -3245,24 +3273,29 @@
                 }
             });
 
-            const verifyJobIds = [...new Set(
+            const verifyReferenceIds = [...new Set(
                 verifyLogRows.map((row) => {
                     const payload = this.parseVerifyLogMessage(row.message) || {};
                     const verificationId = String(row.verification_id || '').trim();
-                    const fallbackEmail = this.looksLikeEmail(verificationId) ? verificationId.toLowerCase() : '';
-                    const fallbackJobId = fallbackEmail ? '' : verificationId;
-                    return String(payload.job_id || fallbackJobId || '').trim();
-                }).filter(Boolean)
+                    const payloadJobId = String(payload.job_id || '').trim();
+                    const payloadEmail = String(payload.email || '').trim().toLowerCase();
+                    const refs = [
+                        verificationId,
+                        payloadJobId,
+                        payloadEmail
+                    ].map((value) => String(value || '').trim()).filter(Boolean);
+                    return refs;
+                }).flat().filter(Boolean)
             )];
 
-            if (verifyJobIds.length > 0) {
+            if (verifyReferenceIds.length > 0) {
                 ledgerRequests.push(
                     supabase
                         .from('points_ledger')
                         .select(ledgerSelect)
                         .eq('user_id', userId)
                         .eq('site', site)
-                        .in('reference_id', verifyJobIds.slice(0, 80))
+                        .in('reference_id', verifyReferenceIds.slice(0, 80))
                         .order('created_at', { ascending: false })
                         .limit(80)
                 );
@@ -3994,8 +4027,18 @@
 
                 const payload = verifyLog?.payload || {};
                 const statusMeta = this.getVerifyStatusMeta(verifyLog?.status || payload?.raw_status || '');
-                const taskId = String(referenceId || verifyLog?.verification_id || payload?.job_id || '').trim();
-                const accountEmail = String(payload?.email || '--').trim() || '--';
+                const normalizedReferenceId = String(referenceId || '').trim();
+                const taskId = String(
+                    payload?.job_id ||
+                    (this.looksLikeEmail(normalizedReferenceId) ? '' : normalizedReferenceId) ||
+                    verifyLog?.verification_id ||
+                    ''
+                ).trim();
+                const accountEmail = String(
+                    payload?.email ||
+                    (this.looksLikeEmail(normalizedReferenceId) ? normalizedReferenceId : '') ||
+                    '--'
+                ).trim() || '--';
                 const generatedLink = String(payload?.url || '').trim();
                 const errorMessage = String(payload?.error_message || '').trim();
                 const orderTimeText = this.formatOrderDateTime(createdAt);
