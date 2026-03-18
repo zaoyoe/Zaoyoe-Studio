@@ -14585,6 +14585,8 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
 #settings-view-affiliate .config-card {
     min-width: 0;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 #settings-view-affiliate .config-card .config-card-body {
@@ -14885,6 +14887,12 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
     .affiliate-poster-hint {
         white-space: normal;
+    }
+}
+
+@media (max-width: 768px) {
+    #settings-view-affiliate .module-content {
+        align-items: stretch;
     }
 }
 
