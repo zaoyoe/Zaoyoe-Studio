@@ -148,6 +148,13 @@
         return getLang() === 'zh' ? 'zh-CN' : 'en-US';
     }
 
+    function getShopUrl() {
+        const hostname = String(window.location.hostname || '').toLowerCase().replace(/^www\./, '');
+        if (hostname === 'zaoyoe.xyz') return 'https://www.zaoyoe.xyz/shop';
+        if (hostname === 'zaoyoe.com') return 'https://www.zaoyoe.com/shop';
+        return `${window.location.origin.replace(/\/$/, '')}/shop.html`;
+    }
+
     function t(key, fallback) {
         if (window.i18n && typeof window.i18n.t === 'function') {
             const translated = window.i18n.t(key);
@@ -553,6 +560,7 @@
         const supportedRegionsUrl = getLang() === 'zh'
             ? 'https://support.google.com/googleone/answer/9080668?hl=zh-Hans'
             : 'https://support.google.com/googleone/answer/9080668?hl=en';
+        const shopUrl = getShopUrl();
 
         container.innerHTML = `
             <div class="verify-widget ring-idle">
@@ -763,13 +771,16 @@
                                             <i class="fas fa-earth-asia"></i>
                                             <span>${t('verify.guideNoteRegion', '不需要拥有学生资格才能订阅，所有符合支持地区的账号都可以进行订阅，按步骤操作即可。')}</span>
                                         </div>
-                                        <div class="verify-guide-note">
-                                            <i class="fas fa-shield-halved"></i>
-                                            <span>${t('verify.guideNotePrivacy', '我们不会保存任何账户信息，提交的信息仅做订阅临时使用，订阅完成后自动销毁。为了账户安全，订阅完成后建议修改 2FA 码；不建议立即修改密码，以免触发封控。')}</span>
+                                        <div class="verify-guide-note verify-guide-note-privacy">
+                                            <div class="verify-guide-note-chip">
+                                                <i class="fas fa-shield-halved"></i>
+                                                <span>${t('verify.guidePrivacyBadge', '隐私与安全')}</span>
+                                            </div>
+                                            <div class="verify-guide-note-privacy-body">${t('verify.guideNotePrivacy', '我们不会保存任何账户信息，提交的信息仅做订阅临时使用，订阅完成后自动销毁。为了账户安全，订阅完成后建议修改 2FA 码；不建议立即修改密码，以免触发封控。')}</div>
                                         </div>
                                         <div class="verify-guide-note verify-guide-note-success">
                                             <i class="fas fa-credit-card"></i>
-                                            <span>${t('verify.guideNoteSuccessPrefix', '✅ 成功后：自行打开链接绑卡订阅。无卡可前往')}<a class="verify-guide-link verify-guide-link-inline" href="/shop.html">${t('verify.guideShopLink', '商城')}</a>${t('verify.guideNoteSuccessSuffix', '购卡。')}</span>
+                                            <span>${t('verify.guideNoteSuccessPrefix', '成功后：自行打开链接绑卡订阅。无卡可前往')}<a class="verify-guide-link verify-guide-link-inline" href="${shopUrl}" target="_blank" rel="noopener noreferrer">${t('verify.guideShopLink', '商城')}</a>${t('verify.guideNoteSuccessSuffix', '购卡。')}</span>
                                         </div>
                                     </div>
                                 </div>
