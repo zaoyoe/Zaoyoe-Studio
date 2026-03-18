@@ -693,6 +693,28 @@
                                         </div>
                                     </div>
                                 </div>
+
+                                <div class="verify-history-card" id="verifyHistoryCard">
+                                    <div class="verify-history-header">
+                                        <div class="verify-history-title">
+                                            <i class="fas fa-clock-rotate-left"></i>
+                                            ${t('verify.history', '任务历史')}
+                                        </div>
+                                        <div class="verify-history-actions">
+                                            <button class="verify-history-export" onclick="VerifyWidget.exportHistory()" title="导出 CSV">
+                                                <i class="fas fa-file-export"></i>
+                                            </button>
+                                            <button class="verify-history-refresh" onclick="VerifyWidget.loadHistory()" title="刷新">
+                                                <i class="fas fa-sync-alt"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="verify-history-list" id="verifyHistoryList">
+                                        <div class="verify-history-loading">
+                                            <i class="fas fa-spinner fa-spin"></i> ${t('verify.loading', '加载中...')}
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
 
                             <aside class="verify-guide-card">
@@ -760,28 +782,6 @@
                         <div class="verify-result-title" id="verifyResultTitle"></div>
                     </div>
                     <div class="verify-result-message" id="verifyResultMessage"></div>
-                </div>
-            </div>
-
-            <div class="verify-history-card" id="verifyHistoryCard">
-                <div class="verify-history-header">
-                    <div class="verify-history-title">
-                        <i class="fas fa-clock-rotate-left"></i>
-                        ${t('verify.history', '任务历史')}
-                    </div>
-                    <div class="verify-history-actions">
-                        <button class="verify-history-export" onclick="VerifyWidget.exportHistory()" title="导出 CSV">
-                            <i class="fas fa-file-export"></i>
-                        </button>
-                        <button class="verify-history-refresh" onclick="VerifyWidget.loadHistory()" title="刷新">
-                            <i class="fas fa-sync-alt"></i>
-                        </button>
-                    </div>
-                </div>
-                <div class="verify-history-list" id="verifyHistoryList">
-                    <div class="verify-history-loading">
-                        <i class="fas fa-spinner fa-spin"></i> ${t('verify.loading', '加载中...')}
-                    </div>
                 </div>
             </div>
         `;
