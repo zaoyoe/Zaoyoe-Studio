@@ -155,6 +155,27 @@
         return `${window.location.origin.replace(/\/$/, '')}/shop.html`;
     }
 
+    function openLoginGate() {
+        try {
+            if (typeof window.openLoginModal === 'function') {
+                const result = window.openLoginModal();
+                if (result && typeof result.catch === 'function') {
+                    result.catch((error) => {
+                        console.warn('[VerifyWidget] Failed to open login modal:', error);
+                    });
+                }
+                return true;
+            }
+            if (typeof window.toggleLoginModal === 'function') {
+                window.toggleLoginModal();
+                return true;
+            }
+        } catch (error) {
+            console.warn('[VerifyWidget] Failed to open login modal:', error);
+        }
+        return false;
+    }
+
     function t(key, fallback) {
         if (window.i18n && typeof window.i18n.t === 'function') {
             const translated = window.i18n.t(key);
@@ -554,8 +575,8 @@
     }
 
     function render(container, isLoggedIn = false) {
-        const loginDisplay = isLoggedIn ? 'none' : 'block';
-        const formDisplay = isLoggedIn ? 'block' : 'none';
+        const loginDisplay = 'none';
+        const formDisplay = 'block';
         const balanceDisplay = isLoggedIn ? 'flex' : 'none';
         const supportedRegionsUrl = getLang() === 'zh'
             ? 'https://support.google.com/googleone/answer/9080668?hl=zh-Hans'
@@ -915,8 +936,8 @@
             persistMergedCachedProfile(currentUser);
             await loadUserBalance();
         } else {
-            if (loginPrompt) loginPrompt.style.display = 'block';
-            if (form) form.style.display = 'none';
+            if (loginPrompt) loginPrompt.style.display = 'none';
+            if (form) form.style.display = 'block';
             if (balanceEl) balanceEl.style.display = 'none';
             if (clearCache) localStorage.removeItem('cached_user_profile');
         }
@@ -1192,6 +1213,18 @@
                 t('verify.serviceUnavailable', '服务维护中'),
                 t('verify.serviceUnavailable', '服务维护中，请稍后再试')
             );
+            return;
+        }
+
+        if (!currentUser) {
+            const opened = openLoginGate();
+            if (!opened) {
+                showSingleResult(
+                    'error',
+                    t('verify.pleaseLogin', '请先登录'),
+                    t('verify.loginPrompt', '登录后即可使用验证服务')
+                );
+            }
             return;
         }
 
