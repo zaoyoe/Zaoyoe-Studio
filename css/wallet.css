@@ -1324,6 +1324,22 @@ body.wallet-modal-lock {
     color: rgba(255, 255, 255, 0.38);
 }
 
+.history-search-input::-webkit-search-decoration,
+.history-search-input::-webkit-search-cancel-button,
+.history-search-input::-webkit-search-results-button,
+.history-search-input::-webkit-search-results-decoration {
+    -webkit-appearance: none;
+    appearance: none;
+    display: none;
+}
+
+.history-search-input::-ms-clear,
+.history-search-input::-ms-reveal {
+    display: none;
+    width: 0;
+    height: 0;
+}
+
 .history-search-input:focus {
     border-color: rgba(107, 158, 206, 0.55);
     background: rgba(255, 255, 255, 0.09);
