@@ -1899,6 +1899,10 @@ body.wallet-modal-lock {
         max-width: 250px;
     }
 
+    .history-search-input {
+        font-size: 13px !important;
+    }
+
     .history-actions {
         width: auto;
         margin-left: auto;
@@ -1944,6 +1948,10 @@ body.wallet-modal-lock {
         flex: 0 0 min(250px, 74vw);
         width: min(250px, 74vw);
         max-width: 250px;
+    }
+
+    .history-search-input {
+        font-size: 12px !important;
     }
 
     .history-actions {

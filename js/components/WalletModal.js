@@ -14,7 +14,7 @@
     console.log('[WalletModal] ✅ Initializing...');
 
     // Inject CSS if not already present
-    const walletCssHref = 'css/wallet.css?v=20260318_WALLET_ORDER_SEARCH_6';
+    const walletCssHref = 'css/wallet.css?v=20260318_WALLET_ORDER_SEARCH_7';
     const existingWalletCss = document.getElementById('wallet-modal-css');
     if (existingWalletCss) {
         existingWalletCss.href = walletCssHref;
@@ -1343,8 +1343,6 @@
                 <div class="wallet-backdrop" aria-hidden="true"></div>
                 <div class="wallet-viewport">
                     <div class="wallet-modal">
-                        <button class="wallet-close-btn" onclick="WalletModal.close()">✕</button>
-                        
                         <div class="wallet-header">
                             <h2>💰 ${window.i18n?.t('wallet.title') || '我的钱包'}</h2>
                         </div>
