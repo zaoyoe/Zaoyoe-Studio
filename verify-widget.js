@@ -26,6 +26,9 @@
     let hadOptimisticLogin = false;
     let authNullConfirmTimer = null;
     let walletBalanceListenerBound = false;
+    let previewMode = 'success';
+    let previewTimers = [];
+    let ringResetTimer = null;
 
     const ERROR_CODE_MAP = {
         invalid_api_key: { zh: 'API Key 无效或缺失', en: 'Invalid or missing API key' },
@@ -158,6 +161,159 @@
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#39;');
+    }
+
+    function clampProgress(value) {
+        const num = Number(value);
+        if (!Number.isFinite(num)) return 0;
+        return Math.max(0, Math.min(100, num));
+    }
+
+    function getWidgetElement() {
+        return document.querySelector(`#${CONFIG.containerId} .verify-widget`) || document.querySelector('.verify-widget');
+    }
+
+    function clearPreviewTimers() {
+        previewTimers.forEach((timer) => clearTimeout(timer));
+        previewTimers = [];
+    }
+
+    function clearRingResetTimer() {
+        if (ringResetTimer) {
+            clearTimeout(ringResetTimer);
+            ringResetTimer = null;
+        }
+    }
+
+    function setRingProgress(progress, visible = true) {
+        const widget = getWidgetElement();
+        if (!widget) return;
+
+        widget.style.setProperty('--verify-progress', `${clampProgress(progress)}%`);
+        widget.style.setProperty('--verify-progress-opacity', visible ? '1' : '0');
+    }
+
+    function applyRingState(state, progress = null) {
+        const widget = getWidgetElement();
+        if (!widget) return;
+
+        widget.classList.remove(
+            'ring-idle',
+            'ring-armed',
+            'ring-running',
+            'ring-success',
+            'ring-error',
+            'success-pulse',
+            'error-pulse'
+        );
+        widget.classList.add(`ring-${state}`);
+
+        if (state === 'idle') {
+            setRingProgress(progress ?? 0, false);
+            return;
+        }
+
+        if (state === 'armed') {
+            setRingProgress(progress ?? 18, true);
+            return;
+        }
+
+        if (state === 'running') {
+            setRingProgress(progress ?? 12, true);
+            return;
+        }
+
+        setRingProgress(progress ?? 100, true);
+    }
+
+    function syncRingStateFromInputs() {
+        if (isLoading) return;
+
+        const emailInput = document.getElementById('verifyEmailInput');
+        const passwordInput = document.getElementById('verifyPasswordInput');
+        const totpInput = document.getElementById('verifyTotpInput');
+        const email = String(emailInput?.value || '').trim();
+        const password = String(passwordInput?.value || '').trim();
+        const totp = String(totpInput?.value || '').trim();
+        const priority = !!document.getElementById('verifyPriorityToggle')?.checked;
+        const hasIntent = !!(email || password || totp || priority);
+        const isFocused = [emailInput, passwordInput, totpInput].some((input) => input && input === document.activeElement);
+
+        applyRingState(hasIntent || isFocused ? 'armed' : 'idle', hasIntent ? 22 : isFocused ? 12 : 0);
+    }
+
+    function triggerRingOutcome(outcome) {
+        const widget = getWidgetElement();
+        if (!widget) return;
+
+        clearRingResetTimer();
+        applyRingState(outcome, 100);
+        const pulseClass = outcome === 'success' ? 'success-pulse' : 'error-pulse';
+
+        widget.classList.remove('success-pulse', 'error-pulse');
+        void widget.offsetWidth;
+        widget.classList.add(pulseClass);
+
+        ringResetTimer = window.setTimeout(() => {
+            const currentWidget = getWidgetElement();
+            if (!currentWidget) return;
+            currentWidget.classList.remove('success-pulse', 'error-pulse', 'ring-success', 'ring-error');
+            syncRingStateFromInputs();
+        }, 3200);
+    }
+
+    function updateExecutionRing(data) {
+        const status = String(data?.status || '').toLowerCase();
+
+        if (status === 'queued') {
+            const queuePosition = Number(data?.queue_position);
+            const progress = Number.isFinite(queuePosition)
+                ? Math.max(12, Math.min(28, 30 - queuePosition * 3))
+                : 18;
+            applyRingState('running', progress);
+            return;
+        }
+
+        if (status === 'running') {
+            const elapsed = Number(data?.elapsed_seconds);
+            const progress = Number.isFinite(elapsed)
+                ? Math.min(92, 46 + elapsed * 1.4)
+                : 56;
+            applyRingState('running', progress);
+            return;
+        }
+
+        if (status === 'success' || status === 'failed') {
+            applyRingState('running', 100);
+            return;
+        }
+
+        applyRingState('running', 16);
+    }
+
+    function updatePreviewModeUI() {
+        document.querySelectorAll('.verify-preview-mode-btn').forEach((btn) => {
+            btn.classList.toggle('active', btn.dataset.mode === previewMode);
+        });
+    }
+
+    function setPreviewMode(mode) {
+        previewMode = mode === 'error' ? 'error' : 'success';
+        updatePreviewModeUI();
+    }
+
+    function setPreviewControlsDisabled(disabled, showRunningState = false) {
+        const previewBtn = document.getElementById('verifyPreviewBtn');
+        if (previewBtn) {
+            previewBtn.disabled = disabled;
+            previewBtn.innerHTML = disabled && showRunningState
+                ? `<div class="spinner"></div> ${t('verify.previewRunningBtn', '预执行中...')}`
+                : `<i class="fas fa-flask"></i> ${t('verify.previewRun', '预执行')}`;
+        }
+
+        document.querySelectorAll('.verify-preview-mode-btn').forEach((btn) => {
+            btn.disabled = disabled;
+        });
     }
 
     function formatBalanceValue(value) {
@@ -403,7 +559,7 @@
         const balanceDisplay = isLoggedIn ? 'flex' : 'none';
 
         container.innerHTML = `
-            <div class="verify-widget">
+            <div class="verify-widget ring-idle">
                 <div class="verify-widget-topline" aria-hidden="true">
                     <div class="verify-orbit-lights">
                         <span class="verify-orbit-light light-primary"></span>
@@ -528,6 +684,39 @@
                                     ${t('verify.startVerify', '提交账号')}
                                 </button>
                             </div>
+
+                            <div class="verify-preview-module">
+                                <div class="verify-preview-copy">
+                                    <strong>${t('verify.previewTitle', '预执行模块')}</strong>
+                                    <span>${t('verify.previewHint', '仅用于测试顶部星环和任务状态动效，不扣积分，也不会写入历史。')}</span>
+                                </div>
+                                <div class="verify-preview-toolbar">
+                                    <div class="verify-preview-mode" role="group" aria-label="${t('verify.previewModeLabel', '预执行结果')}">
+                                        <button
+                                            class="verify-preview-mode-btn"
+                                            id="verifyPreviewModeSuccess"
+                                            type="button"
+                                            data-mode="success"
+                                            onclick="VerifyWidget.setPreviewMode('success')"
+                                        >
+                                            ${t('verify.previewSuccessMode', '成功')}
+                                        </button>
+                                        <button
+                                            class="verify-preview-mode-btn"
+                                            id="verifyPreviewModeError"
+                                            type="button"
+                                            data-mode="error"
+                                            onclick="VerifyWidget.setPreviewMode('error')"
+                                        >
+                                            ${t('verify.previewFailureMode', '失败')}
+                                        </button>
+                                    </div>
+                                    <button class="verify-preview-btn" id="verifyPreviewBtn" type="button" onclick="VerifyWidget.runPreviewExecution()">
+                                        <i class="fas fa-flask"></i>
+                                        ${t('verify.previewRun', '预执行')}
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -592,9 +781,11 @@
         `;
 
         setupInputListener();
+        updatePreviewModeUI();
         updatePriceDisplay();
         updateQuotaDisplay();
         loadHistory();
+        syncRingStateFromInputs();
 
         if (!walletBalanceListenerBound) {
             window.addEventListener('walletBalanceUpdated', (e) => {
@@ -696,6 +887,8 @@
             if (balanceEl) balanceEl.style.display = 'none';
             if (clearCache) localStorage.removeItem('cached_user_profile');
         }
+
+        syncRingStateFromInputs();
     }
 
     async function loadUserBalance() {
@@ -731,19 +924,27 @@
         const emailInput = document.getElementById('verifyEmailInput');
         const passwordInput = document.getElementById('verifyPasswordInput');
         const totpInput = document.getElementById('verifyTotpInput');
+        const priorityToggle = document.getElementById('verifyPriorityToggle');
 
         [emailInput, passwordInput, totpInput].forEach((input) => {
             if (!input) return;
             input.addEventListener('input', () => {
                 const result = document.getElementById('verifyResult');
                 if (result) result.classList.remove('show');
+                syncRingStateFromInputs();
             });
+            input.addEventListener('focus', syncRingStateFromInputs);
+            input.addEventListener('blur', () => window.setTimeout(syncRingStateFromInputs, 0));
         });
 
         if (totpInput) {
             totpInput.addEventListener('input', () => {
                 totpInput.value = totpInput.value.toUpperCase().replace(/[^A-Z2-7]/g, '');
             });
+        }
+
+        if (priorityToggle) {
+            priorityToggle.addEventListener('change', syncRingStateFromInputs);
         }
     }
 
@@ -819,6 +1020,9 @@
         if (batch) batch.classList.remove('show');
         clearResultsList();
         hideBatchSummary();
+        clearPreviewTimers();
+        clearRingResetTimer();
+        syncRingStateFromInputs();
     }
 
     function togglePasswordVisibility() {
@@ -852,6 +1056,75 @@
 
         const singleCost = document.getElementById('verifySingleCost');
         if (singleCost) singleCost.textContent = CONFIG.pricePerVerify;
+    }
+
+    function prepareExecutionDisplay(label, waitingMessage) {
+        const batchPanel = document.getElementById('verifyBatchResults');
+        const singleResult = document.getElementById('verifyResult');
+
+        if (singleResult) singleResult.classList.remove('show');
+        if (batchPanel) batchPanel.classList.add('show');
+
+        batchStats = { success: 0, failed: 0, total: 1 };
+        activeTasks.clear();
+        clearResultsList();
+        hideBatchSummary();
+        addResultItem(0, label, 'processing', escapeHtml(waitingMessage));
+        updateBatchProgress(0, 1);
+        applyRingState('running', 10);
+    }
+
+    function runPreviewExecution() {
+        if (isLoading) return;
+
+        const label = String(document.getElementById('verifyEmailInput')?.value || '').trim().toLowerCase() || 'preview.demo@gmail.com';
+        const submitBtn = document.getElementById('verifySubmitBtn');
+        const resetBtn = document.getElementById('verifyResetBtn');
+        const previewSuccessUrl = 'https://one.google.com/partner-eft-onboard/PREVIEW-DEMO-LINK';
+
+        clearPreviewTimers();
+        clearRingResetTimer();
+        prepareExecutionDisplay(label, t('verify.previewQueued', '演示排队中...'));
+
+        isLoading = true;
+        if (submitBtn) submitBtn.disabled = true;
+        if (resetBtn) resetBtn.disabled = true;
+        setPreviewControlsDisabled(true, true);
+
+        previewTimers.push(window.setTimeout(() => {
+            updateResultItem(0, 'processing', escapeHtml(t('verify.previewQueuedDetail', '排队中 · 正在分配设备')));
+            applyRingState('running', 26);
+        }, 480));
+
+        previewTimers.push(window.setTimeout(() => {
+            updateResultItem(0, 'processing', escapeHtml(t('verify.previewRunningDetail', '执行中 · 模拟登录与领取流程')));
+            applyRingState('running', 64);
+        }, 1480));
+
+        previewTimers.push(window.setTimeout(() => {
+            clearPreviewTimers();
+
+            if (previewMode === 'success') {
+                batchStats.success = 1;
+                updateResultItem(
+                    0,
+                    'success',
+                    `${escapeHtml(t('verify.previewSuccessText', '链接获取成功'))}<div class="verify-result-link-row"><a class="verify-result-link" href="${escapeHtml(previewSuccessUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(previewSuccessUrl)}</a></div>`
+                );
+                updateBatchProgress(1, 1);
+                finishVerification({ skipRefresh: true, outcome: 'success' });
+                return;
+            }
+
+            batchStats.failed = 1;
+            updateResultItem(
+                0,
+                'error',
+                `${escapeHtml(t('verify.previewFailureDetail', '模拟执行失败 · 请检查账号或 2FA 配置'))}<div class="verify-result-subtle">${escapeHtml(t('verify.previewFailureStage', '失败阶段: 模拟领取流程'))}</div>`
+            );
+            updateBatchProgress(1, 1);
+            finishVerification({ skipRefresh: true, outcome: 'error' });
+        }, 2680));
     }
 
     async function logToHistory(email, status, payload = {}, pointsDeducted = 0) {
@@ -891,8 +1164,6 @@
 
         const submitBtn = document.getElementById('verifySubmitBtn');
         const resetBtn = document.getElementById('verifyResetBtn');
-        const batchPanel = document.getElementById('verifyBatchResults');
-        const singleResult = document.getElementById('verifyResult');
 
         if (!submitBtn) return;
 
@@ -926,20 +1197,15 @@
             return;
         }
 
-        if (singleResult) singleResult.classList.remove('show');
-        if (batchPanel) batchPanel.classList.add('show');
-
-        batchStats = { success: 0, failed: 0, total: 1 };
-        activeTasks.clear();
-        clearResultsList();
-        hideBatchSummary();
-        addResultItem(0, entry.email, 'processing', escapeHtml(t('verify.waiting', '等待提交...')));
-        updateBatchProgress(0, 1);
+        clearPreviewTimers();
+        clearRingResetTimer();
+        prepareExecutionDisplay(entry.email, t('verify.waiting', '等待提交...'));
 
         isLoading = true;
         submitBtn.disabled = true;
         submitBtn.innerHTML = `<div class="spinner"></div> ${t('verify.verifying', '提交中...')}`;
         if (resetBtn) resetBtn.disabled = true;
+        setPreviewControlsDisabled(true);
 
         let userId = currentUser?.id || currentUser?.user_id;
 
@@ -955,7 +1221,7 @@
                 const errorMessage = error.message || t('verify.pleaseLogin', '请先登录');
                 updateResultItem(entry.index, 'error', escapeHtml(errorMessage));
                 batchStats.failed = 1;
-                finishVerification();
+                finishVerification({ outcome: 'error' });
                 return;
             }
         }
@@ -993,7 +1259,7 @@
                     error_message: errorText,
                     raw_status: 'submit_failed'
                 });
-                finishVerification();
+                finishVerification({ outcome: 'error' });
                 return;
             }
 
@@ -1008,7 +1274,7 @@
                     error_message: errorText,
                     raw_status: 'missing_job_id'
                 });
-                finishVerification();
+                finishVerification({ outcome: 'error' });
                 return;
             }
 
@@ -1024,6 +1290,7 @@
                 estimated_wait_seconds: data.estimated_wait_seconds
             });
             updateResultItem(entry.index, display.status, display.html);
+            updateExecutionRing(data);
 
             pollTask(jobId, userId, entry).then((result) => {
                 if (result.success) {
@@ -1038,7 +1305,7 @@
                 }
 
                 updateBatchProgress(1, 1);
-                finishVerification();
+                finishVerification({ outcome: result.success ? 'success' : 'error' });
             });
         } catch (error) {
             const errorText = error.message || t('verify.loadFailed', '提交失败');
@@ -1050,7 +1317,7 @@
                 error_message: errorText,
                 raw_status: 'submit_error'
             });
-            finishVerification();
+            finishVerification({ outcome: 'error' });
         }
     }
 
@@ -1106,6 +1373,7 @@
 
                     const display = getResultDisplay(data);
                     updateResultItem(entry.index, display.status, display.html);
+                    updateExecutionRing(data);
 
                     if (display.terminal) {
                         clearInterval(timer);
@@ -1131,9 +1399,11 @@
         return false;
     }
 
-    function finishVerification() {
+    function finishVerification(options = {}) {
+        const { skipRefresh = false, outcome = '' } = options;
         isLoading = false;
         activeTasks.clear();
+        clearPreviewTimers();
 
         const submitBtn = document.getElementById('verifySubmitBtn');
         const resetBtn = document.getElementById('verifyResetBtn');
@@ -1142,11 +1412,22 @@
             submitBtn.innerHTML = `<i class="fas fa-paper-plane"></i> ${t('verify.startVerify', '提交账号')}`;
         }
         if (resetBtn) resetBtn.disabled = false;
+        setPreviewControlsDisabled(false);
 
         showBatchSummary();
-        loadUserBalance();
-        loadApiQuota();
-        loadHistory();
+        updateQuotaDisplay();
+
+        if (!skipRefresh) {
+            loadUserBalance();
+            loadApiQuota();
+            loadHistory();
+        }
+
+        if (outcome === 'success' || outcome === 'error') {
+            triggerRingOutcome(outcome);
+        } else {
+            syncRingStateFromInputs();
+        }
 
         if (CONFIG.enabled === false) {
             applyMaintenanceState();
@@ -1245,6 +1526,7 @@
         const msgEl = document.getElementById('verifyResultMessage');
         if (titleEl) titleEl.textContent = title;
         if (msgEl) msgEl.textContent = message;
+        syncRingStateFromInputs();
     }
 
     function getHistoryStatusCss(status) {
@@ -1467,6 +1749,8 @@
         cancel,
         resetForm,
         togglePasswordVisibility,
+        runPreviewExecution,
+        setPreviewMode,
         reload: loadConfig,
         loadHistory,
         exportHistory,
