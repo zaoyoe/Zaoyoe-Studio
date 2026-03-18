@@ -424,6 +424,7 @@
         "verifyOrderName": "Google One 试用链接",
         "verifyDetails": "Google One 订单详情",
         "verifyServiceType": "Google One",
+        "rechargeDetails": "充值详情",
         "taskNumber": "任务编号",
         "googleAccount": "Google 账号",
         "completedAt": "完成时间",

@@ -877,6 +877,48 @@
             return window.i18n?.t('wallet.verifyOrderName') || 'Google One Pro 试用链接';
         },
 
+        isShopLedgerReason(reason = '', referenceId = '') {
+            const normalizedReason = String(reason || '').trim().toLowerCase();
+            const normalizedRef = String(referenceId || '').trim().toUpperCase();
+            return normalizedReason.startsWith('商城购买:') ||
+                normalizedReason.startsWith('shop purchase:') ||
+                normalizedRef.startsWith('SHOP_ORDER_');
+        },
+
+        getShopOrderIdFromReference(referenceId = '') {
+            const normalizedRef = String(referenceId || '').trim();
+            if (!normalizedRef) return '';
+            if (normalizedRef.startsWith('SHOP_ORDER_')) {
+                return normalizedRef.slice('SHOP_ORDER_'.length);
+            }
+            return normalizedRef;
+        },
+
+        getRechargeDisplayName(reason = '') {
+            const rawReason = String(reason || '').trim();
+            if (!rawReason) {
+                return window.i18n?.t('wallet.rechargeType') || '充值';
+            }
+
+            if (rawReason.startsWith('模拟充值:')) {
+                return rawReason.replace('模拟充值:', '').trim() || (window.i18n?.t('wallet.rechargeType') || '充值');
+            }
+
+            if (rawReason.startsWith('模拟充值：')) {
+                return rawReason.replace('模拟充值：', '').trim() || (window.i18n?.t('wallet.rechargeType') || '充值');
+            }
+
+            if (rawReason === 'package_purchase') {
+                return window.i18n?.t('wallet.rechargeType') || '充值';
+            }
+
+            if (rawReason === 'afdian_recharge') {
+                return 'Afdian';
+            }
+
+            return rawReason;
+        },
+
         looksLikeEmail(value = '') {
             return /^[^\s@]+@[^\s@]+\.[^\s@]+$/i.test(String(value || '').trim());
         },
@@ -1881,6 +1923,12 @@
 
                 // Show success toast immediately (don't wait for data refresh)
                 this.showToast('✅ 充值成功！', 'success');
+
+                // Refresh order data immediately so new recharge records appear without reopening the wallet
+                this._prefetchedShopOrders = null;
+                this._prefetchedLedger = null;
+                this.ordersLoaded = false;
+                this.loadOrders().catch(e => console.error('Order reload after recharge failed:', e));
 
                 // Refresh data in background to show new balance
                 this.loadData();
@@ -3108,6 +3156,7 @@
                     let transactionType = 'other';
                     let displayName = entry.reason || '交易';
                     let icon = '💳';
+                    let shopOrderId = '';
 
                     // Categorize by reason
                     if (entry.reason === 'unlock_prompt') {
@@ -3118,6 +3167,14 @@
                         transactionType = 'verify';
                         displayName = this.getVerifyDisplayName();
                         icon = '🔑';
+                    } else if (this.isShopLedgerReason(entry.reason, entry.reference_id)) {
+                        transactionType = 'shop';
+                        displayName = String(entry.reason || '')
+                            .replace(/^商城购买[:：]\s*/i, '')
+                            .replace(/^shop purchase[:：]\s*/i, '')
+                            .trim() || (window.i18n?.t('wallet.shopPurchase') || '商品');
+                        icon = '🛒';
+                        shopOrderId = this.getShopOrderIdFromReference(entry.reference_id);
                     } else if (entry.reason === 'daily_checkin') {
                         transactionType = 'recharge'; // Or whatever visual category is appropriate (positive)
                         displayName = window.i18n?.t('wallet.dailyCheckin') || '每日签到';
@@ -3125,7 +3182,7 @@
                     } else if (entry.reason && (entry.reason.startsWith('模拟充值') || entry.reason === 'package_purchase' || entry.reason === 'afdian_recharge')) {
                         // Package recharges (mock or real)
                         transactionType = 'recharge';
-                        displayName = entry.reason.replace('模拟充值:', '').replace('模拟充值：', '').trim() || '积分充值';
+                        displayName = this.getRechargeDisplayName(entry.reason);
                         icon = '⚡';
                     } else if (entry.reason === 'redeem_code' || (entry.reason && entry.reason.includes('兑换码'))) {
                         transactionType = 'redeem';
@@ -3162,6 +3219,7 @@
                         promptId: entry.reason === 'unlock_prompt' ? entry.reference_id : null,
                         redeemCode: transactionType === 'redeem' ? entry.reference_id : null,
                         referenceId: entry.reference_id || '',
+                        shopOrderId,
                         rawReason: entry.reason || '',
                         icon: icon
                     };
@@ -3172,11 +3230,24 @@
                     ...order,
                     transactionType: 'shop',
                     isShopOrder: true,
+                    shopOrderId: order.id,
                     icon: '🛒'
                 }));
 
+                const realShopOrderIds = new Set(
+                    shopOrdersList
+                        .map(order => String(order.shopOrderId || order.id || '').trim())
+                        .filter(Boolean)
+                );
+
+                const dedupedLedgerOrders = ledgerOrders.filter((order) => {
+                    if (order.transactionType !== 'shop') return true;
+                    if (!order.shopOrderId) return true;
+                    return !realShopOrderIds.has(String(order.shopOrderId).trim());
+                });
+
                 // Merge and sort by date
-                const allOrders = [...shopOrdersList, ...ledgerOrders].sort((a, b) =>
+                const allOrders = [...shopOrdersList, ...dedupedLedgerOrders].sort((a, b) =>
                     new Date(b.created_at) - new Date(a.created_at)
                 );
 
@@ -3252,7 +3323,11 @@
                         displayName = isEnglish ? `${displayName} +${count - 1} ${itemsText}` : `${displayName} 等 ${count} ${itemsText}`;
                     }
                     displayName = `<i class="fas fa-shopping-bag" style="color: #22c55e;"></i> ${this.escapeHtml(displayName)}`;
-                    clickHandler = `WalletModal.showOrderDetail('${order.id}')`;
+                    if (order.isShopOrder && (order.shopOrderId || order.id)) {
+                        clickHandler = `WalletModal.showOrderDetail('${String(order.shopOrderId || order.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')`;
+                    } else {
+                        clickHandler = `WalletModal.showRechargeOrderDetail('${order.id}', -${Math.abs(order.total_price || order.amount || 0)}, '${order.created_at}', '${String(order.rawReason || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}', '${String(order.referenceId || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')`;
+                    }
 
                     // Map status for shop orders
                     const statusMap = {
@@ -3265,7 +3340,7 @@
                     statusClass = statusInfo.class;
                 } else if (order.transactionType === 'recharge') {
                     displayName = `<i class="fas fa-bolt" style="color: #fbbf24;"></i> ${this.escapeHtml(order.snapshot_product_name)}`;
-                    clickHandler = ''; // No detail view for recharge
+                    clickHandler = `WalletModal.showRechargeOrderDetail('${order.id}', ${Number(order.amount || order.total_price || 0)}, '${order.created_at}', '${String(order.rawReason || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}', '${String(order.referenceId || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')`;
                 } else if (order.transactionType === 'redeem') {
                     displayName = `<i class="fas fa-ticket-alt" style="color: #f472b6;"></i> ${this.escapeHtml(order.snapshot_product_name)}`;
                     clickHandler = `WalletModal.showRedeemOrderDetail('${order.id}', ${order.amount}, '${order.created_at}', '${order.redeemCode || ''}')`;
@@ -3418,6 +3493,88 @@
             `;
 
             document.body.appendChild(detailOverlay);
+        },
+
+        showRechargeOrderDetail(orderId, amount, createdAt, reason = '', referenceId = '') {
+            const date = new Date(createdAt);
+            const dateStr = `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
+            const displayName = this.getRechargeDisplayName(reason);
+            const normalizedAmount = Number(amount) || 0;
+            const titleText = normalizedAmount >= 0
+                ? (window.i18n?.t('wallet.rechargeDetails') || '充值详情')
+                : (window.i18n?.t('wallet.orderDetails') || '订单详情');
+            const typeLabel = normalizedAmount >= 0
+                ? (window.i18n?.t('wallet.rechargeType') || '充值')
+                : (window.i18n?.t('wallet.shopPurchase') || '商品');
+            const pointsLabel = `${normalizedAmount >= 0 ? '+' : '-'}${Math.abs(normalizedAmount)} ${window.i18n?.t('wallet.pointsUnit') || '积分'}`;
+            const amountColor = normalizedAmount >= 0 ? '#10b981' : '#f87171';
+            const shortOrderId = orderId ? `${orderId.substring(0, 8)}...${orderId.slice(-4)}` : '--';
+            const shortRefId = referenceId ? `${referenceId.substring(0, 10)}...${referenceId.slice(-4)}` : '--';
+
+            const detailOverlay = document.createElement('div');
+            detailOverlay.className = 'wallet-order-modal-overlay';
+            detailOverlay.onclick = (e) => {
+                if (e.target === detailOverlay) detailOverlay.remove();
+            };
+
+            detailOverlay.innerHTML = `
+                <div class="wallet-order-modal">
+                    <div class="wallet-order-modal-header">
+                        <div class="wallet-order-modal-title">
+                            <i class="fas ${normalizedAmount >= 0 ? 'fa-bolt' : 'fa-shopping-bag'}" style="color: ${normalizedAmount >= 0 ? '#fbbf24' : '#22c55e'};"></i> ${this.escapeHtml(titleText)}
+                        </div>
+                        <button class="wallet-order-close-btn" onclick="this.closest('.wallet-order-modal-overlay').remove()">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div class="wallet-order-modal-body">
+                        <div class="meta-section">
+                            <div class="detail-row">
+                                <span class="detail-label">${window.i18n?.t('wallet.orderNumber') || '订单编号'}</span>
+                                <span class="detail-val mono js-copy-ledger-order" style="cursor:pointer;" title="${window.i18n?.t('wallet.clickToCopy') || '点击复制'}">${this.escapeHtml(shortOrderId)}</span>
+                            </div>
+                            ${referenceId ? `
+                            <div class="detail-row">
+                                <span class="detail-label">${window.i18n?.t('wallet.businessRef') || '业务关联'}</span>
+                                <span class="detail-val mono js-copy-ledger-ref" style="cursor:pointer;" title="${window.i18n?.t('wallet.clickToCopy') || '点击复制'}">${this.escapeHtml(shortRefId)}</span>
+                            </div>
+                            ` : ''}
+                            <div class="detail-row">
+                                <span class="detail-label">${window.i18n?.t('wallet.transactionType') || '交易类型'}</span>
+                                <span class="detail-val" style="color: #fbbf24;">${this.escapeHtml(typeLabel)}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">${window.i18n?.t('wallet.productName') || '商品名称'}</span>
+                                <span class="detail-val">${this.escapeHtml(displayName || '--')}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">${window.i18n?.t('wallet.orderTime') || '下单时间'}</span>
+                                <span class="detail-val">${this.escapeHtml(dateStr)}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">${normalizedAmount >= 0 ? (window.i18n?.t('wallet.receivedPoints') || '获得积分') : (window.i18n?.t('wallet.pointsPaid') || '支付积分')}</span>
+                                <span class="detail-val" style="color: ${amountColor}; font-weight: 600;">${this.escapeHtml(pointsLabel)}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">${window.i18n?.t('wallet.status') || '状态'}</span>
+                                <span class="detail-val" style="color: #10b981;">✓ ${window.i18n?.t('wallet.completed') || '已完成'}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(detailOverlay);
+
+            detailOverlay.querySelector('.js-copy-ledger-order')?.addEventListener('click', (event) => {
+                this.copyToClipboard(orderId, event);
+            });
+
+            if (referenceId) {
+                detailOverlay.querySelector('.js-copy-ledger-ref')?.addEventListener('click', (event) => {
+                    this.copyToClipboard(referenceId, event);
+                });
+            }
         },
 
         /**

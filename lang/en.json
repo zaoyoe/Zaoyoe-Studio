@@ -424,6 +424,7 @@
         "verifyOrderName": "Google One Trial Link",
         "verifyDetails": "Google One Order Details",
         "verifyServiceType": "Google One",
+        "rechargeDetails": "Recharge Details",
         "taskNumber": "Task ID",
         "googleAccount": "Google Account",
         "completedAt": "Completed At",
