@@ -1231,6 +1231,7 @@
             this.browseOrdersSnapshot = [];
             this.orderRequestId += 1;
             this.resetOrderSearchState();
+            this.resetAffiliateState();
 
             if (isWalletModalIOSMode()) {
                 freezeWalletModalPage();
@@ -1312,6 +1313,7 @@
             this.ordersLoading = false;
             this.orderRequestId += 1;
             this.resetOrderSearchState();
+            this.resetAffiliateState();
             this._prefetched = false; // Allow prefetch on next dropdown open
             console.log('[WalletModal] Closed');
         },
@@ -1679,6 +1681,29 @@
             }
         },
 
+        resetAffiliateState() {
+            this.affiliateLoaded = false;
+            this.currentInviteCode = '';
+        },
+
+        renderAffiliateDescription(commissionRateShop, registrationRewardPoints) {
+            const descEl = document.getElementById('affiliate-desc-text');
+            if (!descEl) return;
+
+            const parsedCommissionRate = Number(commissionRateShop);
+            const safeCommissionRate = Number.isFinite(parsedCommissionRate) ? parsedCommissionRate : 0.10;
+            const parsedRegistrationReward = Number(registrationRewardPoints);
+            const safeRegistrationReward = Number.isFinite(parsedRegistrationReward) ? parsedRegistrationReward : 0;
+            const ratePercent = `${(safeCommissionRate * 100).toFixed(0)}%`;
+
+            if (safeRegistrationReward > 0) {
+                descEl.innerHTML = `分享专属链接邀请新用户。当好友注册并在商城<strong>完成首笔充值或消费</strong>后，您将获得 <strong style="color:#10b981; font-weight:600;">${safeRegistrationReward} 积分</strong> 专属拉新奖励！此外，还会自动无上限将好友所有订单金额的 <strong style="color:#f59e0b; font-weight:600;">${ratePercent}</strong> 作为持久佣金返还给您。`;
+                return;
+            }
+
+            descEl.innerHTML = `分享下方链接给好友。当好友注册并在商城完成消费时，系统会自动将订单金额的 <strong style="color:#f59e0b; font-weight:600;">${ratePercent}</strong> 作为奖励发放至您的积分钱包。`;
+        },
+
         /**
          * Affiliate Logic
          */
@@ -1695,35 +1720,42 @@
                 if (error) throw error;
 
                 if (data) {
+                    const stats = (data && typeof data === 'object' && !Array.isArray(data)) ? data : {};
                     const commissionEl = document.getElementById('affiliate-commission');
                     const countEl = document.getElementById('affiliate-count');
                     const linkEl = document.getElementById('affiliate-link');
+                    const peopleLabel = window.i18n?.t('wallet.people') || '人';
+                    const totalCommission = Number(stats.total_commission);
+                    const invitedCount = Number(stats.invited_count);
+                    const inviteCode = typeof stats.invite_code === 'string' ? stats.invite_code.trim() : '';
 
-                    if (commissionEl) commissionEl.textContent = data.total_commission;
-                    if (countEl) countEl.textContent = data.invited_count + ' ' + (window.i18n?.t('wallet.people') || '人');
-
-                    const descEl = document.getElementById('affiliate-desc-text');
-                    if (descEl && data.commission_rate_shop !== undefined) {
-                        const ratePercent = (data.commission_rate_shop * 100).toFixed(0) + '%';
-                        const regPoints = data.registration_reward_points || 0;
-
-                        if (regPoints > 0) {
-                            descEl.innerHTML = `分享专属链接邀请新用户。当好友注册并在商城<strong>完成首笔充值或消费</strong>后，您将获得 <strong style="color:#10b981; font-weight:600;">${regPoints} 积分</strong> 专属拉新奖励！此外，还会自动无上限将好友所有订单金额的 <strong style="color:#f59e0b; font-weight:600;">${ratePercent}</strong> 作为持久佣金返还给您。`;
-                        } else {
-                            descEl.innerHTML = `分享下方链接给好友。当好友注册并在商城完成消费时，系统会自动将订单金额的 <strong style="color:#f59e0b; font-weight:600;">${ratePercent}</strong> 作为奖励发放至您的积分钱包。`;
-                        }
+                    if (commissionEl) {
+                        commissionEl.textContent = Number.isFinite(totalCommission)
+                            ? totalCommission.toLocaleString()
+                            : '0';
                     }
 
-                    if (linkEl && data.invite_code) {
+                    if (countEl) {
+                        const safeInvitedCount = Number.isFinite(invitedCount) ? invitedCount : 0;
+                        countEl.innerHTML = `${safeInvitedCount} <span style="font-size:14px; color:rgba(255,255,255,0.5); font-weight:normal; font-family:sans-serif;">${peopleLabel}</span>`;
+                    }
+
+                    this.renderAffiliateDescription(stats.commission_rate_shop, stats.registration_reward_points);
+
+                    if (linkEl && inviteCode) {
                         const baseUrl = window.location.origin + window.location.pathname;
-                        linkEl.value = `${baseUrl}?ref=${data.invite_code}`;
+                        linkEl.value = `${baseUrl}?ref=${inviteCode}`;
                     }
 
-                    this.currentInviteCode = data.invite_code;
+                    this.currentInviteCode = inviteCode;
                 }
                 this.affiliateLoaded = true;
             } catch (err) {
                 console.error('[WalletModal] Load Affiliate Error:', err);
+                const descEl = document.getElementById('affiliate-desc-text');
+                if (descEl) {
+                    descEl.textContent = '推广信息加载失败，请稍后重试。';
+                }
             }
         },
 
