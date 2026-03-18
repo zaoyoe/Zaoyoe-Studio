@@ -1692,12 +1692,16 @@
             this.currentInviteCode = '';
             this.affiliateStats = null;
             this.affiliatePosterConfig = null;
+            this.affiliateProfile = null;
         },
 
         getDefaultAffiliatePosterConfig() {
             return {
+                chip_label: window.i18n?.t('wallet.affiliate') || '推广',
                 title: window.i18n?.t('wallet.posterTitle') || '专属邀请函',
                 subtitle: window.i18n?.t('wallet.posterSubtitle') || '扫码注册 · 即享专属奖励',
+                reward_badge_text: '',
+                invite_code_label: window.i18n?.t('wallet.inviteCode') || '邀请码',
                 qr_label: window.i18n?.t('wallet.posterScan') || '扫码注册领取新人福利',
                 footer: window.i18n?.t('wallet.posterJoin') || '邀请好友注册，享受固定奖励与持续返佣',
                 active_template_id: 'midnight',
@@ -1744,8 +1748,11 @@
                 : defaults.active_template_id;
 
             return {
+                chip_label: typeof source.chip_label === 'string' && source.chip_label.trim() ? source.chip_label.trim() : defaults.chip_label,
                 title: typeof source.title === 'string' && source.title.trim() ? source.title.trim() : defaults.title,
                 subtitle: typeof source.subtitle === 'string' && source.subtitle.trim() ? source.subtitle.trim() : defaults.subtitle,
+                reward_badge_text: typeof source.reward_badge_text === 'string' ? source.reward_badge_text.trim() : defaults.reward_badge_text,
+                invite_code_label: typeof source.invite_code_label === 'string' && source.invite_code_label.trim() ? source.invite_code_label.trim() : defaults.invite_code_label,
                 qr_label: typeof source.qr_label === 'string' && source.qr_label.trim() ? source.qr_label.trim() : defaults.qr_label,
                 footer: typeof source.footer === 'string' && source.footer.trim() ? source.footer.trim() : defaults.footer,
                 active_template_id: activeTemplateId,
@@ -1812,6 +1819,75 @@
             const parsed = Number(value);
             const safe = Number.isFinite(parsed) ? parsed : 0;
             return `${(safe * 100).toFixed(digits)}%`;
+        },
+
+        getCachedUserProfile() {
+            try {
+                const cached = localStorage.getItem('cached_user_profile');
+                if (!cached) return {};
+                const parsed = JSON.parse(cached);
+                return parsed && typeof parsed === 'object' ? parsed : {};
+            } catch (error) {
+                console.warn('[WalletModal] Failed to parse cached user profile:', error);
+                return {};
+            }
+        },
+
+        getProfileDisplayName(profile = {}, user = {}) {
+            const candidates = [
+                profile.display_name,
+                profile.username,
+                profile.nickname,
+                user.user_metadata?.display_name,
+                user.user_metadata?.full_name,
+                user.user_metadata?.name,
+                user.user_metadata?.user_name,
+                user.email ? user.email.split('@')[0] : ''
+            ];
+
+            const matched = candidates.find(value => typeof value === 'string' && value.trim());
+            return matched ? matched.trim() : 'U';
+        },
+
+        getProfileAvatarUrl(profile = {}, user = {}) {
+            const candidates = [
+                profile.avatar_url,
+                profile.avatarUrl,
+                user.user_metadata?.avatar_url,
+                user.user_metadata?.avatarUrl,
+                user.user_metadata?.picture
+            ];
+
+            const matched = candidates.find(value => typeof value === 'string' && value.trim());
+            return matched ? matched.trim() : '';
+        },
+
+        getPosterInitial(name = '') {
+            const safeName = String(name || '').trim();
+            return safeName ? safeName.charAt(0).toUpperCase() : 'U';
+        },
+
+        getPosterRewardBadgeText(stats = this.affiliateStats || {}, posterConfig = this.affiliatePosterConfig || {}) {
+            const registrationRewardPoints = Number(stats.registration_reward_points);
+            const safeRegistrationRewardPoints = Number.isFinite(registrationRewardPoints) ? registrationRewardPoints : 0;
+            const commissionRateShop = Number(stats.commission_rate_shop);
+            const safeCommissionRateShop = Number.isFinite(commissionRateShop) ? commissionRateShop : 0.10;
+            const customTemplate = typeof posterConfig.reward_badge_text === 'string' ? posterConfig.reward_badge_text.trim() : '';
+
+            if (!customTemplate) {
+                return [
+                    safeRegistrationRewardPoints > 0 ? `拉新奖励 ${safeRegistrationRewardPoints} 积分` : '',
+                    `商城返佣 ${this.formatAffiliatePercent(safeCommissionRateShop)}`
+                ].filter(Boolean).join(' · ');
+            }
+
+            return customTemplate
+                .replace(/\{registration_reward_text\}/g, safeRegistrationRewardPoints > 0 ? `${safeRegistrationRewardPoints} 积分` : '未开启')
+                .replace(/\{registration_reward\}/g, String(safeRegistrationRewardPoints))
+                .replace(/\{shop_commission\}/g, this.formatAffiliatePercent(safeCommissionRateShop))
+                .replace(/\{shop_commission_rate\}/g, this.formatAffiliatePercent(safeCommissionRateShop))
+                .replace(/\s+/g, ' ')
+                .trim();
         },
 
         getAffiliateRewardExplanation(stats = this.affiliateStats || {}) {
@@ -1937,6 +2013,26 @@
                     this.affiliateStats = stats;
                     this.affiliatePosterConfig = posterConfig;
 
+                    const cachedProfile = this.getCachedUserProfile();
+                    const profileResult = await window.supabaseClient
+                        .from('profiles')
+                        .select('display_name, username, avatar_url')
+                        .eq('id', user.id)
+                        .maybeSingle();
+
+                    if (profileResult?.error) {
+                        console.warn('[WalletModal] Affiliate profile load warning:', profileResult.error);
+                    }
+
+                    const profileSource = profileResult?.data && typeof profileResult.data === 'object'
+                        ? { ...cachedProfile, ...profileResult.data }
+                        : cachedProfile;
+
+                    this.affiliateProfile = {
+                        displayName: this.getProfileDisplayName(profileSource, user),
+                        avatarUrl: this.getProfileAvatarUrl(profileSource, user)
+                    };
+
                     this.renderAffiliateDescription(stats);
 
                     if (linkEl && inviteCode) {
@@ -1990,17 +2086,12 @@
                 const posterConfig = this.normalizeAffiliatePosterConfig(this.affiliatePosterConfig);
                 const activeTemplate = posterConfig.templates.find(template => template.id === posterConfig.active_template_id) || posterConfig.templates[0];
                 const preset = this.getAffiliatePosterPreset(activeTemplate?.id);
-                const registrationRewardPoints = Number(stats.registration_reward_points);
-                const safeRegistrationRewardPoints = Number.isFinite(registrationRewardPoints) ? registrationRewardPoints : 0;
-                const commissionRateShop = Number(stats.commission_rate_shop);
-                const safeCommissionRateShop = Number.isFinite(commissionRateShop) ? commissionRateShop : 0.10;
                 const legalDisclaimer = typeof stats.legal_disclaimer === 'string' && stats.legal_disclaimer.trim()
                     ? stats.legal_disclaimer.trim()
                     : '活动最终解释权归平台所有';
-                const rewardSummary = [
-                    safeRegistrationRewardPoints > 0 ? `拉新奖励 ${safeRegistrationRewardPoints} 积分` : '',
-                    `商城返佣 ${this.formatAffiliatePercent(safeCommissionRateShop)}`
-                ].filter(Boolean).join(' · ');
+                const rewardSummary = this.getPosterRewardBadgeText(stats, posterConfig);
+                const profileDisplayName = this.affiliateProfile?.displayName || 'U';
+                const profileInitial = this.getPosterInitial(profileDisplayName);
 
                 const canvas = document.createElement('canvas');
                 const ctx = canvas.getContext('2d');
@@ -2050,76 +2141,115 @@
                 ctx.restore();
 
                 // Header chip
-                this.drawRoundedRect(ctx, 72, 76, 194, 52, 26);
+                ctx.font = '700 24px "Helvetica Neue", Arial, sans-serif';
+                const chipLabel = posterConfig.chip_label || (window.i18n?.t('wallet.affiliate') || '推广');
+                const chipWidth = Math.max(144, Math.min(280, ctx.measureText(chipLabel).width + 64));
+                this.drawRoundedRect(ctx, 72, 76, chipWidth, 52, 26);
                 ctx.fillStyle = preset.badgeBg;
                 ctx.fill();
                 ctx.fillStyle = preset.badgeText;
-                ctx.font = '700 24px "Helvetica Neue", Arial, sans-serif';
                 ctx.textAlign = 'left';
-                ctx.fillText(window.i18n?.t('wallet.affiliate') || '推广', 104, 109);
-
-                // Reward summary badge
-                if (rewardSummary) {
-                    this.drawRoundedRect(ctx, 72, 446, Math.min(620, 170 + rewardSummary.length * 20), 66, 24);
-                    ctx.fillStyle = preset.badgeBg;
-                    ctx.fill();
-                    ctx.fillStyle = preset.badgeText;
-                    ctx.font = '600 26px "Helvetica Neue", Arial, sans-serif';
-                    ctx.fillText(rewardSummary, 102, 488);
-                }
+                ctx.fillText(chipLabel, 104, 109);
 
                 // Title + Subtitle
                 ctx.fillStyle = preset.text;
-                ctx.font = '800 88px "Helvetica Neue", Arial, sans-serif';
+                ctx.font = `800 ${activeTemplate?.id === 'sunset' ? 82 : 88}px "Helvetica Neue", Arial, sans-serif`;
                 ctx.textAlign = 'left';
-                let cursorY = this.drawPosterTextBlock(ctx, posterConfig.title, 72, 214, 720, 102);
+                const titleLayout = this.drawPosterTextBlock(
+                    ctx,
+                    posterConfig.title,
+                    72,
+                    214,
+                    720,
+                    activeTemplate?.id === 'sunset' ? 92 : 98,
+                    2
+                );
                 ctx.fillStyle = preset.muted;
                 ctx.font = '500 34px "Helvetica Neue", Arial, sans-serif';
-                cursorY = this.drawPosterTextBlock(ctx, posterConfig.subtitle, 72, cursorY + 14, 760, 46);
+                const subtitleLayout = this.drawPosterTextBlock(ctx, posterConfig.subtitle, 72, titleLayout.nextY + 18, 760, 46, 2);
+
+                let rewardBadgeBottom = subtitleLayout.nextY;
+                if (rewardSummary) {
+                    const rewardBadgeWidth = Math.max(280, Math.min(620, 170 + rewardSummary.length * 20));
+                    const rewardBadgeY = subtitleLayout.nextY + 42;
+                    this.drawRoundedRect(ctx, 72, rewardBadgeY, rewardBadgeWidth, 66, 24);
+                    ctx.fillStyle = preset.badgeBg;
+                    ctx.fill();
+                    ctx.fillStyle = preset.badgeText;
+                    let rewardBadgeFontSize = 26;
+                    ctx.font = `600 ${rewardBadgeFontSize}px "Helvetica Neue", Arial, sans-serif`;
+                    while (ctx.measureText(rewardSummary).width > rewardBadgeWidth - 60 && rewardBadgeFontSize > 18) {
+                        rewardBadgeFontSize -= 1;
+                        ctx.font = `600 ${rewardBadgeFontSize}px "Helvetica Neue", Arial, sans-serif`;
+                    }
+                    ctx.fillText(rewardSummary, 102, rewardBadgeY + 42);
+                    rewardBadgeBottom = rewardBadgeY + 66;
+                }
 
                 // Invite card
                 const cardX = 72;
-                const cardY = Math.max(640, cursorY + 70);
+                const cardY = Math.max(652, rewardBadgeBottom + 84);
                 const cardWidth = canvas.width - 144;
-                const cardHeight = 520;
+                const cardHeight = 548;
 
                 this.drawRoundedRect(ctx, cardX, cardY, cardWidth, cardHeight, 42);
                 ctx.fillStyle = preset.qrCardBg;
                 ctx.fill();
 
+                let avatarImage = null;
+                if (this.affiliateProfile?.avatarUrl) {
+                    try {
+                        avatarImage = await this.loadCanvasImage(this.affiliateProfile.avatarUrl);
+                    } catch (avatarError) {
+                        console.warn('[WalletModal] Failed to draw affiliate avatar:', avatarError);
+                    }
+                }
+
+                this.drawPosterAvatar(ctx, {
+                    image: avatarImage,
+                    centerX: cardX + cardWidth / 2,
+                    centerY: cardY + 8,
+                    radius: 58,
+                    ringColor: 'rgba(255, 251, 235, 0.96)',
+                    borderColor: activeTemplate?.id === 'sunset' ? 'rgba(249, 115, 22, 0.34)' : 'rgba(15, 23, 42, 0.12)',
+                    fallbackInitial: profileInitial,
+                    fallbackBackground: activeTemplate?.id === 'sunset'
+                        ? 'sunset'
+                        : 'midnight'
+                });
+
                 // Fetch QR Code image
                 const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(linkEl.value)}&margin=1`;
                 const qrImg = await this.loadCanvasImage(qrUrl);
-                this.drawRoundedRect(ctx, cardX + 54, cardY + 92, 360, 360, 30);
+                this.drawRoundedRect(ctx, cardX + 54, cardY + 118, 360, 360, 30);
                 ctx.fillStyle = '#ffffff';
                 ctx.fill();
-                ctx.drawImage(qrImg, cardX + 84, cardY + 122, 300, 300);
+                ctx.drawImage(qrImg, cardX + 84, cardY + 148, 300, 300);
 
                 ctx.fillStyle = preset.qrLabelColor;
                 ctx.font = '600 28px "Helvetica Neue", Arial, sans-serif';
-                ctx.fillText(posterConfig.qr_label, cardX + 90, cardY + 440);
+                this.drawPosterTextBlock(ctx, posterConfig.qr_label, cardX + 90, cardY + 468, 300, 34, 2);
+
+                ctx.fillStyle = preset.qrLabelColor;
+                ctx.font = '600 26px "Helvetica Neue", Arial, sans-serif';
+                ctx.fillText(posterConfig.invite_code_label, cardX + 464, cardY + 184);
 
                 ctx.fillStyle = preset.codeColor;
-                ctx.font = '700 52px "Helvetica Neue", Arial, sans-serif';
-                this.drawPosterTextBlock(ctx, `${window.i18n?.t('wallet.inviteCode') || '邀请码'} ${this.currentInviteCode}`, cardX + 464, cardY + 176, 430, 62);
+                ctx.font = '700 56px "Helvetica Neue", Arial, sans-serif';
+                const codeLayout = this.drawPosterTextBlock(ctx, this.currentInviteCode, cardX + 464, cardY + 246, 430, 62, 2);
 
                 ctx.fillStyle = '#475569';
                 ctx.font = '500 28px "Helvetica Neue", Arial, sans-serif';
-                this.drawPosterTextBlock(ctx, posterConfig.footer, cardX + 464, cardY + 276, 430, 42, 3);
+                const footerLayout = this.drawPosterTextBlock(ctx, posterConfig.footer, cardX + 464, codeLayout.nextY + 36, 430, 42, 3);
 
                 ctx.fillStyle = preset.accent;
                 ctx.font = '700 28px "Helvetica Neue", Arial, sans-serif';
-                this.drawPosterTextBlock(ctx, linkEl.value, cardX + 464, cardY + 394, 430, 38, 3);
+                this.drawPosterTextBlock(ctx, linkEl.value, cardX + 464, footerLayout.nextY + 42, 430, 38, 3);
 
                 // Footer disclaimer
                 ctx.fillStyle = preset.text;
                 ctx.font = '500 28px "Helvetica Neue", Arial, sans-serif';
                 ctx.fillText(legalDisclaimer, 72, 1508);
-
-                ctx.fillStyle = preset.muted;
-                ctx.font = '500 22px "Helvetica Neue", Arial, sans-serif';
-                const activeTemplateName = activeTemplate?.name || '默认模板';
-                ctx.fillText(`模板：${activeTemplateName}`, 72, 1548);
 
                 // Download Image
                 const dataUrl = canvas.toDataURL('image/png');
@@ -2185,7 +2315,15 @@
 
         drawPosterTextBlock(ctx, text, x, startY, maxWidth, lineHeight, maxLines = 3) {
             const content = String(text || '').trim();
-            if (!content) return startY;
+            if (!content) {
+                return {
+                    lines: [],
+                    lineCount: 0,
+                    startY,
+                    lastBaseline: startY,
+                    nextY: startY
+                };
+            }
 
             const lines = [];
             let currentLine = '';
@@ -2213,7 +2351,67 @@
                 ctx.fillText(line, x, startY + index * lineHeight);
             });
 
-            return startY + Math.max(0, lines.length - 1) * lineHeight;
+            const lastBaseline = startY + Math.max(0, lines.length - 1) * lineHeight;
+            return {
+                lines,
+                lineCount: lines.length,
+                startY,
+                lastBaseline,
+                nextY: startY + lines.length * lineHeight
+            };
+        },
+
+        drawPosterAvatar(ctx, options = {}) {
+            const centerX = Number(options.centerX) || 0;
+            const centerY = Number(options.centerY) || 0;
+            const radius = Number(options.radius) || 56;
+            const ringRadius = radius + 10;
+            const fallbackInitial = options.fallbackInitial || 'U';
+
+            ctx.save();
+            ctx.shadowColor = 'rgba(15, 23, 42, 0.18)';
+            ctx.shadowBlur = 28;
+            ctx.shadowOffsetY = 10;
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, ringRadius, 0, Math.PI * 2);
+            ctx.fillStyle = options.ringColor || 'rgba(255, 255, 255, 0.96)';
+            ctx.fill();
+            ctx.restore();
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+            ctx.closePath();
+            ctx.clip();
+
+            if (options.image) {
+                this.drawCoverImage(ctx, options.image, centerX - radius, centerY - radius, radius * 2, radius * 2);
+            } else {
+                const fallbackGradient = ctx.createLinearGradient(centerX - radius, centerY - radius, centerX + radius, centerY + radius);
+                if (options.fallbackBackground === 'sunset') {
+                    fallbackGradient.addColorStop(0, '#f97316');
+                    fallbackGradient.addColorStop(1, '#f59e0b');
+                } else {
+                    fallbackGradient.addColorStop(0, '#0f172a');
+                    fallbackGradient.addColorStop(1, '#134e4a');
+                }
+                ctx.fillStyle = fallbackGradient;
+                ctx.fillRect(centerX - radius, centerY - radius, radius * 2, radius * 2);
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '700 56px "Helvetica Neue", Arial, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(fallbackInitial, centerX, centerY + 2);
+            }
+            ctx.restore();
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+            ctx.strokeStyle = options.borderColor || 'rgba(255, 255, 255, 0.38)';
+            ctx.lineWidth = 6;
+            ctx.stroke();
+            ctx.restore();
         },
 
         /**

@@ -1644,6 +1644,17 @@
                             <div class="config-card-body affiliate-poster-settings">
                                 <div class="config-row">
                                     <div class="config-info">
+                                        <div class="config-label">顶部角标</div>
+                                        <div class="config-desc">显示在海报左上角的小标签，例如“推广”“邀新”“限时活动”。</div>
+                                    </div>
+                                    <div class="config-input-wrapper">
+                                        <input type="text" id="affiliate_poster_chip_label" class="config-input"
+                                            placeholder="推广"
+                                            onchange="window.saveAffiliatePosterField('chip_label', this.value)">
+                                    </div>
+                                </div>
+                                <div class="config-row">
+                                    <div class="config-info">
                                         <div class="config-label">海报标题</div>
                                         <div class="config-desc">生成推广海报时显示在顶部的主标题。</div>
                                     </div>
@@ -1662,6 +1673,28 @@
                                         <input type="text" id="affiliate_poster_subtitle" class="config-input"
                                             placeholder="扫码注册 · 首单激活奖励"
                                             onchange="window.saveAffiliatePosterField('subtitle', this.value)">
+                                    </div>
+                                </div>
+                                <div class="config-row">
+                                    <div class="config-info">
+                                        <div class="config-label">奖励条文案</div>
+                                        <div class="config-desc">显示在主标题下方的奖励摘要。支持变量：<code>{registration_reward}</code>、<code>{registration_reward_text}</code>、<code>{shop_commission}</code>。留空则按系统自动生成。</div>
+                                    </div>
+                                    <div class="config-input-wrapper">
+                                        <input type="text" id="affiliate_poster_reward_badge_text" class="config-input"
+                                            placeholder="拉新奖励 {registration_reward_text} · 商城返佣 {shop_commission}"
+                                            onchange="window.saveAffiliatePosterField('reward_badge_text', this.value)">
+                                    </div>
+                                </div>
+                                <div class="config-row">
+                                    <div class="config-info">
+                                        <div class="config-label">邀请码标题</div>
+                                        <div class="config-desc">显示在邀请码数字上方，例如“邀请码”“专属识别码”“福利口令”。</div>
+                                    </div>
+                                    <div class="config-input-wrapper">
+                                        <input type="text" id="affiliate_poster_invite_code_label" class="config-input"
+                                            placeholder="邀请码"
+                                            onchange="window.saveAffiliatePosterField('invite_code_label', this.value)">
                                     </div>
                                 </div>
                                 <div class="config-row">
@@ -6798,7 +6831,7 @@
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/zh.js"></script>
     <script src="admin-comments.js"></script>
     <script src="admin-analytics.js"></script>
-    <script src="admin-config.js?v=20260318_REWARDS_AFFILIATE_V2"></script>
+    <script src="admin-config.js?v=20260318_REWARDS_AFFILIATE_V4"></script>
     <script src="admin-homepage.js"></script>
     <script src="js/admin-studio-translate.js"></script>
     <script src="js/admin-site-filter.js"></script>

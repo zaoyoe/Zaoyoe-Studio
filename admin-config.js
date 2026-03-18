@@ -51,8 +51,11 @@ function getAffiliatePosterPresetDefinitions() {
 
 function getDefaultAffiliatePosterConfig() {
     return {
+        chip_label: '推广',
         title: '专属邀请函',
         subtitle: '扫码注册 · 即享专属奖励',
+        reward_badge_text: '',
+        invite_code_label: '邀请码',
         qr_label: '扫码注册领取新人福利',
         footer: '邀请好友注册，享受固定奖励与持续返佣',
         active_template_id: 'midnight',
@@ -137,8 +140,11 @@ function normalizeAffiliatePosterConfig(raw) {
         : defaults.active_template_id;
 
     return {
+        chip_label: typeof source.chip_label === 'string' && source.chip_label.trim() ? source.chip_label.trim() : defaults.chip_label,
         title: typeof source.title === 'string' && source.title.trim() ? source.title.trim() : defaults.title,
         subtitle: typeof source.subtitle === 'string' && source.subtitle.trim() ? source.subtitle.trim() : defaults.subtitle,
+        reward_badge_text: typeof source.reward_badge_text === 'string' ? source.reward_badge_text.trim() : defaults.reward_badge_text,
+        invite_code_label: typeof source.invite_code_label === 'string' && source.invite_code_label.trim() ? source.invite_code_label.trim() : defaults.invite_code_label,
         qr_label: typeof source.qr_label === 'string' && source.qr_label.trim() ? source.qr_label.trim() : defaults.qr_label,
         footer: typeof source.footer === 'string' && source.footer.trim() ? source.footer.trim() : defaults.footer,
         active_template_id: activeTemplateId,
@@ -277,8 +283,11 @@ function loadAffiliateSettings() {
     if (requiresPurchaseInput) requiresPurchaseInput.checked = !!affiliateConfig.registration_reward_requires_purchase;
 
     const posterFieldMap = {
+        affiliate_poster_chip_label: posterConfig.chip_label,
         affiliate_poster_title: posterConfig.title,
         affiliate_poster_subtitle: posterConfig.subtitle,
+        affiliate_poster_reward_badge_text: posterConfig.reward_badge_text,
+        affiliate_poster_invite_code_label: posterConfig.invite_code_label,
         affiliate_poster_qr_label: posterConfig.qr_label,
         affiliate_poster_footer: posterConfig.footer
     };
@@ -300,14 +309,14 @@ function renderAffiliatePosterTemplates(config = normalizeAffiliatePosterConfig(
     container.innerHTML = config.templates.map(template => {
         const preset = presets.find(item => item.id === template.id) || presets[0];
         const isActive = config.active_template_id === template.id;
-        const previewBackground = template.custom_background_url
-            ? `linear-gradient(180deg, rgba(3, 7, 18, 0.08) 0%, rgba(3, 7, 18, 0.44) 100%), url('${escapeConfigHtml(template.custom_background_url)}') center/cover`
-            : preset.preview_background;
+                const previewBackground = template.custom_background_url
+                    ? `linear-gradient(180deg, rgba(3, 7, 18, 0.08) 0%, rgba(3, 7, 18, 0.44) 100%), url('${escapeConfigHtml(template.custom_background_url)}') center/cover`
+                    : preset.preview_background;
 
         return `
             <div class="affiliate-poster-card ${isActive ? 'active' : ''}">
                 <div class="affiliate-poster-preview" style="background:${previewBackground};">
-                    <div class="affiliate-poster-chip">${escapeConfigHtml(isActive ? '默认模板' : '可选模板')}</div>
+                    <div class="affiliate-poster-chip">${escapeConfigHtml(config.chip_label || '推广')}</div>
                     <div class="affiliate-poster-preview-content">
                         <div class="affiliate-poster-preview-title">${escapeConfigHtml(config.title)}</div>
                         <div class="affiliate-poster-preview-subtitle">${escapeConfigHtml(config.subtitle)}</div>
@@ -487,10 +496,14 @@ async function saveAffiliateSetting(field, rawValue) {
 
 async function saveAffiliatePosterField(field, rawValue) {
     const config = normalizeAffiliatePosterConfig(systemConfigCache['affiliate_poster']);
-    const allowedFields = new Set(['title', 'subtitle', 'qr_label', 'footer']);
+    const allowedFields = new Set(['chip_label', 'title', 'subtitle', 'reward_badge_text', 'invite_code_label', 'qr_label', 'footer']);
     if (!allowedFields.has(field)) return false;
 
-    config[field] = String(rawValue || '').trim() || getDefaultAffiliatePosterConfig()[field];
+    if (field === 'reward_badge_text') {
+        config[field] = String(rawValue || '').trim();
+    } else {
+        config[field] = String(rawValue || '').trim() || getDefaultAffiliatePosterConfig()[field];
+    }
 
     if (await saveConfig('affiliate_poster', config)) {
         renderAffiliatePosterTemplates(config);

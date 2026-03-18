@@ -109,8 +109,11 @@ ON CONFLICT (config_key) DO NOTHING;
 -- 推广海报模板
 INSERT INTO public.system_config (config_key, config_value, description) VALUES
 ('affiliate_poster', '{
+    "chip_label": "推广",
     "title": "专属邀请函",
     "subtitle": "扫码注册 · 即享专属奖励",
+    "reward_badge_text": "",
+    "invite_code_label": "邀请码",
     "qr_label": "扫码注册领取新人福利",
     "footer": "邀请好友注册，享受固定奖励与持续返佣",
     "active_template_id": "midnight",
