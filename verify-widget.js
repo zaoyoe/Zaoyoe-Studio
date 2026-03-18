@@ -772,11 +772,10 @@
                                             <span>${t('verify.guideNoteRegion', '不需要拥有学生资格才能订阅，所有符合支持地区的账号都可以进行订阅，按步骤操作即可。')}</span>
                                         </div>
                                         <div class="verify-guide-note verify-guide-note-privacy">
-                                            <div class="verify-guide-note-chip">
+                                            <div class="verify-guide-note-shield" aria-hidden="true">
                                                 <i class="fas fa-shield-halved"></i>
-                                                <span>${t('verify.guidePrivacyBadge', '隐私与安全')}</span>
                                             </div>
-                                            <div class="verify-guide-note-privacy-body">${t('verify.guideNotePrivacy', '我们不会保存任何账户信息，提交的信息仅做订阅临时使用，订阅完成后自动销毁。为了账户安全，订阅完成后建议修改 2FA 码；不建议立即修改密码，以免触发封控。')}</div>
+                                            <span class="verify-guide-note-privacy-body">${t('verify.guideNotePrivacy', '我们不会保存任何账户信息，提交的信息仅做订阅临时使用，订阅完成后自动销毁。为了账户安全，订阅完成后建议修改 2FA 码；不建议立即修改密码，以免触发封控。')}</span>
                                         </div>
                                         <div class="verify-guide-note verify-guide-note-success">
                                             <i class="fas fa-credit-card"></i>
