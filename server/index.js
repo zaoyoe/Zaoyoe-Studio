@@ -14,6 +14,13 @@ const PORT = process.env.PORT || 3001;
 
 // Upstream API base URL
 const VERIFY_API_BASE = process.env.VERIFY_API_BASE_URL || 'https://iqless.icu';
+const ACTIVE_TRACKED_JOB_STATUSES = ['queued', 'running', 'processing', 'pending'];
+const TERMINAL_TRACKED_JOB_STATUSES = ['success', 'failed'];
+const PENDING_JOB_SWEEP_INTERVAL_MS = Math.max(2000, Number(process.env.VERIFY_PENDING_SWEEP_INTERVAL_MS || 5000));
+const PENDING_JOB_SWEEP_BATCH_SIZE = Math.max(1, Number(process.env.VERIFY_PENDING_SWEEP_BATCH_SIZE || 20));
+const jobSyncLocks = new Map();
+let pendingJobSweepTimer = null;
+let pendingJobSweepRunning = false;
 
 // Initialize Supabase
 const supabase = createClient(
@@ -141,6 +148,448 @@ function parseHistoryMessage(message) {
     }
 
     return null;
+}
+
+function isTerminalTrackedStatus(status) {
+    return TERMINAL_TRACKED_JOB_STATUSES.includes(String(status || '').toLowerCase());
+}
+
+function isActiveTrackedStatus(status) {
+    return ACTIVE_TRACKED_JOB_STATUSES.includes(String(status || '').toLowerCase());
+}
+
+function buildTrackedJobPayload({ email, jobId, apiData = {}, status = '', pointsDeducted = 0 }) {
+    const queuePosition = Number(apiData?.queue_position);
+    const estimatedWait = Number(apiData?.estimated_wait_seconds);
+    const elapsedSeconds = Number(apiData?.elapsed_seconds);
+
+    return {
+        email: email || '',
+        job_id: jobId || '',
+        url: apiData?.url || '',
+        error_code: apiData?.error || '',
+        error_message: buildClientStatusMessage(apiData),
+        stage_label: apiData?.stage_label || '',
+        raw_status: apiData?.status || status || '',
+        queue_position: Number.isFinite(queuePosition) ? queuePosition : null,
+        estimated_wait_seconds: Number.isFinite(estimatedWait) ? estimatedWait : null,
+        elapsed_seconds: Number.isFinite(elapsedSeconds) ? elapsedSeconds : null,
+        points_deducted: pointsDeducted,
+        logged_at: new Date().toISOString()
+    };
+}
+
+async function withJobSyncLock(lockKey, task) {
+    const previous = jobSyncLocks.get(lockKey) || Promise.resolve();
+    let releaseCurrent;
+    const current = new Promise((resolve) => {
+        releaseCurrent = resolve;
+    });
+    const tail = previous.finally(() => current);
+    jobSyncLocks.set(lockKey, tail);
+
+    await previous;
+
+    try {
+        return await task();
+    } finally {
+        releaseCurrent();
+        if (jobSyncLocks.get(lockKey) === tail) {
+            jobSyncLocks.delete(lockKey);
+        }
+    }
+}
+
+function applyTrackedLogMatch(query, existingRecord, { userId, site, jobId }) {
+    if (existingRecord?.id) {
+        return query.eq('id', existingRecord.id);
+    }
+
+    if (existingRecord?.created_at && existingRecord?.verification_id) {
+        return query
+            .eq('user_id', userId)
+            .eq('site', site)
+            .eq('verification_id', existingRecord.verification_id)
+            .eq('created_at', existingRecord.created_at);
+    }
+
+    return query
+        .eq('user_id', userId)
+        .eq('site', site)
+        .eq('verification_id', jobId);
+}
+
+async function findTrackedJobLog(userId, jobId, site = 'cn') {
+    if (!userId || !jobId) return null;
+
+    try {
+        const { data: exactData, error: exactError } = await supabase
+            .from('verification_logs')
+            .select('*')
+            .eq('user_id', userId)
+            .eq('site', site)
+            .eq('verification_id', jobId)
+            .order('created_at', { ascending: false })
+            .limit(1);
+
+        if (exactError) {
+            console.warn('[Verify] Failed to query tracked job log by verification_id:', exactError.message);
+        } else if (exactData?.length) {
+            return exactData[0];
+        }
+
+        const { data, error } = await supabase
+            .from('verification_logs')
+            .select('*')
+            .eq('user_id', userId)
+            .eq('site', site)
+            .order('created_at', { ascending: false })
+            .limit(80);
+
+        if (error) {
+            console.warn('[Verify] Failed to query tracked job logs:', error.message);
+            return null;
+        }
+
+        return (data || []).find((row) => parseHistoryMessage(row.message)?.job_id === jobId) || null;
+    } catch (error) {
+        console.warn('[Verify] Tracked job log lookup failed:', error.message);
+        return null;
+    }
+}
+
+async function upsertTrackedJobLog({
+    existingRecord = null,
+    userId,
+    site = 'cn',
+    email,
+    jobId,
+    status,
+    apiData = {},
+    pointsDeducted = 0
+}) {
+    if (!userId || !jobId) return existingRecord;
+
+    const normalizedStatus = String(status || apiData?.status || 'queued').toLowerCase();
+    const message = buildHistoryMessage(buildTrackedJobPayload({
+        email,
+        jobId,
+        apiData,
+        status: normalizedStatus,
+        pointsDeducted
+    }));
+    const payload = {
+        verification_id: jobId,
+        status: normalizedStatus,
+        message,
+        points_deducted: pointsDeducted,
+        batch_count: 1,
+        batch_success: normalizedStatus === 'success' ? 1 : 0,
+        batch_failed: normalizedStatus === 'failed' ? 1 : 0,
+        site
+    };
+
+    try {
+        if (existingRecord) {
+            let query = supabase
+                .from('verification_logs')
+                .update(payload);
+            query = applyTrackedLogMatch(query, existingRecord, { userId, site, jobId });
+            const { data, error } = await query.select('*').limit(1);
+
+            if (error) {
+                console.warn('[Verify] Failed to update tracked job log:', error.message);
+                return existingRecord;
+            }
+
+            return data?.[0] || existingRecord;
+        }
+
+        const { data, error } = await supabase
+            .from('verification_logs')
+            .insert({
+                user_id: userId,
+                ...payload
+            })
+            .select('*')
+            .limit(1);
+
+        if (error) {
+            console.warn('[Verify] Failed to insert tracked job log:', error.message);
+            return null;
+        }
+
+        return data?.[0] || null;
+    } catch (error) {
+        console.warn('[Verify] Tracked job log upsert failed:', error.message);
+        return existingRecord;
+    }
+}
+
+async function findExistingJobDeduction(userId, jobId, site = 'cn') {
+    if (!userId || !jobId) return 0;
+
+    const runQuery = async (withSite) => {
+        let query = supabase
+            .from('points_ledger')
+            .select('amount')
+            .eq('user_id', userId)
+            .eq('reference_id', jobId)
+            .lt('amount', 0)
+            .order('created_at', { ascending: false })
+            .limit(1);
+
+        if (withSite) {
+            query = query.eq('site', site);
+        }
+
+        return query;
+    };
+
+    try {
+        let { data, error } = await runQuery(true);
+        if (error) {
+            ({ data, error } = await runQuery(false));
+        }
+
+        if (error) {
+            console.warn('[Verify] Failed to inspect points ledger:', error.message);
+            return 0;
+        }
+
+        const amount = Number(data?.[0]?.amount);
+        return Number.isFinite(amount) ? Math.abs(amount) : 0;
+    } catch (error) {
+        console.warn('[Verify] Points ledger lookup failed:', error.message);
+        return 0;
+    }
+}
+
+async function deductPointsForJob(userId, jobId, amount, site = 'cn') {
+    const existingDeduction = await findExistingJobDeduction(userId, jobId, site);
+    if (existingDeduction > 0) {
+        return existingDeduction;
+    }
+
+    const adminSiteRpcParams = {
+        p_target_user_id: userId,
+        p_amount: amount,
+        p_reason: 'Google One 链接获取服务',
+        p_reference_id: jobId,
+        p_site: site
+    };
+
+    let { data: deductData, error: deductError } = await supabase.rpc('fn_deduct_points_admin_site', adminSiteRpcParams);
+
+    if (deductError) {
+        console.warn('[Verify] fn_deduct_points_admin_site unavailable, falling back:', deductError.message);
+        ({ data: deductData, error: deductError } = await supabase.rpc('fn_deduct_points', {
+            p_target_user_id: userId,
+            p_amount: amount,
+            p_reason: 'Google One 链接获取服务',
+            p_reference_id: jobId
+        }));
+    }
+
+    if (deductError) {
+        console.error('[Verify] Failed to deduct points:', deductError);
+        return 0;
+    }
+
+    return Number(deductData?.deducted) || amount;
+}
+
+async function syncTrackedJobStatus({
+    userId,
+    site = 'cn',
+    email = '',
+    jobId,
+    apiData = {},
+    config = null
+}) {
+    if (!userId || !jobId) {
+        return { pointsDeducted: 0, record: null };
+    }
+
+    const lockKey = `${site}:${userId}:${jobId}`;
+    return withJobSyncLock(lockKey, async () => {
+        let existingRecord = await findTrackedJobLog(userId, jobId, site);
+        const upstreamStatus = String(apiData?.status || '').toLowerCase();
+
+        if (!upstreamStatus) {
+            return {
+                pointsDeducted: Number(existingRecord?.points_deducted) || 0,
+                record: existingRecord
+            };
+        }
+
+        if (!isTerminalTrackedStatus(upstreamStatus)) {
+            existingRecord = await upsertTrackedJobLog({
+                existingRecord,
+                userId,
+                site,
+                email,
+                jobId,
+                status: upstreamStatus,
+                apiData,
+                pointsDeducted: Number(existingRecord?.points_deducted) || 0
+            });
+
+            return {
+                pointsDeducted: Number(existingRecord?.points_deducted) || 0,
+                record: existingRecord
+            };
+        }
+
+        if (existingRecord && isTerminalTrackedStatus(existingRecord.status)) {
+            return {
+                pointsDeducted: Number(existingRecord.points_deducted) || 0,
+                record: existingRecord
+            };
+        }
+
+        let pointsDeducted = Number(existingRecord?.points_deducted) || 0;
+        const runtimeConfig = config || await getVerifyConfig();
+
+        if (upstreamStatus === 'success') {
+            pointsDeducted = await deductPointsForJob(userId, jobId, runtimeConfig.pricePerVerify, site);
+        }
+
+        existingRecord = await upsertTrackedJobLog({
+            existingRecord,
+            userId,
+            site,
+            email,
+            jobId,
+            status: upstreamStatus === 'success' ? 'success' : 'failed',
+            apiData,
+            pointsDeducted
+        });
+
+        return { pointsDeducted, record: existingRecord };
+    });
+}
+
+async function fetchUpstreamJobStatus(config, jobId) {
+    const apiRes = await fetch(`${config.apiBaseUrl}/api/jobs/${jobId}`, {
+        method: 'GET',
+        headers: {
+            'X-API-Key': config.apiKey
+        }
+    });
+
+    const apiData = await apiRes.json().catch(() => ({}));
+
+    if (!apiRes.ok) {
+        const errorCode = getApiErrorCode(apiData);
+        if (apiRes.status === 404 || errorCode === 'job_not_found') {
+            return {
+                ok: true,
+                data: {
+                    job_id: jobId,
+                    status: 'failed',
+                    error: errorCode || 'job_not_found',
+                    message: getApiErrorMessage(apiData, '任务不存在')
+                }
+            };
+        }
+
+        return {
+            ok: false,
+            status: apiRes.status,
+            code: errorCode,
+            message: getApiErrorMessage(apiData, '查询状态失败')
+        };
+    }
+
+    return { ok: true, data: apiData };
+}
+
+async function loadPendingTrackedJobs(limit = PENDING_JOB_SWEEP_BATCH_SIZE) {
+    try {
+        const { data, error } = await supabase
+            .from('verification_logs')
+            .select('*')
+            .in('status', ACTIVE_TRACKED_JOB_STATUSES)
+            .order('created_at', { ascending: true })
+            .limit(limit);
+
+        if (error) {
+            console.warn('[VerifyWorker] Failed to load pending jobs:', error.message);
+            return [];
+        }
+
+        const seen = new Set();
+        const jobs = [];
+
+        for (const row of data || []) {
+            const payload = parseHistoryMessage(row.message) || {};
+            const jobId = String(payload.job_id || row.verification_id || '').trim();
+            const userId = String(row.user_id || '').trim();
+            const site = String(row.site || 'cn').trim() || 'cn';
+            const email = String(payload.email || '').trim().toLowerCase();
+            if (!jobId || !userId) continue;
+
+            const uniqueKey = `${site}:${userId}:${jobId}`;
+            if (seen.has(uniqueKey)) continue;
+            seen.add(uniqueKey);
+            jobs.push({ jobId, userId, site, email });
+        }
+
+        return jobs;
+    } catch (error) {
+        console.warn('[VerifyWorker] Pending job load failed:', error.message);
+        return [];
+    }
+}
+
+async function sweepPendingJobs() {
+    if (pendingJobSweepRunning) return;
+    pendingJobSweepRunning = true;
+
+    try {
+        const config = await getVerifyConfig();
+        if (!config.apiKey) return;
+
+        const pendingJobs = await loadPendingTrackedJobs();
+
+        for (const job of pendingJobs) {
+            const upstream = await fetchUpstreamJobStatus(config, job.jobId);
+            if (!upstream.ok) {
+                console.warn(`[VerifyWorker] Failed to poll ${job.jobId}: ${upstream.message}`);
+                continue;
+            }
+
+            await syncTrackedJobStatus({
+                userId: job.userId,
+                site: job.site,
+                email: job.email,
+                jobId: job.jobId,
+                apiData: upstream.data,
+                config
+            });
+        }
+    } catch (error) {
+        console.error('[VerifyWorker] Pending job sweep failed:', error);
+    } finally {
+        pendingJobSweepRunning = false;
+    }
+}
+
+function startPendingJobSweep() {
+    if (pendingJobSweepTimer) return;
+
+    pendingJobSweepTimer = setInterval(() => {
+        sweepPendingJobs().catch((error) => {
+            console.error('[VerifyWorker] Sweep tick failed:', error);
+        });
+    }, PENDING_JOB_SWEEP_INTERVAL_MS);
+
+    setTimeout(() => {
+        sweepPendingJobs().catch((error) => {
+            console.error('[VerifyWorker] Initial sweep failed:', error);
+        });
+    }, 1200);
 }
 
 async function hasLoggedJobResult(userId, jobId, site = 'cn') {
@@ -308,10 +757,25 @@ app.post('/api/verify', async (req, res) => {
             });
         }
 
+        const jobId = String(apiData.job_id || '').trim();
+        if (jobId && userId) {
+            await syncTrackedJobStatus({
+                userId,
+                site: currentSite,
+                email: normalizedEmail,
+                jobId,
+                apiData: {
+                    ...apiData,
+                    status: apiData.status || 'queued'
+                },
+                config
+            });
+        }
+
         return res.json({
             success: true,
-            task_id: apiData.job_id,
-            job_id: apiData.job_id,
+            task_id: jobId,
+            job_id: jobId,
             status: apiData.status || 'queued',
             queue_position: apiData.queue_position ?? -1,
             estimated_wait_seconds: apiData.estimated_wait_seconds ?? 0,
@@ -343,59 +807,28 @@ app.get('/api/verify/status/:taskId', async (req, res) => {
             return res.status(500).json({ success: false, message: '验证服务未配置', code: 'api_key_missing' });
         }
 
-        const apiRes = await fetch(`${config.apiBaseUrl}/api/jobs/${taskId}`, {
-            method: 'GET',
-            headers: {
-                'X-API-Key': config.apiKey
-            }
-        });
-
-        const apiData = await apiRes.json().catch(() => ({}));
-
-        if (!apiRes.ok) {
-            return res.status(apiRes.status).json({
+        const upstream = await fetchUpstreamJobStatus(config, taskId);
+        if (!upstream.ok) {
+            return res.status(upstream.status).json({
                 success: false,
-                message: getApiErrorMessage(apiData, '查询状态失败'),
-                code: getApiErrorCode(apiData)
+                message: upstream.message,
+                code: upstream.code
             });
         }
 
+        const apiData = upstream.data;
         let pointsDeducted = 0;
-        const terminal = apiData.status === 'success' || apiData.status === 'failed';
 
-        if (terminal && userId) {
-            const alreadyLogged = await hasLoggedJobResult(userId, taskId, currentSite);
-
-            if (!alreadyLogged) {
-                if (apiData.status === 'success') {
-                    const pointsToDeduct = config.pricePerVerify;
-                    const { data: deductData, error: deductError } = await supabase.rpc('fn_deduct_points', {
-                        p_target_user_id: userId,
-                        p_amount: pointsToDeduct,
-                        p_reason: 'Google One 链接获取服务'
-                    });
-
-                    if (deductError) {
-                        console.error('[Verify] Failed to deduct points:', deductError);
-                    } else {
-                        pointsDeducted = deductData?.deducted ?? pointsToDeduct;
-                    }
-                }
-
-                await logVerificationResult({
-                    userId,
-                    site: currentSite,
-                    email: String(email || ''),
-                    jobId: taskId,
-                    status: apiData.status === 'success' ? 'success' : 'failed',
-                    url: apiData.url || '',
-                    errorCode: apiData.error || '',
-                    errorMessage: buildClientStatusMessage(apiData),
-                    stageLabel: apiData.stage_label || '',
-                    rawStatus: apiData.status || '',
-                    pointsDeducted
-                });
-            }
+        if (userId) {
+            const syncResult = await syncTrackedJobStatus({
+                userId: String(userId),
+                site: currentSite,
+                email: String(email || ''),
+                jobId: taskId,
+                apiData,
+                config
+            });
+            pointsDeducted = Number(syncResult?.pointsDeducted) || 0;
         }
 
         return res.json({
@@ -666,4 +1099,5 @@ app.get('/api/afdian/query', async (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`🚀 Verify proxy server running on port ${PORT}`);
+    startPendingJobSweep();
 });

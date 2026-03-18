@@ -14,6 +14,7 @@
         pollInterval: 3000,
         pollTimeout: 300000
     };
+    const PENDING_TASK_STORAGE_KEY = 'verify_pending_google_one_job_v1';
 
     let currentUser = null;
     let userBalance = 0;
@@ -68,6 +69,10 @@
 
     function getUserId(user) {
         return user?.id || user?.user_id || user?.objectId || null;
+    }
+
+    function getCurrentSiteValue() {
+        return window.SiteConfig?.site || 'cn';
     }
 
     function isTransientAvatarUrl(url) {
@@ -138,6 +143,57 @@
         }
 
         localStorage.setItem('cached_user_profile', JSON.stringify(merged));
+    }
+
+    function normalizePendingTask(task) {
+        if (!task || typeof task !== 'object') return null;
+
+        const jobId = String(task.jobId || task.job_id || '').trim();
+        const email = String(task.email || '').trim().toLowerCase();
+        const userId = String(task.userId || task.user_id || '').trim();
+        const site = String(task.site || getCurrentSiteValue()).trim() || 'cn';
+        const createdAt = String(task.createdAt || task.created_at || new Date().toISOString()).trim();
+
+        if (!jobId || !email || !userId) return null;
+
+        return { jobId, email, userId, site, createdAt };
+    }
+
+    function readPendingTask() {
+        try {
+            const raw = localStorage.getItem(PENDING_TASK_STORAGE_KEY);
+            if (!raw) return null;
+            const normalized = normalizePendingTask(JSON.parse(raw));
+            if (!normalized) {
+                localStorage.removeItem(PENDING_TASK_STORAGE_KEY);
+                return null;
+            }
+            return normalized;
+        } catch (_) {
+            localStorage.removeItem(PENDING_TASK_STORAGE_KEY);
+            return null;
+        }
+    }
+
+    function persistPendingTask(task) {
+        const normalized = normalizePendingTask(task);
+        if (!normalized) return;
+        localStorage.setItem(PENDING_TASK_STORAGE_KEY, JSON.stringify(normalized));
+    }
+
+    function clearPendingTask(jobId = '') {
+        const pending = readPendingTask();
+        if (!pending) return;
+        if (!jobId || pending.jobId === jobId) {
+            localStorage.removeItem(PENDING_TASK_STORAGE_KEY);
+        }
+    }
+
+    function clearActiveTaskTimers() {
+        activeTasks.forEach((task) => {
+            if (task?.timer) clearInterval(task.timer);
+        });
+        activeTasks.clear();
     }
 
     function getLang() {
@@ -840,6 +896,7 @@
         updateQuotaDisplay();
         loadHistory();
         syncRingStateFromInputs();
+        if (currentUser) restorePendingTask({ restart: true });
 
         if (!walletBalanceListenerBound) {
             window.addEventListener('walletBalanceUpdated', (e) => {
@@ -935,6 +992,7 @@
             if (balanceEl) balanceEl.style.display = 'flex';
             persistMergedCachedProfile(currentUser);
             await loadUserBalance();
+            restorePendingTask();
         } else {
             if (loginPrompt) loginPrompt.style.display = 'none';
             if (form) form.style.display = 'block';
@@ -1120,7 +1178,7 @@
         if (batchPanel) batchPanel.classList.add('show');
 
         batchStats = { success: 0, failed: 0, total: 1 };
-        activeTasks.clear();
+        clearActiveTaskTimers();
         clearResultsList();
         hideBatchSummary();
         addResultItem(0, label, 'processing', escapeHtml(waitingMessage));
@@ -1202,6 +1260,70 @@
         } catch (error) {
             console.warn('[VerifyHistory] Failed to write client-side history:', error.message);
         }
+    }
+
+    function restorePendingTask(options = {}) {
+        const { restart = false } = options;
+        const pending = readPendingTask();
+        const currentUserId = getUserId(currentUser);
+
+        if (!pending || !currentUserId || pending.userId !== String(currentUserId) || pending.site !== getCurrentSiteValue()) {
+            return false;
+        }
+
+        if (!restart && activeTasks.has(pending.jobId)) {
+            return true;
+        }
+
+        clearPreviewTimers();
+        clearRingResetTimer();
+        prepareExecutionDisplay(pending.email, t('verify.resumePending', '正在恢复任务状态...'));
+
+        isLoading = true;
+        const submitBtn = document.getElementById('verifySubmitBtn');
+        const resetBtn = document.getElementById('verifyResetBtn');
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = `<div class="spinner"></div> ${t('verify.restoringTask', '恢复中...')}`;
+        }
+        if (resetBtn) resetBtn.disabled = true;
+        setPreviewControlsDisabled(true);
+
+        activeTasks.set(pending.jobId, {
+            index: 0,
+            email: pending.email,
+            timer: null
+        });
+        updateExecutionRing({ status: 'queued', queue_position: 0 });
+
+        pollTask(pending.jobId, pending.userId, {
+            index: 0,
+            email: pending.email
+        }).then((result) => {
+            if (result.terminal && result.success) {
+                batchStats.success = 1;
+                if (result.pointsDeducted) {
+                    userBalance = Math.max(0, userBalance - result.pointsDeducted);
+                    const balEl = document.getElementById('verifyBalanceValue');
+                    if (balEl) balEl.textContent = userBalance;
+                }
+            } else if (result.terminal) {
+                batchStats.failed = 1;
+            }
+
+            if (result.terminal) {
+                updateBatchProgress(1, 1);
+            }
+
+            finishVerification({
+                outcome: result.terminal ? (result.success ? 'success' : 'error') : '',
+                jobId: pending.jobId,
+                preservePending: !result.terminal,
+                showSummary: result.terminal
+            });
+        });
+
+        return true;
     }
 
     async function submit() {
@@ -1349,6 +1471,12 @@
                 email: entry.email,
                 timer: null
             });
+            persistPendingTask({
+                jobId,
+                email: entry.email,
+                userId,
+                site: getCurrentSiteValue()
+            });
 
             const display = getResultDisplay({
                 status: data.status || 'queued',
@@ -1359,19 +1487,27 @@
             updateExecutionRing(data);
 
             pollTask(jobId, userId, entry).then((result) => {
-                if (result.success) {
+                if (result.terminal && result.success) {
                     batchStats.success = 1;
                     if (result.pointsDeducted) {
                         userBalance = Math.max(0, userBalance - result.pointsDeducted);
                         const balEl = document.getElementById('verifyBalanceValue');
                         if (balEl) balEl.textContent = userBalance;
                     }
-                } else {
+                } else if (result.terminal) {
                     batchStats.failed = 1;
                 }
 
-                updateBatchProgress(1, 1);
-                finishVerification({ outcome: result.success ? 'success' : 'error' });
+                if (result.terminal) {
+                    updateBatchProgress(1, 1);
+                }
+
+                finishVerification({
+                    outcome: result.terminal ? (result.success ? 'success' : 'error') : '',
+                    jobId,
+                    preservePending: !result.terminal,
+                    showSummary: result.terminal
+                });
             });
         } catch (error) {
             const errorText = error.message || t('verify.loadFailed', '提交失败');
@@ -1390,26 +1526,25 @@
     function pollTask(jobId, userId, entry) {
         return new Promise((resolve) => {
             const startTime = Date.now();
+            const backgroundContinueText = t('verify.pendingBackgroundContinue', '连接暂时中断，任务仍在后台处理，可稍后在任务历史查看');
+            const backgroundContinueHint = t('verify.pendingBackgroundContinueHint', '你也可以刷新页面继续追踪当前任务');
 
             const timer = setInterval(async () => {
                 if (!activeTasks.has(jobId)) {
                     clearInterval(timer);
-                    resolve({ success: false, pointsDeducted: 0 });
+                    resolve({ success: false, pointsDeducted: 0, terminal: false });
                     return;
                 }
 
                 if (Date.now() - startTime > CONFIG.pollTimeout) {
                     clearInterval(timer);
                     activeTasks.delete(jobId);
-                    const timeoutText = t('verify.timeout', '任务超时，请稍后重试');
-                    updateResultItem(entry.index, 'error', escapeHtml(timeoutText));
-                    await logToHistory(entry.email, 'timeout', {
-                        email: entry.email,
-                        job_id: jobId,
-                        error_message: timeoutText,
-                        raw_status: 'timeout'
-                    });
-                    resolve({ success: false, pointsDeducted: 0 });
+                    updateResultItem(
+                        entry.index,
+                        'processing',
+                        `${escapeHtml(backgroundContinueText)}<div class="verify-result-subtle">${escapeHtml(backgroundContinueHint)}</div>`
+                    );
+                    resolve({ success: false, pointsDeducted: 0, terminal: false });
                     return;
                 }
 
@@ -1424,16 +1559,12 @@
                     if (!res.ok) {
                         clearInterval(timer);
                         activeTasks.delete(jobId);
-                        const errorText = getErrorLabel(data.code, data.message || t('verify.loadFailed', '状态查询失败'));
-                        updateResultItem(entry.index, 'error', escapeHtml(errorText));
-                        await logToHistory(entry.email, 'failed', {
-                            email: entry.email,
-                            job_id: jobId,
-                            error_code: data.code || '',
-                            error_message: errorText,
-                            raw_status: 'status_error'
-                        });
-                        resolve({ success: false, pointsDeducted: 0 });
+                        updateResultItem(
+                            entry.index,
+                            'processing',
+                            `${escapeHtml(backgroundContinueText)}<div class="verify-result-subtle">${escapeHtml(backgroundContinueHint)}</div>`
+                        );
+                        resolve({ success: false, pointsDeducted: 0, terminal: false });
                         return;
                     }
 
@@ -1446,7 +1577,8 @@
                         activeTasks.delete(jobId);
                         resolve({
                             success: display.success,
-                            pointsDeducted: Number(data.pointsDeducted) || 0
+                            pointsDeducted: Number(data.pointsDeducted) || 0,
+                            terminal: true
                         });
                     }
                 } catch (error) {
@@ -1466,9 +1598,16 @@
     }
 
     function finishVerification(options = {}) {
-        const { skipRefresh = false, outcome = '' } = options;
+        const {
+            skipRefresh = false,
+            outcome = '',
+            jobId = '',
+            preservePending = false,
+            showSummary = true
+        } = options;
         isLoading = false;
-        activeTasks.clear();
+        clearActiveTaskTimers();
+        if (jobId && !preservePending) clearPendingTask(jobId);
         clearPreviewTimers();
 
         const submitBtn = document.getElementById('verifySubmitBtn');
@@ -1480,7 +1619,11 @@
         if (resetBtn) resetBtn.disabled = false;
         setPreviewControlsDisabled(false);
 
-        showBatchSummary();
+        if (showSummary) {
+            showBatchSummary();
+        } else {
+            hideBatchSummary();
+        }
         updateQuotaDisplay();
 
         if (!skipRefresh) {
