@@ -1887,21 +1887,23 @@ body.wallet-modal-lock {
 
     /* History */
     .history-header {
-        flex-wrap: wrap;
-        gap: 8px;
+        flex-wrap: nowrap;
+        align-items: center;
+        gap: 10px;
     }
 
     .history-search {
-        flex: 0 0 min(260px, 74vw);
-        width: min(260px, 74vw);
+        flex: 0 1 min(250px, 48vw);
+        width: min(250px, 48vw);
         min-width: 0;
-        max-width: 260px;
+        max-width: 250px;
     }
 
     .history-actions {
-        width: 100%;
+        width: auto;
+        margin-left: auto;
         justify-content: flex-end;
-        flex-wrap: wrap;
+        flex-wrap: nowrap;
     }
 
     .view-title {
@@ -1929,6 +1931,25 @@ body.wallet-modal-lock {
     .filter-popup {
         right: auto;
         left: 0;
+    }
+}
+
+@media (max-width: 420px) {
+    .history-header {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .history-search {
+        flex: 0 0 min(250px, 74vw);
+        width: min(250px, 74vw);
+        max-width: 250px;
+    }
+
+    .history-actions {
+        width: 100%;
+        margin-left: 0;
+        flex-wrap: wrap;
     }
 }
 
