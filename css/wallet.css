@@ -1292,9 +1292,10 @@ body.wallet-modal-lock {
 
 .history-search {
     position: relative;
-    flex: 0 1 320px;
-    min-width: 200px;
-    max-width: 360px;
+    flex: 0 0 clamp(220px, 28vw, 300px);
+    width: clamp(220px, 28vw, 300px);
+    min-width: 220px;
+    max-width: 300px;
 }
 
 .history-search-icon {
@@ -1891,9 +1892,10 @@ body.wallet-modal-lock {
     }
 
     .history-search {
-        max-width: none;
-        width: 100%;
+        flex: 0 0 min(260px, 74vw);
+        width: min(260px, 74vw);
         min-width: 0;
+        max-width: 260px;
     }
 
     .history-actions {
