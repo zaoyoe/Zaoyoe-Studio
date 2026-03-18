@@ -380,7 +380,7 @@
         "query": "Query",
         "querying": "Querying...",
         "transactionRecords": "Transaction Records",
-        "searchPlaceholder": "Search order ID / task ID / code / product",
+        "searchPlaceholder": "Search order ID / task ID / code / product / verify email / points amount",
         "clearSearch": "Clear search",
         "searchingRecords": "Searching...",
         "all": "All",

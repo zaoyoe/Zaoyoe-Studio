@@ -1490,7 +1490,7 @@
                                             type="search"
                                             id="wallet-order-search-input"
                                             class="history-search-input"
-                                            placeholder="${window.i18n?.t('wallet.searchPlaceholder') || '搜索订单号 / 任务号 / 兑换码 / 商品名'}"
+                                            placeholder="${window.i18n?.t('wallet.searchPlaceholder') || '搜索订单号 / 任务号 / 兑换码 / 商品名 / 认证邮箱 / 积分数量'}"
                                             autocomplete="off"
                                             spellcheck="false"
                                             oninput="WalletModal.handleOrderSearchInput(event)"
@@ -3114,6 +3114,9 @@
             const ledgerSelect = 'id, amount, reason, reference_id, created_at';
             const likeValue = `%${trimmedQuery}%`;
             const isUuidQuery = this.isUuid(trimmedQuery);
+            const numericQuery = Number(trimmedQuery);
+            const isPositiveAmountQuery = /^\d+$/.test(trimmedQuery) && Number.isFinite(numericQuery) && numericQuery > 0;
+            const shouldSearchVerifyEmail = this.looksLikeEmail(trimmedQuery) || trimmedQuery.includes('@');
 
             const shopRequests = [
                 supabase
@@ -3145,6 +3148,19 @@
                     .limit(80)
             ];
 
+            if (isPositiveAmountQuery) {
+                ledgerRequests.push(
+                    supabase
+                        .from('points_ledger')
+                        .select(ledgerSelect)
+                        .eq('user_id', userId)
+                        .eq('site', site)
+                        .eq('amount', numericQuery)
+                        .order('created_at', { ascending: false })
+                        .limit(80)
+                );
+            }
+
             if (isUuidQuery) {
                 shopRequests.push(
                     supabase
@@ -3167,11 +3183,35 @@
                 );
             }
 
-            const { data: promptMatches, error: promptError } = await supabase
+            const promptSearchRequest = supabase
                 .from('prompts')
                 .select('id, title')
                 .ilike('title', likeValue)
                 .limit(30);
+
+            const verifyLogRequests = shouldSearchVerifyEmail ? [
+                supabase
+                    .from('verification_logs')
+                    .select('verification_id, status, message, points_deducted, created_at')
+                    .eq('user_id', userId)
+                    .eq('site', site)
+                    .ilike('verification_id', likeValue)
+                    .order('created_at', { ascending: false })
+                    .limit(80),
+                supabase
+                    .from('verification_logs')
+                    .select('verification_id, status, message, points_deducted, created_at')
+                    .eq('user_id', userId)
+                    .eq('site', site)
+                    .ilike('message', likeValue)
+                    .order('created_at', { ascending: false })
+                    .limit(80)
+            ] : [];
+
+            const [{ data: promptMatches, error: promptError }, verifyLogResults] = await Promise.all([
+                promptSearchRequest,
+                verifyLogRequests.length > 0 ? Promise.all(verifyLogRequests) : Promise.resolve([])
+            ]);
 
             if (promptError) {
                 console.warn('[WalletModal] Prompt search failed:', promptError);
@@ -3192,6 +3232,37 @@
                         .eq('site', site)
                         .eq('reason', 'unlock_prompt')
                         .in('reference_id', promptIds)
+                        .order('created_at', { ascending: false })
+                        .limit(80)
+                );
+            }
+
+            const verifyLogRows = [];
+            verifyLogResults.forEach((result) => {
+                if (result.error) throw result.error;
+                if (result.data?.length) {
+                    verifyLogRows.push(...result.data);
+                }
+            });
+
+            const verifyJobIds = [...new Set(
+                verifyLogRows.map((row) => {
+                    const payload = this.parseVerifyLogMessage(row.message) || {};
+                    const verificationId = String(row.verification_id || '').trim();
+                    const fallbackEmail = this.looksLikeEmail(verificationId) ? verificationId.toLowerCase() : '';
+                    const fallbackJobId = fallbackEmail ? '' : verificationId;
+                    return String(payload.job_id || fallbackJobId || '').trim();
+                }).filter(Boolean)
+            )];
+
+            if (verifyJobIds.length > 0) {
+                ledgerRequests.push(
+                    supabase
+                        .from('points_ledger')
+                        .select(ledgerSelect)
+                        .eq('user_id', userId)
+                        .eq('site', site)
+                        .in('reference_id', verifyJobIds.slice(0, 80))
                         .order('created_at', { ascending: false })
                         .limit(80)
                 );

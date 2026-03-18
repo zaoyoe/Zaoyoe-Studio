@@ -380,7 +380,7 @@
         "query": "查询",
         "querying": "查询中...",
         "transactionRecords": "交易记录",
-        "searchPlaceholder": "搜索订单号 / 任务号 / 兑换码 / 商品名",
+        "searchPlaceholder": "搜索订单号 / 任务号 / 兑换码 / 商品名 / 认证邮箱 / 积分数量",
         "clearSearch": "清除搜索",
         "searchingRecords": "查询中...",
         "all": "全部",
