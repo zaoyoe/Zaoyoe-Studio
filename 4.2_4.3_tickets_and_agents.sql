@@ -9,7 +9,9 @@ CREATE TABLE IF NOT EXISTS agent_prices (
 
 ALTER TABLE agent_prices ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Anyone can view agent prices" ON agent_prices;
 CREATE POLICY "Anyone can view agent prices" ON agent_prices FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Agents can manage their own prices" ON agent_prices;
 CREATE POLICY "Agents can manage their own prices" ON agent_prices FOR ALL USING (auth.uid() = agent_id);
 
 
@@ -28,8 +30,11 @@ CREATE TABLE IF NOT EXISTS shop_tickets (
 
 ALTER TABLE shop_tickets ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can view their own tickets" ON shop_tickets;
 CREATE POLICY "Users can view their own tickets" ON shop_tickets FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can create tickets" ON shop_tickets;
 CREATE POLICY "Users can create tickets" ON shop_tickets FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Admins have full access to tickets" ON shop_tickets;
 CREATE POLICY "Admins have full access to tickets" ON shop_tickets FOR ALL USING (
     EXISTS (SELECT 1 FROM admin_roles ar WHERE ar.user_id = auth.uid())
 );

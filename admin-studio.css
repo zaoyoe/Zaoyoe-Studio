@@ -14578,6 +14578,71 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     min-height: 108px;
 }
 
+#settings-view-affiliate .module-content {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    align-items: start;
+}
+
+#settings-view-affiliate .config-card {
+    min-width: 0;
+}
+
+#settings-view-affiliate .config-card .config-card-body {
+    max-height: none;
+    overflow: visible;
+}
+
+#settings-view-affiliate .config-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(240px, 360px);
+    align-items: start;
+    gap: 18px;
+}
+
+#settings-view-affiliate .config-info,
+#settings-view-affiliate .config-input-wrapper {
+    min-width: 0;
+}
+
+#settings-view-affiliate .config-desc {
+    max-width: none;
+}
+
+#settings-view-affiliate .config-input-wrapper {
+    width: 100%;
+    justify-content: flex-end;
+    margin-top: 0;
+}
+
+#settings-view-affiliate .config-input-wrapper .config-input[type="number"] {
+    width: 120px;
+    min-width: 120px;
+}
+
+#settings-view-affiliate .config-input-wrapper .config-input[type="text"] {
+    width: min(100%, 360px);
+    min-width: 240px;
+    text-align: left;
+}
+
+#settings-view-affiliate .affiliate-textarea-wrapper {
+    flex: 1 1 auto;
+}
+
+#settings-view-affiliate .affiliate-textarea-wrapper .config-textarea {
+    min-width: 0;
+    width: 100%;
+}
+
+#settings-view-affiliate .config-input-wrapper .toggle-switch {
+    margin-left: auto;
+}
+
+#settings-view-affiliate .affiliate-config-card--wide,
+#settings-view-affiliate .affiliate-config-card--poster {
+    grid-column: 1 / -1;
+}
+
 .affiliate-poster-settings .config-row {
     align-items: flex-start;
 }
@@ -14784,6 +14849,25 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 }
 
 @media (max-width: 920px) {
+    #settings-view-affiliate .module-content {
+        grid-template-columns: 1fr !important;
+    }
+
+    #settings-view-affiliate .config-row {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+
+    #settings-view-affiliate .config-input-wrapper {
+        justify-content: flex-start;
+    }
+
+    #settings-view-affiliate .config-input-wrapper .config-input[type="text"],
+    #settings-view-affiliate .config-input-wrapper .config-input[type="number"] {
+        width: 100%;
+        min-width: 0;
+    }
+
     .affiliate-poster-header {
         flex-direction: column;
         align-items: flex-start;

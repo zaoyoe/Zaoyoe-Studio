@@ -21,6 +21,7 @@ CREATE INDEX IF NOT EXISTS idx_system_config_key ON public.system_config(config_
 ALTER TABLE public.system_config ENABLE ROW LEVEL SECURITY;
 
 -- 管理员可读写
+DROP POLICY IF EXISTS "Admins can manage config" ON public.system_config;
 CREATE POLICY "Admins can manage config" ON public.system_config
     FOR ALL TO authenticated
     USING (
@@ -31,6 +32,7 @@ CREATE POLICY "Admins can manage config" ON public.system_config
     );
 
 -- 所有认证用户可读取（前端需要读取定价信息）
+DROP POLICY IF EXISTS "Authenticated users can read config" ON public.system_config;
 CREATE POLICY "Authenticated users can read config" ON public.system_config
     FOR SELECT TO authenticated
     USING (true);
