@@ -388,6 +388,7 @@
         "rechargeType": "Recharge",
         "redeemCode": "Redemption Code",
         "shopPurchase": "Product",
+        "verifyPurchase": "Verification",
         "promptPurchase": "Prompt",
         "noRecords": "No records",
         "orderNo": "Order No.",

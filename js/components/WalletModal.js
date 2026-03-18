@@ -1498,6 +1498,7 @@
                                                 <div class="filter-option" data-value="recharge" onclick="WalletModal.selectOrderFilter('recharge', window.i18n?.t('wallet.rechargeType') || '充值')"><i class="fas fa-bolt" style="color: #fbbf24;"></i> ${window.i18n?.t('wallet.rechargeType') || '充值'}</div>
                                                 <div class="filter-option" data-value="redeem" onclick="WalletModal.selectOrderFilter('redeem', window.i18n?.t('wallet.redeemCode') || '兑换码')"><i class="fas fa-ticket-alt" style="color: #f472b6;"></i> ${window.i18n?.t('wallet.redeemCode') || '兑换码'}</div>
                                                 <div class="filter-option" data-value="shop" onclick="WalletModal.selectOrderFilter('shop', window.i18n?.t('wallet.shopPurchase') || '商品')"><i class="fas fa-shopping-bag" style="color: #22c55e;"></i> ${window.i18n?.t('wallet.shopPurchase') || '商品'}</div>
+                                                <div class="filter-option" data-value="verify" onclick="WalletModal.selectOrderFilter('verify', window.i18n?.t('wallet.verifyPurchase') || '认证')"><i class="fas fa-shield-alt" style="color: #60a5fa;"></i> ${window.i18n?.t('wallet.verifyPurchase') || '认证'}</div>
                                                 <div class="filter-option" data-value="prompt" onclick="WalletModal.selectOrderFilter('prompt', window.i18n?.t('wallet.promptPurchase') || '提示词')"><i class="fas fa-lightbulb" style="color: #fde68a;"></i> ${window.i18n?.t('wallet.promptPurchase') || '提示词'}</div>
                                             </div>
                                         </div>
@@ -2972,6 +2973,8 @@
             // Apply type filter using transactionType
             if (typeFilter === 'shop') {
                 filtered = filtered.filter(order => order.transactionType === 'shop');
+            } else if (typeFilter === 'verify') {
+                filtered = filtered.filter(order => order.transactionType === 'verify');
             } else if (typeFilter === 'prompt') {
                 filtered = filtered.filter(order => order.transactionType === 'prompt');
             } else if (typeFilter === 'recharge') {

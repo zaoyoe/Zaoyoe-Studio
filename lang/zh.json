@@ -388,6 +388,7 @@
         "rechargeType": "充值",
         "redeemCode": "兑换码",
         "shopPurchase": "商品",
+        "verifyPurchase": "认证",
         "promptPurchase": "提示词",
         "noRecords": "暂无记录",
         "orderNo": "订单号",
