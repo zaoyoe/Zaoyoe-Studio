@@ -481,6 +481,7 @@
         "showPassword": "Show password",
         "hidePassword": "Hide password",
         "totpLabel": "2FA Secret (Base32)",
+        "totpEnableGuide": "How to enable 2FA",
         "totpPlaceholder": "Example: JBSWY3DPEHPK3PXP",
         "priorityLabel": "High Priority Queue",
         "singleCost": "This submission costs",

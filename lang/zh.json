@@ -481,6 +481,7 @@
         "showPassword": "显示密码",
         "hidePassword": "隐藏密码",
         "totpLabel": "2FA 密钥（Base32）",
+        "totpEnableGuide": "2fa 开启方式",
         "totpPlaceholder": "例如：JBSWY3DPEHPK3PXP",
         "priorityLabel": "高优先级任务",
         "singleCost": "本次提交消耗",
