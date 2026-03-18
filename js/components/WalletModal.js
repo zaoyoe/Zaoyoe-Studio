@@ -864,6 +864,7 @@
         verifyLogCache: {},
         affiliateStats: null,
         affiliatePosterConfig: null,
+        checkinConfig: null,
 
         isVerifyServiceReason(reason = '') {
             const normalized = String(reason || '').trim().toLowerCase();
@@ -1693,6 +1694,52 @@
             this.affiliateStats = null;
             this.affiliatePosterConfig = null;
             this.affiliateProfile = null;
+        },
+
+        getDefaultCheckinConfig() {
+            return {
+                base_points: 5,
+                consecutive_7_points: 50,
+                perfect_month_points: 200,
+                makeup_cost_points: 10
+            };
+        },
+
+        normalizeCheckinConfig(raw) {
+            const defaults = this.getDefaultCheckinConfig();
+            const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+            const parseWholeNumber = (value, fallback) => {
+                const parsed = Number.parseInt(value, 10);
+                return Number.isFinite(parsed) ? parsed : fallback;
+            };
+
+            return {
+                base_points: parseWholeNumber(source.base_points, defaults.base_points),
+                consecutive_7_points: parseWholeNumber(source.consecutive_7_points, defaults.consecutive_7_points),
+                perfect_month_points: parseWholeNumber(source.perfect_month_points, defaults.perfect_month_points),
+                makeup_cost_points: Math.max(0, parseWholeNumber(source.makeup_cost_points, defaults.makeup_cost_points))
+            };
+        },
+
+        async loadCheckinConfig(forceRefresh = false) {
+            if (!forceRefresh && this.checkinConfig) {
+                return this.checkinConfig;
+            }
+
+            try {
+                const { data, error } = await window.supabaseClient.rpc('get_system_config', {
+                    p_key: 'checkin_system'
+                });
+
+                if (error) throw error;
+
+                this.checkinConfig = this.normalizeCheckinConfig(data);
+            } catch (configError) {
+                console.warn('[WalletModal] Failed to load check-in config:', configError);
+                this.checkinConfig = this.getDefaultCheckinConfig();
+            }
+
+            return this.checkinConfig;
         },
 
         getDefaultAffiliatePosterConfig() {
@@ -2574,13 +2621,17 @@
                 const titleEl = document.getElementById('checkin-month-title');
                 if (titleEl) titleEl.textContent = `${month}月打卡`;
 
-                // Fetch data from RPC
-                const { data, error } = await window.supabaseClient.rpc('fn_get_checkin_data', {
-                    p_user_id: session.user.id,
-                    p_site: window.SiteConfig?.site || 'cn',
-                    p_year: year,
-                    p_month: month
-                });
+                const [checkinResult] = await Promise.all([
+                    window.supabaseClient.rpc('fn_get_checkin_data', {
+                        p_user_id: session.user.id,
+                        p_site: window.SiteConfig?.site || 'cn',
+                        p_year: year,
+                        p_month: month
+                    }),
+                    this.loadCheckinConfig(true)
+                ]);
+
+                const { data, error } = checkinResult;
 
                 if (error) throw error;
 
@@ -2777,13 +2828,14 @@
         /**
          * Popup logic for Makeup Checkin
          */
-        makeupCheckin(dateStr) {
-            // Future extension: present a modal letting user choose 'points', 'comment', or 'invite'
-            // For now, default to points, but ask for confirmation.
-            // Ideally, we'd read the cost from `systemConfigCache` if we loaded it in frontend,
-            // but for simplicity, we let backend handle/reject.
+        async makeupCheckin(dateStr) {
+            const checkinConfig = await this.loadCheckinConfig(true);
+            const makeupCost = Math.max(0, Number(checkinConfig?.makeup_cost_points) || 0);
+            const confirmMessage = makeupCost > 0
+                ? `确认要补签 ${dateStr} 吗？\\n这将扣除 ${makeupCost} 积分`
+                : `确认要补签 ${dateStr} 吗？\\n当前补签不扣除积分`;
 
-            if (!confirm(`确认要补签 ${dateStr} 吗？\\n这将扣除配置的积分(如10分)`)) {
+            if (!confirm(confirmMessage)) {
                 return;
             }
 
@@ -2821,7 +2873,7 @@
                 }
             } catch (e) {
                 console.error('[WalletModal] Makeup failed:', e);
-                this.showToast(`更补签失败: ${e.message}`, 'error');
+                this.showToast(`补签失败: ${e.message}`, 'error');
             }
         },
 

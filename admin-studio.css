@@ -14441,6 +14441,11 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     border-bottom-color: var(--card-border);
 }
 
+#settings-view-pricing .config-card[data-config="rewards"]:not(.collapsed) .config-card-body {
+    max-height: none;
+    overflow: visible;
+}
+
 /* Config Row */
 .config-row {
     display: flex;

@@ -203,6 +203,11 @@ DECLARE
     v_cost INT := 0;
     v_user_balance NUMERIC;
     v_new_balance NUMERIC;
+    v_current_bonus INT := 0;
+    v_current_paid INT := 0;
+    v_deduct_bonus INT := 0;
+    v_deduct_paid INT := 0;
+    v_remaining_cost INT := 0;
 BEGIN
     IF p_user_id IS NULL THEN RETURN jsonb_build_object('success', false, 'message', '用户未登录'); END IF;
     IF p_date >= current_date THEN RETURN jsonb_build_object('success', false, 'message', '只能对过去的日期进行补签'); END IF;
@@ -218,14 +223,33 @@ BEGIN
         v_cost := COALESCE((v_config->>'makeup_cost_points')::INT, 10);
         
         IF v_cost > 0 THEN
-            -- 检查余额
-            SELECT total_balance INTO v_user_balance FROM points_balance WHERE user_id = p_user_id AND site = p_site;
+            -- 检查余额并锁定当前账户
+            SELECT COALESCE(paid_balance, 0), COALESCE(bonus_balance, 0), COALESCE(total_balance, 0)
+            INTO v_current_paid, v_current_bonus, v_user_balance
+            FROM points_balance
+            WHERE user_id = p_user_id AND site = p_site
+            FOR UPDATE;
+
             IF v_user_balance IS NULL OR v_user_balance < v_cost THEN
                 RETURN jsonb_build_object('success', false, 'message', '积分不足，无法补签（需要 ' || v_cost || ' 积分）');
             END IF;
-            
-            -- 扣除积分
-            UPDATE points_balance SET bonus_balance = bonus_balance - v_cost WHERE user_id = p_user_id AND site = p_site;
+
+            -- 优先扣赠送积分，不够时再扣付费积分，避免出现 bonus_balance 负数
+            v_remaining_cost := v_cost;
+            v_deduct_bonus := LEAST(v_current_bonus, v_remaining_cost);
+            v_remaining_cost := v_remaining_cost - v_deduct_bonus;
+            v_deduct_paid := LEAST(v_current_paid, v_remaining_cost);
+
+            IF (v_deduct_bonus + v_deduct_paid) < v_cost THEN
+                RETURN jsonb_build_object('success', false, 'message', '积分不足，无法补签（需要 ' || v_cost || ' 积分）');
+            END IF;
+
+            UPDATE points_balance
+            SET bonus_balance = bonus_balance - v_deduct_bonus,
+                paid_balance = paid_balance - v_deduct_paid,
+                updated_at = NOW()
+            WHERE user_id = p_user_id AND site = p_site;
+
             INSERT INTO points_ledger (user_id, site, amount, reason, reference_id)
             VALUES (p_user_id, p_site, -v_cost, 'makeup_checkin_cost', 'MKP_COST_' || to_char(p_date, 'YYYYMMDD'));
         END IF;
@@ -245,7 +269,11 @@ BEGIN
     VALUES (p_user_id, p_site, p_date, true, p_method);
 
     -- 返回新余额
-    SELECT COALESCE(total_balance, 0) INTO v_new_balance FROM points_balance WHERE user_id = p_user_id AND site = p_site;
+    SELECT COALESCE((
+        SELECT total_balance
+        FROM points_balance
+        WHERE user_id = p_user_id AND site = p_site
+    ), 0) INTO v_new_balance;
 
     RETURN jsonb_build_object(
         'success', true,
