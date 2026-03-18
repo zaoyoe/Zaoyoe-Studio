@@ -865,6 +865,7 @@
         affiliateStats: null,
         affiliatePosterConfig: null,
         checkinConfig: null,
+        rechargeOptionsConfig: null,
 
         isVerifyServiceReason(reason = '') {
             const normalized = String(reason || '').trim().toLowerCase();
@@ -913,6 +914,10 @@
 
             if (rawReason === 'signup_bonus') {
                 return '注册奖励';
+            }
+
+            if (rawReason === 'custom_recharge') {
+                return '自定义充值';
             }
 
             if (rawReason.startsWith('模拟充值:')) {
@@ -1450,6 +1455,28 @@
                                 <div class="packages-container" id="wallet-packages">
                                     <div class="loading-text">${window.i18n?.t('common.loading') || '加载中...'}</div>
                                 </div>
+
+                                <div class="custom-recharge-section" id="wallet-custom-recharge-section" style="display:none;">
+                                    <div class="custom-recharge-header">
+                                        <div>
+                                            <div class="custom-recharge-title">自定义充值</div>
+                                            <div class="custom-recharge-subtitle">输入要充值的积分数量，支持 0.1 精度。</div>
+                                        </div>
+                                        <span class="custom-recharge-badge">按需充值</span>
+                                    </div>
+                                    <div class="custom-recharge-row">
+                                        <input type="number"
+                                               id="wallet-custom-recharge-input"
+                                               class="custom-recharge-input"
+                                               min="0.1"
+                                               step="0.1"
+                                               inputmode="decimal"
+                                               placeholder="例如 100 或 0.1"
+                                               onkeyup="if(event.key==='Enter') WalletModal.customRecharge()" />
+                                        <button class="custom-recharge-btn" id="wallet-custom-recharge-btn" onclick="WalletModal.customRecharge()">立即充值</button>
+                                    </div>
+                                    <div class="custom-recharge-meta">该入口由管理员在后台控制显示，用于用户自行决定本次充值的积分数量。</div>
+                                </div>
                                 
                                 <!-- Afdian Code Query Section -->
                                 <div class="afdian-section">
@@ -1762,6 +1789,67 @@
             }
 
             return this.checkinConfig;
+        },
+
+        getDefaultRechargeOptionsConfig() {
+            return {
+                custom_amount_enabled: false
+            };
+        },
+
+        normalizeRechargeOptionsConfig(raw) {
+            const defaults = this.getDefaultRechargeOptionsConfig();
+            const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+
+            return {
+                custom_amount_enabled: source.custom_amount_enabled === true || String(source.custom_amount_enabled) === 'true'
+                    ? true
+                    : defaults.custom_amount_enabled
+            };
+        },
+
+        async loadRechargeOptionsConfig(forceRefresh = false) {
+            if (!forceRefresh && this.rechargeOptionsConfig) {
+                return this.rechargeOptionsConfig;
+            }
+
+            try {
+                const { data, error } = await window.supabaseClient.rpc('get_system_config', {
+                    p_key: 'recharge_options'
+                });
+
+                if (error) throw error;
+
+                this.rechargeOptionsConfig = this.normalizeRechargeOptionsConfig(data);
+            } catch (configError) {
+                console.warn('[WalletModal] Failed to load recharge options config:', configError);
+                this.rechargeOptionsConfig = this.getDefaultRechargeOptionsConfig();
+            }
+
+            return this.rechargeOptionsConfig;
+        },
+
+        renderCustomRechargeSection(config = this.rechargeOptionsConfig) {
+            const section = document.getElementById('wallet-custom-recharge-section');
+            const input = document.getElementById('wallet-custom-recharge-input');
+            const button = document.getElementById('wallet-custom-recharge-btn');
+            if (!section) return;
+
+            const normalizedConfig = this.normalizeRechargeOptionsConfig(config);
+            const isEnabled = normalizedConfig.custom_amount_enabled;
+
+            section.style.display = isEnabled ? '' : 'none';
+
+            if (input) {
+                input.disabled = !isEnabled;
+                if (!isEnabled) input.value = '';
+            }
+
+            if (button) {
+                button.disabled = !isEnabled;
+            }
+
+            requestWalletRechargeScrollCueUpdate();
         },
 
         getDefaultAffiliatePosterConfig() {
@@ -2497,10 +2585,11 @@
                 }
 
                 // 🚀 Run ALL API calls in PARALLEL
-                const [balance, packages, history] = await Promise.all([
+                const [balance, packages, history, rechargeOptions] = await Promise.all([
                     PointsService.getBalance(),
                     PointsService.getPackages(),
-                    PointsService.getHistory()
+                    PointsService.getHistory(),
+                    this.loadRechargeOptionsConfig()
                 ]);
 
                 console.log('[WalletModal] ✅ Data loaded:', { balance, packagesLength: packages.length });
@@ -2545,6 +2634,8 @@
                     }
                     requestWalletRechargeScrollCueUpdate();
                 }
+
+                this.renderCustomRechargeSection(rechargeOptions);
 
                 // Store packages & history data for reuse
                 this._packagesCache = packages;
@@ -2633,6 +2724,48 @@
                 // Remove loading state on error
                 if (overlay) overlay.classList.remove('loading');
                 alert('❌ 支付失败: ' + (err.message || '未知错误'));
+            }
+        },
+
+        async customRecharge() {
+            const overlay = document.getElementById('wallet-modal-overlay');
+            const input = document.getElementById('wallet-custom-recharge-input');
+            const button = document.getElementById('wallet-custom-recharge-btn');
+            const rawValue = input?.value ?? '';
+            const normalizedAmount = this.normalizePointValue(rawValue);
+
+            if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
+                this.showToast('请输入大于 0 的充值积分', 'error');
+                if (input) input.focus();
+                return;
+            }
+
+            try {
+                if (button) button.disabled = true;
+                if (overlay) overlay.classList.add('loading');
+
+                await PointsService.customRecharge(normalizedAmount);
+
+                if (input) {
+                    input.value = '';
+                }
+
+                if (overlay) overlay.classList.remove('loading');
+                this.showToast(`✅ 自定义充值成功！ +${this.formatPoints(normalizedAmount)} 积分`, 'success');
+
+                this.invalidateOrderRecordsCache();
+                this.loadOrders({
+                    searchQuery: this.orderSearchActiveQuery || this.orderSearchQuery,
+                    ignorePrefetch: true
+                }).catch(e => console.error('Order reload after custom recharge failed:', e));
+
+                this.loadData().catch(e => console.error('Wallet reload after custom recharge failed:', e));
+            } catch (err) {
+                console.error('[WalletModal] Custom recharge failed:', err);
+                if (overlay) overlay.classList.remove('loading');
+                this.showToast('❌ 自定义充值失败: ' + (err.message || '未知错误'), 'error');
+            } finally {
+                if (button) button.disabled = false;
             }
         },
 
@@ -3236,6 +3369,9 @@
                 }
                 else if (reason === 'signup_bonus') {
                     reason = '注册奖励';
+                }
+                else if (reason === 'custom_recharge') {
+                    reason = '自定义充值';
                 }
 
                 return `
@@ -4363,6 +4499,10 @@
                         transactionType = 'recharge';
                         displayName = '注册奖励';
                         icon = '🎁';
+                    } else if (entry.reason === 'custom_recharge') {
+                        transactionType = 'recharge';
+                        displayName = '自定义充值';
+                        icon = '⚡';
                     } else if (entry.reason && (entry.reason.startsWith('模拟充值') || entry.reason === 'package_purchase' || entry.reason === 'afdian_recharge')) {
                         transactionType = 'recharge';
                         displayName = this.getRechargeDisplayName(entry.reason);

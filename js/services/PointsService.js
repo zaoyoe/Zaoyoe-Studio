@@ -151,6 +151,31 @@
 
             if (rpcError) throw rpcError;
             return { success: true };
+        },
+
+        /**
+         * Custom recharge points
+         */
+        async customRecharge(pointsAmount) {
+            const userId = await this._getUserId();
+            if (!userId) throw new Error('请先登录');
+
+            const normalizedAmount = normalizePointValue(pointsAmount);
+            if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
+                throw new Error('请输入大于 0 的充值积分');
+            }
+
+            const { error: rpcError } = await supabase.rpc('fn_recharge_points', {
+                target_user_id: userId,
+                p_paid: normalizedAmount,
+                p_bonus: 0,
+                p_reason: 'custom_recharge',
+                p_reference_id: `custom_recharge_${Date.now()}`,
+                p_site: window.SiteConfig?.site || 'cn'
+            });
+
+            if (rpcError) throw rpcError;
+            return { success: true, amount: normalizedAmount };
         }
     };
 

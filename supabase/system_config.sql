@@ -63,6 +63,13 @@ INSERT INTO public.system_config (config_key, config_value, description) VALUES
 ]'::jsonb, '礼包配置')
 ON CONFLICT (config_key) DO NOTHING;
 
+-- 充值入口配置
+INSERT INTO public.system_config (config_key, config_value, description) VALUES
+('recharge_options', '{
+    "custom_amount_enabled": false
+}'::jsonb, '充值入口配置')
+ON CONFLICT (config_key) DO NOTHING;
+
 -- 销售渠道
 INSERT INTO public.system_config (config_key, config_value, description) VALUES
 ('channels', '[

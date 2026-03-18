@@ -1,8 +1,10 @@
 -- Function to handle recharging points with separate paid and bonus tracking
+DROP FUNCTION IF EXISTS fn_recharge_points(UUID, INTEGER, INTEGER, TEXT, TEXT);
+
 CREATE OR REPLACE FUNCTION fn_recharge_points(
     target_user_id UUID,
-    p_paid INTEGER,
-    p_bonus INTEGER,
+    p_paid NUMERIC(12,1),
+    p_bonus NUMERIC(12,1),
     p_reason TEXT,
     p_reference_id TEXT
 )

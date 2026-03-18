@@ -404,10 +404,12 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- PK 为 (user_id, site)，ON CONFLICT 需匹配
 -- ============================================
 
+DROP FUNCTION IF EXISTS fn_recharge_points(UUID, INTEGER, INTEGER, TEXT, TEXT, VARCHAR);
+
 CREATE OR REPLACE FUNCTION fn_recharge_points(
     target_user_id UUID,
-    p_paid INTEGER,
-    p_bonus INTEGER,
+    p_paid NUMERIC(12,1),
+    p_bonus NUMERIC(12,1),
     p_reason TEXT,
     p_reference_id TEXT,
     p_site VARCHAR DEFAULT 'cn'

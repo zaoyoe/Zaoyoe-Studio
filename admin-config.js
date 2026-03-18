@@ -15,6 +15,12 @@ function getDefaultCheckinConfig() {
     };
 }
 
+function getDefaultRechargeOptionsConfig() {
+    return {
+        custom_amount_enabled: false
+    };
+}
+
 function getDefaultAffiliateProgramConfig() {
     return {
         commission_rate_shop: 0.10,
@@ -104,6 +110,15 @@ function normalizeCheckinConfig(raw) {
         consecutive_7_points: Math.max(0, toPointNumber(source.consecutive_7_points, defaults.consecutive_7_points)),
         perfect_month_points: Math.max(0, toPointNumber(source.perfect_month_points, defaults.perfect_month_points)),
         makeup_cost_points: Math.max(0, toPointNumber(source.makeup_cost_points, defaults.makeup_cost_points))
+    };
+}
+
+function normalizeRechargeOptionsConfig(raw) {
+    const defaults = getDefaultRechargeOptionsConfig();
+    const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+
+    return {
+        custom_amount_enabled: source.custom_amount_enabled === true || String(source.custom_amount_enabled) === 'true'
     };
 }
 
@@ -218,6 +233,7 @@ function renderUnlockPricingConfig() {
 
 function renderPackagesConfig() {
     const packages = systemConfigCache['packages'] || [];
+    const rechargeOptions = normalizeRechargeOptionsConfig(systemConfigCache['recharge_options']);
     const tbody = document.getElementById('packagesTableBody');
     if (!tbody) return;
 
@@ -233,6 +249,11 @@ function renderPackagesConfig() {
             <td><button class="btn-delete" onclick="deletePackage(${index})"><i class="fas fa-trash"></i></button></td>
         </tr>
     `).join('');
+
+    const customRechargeToggle = document.getElementById('customRechargeStatusToggle');
+    if (customRechargeToggle) {
+        customRechargeToggle.classList.toggle('active', rechargeOptions.custom_amount_enabled);
+    }
 }
 
 function renderChannelsConfig() {
@@ -834,6 +855,34 @@ async function addPackageRow() {
 
     // Save in background
     saveConfig('packages', packages);
+}
+
+async function toggleCustomRechargeEntryStatus() {
+    const config = normalizeRechargeOptionsConfig(systemConfigCache['recharge_options']);
+    const toggleEl = document.getElementById('customRechargeStatusToggle');
+    const nextValue = !config.custom_amount_enabled;
+
+    config.custom_amount_enabled = nextValue;
+
+    if (toggleEl) {
+        toggleEl.classList.toggle('active', nextValue);
+        toggleEl.style.transform = 'scale(1.1)';
+        setTimeout(() => {
+            toggleEl.style.transform = '';
+        }, 150);
+    }
+
+    const success = await saveConfig('recharge_options', config);
+    if (!success) {
+        config.custom_amount_enabled = !nextValue;
+        if (toggleEl) {
+            toggleEl.classList.toggle('active', config.custom_amount_enabled);
+        }
+        return false;
+    }
+
+    showConfigSavedToast(nextValue ? '已开启自定义充值入口' : '已关闭自定义充值入口');
+    return true;
 }
 
 // ============================================
@@ -2336,6 +2385,7 @@ window.updatePackage = updatePackage;
 window.togglePackageStatus = togglePackageStatus;
 window.deletePackage = deletePackage;
 window.addPackageRow = addPackageRow;
+window.toggleCustomRechargeEntryStatus = toggleCustomRechargeEntryStatus;
 window.deleteChannel = deleteChannel;
 window.addChannel = addChannel;
 window.saveIpBlacklist = saveIpBlacklist;
