@@ -877,6 +877,30 @@
             return window.i18n?.t('wallet.verifyOrderName') || 'Google One Pro 试用链接';
         },
 
+        looksLikeEmail(value = '') {
+            return /^[^\s@]+@[^\s@]+\.[^\s@]+$/i.test(String(value || '').trim());
+        },
+
+        extractEmailCandidates(...values) {
+            const emailRegex = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/ig;
+            const emails = new Set();
+
+            values.flat().forEach((value) => {
+                const text = String(value || '').trim();
+                if (!text) return;
+
+                const matches = text.match(emailRegex) || [];
+                matches.forEach((email) => emails.add(String(email || '').trim().toLowerCase()));
+            });
+
+            return Array.from(emails);
+        },
+
+        extractFirstUrl(text = '') {
+            const match = String(text || '').match(/https?:\/\/[^\s"'<>]+/i);
+            return match ? match[0] : '';
+        },
+
         parseVerifyLogMessage(message) {
             if (typeof message !== 'string' || !message.trim().startsWith('{')) {
                 return null;
@@ -936,10 +960,21 @@
             };
         },
 
-        async fetchVerifyOrderLog(referenceId, userId, site) {
-            if (!referenceId || !userId) return null;
+        async fetchVerifyOrderLog(options = {}) {
+            const {
+                orderId = '',
+                referenceId = '',
+                userId = '',
+                site = 'cn',
+                createdAt = '',
+                pointsPaid = 0,
+                reason = ''
+            } = options;
 
-            const cacheKey = `${site}:${userId}:${referenceId}`;
+            if (!userId) return null;
+
+            const emailCandidates = this.extractEmailCandidates(referenceId, reason);
+            const cacheKey = `${site}:${userId}:${referenceId || orderId || createdAt || 'verify'}:${emailCandidates.join('|')}`;
             if (this.verifyLogCache[cacheKey]) {
                 return this.verifyLogCache[cacheKey];
             }
@@ -947,37 +982,131 @@
             let matchedRecord = null;
 
             try {
-                const exactResult = await supabase
-                    .from('verification_logs')
-                    .select('verification_id, status, message, points_deducted, created_at')
-                    .eq('user_id', userId)
-                    .eq('site', site)
-                    .eq('verification_id', referenceId)
-                    .order('created_at', { ascending: false })
-                    .limit(1);
-
-                if (exactResult.error) {
-                    console.warn('[WalletModal] Verify log exact lookup failed:', exactResult.error);
-                } else if (exactResult.data?.length) {
-                    matchedRecord = exactResult.data[0];
-                }
-
-                if (!matchedRecord) {
-                    const fallbackResult = await supabase
+                if (referenceId) {
+                    const exactResult = await supabase
                         .from('verification_logs')
                         .select('verification_id, status, message, points_deducted, created_at')
                         .eq('user_id', userId)
                         .eq('site', site)
+                        .eq('verification_id', referenceId)
                         .order('created_at', { ascending: false })
-                        .limit(60);
+                        .limit(1);
+
+                    if (exactResult.error) {
+                        console.warn('[WalletModal] Verify log exact lookup failed:', exactResult.error);
+                    } else if (exactResult.data?.length) {
+                        matchedRecord = exactResult.data[0];
+                    }
+                }
+
+                if (!matchedRecord) {
+                    let exactEmailRows = [];
+
+                    if (emailCandidates.length) {
+                        const emailResult = await supabase
+                            .from('verification_logs')
+                            .select('verification_id, status, message, points_deducted, created_at')
+                            .eq('user_id', userId)
+                            .eq('site', site)
+                            .in('verification_id', emailCandidates)
+                            .order('created_at', { ascending: false })
+                            .limit(20);
+
+                        if (emailResult.error) {
+                            console.warn('[WalletModal] Verify log email lookup failed:', emailResult.error);
+                        } else {
+                            exactEmailRows = emailResult.data || [];
+                        }
+                    }
+
+                    let fallbackResult = null;
+                    const ledgerTime = createdAt ? new Date(createdAt).getTime() : 0;
+
+                    if (ledgerTime) {
+                        const from = new Date(ledgerTime - (24 * 60 * 60 * 1000)).toISOString();
+                        const to = new Date(ledgerTime + (24 * 60 * 60 * 1000)).toISOString();
+                        fallbackResult = await supabase
+                            .from('verification_logs')
+                            .select('verification_id, status, message, points_deducted, created_at')
+                            .eq('user_id', userId)
+                            .eq('site', site)
+                            .gte('created_at', from)
+                            .lte('created_at', to)
+                            .order('created_at', { ascending: false })
+                            .limit(120);
+                    }
+
+                    if (!fallbackResult || fallbackResult.error || !(fallbackResult.data || []).length) {
+                        fallbackResult = await supabase
+                            .from('verification_logs')
+                            .select('verification_id, status, message, points_deducted, created_at')
+                            .eq('user_id', userId)
+                            .eq('site', site)
+                            .order('created_at', { ascending: false })
+                            .limit(120);
+                    }
 
                     if (fallbackResult.error) {
                         console.warn('[WalletModal] Verify log fallback lookup failed:', fallbackResult.error);
                     } else {
-                        matchedRecord = (fallbackResult.data || []).find((row) => {
+                        const targetAmount = Math.abs(Number(pointsPaid) || 0);
+                        const candidateRows = [...exactEmailRows, ...(fallbackResult.data || [])]
+                            .filter((row, index, rows) => rows.findIndex((item) => (
+                                item.verification_id === row.verification_id &&
+                                item.created_at === row.created_at &&
+                                item.status === row.status
+                            )) === index);
+
+                        const scoredMatches = candidateRows.map((row) => {
                             const payload = this.parseVerifyLogMessage(row.message);
-                            return payload?.job_id === referenceId;
-                        }) || null;
+                            const fallbackEmail = this.looksLikeEmail(row.verification_id) ? String(row.verification_id || '').trim().toLowerCase() : '';
+                            const fallbackJobId = !fallbackEmail ? String(row.verification_id || '').trim() : '';
+                            const rowEmail = String(payload?.email || fallbackEmail || '').trim().toLowerCase();
+                            const rowJobId = String(payload?.job_id || fallbackJobId || '').trim();
+                            const rowUrl = String(payload?.url || this.extractFirstUrl(row.message) || '').trim();
+
+                            if (referenceId && rowJobId && rowJobId === referenceId) {
+                                return { row, score: 1_000_000 };
+                            }
+
+                            const rowAmount = Math.abs(Number(row.points_deducted) || 0);
+                            const rowTime = row.created_at ? new Date(row.created_at).getTime() : 0;
+                            const diffMs = ledgerTime && rowTime ? Math.abs(rowTime - ledgerTime) : Number.MAX_SAFE_INTEGER;
+                            const diffMinutes = Number.isFinite(diffMs) ? diffMs / 60000 : Number.MAX_SAFE_INTEGER;
+
+                            let score = 0;
+
+                            if (emailCandidates.length && rowEmail && emailCandidates.includes(rowEmail)) score += 340;
+                            if (rowUrl) score += 120;
+                            if (String(row.status || '').toLowerCase() === 'success') score += 80;
+                            if (targetAmount > 0 && rowAmount === targetAmount) score += 220;
+                            if (targetAmount > 0 && rowAmount > 0 && Math.abs(rowAmount - targetAmount) <= 1) score += 40;
+
+                            if (Number.isFinite(diffMinutes)) {
+                                if (diffMinutes <= 1) score += 320;
+                                else if (diffMinutes <= 3) score += 240;
+                                else if (diffMinutes <= 10) score += 180;
+                                else if (diffMinutes <= 30) score += 120;
+                                else if (diffMinutes <= 120) score += 60;
+                                else if (diffMinutes <= 1440) score += 20;
+                            }
+
+                            if (score <= 0) return null;
+
+                            return {
+                                row,
+                                payload,
+                                score,
+                                diffMs
+                            };
+                        }).filter(Boolean);
+
+                        scoredMatches.sort((a, b) => {
+                            if (b.score !== a.score) return b.score - a.score;
+                            return a.diffMs - b.diffMs;
+                        });
+
+                        matchedRecord = scoredMatches[0]?.row || null;
                     }
                 }
             } catch (err) {
@@ -986,9 +1115,17 @@
 
             if (!matchedRecord) return null;
 
+            const parsedPayload = this.parseVerifyLogMessage(matchedRecord.message) || {};
+            const fallbackEmail = this.looksLikeEmail(matchedRecord.verification_id) ? String(matchedRecord.verification_id || '').trim().toLowerCase() : '';
+            const fallbackJobId = !fallbackEmail ? String(matchedRecord.verification_id || '').trim() : '';
             const normalized = {
                 ...matchedRecord,
-                payload: this.parseVerifyLogMessage(matchedRecord.message) || null
+                payload: {
+                    ...parsedPayload,
+                    email: parsedPayload.email || fallbackEmail || '',
+                    job_id: parsedPayload.job_id || fallbackJobId || '',
+                    url: parsedPayload.url || this.extractFirstUrl(matchedRecord.message) || ''
+                }
             };
             this.verifyLogCache[cacheKey] = normalized;
             return normalized;
@@ -3107,7 +3244,7 @@
                     clickHandler = `WalletModal.showPromptOrderDetail('${order.id}', '${this.escapeHtml(order.snapshot_product_name).replace(/'/g, "\\'")}', ${order.total_price}, '${order.created_at}', '${order.promptId || ''}')`;
                 } else if (order.transactionType === 'verify') {
                     displayName = `<i class="fas fa-key" style="color: #6b9ece;"></i> ${this.escapeHtml(order.snapshot_product_name)}`;
-                    clickHandler = `WalletModal.showVerifyOrderDetail('${order.id}', '${String(order.referenceId || '').replace(/'/g, "\\'")}', ${Math.abs(order.total_price || order.amount || 0)}, '${order.created_at}')`;
+                    clickHandler = `WalletModal.showVerifyOrderDetail('${order.id}', '${String(order.referenceId || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}', ${Math.abs(order.total_price || order.amount || 0)}, '${order.created_at}', '${String(order.rawReason || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')`;
                 } else if (order.transactionType === 'shop') {
                     displayName = order.snapshot_product_name || unknownProductText;
                     const count = order.item_count || (order.shop_order_items ? order.shop_order_items.length : 1);
@@ -3286,7 +3423,7 @@
         /**
          * Show Google One verify order detail modal
          */
-        async showVerifyOrderDetail(orderId, referenceId, pointsPaid, createdAt) {
+        async showVerifyOrderDetail(orderId, referenceId, pointsPaid, createdAt, reason = '') {
             this._ensureOrderDetailStyles();
 
             const detailOverlay = document.createElement('div');
@@ -3316,11 +3453,19 @@
                     return;
                 }
 
-                const verifyLog = await this.fetchVerifyOrderLog(referenceId, user.id, window.SiteConfig?.site || 'cn');
+                const verifyLog = await this.fetchVerifyOrderLog({
+                    orderId,
+                    referenceId,
+                    userId: user.id,
+                    site: window.SiteConfig?.site || 'cn',
+                    createdAt,
+                    pointsPaid,
+                    reason
+                });
                 if (!document.getElementById(`verify-order-detail-${orderId}`)) return;
 
                 const payload = verifyLog?.payload || {};
-                const statusMeta = this.getVerifyStatusMeta(verifyLog?.status || payload?.raw_status || 'success');
+                const statusMeta = this.getVerifyStatusMeta(verifyLog?.status || payload?.raw_status || '');
                 const taskId = String(referenceId || verifyLog?.verification_id || payload?.job_id || '').trim();
                 const accountEmail = String(payload?.email || '--').trim() || '--';
                 const generatedLink = String(payload?.url || '').trim();
