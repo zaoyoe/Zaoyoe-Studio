@@ -478,6 +478,8 @@
         "emailPlaceholder": "your.account@gmail.com",
         "passwordLabel": "Account Password",
         "passwordPlaceholder": "Enter the Google account password",
+        "showPassword": "Show password",
+        "hidePassword": "Hide password",
         "totpLabel": "2FA Secret (Base32)",
         "totpPlaceholder": "Example: JBSWY3DPEHPK3PXP",
         "priorityLabel": "High Priority Queue",

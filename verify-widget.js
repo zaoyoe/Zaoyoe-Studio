@@ -473,13 +473,25 @@
 
                             <label class="verify-form-field">
                                 <span class="verify-field-label">${t('verify.passwordLabel', '账号密码')} <em>*</em></span>
-                                <input
-                                    class="verify-input"
-                                    id="verifyPasswordInput"
-                                    type="password"
-                                    autocomplete="new-password"
-                                    placeholder="${t('verify.passwordPlaceholder', '请输入 Google 账号密码')}"
-                                />
+                                <div class="verify-password-shell">
+                                    <input
+                                        class="verify-input"
+                                        id="verifyPasswordInput"
+                                        type="password"
+                                        autocomplete="new-password"
+                                        placeholder="${t('verify.passwordPlaceholder', '请输入 Google 账号密码')}"
+                                    />
+                                    <button
+                                        class="verify-password-toggle"
+                                        id="verifyPasswordToggle"
+                                        type="button"
+                                        onclick="VerifyWidget.togglePasswordVisibility()"
+                                        aria-label="${t('verify.showPassword', '显示密码')}"
+                                        title="${t('verify.showPassword', '显示密码')}"
+                                    >
+                                        <i class="fas fa-eye"></i>
+                                    </button>
+                                </div>
                             </label>
 
                             <label class="verify-form-field">
@@ -787,17 +799,50 @@
         const passwordInput = document.getElementById('verifyPasswordInput');
         const totpInput = document.getElementById('verifyTotpInput');
         const priorityToggle = document.getElementById('verifyPriorityToggle');
+        const passwordToggle = document.getElementById('verifyPasswordToggle');
         const result = document.getElementById('verifyResult');
         const batch = document.getElementById('verifyBatchResults');
 
         if (emailInput) emailInput.value = '';
-        if (passwordInput) passwordInput.value = '';
+        if (passwordInput) {
+            passwordInput.value = '';
+            passwordInput.type = 'password';
+        }
         if (totpInput) totpInput.value = '';
         if (priorityToggle) priorityToggle.checked = false;
+        if (passwordToggle) {
+            passwordToggle.innerHTML = '<i class="fas fa-eye"></i>';
+            passwordToggle.setAttribute('aria-label', t('verify.showPassword', '显示密码'));
+            passwordToggle.setAttribute('title', t('verify.showPassword', '显示密码'));
+        }
         if (result) result.classList.remove('show');
         if (batch) batch.classList.remove('show');
         clearResultsList();
         hideBatchSummary();
+    }
+
+    function togglePasswordVisibility() {
+        const passwordInput = document.getElementById('verifyPasswordInput');
+        const passwordToggle = document.getElementById('verifyPasswordToggle');
+        if (!passwordInput || !passwordToggle) return;
+
+        const willShow = passwordInput.type === 'password';
+        passwordInput.type = willShow ? 'text' : 'password';
+        passwordToggle.innerHTML = `<i class="fas ${willShow ? 'fa-eye-slash' : 'fa-eye'}"></i>`;
+
+        const label = willShow
+            ? t('verify.hidePassword', '隐藏密码')
+            : t('verify.showPassword', '显示密码');
+        passwordToggle.setAttribute('aria-label', label);
+        passwordToggle.setAttribute('title', label);
+
+        requestAnimationFrame(() => {
+            passwordInput.focus({ preventScroll: true });
+            const cursor = passwordInput.value.length;
+            if (typeof passwordInput.setSelectionRange === 'function') {
+                passwordInput.setSelectionRange(cursor, cursor);
+            }
+        });
     }
 
     function updatePriceDisplay() {
@@ -1421,6 +1466,7 @@
         submit,
         cancel,
         resetForm,
+        togglePasswordVisibility,
         reload: loadConfig,
         loadHistory,
         exportHistory,
