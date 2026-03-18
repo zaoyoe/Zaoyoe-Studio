@@ -670,36 +670,27 @@
                                     </button>
                                 </div>
 
-                                <div class="verify-preview-module">
-                                    <div class="verify-preview-copy">
-                                        <strong>${t('verify.previewTitle', '预执行模块')}</strong>
-                                        <span>${t('verify.previewHint', '仅用于测试顶部星环和任务状态动效，不扣积分，也不会写入历史。')}</span>
-                                    </div>
-                                    <div class="verify-preview-toolbar">
-                                        <div class="verify-preview-mode" role="group" aria-label="${t('verify.previewModeLabel', '预执行结果')}">
-                                            <button
-                                                class="verify-preview-mode-btn"
-                                                id="verifyPreviewModeSuccess"
-                                                type="button"
-                                                data-mode="success"
-                                                onclick="VerifyWidget.setPreviewMode('success')"
-                                            >
-                                                ${t('verify.previewSuccessMode', '成功')}
-                                            </button>
-                                            <button
-                                                class="verify-preview-mode-btn"
-                                                id="verifyPreviewModeError"
-                                                type="button"
-                                                data-mode="error"
-                                                onclick="VerifyWidget.setPreviewMode('error')"
-                                            >
-                                                ${t('verify.previewFailureMode', '失败')}
-                                            </button>
+                                <div class="verify-batch-results" id="verifyBatchResults">
+                                    <div class="verify-batch-results-header">
+                                        <div class="verify-batch-results-title">
+                                            <i class="fas fa-list-check"></i>
+                                            ${t('verify.results', '任务状态')}
                                         </div>
-                                        <button class="verify-preview-btn" id="verifyPreviewBtn" type="button" onclick="VerifyWidget.runPreviewExecution()">
-                                            <i class="fas fa-flask"></i>
-                                            ${t('verify.previewRun', '预执行')}
-                                        </button>
+                                        <div class="verify-batch-progress" id="verifyBatchProgress">
+                                            ${t('verify.progress', '进度')}: <span class="current">0</span>/<span class="total">1</span>
+                                        </div>
+                                    </div>
+                                    <div id="verifyResultsList"></div>
+                                    <div class="verify-batch-summary" id="verifyBatchSummary" style="display: none;">
+                                        <div class="verify-batch-stat success">
+                                            ${t('verify.success', '成功')}: <span id="successCount">0</span>
+                                        </div>
+                                        <div class="verify-batch-stat error">
+                                            ${t('verify.failed', '失败')}: <span id="failedCount">0</span>
+                                        </div>
+                                        <div class="verify-batch-stat total">
+                                            ${t('verify.total', '总计')}: <span id="totalCount">0</span>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -760,30 +751,6 @@
                                     </div>
                                 </div>
                             </aside>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="verify-batch-results" id="verifyBatchResults">
-                    <div class="verify-batch-results-header">
-                        <div class="verify-batch-results-title">
-                            <i class="fas fa-list-check"></i>
-                            ${t('verify.results', '任务状态')}
-                        </div>
-                        <div class="verify-batch-progress" id="verifyBatchProgress">
-                            ${t('verify.progress', '进度')}: <span class="current">0</span>/<span class="total">1</span>
-                        </div>
-                    </div>
-                    <div id="verifyResultsList"></div>
-                    <div class="verify-batch-summary" id="verifyBatchSummary" style="display: none;">
-                        <div class="verify-batch-stat success">
-                            ${t('verify.success', '成功')}: <span id="successCount">0</span>
-                        </div>
-                        <div class="verify-batch-stat error">
-                            ${t('verify.failed', '失败')}: <span id="failedCount">0</span>
-                        </div>
-                        <div class="verify-batch-stat total">
-                            ${t('verify.total', '总计')}: <span id="totalCount">0</span>
                         </div>
                     </div>
                 </div>
