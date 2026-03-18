@@ -14,7 +14,7 @@
     console.log('[WalletModal] ✅ Initializing...');
 
     // Inject CSS if not already present
-    const walletCssHref = 'css/wallet.css?v=20260318_WALLET_ORDER_SEARCH_7';
+    const walletCssHref = 'css/wallet.css?v=20260318_WALLET_ORDER_SEARCH_8';
     const existingWalletCss = document.getElementById('wallet-modal-css');
     if (existingWalletCss) {
         existingWalletCss.href = walletCssHref;

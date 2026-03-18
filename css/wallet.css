@@ -1903,6 +1903,10 @@ body.wallet-modal-lock {
         font-size: 13px !important;
     }
 
+    .history-search-input::placeholder {
+        font-size: 11px;
+    }
+
     .history-actions {
         width: auto;
         margin-left: auto;
@@ -1952,6 +1956,10 @@ body.wallet-modal-lock {
 
     .history-search-input {
         font-size: 12px !important;
+    }
+
+    .history-search-input::placeholder {
+        font-size: 10px;
     }
 
     .history-actions {
