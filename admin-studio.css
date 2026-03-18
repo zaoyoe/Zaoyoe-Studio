@@ -14225,13 +14225,13 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     padding-bottom: 0;
 }
 
-.config-label {
+.config-item-row .config-label {
     display: flex;
     flex-direction: column;
     gap: 4px;
 }
 
-.config-label>span:first-child {
+.config-item-row .config-label>span:first-child {
     font-weight: 500;
     color: var(--text-main);
 }
@@ -14594,13 +14594,18 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
 #settings-view-affiliate .config-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(240px, 360px);
+    grid-template-columns: minmax(0, 1fr) minmax(120px, 180px);
     align-items: start;
     gap: 18px;
 }
 
 #settings-view-affiliate .config-info,
 #settings-view-affiliate .config-input-wrapper {
+    min-width: 0;
+}
+
+#settings-view-affiliate .config-label {
+    display: block;
     min-width: 0;
 }
 
@@ -14641,6 +14646,11 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 #settings-view-affiliate .affiliate-config-card--wide,
 #settings-view-affiliate .affiliate-config-card--poster {
     grid-column: 1 / -1;
+}
+
+#settings-view-affiliate .affiliate-config-card--wide .config-row,
+#settings-view-affiliate .affiliate-config-card--poster .config-row {
+    grid-template-columns: minmax(0, 1fr) minmax(240px, 360px);
 }
 
 .affiliate-poster-settings .config-row {
@@ -14848,7 +14858,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     opacity: 0.45;
 }
 
-@media (max-width: 920px) {
+@media (max-width: 1200px) {
     #settings-view-affiliate .module-content {
         grid-template-columns: 1fr !important;
     }
