@@ -861,6 +861,138 @@
         isOpen: false,
         modalEl: null,
         promptCache: {}, // Local simple cache for titles
+        verifyLogCache: {},
+
+        isVerifyServiceReason(reason = '') {
+            const normalized = String(reason || '').trim().toLowerCase();
+            return normalized.includes('google one') && (
+                normalized.includes('链接获取服务') ||
+                normalized.includes('trial link') ||
+                normalized.includes('link service') ||
+                normalized.includes('verify service')
+            );
+        },
+
+        getVerifyDisplayName() {
+            return window.i18n?.t('wallet.verifyOrderName') || 'Google One Pro 试用链接';
+        },
+
+        parseVerifyLogMessage(message) {
+            if (typeof message !== 'string' || !message.trim().startsWith('{')) {
+                return null;
+            }
+
+            try {
+                const parsed = JSON.parse(message);
+                if (parsed?.kind === 'google_one_job') {
+                    return parsed;
+                }
+            } catch (_) {
+                return null;
+            }
+
+            return null;
+        },
+
+        formatOrderDateTime(value) {
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) {
+                return '--';
+            }
+            return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
+        },
+
+        getVerifyStatusMeta(status = '') {
+            const normalized = String(status || '').trim().toLowerCase();
+
+            if (normalized.includes('success') || normalized.includes('completed')) {
+                return {
+                    text: window.i18n?.t('wallet.completed') || '已完成',
+                    color: '#10b981',
+                    prefix: '✓'
+                };
+            }
+
+            if (normalized.includes('fail') || normalized.includes('error') || normalized.includes('timeout')) {
+                return {
+                    text: window.i18n?.t('wallet.failed') || '失败',
+                    color: '#ef4444',
+                    prefix: '✕'
+                };
+            }
+
+            if (normalized.includes('queue') || normalized.includes('running') || normalized.includes('process') || normalized.includes('pending')) {
+                return {
+                    text: window.i18n?.t('wallet.processing') || window.i18n?.t('common.processing') || '处理中...',
+                    color: '#6b9ece',
+                    prefix: '•'
+                };
+            }
+
+            return {
+                text: normalized || '--',
+                color: '#e5e7eb',
+                prefix: ''
+            };
+        },
+
+        async fetchVerifyOrderLog(referenceId, userId, site) {
+            if (!referenceId || !userId) return null;
+
+            const cacheKey = `${site}:${userId}:${referenceId}`;
+            if (this.verifyLogCache[cacheKey]) {
+                return this.verifyLogCache[cacheKey];
+            }
+
+            let matchedRecord = null;
+
+            try {
+                const exactResult = await supabase
+                    .from('verification_logs')
+                    .select('verification_id, status, message, points_deducted, created_at')
+                    .eq('user_id', userId)
+                    .eq('site', site)
+                    .eq('verification_id', referenceId)
+                    .order('created_at', { ascending: false })
+                    .limit(1);
+
+                if (exactResult.error) {
+                    console.warn('[WalletModal] Verify log exact lookup failed:', exactResult.error);
+                } else if (exactResult.data?.length) {
+                    matchedRecord = exactResult.data[0];
+                }
+
+                if (!matchedRecord) {
+                    const fallbackResult = await supabase
+                        .from('verification_logs')
+                        .select('verification_id, status, message, points_deducted, created_at')
+                        .eq('user_id', userId)
+                        .eq('site', site)
+                        .order('created_at', { ascending: false })
+                        .limit(60);
+
+                    if (fallbackResult.error) {
+                        console.warn('[WalletModal] Verify log fallback lookup failed:', fallbackResult.error);
+                    } else {
+                        matchedRecord = (fallbackResult.data || []).find((row) => {
+                            const payload = this.parseVerifyLogMessage(row.message);
+                            return payload?.job_id === referenceId;
+                        }) || null;
+                    }
+                }
+            } catch (err) {
+                console.warn('[WalletModal] Verify log query exception:', err);
+            }
+
+            if (!matchedRecord) return null;
+
+            const normalized = {
+                ...matchedRecord,
+                payload: this.parseVerifyLogMessage(matchedRecord.message) || null
+            };
+            this.verifyLogCache[cacheKey] = normalized;
+            return normalized;
+        },
 
         /**
          * Pre-fetch wallet data in background (called when avatar dropdown opens)
@@ -2845,6 +2977,10 @@
                         transactionType = 'prompt';
                         displayName = promptTitles[entry.reference_id] || `${window.i18n?.t('wallet.promptItem') || '提示词'} #${entry.reference_id}`;
                         icon = '💡';
+                    } else if (this.isVerifyServiceReason(entry.reason)) {
+                        transactionType = 'verify';
+                        displayName = this.getVerifyDisplayName();
+                        icon = '🔑';
                     } else if (entry.reason === 'daily_checkin') {
                         transactionType = 'recharge'; // Or whatever visual category is appropriate (positive)
                         displayName = window.i18n?.t('wallet.dailyCheckin') || '每日签到';
@@ -2883,10 +3019,13 @@
                         item_count: 1,
                         transactionType: transactionType,
                         isPromptUnlock: transactionType === 'prompt',
+                        isVerifyOrder: transactionType === 'verify',
                         isRecharge: transactionType === 'recharge',
                         isRedeem: transactionType === 'redeem',
                         promptId: entry.reason === 'unlock_prompt' ? entry.reference_id : null,
                         redeemCode: transactionType === 'redeem' ? entry.reference_id : null,
+                        referenceId: entry.reference_id || '',
+                        rawReason: entry.reason || '',
                         icon: icon
                     };
                 });
@@ -2966,6 +3105,9 @@
                 if (order.transactionType === 'prompt') {
                     displayName = `<i class="fas fa-lightbulb" style="color: #fde68a;"></i> ${this.escapeHtml(order.snapshot_product_name)}`;
                     clickHandler = `WalletModal.showPromptOrderDetail('${order.id}', '${this.escapeHtml(order.snapshot_product_name).replace(/'/g, "\\'")}', ${order.total_price}, '${order.created_at}', '${order.promptId || ''}')`;
+                } else if (order.transactionType === 'verify') {
+                    displayName = `<i class="fas fa-key" style="color: #6b9ece;"></i> ${this.escapeHtml(order.snapshot_product_name)}`;
+                    clickHandler = `WalletModal.showVerifyOrderDetail('${order.id}', '${String(order.referenceId || '').replace(/'/g, "\\'")}', ${Math.abs(order.total_price || order.amount || 0)}, '${order.created_at}')`;
                 } else if (order.transactionType === 'shop') {
                     displayName = order.snapshot_product_name || unknownProductText;
                     const count = order.item_count || (order.shop_order_items ? order.shop_order_items.length : 1);
@@ -3139,6 +3281,174 @@
             `;
 
             document.body.appendChild(detailOverlay);
+        },
+
+        /**
+         * Show Google One verify order detail modal
+         */
+        async showVerifyOrderDetail(orderId, referenceId, pointsPaid, createdAt) {
+            this._ensureOrderDetailStyles();
+
+            const detailOverlay = document.createElement('div');
+            detailOverlay.className = 'wallet-order-modal-overlay';
+            detailOverlay.id = `verify-order-detail-${orderId}`;
+            detailOverlay.onclick = (e) => {
+                if (e.target === detailOverlay) detailOverlay.remove();
+            };
+
+            detailOverlay.innerHTML = `
+                <div class="wallet-order-modal" style="display: flex; align-items: center; justify-content: center; min-height: 200px;">
+                    <div style="text-align: center; color: #6b9ece;">
+                        <i class="fas fa-circle-notch fa-spin" style="font-size: 32px; margin-bottom: 12px;"></i>
+                        <div style="font-size: 13px; opacity: 0.8;">${window.i18n?.t('wallet.loading') || '加载中...'}</div>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(detailOverlay);
+
+            try {
+                const { data: { session } } = await window.supabaseClient.auth.getSession();
+                const user = session?.user;
+                if (!user) {
+                    detailOverlay.remove();
+                    this.showToast(window.i18n?.t('security.loginRequired') || '请先登录', 'error');
+                    return;
+                }
+
+                const verifyLog = await this.fetchVerifyOrderLog(referenceId, user.id, window.SiteConfig?.site || 'cn');
+                if (!document.getElementById(`verify-order-detail-${orderId}`)) return;
+
+                const payload = verifyLog?.payload || {};
+                const statusMeta = this.getVerifyStatusMeta(verifyLog?.status || payload?.raw_status || 'success');
+                const taskId = String(referenceId || verifyLog?.verification_id || payload?.job_id || '').trim();
+                const accountEmail = String(payload?.email || '--').trim() || '--';
+                const generatedLink = String(payload?.url || '').trim();
+                const errorMessage = String(payload?.error_message || '').trim();
+                const orderTimeText = this.formatOrderDateTime(createdAt);
+                const completedTimeText = verifyLog?.created_at ? this.formatOrderDateTime(verifyLog.created_at) : '';
+                const shortOrderId = orderId ? `${orderId.substring(0, 8)}...${orderId.slice(-4)}` : '--';
+                const shortTaskId = taskId ? `${taskId.substring(0, 8)}...${taskId.slice(-4)}` : '--';
+                const safeLink = this.escapeHtml(generatedLink);
+
+                const modal = detailOverlay.querySelector('.wallet-order-modal');
+                if (!modal) return;
+
+                modal.style.alignItems = 'stretch';
+                modal.style.justifyContent = 'flex-start';
+                modal.style.minHeight = 'auto';
+                modal.style.background = '';
+
+                modal.innerHTML = `
+                    <div class="wallet-order-modal-header">
+                        <div class="wallet-order-modal-title">
+                            <i class="fas fa-key" style="color: #6b9ece;"></i> ${window.i18n?.t('wallet.verifyDetails') || 'Google One 订单详情'}
+                        </div>
+                        <button class="wallet-order-close-btn" onclick="this.closest('.wallet-order-modal-overlay').remove()">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div class="wallet-order-modal-body" style="animation: fadeIn 0.2s ease-out;">
+                        <div class="meta-section">
+                            <div class="detail-row">
+                                <span class="detail-label">${window.i18n?.t('wallet.orderNumber') || '订单编号'}</span>
+                                <span class="detail-val mono js-copy-verify-order" style="cursor:pointer;" title="${window.i18n?.t('wallet.clickToCopy') || '点击复制'}">${this.escapeHtml(shortOrderId)}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">${window.i18n?.t('wallet.taskNumber') || '任务编号'}</span>
+                                <span class="detail-val mono js-copy-verify-task" style="cursor:pointer;" title="${window.i18n?.t('wallet.clickToCopy') || '点击复制'}">${this.escapeHtml(shortTaskId || '--')}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">${window.i18n?.t('wallet.productType') || '商品类型'}</span>
+                                <span class="detail-val" style="color: #6b9ece;">${window.i18n?.t('wallet.verifyServiceType') || 'Google One'}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">${window.i18n?.t('wallet.googleAccount') || 'Google 账号'}</span>
+                                <span class="detail-val js-copy-verify-email" style="cursor:${accountEmail !== '--' ? 'pointer' : 'default'};" title="${accountEmail !== '--' ? (window.i18n?.t('wallet.clickToCopy') || '点击复制') : ''}">${this.escapeHtml(accountEmail)}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">${window.i18n?.t('wallet.orderTime') || '下单时间'}</span>
+                                <span class="detail-val">${this.escapeHtml(orderTimeText)}</span>
+                            </div>
+                            ${completedTimeText ? `
+                            <div class="detail-row">
+                                <span class="detail-label">${window.i18n?.t('wallet.completedAt') || '完成时间'}</span>
+                                <span class="detail-val">${this.escapeHtml(completedTimeText)}</span>
+                            </div>
+                            ` : ''}
+                            <div class="detail-row">
+                                <span class="detail-label">${window.i18n?.t('wallet.pointsPaid') || '支付积分'}</span>
+                                <span class="detail-val highlight">-${Math.abs(Number(pointsPaid) || Number(verifyLog?.points_deducted) || 0)} ${window.i18n?.t('wallet.pointsUnit') || '积分'}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">${window.i18n?.t('wallet.status') || '状态'}</span>
+                                <span class="detail-val" style="color: ${statusMeta.color};">${statusMeta.prefix ? `${statusMeta.prefix} ` : ''}${this.escapeHtml(statusMeta.text)}</span>
+                            </div>
+                        </div>
+                        ${generatedLink ? `
+                        <div class="modal-actions">
+                            <button class="action-btn secondary js-copy-verify-link">
+                                <i class="fas fa-copy"></i> ${window.i18n?.t('wallet.copyLink') || '复制链接'}
+                            </button>
+                            <button class="action-btn primary js-open-verify-link">
+                                <i class="fas fa-arrow-up-right-from-square"></i> ${window.i18n?.t('wallet.openLink') || '打开链接'}
+                            </button>
+                        </div>
+                        <div class="content-section">
+                            <div class="content-section-title">${window.i18n?.t('wallet.generatedLink') || '生成链接'}</div>
+                            <div class="content-card js-copy-verify-link-card" style="margin-bottom: 0 !important; cursor: pointer; transition: all 0.2s; padding: 12px 10px !important; display: flex; align-items: center; justify-content: center;" title="${window.i18n?.t('wallet.clickToCopy') || '点击复制'}">
+                                <div class="item-content-box" style="padding: 0 !important; width: 100%; background: transparent !important; border-radius: 0 !important;">
+                                    <div class="item-text" style="text-align: left; font-size: 13px; line-height: 1.45; color: #7dd3fc; word-break: break-all;">${safeLink}</div>
+                                </div>
+                            </div>
+                        </div>
+                        ` : `
+                        <div class="content-section">
+                            <div class="content-section-title">${window.i18n?.t('wallet.generatedLink') || '生成链接'}</div>
+                            <div class="content-card" style="margin-bottom: 0 !important; padding: 14px 12px !important; cursor: default;">
+                                <div class="item-content-box" style="padding: 0 !important; width: 100%; background: transparent !important; border-radius: 0 !important;">
+                                    <div class="item-text" style="text-align: left; font-size: 13px; line-height: 1.45; color: ${errorMessage ? '#fca5a5' : '#cbd5e1'}; word-break: break-word;">
+                                        ${this.escapeHtml(errorMessage || (window.i18n?.t('wallet.linkUnavailable') || '暂未获取到链接'))}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        `}
+                    </div>
+                `;
+
+                modal.querySelector('.js-copy-verify-order')?.addEventListener('click', (event) => {
+                    this.copyToClipboard(orderId, event);
+                });
+
+                modal.querySelector('.js-copy-verify-task')?.addEventListener('click', (event) => {
+                    if (!taskId) return;
+                    this.copyToClipboard(taskId, event);
+                });
+
+                if (accountEmail && accountEmail !== '--') {
+                    modal.querySelector('.js-copy-verify-email')?.addEventListener('click', (event) => {
+                        this.copyToClipboard(accountEmail, event);
+                    });
+                }
+
+                if (generatedLink) {
+                    const copyLink = (event) => this.copyToClipboard(generatedLink, event);
+                    modal.querySelector('.js-copy-verify-link')?.addEventListener('click', copyLink);
+                    modal.querySelector('.js-copy-verify-link-card')?.addEventListener('click', copyLink);
+                    modal.querySelector('.js-open-verify-link')?.addEventListener('click', (event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        window.open(generatedLink, '_blank', 'noopener,noreferrer');
+                    });
+                }
+            } catch (err) {
+                console.error('[WalletModal] Show verify order detail failed:', err);
+                if (document.getElementById(`verify-order-detail-${orderId}`)) {
+                    detailOverlay.remove();
+                }
+                this.showToast(window.i18n?.t('wallet.verifyDetailFailed') || '加载 Google One 订单详情失败', 'error');
+            }
         },
 
         /**
