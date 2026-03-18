@@ -214,7 +214,7 @@
         }
 
         if (state === 'armed') {
-            setRingProgress(progress ?? 18, true);
+            setRingProgress(progress ?? 0, false);
             return;
         }
 
@@ -734,15 +734,12 @@
                     <div id="verifyResultsList"></div>
                     <div class="verify-batch-summary" id="verifyBatchSummary" style="display: none;">
                         <div class="verify-batch-stat success">
-                            <i class="fas fa-check-circle"></i>
                             ${t('verify.success', '成功')}: <span id="successCount">0</span>
                         </div>
                         <div class="verify-batch-stat error">
-                            <i class="fas fa-times-circle"></i>
                             ${t('verify.failed', '失败')}: <span id="failedCount">0</span>
                         </div>
                         <div class="verify-batch-stat total">
-                            <i class="fas fa-list"></i>
                             ${t('verify.total', '总计')}: <span id="totalCount">0</span>
                         </div>
                     </div>
@@ -750,7 +747,6 @@
 
                 <div class="verify-result" id="verifyResult">
                     <div class="verify-result-header">
-                        <div class="verify-result-icon"><i class="fas fa-check"></i></div>
                         <div class="verify-result-title" id="verifyResultTitle"></div>
                     </div>
                     <div class="verify-result-message" id="verifyResultMessage"></div>
@@ -1447,20 +1443,10 @@
             ? String(label).substring(0, 55) + '...'
             : String(label || '');
 
-        const icons = {
-            success: 'fa-check',
-            error: 'fa-times',
-            processing: 'fa-spinner fa-spin',
-            info: 'fa-info-circle'
-        };
-
         const item = document.createElement('div');
         item.className = `verify-result-item ${status}`;
         item.id = `result-item-${index}`;
         item.innerHTML = `
-            <div class="verify-result-item-icon">
-                <i class="fas ${icons[status] || 'fa-spinner fa-spin'}"></i>
-            </div>
             <div class="verify-result-item-content">
                 <div class="verify-result-item-id">#${index + 1}: ${escapeHtml(shortLabel)}</div>
                 <div class="verify-result-item-message">${messageHtml}</div>
@@ -1473,18 +1459,7 @@
         const item = document.getElementById(`result-item-${index}`);
         if (!item) return;
 
-        const icons = {
-            success: 'fa-check',
-            error: 'fa-times',
-            processing: 'fa-spinner fa-spin',
-            info: 'fa-info-circle'
-        };
-
         item.className = `verify-result-item ${status}`;
-        const iconEl = item.querySelector('.verify-result-item-icon i');
-        if (iconEl) {
-            iconEl.className = `fas ${icons[status] || 'fa-spinner fa-spin'}`;
-        }
 
         const msgEl = item.querySelector('.verify-result-item-message');
         if (msgEl) msgEl.innerHTML = messageHtml;
