@@ -2,6 +2,43 @@
 // Admin Studio - Shop Management Module
 // ==========================================
 
+const SHOP_ADMIN_PROJECT_URL = 'https://mmkugdibsaeoevliebzk.supabase.co';
+const SHOP_ADMIN_PUBLISHABLE_KEY = typeof SUPABASE_KEY !== 'undefined'
+    ? SUPABASE_KEY
+    : 'sb_publishable_lwkiF-sQ80z8e9oMcejFPQ_j7oezjcF';
+
+// Keep auth on the custom domain client, but route shop data reads/writes
+// through the official project endpoint to avoid PATCH/DELETE fetch failures.
+const supabaseClient = (() => {
+    const authClient = window.supabaseClient;
+
+    if (!authClient || typeof window.supabase?.createClient !== 'function') {
+        return authClient;
+    }
+
+    if (window.__shopAdminDbClient) {
+        return window.__shopAdminDbClient;
+    }
+
+    window.__shopAdminDbClient = window.supabase.createClient(
+        SHOP_ADMIN_PROJECT_URL,
+        SHOP_ADMIN_PUBLISHABLE_KEY,
+        {
+            accessToken: async () => {
+                const { data: { session } = {} } = await authClient.auth.getSession();
+                return session?.access_token ?? null;
+            },
+            auth: {
+                persistSession: false,
+                autoRefreshToken: false,
+                detectSessionInUrl: false
+            }
+        }
+    );
+
+    return window.__shopAdminDbClient;
+})();
+
 const ShopAdmin = {
     currentTab: 'products',
     selectedProductId: null,
@@ -2291,7 +2328,7 @@ Example output format:
         try {
             const { data, error } = await supabaseClient.rpc('fn_admin_refund_order', {
                 p_order_id: orderId,
-                p_admin_id: (await supabaseClient.auth.getUser()).data.user.id,
+                p_admin_id: (await window.supabaseClient.auth.getUser()).data.user.id,
                 p_target_status: targetStatus,
                 p_remark: remark || null
             });
