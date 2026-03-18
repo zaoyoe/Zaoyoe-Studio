@@ -246,38 +246,38 @@
 
 .verify-widget.ring-armed,
 .verify-widget:focus-within:not(.ring-running):not(.ring-success):not(.ring-error) {
-    --ring-light-1: #7bbcff;
-    --ring-light-2: #aef3ff;
-    --ring-light-3: #54f0b1;
-    --ring-trail-base: linear-gradient(90deg, rgba(123, 188, 255, 0.28) 0%, rgba(174, 243, 255, 0.14) 42%, rgba(84, 240, 177, 0.09) 100%);
-    --ring-trail-fill: linear-gradient(90deg, #7bbcff 0%, #aef3ff 56%, #54f0b1 100%);
-    --ring-fill-shadow: 0 0 24px rgba(123, 188, 255, 0.28), 0 0 30px rgba(84, 240, 177, 0.1);
+    --ring-light-1: #75b6f2;
+    --ring-light-2: #9fe6f5;
+    --ring-light-3: #34c759;
+    --ring-trail-base: linear-gradient(90deg, rgba(117, 182, 242, 0.24) 0%, rgba(159, 230, 245, 0.12) 42%, rgba(52, 199, 89, 0.08) 100%);
+    --ring-trail-fill: linear-gradient(90deg, #75b6f2 0%, #9fe6f5 56%, #34c759 100%);
+    --ring-fill-shadow: 0 0 20px rgba(117, 182, 242, 0.24), 0 0 26px rgba(52, 199, 89, 0.09);
     --widget-top-base: linear-gradient(90deg,
-            rgba(123, 188, 255, 0.72) 0%,
-            rgba(123, 188, 255, 1) 18%,
-            rgba(174, 243, 255, 1) 38%,
-            rgba(84, 240, 177, 0.62) 54%,
-            rgba(174, 243, 255, 0.96) 72%,
-            rgba(123, 188, 255, 0.84) 100%);
-    --widget-top-fill: linear-gradient(90deg, #7bbcff 0%, #aef3ff 56%, #54f0b1 100%);
-    --widget-top-shadow: 0 0 18px rgba(123, 188, 255, 0.24), 0 0 28px rgba(84, 240, 177, 0.12);
-    --widget-top-base-shadow: 0 0 18px rgba(123, 188, 255, 0.26), 0 0 30px rgba(174, 243, 255, 0.12);
-    --widget-top-opacity: 0.92;
-    --widget-top-flow-duration: 5.2s;
-    --trail-sheen-opacity: 1;
-    --trail-sheen-duration: 5.4s;
-    --trail-sheen-width: 40%;
-    --trail-sheen-blur: 16px;
+            rgba(117, 182, 242, 0.66) 0%,
+            rgba(117, 182, 242, 0.92) 18%,
+            rgba(159, 230, 245, 0.96) 38%,
+            rgba(52, 199, 89, 0.54) 54%,
+            rgba(159, 230, 245, 0.92) 72%,
+            rgba(117, 182, 242, 0.76) 100%);
+    --widget-top-fill: linear-gradient(90deg, #75b6f2 0%, #9fe6f5 56%, #34c759 100%);
+    --widget-top-shadow: 0 0 16px rgba(117, 182, 242, 0.2), 0 0 24px rgba(52, 199, 89, 0.1);
+    --widget-top-base-shadow: 0 0 16px rgba(117, 182, 242, 0.22), 0 0 24px rgba(159, 230, 245, 0.1);
+    --widget-top-opacity: 0.84;
+    --widget-top-flow-duration: 5.8s;
+    --trail-sheen-opacity: 0.96;
+    --trail-sheen-duration: 5.9s;
+    --trail-sheen-width: 38%;
+    --trail-sheen-blur: 15px;
     --trail-sheen-bg: linear-gradient(90deg,
-            rgba(123, 188, 255, 0) 0%,
-            rgba(123, 188, 255, 0.28) 18%,
-            rgba(174, 243, 255, 1) 46%,
-            rgba(84, 240, 177, 0.68) 72%,
-            rgba(84, 240, 177, 0) 100%);
-    --trail-aura-opacity: 0.7;
-    --trail-aura-glow: radial-gradient(circle at 16% 50%, rgba(123, 188, 255, 0.28) 0%, rgba(123, 188, 255, 0.06) 34%, transparent 70%),
-        radial-gradient(circle at 34% 50%, rgba(174, 243, 255, 0.24) 0%, rgba(174, 243, 255, 0.04) 36%, transparent 68%),
-        radial-gradient(circle at 56% 50%, rgba(84, 240, 177, 0.22) 0%, rgba(84, 240, 177, 0.04) 38%, transparent 70%);
+            rgba(117, 182, 242, 0) 0%,
+            rgba(117, 182, 242, 0.24) 18%,
+            rgba(159, 230, 245, 0.98) 46%,
+            rgba(52, 199, 89, 0.6) 72%,
+            rgba(52, 199, 89, 0) 100%);
+    --trail-aura-opacity: 0.64;
+    --trail-aura-glow: radial-gradient(circle at 16% 50%, rgba(117, 182, 242, 0.24) 0%, rgba(117, 182, 242, 0.05) 34%, transparent 70%),
+        radial-gradient(circle at 34% 50%, rgba(159, 230, 245, 0.2) 0%, rgba(159, 230, 245, 0.035) 36%, transparent 68%),
+        radial-gradient(circle at 56% 50%, rgba(52, 199, 89, 0.2) 0%, rgba(52, 199, 89, 0.035) 38%, transparent 70%);
     --verify-progress-opacity: 0;
 }
 
