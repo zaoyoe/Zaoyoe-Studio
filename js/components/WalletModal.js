@@ -14,7 +14,7 @@
     console.log('[WalletModal] ✅ Initializing...');
 
     // Inject CSS if not already present
-    const walletCssHref = 'css/wallet.css?v=20260316_WALLET_VIEWPORT_BOTTOM_INSET_FIX_1';
+    const walletCssHref = 'css/wallet.css?v=20260318_WALLET_ORDER_SEARCH_1';
     const existingWalletCss = document.getElementById('wallet-modal-css');
     if (existingWalletCss) {
         existingWalletCss.href = walletCssHref;
@@ -1227,6 +1227,9 @@
 
             this.isOpen = true;
             this.ordersLoaded = false; // Reset loaded flag for new session
+            this.ordersData = [];
+            this.orderRequestId += 1;
+            this.resetOrderSearchState();
 
             if (isWalletModalIOSMode()) {
                 freezeWalletModalPage();
@@ -1234,6 +1237,11 @@
 
             // Render UI immediately so there's zero delay for the user
             this.render();
+            this.syncOrderSearchUi();
+            const ordersContainer = document.getElementById('wallet-orders');
+            if (ordersContainer) {
+                ordersContainer.innerHTML = `<div class="loading-text">${window.i18n?.t('common.loading') || '加载中...'}</div>`;
+            }
             activateWalletModalOverlay();
 
             const { card, overlay } = getWalletModalElements();
@@ -1299,6 +1307,9 @@
             unfreezeWalletModalPage();
             this.isOpen = false;
             this.ordersLoaded = false;
+            this.ordersLoading = false;
+            this.orderRequestId += 1;
+            this.resetOrderSearchState();
             this._prefetched = false; // Allow prefetch on next dropdown open
             console.log('[WalletModal] Closed');
         },
@@ -1318,6 +1329,7 @@
             if (overlay) {
                 overlay.style.display = 'block';
                 this.modalEl = overlay;
+                this.syncOrderSearchUi();
                 return;
             }
 
@@ -1472,7 +1484,28 @@
                             <!-- Orders View (Shop Purchase History) -->
                             <div class="wallet-view" id="view-orders">
                                 <div class="history-header">
-                                    <h3 class="view-title">📋 ${window.i18n?.t('wallet.transactionRecords') || '交易记录'}</h3>
+                                    <div class="history-search" role="search">
+                                        <i class="fas fa-search history-search-icon" aria-hidden="true"></i>
+                                        <input
+                                            type="search"
+                                            id="wallet-order-search-input"
+                                            class="history-search-input"
+                                            placeholder="${window.i18n?.t('wallet.searchPlaceholder') || '搜索订单号 / 任务号 / 兑换码 / 商品名'}"
+                                            autocomplete="off"
+                                            spellcheck="false"
+                                            oninput="WalletModal.handleOrderSearchInput(event)"
+                                            onkeydown="WalletModal.handleOrderSearchKeydown(event)"
+                                        />
+                                        <button
+                                            type="button"
+                                            class="history-search-clear"
+                                            id="wallet-order-search-clear"
+                                            onclick="WalletModal.clearOrderSearch(event)"
+                                            title="${window.i18n?.t('wallet.clearSearch') || '清除搜索'}"
+                                        >
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </div>
                                     <div class="history-actions">
                                         <div class="filter-wrapper">
                                             <div class="filter-chip" onclick="WalletModal.toggleOrderTimeFilterMenu(event)">
@@ -2769,6 +2802,108 @@
         // Order filter state
         orderFilter: 'all',
         ordersData: [],
+        orderSearchQuery: '',
+        orderSearchActiveQuery: '',
+        orderSearchDebounceTimer: null,
+        orderRequestId: 0,
+
+        syncOrderSearchUi() {
+            const input = document.getElementById('wallet-order-search-input');
+            const clearBtn = document.getElementById('wallet-order-search-clear');
+            const query = String(this.orderSearchQuery || '');
+
+            if (input && input.value !== query) {
+                input.value = query;
+            }
+
+            if (clearBtn) {
+                clearBtn.classList.toggle('visible', !!query.trim());
+            }
+        },
+
+        resetOrderSearchState() {
+            if (this.orderSearchDebounceTimer) {
+                clearTimeout(this.orderSearchDebounceTimer);
+                this.orderSearchDebounceTimer = null;
+            }
+
+            this.orderSearchQuery = '';
+            this.orderSearchActiveQuery = '';
+            this.syncOrderSearchUi();
+        },
+
+        handleOrderSearchInput(event) {
+            this.orderSearchQuery = event?.target?.value || '';
+            this.syncOrderSearchUi();
+
+            if (this.orderSearchDebounceTimer) {
+                clearTimeout(this.orderSearchDebounceTimer);
+            }
+
+            this.orderSearchDebounceTimer = setTimeout(() => {
+                this.orderSearchDebounceTimer = null;
+                this.triggerOrderSearch();
+            }, 260);
+        },
+
+        handleOrderSearchKeydown(event) {
+            if (event.key !== 'Enter') return;
+
+            event.preventDefault();
+            this.orderSearchQuery = event?.target?.value || this.orderSearchQuery || '';
+
+            if (this.orderSearchDebounceTimer) {
+                clearTimeout(this.orderSearchDebounceTimer);
+                this.orderSearchDebounceTimer = null;
+            }
+
+            this.triggerOrderSearch(true);
+        },
+
+        clearOrderSearch(event) {
+            if (event) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+
+            this.resetOrderSearchState();
+
+            const input = document.getElementById('wallet-order-search-input');
+            if (input) {
+                input.focus();
+            }
+
+            this.triggerOrderSearch(true);
+        },
+
+        triggerOrderSearch(force = false) {
+            const normalizedQuery = String(this.orderSearchQuery || '').trim();
+            if (!force && normalizedQuery === this.orderSearchActiveQuery && this.ordersLoaded) {
+                this.applyOrderFilter();
+                return;
+            }
+
+            this.loadOrders({
+                searchQuery: normalizedQuery,
+                ignorePrefetch: force || !!normalizedQuery
+            }).catch((err) => {
+                console.error('[WalletModal] Order search failed:', err);
+            });
+        },
+
+        isUuid(value = '') {
+            return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value || '').trim());
+        },
+
+        dedupeRecordsById(records = []) {
+            const seen = new Set();
+            return records.filter((record) => {
+                const key = String(record?.id || '').trim();
+                if (!key || seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+        },
 
         /**
          * Toggle order filter menu
@@ -2962,6 +3097,134 @@
             document.body.appendChild(modal);
         },
 
+        async searchWalletTransactions({ userId, site, query }) {
+            const trimmedQuery = String(query || '').trim();
+            const orderSelect = `
+                id,
+                total_price,
+                item_count,
+                status,
+                created_at,
+                snapshot_product_name,
+                shop_order_items (
+                    id,
+                    snapshot_product_name
+                )
+            `;
+            const ledgerSelect = 'id, amount, reason, reference_id, created_at';
+            const likeValue = `%${trimmedQuery}%`;
+            const isUuidQuery = this.isUuid(trimmedQuery);
+
+            const shopRequests = [
+                supabase
+                    .from('shop_orders')
+                    .select(orderSelect)
+                    .eq('user_id', userId)
+                    .eq('site', site)
+                    .ilike('snapshot_product_name', likeValue)
+                    .order('created_at', { ascending: false })
+                    .limit(80)
+            ];
+
+            const ledgerRequests = [
+                supabase
+                    .from('points_ledger')
+                    .select(ledgerSelect)
+                    .eq('user_id', userId)
+                    .eq('site', site)
+                    .ilike('reference_id', likeValue)
+                    .order('created_at', { ascending: false })
+                    .limit(80),
+                supabase
+                    .from('points_ledger')
+                    .select(ledgerSelect)
+                    .eq('user_id', userId)
+                    .eq('site', site)
+                    .ilike('reason', likeValue)
+                    .order('created_at', { ascending: false })
+                    .limit(80)
+            ];
+
+            if (isUuidQuery) {
+                shopRequests.push(
+                    supabase
+                        .from('shop_orders')
+                        .select(orderSelect)
+                        .eq('user_id', userId)
+                        .eq('site', site)
+                        .eq('id', trimmedQuery)
+                        .limit(20)
+                );
+
+                ledgerRequests.push(
+                    supabase
+                        .from('points_ledger')
+                        .select(ledgerSelect)
+                        .eq('user_id', userId)
+                        .eq('site', site)
+                        .eq('id', trimmedQuery)
+                        .limit(20)
+                );
+            }
+
+            const { data: promptMatches, error: promptError } = await supabase
+                .from('prompts')
+                .select('id, title')
+                .ilike('title', likeValue)
+                .limit(30);
+
+            if (promptError) {
+                console.warn('[WalletModal] Prompt search failed:', promptError);
+            }
+
+            const promptTitles = {};
+            const promptIds = (promptMatches || []).map((prompt) => {
+                promptTitles[prompt.id] = prompt.title;
+                return prompt.id;
+            });
+
+            if (promptIds.length > 0) {
+                ledgerRequests.push(
+                    supabase
+                        .from('points_ledger')
+                        .select(ledgerSelect)
+                        .eq('user_id', userId)
+                        .eq('site', site)
+                        .eq('reason', 'unlock_prompt')
+                        .in('reference_id', promptIds)
+                        .order('created_at', { ascending: false })
+                        .limit(80)
+                );
+            }
+
+            const [shopResults, ledgerResults] = await Promise.all([
+                Promise.all(shopRequests),
+                Promise.all(ledgerRequests)
+            ]);
+
+            const shopOrders = [];
+            shopResults.forEach((result) => {
+                if (result.error) throw result.error;
+                if (result.data?.length) {
+                    shopOrders.push(...result.data);
+                }
+            });
+
+            const ledgerEntries = [];
+            ledgerResults.forEach((result) => {
+                if (result.error) throw result.error;
+                if (result.data?.length) {
+                    ledgerEntries.push(...result.data);
+                }
+            });
+
+            return {
+                shopOrders: this.dedupeRecordsById(shopOrders),
+                ledgerEntries: this.dedupeRecordsById(ledgerEntries),
+                promptTitles
+            };
+        },
+
         /**
          * Apply order filter (both type and time)
          */
@@ -3074,42 +3337,69 @@
         /**
          * Load all transactions: shop orders, prompt unlocks, recharges, redemptions
          */
-        async loadOrders() {
-            if (this.ordersLoading) return;
+        async loadOrders(options = {}) {
+            const {
+                searchQuery = this.orderSearchQuery,
+                ignorePrefetch = false
+            } = options;
+            const normalizedQuery = String(searchQuery || '').trim();
+            const requestId = ++this.orderRequestId;
+            const site = window.SiteConfig?.site || 'cn';
+            const container = document.getElementById('wallet-orders');
+
             this.ordersLoading = true;
+            this.orderSearchQuery = typeof searchQuery === 'string' ? searchQuery : (this.orderSearchQuery || '');
+            this.syncOrderSearchUi();
+
             try {
-                console.log('[WalletModal] 🔄 Loading all transactions...');
-                const container = document.getElementById('wallet-orders');
+                console.log('[WalletModal] 🔄 Loading transactions...', normalizedQuery ? `search=${normalizedQuery}` : 'browse');
+
                 if (!container) return;
+
+                container.innerHTML = `<div class="loading-text">${normalizedQuery
+                    ? (window.i18n?.t('wallet.searchingRecords') || '查询中...')
+                    : (window.i18n?.t('common.loading') || '加载中...')}</div>`;
 
                 const { data: { session } } = await window.supabaseClient.auth.getSession();
                 const user = session?.user;
                 if (!user) {
+                    if (requestId !== this.orderRequestId) return;
                     container.innerHTML = `<div class="empty-text">${window.i18n?.t('security.loginRequired') || '请先登录'}</div>`;
                     return;
                 }
 
-                // Use prefetched data if available (instant!), otherwise fetch from network
-                let shopOrders, ledgerEntries;
+                let shopOrders = [];
+                let ledgerEntries = [];
+                let promptTitles = {};
 
-                if (this._prefetchedShopOrders && this._prefetchedLedger) {
+                if (!normalizedQuery && !ignorePrefetch && this._prefetchedShopOrders && this._prefetchedLedger) {
                     console.log('[WalletModal] ⚡ Using prefetched data (instant)');
                     shopOrders = this._prefetchedShopOrders;
                     ledgerEntries = this._prefetchedLedger;
-                    // Clear prefetched data after use
                     this._prefetchedShopOrders = null;
                     this._prefetchedLedger = null;
+                } else if (normalizedQuery) {
+                    const searchResult = await this.searchWalletTransactions({
+                        userId: user.id,
+                        site,
+                        query: normalizedQuery
+                    });
+
+                    if (requestId !== this.orderRequestId) return;
+
+                    shopOrders = searchResult.shopOrders || [];
+                    ledgerEntries = searchResult.ledgerEntries || [];
+                    promptTitles = searchResult.promptTitles || {};
                 } else {
-                    // Fetch shop orders AND all ledger entries in parallel
                     const [shopOrdersResult, ledgerResult] = await Promise.all([
                         supabase
                             .from('shop_orders')
                             .select(`
-                                id, 
-                                total_price, 
-                                item_count, 
-                                status, 
-                                created_at, 
+                                id,
+                                total_price,
+                                item_count,
+                                status,
+                                created_at,
                                 snapshot_product_name,
                                 shop_order_items (
                                     id,
@@ -3117,51 +3407,54 @@
                                 )
                             `)
                             .eq('user_id', user.id)
-                            .eq('site', window.SiteConfig?.site || 'cn')
+                            .eq('site', site)
                             .order('created_at', { ascending: false })
                             .limit(100),
-
                         supabase
                             .from('points_ledger')
                             .select('id, amount, reason, reference_id, created_at')
                             .eq('user_id', user.id)
-                            .eq('site', window.SiteConfig?.site || 'cn')
+                            .eq('site', site)
                             .order('created_at', { ascending: false })
                             .limit(100)
                     ]);
 
+                    if (requestId !== this.orderRequestId) return;
                     if (shopOrdersResult.error) throw shopOrdersResult.error;
+                    if (ledgerResult.error) throw ledgerResult.error;
+
                     shopOrders = shopOrdersResult.data || [];
                     ledgerEntries = ledgerResult.data || [];
                 }
 
-                // Fetch prompt titles for unlock entries
-                const promptIds = ledgerEntries
-                    .filter(e => e.reason === 'unlock_prompt' && e.reference_id)
-                    .map(e => e.reference_id);
+                const missingPromptIds = [...new Set(
+                    (ledgerEntries || [])
+                        .filter((entry) => entry.reason === 'unlock_prompt' && entry.reference_id && !promptTitles[entry.reference_id])
+                        .map((entry) => entry.reference_id)
+                )];
 
-                let promptTitles = {};
-                if (promptIds.length > 0) {
-                    const { data: prompts } = await supabase
+                if (missingPromptIds.length > 0) {
+                    const { data: prompts, error: promptLookupError } = await supabase
                         .from('prompts')
                         .select('id, title')
-                        .in('id', promptIds);
+                        .in('id', missingPromptIds);
 
-                    if (prompts) {
-                        prompts.forEach(p => {
-                            promptTitles[p.id] = p.title;
+                    if (requestId !== this.orderRequestId) return;
+                    if (promptLookupError) {
+                        console.warn('[WalletModal] Prompt title lookup failed:', promptLookupError);
+                    } else if (prompts) {
+                        prompts.forEach((prompt) => {
+                            promptTitles[prompt.id] = prompt.title;
                         });
                     }
                 }
 
-                // Convert ledger entries to order-like format
-                const ledgerOrders = ledgerEntries.map(entry => {
+                const ledgerOrders = (ledgerEntries || []).map((entry) => {
                     let transactionType = 'other';
                     let displayName = entry.reason || '交易';
                     let icon = '💳';
                     let shopOrderId = '';
 
-                    // Categorize by reason
                     if (entry.reason === 'unlock_prompt') {
                         transactionType = 'prompt';
                         displayName = promptTitles[entry.reference_id] || `${window.i18n?.t('wallet.promptItem') || '提示词'} #${entry.reference_id}`;
@@ -3179,11 +3472,10 @@
                         icon = '🛒';
                         shopOrderId = this.getShopOrderIdFromReference(entry.reference_id);
                     } else if (entry.reason === 'daily_checkin') {
-                        transactionType = 'recharge'; // Or whatever visual category is appropriate (positive)
+                        transactionType = 'recharge';
                         displayName = window.i18n?.t('wallet.dailyCheckin') || '每日签到';
                         icon = '⚡';
                     } else if (entry.reason && (entry.reason.startsWith('模拟充值') || entry.reason === 'package_purchase' || entry.reason === 'afdian_recharge')) {
-                        // Package recharges (mock or real)
                         transactionType = 'recharge';
                         displayName = this.getRechargeDisplayName(entry.reason);
                         icon = '⚡';
@@ -3192,7 +3484,7 @@
                         displayName = '兑换码兑换';
                         icon = '🎟️';
                     } else if (entry.reason && entry.reason.startsWith('admin_manual')) {
-                        transactionType = 'recharge'; // Treat admin adjustments as recharge type
+                        transactionType = 'recharge';
                         const adminLabel = window.i18n?.t('wallet.adminAdjustment') || '管理员调整:';
                         displayName = entry.reason.replace(/admin_manual:\s*\[.*?\]\s*/, `${adminLabel} `);
                         if (displayName.startsWith('admin_manual:')) {
@@ -3200,7 +3492,6 @@
                         }
                         icon = '👤';
                     } else if (entry.amount > 0) {
-                        // Positive amounts that don't match other patterns - likely recharges
                         transactionType = 'recharge';
                         displayName = entry.reason || '积分充值';
                         icon = '⚡';
@@ -3210,11 +3501,11 @@
                         id: entry.id,
                         created_at: entry.created_at,
                         total_price: Math.abs(entry.amount),
-                        amount: entry.amount, // Keep original for display
+                        amount: entry.amount,
                         status: 'completed',
                         snapshot_product_name: displayName,
                         item_count: 1,
-                        transactionType: transactionType,
+                        transactionType,
                         isPromptUnlock: transactionType === 'prompt',
                         isVerifyOrder: transactionType === 'verify',
                         isRecharge: transactionType === 'recharge',
@@ -3224,12 +3515,11 @@
                         referenceId: entry.reference_id || '',
                         shopOrderId,
                         rawReason: entry.reason || '',
-                        icon: icon
+                        icon
                     };
                 });
 
-                // Add shop orders with their type
-                const shopOrdersList = shopOrders.map(order => ({
+                const shopOrdersList = (shopOrders || []).map((order) => ({
                     ...order,
                     transactionType: 'shop',
                     isShopOrder: true,
@@ -3239,7 +3529,7 @@
 
                 const realShopOrderIds = new Set(
                     shopOrdersList
-                        .map(order => String(order.shopOrderId || order.id || '').trim())
+                        .map((order) => String(order.shopOrderId || order.id || '').trim())
                         .filter(Boolean)
                 );
 
@@ -3249,23 +3539,27 @@
                     return !realShopOrderIds.has(String(order.shopOrderId).trim());
                 });
 
-                // Merge and sort by date
                 const allOrders = [...shopOrdersList, ...dedupedLedgerOrders].sort((a, b) =>
                     new Date(b.created_at) - new Date(a.created_at)
                 );
 
-                this.ordersLoaded = true;
-                this.ordersData = allOrders; // Save for filtering
-                this.applyOrderFilter();
+                if (requestId !== this.orderRequestId) return;
 
+                this.ordersLoaded = true;
+                this.ordersData = allOrders;
+                this.orderSearchActiveQuery = normalizedQuery;
+                this.applyOrderFilter();
             } catch (err) {
+                if (requestId !== this.orderRequestId) return;
+
                 console.error('[WalletModal] ❌ Load transactions failed:', err);
-                const container = document.getElementById('wallet-orders');
                 if (container) {
-                    container.innerHTML = '<div class="empty-text">加载失败</div>';
+                    container.innerHTML = `<div class="empty-text">${window.i18n?.t('wallet.loadFailed') || '加载失败'}</div>`;
                 }
             } finally {
-                this.ordersLoading = false;
+                if (requestId === this.orderRequestId) {
+                    this.ordersLoading = false;
+                }
             }
         },
 
@@ -3275,7 +3569,10 @@
         renderOrders(orders) {
             const container = document.getElementById('wallet-orders');
             if (!orders || orders.length === 0) {
-                container.innerHTML = `<div class="empty-text">${window.i18n?.t('wallet.noRecords') || '暂无记录'}</div>`;
+                const hasActiveSearch = !!String(this.orderSearchActiveQuery || '').trim();
+                container.innerHTML = `<div class="empty-text">${hasActiveSearch
+                    ? (window.i18n?.t('wallet.noSearchResults') || '未找到相关记录')
+                    : (window.i18n?.t('wallet.noRecords') || '暂无记录')}</div>`;
                 return;
             }
 

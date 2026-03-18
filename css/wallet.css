@@ -1252,6 +1252,7 @@ body.wallet-modal-lock {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 12px;
+    gap: 12px;
 }
 
 .history-header h3,
@@ -1286,6 +1287,75 @@ body.wallet-modal-lock {
     display: flex;
     align-items: center;
     gap: 8px;
+    flex-shrink: 0;
+}
+
+.history-search {
+    position: relative;
+    flex: 1 1 340px;
+    min-width: 240px;
+    max-width: 460px;
+}
+
+.history-search-icon {
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: rgba(255, 255, 255, 0.42);
+    font-size: 13px;
+    pointer-events: none;
+}
+
+.history-search-input {
+    width: 100%;
+    height: 38px;
+    padding: 0 42px 0 38px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--wallet-sheet-text);
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.history-search-input::placeholder {
+    color: rgba(255, 255, 255, 0.38);
+}
+
+.history-search-input:focus {
+    border-color: rgba(107, 158, 206, 0.55);
+    background: rgba(255, 255, 255, 0.09);
+    box-shadow: 0 0 0 3px rgba(107, 158, 206, 0.14);
+}
+
+.history-search-clear {
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 26px;
+    height: 26px;
+    border: none;
+    border-radius: 50%;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.72);
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.history-search-clear.visible {
+    display: inline-flex;
+}
+
+.history-search-clear:hover {
+    background: rgba(255, 255, 255, 0.16);
+    color: #fff;
+    transform: translateY(-50%) scale(1.04);
 }
 
 /* Filter Chip - Small clickable pill */
@@ -1802,6 +1872,18 @@ body.wallet-modal-lock {
     .history-header {
         flex-wrap: wrap;
         gap: 8px;
+    }
+
+    .history-search {
+        max-width: none;
+        width: 100%;
+        min-width: 0;
+    }
+
+    .history-actions {
+        width: 100%;
+        justify-content: flex-end;
+        flex-wrap: wrap;
     }
 
     .view-title {
