@@ -8,7 +8,7 @@
 CREATE OR REPLACE FUNCTION fn_signup_bonus()
 RETURNS TRIGGER AS $$
 DECLARE
-    v_bonus INT := 0;
+    v_bonus NUMERIC(12,1) := 0;
     v_config JSONB;
     v_already_granted BOOLEAN := false;
 BEGIN
@@ -17,7 +17,7 @@ BEGIN
     FROM system_config
     WHERE config_key = 'rewards';
     
-    v_bonus := COALESCE((v_config->>'signup_bonus')::INT, 0);
+    v_bonus := COALESCE((v_config->>'signup_bonus')::NUMERIC(12,1), 0);
     
     -- 如果奖励为 0，直接返回
     IF v_bonus <= 0 THEN

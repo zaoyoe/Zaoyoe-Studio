@@ -14,6 +14,11 @@
 
     console.log('[PointsService] ✅ Initializing...');
 
+    function normalizePointValue(value, fallback = 0) {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? Math.round(parsed * 10) / 10 : fallback;
+    }
+
     const PointsService = {
         // Cached session to avoid redundant getSession() calls
         _cachedUserId: null,
@@ -47,7 +52,15 @@
                     return { paid_balance: 0, bonus_balance: 0, total_balance: 0 };
                 }
 
-                return data || { paid_balance: 0, bonus_balance: 0, total_balance: 0 };
+                if (!data) {
+                    return { paid_balance: 0, bonus_balance: 0, total_balance: 0 };
+                }
+
+                return {
+                    paid_balance: normalizePointValue(data.paid_balance),
+                    bonus_balance: normalizePointValue(data.bonus_balance),
+                    total_balance: normalizePointValue(data.total_balance)
+                };
             } catch (e) {
                 console.error('[PointsService] Exception in getBalance:', e);
                 return { paid_balance: 0, bonus_balance: 0, total_balance: 0 };
@@ -71,7 +84,10 @@
                     console.error('[PointsService] Error fetching history:', error);
                     return [];
                 }
-                return data || [];
+                return (data || []).map((item) => ({
+                    ...item,
+                    amount: normalizePointValue(item.amount)
+                }));
             } catch (e) {
                 console.error('[PointsService] Exception in getHistory:', e);
                 return [];
@@ -93,7 +109,11 @@
                     console.error('[PointsService] Error fetching packages:', error);
                     return [];
                 }
-                return data || [];
+                return (data || []).map((pkg) => ({
+                    ...pkg,
+                    points_amount: normalizePointValue(pkg.points_amount),
+                    bonus_points: normalizePointValue(pkg.bonus_points)
+                }));
             } catch (e) {
                 console.error('[PointsService] Exception in getPackages:', e);
                 return [];

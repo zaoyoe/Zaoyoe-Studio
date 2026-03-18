@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS pending_referral_rewards (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     inviter_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
     invitee_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
-    reward_points INT NOT NULL,
+    reward_points NUMERIC(12,1) NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(invitee_id)
 );
@@ -45,7 +45,7 @@ CREATE POLICY "Users can read own pending rewards" ON pending_referral_rewards F
 CREATE OR REPLACE FUNCTION fn_generate_invite_code()
 RETURNS TRIGGER AS $$
 DECLARE
-    v_reward_points INT := 0;
+    v_reward_points NUMERIC(12,1) := 0;
     v_requires_purchase BOOLEAN := true;
     v_client_ip TEXT;
     v_recent_ip_count INT := 0;
@@ -73,8 +73,8 @@ BEGIN
         WHERE config_key = 'affiliate_program';
 
         v_reward_points := COALESCE(
-            (v_affiliate_config->>'registration_reward_points')::INT,
-            (SELECT value::INT FROM system_settings WHERE key = 'registration_reward_points'),
+            (v_affiliate_config->>'registration_reward_points')::NUMERIC(12,1),
+            (SELECT value::NUMERIC(12,1) FROM system_settings WHERE key = 'registration_reward_points'),
             0
         );
         v_requires_purchase := COALESCE(

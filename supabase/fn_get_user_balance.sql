@@ -1,11 +1,13 @@
 -- Run this in Supabase SQL Editor
 -- Creates RPC function to get user balance (bypasses RLS)
 
+DROP FUNCTION IF EXISTS fn_get_user_balance(UUID);
+
 CREATE OR REPLACE FUNCTION fn_get_user_balance(p_user_id UUID)
 RETURNS TABLE (
-    paid_balance INTEGER,
-    bonus_balance INTEGER,
-    total_balance INTEGER
+    paid_balance NUMERIC(12,1),
+    bonus_balance NUMERIC(12,1),
+    total_balance NUMERIC(12,1)
 )
 LANGUAGE plpgsql
 SECURITY DEFINER

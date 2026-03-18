@@ -5,11 +5,11 @@ SECURITY DEFINER
 AS $$
 DECLARE
     v_invited_count INT := 0;
-    v_total_commission INT := 0;
+    v_total_commission NUMERIC(12,1) := 0;
     v_invite_code VARCHAR;
     v_rate_shop FLOAT;
     v_rate_agent FLOAT;
-    v_reg_reward INT;
+    v_reg_reward NUMERIC(12,1);
     v_requires_purchase BOOLEAN;
     v_reward_notice TEXT;
     v_legal_disclaimer TEXT;
@@ -44,8 +44,8 @@ BEGIN
         0.10
     );
     v_reg_reward := COALESCE(
-        (v_affiliate_config->>'registration_reward_points')::INT,
-        (SELECT value::INT FROM system_settings WHERE key = 'registration_reward_points'),
+        (v_affiliate_config->>'registration_reward_points')::NUMERIC(12,1),
+        (SELECT value::NUMERIC(12,1) FROM system_settings WHERE key = 'registration_reward_points'),
         0
     );
     v_requires_purchase := COALESCE(

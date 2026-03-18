@@ -199,7 +199,7 @@ CREATE OR REPLACE FUNCTION public.unlock_prompt(
 RETURNS JSONB AS $$
 DECLARE
     v_user_id UUID;
-    v_balance INTEGER;
+    v_balance NUMERIC(12,1);
 BEGIN
     v_user_id := auth.uid();
     
@@ -222,11 +222,11 @@ BEGIN
 
     -- 扣除积分（简化：直接扣 bonus 优先）
     DECLARE
-        v_current_bonus INT;
-        v_current_paid INT;
-        v_deduct_bonus INT := 0;
-        v_deduct_paid INT := 0;
-        v_remaining INT := p_cost;
+        v_current_bonus NUMERIC(12,1);
+        v_current_paid NUMERIC(12,1);
+        v_deduct_bonus NUMERIC(12,1) := 0;
+        v_deduct_paid NUMERIC(12,1) := 0;
+        v_remaining NUMERIC(12,1) := p_cost;
     BEGIN
         SELECT bonus_balance, paid_balance INTO v_current_bonus, v_current_paid
         FROM points_balance WHERE user_id = v_user_id AND site = p_site FOR UPDATE;
@@ -311,9 +311,9 @@ CREATE OR REPLACE FUNCTION public.unlock_prompt_v2(
 RETURNS JSONB AS $$
 DECLARE
   v_user_id UUID;
-  v_total_balance INTEGER;
-  v_paid_balance INTEGER;
-  v_bonus_balance INTEGER;
+  v_total_balance NUMERIC(12,1);
+  v_paid_balance NUMERIC(12,1);
+  v_bonus_balance NUMERIC(12,1);
   v_prompt_id_bigint BIGINT;
   v_is_banned BOOLEAN;
 BEGIN
@@ -361,9 +361,9 @@ BEGIN
 
   -- 4. Deduct Points (bonus first)
   DECLARE
-    v_cost_remaining INTEGER := p_cost;
-    v_new_bonus INTEGER := v_bonus_balance;
-    v_new_paid INTEGER := v_paid_balance;
+    v_cost_remaining NUMERIC(12,1) := p_cost;
+    v_new_bonus NUMERIC(12,1) := v_bonus_balance;
+    v_new_paid NUMERIC(12,1) := v_paid_balance;
   BEGIN
       IF v_new_bonus >= v_cost_remaining THEN
           v_new_bonus := v_new_bonus - v_cost_remaining;
@@ -454,8 +454,8 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
 DECLARE
-    new_paid INT;
-    new_bonus INT;
+    new_paid NUMERIC(12,1);
+    new_bonus NUMERIC(12,1);
 BEGIN
     IF p_amount <= 0 THEN
         RAISE EXCEPTION 'Amount must be positive';
@@ -495,10 +495,10 @@ SECURITY DEFINER
 AS $$
 DECLARE
     target_user_id UUID := auth.uid();
-    current_bonus INT;
-    current_paid INT;
-    deduct_from_bonus INT := 0;
-    deduct_from_paid INT := 0;
+    current_bonus NUMERIC(12,1);
+    current_paid NUMERIC(12,1);
+    deduct_from_bonus NUMERIC(12,1) := 0;
+    deduct_from_paid NUMERIC(12,1) := 0;
 BEGIN
     SELECT bonus_balance, paid_balance INTO current_bonus, current_paid
     FROM points_balance

@@ -14,9 +14,9 @@ CREATE OR REPLACE FUNCTION public.unlock_prompt_v2(p_prompt_id TEXT, p_cost INTE
 RETURNS JSONB AS $$
 DECLARE
   v_user_id UUID;
-  v_total_balance INTEGER;
-  v_paid_balance INTEGER;
-  v_bonus_balance INTEGER;
+  v_total_balance NUMERIC(12,1);
+  v_paid_balance NUMERIC(12,1);
+  v_bonus_balance NUMERIC(12,1);
   v_prompt_id_bigint BIGINT;
   v_is_banned BOOLEAN;
 BEGIN
@@ -70,9 +70,9 @@ BEGIN
   -- If bonus < cost: paid - (cost - bonus), bonus = 0.
   
   DECLARE
-    v_cost_remaining INTEGER := p_cost;
-    v_new_bonus INTEGER := v_bonus_balance;
-    v_new_paid INTEGER := v_paid_balance;
+    v_cost_remaining NUMERIC(12,1) := p_cost;
+    v_new_bonus NUMERIC(12,1) := v_bonus_balance;
+    v_new_paid NUMERIC(12,1) := v_paid_balance;
   BEGIN
       -- Deduct from Bonus first
       IF v_new_bonus >= v_cost_remaining THEN

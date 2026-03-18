@@ -96,10 +96,10 @@ CREATE OR REPLACE FUNCTION fn_daily_checkin_v2(
     p_site TEXT DEFAULT 'cn'
 ) RETURNS JSONB AS $$
 DECLARE
-    v_reward INT := 0;
-    v_consecutive_bonus INT := 0;
-    v_perfect_bonus INT := 0;
-    v_total_reward INT := 0;
+    v_reward NUMERIC(12,1) := 0;
+    v_consecutive_bonus NUMERIC(12,1) := 0;
+    v_perfect_bonus NUMERIC(12,1) := 0;
+    v_total_reward NUMERIC(12,1) := 0;
     
     v_config JSONB;
     v_already_checked BOOLEAN := false;
@@ -129,9 +129,9 @@ BEGIN
 
     -- 读取配置
     SELECT config_value INTO v_config FROM system_config WHERE config_key = 'checkin_system';
-    v_reward := COALESCE((v_config->>'base_points')::INT, 5);
-    v_consecutive_bonus := COALESCE((v_config->>'consecutive_7_points')::INT, 50);
-    v_perfect_bonus := COALESCE((v_config->>'perfect_month_points')::INT, 200);
+    v_reward := COALESCE((v_config->>'base_points')::NUMERIC(12,1), 5);
+    v_consecutive_bonus := COALESCE((v_config->>'consecutive_7_points')::NUMERIC(12,1), 50);
+    v_perfect_bonus := COALESCE((v_config->>'perfect_month_points')::NUMERIC(12,1), 200);
 
     -- 计算加上今天之后的连续天数
     LOOP
@@ -200,14 +200,14 @@ CREATE OR REPLACE FUNCTION fn_makeup_checkin(
 ) RETURNS JSONB AS $$
 DECLARE
     v_config JSONB;
-    v_cost INT := 0;
+    v_cost NUMERIC(12,1) := 0;
     v_user_balance NUMERIC;
     v_new_balance NUMERIC;
-    v_current_bonus INT := 0;
-    v_current_paid INT := 0;
-    v_deduct_bonus INT := 0;
-    v_deduct_paid INT := 0;
-    v_remaining_cost INT := 0;
+    v_current_bonus NUMERIC(12,1) := 0;
+    v_current_paid NUMERIC(12,1) := 0;
+    v_deduct_bonus NUMERIC(12,1) := 0;
+    v_deduct_paid NUMERIC(12,1) := 0;
+    v_remaining_cost NUMERIC(12,1) := 0;
 BEGIN
     IF p_user_id IS NULL THEN RETURN jsonb_build_object('success', false, 'message', '用户未登录'); END IF;
     IF p_date >= current_date THEN RETURN jsonb_build_object('success', false, 'message', '只能对过去的日期进行补签'); END IF;
@@ -220,7 +220,7 @@ BEGIN
     SELECT config_value INTO v_config FROM system_config WHERE config_key = 'checkin_system';
     
     IF p_method = 'points' THEN
-        v_cost := COALESCE((v_config->>'makeup_cost_points')::INT, 10);
+        v_cost := COALESCE((v_config->>'makeup_cost_points')::NUMERIC(12,1), 10);
         
         IF v_cost > 0 THEN
             -- 检查余额并锁定当前账户

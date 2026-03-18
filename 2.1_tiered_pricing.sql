@@ -46,7 +46,7 @@ DECLARE
     v_product RECORD;
     v_unit_price INT;
     v_total_price INT;
-    v_user_balance INT;
+    v_user_balance NUMERIC(12,1);
     
     v_inventory_ids UUID[];
     v_contents TEXT[];
@@ -111,11 +111,11 @@ BEGIN
 
     -- 1. Deduct Points
     DECLARE
-        v_current_bonus INT;
-        v_current_paid INT;
-        v_deduct_bonus INT := 0;
-        v_deduct_paid INT := 0;
-        v_remaining_cost INT := v_total_price;
+        v_current_bonus NUMERIC(12,1);
+        v_current_paid NUMERIC(12,1);
+        v_deduct_bonus NUMERIC(12,1) := 0;
+        v_deduct_paid NUMERIC(12,1) := 0;
+        v_remaining_cost NUMERIC(12,1) := v_total_price;
     BEGIN
         SELECT bonus_balance, paid_balance INTO v_current_bonus, v_current_paid
         FROM points_balance WHERE user_id = p_user_id;

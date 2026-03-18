@@ -10,7 +10,7 @@ CREATE OR REPLACE FUNCTION fn_daily_checkin(
 )
 RETURNS JSONB AS $$
 DECLARE
-    v_reward INT := 0;
+    v_reward NUMERIC(12,1) := 0;
     v_config JSONB;
     v_legacy_rewards JSONB;
     v_already_checked BOOLEAN := false;
@@ -31,8 +31,8 @@ BEGIN
     WHERE config_key = 'rewards';
     
     v_reward := COALESCE(
-        (v_config->>'base_points')::INT,
-        (v_legacy_rewards->>'daily_checkin')::INT,
+        (v_config->>'base_points')::NUMERIC(12,1),
+        (v_legacy_rewards->>'daily_checkin')::NUMERIC(12,1),
         5
     );
     

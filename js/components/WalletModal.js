@@ -903,6 +903,18 @@
                 return window.i18n?.t('wallet.rechargeType') || '充值';
             }
 
+            if (rawReason === 'daily_checkin') {
+                return window.i18n?.t('wallet.dailyCheckin') || '每日签到';
+            }
+
+            if (rawReason === 'makeup_checkin_cost') {
+                return '补签扣分';
+            }
+
+            if (rawReason === 'signup_bonus') {
+                return '注册奖励';
+            }
+
             if (rawReason.startsWith('模拟充值:')) {
                 return rawReason.replace('模拟充值:', '').trim() || (window.i18n?.t('wallet.rechargeType') || '充值');
             }
@@ -920,6 +932,20 @@
             }
 
             return rawReason;
+        },
+
+        normalizePointValue(value, fallback = 0) {
+            const parsed = Number(value);
+            return Number.isFinite(parsed) ? Math.round(parsed * 10) / 10 : fallback;
+        },
+
+        formatPoints(value) {
+            const normalized = this.normalizePointValue(value, 0);
+            const hasDecimal = Math.abs(normalized % 1) > 0.0001;
+            return normalized.toLocaleString(undefined, {
+                minimumFractionDigits: hasDecimal ? 1 : 0,
+                maximumFractionDigits: 1
+            });
         },
 
         looksLikeEmail(value = '') {
@@ -1708,16 +1734,12 @@
         normalizeCheckinConfig(raw) {
             const defaults = this.getDefaultCheckinConfig();
             const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
-            const parseWholeNumber = (value, fallback) => {
-                const parsed = Number.parseInt(value, 10);
-                return Number.isFinite(parsed) ? parsed : fallback;
-            };
 
             return {
-                base_points: parseWholeNumber(source.base_points, defaults.base_points),
-                consecutive_7_points: parseWholeNumber(source.consecutive_7_points, defaults.consecutive_7_points),
-                perfect_month_points: parseWholeNumber(source.perfect_month_points, defaults.perfect_month_points),
-                makeup_cost_points: Math.max(0, parseWholeNumber(source.makeup_cost_points, defaults.makeup_cost_points))
+                base_points: Math.max(0, this.normalizePointValue(source.base_points, defaults.base_points)),
+                consecutive_7_points: Math.max(0, this.normalizePointValue(source.consecutive_7_points, defaults.consecutive_7_points)),
+                perfect_month_points: Math.max(0, this.normalizePointValue(source.perfect_month_points, defaults.perfect_month_points)),
+                makeup_cost_points: Math.max(0, this.normalizePointValue(source.makeup_cost_points, defaults.makeup_cost_points))
             };
         },
 
@@ -1923,14 +1945,14 @@
 
             if (!customTemplate) {
                 return [
-                    safeRegistrationRewardPoints > 0 ? `拉新奖励 ${safeRegistrationRewardPoints} 积分` : '',
+                    safeRegistrationRewardPoints > 0 ? `拉新奖励 ${this.formatPoints(safeRegistrationRewardPoints)} 积分` : '',
                     `商城返佣 ${this.formatAffiliatePercent(safeCommissionRateShop)}`
                 ].filter(Boolean).join(' · ');
             }
 
             return customTemplate
-                .replace(/\{registration_reward_text\}/g, safeRegistrationRewardPoints > 0 ? `${safeRegistrationRewardPoints} 积分` : '未开启')
-                .replace(/\{registration_reward\}/g, String(safeRegistrationRewardPoints))
+                .replace(/\{registration_reward_text\}/g, safeRegistrationRewardPoints > 0 ? `${this.formatPoints(safeRegistrationRewardPoints)} 积分` : '未开启')
+                .replace(/\{registration_reward\}/g, this.formatPoints(safeRegistrationRewardPoints))
                 .replace(/\{shop_commission\}/g, this.formatAffiliatePercent(safeCommissionRateShop))
                 .replace(/\{shop_commission_rate\}/g, this.formatAffiliatePercent(safeCommissionRateShop))
                 .replace(/\s+/g, ' ')
@@ -1953,7 +1975,7 @@
                 : '活动最终解释权归平台所有';
 
             const lines = [
-                `固定拉新奖励：${safeRegistrationReward > 0 ? `${safeRegistrationReward} 积分` : '当前未开启'}`,
+                `固定拉新奖励：${safeRegistrationReward > 0 ? `${this.formatPoints(safeRegistrationReward)} 积分` : '当前未开启'}`,
                 `触发条件：好友${requiresPurchase ? '完成首笔充值或消费后激活' : '完成注册后立即发放'}`,
                 `商城消费返佣：${this.formatAffiliatePercent(safeCommissionRateShop)}`,
                 `分销资源返佣：${this.formatAffiliatePercent(safeCommissionRateAgent)}`,
@@ -1980,6 +2002,7 @@
                 : '活动最终解释权归平台所有';
             const rewardTriggerText = requiresPurchase ? '完成首笔充值或消费' : '完成注册';
             const guideText = this.getAffiliateRewardExplanation(stats);
+            const rewardPointsText = this.formatPoints(safeRegistrationReward);
 
             if (rewardGuideEl) {
                 rewardGuideEl.setAttribute('data-tooltip', guideText);
@@ -1987,7 +2010,7 @@
             }
 
             if (safeRegistrationReward > 0) {
-                descEl.innerHTML = `分享专属链接邀请新用户。当好友注册并在商城<strong>${rewardTriggerText}</strong>后，您将获得 <strong style="color:#10b981; font-weight:600;">${safeRegistrationReward} 积分</strong> 专属拉新奖励；此外，好友后续所有商城订单还会持续按 <strong style="color:#f59e0b; font-weight:600;">${ratePercent}</strong> 自动返佣。<span class="affiliate-legal-note">${this.escapeHtml(legalDisclaimer)}</span>`;
+                descEl.innerHTML = `分享专属链接邀请新用户。当好友注册并在商城<strong>${rewardTriggerText}</strong>后，您将获得 <strong style="color:#10b981; font-weight:600;">${rewardPointsText} 积分</strong> 专属拉新奖励；此外，好友后续所有商城订单还会持续按 <strong style="color:#f59e0b; font-weight:600;">${ratePercent}</strong> 自动返佣。<span class="affiliate-legal-note">${this.escapeHtml(legalDisclaimer)}</span>`;
                 return;
             }
 
@@ -2048,7 +2071,7 @@
 
                     if (commissionEl) {
                         commissionEl.textContent = Number.isFinite(totalCommission)
-                            ? totalCommission.toLocaleString()
+                            ? this.formatPoints(totalCommission)
                             : '0';
                     }
 
@@ -2485,17 +2508,17 @@
                 // Update balance with animation
                 const totalEl = document.getElementById('wallet-total');
                 if (totalEl) {
-                    const currentVal = parseInt(totalEl.dataset.value || 0);
-                    const newVal = balance.total_balance;
+                    const currentVal = this.normalizePointValue(totalEl.dataset.value || 0);
+                    const newVal = this.normalizePointValue(balance.total_balance);
                     this.animateValue(totalEl, currentVal, newVal, 800);
                     totalEl.dataset.value = newVal;
                 }
 
                 const paidEl = document.getElementById('wallet-paid');
-                if (paidEl) paidEl.textContent = balance.paid_balance.toLocaleString();
+                if (paidEl) paidEl.textContent = this.formatPoints(balance.paid_balance);
 
                 const bonusEl = document.getElementById('wallet-bonus');
-                if (bonusEl) bonusEl.textContent = balance.bonus_balance.toLocaleString();
+                if (bonusEl) bonusEl.textContent = this.formatPoints(balance.bonus_balance);
 
                 // Notify other widgets (e.g. verify-widget) that balance changed
                 window.dispatchEvent(new CustomEvent('walletBalanceUpdated', {
@@ -2515,7 +2538,7 @@
                             return `
                             <div class="package-item" onclick="WalletModal.buyPackage('${pkg.id}', '${pkg.name}')">
                                 <div class="pkg-name">${displayName}</div>
-                                <div class="pkg-points">${pkg.points_amount} ${pointsUnit}${pkg.bonus_points > 0 ? ` <span class="pkg-bonus">+${pkg.bonus_points}</span>` : ''}</div>
+                                <div class="pkg-points">${this.formatPoints(pkg.points_amount)} ${pointsUnit}${pkg.bonus_points > 0 ? ` <span class="pkg-bonus">+${this.formatPoints(pkg.bonus_points)}</span>` : ''}</div>
                                 <div class="pkg-price">¥${pkg.price_cny}</div>
                             </div>
                         `}).join('');
@@ -2546,7 +2569,7 @@
          */
         animateValue(obj, start, end, duration) {
             if (start === end) {
-                obj.textContent = end.toLocaleString();
+                obj.textContent = this.formatPoints(end);
                 return;
             }
             let startTimestamp = null;
@@ -2556,13 +2579,13 @@
                 // Ease out expo
                 const easeProgress = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress);
 
-                const value = Math.floor(easeProgress * (end - start) + start);
-                obj.textContent = value.toLocaleString();
+                const value = this.normalizePointValue(easeProgress * (end - start) + start);
+                obj.textContent = this.formatPoints(value);
 
                 if (progress < 1) {
                     window.requestAnimationFrame(step);
                 } else {
-                    obj.textContent = end.toLocaleString();
+                    obj.textContent = this.formatPoints(end);
                 }
             };
             window.requestAnimationFrame(step);
@@ -2794,7 +2817,7 @@
                     this.playConfetti();
 
                     // Show message combining base and bonus (if any)
-                    let msg = `💰 签到奖励 +${data.points} 积分`;
+                    let msg = `💰 签到奖励 +${this.formatPoints(data.points)} 积分`;
                     if (data.message && data.message !== '签到成功') {
                         msg += `\\n${data.message}`; // Append the bonus message
                     }
@@ -2803,7 +2826,11 @@
                     // Update balance display
                     if (data.new_balance !== undefined) {
                         const totalEl = document.getElementById('wallet-total');
-                        if (totalEl) totalEl.textContent = data.new_balance;
+                        if (totalEl) {
+                            const normalizedBalance = this.normalizePointValue(data.new_balance);
+                            totalEl.textContent = this.formatPoints(normalizedBalance);
+                            totalEl.dataset.value = normalizedBalance;
+                        }
                     }
 
                     // Relax and let the user see the animation, then reload
@@ -2857,12 +2884,16 @@
                 if (error) throw error;
 
                 if (data.success) {
-                    this.showToast(`✅ 补签成功! 扣除 ${data.cost} 积分`, 'success');
+                    this.showToast(`✅ 补签成功! 扣除 ${this.formatPoints(data.cost)} 积分`, 'success');
 
                     // Update balance display
                     if (data.new_balance !== undefined) {
                         const totalEl = document.getElementById('wallet-total');
-                        if (totalEl) totalEl.textContent = data.new_balance;
+                        if (totalEl) {
+                            const normalizedBalance = this.normalizePointValue(data.new_balance);
+                            totalEl.textContent = this.formatPoints(normalizedBalance);
+                            totalEl.dataset.value = normalizedBalance;
+                        }
                     }
 
                     // Refresh calendar and data
@@ -3187,6 +3218,12 @@
                 else if (reason === 'daily_checkin') {
                     reason = window.i18n?.t('wallet.dailyCheckin') || '每日签到';
                 }
+                else if (reason === 'makeup_checkin_cost') {
+                    reason = '补签扣分';
+                }
+                else if (reason === 'signup_bonus') {
+                    reason = '注册奖励';
+                }
 
                 return `
                     <div class="history-item" onclick="WalletModal.toggleItemDetails(this)">
@@ -3196,7 +3233,7 @@
                                 <div class="history-date">${dateStr}</div>
                             </div>
                             <div class="history-amount ${item.amount > 0 ? 'positive' : 'negative'}">
-                                ${item.amount > 0 ? '+' : ''}${item.amount}
+                                ${item.amount > 0 ? '+' : ''}${this.formatPoints(item.amount)}
                             </div>
                         </div>
                         <div class="history-details" onclick="event.stopPropagation()">
@@ -4279,6 +4316,7 @@
                 }
 
                 const ledgerOrders = (ledgerEntries || []).map((entry) => {
+                    const entryAmount = this.normalizePointValue(entry.amount);
                     let transactionType = 'other';
                     let displayName = entry.reason || '交易';
                     let icon = '💳';
@@ -4304,6 +4342,14 @@
                         transactionType = 'recharge';
                         displayName = window.i18n?.t('wallet.dailyCheckin') || '每日签到';
                         icon = '⚡';
+                    } else if (entry.reason === 'makeup_checkin_cost') {
+                        transactionType = 'recharge';
+                        displayName = '补签扣分';
+                        icon = '📅';
+                    } else if (entry.reason === 'signup_bonus') {
+                        transactionType = 'recharge';
+                        displayName = '注册奖励';
+                        icon = '🎁';
                     } else if (entry.reason && (entry.reason.startsWith('模拟充值') || entry.reason === 'package_purchase' || entry.reason === 'afdian_recharge')) {
                         transactionType = 'recharge';
                         displayName = this.getRechargeDisplayName(entry.reason);
@@ -4320,7 +4366,7 @@
                             displayName = displayName.replace('admin_manual:', adminLabel);
                         }
                         icon = '👤';
-                    } else if (entry.amount > 0) {
+                    } else if (entryAmount > 0) {
                         transactionType = 'recharge';
                         displayName = entry.reason || '积分充值';
                         icon = '⚡';
@@ -4329,8 +4375,8 @@
                     return {
                         id: entry.id,
                         created_at: entry.created_at,
-                        total_price: Math.abs(entry.amount),
-                        amount: entry.amount,
+                        total_price: Math.abs(entryAmount),
+                        amount: entryAmount,
                         status: 'completed',
                         snapshot_product_name: displayName,
                         item_count: 1,
@@ -4437,27 +4483,27 @@
                 let amountClass;
                 let statusText = completedText;
                 let statusClass = 'status-completed';
+                const signedAmount = order.isShopOrder
+                    ? -this.normalizePointValue(order.total_price || 0)
+                    : this.normalizePointValue(order.amount ?? order.total_price ?? 0);
+                const absAmountText = this.formatPoints(Math.abs(signedAmount));
 
                 // Determine amount display and color
-                if (order.transactionType === 'recharge' || order.transactionType === 'redeem') {
-                    // Positive: recharge and redemption
-                    const amount = order.amount || order.total_price;
-                    amountDisplay = `+${Math.abs(amount)} ${pointsUnit}`;
+                if (signedAmount >= 0) {
+                    amountDisplay = `+${absAmountText} ${pointsUnit}`;
                     amountClass = 'positive';
                 } else {
-                    // Negative: purchases (shop, prompt)
-                    const amount = order.total_price || order.amount;
-                    amountDisplay = `-${Math.abs(amount)} ${pointsUnit}`;
+                    amountDisplay = `-${absAmountText} ${pointsUnit}`;
                     amountClass = 'negative';
                 }
 
                 // Handle display name and click based on type
                 if (order.transactionType === 'prompt') {
                     displayName = `<i class="fas fa-lightbulb" style="color: #fde68a;"></i> ${this.escapeHtml(order.snapshot_product_name)}`;
-                    clickHandler = `WalletModal.showPromptOrderDetail('${order.id}', '${this.escapeHtml(order.snapshot_product_name).replace(/'/g, "\\'")}', ${order.total_price}, '${order.created_at}', '${order.promptId || ''}')`;
+                    clickHandler = `WalletModal.showPromptOrderDetail('${order.id}', '${this.escapeHtml(order.snapshot_product_name).replace(/'/g, "\\'")}', ${Math.abs(this.normalizePointValue(order.total_price || order.amount || 0))}, '${order.created_at}', '${order.promptId || ''}')`;
                 } else if (order.transactionType === 'verify') {
                     displayName = `<i class="fas fa-key" style="color: #6b9ece;"></i> ${this.escapeHtml(order.snapshot_product_name)}`;
-                    clickHandler = `WalletModal.showVerifyOrderDetail('${order.id}', '${String(order.referenceId || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}', ${Math.abs(order.total_price || order.amount || 0)}, '${order.created_at}', '${String(order.rawReason || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')`;
+                    clickHandler = `WalletModal.showVerifyOrderDetail('${order.id}', '${String(order.referenceId || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}', ${Math.abs(this.normalizePointValue(order.total_price || order.amount || 0))}, '${order.created_at}', '${String(order.rawReason || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')`;
                 } else if (order.transactionType === 'shop') {
                     displayName = order.snapshot_product_name || unknownProductText;
                     const count = order.item_count || (order.shop_order_items ? order.shop_order_items.length : 1);
@@ -4468,7 +4514,7 @@
                     if (order.isShopOrder && (order.shopOrderId || order.id)) {
                         clickHandler = `WalletModal.showOrderDetail('${String(order.shopOrderId || order.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')`;
                     } else {
-                        clickHandler = `WalletModal.showRechargeOrderDetail('${order.id}', -${Math.abs(order.total_price || order.amount || 0)}, '${order.created_at}', '${String(order.rawReason || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}', '${String(order.referenceId || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')`;
+                        clickHandler = `WalletModal.showRechargeOrderDetail('${order.id}', -${Math.abs(this.normalizePointValue(order.total_price || order.amount || 0))}, '${order.created_at}', '${String(order.rawReason || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}', '${String(order.referenceId || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')`;
                     }
 
                     // Map status for shop orders
@@ -4482,10 +4528,10 @@
                     statusClass = statusInfo.class;
                 } else if (order.transactionType === 'recharge') {
                     displayName = `<i class="fas fa-bolt" style="color: #fbbf24;"></i> ${this.escapeHtml(order.snapshot_product_name)}`;
-                    clickHandler = `WalletModal.showRechargeOrderDetail('${order.id}', ${Number(order.amount || order.total_price || 0)}, '${order.created_at}', '${String(order.rawReason || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}', '${String(order.referenceId || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')`;
+                    clickHandler = `WalletModal.showRechargeOrderDetail('${order.id}', ${this.normalizePointValue(order.amount || order.total_price || 0)}, '${order.created_at}', '${String(order.rawReason || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}', '${String(order.referenceId || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')`;
                 } else if (order.transactionType === 'redeem') {
                     displayName = `<i class="fas fa-ticket-alt" style="color: #f472b6;"></i> ${this.escapeHtml(order.snapshot_product_name)}`;
-                    clickHandler = `WalletModal.showRedeemOrderDetail('${order.id}', ${order.amount}, '${order.created_at}', '${order.redeemCode || ''}')`;
+                    clickHandler = `WalletModal.showRedeemOrderDetail('${order.id}', ${this.normalizePointValue(order.amount)}, '${order.created_at}', '${order.redeemCode || ''}')`;
                 } else {
                     // Fallback for other types
                     displayName = `${order.icon || '💳'} ${order.snapshot_product_name || '交易'}`;
@@ -4518,6 +4564,7 @@
         showPromptOrderDetail(orderId, promptName, price, createdAt, promptId) {
             const date = new Date(createdAt);
             const dateStr = `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
+            const priceText = this.formatPoints(price);
 
             // Create modal overlay using same classes as shop order detail
             const detailOverlay = document.createElement('div');
@@ -4556,7 +4603,7 @@
                             </div>
                             <div class="detail-row">
                                 <span class="detail-label">${window.i18n?.t('wallet.pointsPaid') || '支付积分'}</span>
-                                <span class="detail-val highlight">-${price} ${window.i18n?.t('wallet.pointsUnit') || '积分'}</span>
+                                <span class="detail-val highlight">-${priceText} ${window.i18n?.t('wallet.pointsUnit') || '积分'}</span>
                             </div>
                             <div class="detail-row">
                                 <span class="detail-label">${window.i18n?.t('wallet.status') || '状态'}</span>
@@ -4583,6 +4630,7 @@
         showRedeemOrderDetail(orderId, amount, createdAt, redeemCode) {
             const date = new Date(createdAt);
             const dateStr = `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
+            const amountText = this.formatPoints(amount);
 
             // Create modal overlay
             const detailOverlay = document.createElement('div');
@@ -4623,7 +4671,7 @@
                             </div>
                             <div class="detail-row">
                                 <span class="detail-label">${window.i18n?.t('wallet.receivedPoints') || '获得积分'}</span>
-                                <span class="detail-val" style="color: #10b981; font-weight: 600;">+${amount} ${window.i18n?.t('wallet.pointsUnit') || '积分'}</span>
+                                <span class="detail-val" style="color: #10b981; font-weight: 600;">+${amountText} ${window.i18n?.t('wallet.pointsUnit') || '积分'}</span>
                             </div>
                             <div class="detail-row">
                                 <span class="detail-label">${window.i18n?.t('wallet.status') || '状态'}</span>
@@ -4641,14 +4689,16 @@
             const date = new Date(createdAt);
             const dateStr = `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
             const displayName = this.getRechargeDisplayName(reason);
-            const normalizedAmount = Number(amount) || 0;
+            const normalizedAmount = this.normalizePointValue(amount);
             const titleText = normalizedAmount >= 0
                 ? (window.i18n?.t('wallet.rechargeDetails') || '充值详情')
                 : (window.i18n?.t('wallet.orderDetails') || '订单详情');
             const typeLabel = normalizedAmount >= 0
                 ? (window.i18n?.t('wallet.rechargeType') || '充值')
+                : reason === 'makeup_checkin_cost'
+                    ? '补签扣分'
                 : (window.i18n?.t('wallet.shopPurchase') || '商品');
-            const pointsLabel = `${normalizedAmount >= 0 ? '+' : '-'}${Math.abs(normalizedAmount)} ${window.i18n?.t('wallet.pointsUnit') || '积分'}`;
+            const pointsLabel = `${normalizedAmount >= 0 ? '+' : '-'}${this.formatPoints(Math.abs(normalizedAmount))} ${window.i18n?.t('wallet.pointsUnit') || '积分'}`;
             const amountColor = normalizedAmount >= 0 ? '#10b981' : '#f87171';
             const shortOrderId = orderId ? `${orderId.substring(0, 8)}...${orderId.slice(-4)}` : '--';
             const shortRefId = referenceId ? `${referenceId.substring(0, 10)}...${referenceId.slice(-4)}` : '--';

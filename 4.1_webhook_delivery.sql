@@ -34,7 +34,7 @@ DECLARE
     v_discount_record RECORD;
     v_discount_amount INT := 0;
     
-    v_user_balance INT;
+    v_user_balance NUMERIC(12,1);
     v_inventory_ids UUID[];
     v_contents TEXT[];
     
@@ -134,11 +134,11 @@ BEGIN
     -- 1. Deduct Points
     IF v_total_price > 0 THEN
         DECLARE
-            v_current_bonus INT;
-            v_current_paid INT;
-            v_deduct_bonus INT := 0;
-            v_deduct_paid INT := 0;
-            v_remaining_cost INT := v_total_price;
+            v_current_bonus NUMERIC(12,1);
+            v_current_paid NUMERIC(12,1);
+            v_deduct_bonus NUMERIC(12,1) := 0;
+            v_deduct_paid NUMERIC(12,1) := 0;
+            v_remaining_cost NUMERIC(12,1) := v_total_price;
         BEGIN
             SELECT bonus_balance, paid_balance INTO v_current_bonus, v_current_paid
             FROM points_balance WHERE user_id = p_user_id;
@@ -207,7 +207,7 @@ BEGIN
     -- H. Affiliate Commission
     DECLARE
         v_inviter_id UUID;
-        v_commission INT;
+        v_commission NUMERIC(12,1);
         v_commission_rate FLOAT;
         v_affiliate_config JSONB;
     BEGIN
@@ -223,7 +223,7 @@ BEGIN
         
         SELECT invited_by INTO v_inviter_id FROM profiles WHERE id = p_user_id;
         IF v_inviter_id IS NOT NULL AND v_total_price > 0 THEN
-            v_commission := FLOOR(v_total_price * v_commission_rate);
+            v_commission := ROUND((v_total_price * v_commission_rate)::NUMERIC, 1);
             IF v_commission > 0 THEN
                 UPDATE points_balance SET bonus_balance = bonus_balance + v_commission, updated_at = NOW() WHERE user_id = v_inviter_id;
                 INSERT INTO points_ledger (user_id, amount, reason, reference_id) VALUES (v_inviter_id, v_commission, '推广返佣 (' || (v_commission_rate * 100) || '%): 下线购买商品', 'AFFILIATE_REWARD_' || v_order_id);

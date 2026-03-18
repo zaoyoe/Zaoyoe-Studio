@@ -13,11 +13,11 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
 DECLARE
-    current_bonus INT;
-    current_paid INT;
-    deduct_from_bonus INT := 0;
-    deduct_from_paid INT := 0;
-    actual_deducted INT := 0;
+    current_bonus NUMERIC(12,1);
+    current_paid NUMERIC(12,1);
+    deduct_from_bonus NUMERIC(12,1) := 0;
+    deduct_from_paid NUMERIC(12,1) := 0;
+    actual_deducted NUMERIC(12,1) := 0;
 BEGIN
     -- 1. Lock record for update
     SELECT bonus_balance, paid_balance INTO current_bonus, current_paid

@@ -73,6 +73,11 @@ function toWholeNumber(value, fallback = 0) {
     return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function toPointNumber(value, fallback = 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? Math.round(parsed * 10) / 10 : fallback;
+}
+
 function toDecimal(value, fallback = 0) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
@@ -95,10 +100,10 @@ function normalizeCheckinConfig(raw) {
     const defaults = getDefaultCheckinConfig();
     const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
     return {
-        base_points: toWholeNumber(source.base_points, defaults.base_points),
-        consecutive_7_points: toWholeNumber(source.consecutive_7_points, defaults.consecutive_7_points),
-        perfect_month_points: toWholeNumber(source.perfect_month_points, defaults.perfect_month_points),
-        makeup_cost_points: toWholeNumber(source.makeup_cost_points, defaults.makeup_cost_points)
+        base_points: Math.max(0, toPointNumber(source.base_points, defaults.base_points)),
+        consecutive_7_points: Math.max(0, toPointNumber(source.consecutive_7_points, defaults.consecutive_7_points)),
+        perfect_month_points: Math.max(0, toPointNumber(source.perfect_month_points, defaults.perfect_month_points)),
+        makeup_cost_points: Math.max(0, toPointNumber(source.makeup_cost_points, defaults.makeup_cost_points))
     };
 }
 
@@ -111,7 +116,7 @@ function normalizeAffiliateProgramConfig(raw) {
     return {
         commission_rate_shop: clamp(toDecimal(source.commission_rate_shop, defaults.commission_rate_shop), 0, 1),
         commission_rate_agent: clamp(toDecimal(source.commission_rate_agent, defaults.commission_rate_agent), 0, 1),
-        registration_reward_points: Math.max(0, toWholeNumber(source.registration_reward_points, defaults.registration_reward_points)),
+        registration_reward_points: Math.max(0, toPointNumber(source.registration_reward_points, defaults.registration_reward_points)),
         registration_reward_requires_purchase: source.registration_reward_requires_purchase !== undefined
             ? String(source.registration_reward_requires_purchase) !== 'false'
             : defaults.registration_reward_requires_purchase,
@@ -248,12 +253,12 @@ function renderRewardsConfig() {
     const checkinConfig = normalizeCheckinConfig(systemConfigCache['checkin_system']);
 
     const fields = {
-        'cfgSignupBonus': rewardsConfig.signup_bonus ?? 50,
+        'cfgSignupBonus': Math.max(0, toPointNumber(rewardsConfig.signup_bonus, 50)),
         'cfgDailyCheckin': checkinConfig.base_points,
         'cfgCheckinStreakBonus': checkinConfig.consecutive_7_points,
         'cfgCheckinPerfectBonus': checkinConfig.perfect_month_points,
         'cfgCheckinMakeupCost': checkinConfig.makeup_cost_points,
-        'cfgCommentReward': rewardsConfig.comment_reward ?? 2
+        'cfgCommentReward': Math.max(0, toPointNumber(rewardsConfig.comment_reward, 2))
     };
 
     Object.entries(fields).forEach(([id, value]) => {
@@ -472,7 +477,7 @@ async function saveAffiliateSetting(field, rawValue) {
             config[field] = clamp(toDecimal(rawValue, config[field]), 0, 1);
             break;
         case 'registration_reward_points':
-            config[field] = Math.max(0, toWholeNumber(rawValue, config[field]));
+            config[field] = Math.max(0, toPointNumber(rawValue, config[field]));
             break;
         case 'registration_reward_requires_purchase':
             config[field] = String(rawValue) !== 'false';
@@ -711,7 +716,9 @@ function setupConfigEventListeners() {
                     'cfgSignupBonus': 'signup_bonus',
                     'cfgCommentReward': 'comment_reward'
                 };
-                config[fieldMap[id]] = toWholeNumber(e.target.value, 0);
+                const normalizedValue = Math.max(0, toPointNumber(e.target.value, 0));
+                e.target.value = normalizedValue;
+                config[fieldMap[id]] = normalizedValue;
                 if (await saveConfig('rewards', config)) {
                     showSaveIndicator(e.target);
                 }
@@ -730,7 +737,9 @@ function setupConfigEventListeners() {
                     'cfgCheckinPerfectBonus': 'perfect_month_points',
                     'cfgCheckinMakeupCost': 'makeup_cost_points'
                 };
-                config[fieldMap[id]] = Math.max(0, toWholeNumber(e.target.value, config[fieldMap[id]]));
+                const normalizedValue = Math.max(0, toPointNumber(e.target.value, config[fieldMap[id]]));
+                e.target.value = normalizedValue;
+                config[fieldMap[id]] = normalizedValue;
                 if (await saveConfig('checkin_system', config)) {
                     showSaveIndicator(e.target);
                 }

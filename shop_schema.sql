@@ -138,7 +138,7 @@ SECURITY DEFINER
 AS $$
 DECLARE
     v_product_price INT;
-    v_user_balance INT;
+    v_user_balance NUMERIC(12,1);
     v_inventory_id UUID;
     v_content TEXT;
     v_product_name VARCHAR;
@@ -182,11 +182,11 @@ BEGIN
     -- 这里采用简单策略：优先扣 bonus (赠送的)，不够扣 paid.
     
     DECLARE
-        v_current_bonus INT;
-        v_current_paid INT;
-        v_deduct_bonus INT := 0;
-        v_deduct_paid INT := 0;
-        v_remaining_cost INT := v_product_price;
+        v_current_bonus NUMERIC(12,1);
+        v_current_paid NUMERIC(12,1);
+        v_deduct_bonus NUMERIC(12,1) := 0;
+        v_deduct_paid NUMERIC(12,1) := 0;
+        v_remaining_cost NUMERIC(12,1) := v_product_price;
     BEGIN
         SELECT bonus_balance, paid_balance INTO v_current_bonus, v_current_paid
         FROM points_balance WHERE user_id = p_user_id;
@@ -268,7 +268,7 @@ SECURITY DEFINER
 AS $$
 DECLARE
     v_order RECORD;
-    v_current_balance INT;
+    v_current_balance NUMERIC(12,1);
 BEGIN
     -- Check Admin
     IF NOT public.is_admin() THEN

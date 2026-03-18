@@ -54,7 +54,7 @@ CREATE POLICY "Users can view own points"
 CREATE TABLE IF NOT EXISTS public.points_ledger (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
-  amount INTEGER NOT NULL, -- Positive for earn, negative for spend
+  amount NUMERIC(12,1) NOT NULL, -- Positive for earn, negative for spend
   reason TEXT NOT NULL, -- e.g., 'comment_reward', 'unlock_prompt', 'daily_checkin'
   reference_id TEXT, -- e.g., Comment UUID or Prompt UUID
   created_at TIMESTAMPTZ DEFAULT NOW()

@@ -789,7 +789,7 @@
                                         <div class="config-desc">新用户注册成功后自动发放的固定积分，填 0 则关闭。</div>
                                     </div>
                                     <div class="config-input-wrapper">
-                                        <input type="number" class="config-input" id="cfgSignupBonus" min="0" step="1">
+                                        <input type="number" class="config-input" id="cfgSignupBonus" min="0" step="0.1">
                                         <span class="config-unit">分</span>
                                         <span class="config-save-indicator">✓</span>
                                     </div>
@@ -797,10 +797,10 @@
                                 <div class="config-row">
                                     <div class="config-info">
                                         <div class="config-label">每日签到基础积分</div>
-                                        <div class="config-desc">已接入签到 V2，作为每天签到时的基础奖励，仅支持整数积分。</div>
+                                        <div class="config-desc">已接入签到 V2，作为每天签到时的基础奖励，支持 0.1 精度。</div>
                                     </div>
                                     <div class="config-input-wrapper">
-                                        <input type="number" class="config-input" id="cfgDailyCheckin" min="0" step="1">
+                                        <input type="number" class="config-input" id="cfgDailyCheckin" min="0" step="0.1">
                                         <span class="config-unit">分</span>
                                         <span class="config-save-indicator">✓</span>
                                     </div>
@@ -811,7 +811,7 @@
                                         <div class="config-desc">连续签到达到 7 / 14 / 21 / 28 天时额外发放的积分。</div>
                                     </div>
                                     <div class="config-input-wrapper">
-                                        <input type="number" class="config-input" id="cfgCheckinStreakBonus" min="0" step="1">
+                                        <input type="number" class="config-input" id="cfgCheckinStreakBonus" min="0" step="0.1">
                                         <span class="config-unit">分</span>
                                         <span class="config-save-indicator">✓</span>
                                     </div>
@@ -822,7 +822,7 @@
                                         <div class="config-desc">用户达成当月全勤时额外发放的积分。</div>
                                     </div>
                                     <div class="config-input-wrapper">
-                                        <input type="number" class="config-input" id="cfgCheckinPerfectBonus" min="0" step="1">
+                                        <input type="number" class="config-input" id="cfgCheckinPerfectBonus" min="0" step="0.1">
                                         <span class="config-unit">分</span>
                                         <span class="config-save-indicator">✓</span>
                                     </div>
@@ -833,7 +833,7 @@
                                         <div class="config-desc">用户对漏签日期进行补签时，需要扣除的积分。</div>
                                     </div>
                                     <div class="config-input-wrapper">
-                                        <input type="number" class="config-input" id="cfgCheckinMakeupCost" min="0" step="1">
+                                        <input type="number" class="config-input" id="cfgCheckinMakeupCost" min="0" step="0.1">
                                         <span class="config-unit">分</span>
                                         <span class="config-save-indicator">✓</span>
                                     </div>
@@ -844,7 +844,7 @@
                                         <div class="config-desc">评论奖励积分，填 0 则关闭该奖励。</div>
                                     </div>
                                     <div class="config-input-wrapper">
-                                        <input type="number" class="config-input" id="cfgCommentReward" min="0" step="1">
+                                        <input type="number" class="config-input" id="cfgCommentReward" min="0" step="0.1">
                                         <span class="config-unit">分</span>
                                         <span class="config-save-indicator">✓</span>
                                     </div>
@@ -1563,10 +1563,10 @@
                                 <div class="config-row">
                                     <div class="config-info">
                                         <div class="config-label">固定积分奖励</div>
-                                        <div class="config-desc">每成功邀请一位新用户注册并在商城产生首笔订单，向邀请人发放的固定积分。填0则不开启该奖励。</div>
+                                        <div class="config-desc">每成功邀请一位新用户注册并在商城产生首笔订单，向邀请人发放的固定积分。支持 0.1 精度，填0则不开启该奖励。</div>
                                     </div>
                                     <div class="config-input-wrapper">
-                                        <input type="number" id="affiliate_setting_registration_reward_points" step="1"
+                                        <input type="number" id="affiliate_setting_registration_reward_points" step="0.1"
                                             min="0" placeholder="100" class="config-input"
                                             onchange="window.saveAffiliateSetting('registration_reward_points', this.value)">
                                     </div>
@@ -6831,7 +6831,7 @@
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/zh.js"></script>
     <script src="admin-comments.js"></script>
     <script src="admin-analytics.js"></script>
-    <script src="admin-config.js?v=20260318_REWARDS_AFFILIATE_V4"></script>
+    <script src="admin-config.js?v=20260318_REWARDS_AFFILIATE_V6"></script>
     <script src="admin-homepage.js"></script>
     <script src="js/admin-studio-translate.js"></script>
     <script src="js/admin-site-filter.js"></script>

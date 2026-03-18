@@ -3,9 +3,9 @@
 -- 1. 💳 Points Balance (Dual-Balance System)
 CREATE TABLE IF NOT EXISTS points_balance (
     user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-    paid_balance INT DEFAULT 0,  -- Purchased points (Permanent)
-    bonus_balance INT DEFAULT 0, -- Bonus/Free points (Time-limited in logic)
-    total_balance INT GENERATED ALWAYS AS (paid_balance + bonus_balance) STORED,
+    paid_balance NUMERIC(12,1) DEFAULT 0,  -- Purchased points (Permanent)
+    bonus_balance NUMERIC(12,1) DEFAULT 0, -- Bonus/Free points (Time-limited in logic)
+    total_balance NUMERIC(12,1) GENERATED ALWAYS AS (paid_balance + bonus_balance) STORED,
     version INT DEFAULT 0,       -- Optimistic locking
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     CONSTRAINT non_negative_balances CHECK (paid_balance >= 0 AND bonus_balance >= 0)
@@ -17,8 +17,8 @@ CREATE TABLE IF NOT EXISTS points_ledger (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     event_type VARCHAR(50) NOT NULL, -- e.g., 'recharge', 'redeem_code', 'consume', 'refund', 'admin_adjustment'
-    amount INT NOT NULL,             -- Positive for add, Negative for subtract
-    balance_snapshot INT NOT NULL,   -- Balance AFTER transaction (for consistency check)
+    amount NUMERIC(12,1) NOT NULL,   -- Positive for add, Negative for subtract
+    balance_snapshot NUMERIC(12,1) NOT NULL,   -- Balance AFTER transaction (for consistency check)
     description TEXT,                -- Human readable note
     metadata JSONB DEFAULT '{}'::JSONB, -- Extra data (order_id, code_id, etc.)
     created_at TIMESTAMPTZ DEFAULT NOW(),
