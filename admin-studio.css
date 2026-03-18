@@ -14870,6 +14870,11 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
         gap: 12px;
     }
 
+    #settings-view-affiliate .affiliate-config-card--wide .config-row,
+    #settings-view-affiliate .affiliate-config-card--poster .config-row {
+        grid-template-columns: 1fr;
+    }
+
     #settings-view-affiliate .config-input-wrapper {
         justify-content: flex-start;
     }
