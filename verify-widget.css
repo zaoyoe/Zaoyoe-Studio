@@ -10,10 +10,10 @@
     --ring-trail-base: linear-gradient(90deg, rgba(107, 158, 206, 0.18) 0%, rgba(159, 215, 229, 0.08) 42%, rgba(255, 255, 255, 0.02) 100%);
     --ring-trail-fill: linear-gradient(90deg, #6b9ece 0%, #9fd7e5 58%, #fbbf24 100%);
     --ring-fill-shadow: 0 0 18px rgba(107, 158, 206, 0.22);
-    --widget-top-base: linear-gradient(90deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.015) 48%, rgba(255, 255, 255, 0) 100%);
+    --widget-top-base: linear-gradient(90deg, rgba(107, 158, 206, 0.5) 0%, rgba(159, 215, 229, 0.22) 54%, rgba(243, 199, 106, 0.1) 100%);
     --widget-top-fill: linear-gradient(90deg, #6b9ece 0%, #9fd7e5 58%, #fbbf24 100%);
-    --widget-top-shadow: 0 0 18px rgba(107, 158, 206, 0.2);
-    --widget-top-opacity: 0;
+    --widget-top-shadow: 0 0 14px rgba(107, 158, 206, 0.16);
+    --widget-top-opacity: 0.28;
     --trail-sheen-opacity: 0.9;
     --trail-sheen-duration: 7.2s;
     --trail-sheen-width: 34%;
@@ -226,10 +226,10 @@
     --ring-trail-base: linear-gradient(90deg, rgba(107, 158, 206, 0.22) 0%, rgba(159, 215, 229, 0.1) 42%, rgba(255, 255, 255, 0.03) 100%);
     --ring-trail-fill: linear-gradient(90deg, #6b9ece 0%, #8bd9ef 56%, #fbbf24 100%);
     --ring-fill-shadow: 0 0 22px rgba(139, 217, 239, 0.24);
-    --widget-top-base: linear-gradient(90deg, rgba(255, 255, 255, 0.07) 0%, rgba(159, 215, 229, 0.02) 44%, rgba(255, 255, 255, 0) 100%);
+    --widget-top-base: linear-gradient(90deg, rgba(132, 186, 231, 0.58) 0%, rgba(184, 239, 248, 0.28) 54%, rgba(255, 217, 117, 0.12) 100%);
     --widget-top-fill: linear-gradient(90deg, #6b9ece 0%, #8bd9ef 56%, #fbbf24 100%);
     --widget-top-shadow: 0 0 20px rgba(139, 217, 239, 0.22);
-    --widget-top-opacity: 0;
+    --widget-top-opacity: 0.34;
     --trail-sheen-opacity: 1;
     --trail-sheen-duration: 4.6s;
     --trail-sheen-width: 40%;
