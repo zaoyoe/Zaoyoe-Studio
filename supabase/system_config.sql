@@ -78,9 +78,61 @@ INSERT INTO public.system_config (config_key, config_value, description) VALUES
     "signup_bonus": 50,
     "daily_checkin": 5,
     "comment_reward": 2,
-    "invite_reward": 100,
     "event_multiplier": 1.0
 }'::jsonb, '积分奖励配置')
+ON CONFLICT (config_key) DO NOTHING;
+
+-- 签到系统 V2
+INSERT INTO public.system_config (config_key, config_value, description) VALUES
+('checkin_system', '{
+    "base_points": 5,
+    "consecutive_7_points": 50,
+    "perfect_month_points": 200,
+    "makeup_cost_points": 10
+}'::jsonb, '签到系统 V2 配置')
+ON CONFLICT (config_key) DO NOTHING;
+
+-- 推广返现配置
+INSERT INTO public.system_config (config_key, config_value, description) VALUES
+('affiliate_program', '{
+    "commission_rate_shop": 0.10,
+    "commission_rate_agent": 0.10,
+    "registration_reward_points": 0,
+    "registration_reward_requires_purchase": true,
+    "reward_notice": "拉新固定奖励与持续返佣可叠加发放；异常流量、作弊注册、退款订单与刷单行为不计入奖励统计。",
+    "legal_disclaimer": "活动最终解释权归平台所有"
+}'::jsonb, '推广返现配置')
+ON CONFLICT (config_key) DO NOTHING;
+
+-- 推广海报模板
+INSERT INTO public.system_config (config_key, config_value, description) VALUES
+('affiliate_poster', '{
+    "title": "专属邀请函",
+    "subtitle": "扫码注册 · 即享专属奖励",
+    "qr_label": "扫码注册领取新人福利",
+    "footer": "邀请好友注册，享受固定奖励与持续返佣",
+    "active_template_id": "midnight",
+    "templates": [
+        {
+            "id": "midnight",
+            "name": "星幕邀请函",
+            "description": "深色高级感，适合作为默认分享海报。",
+            "custom_background_url": ""
+        },
+        {
+            "id": "sunset",
+            "name": "暖金品牌卡",
+            "description": "暖色氛围更强，适合活动档期与节庆传播。",
+            "custom_background_url": ""
+        },
+        {
+            "id": "crystal",
+            "name": "清透极简版",
+            "description": "浅色留白更多，适合搭配自定义品牌底图。",
+            "custom_background_url": ""
+        }
+    ]
+}'::jsonb, '推广海报模板配置')
 ON CONFLICT (config_key) DO NOTHING;
 
 -- 系统限制

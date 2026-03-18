@@ -49,6 +49,7 @@ DECLARE
     v_requires_purchase BOOLEAN := true;
     v_client_ip TEXT;
     v_recent_ip_count INT := 0;
+    v_affiliate_config JSONB;
 BEGIN
     IF NEW.invite_code IS NULL THEN
         NEW.invite_code := UPPER(SUBSTRING(NEW.id::text, 1, 8));
@@ -67,8 +68,20 @@ BEGIN
     
     -- Handle Registration Reward Logic
     IF NEW.invited_by IS NOT NULL THEN
-        SELECT COALESCE((SELECT value::INT FROM system_settings WHERE key = 'registration_reward_points'), 0) INTO v_reward_points;
-        SELECT COALESCE((SELECT value::BOOLEAN FROM system_settings WHERE key = 'registration_reward_requires_purchase'), true) INTO v_requires_purchase;
+        SELECT config_value INTO v_affiliate_config
+        FROM system_config
+        WHERE config_key = 'affiliate_program';
+
+        v_reward_points := COALESCE(
+            (v_affiliate_config->>'registration_reward_points')::INT,
+            (SELECT value::INT FROM system_settings WHERE key = 'registration_reward_points'),
+            0
+        );
+        v_requires_purchase := COALESCE(
+            (v_affiliate_config->>'registration_reward_requires_purchase')::BOOLEAN,
+            (SELECT value::BOOLEAN FROM system_settings WHERE key = 'registration_reward_requires_purchase'),
+            true
+        );
         
         IF v_reward_points > 0 THEN
             -- Plan B: Fraud Check (Max 3 registrations per IP per 24h)

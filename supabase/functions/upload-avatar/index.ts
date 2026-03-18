@@ -8,10 +8,11 @@ const corsHeaders = {
 
 interface UploadRequest {
     userId: string
-    type?: 'avatar' | 'product'  // Upload type
+    type?: 'avatar' | 'product' | 'poster'  // Upload type
     imageUrl?: string      // External URL (e.g., Google OAuth)
     imageData?: string     // Base64 data (manual upload)
     productId?: string     // Product ID for naming (optional)
+    posterId?: string      // Poster template ID for naming (optional)
 }
 
 serve(async (req) => {
@@ -28,7 +29,7 @@ serve(async (req) => {
         }
 
         // Parse request
-        const { userId, type = 'avatar', imageUrl, imageData, productId }: UploadRequest = await req.json()
+        const { userId, type = 'avatar', imageUrl, imageData, productId, posterId }: UploadRequest = await req.json()
 
         if (!userId) {
             throw new Error('userId is required')
@@ -81,7 +82,9 @@ serve(async (req) => {
         // Generate filename based on type
         const filename = type === 'product'
             ? `products/${productId || Date.now()}.jpg`
-            : `avatars/${userId}.jpg`
+            : type === 'poster'
+                ? `affiliate-posters/${posterId || userId}_${Date.now()}.jpg`
+                : `avatars/${userId}.jpg`
 
         const bucketName = Deno.env.get('R2_BUCKET_NAME') || 'zaoyoe-images'
 

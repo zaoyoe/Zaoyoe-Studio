@@ -178,6 +178,109 @@ body.wallet-modal-lock {
     z-index: 1;
 }
 
+.affiliate-reward-guide {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: rgba(16, 185, 129, 0.12);
+    border: 1px solid rgba(16, 185, 129, 0.22);
+    color: #d1fae5;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: help;
+}
+
+.affiliate-reward-guide::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    top: calc(100% + 12px);
+    right: 0;
+    width: min(340px, calc(100vw - 72px));
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: rgba(12, 18, 30, 0.96);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    box-shadow: 0 18px 38px rgba(2, 6, 23, 0.42);
+    color: #e2e8f0;
+    font-size: 12px;
+    line-height: 1.65;
+    white-space: pre-line;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-4px);
+    pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s ease;
+    z-index: 20;
+}
+
+.affiliate-reward-guide::before {
+    content: '';
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 18px;
+    width: 10px;
+    height: 10px;
+    background: rgba(12, 18, 30, 0.96);
+    border-left: 1px solid rgba(148, 163, 184, 0.18);
+    border-top: 1px solid rgba(148, 163, 184, 0.18);
+    transform: rotate(45deg);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s ease;
+    z-index: 19;
+}
+
+.affiliate-reward-guide:hover::after,
+.affiliate-reward-guide:hover::before,
+.affiliate-reward-guide:focus-visible::after,
+.affiliate-reward-guide:focus-visible::before {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.affiliate-legal-note {
+    display: block;
+    margin-top: 10px;
+    color: rgba(226, 232, 240, 0.46);
+    font-size: 12px;
+    line-height: 1.55;
+}
+
+.affiliate-poster-template-name {
+    margin-left: auto;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.14);
+    color: rgba(255, 255, 255, 0.82);
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1;
+}
+
+@media (max-width: 600px) {
+    .affiliate-reward-guide::after {
+        right: auto;
+        left: 0;
+        width: min(300px, calc(100vw - 84px));
+    }
+
+    .affiliate-reward-guide::before {
+        right: auto;
+        left: 18px;
+    }
+
+    .affiliate-poster-template-name {
+        width: 100%;
+        margin-left: 0;
+        justify-content: center;
+    }
+}
+
 .wallet-recharge-scroll-cue {
     display: none;
     position: absolute;

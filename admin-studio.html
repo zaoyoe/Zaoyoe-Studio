@@ -19,7 +19,7 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
-    <link rel="stylesheet" href="admin-studio.css?v=19">
+    <link rel="stylesheet" href="admin-studio.css?v=20">
     <link rel="stylesheet" href="admin-sidebar.css?v=10">
     <link rel="stylesheet" href="css/admin-chat.css">
 
@@ -784,36 +784,74 @@
                             </div>
                             <div class="config-card-body">
                                 <div class="config-row">
-                                    <label>首次注册赠送</label>
+                                    <div class="config-info">
+                                        <div class="config-label">首次注册赠送</div>
+                                        <div class="config-desc">新用户注册成功后自动发放的固定积分，填 0 则关闭。</div>
+                                    </div>
                                     <div class="config-input-wrapper">
-                                        <input type="number" class="config-input" id="cfgSignupBonus" min="0">
+                                        <input type="number" class="config-input" id="cfgSignupBonus" min="0" step="1">
                                         <span class="config-unit">分</span>
                                         <span class="config-save-indicator">✓</span>
                                     </div>
                                 </div>
                                 <div class="config-row">
-                                    <label>每日签到</label>
+                                    <div class="config-info">
+                                        <div class="config-label">每日签到基础积分</div>
+                                        <div class="config-desc">已接入签到 V2，作为每天签到时的基础奖励，仅支持整数积分。</div>
+                                    </div>
                                     <div class="config-input-wrapper">
-                                        <input type="number" class="config-input" id="cfgDailyCheckin" min="0">
+                                        <input type="number" class="config-input" id="cfgDailyCheckin" min="0" step="1">
                                         <span class="config-unit">分</span>
                                         <span class="config-save-indicator">✓</span>
                                     </div>
                                 </div>
                                 <div class="config-row">
-                                    <label>评论奖励</label>
+                                    <div class="config-info">
+                                        <div class="config-label">连续 7 天额外奖励</div>
+                                        <div class="config-desc">连续签到达到 7 / 14 / 21 / 28 天时额外发放的积分。</div>
+                                    </div>
                                     <div class="config-input-wrapper">
-                                        <input type="number" class="config-input" id="cfgCommentReward" min="0">
+                                        <input type="number" class="config-input" id="cfgCheckinStreakBonus" min="0" step="1">
                                         <span class="config-unit">分</span>
                                         <span class="config-save-indicator">✓</span>
                                     </div>
                                 </div>
                                 <div class="config-row">
-                                    <label>邀请奖励</label>
+                                    <div class="config-info">
+                                        <div class="config-label">全月全勤奖励</div>
+                                        <div class="config-desc">用户达成当月全勤时额外发放的积分。</div>
+                                    </div>
                                     <div class="config-input-wrapper">
-                                        <input type="number" class="config-input" id="cfgInviteReward" min="0">
+                                        <input type="number" class="config-input" id="cfgCheckinPerfectBonus" min="0" step="1">
                                         <span class="config-unit">分</span>
                                         <span class="config-save-indicator">✓</span>
                                     </div>
+                                </div>
+                                <div class="config-row">
+                                    <div class="config-info">
+                                        <div class="config-label">补签消耗积分</div>
+                                        <div class="config-desc">用户对漏签日期进行补签时，需要扣除的积分。</div>
+                                    </div>
+                                    <div class="config-input-wrapper">
+                                        <input type="number" class="config-input" id="cfgCheckinMakeupCost" min="0" step="1">
+                                        <span class="config-unit">分</span>
+                                        <span class="config-save-indicator">✓</span>
+                                    </div>
+                                </div>
+                                <div class="config-row">
+                                    <div class="config-info">
+                                        <div class="config-label">评论奖励</div>
+                                        <div class="config-desc">评论奖励积分，填 0 则关闭该奖励。</div>
+                                    </div>
+                                    <div class="config-input-wrapper">
+                                        <input type="number" class="config-input" id="cfgCommentReward" min="0" step="1">
+                                        <span class="config-unit">分</span>
+                                        <span class="config-save-indicator">✓</span>
+                                    </div>
+                                </div>
+                                <div class="config-inline-note">
+                                    <i class="fas fa-route"></i>
+                                    <span>“邀请奖励”已并入“推广返现 &gt; 拉新注册奖励”，避免两套配置重复或互相打架。</span>
                                 </div>
                             </div>
                         </div>
@@ -1560,6 +1598,104 @@
                                         </label>
                                     </div>
                                 </div>
+                            </div>
+                        </div>
+
+                        <div class="config-card">
+                            <div class="config-card-header">
+                                <div class="config-card-title">
+                                    <i class="fas fa-circle-info"></i>
+                                    <span>奖励说明</span>
+                                </div>
+                            </div>
+                            <div class="config-card-body">
+                                <div class="config-row">
+                                    <div class="config-info">
+                                        <div class="config-label">悬浮说明文案</div>
+                                        <div class="config-desc">显示在用户“我的钱包 &gt; 推广”里“奖励说明”悬浮提示中的补充文案，可填写活动时间、统计口径、限制条件等。</div>
+                                    </div>
+                                    <div class="config-input-wrapper affiliate-textarea-wrapper">
+                                        <textarea class="config-textarea" id="affiliate_setting_reward_notice" rows="4"
+                                            placeholder="例如：拉新固定奖励与返佣奖励可叠加；异常账号、作弊流量、退款订单不计入活动奖励。"
+                                            onchange="window.saveAffiliateSetting('reward_notice', this.value)"></textarea>
+                                    </div>
+                                </div>
+                                <div class="config-row">
+                                    <div class="config-info">
+                                        <div class="config-label">活动解释权说明</div>
+                                        <div class="config-desc">会展示在奖励说明和推广海报底部。</div>
+                                    </div>
+                                    <div class="config-input-wrapper">
+                                        <input type="text" id="affiliate_setting_legal_disclaimer" class="config-input"
+                                            placeholder="活动最终解释权归平台所有"
+                                            onchange="window.saveAffiliateSetting('legal_disclaimer', this.value)">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="config-card">
+                            <div class="config-card-header">
+                                <div class="config-card-title">
+                                    <i class="fas fa-image"></i>
+                                    <span>推广海报模板</span>
+                                </div>
+                            </div>
+                            <div class="config-card-body affiliate-poster-settings">
+                                <div class="config-row">
+                                    <div class="config-info">
+                                        <div class="config-label">海报标题</div>
+                                        <div class="config-desc">生成推广海报时显示在顶部的主标题。</div>
+                                    </div>
+                                    <div class="config-input-wrapper">
+                                        <input type="text" id="affiliate_poster_title" class="config-input"
+                                            placeholder="专属邀请函"
+                                            onchange="window.saveAffiliatePosterField('title', this.value)">
+                                    </div>
+                                </div>
+                                <div class="config-row">
+                                    <div class="config-info">
+                                        <div class="config-label">海报副标题</div>
+                                        <div class="config-desc">建议写成一句利益点，例如“扫码注册 · 首单激活奖励”。</div>
+                                    </div>
+                                    <div class="config-input-wrapper">
+                                        <input type="text" id="affiliate_poster_subtitle" class="config-input"
+                                            placeholder="扫码注册 · 首单激活奖励"
+                                            onchange="window.saveAffiliatePosterField('subtitle', this.value)">
+                                    </div>
+                                </div>
+                                <div class="config-row">
+                                    <div class="config-info">
+                                        <div class="config-label">二维码提示语</div>
+                                        <div class="config-desc">显示在二维码附近，用于引导用户扫码。</div>
+                                    </div>
+                                    <div class="config-input-wrapper">
+                                        <input type="text" id="affiliate_poster_qr_label" class="config-input"
+                                            placeholder="扫码注册领取新人福利"
+                                            onchange="window.saveAffiliatePosterField('qr_label', this.value)">
+                                    </div>
+                                </div>
+                                <div class="config-row">
+                                    <div class="config-info">
+                                        <div class="config-label">底部文案</div>
+                                        <div class="config-desc">显示在海报底部的补充文案，适合写活动利益点或品牌语。</div>
+                                    </div>
+                                    <div class="config-input-wrapper">
+                                        <input type="text" id="affiliate_poster_footer" class="config-input"
+                                            placeholder="邀请好友注册，享受固定奖励与持续返佣"
+                                            onchange="window.saveAffiliatePosterField('footer', this.value)">
+                                    </div>
+                                </div>
+
+                                <div class="affiliate-poster-header">
+                                    <div>
+                                        <div class="config-label">模板选择与底图上传</div>
+                                        <div class="config-desc">内置 3 个模板，可分别上传自定义底图；设置为默认后，用户生成海报时会使用当前模板。</div>
+                                    </div>
+                                    <div class="affiliate-poster-hint">建议上传 1080 x 1600 以上的 JPG / PNG 图片</div>
+                                </div>
+
+                                <div class="affiliate-poster-template-grid" id="affiliatePosterTemplateGrid"></div>
                             </div>
                         </div>
                     </div>
@@ -6662,7 +6798,7 @@
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/zh.js"></script>
     <script src="admin-comments.js"></script>
     <script src="admin-analytics.js"></script>
-    <script src="admin-config.js?v=20260317_RTE_V1"></script>
+    <script src="admin-config.js?v=20260318_REWARDS_AFFILIATE_V2"></script>
     <script src="admin-homepage.js"></script>
     <script src="js/admin-studio-translate.js"></script>
     <script src="js/admin-site-filter.js"></script>

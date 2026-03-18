@@ -14,7 +14,7 @@
     console.log('[WalletModal] ✅ Initializing...');
 
     // Inject CSS if not already present
-    const walletCssHref = 'css/wallet.css?v=20260318_WALLET_ORDER_SEARCH_9';
+    const walletCssHref = 'css/wallet.css?v=20260318_WALLET_AFFILIATE_POSTER_11';
     const existingWalletCss = document.getElementById('wallet-modal-css');
     if (existingWalletCss) {
         existingWalletCss.href = walletCssHref;
@@ -862,6 +862,8 @@
         modalEl: null,
         promptCache: {}, // Local simple cache for titles
         verifyLogCache: {},
+        affiliateStats: null,
+        affiliatePosterConfig: null,
 
         isVerifyServiceReason(reason = '') {
             const normalized = String(reason || '').trim().toLowerCase();
@@ -1562,8 +1564,11 @@
                                 <!-- Link Section -->
                                 <div class="premium-panel" style="padding:24px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:16px; display:flex; flex-direction:column; gap:16px; box-shadow:0 10px 30px rgba(0,0,0,0.2);">
                                     <div>
-                                        <h3 style="margin:0 0 8px 0; color:#fff; font-size:16px; display:flex; align-items:center; gap:8px;">
-                                            <i class="fas fa-link" style="color:#10b981;"></i> ${window.i18n?.t('wallet.getInviteLink') || '获取专属推广链接'}
+                                        <h3 style="margin:0 0 8px 0; color:#fff; font-size:16px; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                                            <span style="display:flex; align-items:center; gap:8px;">
+                                                <i class="fas fa-link" style="color:#10b981;"></i> ${window.i18n?.t('wallet.getInviteLink') || '获取专属推广链接'}
+                                            </span>
+                                            <span class="affiliate-reward-guide" id="affiliate-reward-guide">奖励说明</span>
                                         </h3>
                                         <p id="affiliate-desc-text" style="margin:0; color:rgba(255,255,255,0.5); font-size:13px; line-height:1.6;">
                                             加载中...
@@ -1579,6 +1584,7 @@
 
                                     <button onclick="WalletModal.generateAffiliatePoster()" style="margin-top:8px; width:100%; border:none; padding:14px; border-radius:12px; background:linear-gradient(135deg, #10b981, #059669); color:#fff; font-weight:600; font-size:14px; cursor:pointer; box-shadow:0 10px 20px rgba(16,185,129,0.2); transition:all 0.25s; display:flex; align-items:center; justify-content:center; gap:8px;" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 15px 25px rgba(16,185,129,0.3)';" onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='0 10px 20px rgba(16,185,129,0.2)';">
                                         <i class="fas fa-image"></i> ${window.i18n?.t('wallet.generatePoster') || '生成精美推广海报'}
+                                        <span class="affiliate-poster-template-name" id="affiliate-poster-template-name">默认模板</span>
                                     </button>
                                 </div>
                             </div>
@@ -1684,24 +1690,185 @@
         resetAffiliateState() {
             this.affiliateLoaded = false;
             this.currentInviteCode = '';
+            this.affiliateStats = null;
+            this.affiliatePosterConfig = null;
         },
 
-        renderAffiliateDescription(commissionRateShop, registrationRewardPoints) {
+        getDefaultAffiliatePosterConfig() {
+            return {
+                title: window.i18n?.t('wallet.posterTitle') || '专属邀请函',
+                subtitle: window.i18n?.t('wallet.posterSubtitle') || '扫码注册 · 即享专属奖励',
+                qr_label: window.i18n?.t('wallet.posterScan') || '扫码注册领取新人福利',
+                footer: window.i18n?.t('wallet.posterJoin') || '邀请好友注册，享受固定奖励与持续返佣',
+                active_template_id: 'midnight',
+                templates: [
+                    {
+                        id: 'midnight',
+                        name: '星幕邀请函',
+                        description: '深色高级感，适合作为默认分享海报。',
+                        custom_background_url: ''
+                    },
+                    {
+                        id: 'sunset',
+                        name: '暖金品牌卡',
+                        description: '暖色氛围更强，适合活动档期与节庆传播。',
+                        custom_background_url: ''
+                    },
+                    {
+                        id: 'crystal',
+                        name: '清透极简版',
+                        description: '浅色留白更多，适合搭配自定义品牌底图。',
+                        custom_background_url: ''
+                    }
+                ]
+            };
+        },
+
+        normalizeAffiliatePosterConfig(raw) {
+            const defaults = this.getDefaultAffiliatePosterConfig();
+            const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+            const sourceTemplates = Array.isArray(source.templates) ? source.templates : [];
+
+            const templates = defaults.templates.map(defaultTemplate => {
+                const matched = sourceTemplates.find(template => template && template.id === defaultTemplate.id) || {};
+                return {
+                    ...defaultTemplate,
+                    custom_background_url: typeof matched.custom_background_url === 'string'
+                        ? matched.custom_background_url.trim()
+                        : ''
+                };
+            });
+
+            const activeTemplateId = templates.some(template => template.id === source.active_template_id)
+                ? source.active_template_id
+                : defaults.active_template_id;
+
+            return {
+                title: typeof source.title === 'string' && source.title.trim() ? source.title.trim() : defaults.title,
+                subtitle: typeof source.subtitle === 'string' && source.subtitle.trim() ? source.subtitle.trim() : defaults.subtitle,
+                qr_label: typeof source.qr_label === 'string' && source.qr_label.trim() ? source.qr_label.trim() : defaults.qr_label,
+                footer: typeof source.footer === 'string' && source.footer.trim() ? source.footer.trim() : defaults.footer,
+                active_template_id: activeTemplateId,
+                templates
+            };
+        },
+
+        getAffiliatePosterPreset(templateId) {
+            const presets = {
+                midnight: {
+                    accent: '#10b981',
+                    text: '#f8fafc',
+                    muted: 'rgba(226, 232, 240, 0.82)',
+                    badgeBg: 'rgba(16, 185, 129, 0.18)',
+                    badgeText: '#dcfce7',
+                    qrCardBg: 'rgba(255, 255, 255, 0.95)',
+                    qrLabelColor: '#0f172a',
+                    codeColor: '#86efac',
+                    overlayOpacity: 0.52,
+                    gradientStops: [
+                        { offset: 0, color: '#020617' },
+                        { offset: 0.45, color: '#0f172a' },
+                        { offset: 1, color: '#134e4a' }
+                    ]
+                },
+                sunset: {
+                    accent: '#f97316',
+                    text: '#fff7ed',
+                    muted: 'rgba(255, 237, 213, 0.86)',
+                    badgeBg: 'rgba(251, 146, 60, 0.18)',
+                    badgeText: '#ffedd5',
+                    qrCardBg: 'rgba(255, 251, 235, 0.96)',
+                    qrLabelColor: '#7c2d12',
+                    codeColor: '#fde68a',
+                    overlayOpacity: 0.42,
+                    gradientStops: [
+                        { offset: 0, color: '#431407' },
+                        { offset: 0.4, color: '#9a3412' },
+                        { offset: 1, color: '#f59e0b' }
+                    ]
+                },
+                crystal: {
+                    accent: '#2563eb',
+                    text: '#0f172a',
+                    muted: 'rgba(15, 23, 42, 0.68)',
+                    badgeBg: 'rgba(37, 99, 235, 0.12)',
+                    badgeText: '#1d4ed8',
+                    qrCardBg: 'rgba(255, 255, 255, 0.96)',
+                    qrLabelColor: '#1e293b',
+                    codeColor: '#1d4ed8',
+                    overlayOpacity: 0.2,
+                    gradientStops: [
+                        { offset: 0, color: '#eff6ff' },
+                        { offset: 0.45, color: '#dbeafe' },
+                        { offset: 1, color: '#f8fafc' }
+                    ]
+                }
+            };
+
+            return presets[templateId] || presets.midnight;
+        },
+
+        formatAffiliatePercent(value, digits = 0) {
+            const parsed = Number(value);
+            const safe = Number.isFinite(parsed) ? parsed : 0;
+            return `${(safe * 100).toFixed(digits)}%`;
+        },
+
+        getAffiliateRewardExplanation(stats = this.affiliateStats || {}) {
+            const commissionRateShop = Number(stats.commission_rate_shop);
+            const safeCommissionRateShop = Number.isFinite(commissionRateShop) ? commissionRateShop : 0.10;
+            const commissionRateAgent = Number(stats.commission_rate_agent);
+            const safeCommissionRateAgent = Number.isFinite(commissionRateAgent) ? commissionRateAgent : 0.10;
+            const registrationReward = Number(stats.registration_reward_points);
+            const safeRegistrationReward = Number.isFinite(registrationReward) ? registrationReward : 0;
+            const requiresPurchase = stats.registration_reward_requires_purchase !== false && String(stats.registration_reward_requires_purchase) !== 'false';
+            const rewardNotice = typeof stats.reward_notice === 'string' && stats.reward_notice.trim()
+                ? stats.reward_notice.trim()
+                : '奖励按平台风控规则自动结算，异常账号、作弊注册与退款订单不计入奖励。';
+            const legalDisclaimer = typeof stats.legal_disclaimer === 'string' && stats.legal_disclaimer.trim()
+                ? stats.legal_disclaimer.trim()
+                : '活动最终解释权归平台所有';
+
+            const lines = [
+                `固定拉新奖励：${safeRegistrationReward > 0 ? `${safeRegistrationReward} 积分` : '当前未开启'}`,
+                `触发条件：好友${requiresPurchase ? '完成首笔充值或消费后激活' : '完成注册后立即发放'}`,
+                `商城消费返佣：${this.formatAffiliatePercent(safeCommissionRateShop)}`,
+                `分销资源返佣：${this.formatAffiliatePercent(safeCommissionRateAgent)}`,
+                rewardNotice,
+                legalDisclaimer
+            ];
+
+            return lines.join('\n');
+        },
+
+        renderAffiliateDescription(stats = this.affiliateStats || {}) {
             const descEl = document.getElementById('affiliate-desc-text');
             if (!descEl) return;
 
-            const parsedCommissionRate = Number(commissionRateShop);
+            const rewardGuideEl = document.getElementById('affiliate-reward-guide');
+            const parsedCommissionRate = Number(stats.commission_rate_shop);
             const safeCommissionRate = Number.isFinite(parsedCommissionRate) ? parsedCommissionRate : 0.10;
-            const parsedRegistrationReward = Number(registrationRewardPoints);
+            const parsedRegistrationReward = Number(stats.registration_reward_points);
             const safeRegistrationReward = Number.isFinite(parsedRegistrationReward) ? parsedRegistrationReward : 0;
+            const requiresPurchase = stats.registration_reward_requires_purchase !== false && String(stats.registration_reward_requires_purchase) !== 'false';
             const ratePercent = `${(safeCommissionRate * 100).toFixed(0)}%`;
+            const legalDisclaimer = typeof stats.legal_disclaimer === 'string' && stats.legal_disclaimer.trim()
+                ? stats.legal_disclaimer.trim()
+                : '活动最终解释权归平台所有';
+            const rewardTriggerText = requiresPurchase ? '完成首笔充值或消费' : '完成注册';
+            const guideText = this.getAffiliateRewardExplanation(stats);
+
+            if (rewardGuideEl) {
+                rewardGuideEl.setAttribute('data-tooltip', guideText);
+                rewardGuideEl.setAttribute('title', guideText);
+            }
 
             if (safeRegistrationReward > 0) {
-                descEl.innerHTML = `分享专属链接邀请新用户。当好友注册并在商城<strong>完成首笔充值或消费</strong>后，您将获得 <strong style="color:#10b981; font-weight:600;">${safeRegistrationReward} 积分</strong> 专属拉新奖励！此外，还会自动无上限将好友所有订单金额的 <strong style="color:#f59e0b; font-weight:600;">${ratePercent}</strong> 作为持久佣金返还给您。`;
+                descEl.innerHTML = `分享专属链接邀请新用户。当好友注册并在商城<strong>${rewardTriggerText}</strong>后，您将获得 <strong style="color:#10b981; font-weight:600;">${safeRegistrationReward} 积分</strong> 专属拉新奖励；此外，好友后续所有商城订单还会持续按 <strong style="color:#f59e0b; font-weight:600;">${ratePercent}</strong> 自动返佣。<span class="affiliate-legal-note">${this.escapeHtml(legalDisclaimer)}</span>`;
                 return;
             }
 
-            descEl.innerHTML = `分享下方链接给好友。当好友注册并在商城完成消费时，系统会自动将订单金额的 <strong style="color:#f59e0b; font-weight:600;">${ratePercent}</strong> 作为奖励发放至您的积分钱包。`;
+            descEl.innerHTML = `分享下方链接给好友。当好友注册并在商城完成消费时，系统会自动将订单金额的 <strong style="color:#f59e0b; font-weight:600;">${ratePercent}</strong> 作为奖励发放至您的积分钱包。<span class="affiliate-legal-note">${this.escapeHtml(legalDisclaimer)}</span>`;
         },
 
         /**
@@ -1713,21 +1880,48 @@
                 const user = session?.user;
                 if (!user) return;
 
-                const { data, error } = await window.supabaseClient.rpc('fn_get_affiliate_stats', {
-                    p_user_id: user.id
-                });
+                const [statsResult, programResult, posterResult] = await Promise.all([
+                    window.supabaseClient.rpc('fn_get_affiliate_stats', {
+                        p_user_id: user.id
+                    }),
+                    window.supabaseClient.rpc('get_system_config', {
+                        p_key: 'affiliate_program'
+                    }),
+                    window.supabaseClient.rpc('get_system_config', {
+                        p_key: 'affiliate_poster'
+                    })
+                ]);
 
-                if (error) throw error;
+                if (statsResult.error) throw statsResult.error;
+                if (programResult.error) {
+                    console.warn('[WalletModal] Affiliate program config load warning:', programResult.error);
+                }
+                if (posterResult.error) {
+                    console.warn('[WalletModal] Poster config load warning:', posterResult.error);
+                }
 
-                if (data) {
-                    const stats = (data && typeof data === 'object' && !Array.isArray(data)) ? data : {};
+                if (statsResult.data) {
+                    const rawStats = (statsResult.data && typeof statsResult.data === 'object' && !Array.isArray(statsResult.data)) ? statsResult.data : {};
+                    const programConfig = (programResult.data && typeof programResult.data === 'object' && !Array.isArray(programResult.data))
+                        ? programResult.data
+                        : {};
+                    const stats = {
+                        ...rawStats,
+                        ...programConfig,
+                        total_commission: rawStats.total_commission,
+                        invited_count: rawStats.invited_count,
+                        invite_code: rawStats.invite_code
+                    };
                     const commissionEl = document.getElementById('affiliate-commission');
                     const countEl = document.getElementById('affiliate-count');
                     const linkEl = document.getElementById('affiliate-link');
+                    const templateNameEl = document.getElementById('affiliate-poster-template-name');
                     const peopleLabel = window.i18n?.t('wallet.people') || '人';
                     const totalCommission = Number(stats.total_commission);
                     const invitedCount = Number(stats.invited_count);
                     const inviteCode = typeof stats.invite_code === 'string' ? stats.invite_code.trim() : '';
+                    const posterConfig = this.normalizeAffiliatePosterConfig(posterResult.data);
+                    const activeTemplate = posterConfig.templates.find(template => template.id === posterConfig.active_template_id) || posterConfig.templates[0];
 
                     if (commissionEl) {
                         commissionEl.textContent = Number.isFinite(totalCommission)
@@ -1740,11 +1934,18 @@
                         countEl.innerHTML = `${safeInvitedCount} <span style="font-size:14px; color:rgba(255,255,255,0.5); font-weight:normal; font-family:sans-serif;">${peopleLabel}</span>`;
                     }
 
-                    this.renderAffiliateDescription(stats.commission_rate_shop, stats.registration_reward_points);
+                    this.affiliateStats = stats;
+                    this.affiliatePosterConfig = posterConfig;
+
+                    this.renderAffiliateDescription(stats);
 
                     if (linkEl && inviteCode) {
                         const baseUrl = window.location.origin + window.location.pathname;
                         linkEl.value = `${baseUrl}?ref=${inviteCode}`;
+                    }
+
+                    if (templateNameEl && activeTemplate) {
+                        templateNameEl.textContent = activeTemplate.name;
                     }
 
                     this.currentInviteCode = inviteCode;
@@ -1785,68 +1986,142 @@
             if (btn) btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${window.i18n?.t('wallet.generating') || '生成中...'}`;
 
             try {
-                // 1. Create a canvas
+                const stats = this.affiliateStats || {};
+                const posterConfig = this.normalizeAffiliatePosterConfig(this.affiliatePosterConfig);
+                const activeTemplate = posterConfig.templates.find(template => template.id === posterConfig.active_template_id) || posterConfig.templates[0];
+                const preset = this.getAffiliatePosterPreset(activeTemplate?.id);
+                const registrationRewardPoints = Number(stats.registration_reward_points);
+                const safeRegistrationRewardPoints = Number.isFinite(registrationRewardPoints) ? registrationRewardPoints : 0;
+                const commissionRateShop = Number(stats.commission_rate_shop);
+                const safeCommissionRateShop = Number.isFinite(commissionRateShop) ? commissionRateShop : 0.10;
+                const legalDisclaimer = typeof stats.legal_disclaimer === 'string' && stats.legal_disclaimer.trim()
+                    ? stats.legal_disclaimer.trim()
+                    : '活动最终解释权归平台所有';
+                const rewardSummary = [
+                    safeRegistrationRewardPoints > 0 ? `拉新奖励 ${safeRegistrationRewardPoints} 积分` : '',
+                    `商城返佣 ${this.formatAffiliatePercent(safeCommissionRateShop)}`
+                ].filter(Boolean).join(' · ');
+
                 const canvas = document.createElement('canvas');
                 const ctx = canvas.getContext('2d');
-                canvas.width = 800;
-                canvas.height = 1200;
+                if (!ctx) {
+                    throw new Error('海报画布初始化失败');
+                }
 
-                // 2. Draw background (gradient)
-                const gradient = ctx.createLinearGradient(0, 0, 0, 1200);
-                gradient.addColorStop(0, '#111827'); // dark gray
-                gradient.addColorStop(1, '#0f172a'); // slate
+                canvas.width = 1080;
+                canvas.height = 1600;
+
+                // 1. Draw base background
+                const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+                preset.gradientStops.forEach(stop => gradient.addColorStop(stop.offset, stop.color));
                 ctx.fillStyle = gradient;
-                ctx.fillRect(0, 0, 800, 1200);
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-                // Draw some decorative accents
-                ctx.fillStyle = 'rgba(107, 158, 206, 0.15)'; // #6b9ece with opacity
+                if (activeTemplate?.custom_background_url) {
+                    try {
+                        const backgroundImage = await this.loadCanvasImage(activeTemplate.custom_background_url);
+                        this.drawCoverImage(ctx, backgroundImage, 0, 0, canvas.width, canvas.height);
+                    } catch (backgroundError) {
+                        console.warn('[WalletModal] Failed to draw custom affiliate poster background:', backgroundError);
+                    }
+
+                    ctx.save();
+                    ctx.globalAlpha = preset.overlayOpacity;
+                    ctx.fillStyle = gradient;
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.restore();
+                }
+
+                // Decorative shapes
+                ctx.save();
+                ctx.globalAlpha = activeTemplate?.id === 'crystal' ? 0.65 : 0.14;
+                ctx.fillStyle = activeTemplate?.id === 'sunset' ? '#fed7aa' : '#bfdbfe';
                 ctx.beginPath();
-                ctx.arc(400, -200, 600, 0, Math.PI * 2);
+                ctx.arc(canvas.width * 0.88, 160, 220, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+
+                ctx.save();
+                ctx.globalAlpha = activeTemplate?.id === 'crystal' ? 0.45 : 0.18;
+                ctx.fillStyle = activeTemplate?.id === 'sunset' ? '#fdba74' : '#6ee7b7';
+                ctx.beginPath();
+                ctx.arc(120, canvas.height - 220, 180, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+
+                // Header chip
+                this.drawRoundedRect(ctx, 72, 76, 194, 52, 26);
+                ctx.fillStyle = preset.badgeBg;
+                ctx.fill();
+                ctx.fillStyle = preset.badgeText;
+                ctx.font = '700 24px "Helvetica Neue", Arial, sans-serif';
+                ctx.textAlign = 'left';
+                ctx.fillText(window.i18n?.t('wallet.affiliate') || '推广', 104, 109);
+
+                // Reward summary badge
+                if (rewardSummary) {
+                    this.drawRoundedRect(ctx, 72, 446, Math.min(620, 170 + rewardSummary.length * 20), 66, 24);
+                    ctx.fillStyle = preset.badgeBg;
+                    ctx.fill();
+                    ctx.fillStyle = preset.badgeText;
+                    ctx.font = '600 26px "Helvetica Neue", Arial, sans-serif';
+                    ctx.fillText(rewardSummary, 102, 488);
+                }
+
+                // Title + Subtitle
+                ctx.fillStyle = preset.text;
+                ctx.font = '800 88px "Helvetica Neue", Arial, sans-serif';
+                ctx.textAlign = 'left';
+                let cursorY = this.drawPosterTextBlock(ctx, posterConfig.title, 72, 214, 720, 102);
+                ctx.fillStyle = preset.muted;
+                ctx.font = '500 34px "Helvetica Neue", Arial, sans-serif';
+                cursorY = this.drawPosterTextBlock(ctx, posterConfig.subtitle, 72, cursorY + 14, 760, 46);
+
+                // Invite card
+                const cardX = 72;
+                const cardY = Math.max(640, cursorY + 70);
+                const cardWidth = canvas.width - 144;
+                const cardHeight = 520;
+
+                this.drawRoundedRect(ctx, cardX, cardY, cardWidth, cardHeight, 42);
+                ctx.fillStyle = preset.qrCardBg;
                 ctx.fill();
 
-                // 3. Draw Title & Text
-                ctx.fillStyle = '#ffffff';
-                ctx.font = 'bold 64px "Helvetica Neue", Arial, sans-serif';
-                ctx.textAlign = 'center';
-                ctx.fillText(window.i18n?.t('wallet.posterTitle') || '专属邀请函', 400, 200);
-
-                ctx.font = '32px Arial';
-                ctx.fillStyle = '#9ca3af';
-                ctx.fillText(window.i18n?.t('wallet.posterSubtitle') || '扫码注册·即享特权', 400, 280);
-
-                // 4. Fetch QR Code image
+                // Fetch QR Code image
                 const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(linkEl.value)}&margin=1`;
-                const qrImg = new Image();
-                qrImg.crossOrigin = 'Anonymous';
-
-                await new Promise((resolve, reject) => {
-                    qrImg.onload = resolve;
-                    qrImg.onerror = reject;
-                    qrImg.src = qrUrl;
-                });
-
-                // Draw white background for QR
+                const qrImg = await this.loadCanvasImage(qrUrl);
+                this.drawRoundedRect(ctx, cardX + 54, cardY + 92, 360, 360, 30);
                 ctx.fillStyle = '#ffffff';
-                ctx.fillRect(230, 480, 340, 340);
+                ctx.fill();
+                ctx.drawImage(qrImg, cardX + 84, cardY + 122, 300, 300);
 
-                // Draw QR Code
-                ctx.drawImage(qrImg, 250, 500, 300, 300);
+                ctx.fillStyle = preset.qrLabelColor;
+                ctx.font = '600 28px "Helvetica Neue", Arial, sans-serif';
+                ctx.fillText(posterConfig.qr_label, cardX + 90, cardY + 440);
 
-                // Draw code text
-                ctx.fillStyle = '#10b981';
-                ctx.font = 'bold 42px monospace';
-                ctx.fillText(`${window.i18n?.t('wallet.inviteCode') || '邀请码'}: ${this.currentInviteCode}`, 400, 920);
+                ctx.fillStyle = preset.codeColor;
+                ctx.font = '700 52px "Helvetica Neue", Arial, sans-serif';
+                this.drawPosterTextBlock(ctx, `${window.i18n?.t('wallet.inviteCode') || '邀请码'} ${this.currentInviteCode}`, cardX + 464, cardY + 176, 430, 62);
 
-                // Add QR code text indicator
-                ctx.fillStyle = '#0f172a';
-                ctx.font = '24px Arial';
-                ctx.fillText(window.i18n?.t('wallet.posterScan') || '在此扫码注册', 400, 750);
+                ctx.fillStyle = '#475569';
+                ctx.font = '500 28px "Helvetica Neue", Arial, sans-serif';
+                this.drawPosterTextBlock(ctx, posterConfig.footer, cardX + 464, cardY + 276, 430, 42, 3);
 
-                ctx.fillStyle = '#ffffff';
-                ctx.font = '28px Arial';
-                ctx.fillText(window.i18n?.t('wallet.posterJoin') || '加入我们获取新人专属福利', 400, 1000);
+                ctx.fillStyle = preset.accent;
+                ctx.font = '700 28px "Helvetica Neue", Arial, sans-serif';
+                this.drawPosterTextBlock(ctx, linkEl.value, cardX + 464, cardY + 394, 430, 38, 3);
 
-                // 5. Download Image
+                // Footer disclaimer
+                ctx.fillStyle = preset.text;
+                ctx.font = '500 28px "Helvetica Neue", Arial, sans-serif';
+                ctx.fillText(legalDisclaimer, 72, 1508);
+
+                ctx.fillStyle = preset.muted;
+                ctx.font = '500 22px "Helvetica Neue", Arial, sans-serif';
+                const activeTemplateName = activeTemplate?.name || '默认模板';
+                ctx.fillText(`模板：${activeTemplateName}`, 72, 1548);
+
+                // Download Image
                 const dataUrl = canvas.toDataURL('image/png');
                 const a = document.createElement('a');
                 a.href = dataUrl;
@@ -1861,6 +2136,84 @@
             } finally {
                 if (btn) btn.innerHTML = origText;
             }
+        },
+
+        async loadCanvasImage(src) {
+            return await new Promise((resolve, reject) => {
+                const image = new Image();
+                image.crossOrigin = 'Anonymous';
+                image.onload = () => resolve(image);
+                image.onerror = () => reject(new Error('图片加载失败'));
+                image.src = src;
+            });
+        },
+
+        drawCoverImage(ctx, image, x, y, width, height) {
+            const imageRatio = image.width / image.height;
+            const targetRatio = width / height;
+
+            let drawWidth = width;
+            let drawHeight = height;
+            let offsetX = x;
+            let offsetY = y;
+
+            if (imageRatio > targetRatio) {
+                drawWidth = height * imageRatio;
+                offsetX = x - (drawWidth - width) / 2;
+            } else {
+                drawHeight = width / imageRatio;
+                offsetY = y - (drawHeight - height) / 2;
+            }
+
+            ctx.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
+        },
+
+        drawRoundedRect(ctx, x, y, width, height, radius) {
+            const safeRadius = Math.min(radius, width / 2, height / 2);
+            ctx.beginPath();
+            if (typeof ctx.roundRect === 'function') {
+                ctx.roundRect(x, y, width, height, safeRadius);
+                return;
+            }
+            ctx.moveTo(x + safeRadius, y);
+            ctx.arcTo(x + width, y, x + width, y + height, safeRadius);
+            ctx.arcTo(x + width, y + height, x, y + height, safeRadius);
+            ctx.arcTo(x, y + height, x, y, safeRadius);
+            ctx.arcTo(x, y, x + width, y, safeRadius);
+            ctx.closePath();
+        },
+
+        drawPosterTextBlock(ctx, text, x, startY, maxWidth, lineHeight, maxLines = 3) {
+            const content = String(text || '').trim();
+            if (!content) return startY;
+
+            const lines = [];
+            let currentLine = '';
+
+            for (const char of content) {
+                const candidate = currentLine + char;
+                if (ctx.measureText(candidate).width > maxWidth && currentLine) {
+                    lines.push(currentLine);
+                    currentLine = char;
+                    if (lines.length >= maxLines - 1) break;
+                } else {
+                    currentLine = candidate;
+                }
+            }
+
+            if (currentLine && lines.length < maxLines) {
+                lines.push(currentLine);
+            }
+
+            if (lines.length === maxLines && content.length > lines.join('').length) {
+                lines[maxLines - 1] = `${lines[maxLines - 1].slice(0, Math.max(0, lines[maxLines - 1].length - 1))}…`;
+            }
+
+            lines.forEach((line, index) => {
+                ctx.fillText(line, x, startY + index * lineHeight);
+            });
+
+            return startY + Math.max(0, lines.length - 1) * lineHeight;
         },
 
         /**

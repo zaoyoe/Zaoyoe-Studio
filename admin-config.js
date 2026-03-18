@@ -6,6 +6,146 @@
 // Config cache
 let systemConfigCache = {};
 
+function getDefaultCheckinConfig() {
+    return {
+        base_points: 5,
+        consecutive_7_points: 50,
+        perfect_month_points: 200,
+        makeup_cost_points: 10
+    };
+}
+
+function getDefaultAffiliateProgramConfig() {
+    return {
+        commission_rate_shop: 0.10,
+        commission_rate_agent: 0.10,
+        registration_reward_points: 0,
+        registration_reward_requires_purchase: true,
+        reward_notice: '拉新固定奖励与持续返佣可叠加发放；异常流量、作弊注册、退款订单与刷单行为不计入奖励统计。',
+        legal_disclaimer: '活动最终解释权归平台所有'
+    };
+}
+
+function getAffiliatePosterPresetDefinitions() {
+    return [
+        {
+            id: 'midnight',
+            name: '星幕邀请函',
+            description: '深色高级感，适合作为默认分享海报。',
+            preview_background: 'linear-gradient(160deg, #020617 0%, #0f172a 42%, #134e4a 100%)'
+        },
+        {
+            id: 'sunset',
+            name: '暖金品牌卡',
+            description: '暖色氛围更强，适合活动档期与节庆传播。',
+            preview_background: 'linear-gradient(160deg, #431407 0%, #9a3412 38%, #f59e0b 100%)'
+        },
+        {
+            id: 'crystal',
+            name: '清透极简版',
+            description: '浅色留白更多，适合搭配自定义品牌底图。',
+            preview_background: 'linear-gradient(160deg, #e2e8f0 0%, #cbd5e1 45%, #f8fafc 100%)'
+        }
+    ];
+}
+
+function getDefaultAffiliatePosterConfig() {
+    return {
+        title: '专属邀请函',
+        subtitle: '扫码注册 · 即享专属奖励',
+        qr_label: '扫码注册领取新人福利',
+        footer: '邀请好友注册，享受固定奖励与持续返佣',
+        active_template_id: 'midnight',
+        templates: getAffiliatePosterPresetDefinitions().map(template => ({
+            id: template.id,
+            name: template.name,
+            description: template.description,
+            custom_background_url: ''
+        }))
+    };
+}
+
+function toWholeNumber(value, fallback = 0) {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function toDecimal(value, fallback = 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+}
+
+function escapeConfigHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function normalizeCheckinConfig(raw) {
+    const defaults = getDefaultCheckinConfig();
+    const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    return {
+        base_points: toWholeNumber(source.base_points, defaults.base_points),
+        consecutive_7_points: toWholeNumber(source.consecutive_7_points, defaults.consecutive_7_points),
+        perfect_month_points: toWholeNumber(source.perfect_month_points, defaults.perfect_month_points),
+        makeup_cost_points: toWholeNumber(source.makeup_cost_points, defaults.makeup_cost_points)
+    };
+}
+
+function normalizeAffiliateProgramConfig(raw) {
+    const defaults = getDefaultAffiliateProgramConfig();
+    const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    const rewardNotice = typeof source.reward_notice === 'string' ? source.reward_notice : defaults.reward_notice;
+    const legalDisclaimer = typeof source.legal_disclaimer === 'string' ? source.legal_disclaimer : defaults.legal_disclaimer;
+
+    return {
+        commission_rate_shop: clamp(toDecimal(source.commission_rate_shop, defaults.commission_rate_shop), 0, 1),
+        commission_rate_agent: clamp(toDecimal(source.commission_rate_agent, defaults.commission_rate_agent), 0, 1),
+        registration_reward_points: Math.max(0, toWholeNumber(source.registration_reward_points, defaults.registration_reward_points)),
+        registration_reward_requires_purchase: source.registration_reward_requires_purchase !== undefined
+            ? String(source.registration_reward_requires_purchase) !== 'false'
+            : defaults.registration_reward_requires_purchase,
+        reward_notice: rewardNotice.trim() || defaults.reward_notice,
+        legal_disclaimer: legalDisclaimer.trim() || defaults.legal_disclaimer
+    };
+}
+
+function normalizeAffiliatePosterConfig(raw) {
+    const defaults = getDefaultAffiliatePosterConfig();
+    const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    const sourceTemplates = Array.isArray(source.templates) ? source.templates : [];
+
+    const templates = defaults.templates.map(defaultTemplate => {
+        const match = sourceTemplates.find(template => template && template.id === defaultTemplate.id) || {};
+        return {
+            ...defaultTemplate,
+            name: typeof match.name === 'string' && match.name.trim() ? match.name.trim() : defaultTemplate.name,
+            description: typeof match.description === 'string' && match.description.trim() ? match.description.trim() : defaultTemplate.description,
+            custom_background_url: typeof match.custom_background_url === 'string' ? match.custom_background_url.trim() : ''
+        };
+    });
+
+    const activeTemplateId = templates.some(template => template.id === source.active_template_id)
+        ? source.active_template_id
+        : defaults.active_template_id;
+
+    return {
+        title: typeof source.title === 'string' && source.title.trim() ? source.title.trim() : defaults.title,
+        subtitle: typeof source.subtitle === 'string' && source.subtitle.trim() ? source.subtitle.trim() : defaults.subtitle,
+        qr_label: typeof source.qr_label === 'string' && source.qr_label.trim() ? source.qr_label.trim() : defaults.qr_label,
+        footer: typeof source.footer === 'string' && source.footer.trim() ? source.footer.trim() : defaults.footer,
+        active_template_id: activeTemplateId,
+        templates
+    };
+}
+
 // ============================================
 // INIT & LOAD
 // ============================================
@@ -98,19 +238,109 @@ function renderChannelsConfig() {
 }
 
 function renderRewardsConfig() {
-    const config = systemConfigCache['rewards'] || {};
+    const rewardsConfig = systemConfigCache['rewards'] || {};
+    const checkinConfig = normalizeCheckinConfig(systemConfigCache['checkin_system']);
 
     const fields = {
-        'cfgSignupBonus': config.signup_bonus ?? 50,
-        'cfgDailyCheckin': config.daily_checkin ?? 5,
-        'cfgCommentReward': config.comment_reward ?? 2,
-        'cfgInviteReward': config.invite_reward ?? 100
+        'cfgSignupBonus': rewardsConfig.signup_bonus ?? 50,
+        'cfgDailyCheckin': checkinConfig.base_points,
+        'cfgCheckinStreakBonus': checkinConfig.consecutive_7_points,
+        'cfgCheckinPerfectBonus': checkinConfig.perfect_month_points,
+        'cfgCheckinMakeupCost': checkinConfig.makeup_cost_points,
+        'cfgCommentReward': rewardsConfig.comment_reward ?? 2
     };
 
     Object.entries(fields).forEach(([id, value]) => {
         const input = document.getElementById(id);
         if (input) input.value = value;
     });
+}
+
+function loadAffiliateSettings() {
+    const affiliateConfig = normalizeAffiliateProgramConfig(systemConfigCache['affiliate_program']);
+    const posterConfig = normalizeAffiliatePosterConfig(systemConfigCache['affiliate_poster']);
+
+    const affiliateFieldMap = {
+        affiliate_setting_commission_rate_shop: affiliateConfig.commission_rate_shop,
+        affiliate_setting_commission_rate_agent: affiliateConfig.commission_rate_agent,
+        affiliate_setting_registration_reward_points: affiliateConfig.registration_reward_points,
+        affiliate_setting_reward_notice: affiliateConfig.reward_notice,
+        affiliate_setting_legal_disclaimer: affiliateConfig.legal_disclaimer
+    };
+
+    Object.entries(affiliateFieldMap).forEach(([id, value]) => {
+        const input = document.getElementById(id);
+        if (input) input.value = value;
+    });
+
+    const requiresPurchaseInput = document.getElementById('affiliate_setting_registration_reward_requires_purchase');
+    if (requiresPurchaseInput) requiresPurchaseInput.checked = !!affiliateConfig.registration_reward_requires_purchase;
+
+    const posterFieldMap = {
+        affiliate_poster_title: posterConfig.title,
+        affiliate_poster_subtitle: posterConfig.subtitle,
+        affiliate_poster_qr_label: posterConfig.qr_label,
+        affiliate_poster_footer: posterConfig.footer
+    };
+
+    Object.entries(posterFieldMap).forEach(([id, value]) => {
+        const input = document.getElementById(id);
+        if (input) input.value = value;
+    });
+
+    renderAffiliatePosterTemplates(posterConfig);
+}
+
+function renderAffiliatePosterTemplates(config = normalizeAffiliatePosterConfig(systemConfigCache['affiliate_poster'])) {
+    const container = document.getElementById('affiliatePosterTemplateGrid');
+    if (!container) return;
+
+    const presets = getAffiliatePosterPresetDefinitions();
+
+    container.innerHTML = config.templates.map(template => {
+        const preset = presets.find(item => item.id === template.id) || presets[0];
+        const isActive = config.active_template_id === template.id;
+        const previewBackground = template.custom_background_url
+            ? `linear-gradient(180deg, rgba(3, 7, 18, 0.08) 0%, rgba(3, 7, 18, 0.44) 100%), url('${escapeConfigHtml(template.custom_background_url)}') center/cover`
+            : preset.preview_background;
+
+        return `
+            <div class="affiliate-poster-card ${isActive ? 'active' : ''}">
+                <div class="affiliate-poster-preview" style="background:${previewBackground};">
+                    <div class="affiliate-poster-chip">${escapeConfigHtml(isActive ? '默认模板' : '可选模板')}</div>
+                    <div class="affiliate-poster-preview-content">
+                        <div class="affiliate-poster-preview-title">${escapeConfigHtml(config.title)}</div>
+                        <div class="affiliate-poster-preview-subtitle">${escapeConfigHtml(config.subtitle)}</div>
+                        <div class="affiliate-poster-preview-footer">${escapeConfigHtml(config.footer)}</div>
+                    </div>
+                </div>
+                <div class="affiliate-poster-card-body">
+                    <div class="affiliate-poster-card-header-row">
+                        <div>
+                            <div class="affiliate-poster-card-title">${escapeConfigHtml(template.name)}</div>
+                            <div class="affiliate-poster-card-desc">${escapeConfigHtml(template.description)}</div>
+                        </div>
+                        <span class="affiliate-poster-status ${isActive ? 'active' : ''}">${isActive ? '已启用' : '未启用'}</span>
+                    </div>
+                    <div class="affiliate-poster-asset-state">
+                        ${template.custom_background_url ? '已上传自定义底图' : '使用内置背景'}
+                    </div>
+                    <div class="affiliate-poster-actions">
+                        <button type="button" class="poster-action-btn primary" onclick="window.selectAffiliatePosterTemplate('${template.id}')">
+                            ${isActive ? '当前模板' : '设为默认'}
+                        </button>
+                        <label class="poster-action-btn upload">
+                            上传底图
+                            <input type="file" accept="image/*" onchange="window.handleAffiliatePosterUpload('${template.id}', this)">
+                        </label>
+                        <button type="button" class="poster-action-btn" ${template.custom_background_url ? '' : 'disabled'} onclick="window.resetAffiliatePosterBackground('${template.id}')">
+                            恢复默认
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
 }
 
 // ============================================
@@ -218,6 +448,201 @@ async function syncPackagesToDatabase(packages) {
     }
 }
 
+function showConfigSavedToast(message) {
+    if (typeof showToast === 'function') {
+        showToast(message, 'success');
+    }
+}
+
+async function saveAffiliateSetting(field, rawValue) {
+    const config = normalizeAffiliateProgramConfig(systemConfigCache['affiliate_program']);
+
+    switch (field) {
+        case 'commission_rate_shop':
+        case 'commission_rate_agent':
+            config[field] = clamp(toDecimal(rawValue, config[field]), 0, 1);
+            break;
+        case 'registration_reward_points':
+            config[field] = Math.max(0, toWholeNumber(rawValue, config[field]));
+            break;
+        case 'registration_reward_requires_purchase':
+            config[field] = String(rawValue) !== 'false';
+            break;
+        case 'reward_notice':
+        case 'legal_disclaimer':
+            config[field] = String(rawValue || '').trim() || getDefaultAffiliateProgramConfig()[field];
+            break;
+        default:
+            return false;
+    }
+
+    if (await saveConfig('affiliate_program', config)) {
+        loadAffiliateSettings();
+        showConfigSavedToast('推广返现设置已保存');
+        return true;
+    }
+
+    return false;
+}
+
+async function saveAffiliatePosterField(field, rawValue) {
+    const config = normalizeAffiliatePosterConfig(systemConfigCache['affiliate_poster']);
+    const allowedFields = new Set(['title', 'subtitle', 'qr_label', 'footer']);
+    if (!allowedFields.has(field)) return false;
+
+    config[field] = String(rawValue || '').trim() || getDefaultAffiliatePosterConfig()[field];
+
+    if (await saveConfig('affiliate_poster', config)) {
+        renderAffiliatePosterTemplates(config);
+        showConfigSavedToast('海报文案已保存');
+        return true;
+    }
+
+    return false;
+}
+
+async function selectAffiliatePosterTemplate(templateId) {
+    const config = normalizeAffiliatePosterConfig(systemConfigCache['affiliate_poster']);
+    if (!config.templates.some(template => template.id === templateId)) return false;
+
+    config.active_template_id = templateId;
+
+    if (await saveConfig('affiliate_poster', config)) {
+        renderAffiliatePosterTemplates(config);
+        showConfigSavedToast('默认海报模板已更新');
+        return true;
+    }
+
+    return false;
+}
+
+function compressConfigImage(file, options = {}) {
+    const maxWidth = options.maxWidth || 1600;
+    const maxHeight = options.maxHeight || 2400;
+    const quality = options.quality || 0.9;
+
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            const img = new Image();
+            img.onload = () => {
+                let { width, height } = img;
+
+                if (width > height && width > maxWidth) {
+                    height = Math.round(height * (maxWidth / width));
+                    width = maxWidth;
+                } else if (height >= width && height > maxHeight) {
+                    width = Math.round(width * (maxHeight / height));
+                    height = maxHeight;
+                }
+
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.width = width;
+                canvas.height = height;
+
+                if (!ctx) {
+                    reject(new Error('无法初始化图片画布'));
+                    return;
+                }
+
+                ctx.drawImage(img, 0, 0, width, height);
+                resolve(canvas.toDataURL('image/jpeg', quality));
+            };
+            img.onerror = () => reject(new Error('图片解析失败'));
+            img.src = reader.result;
+        };
+        reader.onerror = () => reject(new Error('图片读取失败'));
+        reader.readAsDataURL(file);
+    });
+}
+
+async function uploadAffiliatePosterBackgroundToR2(templateId, file) {
+    const { data: { session } } = await window.supabaseClient.auth.getSession();
+    if (!session) {
+        throw new Error('请先登录');
+    }
+
+    const imageData = await compressConfigImage(file, {
+        maxWidth: 1800,
+        maxHeight: 2600,
+        quality: 0.92
+    });
+
+    const response = await fetch(
+        'https://mmkugdibsaeoevliebzk.supabase.co/functions/v1/upload-avatar',
+        {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${session.access_token}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                userId: session.user.id,
+                type: 'poster',
+                posterId: `affiliate_${templateId}`,
+                imageData
+            })
+        }
+    );
+
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result?.imageUrl) {
+        throw new Error(result?.error || '海报底图上传失败');
+    }
+
+    return result.imageUrl;
+}
+
+async function handleAffiliatePosterUpload(templateId, inputEl) {
+    const file = inputEl?.files?.[0];
+    if (!file) return false;
+
+    const config = normalizeAffiliatePosterConfig(systemConfigCache['affiliate_poster']);
+    const template = config.templates.find(item => item.id === templateId);
+    if (!template) return false;
+
+    const labelEl = inputEl.closest('.poster-action-btn.upload');
+    if (labelEl) labelEl.classList.add('uploading');
+
+    try {
+        const imageUrl = await uploadAffiliatePosterBackgroundToR2(templateId, file);
+        template.custom_background_url = imageUrl;
+
+        if (await saveConfig('affiliate_poster', config)) {
+            renderAffiliatePosterTemplates(config);
+            showConfigSavedToast('海报底图已上传');
+            return true;
+        }
+    } catch (err) {
+        console.error('[Config] Affiliate poster upload failed:', err);
+        if (typeof showToast === 'function') {
+            showToast('上传失败: ' + err.message, 'error');
+        }
+    } finally {
+        if (labelEl) labelEl.classList.remove('uploading');
+        if (inputEl) inputEl.value = '';
+    }
+
+    return false;
+}
+
+async function resetAffiliatePosterBackground(templateId) {
+    const config = normalizeAffiliatePosterConfig(systemConfigCache['affiliate_poster']);
+    const template = config.templates.find(item => item.id === templateId);
+    if (!template) return false;
+
+    template.custom_background_url = '';
+
+    if (await saveConfig('affiliate_poster', config)) {
+        renderAffiliatePosterTemplates(config);
+        showConfigSavedToast('已恢复内置海报背景');
+        return true;
+    }
+
+    return false;
+}
+
 // Show save indicator animation
 function showSaveIndicator(element) {
     const indicator = element.closest('.config-input-wrapper')?.querySelector('.config-save-indicator');
@@ -264,19 +689,36 @@ function setupConfigEventListeners() {
     }
 
     // Rewards config
-    ['cfgSignupBonus', 'cfgDailyCheckin', 'cfgCommentReward', 'cfgInviteReward'].forEach(id => {
+    ['cfgSignupBonus', 'cfgCommentReward'].forEach(id => {
         const input = document.getElementById(id);
         if (input) {
             input.addEventListener('change', async (e) => {
                 const config = systemConfigCache['rewards'] || {};
                 const fieldMap = {
                     'cfgSignupBonus': 'signup_bonus',
-                    'cfgDailyCheckin': 'daily_checkin',
-                    'cfgCommentReward': 'comment_reward',
-                    'cfgInviteReward': 'invite_reward'
+                    'cfgCommentReward': 'comment_reward'
                 };
-                config[fieldMap[id]] = parseInt(e.target.value) || 0;
+                config[fieldMap[id]] = toWholeNumber(e.target.value, 0);
                 if (await saveConfig('rewards', config)) {
+                    showSaveIndicator(e.target);
+                }
+            });
+        }
+    });
+
+    ['cfgDailyCheckin', 'cfgCheckinStreakBonus', 'cfgCheckinPerfectBonus', 'cfgCheckinMakeupCost'].forEach(id => {
+        const input = document.getElementById(id);
+        if (input) {
+            input.addEventListener('change', async (e) => {
+                const config = normalizeCheckinConfig(systemConfigCache['checkin_system']);
+                const fieldMap = {
+                    'cfgDailyCheckin': 'base_points',
+                    'cfgCheckinStreakBonus': 'consecutive_7_points',
+                    'cfgCheckinPerfectBonus': 'perfect_month_points',
+                    'cfgCheckinMakeupCost': 'makeup_cost_points'
+                };
+                config[fieldMap[id]] = Math.max(0, toWholeNumber(e.target.value, config[fieldMap[id]]));
+                if (await saveConfig('checkin_system', config)) {
                     showSaveIndicator(e.target);
                 }
             });
@@ -1880,3 +2322,9 @@ window.saveSensitiveWords = saveSensitiveWords;
 window.toggleDecoration = toggleDecoration;
 window.selectDecoration = selectDecoration;
 window.togglePageTarget = togglePageTarget;
+window.loadAffiliateSettings = loadAffiliateSettings;
+window.saveAffiliateSetting = saveAffiliateSetting;
+window.saveAffiliatePosterField = saveAffiliatePosterField;
+window.selectAffiliatePosterTemplate = selectAffiliatePosterTemplate;
+window.handleAffiliatePosterUpload = handleAffiliatePosterUpload;
+window.resetAffiliatePosterBackground = resetAffiliatePosterBackground;

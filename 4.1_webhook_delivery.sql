@@ -209,8 +209,17 @@ BEGIN
         v_inviter_id UUID;
         v_commission INT;
         v_commission_rate FLOAT;
+        v_affiliate_config JSONB;
     BEGIN
-        SELECT COALESCE((SELECT value::FLOAT FROM system_settings WHERE key = 'commission_rate_shop'), 0.10) INTO v_commission_rate;
+        SELECT config_value INTO v_affiliate_config
+        FROM system_config
+        WHERE config_key = 'affiliate_program';
+
+        v_commission_rate := COALESCE(
+            (v_affiliate_config->>'commission_rate_shop')::FLOAT,
+            (SELECT value::FLOAT FROM system_settings WHERE key = 'commission_rate_shop'),
+            0.10
+        );
         
         SELECT invited_by INTO v_inviter_id FROM profiles WHERE id = p_user_id;
         IF v_inviter_id IS NOT NULL AND v_total_price > 0 THEN

@@ -249,8 +249,17 @@ BEGIN
         v_commission INT := 0;
         v_agent_profit INT := 0;
         v_commission_rate FLOAT;
+        v_affiliate_config JSONB;
     BEGIN
-        SELECT COALESCE((SELECT value::FLOAT FROM system_settings WHERE key = 'commission_rate_agent'), 0.10) INTO v_commission_rate;
+        SELECT config_value INTO v_affiliate_config
+        FROM system_config
+        WHERE config_key = 'affiliate_program';
+
+        v_commission_rate := COALESCE(
+            (v_affiliate_config->>'commission_rate_agent')::FLOAT,
+            (SELECT value::FLOAT FROM system_settings WHERE key = 'commission_rate_agent'),
+            0.10
+        );
         
         -- Handle global affiliate referral
         SELECT invited_by INTO v_inviter_id FROM profiles WHERE id = p_user_id;

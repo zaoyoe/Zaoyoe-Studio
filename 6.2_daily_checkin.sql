@@ -12,6 +12,7 @@ RETURNS JSONB AS $$
 DECLARE
     v_reward INT := 0;
     v_config JSONB;
+    v_legacy_rewards JSONB;
     v_already_checked BOOLEAN := false;
     v_new_balance NUMERIC;
 BEGIN
@@ -20,12 +21,20 @@ BEGIN
         RETURN jsonb_build_object('success', false, 'message', '用户未登录');
     END IF;
     
-    -- 读取签到奖励配置
+    -- 优先读取签到 V2 配置，兼容旧 rewards.daily_checkin
     SELECT config_value INTO v_config
+    FROM system_config
+    WHERE config_key = 'checkin_system';
+
+    SELECT config_value INTO v_legacy_rewards
     FROM system_config
     WHERE config_key = 'rewards';
     
-    v_reward := COALESCE((v_config->>'daily_checkin')::INT, 5);
+    v_reward := COALESCE(
+        (v_config->>'base_points')::INT,
+        (v_legacy_rewards->>'daily_checkin')::INT,
+        5
+    );
     
     -- 检查今天是否已签到（基于用户时区，用 UTC date 判断）
     SELECT EXISTS(
