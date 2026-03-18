@@ -626,17 +626,7 @@
                                 </label>
 
                                 <div class="verify-form-field">
-                                    <div class="verify-field-label verify-field-label-row">
-                                        <span class="verify-field-label-copy">${t('verify.totpLabel', '2FA 密钥（Base32）')} <em>*</em></span>
-                                        <a
-                                            class="verify-field-link"
-                                            href="https://zhuanlan.zhihu.com/p/1997015036741304912"
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                        >
-                                            ${t('verify.totpEnableGuide', '2fa 开启方式')}
-                                        </a>
-                                    </div>
+                                    <span class="verify-field-label">${t('verify.totpLabel', '2FA 密钥（Base32）')} <em>*</em></span>
                                     <input
                                         class="verify-input"
                                         id="verifyTotpInput"

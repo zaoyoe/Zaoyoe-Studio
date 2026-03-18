@@ -642,42 +642,6 @@
     letter-spacing: 0.01em;
 }
 
-.verify-field-label-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    flex-wrap: wrap;
-}
-
-.verify-field-label-copy {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-}
-
-.verify-field-link {
-    color: #9fd7e5;
-    font-size: 0.83rem;
-    font-weight: 500;
-    letter-spacing: 0.01em;
-    text-decoration: none;
-    opacity: 0.88;
-    transition: color 0.22s ease, opacity 0.22s ease;
-}
-
-.verify-field-link:hover,
-.verify-field-link:focus-visible {
-    color: #c6f1fb;
-    opacity: 1;
-    text-decoration: underline;
-    text-underline-offset: 3px;
-}
-
-.verify-field-link:focus-visible {
-    outline: none;
-}
-
 .verify-field-label em {
     color: #fca5a5;
     font-style: normal;
