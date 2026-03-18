@@ -14664,8 +14664,8 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     align-items: flex-end;
     justify-content: space-between;
     gap: 16px;
-    margin-top: 6px;
-    padding-top: 4px;
+    margin-top: 10px;
+    padding-top: 6px;
 }
 
 .affiliate-poster-hint {
@@ -14678,6 +14678,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
     gap: 18px;
+    margin-top: 18px;
 }
 
 .affiliate-poster-card {
