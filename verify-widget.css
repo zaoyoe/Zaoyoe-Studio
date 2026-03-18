@@ -10,10 +10,18 @@
     --ring-trail-base: linear-gradient(90deg, rgba(107, 158, 206, 0.18) 0%, rgba(159, 215, 229, 0.08) 42%, rgba(255, 255, 255, 0.02) 100%);
     --ring-trail-fill: linear-gradient(90deg, #6b9ece 0%, #9fd7e5 58%, #fbbf24 100%);
     --ring-fill-shadow: 0 0 18px rgba(107, 158, 206, 0.22);
-    --widget-top-base: linear-gradient(90deg, rgba(107, 158, 206, 0.5) 0%, rgba(159, 215, 229, 0.22) 54%, rgba(243, 199, 106, 0.1) 100%);
+    --widget-top-base: linear-gradient(90deg,
+            rgba(107, 158, 206, 0.56) 0%,
+            rgba(107, 158, 206, 0.84) 18%,
+            rgba(159, 215, 229, 0.96) 38%,
+            rgba(243, 199, 106, 0.5) 54%,
+            rgba(159, 215, 229, 0.9) 72%,
+            rgba(107, 158, 206, 0.66) 100%);
     --widget-top-fill: linear-gradient(90deg, #6b9ece 0%, #9fd7e5 58%, #fbbf24 100%);
     --widget-top-shadow: 0 0 14px rgba(107, 158, 206, 0.16);
-    --widget-top-opacity: 0.28;
+    --widget-top-base-shadow: 0 0 14px rgba(107, 158, 206, 0.2), 0 0 22px rgba(159, 215, 229, 0.08);
+    --widget-top-opacity: 0.72;
+    --widget-top-flow-duration: 7.8s;
     --trail-sheen-opacity: 0.9;
     --trail-sheen-duration: 7.2s;
     --trail-sheen-width: 34%;
@@ -189,6 +197,20 @@
     }
 }
 
+@keyframes topAuroraFlow {
+    0% {
+        background-position: 0% 50%;
+    }
+
+    50% {
+        background-position: 100% 50%;
+    }
+
+    100% {
+        background-position: 0% 50%;
+    }
+}
+
 /* Decorative Top Bar */
 .verify-widget::before {
     content: '';
@@ -198,9 +220,13 @@
     width: 100%;
     height: 4px;
     background: var(--widget-top-base);
+    background-size: 220% 100%;
+    background-position: 0% 50%;
+    box-shadow: var(--widget-top-base-shadow);
     opacity: var(--widget-top-opacity);
     z-index: 1;
-    transition: opacity 0.35s ease, background 0.35s ease;
+    animation: topAuroraFlow var(--widget-top-flow-duration) linear infinite;
+    transition: opacity 0.35s ease, background 0.35s ease, box-shadow 0.35s ease;
 }
 
 .verify-widget::after {
@@ -226,10 +252,18 @@
     --ring-trail-base: linear-gradient(90deg, rgba(107, 158, 206, 0.22) 0%, rgba(159, 215, 229, 0.1) 42%, rgba(255, 255, 255, 0.03) 100%);
     --ring-trail-fill: linear-gradient(90deg, #6b9ece 0%, #8bd9ef 56%, #fbbf24 100%);
     --ring-fill-shadow: 0 0 22px rgba(139, 217, 239, 0.24);
-    --widget-top-base: linear-gradient(90deg, rgba(132, 186, 231, 0.58) 0%, rgba(184, 239, 248, 0.28) 54%, rgba(255, 217, 117, 0.12) 100%);
+    --widget-top-base: linear-gradient(90deg,
+            rgba(132, 186, 231, 0.66) 0%,
+            rgba(132, 186, 231, 0.94) 18%,
+            rgba(184, 239, 248, 1) 40%,
+            rgba(255, 217, 117, 0.56) 56%,
+            rgba(184, 239, 248, 0.96) 74%,
+            rgba(132, 186, 231, 0.74) 100%);
     --widget-top-fill: linear-gradient(90deg, #6b9ece 0%, #8bd9ef 56%, #fbbf24 100%);
     --widget-top-shadow: 0 0 20px rgba(139, 217, 239, 0.22);
-    --widget-top-opacity: 0.34;
+    --widget-top-base-shadow: 0 0 18px rgba(132, 186, 231, 0.24), 0 0 28px rgba(184, 239, 248, 0.1);
+    --widget-top-opacity: 0.88;
+    --widget-top-flow-duration: 5.6s;
     --trail-sheen-opacity: 1;
     --trail-sheen-duration: 4.6s;
     --trail-sheen-width: 40%;
@@ -257,7 +291,9 @@
     --widget-top-base: linear-gradient(90deg, rgba(67, 96, 125, 0.92) 0%, rgba(47, 70, 92, 0.92) 52%, rgba(255, 255, 255, 0.08) 100%);
     --widget-top-fill: linear-gradient(90deg, #6b9ece 0%, #77d9f4 60%, #fbbf24 100%);
     --widget-top-shadow: 0 0 22px rgba(119, 217, 244, 0.22), 0 0 28px rgba(251, 191, 36, 0.12);
-    --widget-top-opacity: 0.42;
+    --widget-top-base-shadow: 0 0 18px rgba(119, 217, 244, 0.18), 0 0 30px rgba(251, 191, 36, 0.08);
+    --widget-top-opacity: 0.78;
+    --widget-top-flow-duration: 5.8s;
     --trail-aura-opacity: 0.58;
     --trail-sheen-opacity: 0.9;
     --trail-sheen-duration: 7.2s;
