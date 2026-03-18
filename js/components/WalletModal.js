@@ -1228,6 +1228,7 @@
             this.isOpen = true;
             this.ordersLoaded = false; // Reset loaded flag for new session
             this.ordersData = [];
+            this.browseOrdersSnapshot = [];
             this.orderRequestId += 1;
             this.resetOrderSearchState();
 
@@ -2803,6 +2804,7 @@
         // Order filter state
         orderFilter: 'all',
         ordersData: [],
+        browseOrdersSnapshot: [],
         orderSearchQuery: '',
         orderSearchActiveQuery: '',
         orderSearchDebounceTimer: null,
@@ -2909,6 +2911,96 @@
                 seen.add(key);
                 return true;
             });
+        },
+
+        getOrderSearchTokens(order = {}) {
+            return [
+                order.id,
+                order.shopOrderId,
+                order.referenceId,
+                order.snapshot_product_name,
+                order.rawReason,
+                order.promptId,
+                order.redeemCode,
+                order.amount,
+                order.total_price
+            ].map((value) => String(value || '').trim().toLowerCase()).filter(Boolean);
+        },
+
+        async mergeLocalSearchMatches({ query = '', remoteOrders = [], sourceOrders = [], userId = '', site = 'cn' }) {
+            const normalizedQuery = String(query || '').trim().toLowerCase();
+            if (!normalizedQuery || !Array.isArray(sourceOrders) || sourceOrders.length === 0) {
+                return remoteOrders;
+            }
+
+            const mergedOrders = [...remoteOrders];
+            const seenIds = new Set(
+                remoteOrders
+                    .map((order) => String(order?.id || '').trim())
+                    .filter(Boolean)
+            );
+            const emailLikeQuery = this.looksLikeEmail(normalizedQuery) || normalizedQuery.includes('@');
+            const verifyCandidates = [];
+
+            sourceOrders.forEach((order) => {
+                const orderId = String(order?.id || '').trim();
+                if (!orderId || seenIds.has(orderId)) return;
+
+                const tokens = this.getOrderSearchTokens(order);
+                if (tokens.some((token) => token.includes(normalizedQuery))) {
+                    seenIds.add(orderId);
+                    mergedOrders.push(order);
+                    return;
+                }
+
+                if (emailLikeQuery && order.transactionType === 'verify' && userId) {
+                    verifyCandidates.push(order);
+                }
+            });
+
+            if (verifyCandidates.length > 0) {
+                const verifyMatches = await Promise.all(
+                    verifyCandidates.slice(0, 80).map(async (order) => {
+                        try {
+                            const verifyLog = await this.fetchVerifyOrderLog({
+                                orderId: order.id,
+                                referenceId: order.referenceId,
+                                userId,
+                                site,
+                                createdAt: order.created_at,
+                                pointsPaid: Math.abs(Number(order.total_price || order.amount) || 0),
+                                reason: order.rawReason
+                            });
+                            const payload = verifyLog?.payload || {};
+                            const verifyTokens = [
+                                ...this.getOrderSearchTokens(order),
+                                payload.email,
+                                payload.job_id,
+                                payload.url,
+                                payload.error_message,
+                                verifyLog?.verification_id
+                            ].map((value) => String(value || '').trim().toLowerCase()).filter(Boolean);
+
+                            if (verifyTokens.some((token) => token.includes(normalizedQuery))) {
+                                return order;
+                            }
+                        } catch (error) {
+                            console.warn('[WalletModal] Local verify search fallback failed:', error);
+                        }
+
+                        return null;
+                    })
+                );
+
+                verifyMatches.filter(Boolean).forEach((order) => {
+                    const orderId = String(order?.id || '').trim();
+                    if (!orderId || seenIds.has(orderId)) return;
+                    seenIds.add(orderId);
+                    mergedOrders.push(order);
+                });
+            }
+
+            return mergedOrders.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
         },
 
         resetOrderFilters() {
@@ -3647,10 +3739,23 @@
                     new Date(b.created_at) - new Date(a.created_at)
                 );
 
+                const finalOrders = normalizedQuery
+                    ? await this.mergeLocalSearchMatches({
+                        query: normalizedQuery,
+                        remoteOrders: allOrders,
+                        sourceOrders: this.browseOrdersSnapshot.length ? this.browseOrdersSnapshot : this.ordersData,
+                        userId: user.id,
+                        site
+                    })
+                    : allOrders;
+
                 if (requestId !== this.orderRequestId) return;
 
                 this.ordersLoaded = true;
-                this.ordersData = allOrders;
+                this.ordersData = finalOrders;
+                if (!normalizedQuery) {
+                    this.browseOrdersSnapshot = [...finalOrders];
+                }
                 this.orderSearchActiveQuery = normalizedQuery;
                 this.applyOrderFilter();
             } catch (err) {
