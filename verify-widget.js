@@ -228,18 +228,7 @@
 
     function syncRingStateFromInputs() {
         if (isLoading) return;
-
-        const emailInput = document.getElementById('verifyEmailInput');
-        const passwordInput = document.getElementById('verifyPasswordInput');
-        const totpInput = document.getElementById('verifyTotpInput');
-        const email = String(emailInput?.value || '').trim();
-        const password = String(passwordInput?.value || '').trim();
-        const totp = String(totpInput?.value || '').trim();
-        const priority = !!document.getElementById('verifyPriorityToggle')?.checked;
-        const hasIntent = !!(email || password || totp || priority);
-        const isFocused = [emailInput, passwordInput, totpInput].some((input) => input && input === document.activeElement);
-
-        applyRingState(hasIntent || isFocused ? 'armed' : 'idle', hasIntent ? 22 : isFocused ? 12 : 0);
+        applyRingState('idle', 0);
     }
 
     function triggerRingOutcome(outcome) {
@@ -561,11 +550,6 @@
         container.innerHTML = `
             <div class="verify-widget ring-idle">
                 <div class="verify-widget-topline" aria-hidden="true">
-                    <div class="verify-orbit-lights">
-                        <span class="verify-orbit-light light-primary"></span>
-                        <span class="verify-orbit-light light-secondary"></span>
-                        <span class="verify-orbit-light light-accent"></span>
-                    </div>
                     <div class="verify-orbit-trail"></div>
                 </div>
                 <div class="verify-widget-header">
@@ -605,16 +589,6 @@
 
                     <div id="verifyForm" style="display: ${formDisplay};">
                         <div class="verify-input-area verify-form-layout">
-                            <div class="verify-form-notice">
-                                <div class="verify-form-notice-icon">
-                                    <i class="fas fa-shield-alt"></i>
-                                </div>
-                                <div class="verify-form-notice-copy">
-                                    <strong>${t('verify.noticeTitle', '提交账号信息')}</strong>
-                                    <span>${t('verify.noticeBody', '仅提交当前任务所需信息，密码与 2FA 密钥不会写入历史记录。')}</span>
-                                </div>
-                            </div>
-
                             <label class="verify-form-field">
                                 <span class="verify-field-label">${t('verify.emailLabel', 'Gmail 地址')} <em>*</em></span>
                                 <input
