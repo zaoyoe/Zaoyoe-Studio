@@ -2305,6 +2305,64 @@ function getAdminRechargeDisplayName(reason = '') {
     return rawReason;
 }
 
+function getAdminLedgerReasonText(reason = '', referenceId = '') {
+    const rawReason = String(reason || '').trim();
+    if (!rawReason) return '未记录';
+
+    if (rawReason === 'daily_checkin') return '每日签到奖励发放';
+    if (rawReason === 'makeup_checkin_cost') return '用户补签时扣除成本积分';
+    if (rawReason === 'signup_bonus' || rawReason === 'register_bonus') return '用户注册成功后发放奖励积分';
+    if (rawReason === 'unlock_prompt') {
+        const promptTitle = referenceId && promptCache[referenceId] ? promptCache[referenceId] : '';
+        return promptTitle ? `解锁提示词：${promptTitle}` : '解锁提示词并扣除对应积分';
+    }
+    if (rawReason === 'redeem_code' || rawReason.includes('兑换码')) return '兑换码兑换积分';
+    if (rawReason === 'package_purchase' || rawReason === 'afdian_recharge' || rawReason === 'custom_recharge' || rawReason.startsWith('模拟充值:') || rawReason.startsWith('模拟充值：')) {
+        return `${getAdminRechargeDisplayName(rawReason)}积分到账`;
+    }
+    if (rawReason.startsWith('admin_manual:')) {
+        const parsed = parseAdminManualReason(rawReason);
+        return `管理员调整积分：${parsed.note}`;
+    }
+    if (isAdminVerifyServiceReason(rawReason)) return 'Google One 验证服务扣分';
+    return rawReason;
+}
+
+function getAdminReferenceMeta(detail) {
+    const transactionType = String(detail?.meta?.transactionType || '').trim();
+
+    switch (transactionType) {
+        case 'prompt':
+            return { label: '提示词编号', usage: '用于回溯本次解锁对应的提示词记录' };
+        case 'shop':
+            return { label: '关联订单号', usage: '用于回溯本次商城订单和商品内容' };
+        case 'affiliate':
+            return { label: '关联奖励号', usage: '用于回溯返佣对应的来源订单或奖励流水' };
+        case 'verify':
+            return { label: '验证任务号', usage: '用于回溯验证任务、状态和生成链接' };
+        case 'recharge':
+            return { label: '充值单号', usage: '用于回溯本次充值来源或支付批次' };
+        case 'redeem':
+            return { label: '兑换码编号', usage: '用于回溯本次兑换对应的兑换码或兑换批次' };
+        case 'bonus':
+            return { label: '关联批次号', usage: '用于标记这次系统奖励或扣分的来源批次' };
+        case 'admin':
+            return { label: '关联记录号', usage: '用于标记本次管理员调整关联的附加来源' };
+        default:
+            return { label: '关联编号', usage: '用于回溯这笔流水对应的来源记录' };
+    }
+}
+
+function getAdminInviteeDisplay(detail = {}) {
+    const inviteeId = String(detail.invitee_id || '').trim();
+    const userRecord = inviteeId
+        ? userState.users.find(user => String(user?.id || '').trim() === inviteeId)
+        : null;
+    const displayName = String(detail.invitee_name || detail.invitee_username || userRecord?.username || detail.invitee_masked_email || '匿名用户').trim();
+    const email = String(userRecord?.email || detail.invitee_masked_email || '').trim();
+    return email ? `${displayName} · ${email}` : displayName;
+}
+
 function parseAdminManualReason(reason = '') {
     const rawReason = String(reason || '').trim();
     const match = rawReason.match(/admin_manual:\s*\[(.*?)\]\s*(.*)/);
@@ -2622,14 +2680,17 @@ function bindAdminLedgerDetailInteractions(overlay) {
 }
 
 function renderAdminLedgerDetailModal(detail) {
+    const referenceMeta = getAdminReferenceMeta(detail);
+    const humanizedReason = getAdminLedgerReasonText(detail.reason, detail.referenceId);
     const amountText = `${detail.amount >= 0 ? '+' : ''}${formatAdminPointValue(detail.amount)} 分`;
     const summaryRows = [
         { label: '流水编号', value: String(detail.record.id || '') },
         { label: '交易类型', value: detail.meta.badge },
         { label: '变动时间', value: formatAdminDateTime(detail.createdAt) },
         { label: '积分变动', value: amountText, color: detail.amount >= 0 ? '#34d399' : '#f87171' },
-        { label: '引用编号', value: detail.referenceId || '无', mono: !!detail.referenceId },
-        { label: '原始原因', value: detail.reason || '未记录' }
+        { label: referenceMeta.label, value: detail.referenceId || '无', mono: !!detail.referenceId },
+        { label: '关联用途', value: referenceMeta.usage },
+        { label: '原因说明', value: humanizedReason }
     ];
 
     let extraSections = '';
@@ -2685,7 +2746,7 @@ function renderAdminLedgerDetailModal(detail) {
                     ${renderAdminLedgerDetailRows([
                         { label: '奖励类型', value: detail.affiliate.reward_label || detail.meta.title },
                         { label: '来源阶段', value: detail.affiliate.source_stage || detail.affiliate.reward_reason || '未记录' },
-                        { label: '被邀请人', value: detail.affiliate.invitee_name || detail.affiliate.invitee_username || '匿名用户' },
+                        { label: '被邀请人', value: getAdminInviteeDisplay(detail.affiliate) },
                         { label: '来源对象', value: detail.affiliate.source_name || detail.affiliate.source_reason || '未命名记录' },
                         { label: '来源金额', value: `${formatAdminPointValue(detail.affiliate.source_amount || 0)} 分` },
                         { label: '配置比例', value: detail.affiliate.declared_commission_rate ? formatAdminPercentValue(detail.affiliate.declared_commission_rate) : '未记录' },
@@ -2748,8 +2809,8 @@ function renderAdminLedgerDetailModal(detail) {
                         { label: '兑换状态', value: '已完成', color: '#34d399' },
                         { label: '兑换时间', value: formatAdminDateTime(detail.createdAt) },
                         { label: '获得积分', value: `${detail.amount >= 0 ? '+' : ''}${formatAdminPointValue(detail.amount)} 分`, color: detail.amount >= 0 ? '#34d399' : '#f87171' },
-                        { label: '兑换码 / 引用号', value: detail.referenceId || '未记录', mono: !!detail.referenceId },
-                        { label: '流水说明', value: detail.reason || '兑换码记录' }
+                        { label: '兑换码 / 关联号', value: detail.referenceId || '未记录', mono: !!detail.referenceId },
+                        { label: '流水说明', value: humanizedReason }
                     ])}
                 </div>
             </section>
@@ -2767,7 +2828,7 @@ function renderAdminLedgerDetailModal(detail) {
                         { label: '调整时间', value: formatAdminDateTime(detail.createdAt) },
                         { label: '积分变动', value: `${detail.amount >= 0 ? '+' : ''}${formatAdminPointValue(detail.amount)} 分`, color: detail.amount >= 0 ? '#34d399' : '#f87171' },
                         { label: '调整原因', value: adminManualMeta.note },
-                        { label: '引用编号', value: detail.referenceId || '无', mono: !!detail.referenceId }
+                        { label: '关联记录号', value: detail.referenceId || '无', mono: !!detail.referenceId }
                     ])}
                 </div>
             </section>
@@ -2775,16 +2836,18 @@ function renderAdminLedgerDetailModal(detail) {
     }
 
     if (detail.meta.transactionType === 'bonus') {
+        const sectionTitle = detail.amount >= 0 ? '奖励详情' : '扣分详情';
+        const descriptionLabel = detail.amount >= 0 ? '奖励说明' : '扣分说明';
         extraSections += `
             <section class="admin-ledger-section">
-                <div class="admin-ledger-section-title">奖励详情</div>
+                <div class="admin-ledger-section-title">${sectionTitle}</div>
                 <div class="admin-ledger-detail-grid">
                     ${renderAdminLedgerDetailRows([
                         { label: '奖励类型', value: detail.meta.title || '积分奖励' },
                         { label: '处理时间', value: formatAdminDateTime(detail.createdAt) },
                         { label: '积分变动', value: `${detail.amount >= 0 ? '+' : ''}${formatAdminPointValue(detail.amount)} 分`, color: detail.amount >= 0 ? '#34d399' : '#f87171' },
                         { label: '状态', value: detail.amount >= 0 ? '已发放' : '已扣除', color: detail.amount >= 0 ? '#34d399' : '#f59e0b' },
-                        { label: '流水说明', value: detail.reason || detail.meta.subtitle || '系统奖励' }
+                        { label: descriptionLabel, value: humanizedReason }
                     ])}
                 </div>
             </section>
