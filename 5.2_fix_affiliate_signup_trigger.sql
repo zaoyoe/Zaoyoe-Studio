@@ -1,50 +1,36 @@
--- 1. System Settings Table
-CREATE TABLE IF NOT EXISTS system_settings (
-    key VARCHAR(50) PRIMARY KEY,
-    value TEXT NOT NULL,
-    description TEXT,
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_by UUID
-);
+-- ============================================
+-- 推广链接注册热修复
+-- 修复点：
+-- 1. 避免在 BEFORE INSERT 阶段写 pending_referral_rewards，导致 invitee_id 外键报错
+-- 2. 将同 IP 注册频控从 profiles.created_at 改为 auth.users.created_at
+-- 3. 兼容 points_balance / points_ledger 有无 site 字段的两套积分 schema
+-- ============================================
 
-ALTER TABLE system_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS invite_code VARCHAR(20);
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS invited_by UUID REFERENCES public.profiles(id);
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS registration_ip VARCHAR(100);
 
--- Only authenticated users can read globally
-DROP POLICY IF EXISTS "Anyone can read system settings" ON system_settings;
-CREATE POLICY "Anyone can read system settings" ON system_settings FOR SELECT USING (true);
+UPDATE public.profiles
+SET invite_code = UPPER(SUBSTRING(id::text, 1, 8))
+WHERE invite_code IS NULL OR BTRIM(invite_code) = '';
 
--- Insert Customization Defaults
-INSERT INTO system_settings (key, value, description) VALUES
-('commission_rate_shop', '0.10', '商城消费返佣比例 (例如 0.10 = 10%)'),
-('commission_rate_agent', '0.10', '分销商资源购买返佣比例 (小数)'),
-('registration_reward_points', '0', '拉新注册固定奖励积分'),
-('registration_reward_requires_purchase', 'true', '拉新奖励是否需要首单激活(防刷作弊必开)')
-ON CONFLICT (key) DO NOTHING;
-
--- 2. Pending Registration Rewards Table (Plan A: Purchase-Gateway)
-ALTER TABLE profiles ADD COLUMN IF NOT EXISTS registration_ip VARCHAR(100);
-
-CREATE TABLE IF NOT EXISTS pending_referral_rewards (
+CREATE TABLE IF NOT EXISTS public.pending_referral_rewards (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    inviter_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
-    invitee_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+    inviter_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+    invitee_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
     reward_points NUMERIC(12,1) NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(invitee_id)
 );
 
-ALTER TABLE pending_referral_rewards ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.pending_referral_rewards ENABLE ROW LEVEL SECURITY;
 
--- Invitees or Inviters can read their own pending rewards
-DROP POLICY IF EXISTS "Users can read own pending rewards" ON pending_referral_rewards;
-CREATE POLICY "Users can read own pending rewards" ON pending_referral_rewards FOR SELECT USING (
+DROP POLICY IF EXISTS "Users can read own pending rewards" ON public.pending_referral_rewards;
+CREATE POLICY "Users can read own pending rewards" ON public.pending_referral_rewards FOR SELECT USING (
     auth.uid() = inviter_id OR auth.uid() = invitee_id
 );
 
--- 3. BEFORE INSERT: only prepare profile fields.
--- Keep reward side effects out of this trigger so signup cannot fail on
--- pending_referral_rewards foreign keys before the profile row exists.
-CREATE OR REPLACE FUNCTION fn_generate_invite_code()
+CREATE OR REPLACE FUNCTION public.fn_generate_invite_code()
 RETURNS TRIGGER AS $$
 DECLARE
     v_client_ip TEXT;
@@ -60,7 +46,6 @@ BEGIN
             NEW.registration_ip := NULLIF(BTRIM(v_client_ip), '');
         END IF;
     EXCEPTION WHEN OTHERS THEN
-        -- request.headers is not always available during auth-triggered inserts
         NULL;
     END;
 
@@ -68,14 +53,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS tr_generate_invite_code ON profiles;
-CREATE TRIGGER tr_generate_invite_code
-    BEFORE INSERT ON profiles
-    FOR EACH ROW
-    EXECUTE FUNCTION fn_generate_invite_code();
-
--- 4. AFTER INSERT: handle invitation rewards once the profile row exists.
-CREATE OR REPLACE FUNCTION fn_handle_registration_rewards()
+CREATE OR REPLACE FUNCTION public.fn_handle_registration_rewards()
 RETURNS TRIGGER AS $$
 DECLARE
     v_reward_points NUMERIC(12,1) := 0;
@@ -90,17 +68,17 @@ BEGIN
     END IF;
 
     SELECT config_value INTO v_affiliate_config
-    FROM system_config
+    FROM public.system_config
     WHERE config_key = 'affiliate_program';
 
     v_reward_points := COALESCE(
         (v_affiliate_config->>'registration_reward_points')::NUMERIC(12,1),
-        (SELECT value::NUMERIC(12,1) FROM system_settings WHERE key = 'registration_reward_points'),
+        (SELECT value::NUMERIC(12,1) FROM public.system_settings WHERE key = 'registration_reward_points'),
         0
     );
     v_requires_purchase := COALESCE(
         (v_affiliate_config->>'registration_reward_requires_purchase')::BOOLEAN,
-        (SELECT value::BOOLEAN FROM system_settings WHERE key = 'registration_reward_requires_purchase'),
+        (SELECT value::BOOLEAN FROM public.system_settings WHERE key = 'registration_reward_requires_purchase'),
         true
     );
 
@@ -110,7 +88,7 @@ BEGIN
 
     IF NEW.registration_ip IS NOT NULL AND BTRIM(NEW.registration_ip) <> '' THEN
         SELECT COUNT(*) INTO v_recent_ip_count
-        FROM profiles p
+        FROM public.profiles p
         JOIN auth.users au ON au.id = p.id
         WHERE p.registration_ip = NEW.registration_ip
           AND au.created_at > NOW() - INTERVAL '24 hours';
@@ -121,7 +99,7 @@ BEGIN
     END IF;
 
     IF v_requires_purchase THEN
-        INSERT INTO pending_referral_rewards (inviter_id, invitee_id, reward_points)
+        INSERT INTO public.pending_referral_rewards (inviter_id, invitee_id, reward_points)
         VALUES (NEW.invited_by, NEW.id, v_reward_points)
         ON CONFLICT (invitee_id) DO UPDATE SET
             inviter_id = EXCLUDED.inviter_id,
@@ -176,8 +154,14 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
-DROP TRIGGER IF EXISTS tr_handle_registration_rewards ON profiles;
-CREATE TRIGGER tr_handle_registration_rewards
-    AFTER INSERT ON profiles
+DROP TRIGGER IF EXISTS tr_generate_invite_code ON public.profiles;
+CREATE TRIGGER tr_generate_invite_code
+    BEFORE INSERT ON public.profiles
     FOR EACH ROW
-    EXECUTE FUNCTION fn_handle_registration_rewards();
+    EXECUTE FUNCTION public.fn_generate_invite_code();
+
+DROP TRIGGER IF EXISTS tr_handle_registration_rewards ON public.profiles;
+CREATE TRIGGER tr_handle_registration_rewards
+    AFTER INSERT ON public.profiles
+    FOR EACH ROW
+    EXECUTE FUNCTION public.fn_handle_registration_rewards();
