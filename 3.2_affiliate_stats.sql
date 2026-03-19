@@ -352,6 +352,8 @@ DECLARE
     v_source_amount NUMERIC(12,1) := 0;
     v_source_created_at TIMESTAMPTZ;
     v_commission_rate NUMERIC(12,1);
+    v_declared_commission_rate NUMERIC(12,1);
+    v_expected_reward_amount NUMERIC(12,1);
     v_text_ref TEXT;
 BEGIN
     SELECT
@@ -409,6 +411,16 @@ BEGIN
 
         IF COALESCE(v_source_amount, 0) > 0 THEN
             v_commission_rate := ROUND((v_entry.amount / v_source_amount * 100)::NUMERIC, 1);
+        END IF;
+
+        BEGIN
+            v_declared_commission_rate := NULLIF((regexp_match(v_entry.reason, '([0-9]+(?:\.[0-9]+)?)%'))[1], '')::NUMERIC;
+        EXCEPTION WHEN OTHERS THEN
+            v_declared_commission_rate := NULL;
+        END;
+
+        IF v_declared_commission_rate IS NOT NULL AND COALESCE(v_source_amount, 0) > 0 THEN
+            v_expected_reward_amount := ROUND((v_source_amount * v_declared_commission_rate / 100)::NUMERIC, 1);
         END IF;
     ELSIF v_entry.reference_id LIKE 'REG_REWARD_UNLOCK_RECHARGE_%' THEN
         v_reward_type := 'registration_reward';
@@ -522,6 +534,8 @@ BEGIN
         'source_amount', COALESCE(v_source_amount, 0)::NUMERIC(12,1),
         'source_created_at', v_source_created_at,
         'commission_rate', v_commission_rate,
+        'declared_commission_rate', v_declared_commission_rate,
+        'expected_reward_amount', v_expected_reward_amount,
         'invitee_id', v_invitee_id,
         'invitee_name', v_invitee_name,
         'invitee_username', v_invitee_username,

@@ -5199,6 +5199,19 @@
                 const sourceStageText = String(detail.source_stage || '').trim() || '推广奖励';
                 const commissionRate = Number(detail.commission_rate);
                 const commissionRateText = Number.isFinite(commissionRate) ? `${this.formatPoints(commissionRate)}%` : '--';
+                const declaredCommissionRate = Number(detail.declared_commission_rate);
+                const declaredCommissionRateText = Number.isFinite(declaredCommissionRate) ? `${this.formatPoints(declaredCommissionRate)}%` : '--';
+                const expectedRewardAmount = Number(detail.expected_reward_amount);
+                const expectedRewardText = Number.isFinite(expectedRewardAmount)
+                    ? `${this.formatPoints(expectedRewardAmount)} ${window.i18n?.t('wallet.pointsUnit') || '积分'}`
+                    : '--';
+                const rewardAmountValue = Number(detail.reward_amount ?? amount ?? 0);
+                const rewardDelta = Number.isFinite(expectedRewardAmount)
+                    ? this.normalizePointValue(rewardAmountValue - expectedRewardAmount)
+                    : 0;
+                const hasCommissionMismatch = meta.rewardType === 'commission'
+                    && Number.isFinite(expectedRewardAmount)
+                    && Math.abs(rewardDelta) >= 0.1;
                 const shortLedgerId = orderId ? `${orderId.substring(0, 8)}...${orderId.slice(-4)}` : '--';
                 const shortSourceId = detail.source_order_id
                     ? `${String(detail.source_order_id).substring(0, 8)}...${String(detail.source_order_id).slice(-4)}`
@@ -5252,11 +5265,33 @@
                             </div>
                             ${meta.rewardType === 'commission' ? `
                             <div class="detail-row">
-                                <span class="detail-label">返佣比例</span>
+                                <span class="detail-label">配置比例</span>
+                                <span class="detail-val">${this.escapeHtml(declaredCommissionRateText)}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">实际到账比例</span>
                                 <span class="detail-val">${this.escapeHtml(commissionRateText)}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">按配置应返</span>
+                                <span class="detail-val">${this.escapeHtml(expectedRewardText)}</span>
                             </div>
                             ` : ''}
                         </div>
+
+                        ${hasCommissionMismatch ? `
+                        <div class="content-section" style="margin-top: -4px;">
+                            <div class="content-card" style="padding: 13px 14px !important; border-color: rgba(251, 191, 36, 0.22) !important; background: linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(120, 53, 15, 0.14)) !important;">
+                                <div style="display:flex; gap:10px; align-items:flex-start;">
+                                    <i class="fas fa-triangle-exclamation" style="color:#fbbf24; margin-top:2px;"></i>
+                                    <div style="font-size:12px; line-height:1.7; color:rgba(255,255,255,0.86);">
+                                        当前到账是 <strong>+${this.escapeHtml(rewardAmount)} 积分</strong>，但按配置比例应为 <strong>${this.escapeHtml(expectedRewardText)}</strong>。
+                                        这通常说明数据库仍在按整数保存返佣，需要执行小数积分热修复。
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        ` : ''}
 
                         <div class="content-section">
                             <div class="content-section-title">被邀请人</div>
