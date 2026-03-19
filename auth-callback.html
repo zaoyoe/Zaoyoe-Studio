@@ -54,6 +54,7 @@
         (async () => {
             const statusText = document.getElementById('statusText');
             const setStatus = (text) => { if (statusText) statusText.textContent = text; };
+            const GOOGLE_POPUP_MESSAGE_TYPE = 'zaoyoe:google-auth-popup';
 
             const SUPABASE_URL = 'https://auth.zaoyoe.com';
             const SUPABASE_KEY = 'sb_publishable_lwkiF-sQ80z8e9oMcejFPQ_j7oezjcF';
@@ -80,6 +81,19 @@
                 window.location.replace(target);
             };
 
+            const isPopupWindow = () => !!(window.opener && window.opener !== window);
+            const notifyOpener = (payload) => {
+                if (!isPopupWindow()) return;
+                try {
+                    window.opener.postMessage({
+                        type: GOOGLE_POPUP_MESSAGE_TYPE,
+                        ...payload
+                    }, window.location.origin);
+                } catch (err) {
+                    console.warn('Failed to notify opener from auth callback:', err);
+                }
+            };
+
             try {
                 const url = new URL(window.location.href);
                 const hash = window.location.hash || '';
@@ -87,11 +101,19 @@
                 const hashParams = new URLSearchParams(hash.replace(/^#/, ''));
                 const hasAccessToken = !!hashParams.get('access_token');
                 const hasRefreshToken = !!hashParams.get('refresh_token');
+                const idToken = hashParams.get('id_token');
                 const hashError = hashParams.get('error');
 
                 if (code) {
                     setStatus('正在交换登录票据...');
                     const { error } = await client.auth.exchangeCodeForSession(code);
+                    if (error) throw error;
+                } else if (idToken) {
+                    setStatus('正在完成 Google 登录...');
+                    const { error } = await client.auth.signInWithIdToken({
+                        provider: 'google',
+                        token: idToken
+                    });
                     if (error) throw error;
                 } else if (hasAccessToken && hasRefreshToken) {
                     setStatus('正在恢复登录会话...');
@@ -127,9 +149,38 @@
                 }
 
                 setStatus('登录成功，正在返回...');
+                if (isPopupWindow()) {
+                    const { data: { user } } = await client.auth.getUser().catch(() => ({ data: { user: null } }));
+                    notifyOpener({
+                        status: 'success',
+                        userId: user?.id || null
+                    });
+                    setTimeout(() => {
+                        try {
+                            window.close();
+                        } catch (_) {
+                            redirectBack();
+                        }
+                    }, 120);
+                    return;
+                }
                 setTimeout(redirectBack, 120);
             } catch (err) {
                 console.error('OAuth callback failed:', err);
+                if (isPopupWindow()) {
+                    notifyOpener({
+                        status: 'error',
+                        message: err.message || '未知错误'
+                    });
+                    setTimeout(() => {
+                        try {
+                            window.close();
+                        } catch (_) {
+                            window.location.replace('/');
+                        }
+                    }, 200);
+                    return;
+                }
                 setStatus(`登录失败：${err.message || '未知错误'}，正在返回主页...`);
                 localStorage.removeItem('oauth_post_login_redirect');
                 setTimeout(() => window.location.replace('/'), 1400);

@@ -1555,12 +1555,16 @@ function updateResetButtonCountdown(button, originalText) {
 // ==================== Google Login (Primary: Google ID Token flow, no OAuth callback dependency) ====================
 const GOOGLE_CLIENT_ID = '1017068787594-ep4bj8cdirkllqlpbmlfk436br0vbifp.apps.googleusercontent.com';
 const DISABLE_OAUTH_REDIRECT_FALLBACK = true;
+const GOOGLE_POPUP_MESSAGE_TYPE = 'zaoyoe:google-auth-popup';
 let googleIdentityScriptPromise = null;
 window.currentGoogleNonce = null;
 window.currentGoogleNonceHash = null;
 let googleCredentialReceived = false;
 let googleLoginAttemptId = 0;
 let googleIdentityInitialized = false;
+let googlePopupWindowRef = null;
+let googlePopupMonitorTimer = null;
+let googlePopupAuthResultHandled = false;
 
 function shouldUseOAuthRedirectFallback() {
     if (DISABLE_OAUTH_REDIRECT_FALLBACK) return false;
@@ -1590,6 +1594,7 @@ function resolveActiveGoogleButton() {
 }
 
 function setGoogleButtonsLoading(isLoading, text = authT('auth.signingIn', '正在登录...')) {
+    window.isGoogleLoginLoading = !!isLoading;
     document.querySelectorAll('.google-login-btn').forEach((btn) => {
         if (isLoading) {
             if (!btn.dataset.originalHtml) btn.dataset.originalHtml = btn.innerHTML;
@@ -1604,6 +1609,88 @@ function setGoogleButtonsLoading(isLoading, text = authT('auth.signingIn', '正�
             btn.style.pointerEvents = '';
             btn.style.opacity = '';
         }
+    });
+}
+
+function isGooglePopupWindow() {
+    return !!(window.opener && window.opener !== window);
+}
+
+function notifyGooglePopupResultToOpener(payload) {
+    if (!isGooglePopupWindow()) return;
+    try {
+        window.opener.postMessage({
+            type: GOOGLE_POPUP_MESSAGE_TYPE,
+            ...payload
+        }, window.location.origin);
+    } catch (err) {
+        console.warn('Failed to notify opener about Google popup result:', err);
+    }
+}
+
+function stopGooglePopupMonitor() {
+    if (googlePopupMonitorTimer) {
+        clearInterval(googlePopupMonitorTimer);
+        googlePopupMonitorTimer = null;
+    }
+}
+
+function closeTrackedGooglePopup() {
+    if (googlePopupWindowRef && !googlePopupWindowRef.closed) {
+        try {
+            googlePopupWindowRef.close();
+        } catch (_) {
+            // ignore
+        }
+    }
+    googlePopupWindowRef = null;
+}
+
+function ensureGooglePopupMessageBridge() {
+    if (window._googlePopupMessageBridgeBound) return;
+    window._googlePopupMessageBridgeBound = true;
+
+    window.addEventListener('message', async (event) => {
+        if (event.origin !== window.location.origin) return;
+        const payload = event.data;
+        if (!payload || payload.type !== GOOGLE_POPUP_MESSAGE_TYPE) return;
+
+        googlePopupAuthResultHandled = true;
+        stopGooglePopupMonitor();
+        closeTrackedGooglePopup();
+        setGoogleButtonsLoading(false);
+
+        if (payload.status === 'success') {
+            clearAuthFeedback();
+            clearInlineGoogleFallbackButtons();
+
+            if (typeof closeAdminLoginModal === 'function') closeAdminLoginModal();
+            if (typeof toggleLoginModal === 'function') {
+                const loginModal = document.getElementById('loginModal');
+                if (loginModal && (loginModal.classList.contains('active') || loginModal.style.visibility === 'visible')) {
+                    toggleLoginModal();
+                }
+            }
+
+            try {
+                await new Promise((resolve) => setTimeout(resolve, 120));
+                await checkAuthState();
+                if (payload.userId) {
+                    flushPendingAuthOrigin(payload.userId);
+                }
+            } catch (err) {
+                console.warn('Failed to refresh auth state after popup login:', err);
+            }
+            return;
+        }
+
+        showAuthFeedback(
+            formatAuthText('auth.googleLoginFailed', 'Google 登录失败: {message}', {
+                message: payload.message || authT('auth.tryAgainLater', '请稍后重试')
+            }),
+            'error',
+            'login'
+        );
     });
 }
 
@@ -1767,6 +1854,7 @@ window.triggerGoogleLogin = async () => {
     setGoogleButtonsLoading(true, authT('auth.openingGoogleWindow', '正在打开授权窗口...'));
 
     try {
+        ensureGooglePopupMessageBridge();
         openGooglePopupFallback();
         // Loading state will be cleared by the popup polling logic or after redirect
     } catch (error) {
@@ -1803,6 +1891,10 @@ function openGooglePopupFallback() {
     // Add a slight downward offset (+ 40px) to account for the browser's thick top toolbar
     const top = window.screenY + (browserHeight - height) / 2 + 40;
 
+    googlePopupAuthResultHandled = false;
+    stopGooglePopupMonitor();
+    closeTrackedGooglePopup();
+
     const popup = window.open(authUrl, 'google_login',
         `width=${width},height=${height},top=${top},left=${left},toolbar=no,menubar=no`);
 
@@ -1812,33 +1904,40 @@ function openGooglePopupFallback() {
         return;
     }
 
-    // Poll for the popup redirect
-    const pollTimer = setInterval(() => {
-        try {
-            if (popup.closed) {
-                clearInterval(pollTimer);
-                return;
+    googlePopupWindowRef = popup;
+    const popupOpenedAt = Date.now();
+
+    googlePopupMonitorTimer = setInterval(() => {
+        if (!googlePopupWindowRef || googlePopupWindowRef.closed) {
+            stopGooglePopupMonitor();
+            googlePopupWindowRef = null;
+
+            if (!googlePopupAuthResultHandled) {
+                setGoogleButtonsLoading(false);
+                showAuthFeedback(
+                    authT('auth.googlePopupClosed', '登录窗口已关闭，请重试'),
+                    'error',
+                    'login'
+                );
             }
-            const popupUrl = popup.location.href;
-            if (popupUrl.startsWith(redirectUri)) {
-                clearInterval(pollTimer);
-                const hash = popup.location.hash;
-                popup.close();
-                if (hash) {
-                    const params = new URLSearchParams(hash.substring(1));
-                    const idToken = params.get('id_token');
-                    if (idToken) {
-                        handleGoogleCredentialResponse({ credential: idToken });
-                    }
-                }
-            }
-        } catch (e) {
-            // Cross-origin - popup hasn't redirected yet, keep polling
+            return;
         }
-    }, 500);
+
+        if (Date.now() - popupOpenedAt > 120000) {
+            stopGooglePopupMonitor();
+            closeTrackedGooglePopup();
+            setGoogleButtonsLoading(false);
+            showAuthFeedback(
+                authT('auth.googlePopupTimeout', 'Google 登录超时，请重试'),
+                'error',
+                'login'
+            );
+        }
+    }, 400);
 }
 
-async function handleGoogleCredentialResponse(response) {
+async function handleGoogleCredentialResponse(response, options = {}) {
+    const shouldClosePopupAfterSuccess = options.closePopup === true || isGooglePopupWindow();
     try {
         if (!response?.credential) throw new Error('未获取到 Google 凭证');
         googleCredentialReceived = true;
@@ -1885,6 +1984,21 @@ async function handleGoogleCredentialResponse(response) {
         }
         clearInlineGoogleFallbackButtons();
 
+        if (shouldClosePopupAfterSuccess) {
+            notifyGooglePopupResultToOpener({
+                status: 'success',
+                userId: data?.user?.id || null
+            });
+            setTimeout(() => {
+                try {
+                    window.close();
+                } catch (_) {
+                    // ignore
+                }
+            }, 80);
+            return;
+        }
+
         if (typeof closeAdminLoginModal === 'function') closeAdminLoginModal();
         if (typeof toggleLoginModal === 'function') {
             const loginModal = document.getElementById('loginModal');
@@ -1897,6 +2011,20 @@ async function handleGoogleCredentialResponse(response) {
         }
     } catch (error) {
         console.error('❌ Google ID Token login error:', error);
+        if (isGooglePopupWindow()) {
+            notifyGooglePopupResultToOpener({
+                status: 'error',
+                message: error.message || authT('auth.tryAgainLater', '请稍后重试')
+            });
+            setTimeout(() => {
+                try {
+                    window.close();
+                } catch (_) {
+                    // ignore
+                }
+            }, 120);
+            return;
+        }
         showAuthFeedback(
             formatAuthText('auth.googleLoginFailed', 'Google 登录失败: {message}', {
                 message: error.message || authT('auth.tryAgainLater', '请稍后重试')
@@ -2184,6 +2312,7 @@ async function initializeAuthPageBoot() {
     const urlParams = new URLSearchParams(window.location.search);
     const oauthCode = urlParams.get('code');
     const hashHasToken = window.location.hash && window.location.hash.includes('access_token=');
+    const hashHasIdToken = window.location.hash && window.location.hash.includes('id_token=');
 
     if (oauthCode) {
         // ===== PKCE Flow (default for signInWithOAuth) =====
@@ -2204,6 +2333,20 @@ async function initializeAuthPageBoot() {
         url.searchParams.delete('code');
         url.searchParams.delete('state');
         window.history.replaceState({}, document.title, `${url.pathname}${url.search}` || '/');
+    } else if (hashHasIdToken) {
+        console.log('🔐 Detected Google ID token in URL hash, completing popup login...');
+        const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+        const idToken = hashParams.get('id_token');
+        const url = new URL(window.location.href);
+        window.history.replaceState({}, document.title, `${url.pathname}${url.search}` || '/');
+
+        if (idToken) {
+            await handleGoogleCredentialResponse({ credential: idToken }, {
+                closePopup: isGooglePopupWindow()
+            });
+        } else {
+            console.warn('⚠️ Google ID token hash detected without id_token value.');
+        }
     } else if (hashHasToken) {
         // ===== Implicit Flow (#access_token=...) =====
         console.log('🔐 Detected implicit OAuth token in URL hash. Waiting for Supabase...');

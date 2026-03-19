@@ -49,6 +49,27 @@ if (_sessionSnapshot) {
     console.log('📸 Session snapshot saved (key: ' + _detectedKey + ')');
 }
 
+const _hasValidAccessToken = (value) => {
+    if (!value) return false;
+
+    if (typeof value === 'string') {
+        return value.split('.').length >= 3 && value.length > 40;
+    }
+
+    if (Array.isArray(value)) {
+        return value.some(_hasValidAccessToken);
+    }
+
+    if (typeof value === 'object') {
+        if (_hasValidAccessToken(value.access_token)) return true;
+        if (_hasValidAccessToken(value.currentSession)) return true;
+        if (_hasValidAccessToken(value.session)) return true;
+        if (_hasValidAccessToken(value.data)) return true;
+    }
+
+    return false;
+};
+
 // ==================== Guard Storage Adapter ====================
 const guardStorage = {
     _locked: true,
@@ -63,7 +84,7 @@ const guardStorage = {
             try {
                 const parsed = JSON.parse(value);
                 // If Supabase is writing a valid session (has access_token), allow it
-                if (parsed && parsed.access_token) {
+                if (_hasValidAccessToken(parsed)) {
                     localStorage.setItem(key, value);
                     return;
                 }
