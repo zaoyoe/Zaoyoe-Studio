@@ -1,12 +1,18 @@
 -- 1. Enable Realtime for the chat_messages table
 -- valid for Supabase generic replication
-begin;
-  -- Try to add the table to the publication. 
-  -- If it fails (already added), it's fine, but standard SQL 'alter publication' might error if already exists depending on pg version.
-  -- Safe way: drop and re-add or just run it and ignore "duplicate" error if user knows how.
-  -- Simpler: Just run the alter command.
-  alter publication supabase_realtime add table chat_messages;
-commit;
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'chat_messages'
+  ) then
+    execute 'alter publication supabase_realtime add table public.chat_messages';
+  end if;
+end;
+$$;
 
 -- 2. Ensure helper functions exist for scoped chat access
 create or replace function public.current_chat_session_id()
