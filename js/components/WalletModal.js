@@ -2274,7 +2274,6 @@
                                     <div class="affiliate-member-ident">
                                         <div class="affiliate-member-name-row">
                                             <div class="affiliate-member-name">${this.escapeHtml(displayName)}</div>
-                                            <span class="${badgeClass}">${stageMeta.label}</span>
                                         </div>
                                         <div class="affiliate-member-sub">${this.escapeHtml(secondaryLine || '新邀请用户')}</div>
                                         <div class="affiliate-member-note">${this.escapeHtml(stageMeta.hint)}</div>
@@ -2286,9 +2285,12 @@
                                     <span class="affiliate-member-chip">拉新 ${this.escapeHtml(quickReward)}</span>
                                 </div>
                             </div>
-                            <span class="affiliate-member-chevron" aria-hidden="true">
-                                <i class="fas fa-chevron-down"></i>
-                            </span>
+                            <div class="affiliate-member-summary-side">
+                                <span class="${badgeClass}">${stageMeta.label}</span>
+                                <span class="affiliate-member-chevron" aria-hidden="true">
+                                    <i class="fas fa-chevron-down"></i>
+                                </span>
+                            </div>
                         </button>
 
                         <div class="affiliate-member-details" hidden>
