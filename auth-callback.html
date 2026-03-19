@@ -55,6 +55,8 @@
             const statusText = document.getElementById('statusText');
             const setStatus = (text) => { if (statusText) statusText.textContent = text; };
             const GOOGLE_POPUP_MESSAGE_TYPE = 'zaoyoe:google-auth-popup';
+            const GOOGLE_POPUP_WINDOW_NAME = 'google_login';
+            const GOOGLE_POPUP_RESULT_STORAGE_KEY = 'zaoyoe_google_popup_auth_result_v1';
 
             const SUPABASE_URL = 'https://auth.zaoyoe.com';
             const SUPABASE_KEY = 'sb_publishable_lwkiF-sQ80z8e9oMcejFPQ_j7oezjcF';
@@ -81,9 +83,34 @@
                 window.location.replace(target);
             };
 
-            const isPopupWindow = () => !!(window.opener && window.opener !== window);
+            const isPopupWindow = () => !!(
+                (window.opener && window.opener !== window) ||
+                window.name === GOOGLE_POPUP_WINDOW_NAME
+            );
+            const broadcastPopupResult = (payload) => {
+                try {
+                    const envelope = JSON.stringify({
+                        type: GOOGLE_POPUP_MESSAGE_TYPE,
+                        emittedAt: Date.now(),
+                        ...payload
+                    });
+                    localStorage.setItem(GOOGLE_POPUP_RESULT_STORAGE_KEY, envelope);
+                    setTimeout(() => {
+                        try {
+                            if (localStorage.getItem(GOOGLE_POPUP_RESULT_STORAGE_KEY) === envelope) {
+                                localStorage.removeItem(GOOGLE_POPUP_RESULT_STORAGE_KEY);
+                            }
+                        } catch (_) {
+                            // ignore cleanup failure
+                        }
+                    }, 1500);
+                } catch (err) {
+                    console.warn('Failed to broadcast popup auth result:', err);
+                }
+            };
             const notifyOpener = (payload) => {
-                if (!isPopupWindow()) return;
+                broadcastPopupResult(payload);
+                if (!window.opener || window.opener === window) return;
                 try {
                     window.opener.postMessage({
                         type: GOOGLE_POPUP_MESSAGE_TYPE,
@@ -92,6 +119,30 @@
                 } catch (err) {
                     console.warn('Failed to notify opener from auth callback:', err);
                 }
+            };
+            const attemptClosePopup = () => {
+                if (!isPopupWindow()) return false;
+
+                const tryClose = () => {
+                    try {
+                        window.close();
+                    } catch (_) {
+                        // ignore
+                    }
+                };
+
+                tryClose();
+                setTimeout(() => {
+                    if (window.closed) return;
+                    try {
+                        window.open('', '_self');
+                    } catch (_) {
+                        // ignore
+                    }
+                    tryClose();
+                }, 120);
+
+                return true;
             };
 
             try {
@@ -156,11 +207,7 @@
                         userId: user?.id || null
                     });
                     setTimeout(() => {
-                        try {
-                            window.close();
-                        } catch (_) {
-                            redirectBack();
-                        }
+                        attemptClosePopup();
                     }, 120);
                     return;
                 }
@@ -173,11 +220,7 @@
                         message: err.message || '未知错误'
                     });
                     setTimeout(() => {
-                        try {
-                            window.close();
-                        } catch (_) {
-                            window.location.replace('/');
-                        }
+                        attemptClosePopup();
                     }, 200);
                     return;
                 }

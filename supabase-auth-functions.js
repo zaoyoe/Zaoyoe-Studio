@@ -1556,6 +1556,8 @@ function updateResetButtonCountdown(button, originalText) {
 const GOOGLE_CLIENT_ID = '1017068787594-ep4bj8cdirkllqlpbmlfk436br0vbifp.apps.googleusercontent.com';
 const DISABLE_OAUTH_REDIRECT_FALLBACK = true;
 const GOOGLE_POPUP_MESSAGE_TYPE = 'zaoyoe:google-auth-popup';
+const GOOGLE_POPUP_WINDOW_NAME = 'google_login';
+const GOOGLE_POPUP_RESULT_STORAGE_KEY = 'zaoyoe_google_popup_auth_result_v1';
 let googleIdentityScriptPromise = null;
 window.currentGoogleNonce = null;
 window.currentGoogleNonceHash = null;
@@ -1565,6 +1567,7 @@ let googleIdentityInitialized = false;
 let googlePopupWindowRef = null;
 let googlePopupMonitorTimer = null;
 let googlePopupAuthResultHandled = false;
+let googlePopupLastResultSignature = '';
 
 function shouldUseOAuthRedirectFallback() {
     if (DISABLE_OAUTH_REDIRECT_FALLBACK) return false;
@@ -1613,11 +1616,63 @@ function setGoogleButtonsLoading(isLoading, text = authT('auth.signingIn', '正�
 }
 
 function isGooglePopupWindow() {
-    return !!(window.opener && window.opener !== window);
+    return !!(
+        (window.opener && window.opener !== window) ||
+        window.name === GOOGLE_POPUP_WINDOW_NAME
+    );
+}
+
+function broadcastGooglePopupResult(payload) {
+    try {
+        const envelope = JSON.stringify({
+            type: GOOGLE_POPUP_MESSAGE_TYPE,
+            emittedAt: Date.now(),
+            ...payload
+        });
+        localStorage.setItem(GOOGLE_POPUP_RESULT_STORAGE_KEY, envelope);
+        setTimeout(() => {
+            try {
+                if (localStorage.getItem(GOOGLE_POPUP_RESULT_STORAGE_KEY) === envelope) {
+                    localStorage.removeItem(GOOGLE_POPUP_RESULT_STORAGE_KEY);
+                }
+            } catch (_) {
+                // ignore cleanup failure
+            }
+        }, 1500);
+    } catch (err) {
+        console.warn('Failed to broadcast Google popup result:', err);
+    }
+}
+
+function attemptCloseCurrentGooglePopup() {
+    if (!isGooglePopupWindow()) return false;
+
+    const tryClose = () => {
+        try {
+            window.close();
+        } catch (_) {
+            // ignore
+        }
+    };
+
+    tryClose();
+    setTimeout(() => {
+        if (window.closed) return;
+        try {
+            window.open('', '_self');
+        } catch (_) {
+            // ignore
+        }
+        tryClose();
+    }, 120);
+
+    return true;
 }
 
 function notifyGooglePopupResultToOpener(payload) {
-    if (!isGooglePopupWindow()) return;
+    broadcastGooglePopupResult(payload);
+
+    if (!window.opener || window.opener === window) return;
     try {
         window.opener.postMessage({
             type: GOOGLE_POPUP_MESSAGE_TYPE,
@@ -1636,12 +1691,23 @@ function stopGooglePopupMonitor() {
 }
 
 function closeTrackedGooglePopup() {
-    if (googlePopupWindowRef && !googlePopupWindowRef.closed) {
+    const trackedPopup = googlePopupWindowRef;
+    if (trackedPopup && !trackedPopup.closed) {
         try {
-            googlePopupWindowRef.close();
+            trackedPopup.close();
         } catch (_) {
             // ignore
         }
+
+        setTimeout(() => {
+            if (!trackedPopup.closed) {
+                try {
+                    trackedPopup.close();
+                } catch (_) {
+                    // ignore
+                }
+            }
+        }, 160);
     }
     googlePopupWindowRef = null;
 }
@@ -1650,10 +1716,20 @@ function ensureGooglePopupMessageBridge() {
     if (window._googlePopupMessageBridgeBound) return;
     window._googlePopupMessageBridgeBound = true;
 
-    window.addEventListener('message', async (event) => {
-        if (event.origin !== window.location.origin) return;
-        const payload = event.data;
+    const processPopupPayload = async (payload) => {
         if (!payload || payload.type !== GOOGLE_POPUP_MESSAGE_TYPE) return;
+
+        const signature = [
+            payload.status || '',
+            payload.userId || '',
+            payload.message || '',
+            payload.emittedAt || ''
+        ].join('|');
+
+        if (signature && signature === googlePopupLastResultSignature) {
+            return;
+        }
+        googlePopupLastResultSignature = signature;
 
         googlePopupAuthResultHandled = true;
         stopGooglePopupMonitor();
@@ -1691,6 +1767,21 @@ function ensureGooglePopupMessageBridge() {
             'error',
             'login'
         );
+    };
+
+    window.addEventListener('message', async (event) => {
+        if (event.origin !== window.location.origin) return;
+        await processPopupPayload(event.data);
+    });
+
+    window.addEventListener('storage', async (event) => {
+        if (event.key !== GOOGLE_POPUP_RESULT_STORAGE_KEY || !event.newValue) return;
+        try {
+            const payload = JSON.parse(event.newValue);
+            await processPopupPayload(payload);
+        } catch (err) {
+            console.warn('Failed to parse Google popup storage payload:', err);
+        }
     });
 }
 
@@ -1895,7 +1986,7 @@ function openGooglePopupFallback() {
     stopGooglePopupMonitor();
     closeTrackedGooglePopup();
 
-    const popup = window.open(authUrl, 'google_login',
+    const popup = window.open(authUrl, GOOGLE_POPUP_WINDOW_NAME,
         `width=${width},height=${height},top=${top},left=${left},toolbar=no,menubar=no`);
 
     if (!popup) {
@@ -1990,11 +2081,7 @@ async function handleGoogleCredentialResponse(response, options = {}) {
                 userId: data?.user?.id || null
             });
             setTimeout(() => {
-                try {
-                    window.close();
-                } catch (_) {
-                    // ignore
-                }
+                attemptCloseCurrentGooglePopup();
             }, 80);
             return;
         }
@@ -2017,11 +2104,7 @@ async function handleGoogleCredentialResponse(response, options = {}) {
                 message: error.message || authT('auth.tryAgainLater', '请稍后重试')
             });
             setTimeout(() => {
-                try {
-                    window.close();
-                } catch (_) {
-                    // ignore
-                }
+                attemptCloseCurrentGooglePopup();
             }, 120);
             return;
         }
