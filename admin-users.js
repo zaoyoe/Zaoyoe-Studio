@@ -3458,126 +3458,316 @@ function closeUserModal() {
     currentModalData = {};
 }
 
-// Export Tab Data to Excel (CSV fallback)
-function exportTabData(tabName) {
-    let data = [];
-    let filename = '';
-    const username = currentModalUser?.username || 'user';
-    const date = new Date().toISOString().split('T')[0];
+function sanitizeAdminExportFilename(value = 'export') {
+    const text = String(value || '').trim().replace(/[\\/:*?"<>|]+/g, '_');
+    return text || 'export';
+}
 
-    switch (tabName) {
-        case 'ledger':
-            data = (currentModalData.pointsLedger || []).map(r => {
-                let operator = '系统';
-                let reasonText = r.reason || '';
+function summarizeAdminExportText(value = '', limit = 160) {
+    const text = String(value || '').replace(/\s+/g, ' ').trim();
+    if (!text) return '';
+    return text.length > limit ? `${text.slice(0, Math.max(limit - 1, 1))}…` : text;
+}
 
-                // Parse admin manual reason
-                if (reasonText.startsWith('admin_manual:')) {
-                    const match = reasonText.match(/admin_manual:\[(.*?)\] (.*)/);
-                    if (match) {
-                        operator = match[1];
-                        reasonText = match[2];
-                    } else {
-                        // Fallback for old records
-                        operator = '管理员';
-                        reasonText = reasonText.replace('admin_manual:', '').trim();
-                    }
-                } else {
-                    // Map other system codes to readable text without emojis for Excel
-                    const reasonMap = {
-                        'sign_in_bonus': '签到奖励',
-                        'comment_reward': '评论奖励',
-                        'like_reward': '点赞奖励',
-                        'purchase': '积分消费',
-                        'refund': '退款',
-                        'admin_adjustment': '管理员调整'
-                    };
-                    reasonText = reasonMap[reasonText] || reasonText;
-                }
+function hasAdminExportValue(value) {
+    return value !== null && value !== undefined && String(value).trim() !== '';
+}
 
-                return {
-                    '操作人': operator,
-                    '金额': r.amount,
-                    '原因': reasonText,
-                    '时间': new Date(r.created_at).toLocaleString()
-                };
-            });
-            filename = `${username}_积分流水_${date}.csv`;
-            break;
-        case 'activity':
-            data = (currentModalData.contentLog || []).map(r => ({
-                '类型': r.type,
-                '内容': r.content,
-                '来源': r.source,
-                '时间': new Date(r.created_at).toLocaleString()
-            }));
-            filename = `${username}_近期动态_${date}.csv`;
-            break;
-        case 'notes':
-            data = (currentModalData.notes || []).map(r => ({
-                '操作人': r.admin_email,
-                '内容': r.content,
-                '时间': new Date(r.created_at).toLocaleString()
-            }));
-            filename = `${username}_备注记录_${date}.csv`;
-            break;
-        case 'audit':
-            data = (currentModalData.auditLogs || []).map(r => {
-                let details = '';
-                try { details = JSON.stringify(r.details); } catch (e) { }
-                // Better formatting for Excel? Maybe simple text logic if needed
-                return {
-                    '行动': r.action_type,
-                    '详情': details,
-                    '操作人': r.admin_email,
-                    '时间': new Date(r.created_at).toLocaleString()
-                };
-            });
-            filename = `${username}_审计日志_${date}.csv`;
-            break;
-        case 'blocks':
-            data = (currentModalData.blockHistory || []).map(r => ({
-                '操作': r.action,
-                '范围': r.scope,
-                '原因': r.reason || '',
-                '时间': new Date(r.created_at).toLocaleString()
-            }));
-            filename = `${username}_封禁记录_${date}.csv`;
-            break;
-        case 'affiliate':
-            data = (currentModalData.affiliate?.rewards || []).map(r => ({
-                '奖励类型': r.reward_label || '推广奖励',
-                '被邀请人': r.invitee_name || r.invitee_username || '',
-                '奖励阶段': r.source_stage || '',
-                '奖励积分': Number(r.reward_amount || 0),
-                '来源对象': r.source_name || r.source_reason || '',
-                '来源金额': Number(r.source_amount || 0),
-                '配置比例': r.declared_commission_rate ? `${r.declared_commission_rate}%` : '',
-                '实际到账比例': r.commission_rate ? `${r.commission_rate}%` : '',
-                '时间': r.reward_created_at ? new Date(r.reward_created_at).toLocaleString() : ''
-            }));
-            filename = `${username}_推广记录_${date}.csv`;
-            break;
-    }
+function formatAdminExportPercent(value) {
+    return hasAdminExportValue(value) ? formatAdminPercentValue(value) : '';
+}
 
-    if (data.length === 0) {
-        alert('没有数据可导出');
+function buildAdminExportWorksheet(data, headers) {
+    const worksheet = XLSX.utils.json_to_sheet(data, { header: headers });
+    worksheet['!cols'] = headers.map(header => {
+        const contentWidth = data.reduce((maxWidth, row) => {
+            const rawValue = row?.[header];
+            const text = rawValue === null || rawValue === undefined ? '' : String(rawValue);
+            const width = text.split(/\r?\n/).reduce((lineMax, line) => Math.max(lineMax, line.length), 0);
+            return Math.max(maxWidth, width);
+        }, header.length);
+        return { wch: Math.min(Math.max(contentWidth + 2, 10), 42) };
+    });
+    return worksheet;
+}
+
+function downloadAdminTabExport(data, { filenameBase, sheetName, headers }) {
+    const safeFilename = sanitizeAdminExportFilename(filenameBase || 'export');
+    const safeSheetName = String(sheetName || '导出').slice(0, 31);
+    const exportHeaders = headers?.length ? headers : Object.keys(data[0] || {});
+
+    if (typeof XLSX === 'undefined') {
+        showToast?.('Excel 库未加载，将导出为 CSV', 'warning');
+        const csv = [
+            exportHeaders.join(','),
+            ...data.map(row => exportHeaders.map(header => `"${String(row?.[header] ?? '').replace(/"/g, '""')}"`).join(','))
+        ].join('\n');
+        const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `${safeFilename}.csv`;
+        link.click();
         return;
     }
 
-    // Convert to CSV
-    const headers = Object.keys(data[0]);
-    const csv = [
-        headers.join(','),
-        ...data.map(row => headers.map(h => `"${String(row[h]).replace(/"/g, '""')}"`).join(','))
-    ].join('\n');
+    const workbook = XLSX.utils.book_new();
+    const worksheet = buildAdminExportWorksheet(data, exportHeaders);
+    XLSX.utils.book_append_sheet(workbook, worksheet, safeSheetName);
+    XLSX.writeFile(workbook, `${safeFilename}.xlsx`);
+}
 
-    // Download
-    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = filename;
-    link.click();
+function buildAdminLedgerExportRow(detail = {}) {
+    const referenceMeta = getAdminReferenceMeta(detail);
+    const humanizedReason = getAdminLedgerReasonText(detail.reason, detail.referenceId);
+    const adminManualMeta = detail.meta?.transactionType === 'admin' ? parseAdminManualReason(detail.reason) : null;
+    const baseUserName = currentModalUser?.username || '';
+    const baseUserEmail = currentModalUser?.email || '';
+    const row = {
+        '用户昵称': baseUserName,
+        '用户邮箱': baseUserEmail,
+        '流水编号': String(detail.record?.id || ''),
+        '记录标题': detail.meta?.title || '',
+        '流水摘要': detail.meta?.subtitle || '',
+        '交易类型': detail.meta?.badge || '',
+        '积分方向': detail.amount >= 0 ? '入账' : '支出',
+        '积分变动(分)': detail.amount,
+        '原因说明': humanizedReason,
+        '关联编号': detail.referenceId || '',
+        '关联用途': referenceMeta.usage || '',
+        '时间': formatAdminDateTime(detail.createdAt),
+        '操作人': adminManualMeta?.operator || '系统',
+        '状态/阶段': '',
+        '来源对象': '',
+        '被邀请人': '',
+        '订单/来源金额(分)': '',
+        '配置比例': '',
+        '实际到账比例': '',
+        '按配置应返(分)': '',
+        '订单编号': '',
+        '订单状态': '',
+        '商品明细': '',
+        '商品内容摘要': '',
+        '提示词标题': '',
+        '提示词作者': '',
+        '提示词标签': '',
+        '验证状态': '',
+        '账号邮箱': '',
+        '任务编号': '',
+        '生成链接': '',
+        '附加说明': detail.error || ''
+    };
+
+    if (detail.prompt) {
+        row['来源对象'] = detail.prompt.title || detail.meta?.title || '提示词';
+        row['提示词标题'] = detail.prompt.title || '';
+        row['提示词作者'] = detail.prompt.author_name || '';
+        row['提示词标签'] = Array.isArray(detail.prompt.tags) ? detail.prompt.tags.join(' / ') : '';
+        row['附加说明'] = summarizeAdminExportText(detail.prompt.description || detail.meta?.subtitle || '');
+    }
+
+    if (detail.shop?.order || (detail.shop?.items || []).length) {
+        const order = detail.shop.order || {};
+        const itemSummaries = (detail.shop.items || []).map(item => `${item.name || '未知商品'} · ${formatAdminPointValue(item.price || 0)} 分`);
+        const itemContentSummaries = (detail.shop.items || [])
+            .filter(item => item.content)
+            .map(item => `${item.name || '未知商品'}：${summarizeAdminExportText(item.content, 140)}`);
+        row['来源对象'] = itemSummaries.join('；') || detail.meta?.title || '商城订单';
+        row['订单/来源金额(分)'] = normalizeAdminLedgerValue(order.total_price ?? order.price_paid ?? Math.abs(detail.amount));
+        row['订单编号'] = order.id || getAdminShopOrderIdFromReference(detail.referenceId) || '';
+        row['订单状态'] = order.status || '已完成';
+        row['状态/阶段'] = row['订单状态'];
+        row['商品明细'] = itemSummaries.join('\n');
+        row['商品内容摘要'] = itemContentSummaries.join('\n\n');
+    }
+
+    if (detail.affiliate) {
+        const hasExpected = hasAdminExportValue(detail.affiliate.expected_reward_amount);
+        row['状态/阶段'] = detail.affiliate.source_stage || detail.affiliate.reward_reason || '';
+        row['来源对象'] = detail.affiliate.source_name || detail.affiliate.source_reason || detail.meta?.title || '推广奖励';
+        row['被邀请人'] = getAdminInviteeDisplay(detail.affiliate);
+        row['订单/来源金额(分)'] = hasAdminExportValue(detail.affiliate.source_amount)
+            ? normalizeAdminLedgerValue(detail.affiliate.source_amount)
+            : '';
+        row['配置比例'] = formatAdminExportPercent(detail.affiliate.declared_commission_rate);
+        row['实际到账比例'] = formatAdminExportPercent(detail.affiliate.commission_rate);
+        row['按配置应返(分)'] = hasExpected
+            ? normalizeAdminLedgerValue(detail.affiliate.expected_reward_amount)
+            : '';
+        row['附加说明'] = detail.affiliate.reward_label || detail.meta?.subtitle || '';
+    }
+
+    if (detail.verify) {
+        const verifyStatus = getAdminVerifyStatusMeta(detail.verify.status || detail.verify.payload?.raw_status || '');
+        row['状态/阶段'] = verifyStatus.text;
+        row['来源对象'] = 'Google One 验证服务';
+        row['验证状态'] = verifyStatus.text;
+        row['账号邮箱'] = detail.verify.email || '';
+        row['任务编号'] = detail.verify.jobId || detail.referenceId || '';
+        row['生成链接'] = detail.verify.url || '';
+        row['附加说明'] = summarizeAdminExportText(detail.verify.message || detail.meta?.subtitle || '');
+    }
+
+    if (detail.meta?.transactionType === 'recharge') {
+        row['状态/阶段'] = '已到账';
+        row['来源对象'] = detail.meta?.title || getAdminRechargeDisplayName(detail.reason);
+        row['附加说明'] = '积分充值记录';
+    }
+
+    if (detail.meta?.transactionType === 'redeem') {
+        row['状态/阶段'] = '已兑换';
+        row['来源对象'] = '兑换码兑换';
+        row['附加说明'] = '兑换码积分到账';
+    }
+
+    if (detail.meta?.transactionType === 'bonus') {
+        row['状态/阶段'] = detail.amount >= 0 ? '已发放' : '已扣除';
+        row['来源对象'] = detail.meta?.title || humanizedReason;
+        row['附加说明'] = detail.meta?.subtitle || humanizedReason;
+    }
+
+    if (detail.meta?.transactionType === 'admin') {
+        row['状态/阶段'] = detail.amount >= 0 ? '管理员加分' : '管理员扣分';
+        row['来源对象'] = '管理员手动调整';
+        row['附加说明'] = adminManualMeta?.note || humanizedReason;
+    }
+
+    if (!row['来源对象']) {
+        row['来源对象'] = detail.meta?.title || humanizedReason;
+    }
+
+    return row;
+}
+
+async function buildAdminLedgerExportData(records = []) {
+    await fetchPromptCache();
+    const details = await Promise.all(records.map(record => fetchAdminLedgerDetail(record)));
+    return details.map(detail => buildAdminLedgerExportRow(detail));
+}
+
+// Export Tab Data to Excel (CSV fallback)
+async function exportTabData(tabName) {
+    let data = [];
+    let headers = [];
+    let filenameBase = '';
+    let sheetName = '';
+    const username = sanitizeAdminExportFilename(currentModalUser?.username || 'user');
+    const date = new Date().toISOString().split('T')[0];
+
+    try {
+        switch (tabName) {
+            case 'ledger':
+                showToast?.('正在整理积分流水导出内容...', 'info');
+                data = await buildAdminLedgerExportData(currentModalData.pointsLedger || []);
+                headers = [
+                    '用户昵称',
+                    '用户邮箱',
+                    '流水编号',
+                    '记录标题',
+                    '流水摘要',
+                    '交易类型',
+                    '积分方向',
+                    '积分变动(分)',
+                    '原因说明',
+                    '关联编号',
+                    '关联用途',
+                    '时间',
+                    '操作人',
+                    '状态/阶段',
+                    '来源对象',
+                    '被邀请人',
+                    '订单/来源金额(分)',
+                    '配置比例',
+                    '实际到账比例',
+                    '按配置应返(分)',
+                    '订单编号',
+                    '订单状态',
+                    '商品明细',
+                    '商品内容摘要',
+                    '提示词标题',
+                    '提示词作者',
+                    '提示词标签',
+                    '验证状态',
+                    '账号邮箱',
+                    '任务编号',
+                    '生成链接',
+                    '附加说明'
+                ];
+                filenameBase = `${username}_积分流水_${date}`;
+                sheetName = '积分流水';
+                break;
+            case 'activity':
+                data = (currentModalData.contentLog || []).map(r => ({
+                    '类型': r.type,
+                    '内容': r.content,
+                    '来源': r.source,
+                    '时间': new Date(r.created_at).toLocaleString()
+                }));
+                filenameBase = `${username}_近期动态_${date}`;
+                sheetName = '近期动态';
+                break;
+            case 'notes':
+                data = (currentModalData.notes || []).map(r => ({
+                    '操作人': r.admin_email,
+                    '内容': r.content,
+                    '时间': new Date(r.created_at).toLocaleString()
+                }));
+                filenameBase = `${username}_备注记录_${date}`;
+                sheetName = '备注记录';
+                break;
+            case 'audit':
+                data = (currentModalData.auditLogs || []).map(r => {
+                    let details = '';
+                    try { details = JSON.stringify(r.details); } catch (e) { }
+                    return {
+                        '行动': r.action_type,
+                        '详情': details,
+                        '操作人': r.admin_email,
+                        '时间': new Date(r.created_at).toLocaleString()
+                    };
+                });
+                filenameBase = `${username}_审计日志_${date}`;
+                sheetName = '审计日志';
+                break;
+            case 'blocks':
+                data = (currentModalData.blockHistory || []).map(r => ({
+                    '操作': r.action,
+                    '范围': r.scope,
+                    '原因': r.reason || '',
+                    '时间': new Date(r.created_at).toLocaleString()
+                }));
+                filenameBase = `${username}_封禁记录_${date}`;
+                sheetName = '封禁记录';
+                break;
+            case 'affiliate':
+                data = (currentModalData.affiliate?.rewards || []).map(r => ({
+                    '奖励类型': r.reward_label || '推广奖励',
+                    '被邀请人': getAdminInviteeDisplay(r),
+                    '奖励阶段': r.source_stage || '',
+                    '奖励积分': Number(r.reward_amount || 0),
+                    '来源对象': r.source_name || r.source_reason || '',
+                    '来源金额': Number(r.source_amount || 0),
+                    '配置比例': hasAdminExportValue(r.declared_commission_rate) ? `${r.declared_commission_rate}%` : '',
+                    '实际到账比例': hasAdminExportValue(r.commission_rate) ? `${r.commission_rate}%` : '',
+                    '时间': r.reward_created_at ? new Date(r.reward_created_at).toLocaleString() : ''
+                }));
+                filenameBase = `${username}_推广记录_${date}`;
+                sheetName = '推广记录';
+                break;
+            default:
+                break;
+        }
+
+        if (data.length === 0) {
+            alert('没有数据可导出');
+            return;
+        }
+
+        downloadAdminTabExport(data, { filenameBase, sheetName, headers });
+        showToast?.(`已导出 ${data.length} 条${sheetName || '记录'}`, 'success');
+    } catch (error) {
+        console.error(`Failed to export tab data for ${tabName}:`, error);
+        showToast?.(`导出失败: ${error.message || '未知错误'}`, 'error');
+    }
 }
 
 // Backward compatibility: keep openUserDrawer as alias
