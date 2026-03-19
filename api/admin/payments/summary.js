@@ -11,12 +11,13 @@ module.exports = async function handler(req, res) {
     }
 
     try {
-        const { supabase, user } = await requireAdmin(req);
+        const { supabase, requestSupabase, user } = await requireAdmin(req);
+        const scopedClient = requestSupabase || supabase;
         const site = typeof req.query?.site === 'string' && req.query.site.trim() ? req.query.site.trim() : null;
         const days = Number.parseInt(req.query?.days, 10);
         const normalizedDays = Number.isFinite(days) && days > 0 ? Math.min(days, 365) : 30;
 
-        const { data: overview, error: overviewError } = await supabase.rpc('get_payment_overview', {
+        const { data: overview, error: overviewError } = await scopedClient.rpc('get_payment_overview', {
             p_days: normalizedDays,
             p_site: site
         });
@@ -25,7 +26,7 @@ module.exports = async function handler(req, res) {
             throw overviewError;
         }
 
-        let recentQuery = supabase
+        let recentQuery = scopedClient
             .from('payment_orders')
             .select('id, provider_order_no, package_name, paid_amount, points_amount, status, user_id, created_at, paid_at, claimed_at, site')
             .eq('provider', 'afdian')
@@ -42,7 +43,7 @@ module.exports = async function handler(req, res) {
         }
 
         await writeAdminAuditLog({
-            supabase,
+            supabase: scopedClient,
             adminId: user.id,
             actionType: 'payments.summary.view',
             details: {

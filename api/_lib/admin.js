@@ -201,7 +201,12 @@ async function requireAdmin(req) {
         throw forbiddenError;
     }
 
-    return { supabase, user, roles: activeRoles };
+    return {
+        supabase,
+        requestSupabase: requestClient,
+        user,
+        roles: activeRoles
+    };
 }
 
 async function writeAdminAuditLog({ supabase, adminId, targetUserId = null, actionType, details = {} }) {
