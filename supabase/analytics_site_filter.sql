@@ -452,6 +452,8 @@ DROP FUNCTION IF EXISTS get_top_contributors(INTEGER);
 -- 9. POINTS LEADERBOARD (带站点过滤)
 -- ============================================
 
+DROP FUNCTION IF EXISTS get_points_leaderboard(INTEGER, VARCHAR);
+
 CREATE OR REPLACE FUNCTION get_points_leaderboard(p_limit INTEGER DEFAULT 10, p_site VARCHAR DEFAULT NULL)
 RETURNS TABLE (
     user_id UUID,

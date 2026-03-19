@@ -139,6 +139,8 @@ DROP FUNCTION IF EXISTS get_retention_cohort(INTEGER);
 -- 3. POINTS FLOW (积分流向)
 -- ============================================
 
+DROP FUNCTION IF EXISTS get_points_flow(INTEGER, VARCHAR);
+
 CREATE OR REPLACE FUNCTION get_points_flow(p_days INTEGER DEFAULT 30, p_site VARCHAR DEFAULT NULL)
 RETURNS TABLE (
     source_node TEXT,

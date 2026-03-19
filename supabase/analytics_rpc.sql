@@ -555,6 +555,8 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- 9.2 Points Leaderboard
+DROP FUNCTION IF EXISTS get_points_leaderboard(INTEGER);
+
 CREATE OR REPLACE FUNCTION get_points_leaderboard(p_limit INTEGER DEFAULT 10)
 RETURNS TABLE (
     user_id UUID,

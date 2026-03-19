@@ -113,6 +113,8 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- 收入来源 -> 用户 -> 消费去向
 -- ============================================
 
+DROP FUNCTION IF EXISTS get_points_flow(INTEGER);
+
 CREATE OR REPLACE FUNCTION get_points_flow(p_days INTEGER DEFAULT 30)
 RETURNS TABLE (
     source_node TEXT,

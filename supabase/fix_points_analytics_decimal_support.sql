@@ -5,6 +5,9 @@
 -- 2. admin studio 的“积分流向 / 积分富豪榜 / 周收入周消耗”出现加载失败或无法显示
 -- ============================================
 
+DROP FUNCTION IF EXISTS get_points_leaderboard(INTEGER, VARCHAR);
+DROP FUNCTION IF EXISTS get_points_flow(INTEGER, VARCHAR);
+
 -- 1) 积分富豪榜：返回 NUMERIC，避免 total_balance 与 amount 的聚合结果和旧 INTEGER 签名冲突
 CREATE OR REPLACE FUNCTION get_points_leaderboard(p_limit INTEGER DEFAULT 10, p_site VARCHAR DEFAULT NULL)
 RETURNS TABLE (

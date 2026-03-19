@@ -1729,6 +1729,7 @@ async function openUserModal(userId) {
             relatedAccounts,
             roleInfo,
             pointsLedger,
+            ledgerDetails: {},
             isSuperAdmin,
             activeBans,
             affiliate: createEmptyAffiliateModalState()
@@ -2128,17 +2129,745 @@ function renderLedgerItems(data) {
     if (data.length === 0) {
         return '<div class="empty-state" style="text-align:center;padding:40px;color:var(--text-dim);">暂无积分记录</div>';
     }
-    return data.map(record => `
-        <div class="data-list-item" style="border-left-color: ${record.amount >= 0 ? '#10b981' : '#ef4444'}; display: flex; align-items: center;">
-            <div class="ledger-amount" style="color:${record.amount >= 0 ? '#10b981' : '#ef4444'};min-width:60px;font-weight:700;text-align:center;">
-                ${record.amount >= 0 ? '+' : ''}${record.amount}
+    return data.map(record => {
+        const meta = getAdminLedgerMeta(record);
+        const normalizedAmount = normalizeAdminLedgerValue(record.amount);
+        const recordId = String(record.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        const amountText = `${normalizedAmount >= 0 ? '+' : ''}${formatAdminPointValue(normalizedAmount)} 分`;
+        const referenceChip = meta.referenceLabel
+            ? `<span class="admin-ledger-chip admin-ledger-chip-mono">${escapeHtml(meta.referenceLabel)}</span>`
+            : '';
+
+        return `
+            <div class="data-list-item admin-ledger-item" style="border-left-color: ${meta.accent};" onclick="openAdminLedgerDetail('${recordId}')">
+                <div class="admin-ledger-icon" style="--ledger-accent:${meta.accent};">
+                    <i class="fas ${meta.icon}"></i>
+                </div>
+                <div class="admin-ledger-main">
+                    <div class="admin-ledger-topline">
+                        <div class="admin-ledger-title-wrap">
+                            <div class="admin-ledger-title">${escapeHtml(meta.title)}</div>
+                            <div class="admin-ledger-subtitle">${escapeHtml(meta.subtitle)}</div>
+                        </div>
+                        <div class="admin-ledger-amount ${normalizedAmount >= 0 ? 'positive' : 'negative'}">${amountText}</div>
+                    </div>
+                    <div class="admin-ledger-meta-row">
+                        <span class="admin-ledger-chip">${escapeHtml(meta.badge)}</span>
+                        ${referenceChip}
+                        <span class="admin-ledger-time">${escapeHtml(meta.timeLabel)}</span>
+                    </div>
+                </div>
+                <i class="fas fa-chevron-right admin-ledger-arrow"></i>
             </div>
-            <div class="ledger-details" style="flex:1;">
-                ${formatLedgerReason(record.reason, record.created_at, record.reference_id)}
-            </div>
+        `;
+    }).join('');
+}
+
+function normalizeAdminLedgerValue(value, fallback = 0) {
+    const numericValue = Number(value);
+    return Number.isFinite(numericValue) ? Math.round(numericValue * 10) / 10 : fallback;
+}
+
+function truncateAdminLedgerText(value, head = 10, tail = 4) {
+    const text = String(value || '').trim();
+    if (!text) return '';
+    if (text.length <= head + tail + 3) return text;
+    return `${text.slice(0, head)}...${text.slice(-tail)}`;
+}
+
+function looksLikeAdminEmail(value = '') {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/i.test(String(value || '').trim());
+}
+
+function extractAdminFirstUrl(text = '') {
+    const match = String(text || '').match(/https?:\/\/[^\s"'<>]+/i);
+    return match ? match[0] : '';
+}
+
+function parseAdminVerifyLogMessage(message) {
+    if (typeof message !== 'string' || !message.trim().startsWith('{')) {
+        return null;
+    }
+
+    try {
+        const parsed = JSON.parse(message);
+        return parsed?.kind === 'google_one_job' ? parsed : null;
+    } catch (_) {
+        return null;
+    }
+}
+
+function getAdminVerifyStatusMeta(status = '') {
+    const normalized = String(status || '').trim().toLowerCase();
+
+    if (normalized.includes('success') || normalized.includes('completed')) {
+        return { text: '已完成', color: '#10b981' };
+    }
+    if (normalized.includes('fail') || normalized.includes('error') || normalized.includes('timeout')) {
+        return { text: '失败', color: '#ef4444' };
+    }
+    if (normalized.includes('queue') || normalized.includes('running') || normalized.includes('process') || normalized.includes('pending')) {
+        return { text: '处理中', color: '#6b9ece' };
+    }
+    return { text: normalized || '未知', color: '#cbd5e1' };
+}
+
+function isAdminVerifyServiceReason(reason = '') {
+    const normalized = String(reason || '').trim().toLowerCase();
+    return normalized.includes('google one') && (
+        normalized.includes('链接获取服务') ||
+        normalized.includes('trial link') ||
+        normalized.includes('link service') ||
+        normalized.includes('verify service')
+    );
+}
+
+function isAdminShopLedgerReason(reason = '', referenceId = '') {
+    const normalizedReason = String(reason || '').trim().toLowerCase();
+    const normalizedRef = String(referenceId || '').trim().toUpperCase();
+    return normalizedReason.startsWith('商城购买:') ||
+        normalizedReason.startsWith('shop purchase:') ||
+        normalizedRef.startsWith('SHOP_ORDER_');
+}
+
+function getAdminShopOrderIdFromReference(referenceId = '') {
+    const normalizedRef = String(referenceId || '').trim();
+    if (!normalizedRef) return '';
+    if (normalizedRef.startsWith('SHOP_ORDER_')) {
+        return normalizedRef.slice('SHOP_ORDER_'.length);
+    }
+    return normalizedRef;
+}
+
+function isAdminAffiliateRewardReason(reason = '', referenceId = '') {
+    const rawReason = String(reason || '').trim();
+    const normalizedRef = String(referenceId || '').trim().toUpperCase();
+
+    return rawReason.startsWith('推广返佣')
+        || rawReason.startsWith('拉新固定奖励')
+        || rawReason.startsWith('邀请拉新奖励')
+        || normalizedRef.startsWith('AFFILIATE_REWARD_')
+        || normalizedRef.startsWith('AFF_REW_')
+        || normalizedRef.startsWith('REG_REWARD_');
+}
+
+function getAdminAffiliateRewardMeta(reason = '', referenceId = '') {
+    const rawReason = String(reason || '').trim();
+    const normalizedRef = String(referenceId || '').trim().toUpperCase();
+
+    if (normalizedRef.startsWith('REG_REWARD_UNLOCK_RECHARGE_') || rawReason.includes('首充激活')) {
+        return {
+            rewardType: 'registration_reward',
+            label: '邀请首充奖励',
+            icon: 'fa-gift',
+            color: '#34d399'
+        };
+    }
+
+    if (normalizedRef.startsWith('REG_REWARD_UNLOCK_') || rawReason.includes('首单激活')) {
+        return {
+            rewardType: 'registration_reward',
+            label: '邀请消费奖励',
+            icon: 'fa-seedling',
+            color: '#f59e0b'
+        };
+    }
+
+    if (normalizedRef.startsWith('REG_REWARD_') || rawReason.startsWith('邀请拉新奖励')) {
+        return {
+            rewardType: 'registration_reward',
+            label: '邀请注册奖励',
+            icon: 'fa-user-check',
+            color: '#8b5cf6'
+        };
+    }
+
+    return {
+        rewardType: 'commission',
+        label: '推广返佣',
+        icon: 'fa-share-nodes',
+        color: '#38bdf8'
+    };
+}
+
+function getAdminRechargeDisplayName(reason = '') {
+    const rawReason = String(reason || '').trim();
+    if (!rawReason) return '积分变动';
+    if (rawReason === 'daily_checkin') return '每日签到';
+    if (rawReason === 'makeup_checkin_cost') return '补签扣分';
+    if (rawReason === 'signup_bonus' || rawReason === 'register_bonus') return '注册奖励';
+    if (rawReason === 'custom_recharge') return '自定义充值';
+    if (rawReason === 'package_purchase') return '充值';
+    if (rawReason === 'afdian_recharge') return 'Afdian 充值';
+    if (rawReason.startsWith('模拟充值:')) return rawReason.replace('模拟充值:', '').trim() || '充值';
+    if (rawReason.startsWith('模拟充值：')) return rawReason.replace('模拟充值：', '').trim() || '充值';
+    if (rawReason.startsWith('admin_manual:')) return '管理员调整';
+    return rawReason;
+}
+
+function parseAdminManualReason(reason = '') {
+    const rawReason = String(reason || '').trim();
+    const match = rawReason.match(/admin_manual:\s*\[(.*?)\]\s*(.*)/);
+    if (match) {
+        return {
+            operator: String(match[1] || '').trim() || '管理员',
+            note: String(match[2] || '').trim() || '未填写原因'
+        };
+    }
+
+    return {
+        operator: '管理员',
+        note: rawReason.replace(/^admin_manual:\s*/i, '').trim() || '未填写原因'
+    };
+}
+
+function getAdminLedgerMeta(record = {}) {
+    const amount = normalizeAdminLedgerValue(record.amount);
+    const reason = String(record.reason || '').trim();
+    const referenceId = String(record.reference_id || '').trim();
+    const timeLabel = record.created_at ? formatTimeAgo(record.created_at) : '刚刚';
+    const shortReference = referenceId ? truncateAdminLedgerText(referenceId, 12, 6) : '';
+    const isRechargeRecord =
+        reason === 'package_purchase' ||
+        reason === 'afdian_recharge' ||
+        reason === 'custom_recharge' ||
+        reason.startsWith('模拟充值:') ||
+        reason.startsWith('模拟充值：');
+
+    if (isRechargeRecord) {
+        return {
+            transactionType: 'recharge',
+            title: getAdminRechargeDisplayName(reason),
+            subtitle: referenceId ? `充值流水 ${shortReference}` : '积分充值记录',
+            badge: '积分充值',
+            referenceLabel: shortReference,
+            icon: 'fa-wallet',
+            accent: '#22c55e',
+            timeLabel
+        };
+    }
+
+    if (reason === 'daily_checkin') {
+        return {
+            transactionType: 'bonus',
+            title: '每日签到',
+            subtitle: '签到奖励记录',
+            badge: '签到奖励',
+            referenceLabel: shortReference,
+            icon: 'fa-calendar-check',
+            accent: '#38bdf8',
+            timeLabel
+        };
+    }
+
+    if (reason === 'makeup_checkin_cost') {
+        return {
+            transactionType: 'bonus',
+            title: '补签扣分',
+            subtitle: '补签成本记录',
+            badge: '补签扣分',
+            referenceLabel: shortReference,
+            icon: 'fa-calendar-xmark',
+            accent: '#f97316',
+            timeLabel
+        };
+    }
+
+    if (reason === 'signup_bonus' || reason === 'register_bonus') {
+        return {
+            transactionType: 'bonus',
+            title: '注册奖励',
+            subtitle: '新用户注册奖励记录',
+            badge: '注册奖励',
+            referenceLabel: shortReference,
+            icon: 'fa-gift',
+            accent: '#f472b6',
+            timeLabel
+        };
+    }
+
+    if (reason === 'unlock_prompt') {
+        const promptTitle = referenceId && promptCache[referenceId] ? promptCache[referenceId] : `提示词 #${referenceId || '--'}`;
+        return {
+            transactionType: 'prompt',
+            title: promptTitle,
+            subtitle: '提示词解锁记录',
+            badge: '提示词',
+            referenceLabel: referenceId ? `Prompt ${truncateAdminLedgerText(referenceId, 8, 4)}` : '',
+            icon: 'fa-lightbulb',
+            accent: '#f59e0b',
+            timeLabel
+        };
+    }
+
+    if (isAdminVerifyServiceReason(reason)) {
+        return {
+            transactionType: 'verify',
+            title: 'Google One 验证',
+            subtitle: referenceId ? `任务 ${shortReference}` : '验证服务记录',
+            badge: '验证服务',
+            referenceLabel: shortReference,
+            icon: 'fa-key',
+            accent: '#60a5fa',
+            timeLabel
+        };
+    }
+
+    if (isAdminShopLedgerReason(reason, referenceId)) {
+        const orderId = getAdminShopOrderIdFromReference(referenceId);
+        const productName = reason
+            .replace(/^商城购买[:：]\s*/i, '')
+            .replace(/^shop purchase[:：]\s*/i, '')
+            .trim() || '商城商品';
+        return {
+            transactionType: 'shop',
+            title: productName,
+            subtitle: orderId ? `订单 ${truncateAdminLedgerText(orderId, 8, 4)}` : '商城订单记录',
+            badge: '商城订单',
+            referenceLabel: orderId ? `Order ${truncateAdminLedgerText(orderId, 8, 4)}` : shortReference,
+            icon: 'fa-bag-shopping',
+            accent: amount >= 0 ? '#22c55e' : '#34d399',
+            timeLabel
+        };
+    }
+
+    if (isAdminAffiliateRewardReason(reason, referenceId)) {
+        const rewardMeta = getAdminAffiliateRewardMeta(reason, referenceId);
+        return {
+            transactionType: 'affiliate',
+            title: rewardMeta.label,
+            subtitle: reason || '推广奖励流水',
+            badge: '推广奖励',
+            referenceLabel: shortReference,
+            icon: rewardMeta.icon,
+            accent: rewardMeta.color,
+            timeLabel
+        };
+    }
+
+    if (reason === 'redeem_code' || reason.includes('兑换码')) {
+        return {
+            transactionType: 'redeem',
+            title: '兑换码兑换',
+            subtitle: referenceId ? `兑换码 ${shortReference}` : '兑换记录',
+            badge: '兑换码',
+            referenceLabel: shortReference,
+            icon: 'fa-ticket',
+            accent: '#f472b6',
+            timeLabel
+        };
+    }
+
+    if (reason.startsWith('admin_manual:')) {
+        const match = reason.match(/admin_manual:\[(.*?)\]\s*(.*)/);
+        return {
+            transactionType: 'admin',
+            title: match?.[2] || '管理员调整',
+            subtitle: match?.[1] ? `操作者 ${match[1]}` : '管理员手动调整',
+            badge: '管理员',
+            referenceLabel: shortReference,
+            icon: 'fa-user-shield',
+            accent: '#a78bfa',
+            timeLabel
+        };
+    }
+
+    return {
+        transactionType: amount >= 0 ? 'income' : 'expense',
+        title: getAdminRechargeDisplayName(reason),
+        subtitle: reason || '积分流水记录',
+        badge: amount >= 0 ? '入账' : '支出',
+        referenceLabel: shortReference,
+        icon: amount >= 0 ? 'fa-circle-plus' : 'fa-circle-minus',
+        accent: amount >= 0 ? '#10b981' : '#ef4444',
+        timeLabel
+    };
+}
+
+function renderAdminLedgerDetailRows(rows = []) {
+    return rows.filter(row => row && row.value !== undefined && row.value !== null && row.value !== '').map(row => `
+        <div class="admin-ledger-detail-row">
+            <span class="admin-ledger-detail-label">${escapeHtml(row.label)}</span>
+            <span class="admin-ledger-detail-value ${row.mono ? 'mono' : ''}" style="${row.color ? `color:${row.color};` : ''}">${escapeHtml(String(row.value))}</span>
         </div>
     `).join('');
 }
+
+function renderAdminLedgerContentCards(items = []) {
+    if (!items.length) return '';
+    return `
+        <div class="admin-ledger-content-grid">
+            ${items.map((item, index) => `
+                <div class="admin-ledger-content-card">
+                    <div class="admin-ledger-content-head">
+                        <strong>${escapeHtml(item.title || `内容 ${index + 1}`)}</strong>
+                        ${item.copyText ? `<button class="admin-ledger-copy-btn" data-copy-text="${encodeURIComponent(item.copyText)}">复制</button>` : ''}
+                    </div>
+                    <pre>${escapeHtml(item.content || '--')}</pre>
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
+
+async function fetchAdminLedgerDetail(record) {
+    const meta = getAdminLedgerMeta(record);
+    const detail = {
+        record,
+        meta,
+        amount: normalizeAdminLedgerValue(record.amount),
+        reason: String(record.reason || ''),
+        referenceId: String(record.reference_id || ''),
+        createdAt: record.created_at,
+        prompt: null,
+        shop: null,
+        affiliate: null,
+        verify: null
+    };
+
+    try {
+        if (meta.transactionType === 'prompt' && detail.referenceId) {
+            const promptId = Number(detail.referenceId);
+            if (Number.isFinite(promptId)) {
+                const { data } = await window.supabaseClient
+                    .from('prompts')
+                    .select('id, title, description, prompt, tags, author_name, created_at')
+                    .eq('id', promptId)
+                    .maybeSingle();
+                detail.prompt = data || null;
+            }
+        } else if (meta.transactionType === 'shop') {
+            const orderId = getAdminShopOrderIdFromReference(detail.referenceId);
+            if (orderId) {
+                const [orderResult, itemsResult] = await Promise.all([
+                    window.supabaseClient
+                        .from('shop_orders')
+                        .select('*')
+                        .eq('id', orderId)
+                        .maybeSingle(),
+                    window.supabaseClient
+                        .from('shop_order_items')
+                        .select(`
+                            id,
+                            snapshot_product_name,
+                            price_paid,
+                            shop_inventory ( content )
+                        `)
+                        .eq('order_id', orderId)
+                ]);
+
+                detail.shop = {
+                    order: orderResult.data || null,
+                    items: (itemsResult.data || []).map(item => ({
+                        name: item.snapshot_product_name || '未知商品',
+                        price: normalizeAdminLedgerValue(item.price_paid),
+                        content: item.shop_inventory?.content || ''
+                    }))
+                };
+            }
+        } else if (meta.transactionType === 'affiliate' && currentModalUser?.id) {
+            const { data } = await window.supabaseClient.rpc('fn_get_affiliate_reward_detail', {
+                p_user_id: currentModalUser.id,
+                p_ledger_id: record.id
+            });
+            if (data && data.found !== false) {
+                detail.affiliate = data;
+            }
+        } else if (meta.transactionType === 'verify' && detail.referenceId) {
+            const { data } = await window.supabaseClient
+                .from('verification_logs')
+                .select('verification_id, status, message, points_deducted, created_at')
+                .eq('verification_id', detail.referenceId)
+                .order('created_at', { ascending: false })
+                .limit(1);
+
+            if (Array.isArray(data) && data.length > 0) {
+                const verifyLog = data[0];
+                const payload = parseAdminVerifyLogMessage(verifyLog.message) || {};
+                detail.verify = {
+                    ...verifyLog,
+                    payload,
+                    email: String(payload.email || (looksLikeAdminEmail(detail.referenceId) ? detail.referenceId : '')).trim(),
+                    jobId: String(payload.job_id || (!looksLikeAdminEmail(detail.referenceId) ? detail.referenceId : '')).trim(),
+                    url: String(payload.url || extractAdminFirstUrl(verifyLog.message) || '').trim()
+                };
+            }
+        }
+    } catch (error) {
+        console.warn('Failed to fetch ledger detail:', error);
+        detail.error = error.message || '详情加载失败';
+    }
+
+    return detail;
+}
+
+function bindAdminLedgerDetailInteractions(overlay) {
+    overlay.querySelectorAll('.admin-ledger-copy-btn').forEach((button) => {
+        button.addEventListener('click', (event) => {
+            event.stopPropagation();
+            const encoded = button.getAttribute('data-copy-text');
+            if (!encoded) return;
+            const text = decodeURIComponent(encoded);
+            navigator.clipboard.writeText(text).then(() => {
+                const originalText = button.textContent;
+                button.textContent = '已复制';
+                setTimeout(() => {
+                    button.textContent = originalText;
+                }, 1200);
+            }).catch(() => {
+                button.textContent = '复制失败';
+            });
+        });
+    });
+}
+
+function renderAdminLedgerDetailModal(detail) {
+    const amountText = `${detail.amount >= 0 ? '+' : ''}${formatAdminPointValue(detail.amount)} 分`;
+    const summaryRows = [
+        { label: '流水编号', value: String(detail.record.id || '') },
+        { label: '交易类型', value: detail.meta.badge },
+        { label: '变动时间', value: formatAdminDateTime(detail.createdAt) },
+        { label: '积分变动', value: amountText, color: detail.amount >= 0 ? '#34d399' : '#f87171' },
+        { label: '引用编号', value: detail.referenceId || '无', mono: !!detail.referenceId },
+        { label: '原始原因', value: detail.reason || '未记录' }
+    ];
+
+    let extraSections = '';
+
+    if (detail.prompt) {
+        extraSections += `
+            <section class="admin-ledger-section">
+                <div class="admin-ledger-section-title">提示词详情</div>
+                <div class="admin-ledger-detail-grid">
+                    ${renderAdminLedgerDetailRows([
+                        { label: '标题', value: detail.prompt.title || '未命名提示词' },
+                        { label: '作者', value: detail.prompt.author_name || '未知' },
+                        { label: '创建时间', value: formatAdminDateTime(detail.prompt.created_at) },
+                        { label: '标签', value: Array.isArray(detail.prompt.tags) && detail.prompt.tags.length ? detail.prompt.tags.join(' / ') : '无' }
+                    ])}
+                </div>
+                ${renderAdminLedgerContentCards(detail.prompt.prompt ? [{
+            title: '提示词内容',
+            content: detail.prompt.prompt,
+            copyText: detail.prompt.prompt
+        }] : [])}
+            </section>
+        `;
+    }
+
+    if (detail.shop?.order || (detail.shop?.items || []).length) {
+        const order = detail.shop.order || {};
+        extraSections += `
+            <section class="admin-ledger-section">
+                <div class="admin-ledger-section-title">商城订单详情</div>
+                <div class="admin-ledger-detail-grid">
+                    ${renderAdminLedgerDetailRows([
+                        { label: '订单编号', value: order.id || getAdminShopOrderIdFromReference(detail.referenceId) || '未找到', mono: true },
+                        { label: '订单状态', value: order.status || '已完成' },
+                        { label: '下单时间', value: formatAdminDateTime(order.created_at || detail.createdAt) },
+                        { label: '订单金额', value: `${formatAdminPointValue(order.total_price ?? order.price_paid ?? Math.abs(detail.amount))} 分` }
+                    ])}
+                </div>
+                ${renderAdminLedgerContentCards((detail.shop.items || []).map((item, index) => ({
+            title: `${item.name || `商品 ${index + 1}`} · ${formatAdminPointValue(item.price)} 分`,
+            content: item.content || '该商品没有内容快照或是接口型商品',
+            copyText: item.content || ''
+        })))}
+            </section>
+        `;
+    }
+
+    if (detail.affiliate) {
+        extraSections += `
+            <section class="admin-ledger-section">
+                <div class="admin-ledger-section-title">推广奖励详情</div>
+                <div class="admin-ledger-detail-grid">
+                    ${renderAdminLedgerDetailRows([
+                        { label: '奖励类型', value: detail.affiliate.reward_label || detail.meta.title },
+                        { label: '来源阶段', value: detail.affiliate.source_stage || detail.affiliate.reward_reason || '未记录' },
+                        { label: '被邀请人', value: detail.affiliate.invitee_name || detail.affiliate.invitee_username || '匿名用户' },
+                        { label: '来源对象', value: detail.affiliate.source_name || detail.affiliate.source_reason || '未命名记录' },
+                        { label: '来源金额', value: `${formatAdminPointValue(detail.affiliate.source_amount || 0)} 分` },
+                        { label: '配置比例', value: detail.affiliate.declared_commission_rate ? formatAdminPercentValue(detail.affiliate.declared_commission_rate) : '未记录' },
+                        { label: '实际到账比例', value: detail.affiliate.commission_rate ? formatAdminPercentValue(detail.affiliate.commission_rate) : '未记录' },
+                        { label: '按配置应返', value: detail.affiliate.expected_reward_amount ? `${formatAdminPointValue(detail.affiliate.expected_reward_amount)} 分` : '未记录' }
+                    ])}
+                </div>
+            </section>
+        `;
+    }
+
+    if (detail.verify) {
+        const verifyStatus = getAdminVerifyStatusMeta(detail.verify.status || detail.verify.payload?.raw_status || '');
+        extraSections += `
+            <section class="admin-ledger-section">
+                <div class="admin-ledger-section-title">验证服务详情</div>
+                <div class="admin-ledger-detail-grid">
+                    ${renderAdminLedgerDetailRows([
+                        { label: '验证编号', value: detail.verify.verification_id || detail.referenceId || '未记录', mono: true },
+                        { label: '状态', value: verifyStatus.text, color: verifyStatus.color },
+                        { label: '账号邮箱', value: detail.verify.email || '未记录' },
+                        { label: '任务编号', value: detail.verify.jobId || '未记录', mono: !!detail.verify.jobId },
+                        { label: '完成时间', value: formatAdminDateTime(detail.verify.created_at || detail.createdAt) },
+                        { label: '扣除积分', value: `${formatAdminPointValue(detail.verify.points_deducted || Math.abs(detail.amount))} 分` }
+                    ])}
+                </div>
+                ${detail.verify.url ? renderAdminLedgerContentCards([{
+            title: '生成链接',
+            content: detail.verify.url,
+            copyText: detail.verify.url
+        }]) : ''}
+            </section>
+        `;
+    }
+
+    if (detail.meta.transactionType === 'recharge') {
+        extraSections += `
+            <section class="admin-ledger-section">
+                <div class="admin-ledger-section-title">充值详情</div>
+                <div class="admin-ledger-detail-grid">
+                    ${renderAdminLedgerDetailRows([
+                        { label: '充值类型', value: detail.meta.title || getAdminRechargeDisplayName(detail.reason) },
+                        { label: '到账状态', value: '已完成', color: '#34d399' },
+                        { label: '到账时间', value: formatAdminDateTime(detail.createdAt) },
+                        { label: '到账积分', value: `${detail.amount >= 0 ? '+' : ''}${formatAdminPointValue(detail.amount)} 分`, color: detail.amount >= 0 ? '#34d399' : '#f87171' },
+                        { label: '充值单号', value: detail.referenceId || '未记录', mono: !!detail.referenceId },
+                        { label: '备注', value: detail.reason || '系统充值流水' }
+                    ])}
+                </div>
+            </section>
+        `;
+    }
+
+    if (detail.meta.transactionType === 'redeem') {
+        extraSections += `
+            <section class="admin-ledger-section">
+                <div class="admin-ledger-section-title">兑换详情</div>
+                <div class="admin-ledger-detail-grid">
+                    ${renderAdminLedgerDetailRows([
+                        { label: '兑换状态', value: '已完成', color: '#34d399' },
+                        { label: '兑换时间', value: formatAdminDateTime(detail.createdAt) },
+                        { label: '获得积分', value: `${detail.amount >= 0 ? '+' : ''}${formatAdminPointValue(detail.amount)} 分`, color: detail.amount >= 0 ? '#34d399' : '#f87171' },
+                        { label: '兑换码 / 引用号', value: detail.referenceId || '未记录', mono: !!detail.referenceId },
+                        { label: '流水说明', value: detail.reason || '兑换码记录' }
+                    ])}
+                </div>
+            </section>
+        `;
+    }
+
+    if (detail.meta.transactionType === 'admin') {
+        const adminManualMeta = parseAdminManualReason(detail.reason);
+        extraSections += `
+            <section class="admin-ledger-section">
+                <div class="admin-ledger-section-title">管理员调整详情</div>
+                <div class="admin-ledger-detail-grid">
+                    ${renderAdminLedgerDetailRows([
+                        { label: '操作人', value: adminManualMeta.operator },
+                        { label: '调整时间', value: formatAdminDateTime(detail.createdAt) },
+                        { label: '积分变动', value: `${detail.amount >= 0 ? '+' : ''}${formatAdminPointValue(detail.amount)} 分`, color: detail.amount >= 0 ? '#34d399' : '#f87171' },
+                        { label: '调整原因', value: adminManualMeta.note },
+                        { label: '引用编号', value: detail.referenceId || '无', mono: !!detail.referenceId }
+                    ])}
+                </div>
+            </section>
+        `;
+    }
+
+    if (detail.meta.transactionType === 'bonus') {
+        extraSections += `
+            <section class="admin-ledger-section">
+                <div class="admin-ledger-section-title">奖励详情</div>
+                <div class="admin-ledger-detail-grid">
+                    ${renderAdminLedgerDetailRows([
+                        { label: '奖励类型', value: detail.meta.title || '积分奖励' },
+                        { label: '处理时间', value: formatAdminDateTime(detail.createdAt) },
+                        { label: '积分变动', value: `${detail.amount >= 0 ? '+' : ''}${formatAdminPointValue(detail.amount)} 分`, color: detail.amount >= 0 ? '#34d399' : '#f87171' },
+                        { label: '状态', value: detail.amount >= 0 ? '已发放' : '已扣除', color: detail.amount >= 0 ? '#34d399' : '#f59e0b' },
+                        { label: '流水说明', value: detail.reason || detail.meta.subtitle || '系统奖励' }
+                    ])}
+                </div>
+            </section>
+        `;
+    }
+
+    if (!extraSections && detail.error) {
+        extraSections = `
+            <section class="admin-ledger-section">
+                <div class="admin-ledger-section-title">详情加载提示</div>
+                <div class="admin-ledger-note">${escapeHtml(detail.error)}</div>
+            </section>
+        `;
+    }
+
+    return `
+        <div class="admin-ledger-modal">
+            <div class="admin-ledger-modal-header">
+                <div>
+                    <div class="admin-ledger-modal-title">${escapeHtml(detail.meta.title)}</div>
+                    <div class="admin-ledger-modal-subtitle">${escapeHtml(detail.meta.subtitle)}</div>
+                </div>
+                <button class="modal-close-btn" onclick="closeAdminLedgerDetailModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="admin-ledger-modal-body">
+                <section class="admin-ledger-section">
+                    <div class="admin-ledger-section-title">流水摘要</div>
+                    <div class="admin-ledger-detail-grid">
+                        ${renderAdminLedgerDetailRows(summaryRows)}
+                    </div>
+                </section>
+                ${extraSections}
+            </div>
+        </div>
+    `;
+}
+
+async function openAdminLedgerDetail(ledgerId) {
+    const record = (currentModalData.pointsLedger || []).find(item => String(item.id) === String(ledgerId));
+    if (!record) return;
+
+    closeAdminLedgerDetailModal();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'adminLedgerDetailOverlay';
+    overlay.className = 'admin-ledger-modal-overlay';
+    overlay.addEventListener('click', (event) => {
+        if (event.target === overlay) {
+            closeAdminLedgerDetailModal();
+        }
+    });
+
+    overlay.innerHTML = `
+        <div class="admin-ledger-modal admin-ledger-modal-loading">
+            <div class="modal-loading"><i class="fas fa-spinner fa-spin"></i> 加载流水详情...</div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+
+    if (!currentModalData.ledgerDetails) {
+        currentModalData.ledgerDetails = {};
+    }
+
+    let detail = currentModalData.ledgerDetails[ledgerId];
+    if (!detail) {
+        detail = await fetchAdminLedgerDetail(record);
+        currentModalData.ledgerDetails[ledgerId] = detail;
+    }
+
+    if (!document.getElementById('adminLedgerDetailOverlay')) return;
+
+    overlay.innerHTML = renderAdminLedgerDetailModal(detail);
+    bindAdminLedgerDetailInteractions(overlay);
+}
+
+function closeAdminLedgerDetailModal() {
+    document.getElementById('adminLedgerDetailOverlay')?.remove();
+}
+
+window.openAdminLedgerDetail = openAdminLedgerDetail;
+window.closeAdminLedgerDetailModal = closeAdminLedgerDetailModal;
 
 // Filter tab data by date
 function filterTabByDate(tabName, range, label) {
@@ -2479,28 +3208,15 @@ function renderAffiliateTab(container) {
     const pendingRewardCount = Number(stats.pending_reward_count || 0);
     const rechargeRate = invitedCount > 0 ? (firstRechargeCount / invitedCount) * 100 : 0;
     const consumeRate = invitedCount > 0 ? (consumedCount / invitedCount) * 100 : 0;
-    const shopCommissionRate = Number(stats.commission_rate_shop || 0) * 100;
-    const agentCommissionRate = Number(stats.commission_rate_agent || 0) * 100;
-    const registrationRewardPoints = Number(stats.registration_reward_points || 0);
 
     container.innerHTML = `
         <div class="affiliate-admin-shell">
-            <section class="affiliate-admin-hero">
-                <div class="affiliate-admin-hero-copy">
-                    <div class="affiliate-admin-kicker">推广概览</div>
-                    <h3>${escapeHtml(currentModalUser.username || '该用户')} 的推广面板</h3>
-                    <p>集中查看邀请码、返佣配置、当前转化情况，以及每位被邀请人的旅程节点与贡献明细。</p>
-                    <div class="affiliate-admin-chip-row">
-                        <span class="affiliate-admin-chip"><i class="fas fa-ticket-alt"></i> 邀请码 ${escapeHtml(inviteCode || '未生成')}</span>
-                        <span class="affiliate-admin-chip"><i class="fas fa-percentage"></i> 基础商品 ${formatAdminPercentValue(shopCommissionRate)}</span>
-                        <span class="affiliate-admin-chip"><i class="fas fa-user-tie"></i> 分销渠道 ${formatAdminPercentValue(agentCommissionRate)}</span>
-                        <span class="affiliate-admin-chip"><i class="fas fa-gift"></i> 拉新奖励 ${formatAdminPointValue(registrationRewardPoints)} 积分</span>
+            <section class="affiliate-admin-link-strip">
+                <div class="affiliate-admin-link-card affiliate-admin-link-card--wide">
+                    <div class="affiliate-admin-link-copy">
+                        <div class="affiliate-admin-link-label">推广链接</div>
+                        <div class="affiliate-admin-link-value">${escapeHtml(inviteLink || '暂未生成推广链接')}</div>
                     </div>
-                </div>
-                <div class="affiliate-admin-link-card">
-                    <div class="affiliate-admin-link-label">推广链接</div>
-                    <div class="affiliate-admin-link-value">${escapeHtml(inviteLink || '暂未生成推广链接')}</div>
-                    <div class="affiliate-admin-link-meta">最后刷新：${formatAdminDateTime(affiliateState.loadedAt)}</div>
                     <button class="btn-export affiliate-admin-export-btn" onclick="exportTabData('affiliate')">
                         <i class="fas fa-download"></i> 导出推广记录
                     </button>
@@ -2618,7 +3334,7 @@ function renderAffiliateTab(container) {
                     <div class="affiliate-admin-panel-head">
                         <div>
                             <h4>奖励记录</h4>
-                            <p>按时间倒序展示最近奖励，并附上来源对象、配置比例、实际到账比例与应返金额。</p>
+                            <p>默认折叠显示，点击某条奖励后再查看来源对象、比例和到账明细。</p>
                         </div>
                         <div class="affiliate-admin-panel-meta">${rewards.length} 条记录</div>
                     </div>
@@ -2630,30 +3346,37 @@ function renderAffiliateTab(container) {
         const expectedAmount = Number(reward.expected_reward_amount || 0);
         const rateMismatch = declaredRate > 0 && expectedAmount > 0 && Math.abs(expectedAmount - rewardAmount) >= 0.1;
         return `
-                            <article class="affiliate-admin-reward-card ${rateMismatch ? 'has-warning' : ''}">
-                                <div class="affiliate-admin-reward-top">
-                                    <div>
-                                        <span class="reward-type">${escapeHtml(reward.reward_label || '推广奖励')}</span>
-                                        <h5>${escapeHtml(reward.invitee_name || reward.invitee_username || '匿名用户')}</h5>
-                                        <div class="reward-sub">${escapeHtml(reward.source_stage || reward.reward_reason || '未知来源')}</div>
+                            <details class="affiliate-admin-reward-card ${rateMismatch ? 'has-warning' : ''}">
+                                <summary>
+                                    <div class="affiliate-admin-reward-top">
+                                        <div>
+                                            <span class="reward-type">${escapeHtml(reward.reward_label || '推广奖励')}</span>
+                                            <h5>${escapeHtml(reward.invitee_name || reward.invitee_username || '匿名用户')}</h5>
+                                            <div class="reward-sub">${escapeHtml(reward.source_stage || reward.reward_reason || '未知来源')} · ${formatAdminDateTime(reward.reward_created_at)}</div>
+                                        </div>
+                                        <div class="affiliate-admin-reward-side">
+                                            <div class="reward-amount ${rewardAmount >= 0 ? 'positive' : 'negative'}">${rewardAmount >= 0 ? '+' : ''}${formatAdminPointValue(rewardAmount)} 分</div>
+                                            <i class="fas fa-chevron-down"></i>
+                                        </div>
                                     </div>
-                                    <div class="reward-amount ${rewardAmount >= 0 ? 'positive' : 'negative'}">${rewardAmount >= 0 ? '+' : ''}${formatAdminPointValue(rewardAmount)} 分</div>
-                                </div>
-                                <div class="affiliate-admin-reward-grid">
-                                    <div><span>来源对象</span><strong>${escapeHtml(reward.source_name || reward.source_reason || '未命名记录')}</strong></div>
-                                    <div><span>触发时间</span><strong>${formatAdminDateTime(reward.reward_created_at)}</strong></div>
-                                    <div><span>订单/来源金额</span><strong>${formatAdminPointValue(reward.source_amount || 0)} 分</strong></div>
-                                    <div><span>配置比例</span><strong>${declaredRate ? formatAdminPercentValue(declaredRate) : '未记录'}</strong></div>
-                                    <div><span>实际到账比例</span><strong>${actualRate ? formatAdminPercentValue(actualRate) : '未记录'}</strong></div>
-                                    <div><span>按配置应返</span><strong>${expectedAmount ? `${formatAdminPointValue(expectedAmount)} 分` : '未记录'}</strong></div>
-                                </div>
-                                ${rateMismatch ? `
-                                    <div class="affiliate-admin-reward-warning">
-                                        <i class="fas fa-triangle-exclamation"></i>
-                                        <span>这笔奖励的应返与实返不一致，通常说明它来自历史修复前的旧流水。</span>
+                                </summary>
+                                <div class="affiliate-admin-reward-body">
+                                    <div class="affiliate-admin-reward-grid">
+                                        <div><span>来源对象</span><strong>${escapeHtml(reward.source_name || reward.source_reason || '未命名记录')}</strong></div>
+                                        <div><span>触发时间</span><strong>${formatAdminDateTime(reward.reward_created_at)}</strong></div>
+                                        <div><span>订单/来源金额</span><strong>${formatAdminPointValue(reward.source_amount || 0)} 分</strong></div>
+                                        <div><span>配置比例</span><strong>${declaredRate ? formatAdminPercentValue(declaredRate) : '未记录'}</strong></div>
+                                        <div><span>实际到账比例</span><strong>${actualRate ? formatAdminPercentValue(actualRate) : '未记录'}</strong></div>
+                                        <div><span>按配置应返</span><strong>${expectedAmount ? `${formatAdminPointValue(expectedAmount)} 分` : '未记录'}</strong></div>
                                     </div>
-                                ` : ''}
-                            </article>
+                                    ${rateMismatch ? `
+                                        <div class="affiliate-admin-reward-warning">
+                                            <i class="fas fa-triangle-exclamation"></i>
+                                            <span>这笔奖励的应返与实返不一致，通常说明它来自历史修复前的旧流水。</span>
+                                        </div>
+                                    ` : ''}
+                                </div>
+                            </details>
                         `;
     }).join('') : '<div class="empty-state">该用户暂时还没有推广奖励记录。</div>'}
                     </div>
@@ -2665,6 +3388,7 @@ function renderAffiliateTab(container) {
 
 // Close Modal
 function closeUserModal() {
+    closeAdminLedgerDetailModal();
     const overlay = document.getElementById('userModalOverlay');
     overlay.classList.remove('active');
     currentModalUser = null;
@@ -2910,7 +3634,7 @@ async function fetchPointsLedger(userId) {
             .select('*')
             .eq('user_id', userId)
             .order('created_at', { ascending: false })
-            .limit(10);
+            .limit(20);
 
         if (error) throw error;
 
