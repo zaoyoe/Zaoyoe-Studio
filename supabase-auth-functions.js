@@ -1981,7 +1981,7 @@ async function triggerGoogleOAuthRedirectFallback() {
 // triggerGoogleLogin - Triggered when the user clicks the custom "Sign in with Google" button.
 // Uses a pure client-side OAuth popup flow to get the id_token directly from Google.
 // This bypasses BOTH the FedCM cooldown issues AND the Supabase server-side PKCE failure
-// on the custom domain (auth.zaoyoe.com).
+// on the canonical project domain.
 window.triggerGoogleLogin = async () => {
     console.log('🔵 triggerGoogleLogin called (Client-side Popup mode)');
 
@@ -2226,7 +2226,7 @@ async function uploadAvatarToR2({ userId, imageUrl, imageData }) {
             throw new Error('User not authenticated');
         }
 
-        const SUPABASE_URL = 'https://auth.zaoyoe.com';
+        const SUPABASE_URL = 'https://mmkugdibsaeoevliebzk.supabase.co';
 
         // Call Edge Function
         const response = await fetch(

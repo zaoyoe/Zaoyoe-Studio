@@ -8,7 +8,7 @@
 // Timestamp for init-period guards across all auth scripts
 window._pageLoadTime = Date.now();
 
-const SUPABASE_URL = 'https://auth.zaoyoe.com';
+const SUPABASE_URL = 'https://mmkugdibsaeoevliebzk.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_lwkiF-sQ80z8e9oMcejFPQ_j7oezjcF';
 
 const getOrCreateChatSessionId = () => {

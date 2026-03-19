@@ -5,7 +5,7 @@
 (function () {
     'use strict';
 
-    const AVATAR_SUPABASE_URL = 'https://auth.zaoyoe.com';
+    const AVATAR_SUPABASE_URL = 'https://mmkugdibsaeoevliebzk.supabase.co';
 
     /**
      * Upload avatar to R2

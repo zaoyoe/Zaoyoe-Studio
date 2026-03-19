@@ -2,7 +2,7 @@ const { createClient } = require('@supabase/supabase-js');
 
 let supabaseAdmin = null;
 let supabasePublic = null;
-const DEFAULT_SUPABASE_URL = 'https://auth.zaoyoe.com';
+const DEFAULT_SUPABASE_URL = 'https://mmkugdibsaeoevliebzk.supabase.co';
 const DEFAULT_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_lwkiF-sQ80z8e9oMcejFPQ_j7oezjcF';
 
 function getEnv(name) {
@@ -136,15 +136,22 @@ async function getAuthenticatedUser(req) {
         return { token: '', user: null };
     }
 
-    const supabase = getSupabaseServiceRoleKey()
-        ? getSupabaseAdmin()
-        : getSupabasePublicClient();
-    const { data, error } = await supabase.auth.getUser(token);
-    if (error || !data?.user) {
-        return { token, user: null, error };
+    const requestClient = createSupabaseRequestClient(req);
+    const { data: requestData, error: requestError } = await requestClient.auth.getUser(token);
+    if (!requestError && requestData?.user) {
+        return { token, user: requestData.user };
     }
 
-    return { token, user: data.user };
+    if (!getSupabaseServiceRoleKey()) {
+        return { token, user: null, error: requestError };
+    }
+
+    const { data: adminData, error: adminError } = await getSupabaseAdmin().auth.getUser(token);
+    if (adminError || !adminData?.user) {
+        return { token, user: null, error: adminError || requestError };
+    }
+
+    return { token, user: adminData.user };
 }
 
 async function requireAdmin(req) {
