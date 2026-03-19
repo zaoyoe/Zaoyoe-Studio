@@ -364,6 +364,11 @@ DECLARE
     v_declared_commission_rate NUMERIC(12,1);
     v_expected_reward_amount NUMERIC(12,1);
     v_text_ref TEXT;
+    v_affiliate_config JSONB;
+    v_source_category TEXT;
+    v_has_agent_profit BOOLEAN := false;
+    v_is_agent_commission BOOLEAN := false;
+    v_reason_declared_rate NUMERIC(12,1);
 BEGIN
     SELECT
         pl.id,
@@ -402,7 +407,8 @@ BEGIN
             au.created_at,
             so.snapshot_product_name,
             COALESCE(so.price_paid, so.total_price, 0)::NUMERIC(12,1),
-            so.created_at
+            so.created_at,
+            COALESCE(sp.category, '')
         INTO
             v_invitee_id,
             v_invitee_name,
@@ -412,8 +418,10 @@ BEGIN
             v_invitee_registered_at,
             v_source_name,
             v_source_amount,
-            v_source_created_at
+            v_source_created_at,
+            v_source_category
         FROM public.shop_orders so
+        LEFT JOIN public.shop_products sp ON sp.id = so.product_id
         LEFT JOIN public.profiles p ON p.id = so.user_id
         LEFT JOIN auth.users au ON au.id = so.user_id
         WHERE so.id = v_source_order_id;
@@ -423,10 +431,47 @@ BEGIN
         END IF;
 
         BEGIN
-            v_declared_commission_rate := NULLIF((regexp_match(v_entry.reason, '([0-9]+(?:\.[0-9]+)?)%'))[1], '')::NUMERIC;
+            v_reason_declared_rate := NULLIF((regexp_match(v_entry.reason, '([0-9]+(?:\.[0-9]+)?)%'))[1], '')::NUMERIC;
         EXCEPTION WHEN OTHERS THEN
-            v_declared_commission_rate := NULL;
+            v_reason_declared_rate := NULL;
         END;
+
+        IF v_source_order_id IS NOT NULL THEN
+            SELECT EXISTS (
+                SELECT 1
+                FROM public.points_ledger pl
+                WHERE pl.reference_id = 'AGENT_PROF_' || v_source_order_id::TEXT
+            ) INTO v_has_agent_profit;
+        END IF;
+
+        v_is_agent_commission := v_has_agent_profit OR COALESCE(v_source_category, '') = 'resource';
+
+        SELECT config_value
+        INTO v_affiliate_config
+        FROM public.system_config
+        WHERE config_key = 'affiliate_program';
+
+        IF v_is_agent_commission THEN
+            v_declared_commission_rate := ROUND(
+                COALESCE(
+                    (v_affiliate_config->>'commission_rate_agent')::NUMERIC,
+                    (SELECT value::NUMERIC FROM public.system_settings WHERE key = 'commission_rate_agent'),
+                    0.10
+                ) * 100,
+                1
+            );
+        ELSE
+            v_declared_commission_rate := ROUND(
+                COALESCE(
+                    (v_affiliate_config->>'commission_rate_shop')::NUMERIC,
+                    (SELECT value::NUMERIC FROM public.system_settings WHERE key = 'commission_rate_shop'),
+                    0.10
+                ) * 100,
+                1
+            );
+        END IF;
+
+        v_declared_commission_rate := COALESCE(v_declared_commission_rate, v_reason_declared_rate);
 
         IF v_declared_commission_rate IS NOT NULL AND COALESCE(v_source_amount, 0) > 0 THEN
             v_expected_reward_amount := ROUND((v_source_amount * v_declared_commission_rate / 100)::NUMERIC, 1);

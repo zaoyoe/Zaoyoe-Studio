@@ -255,16 +255,30 @@ BEGIN
         v_agent_profit INT := 0;
         v_commission_rate FLOAT;
         v_affiliate_config JSONB;
+        v_affiliate_reason TEXT;
+        v_affiliate_reference_id TEXT;
     BEGIN
         SELECT config_value INTO v_affiliate_config
         FROM system_config
         WHERE config_key = 'affiliate_program';
 
-        v_commission_rate := COALESCE(
-            (v_affiliate_config->>'commission_rate_agent')::FLOAT,
-            (SELECT value::FLOAT FROM system_settings WHERE key = 'commission_rate_agent'),
-            0.10
-        );
+        IF p_agent_id IS NOT NULL THEN
+            v_commission_rate := COALESCE(
+                (v_affiliate_config->>'commission_rate_agent')::FLOAT,
+                (SELECT value::FLOAT FROM system_settings WHERE key = 'commission_rate_agent'),
+                0.10
+            );
+            v_affiliate_reason := '推广返佣 (' || (v_commission_rate * 100) || '%): 下线购买分销资源';
+            v_affiliate_reference_id := 'AFF_REW_' || v_order_id;
+        ELSE
+            v_commission_rate := COALESCE(
+                (v_affiliate_config->>'commission_rate_shop')::FLOAT,
+                (SELECT value::FLOAT FROM system_settings WHERE key = 'commission_rate_shop'),
+                0.10
+            );
+            v_affiliate_reason := '推广返佣 (' || (v_commission_rate * 100) || '%): 下线购买商品';
+            v_affiliate_reference_id := 'AFFILIATE_REWARD_' || v_order_id;
+        END IF;
         
         -- Handle global affiliate referral
         SELECT invited_by INTO v_inviter_id FROM profiles WHERE id = p_user_id;
@@ -272,7 +286,7 @@ BEGIN
             v_commission := ROUND((v_base_unit_price * p_quantity * v_commission_rate)::NUMERIC, 1);
             IF v_commission > 0 THEN
                 UPDATE points_balance SET bonus_balance = bonus_balance + v_commission, updated_at = NOW() WHERE user_id = v_inviter_id;
-                INSERT INTO points_ledger (user_id, amount, reason, reference_id) VALUES (v_inviter_id, v_commission, '推广返佣 (' || (v_commission_rate * 100) || '%): 下线购买分销资源', 'AFF_REW_' || v_order_id);
+                INSERT INTO points_ledger (user_id, amount, reason, reference_id) VALUES (v_inviter_id, v_commission, v_affiliate_reason, v_affiliate_reference_id);
             END IF;
         END IF;
 
