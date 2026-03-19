@@ -42,6 +42,10 @@ function getSupabaseServiceRoleKey() {
 }
 
 function getSupabasePublishableKey() {
+    if (getSupabaseUrl() === DEFAULT_SUPABASE_URL) {
+        return DEFAULT_SUPABASE_PUBLISHABLE_KEY;
+    }
+
     return process.env.SUPABASE_PUBLISHABLE_KEY
         || process.env.SUPABASE_ANON_KEY
         || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -177,6 +181,7 @@ async function requireAdmin(req) {
         throw authError;
     }
 
+    const requestClient = createSupabaseRequestClient(req);
     const hasServiceRole = Boolean(getSupabaseServiceRoleKey());
     const supabase = hasServiceRole ? getSupabaseAdmin() : createSupabaseRequestClient(req);
     let activeRoles = [];
@@ -184,7 +189,7 @@ async function requireAdmin(req) {
     // Prefer the existing permission RPC so the API stays compatible
     // during the migration from email allowlists to role-based admin auth.
     try {
-        const { data: permissionData, error: permissionError } = await supabase
+        const { data: permissionData, error: permissionError } = await requestClient
             .rpc('get_user_permissions', { p_user_id: user.id });
 
         if (!permissionError && (permissionData?.is_admin || permissionData?.is_super_admin)) {
