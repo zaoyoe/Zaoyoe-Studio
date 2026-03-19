@@ -1638,7 +1638,6 @@
 
                                     <button onclick="WalletModal.generateAffiliatePoster()" style="margin-top:8px; width:100%; border:none; padding:14px; border-radius:12px; background:linear-gradient(135deg, #10b981, #059669); color:#fff; font-weight:600; font-size:14px; cursor:pointer; box-shadow:0 10px 20px rgba(16,185,129,0.2); transition:all 0.25s; display:flex; align-items:center; justify-content:center; gap:8px;" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 15px 25px rgba(16,185,129,0.3)';" onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='0 10px 20px rgba(16,185,129,0.2)';">
                                         <i class="fas fa-image"></i> ${window.i18n?.t('wallet.generatePoster') || '生成海报'}
-                                        <span class="affiliate-poster-template-name" id="affiliate-poster-template-name">默认模板</span>
                                     </button>
                                 </div>
                             </div>
@@ -2149,7 +2148,6 @@
                     const commissionEl = document.getElementById('affiliate-commission');
                     const countEl = document.getElementById('affiliate-count');
                     const linkEl = document.getElementById('affiliate-link');
-                    const templateNameEl = document.getElementById('affiliate-poster-template-name');
                     const peopleLabel = window.i18n?.t('wallet.people') || '人';
                     const totalCommission = Number(stats.total_commission);
                     const invitedCount = Number(stats.invited_count);
@@ -2196,10 +2194,6 @@
                     if (linkEl && inviteCode) {
                         const baseUrl = window.location.origin + window.location.pathname;
                         linkEl.value = `${baseUrl}?ref=${inviteCode}`;
-                    }
-
-                    if (templateNameEl && activeTemplate) {
-                        templateNameEl.textContent = activeTemplate.name;
                     }
 
                     this.currentInviteCode = inviteCode;
