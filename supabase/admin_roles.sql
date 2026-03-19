@@ -23,6 +23,28 @@ CREATE INDEX IF NOT EXISTS idx_admin_roles_expires_at ON public.admin_roles(expi
 -- 启用 RLS
 ALTER TABLE public.admin_roles ENABLE ROW LEVEL SECURITY;
 
+-- 兼容旧版白名单：首次切换到角色制时，把历史超级管理员回填进 admin_roles
+INSERT INTO public.admin_roles (user_id, role_name, permissions, notes)
+SELECT
+    au.id,
+    'super_admin',
+    jsonb_build_array('*'),
+    'Backfilled from legacy hardcoded allowlist'
+FROM auth.users au
+JOIN public.profiles p ON p.id = au.id
+WHERE lower(COALESCE(au.email, '')) IN ('fjivvid@163.com', 'zaoyoe@gmail.com')
+ON CONFLICT (user_id) DO UPDATE SET
+    role_name = CASE
+        WHEN public.admin_roles.role_name = 'super_admin' THEN public.admin_roles.role_name
+        ELSE 'super_admin'
+    END,
+    permissions = CASE
+        WHEN COALESCE(public.admin_roles.permissions, '[]'::jsonb) @> jsonb_build_array('*')
+            THEN COALESCE(public.admin_roles.permissions, '[]'::jsonb)
+        ELSE COALESCE(public.admin_roles.permissions, '[]'::jsonb) || jsonb_build_array('*')
+    END,
+    notes = COALESCE(public.admin_roles.notes, EXCLUDED.notes);
+
 -- RLS 策略：仅 Super Admin 可管理
 DROP POLICY IF EXISTS "Super admin can view roles" ON public.admin_roles;
 CREATE POLICY "Super admin can view roles"
@@ -32,22 +54,22 @@ USING (public.is_admin());
 DROP POLICY IF EXISTS "Super admin can manage roles" ON public.admin_roles;
 CREATE POLICY "Super admin can manage roles"
 ON public.admin_roles FOR ALL
-USING (
-    EXISTS (
-        SELECT 1 FROM auth.users 
-        WHERE id = auth.uid() 
-        AND email IN ('fjivvid@163.com', 'zaoyoe@gmail.com')
-    )
-);
+USING (public.is_super_admin())
+WITH CHECK (public.is_super_admin());
 
 -- 2. 创建 is_super_admin() 函数
 CREATE OR REPLACE FUNCTION public.is_super_admin()
 RETURNS BOOLEAN AS $$
 BEGIN
     RETURN EXISTS (
-        SELECT 1 FROM auth.users 
-        WHERE id = auth.uid() 
-        AND email IN ('fjivvid@163.com', 'zaoyoe@gmail.com')
+        SELECT 1
+        FROM public.admin_roles
+        WHERE user_id = auth.uid()
+          AND (expires_at IS NULL OR expires_at > NOW())
+          AND (
+              role_name = 'super_admin'
+              OR COALESCE(permissions, '[]'::jsonb) @> jsonb_build_array('*')
+          )
     );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
@@ -56,14 +78,8 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 CREATE OR REPLACE FUNCTION public.is_admin()
 RETURNS BOOLEAN AS $$
 BEGIN
-    -- Super Admin（硬编码邮箱）
-    IF public.is_super_admin() THEN
-        RETURN TRUE;
-    END IF;
-    
-    -- 动态 Admin（从 admin_roles 表查询，检查到期时间）
     RETURN EXISTS (
-        SELECT 1 FROM public.admin_roles 
+        SELECT 1 FROM public.admin_roles
         WHERE user_id = auth.uid()
         AND (expires_at IS NULL OR expires_at > NOW())
     );
@@ -74,16 +90,17 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 CREATE OR REPLACE FUNCTION public.has_permission(p_permission TEXT)
 RETURNS BOOLEAN AS $$
 BEGIN
-    -- Super Admin 拥有所有权限
     IF public.is_super_admin() THEN
         RETURN TRUE;
     END IF;
-    
-    -- 检查用户是否有特定权限
+
     RETURN EXISTS (
-        SELECT 1 FROM public.admin_roles 
+        SELECT 1 FROM public.admin_roles
         WHERE user_id = auth.uid()
-        AND permissions @> jsonb_build_array(p_permission)
+        AND (
+            COALESCE(permissions, '[]'::jsonb) @> jsonb_build_array(p_permission)
+            OR COALESCE(permissions, '[]'::jsonb) @> jsonb_build_array('*')
+        )
         AND (expires_at IS NULL OR expires_at > NOW())
     );
 END;
@@ -93,28 +110,29 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 CREATE OR REPLACE FUNCTION public.get_user_permissions(p_user_id UUID)
 RETURNS JSONB AS $$
 DECLARE
-    v_result JSONB;
+    v_role RECORD;
 BEGIN
-    SELECT jsonb_build_object(
-        'is_super_admin', EXISTS (
-            SELECT 1 FROM auth.users 
-            WHERE id = p_user_id 
-            AND email IN ('fjivvid@163.com', 'zaoyoe@gmail.com')
-        ),
-        'is_admin', EXISTS (
-            SELECT 1 FROM public.admin_roles 
-            WHERE user_id = p_user_id
-            AND (expires_at IS NULL OR expires_at > NOW())
-        ),
-        'role', (SELECT role_name FROM public.admin_roles WHERE user_id = p_user_id),
-        'permissions', COALESCE(
-            (SELECT permissions FROM public.admin_roles WHERE user_id = p_user_id),
-            '[]'::jsonb
-        ),
-        'expires_at', (SELECT expires_at FROM public.admin_roles WHERE user_id = p_user_id)
-    ) INTO v_result;
-    
-    RETURN v_result;
+    SELECT
+        role_name,
+        COALESCE(permissions, '[]'::jsonb) AS permissions,
+        expires_at
+    INTO v_role
+    FROM public.admin_roles
+    WHERE user_id = p_user_id
+      AND (expires_at IS NULL OR expires_at > NOW())
+    ORDER BY
+        CASE WHEN role_name = 'super_admin' THEN 0 ELSE 1 END,
+        granted_at DESC NULLS LAST,
+        created_at DESC NULLS LAST
+    LIMIT 1;
+
+    RETURN jsonb_build_object(
+        'is_super_admin', COALESCE(v_role.role_name = 'super_admin' OR v_role.permissions @> jsonb_build_array('*'), FALSE),
+        'is_admin', v_role.role_name IS NOT NULL,
+        'role', v_role.role_name,
+        'permissions', COALESCE(v_role.permissions, '[]'::jsonb),
+        'expires_at', v_role.expires_at
+    );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 

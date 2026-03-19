@@ -26,16 +26,8 @@ let aiInsightCacheTime = 0;
 const AI_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 let aiInsightDebounce = false;
 
-// Helper: Get Gemini API Key (same format as admin-studio.js)
-function getGeminiApiKey() {
-    const storedKeys = JSON.parse(localStorage.getItem('gemini_api_keys') || '[]');
-    const activeIndex = parseInt(localStorage.getItem('gemini_active_key_index') || '0');
-
-    if (storedKeys.length > 0 && storedKeys[activeIndex]) {
-        const keyEntry = storedKeys[activeIndex];
-        return typeof keyEntry === 'object' ? keyEntry.key : keyEntry;
-    }
-    return null;
+function hasAdminAI() {
+    return Boolean(window.AdminAI?.configured);
 }
 
 // Chart theme colors
@@ -525,9 +517,16 @@ async function generateAIInsight() {
     }
 
     // Check for API key (use same format as admin-studio.js)
-    const apiKey = getGeminiApiKey();
-    if (!apiKey) {
-        content.innerHTML = '<p class="ai-error">请先在设置中配置 Gemini API Key</p>';
+    if (!hasAdminAI()) {
+        try {
+            await window.AdminAI?.checkHealth?.();
+        } catch (err) {
+            console.warn('[Analytics] AI proxy health check failed:', err);
+        }
+    }
+
+    if (!hasAdminAI()) {
+        content.innerHTML = '<p class="ai-error">请先在 Vercel 环境变量中配置 GEMINI_API_KEY</p>';
         return;
     }
 
@@ -579,28 +578,20 @@ ${JSON.stringify(data.channel_breakdown || [], null, 2)}
 
 请用简洁的要点形式，每条不超过一行。`;
 
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }]
-            })
+        const text = await window.AdminAI.generateText(prompt, {
+            model: 'gemini-2.0-flash',
+            generationConfig: {
+                temperature: 0.4,
+                maxOutputTokens: 2048
+            }
         });
 
-        if (!response.ok) {
-            const errData = await response.json();
-            throw new Error(errData.error?.message || `API 错误 ${response.status}`);
-        }
-
-        const result = await response.json();
-        const text = result.candidates?.[0]?.content?.parts?.[0]?.text || '分析失败，请重试';
-
         // Cache the result
-        aiInsightCache = text;
+        aiInsightCache = text || '分析失败，请重试';
         aiInsightCacheTime = Date.now();
 
         // Format and display
-        content.innerHTML = `<div class="ai-report">${formatAIResponse(text)}</div>`;
+        content.innerHTML = `<div class="ai-report">${formatAIResponse(aiInsightCache)}</div>`;
 
     } catch (err) {
         console.error('[Analytics] AI insight error:', err);
@@ -614,10 +605,17 @@ ${JSON.stringify(data.channel_breakdown || [], null, 2)}
 
 // Helper: Format AI Response
 function formatAIResponse(text) {
-    return text
+    const escaped = escapeHtml(text || '');
+    return escaped
         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
         .replace(/\n/g, '<br>')
         .replace(/^(\d+)\./gm, '<span class="ai-number">$1.</span>');
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 // Helper: Format Number
@@ -1614,9 +1612,16 @@ async function loadAIPrediction() {
     const container = document.getElementById('aiPredictionContent');
     if (!container) return;
 
-    const apiKey = getGeminiApiKey();
-    if (!apiKey) {
-        container.innerHTML = '<p class="ai-error">请先配置 Gemini API Key</p>';
+    if (!hasAdminAI()) {
+        try {
+            await window.AdminAI?.checkHealth?.();
+        } catch (err) {
+            console.warn('[Analytics] AI proxy health check failed:', err);
+        }
+    }
+
+    if (!hasAdminAI()) {
+        container.innerHTML = '<p class="ai-error">请先在 Vercel 环境变量中配置 GEMINI_API_KEY</p>';
         return;
     }
 
@@ -1632,17 +1637,16 @@ async function loadAIPrediction() {
 
 数据：${JSON.stringify(data.map(d => d.new_users))}`;
 
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+        const text = await window.AdminAI.generateText(prompt, {
+            model: 'gemini-2.0-flash',
+            generationConfig: {
+                temperature: 0.2,
+                maxOutputTokens: 512
+            }
         });
 
-        const result = await response.json();
-        const text = result.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
-
         // Parse prediction
-        const match = text.match(/\[[\d,\s]+\]/);
+        const match = (text || '[]').match(/\[[\d,\s]+\]/);
         if (match) {
             const predictions = JSON.parse(match[0]);
             container.innerHTML = `
@@ -1672,7 +1676,9 @@ let geoChart = null;
 
 async function loadGeoDistribution() {
     try {
-        const { data, error } = await supabaseClient.rpc('get_geo_distribution');
+        const { data, error } = await supabaseClient.rpc('get_geo_distribution_by_site', {
+            p_site: getAnalyticsSiteParam()
+        });
 
         if (error) throw error;
 
@@ -1737,6 +1743,9 @@ const TrackingSDK = {
     },
 
     generateSessionId() {
+        if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+            return `sess_${crypto.randomUUID()}`;
+        }
         return 'sess_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     },
 
@@ -1969,46 +1978,43 @@ async function showABResults(experimentId, experimentName, variants) {
     chartContainer.style.display = 'block';
     if (chartTitle) chartTitle.textContent = `${experimentName} - 结果对比`;
 
-    // Fetch assignment counts
     try {
-        const { data: assignments, error } = await supabaseClient
-            .from('ab_assignments')
-            .select('variant_name')
-            .eq('experiment_id', experimentId);
+        const { data: results, error } = await supabaseClient.rpc('get_experiment_results', {
+            p_experiment_id: experimentId
+        });
 
         if (error) throw error;
 
-        // Count by variant
-        const variantCounts = {};
-        (variants || []).forEach(v => {
-            variantCounts[v.name] = 0;
+        const normalizedResults = Array.isArray(results) ? results : [];
+        const variantMap = new Map();
+
+        (variants || []).forEach((variant) => {
+            if (!variant?.name) return;
+            variantMap.set(variant.name, {
+                variant_name: variant.name,
+                user_count: 0,
+                conversion_count: 0,
+                conversion_rate: 0
+            });
         });
 
-        (assignments || []).forEach(a => {
-            if (variantCounts.hasOwnProperty(a.variant_name)) {
-                variantCounts[a.variant_name]++;
+        normalizedResults.forEach((row) => {
+            if (row?.variant_name) {
+                variantMap.set(row.variant_name, row);
             }
         });
 
-        const labels = Object.keys(variantCounts);
-        const assignedData = Object.values(variantCounts);
-
-        // Generate simulated conversion data (since no real event tracking yet)
-        // In production, this would query user_events table
-        const conversionData = assignedData.map(count => {
-            // Simulate conversion rate between 10-30%
-            const rate = 0.1 + Math.random() * 0.2;
-            return Math.round(count * rate);
-        });
-
-        const conversionRates = assignedData.map((count, i) => {
-            return count > 0 ? Math.round((conversionData[i] / count) * 100) : 0;
-        });
+        const labels = Array.from(variantMap.keys());
+        const assignedData = labels.map((label) => Number(variantMap.get(label)?.user_count || 0));
+        const conversionData = labels.map((label) => Number(variantMap.get(label)?.conversion_count || 0));
+        const conversionRates = labels.map((label) => Number(variantMap.get(label)?.conversion_rate || 0));
 
         // Destroy previous chart
         if (abCompareChartInstance) {
             abCompareChartInstance.destroy();
         }
+
+        chartContainer.querySelectorAll('.ab-results-summary').forEach((node) => node.remove());
 
         // Create chart with multiple datasets
         const ctx = canvas.getContext('2d');
@@ -2069,9 +2075,16 @@ async function showABResults(experimentId, experimentName, variants) {
         const summaryEl = document.createElement('div');
         summaryEl.className = 'ab-results-summary';
         summaryEl.innerHTML = labels.map((label, i) =>
-            `<div class="summary-item"><span class="variant-name">${label}</span><span class="conversion-rate">${conversionRates[i]}%</span></div>`
+            `<div class="summary-item"><span class="variant-name">${escapeHtml(label)}</span><span class="conversion-rate">${conversionRates[i]}%</span></div>`
         ).join('');
         chartContainer.appendChild(summaryEl);
+
+        if (conversionData.every((value) => value === 0)) {
+            const emptyState = document.createElement('div');
+            emptyState.className = 'ab-results-summary';
+            emptyState.innerHTML = '<div class="summary-item"><span class="variant-name">当前还没有匹配到真实转化事件</span><span class="conversion-rate">0%</span></div>';
+            chartContainer.appendChild(emptyState);
+        }
 
     } catch (err) {
         console.error('[A/B] Results error:', err);

@@ -24,12 +24,8 @@ ALTER TABLE public.system_config ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Admins can manage config" ON public.system_config;
 CREATE POLICY "Admins can manage config" ON public.system_config
     FOR ALL TO authenticated
-    USING (
-        EXISTS (
-            SELECT 1 FROM public.profiles 
-            WHERE id = auth.uid() AND email IN ('fjivvid@163.com', 'zaoyoe@gmail.com')
-        )
-    );
+    USING (public.is_admin())
+    WITH CHECK (public.is_admin());
 
 -- 所有认证用户可读取（前端需要读取定价信息）
 DROP POLICY IF EXISTS "Authenticated users can read config" ON public.system_config;
@@ -205,15 +201,8 @@ CREATE OR REPLACE FUNCTION update_system_config(
 )
 RETURNS BOOLEAN AS $$
 DECLARE
-    v_is_admin BOOLEAN;
 BEGIN
-    -- 检查管理员权限
-    SELECT EXISTS (
-        SELECT 1 FROM public.profiles 
-        WHERE id = auth.uid() AND email IN ('fjivvid@163.com', 'zaoyoe@gmail.com')
-    ) INTO v_is_admin;
-    
-    IF NOT v_is_admin THEN
+    IF NOT public.is_admin() THEN
         RAISE EXCEPTION 'Permission denied';
     END IF;
     
@@ -224,6 +213,17 @@ BEGIN
         config_value = EXCLUDED.config_value,
         updated_by = EXCLUDED.updated_by,
         updated_at = EXCLUDED.updated_at;
+
+    BEGIN
+        INSERT INTO public.admin_audit_logs (admin_id, action_type, details)
+        VALUES (
+            auth.uid(),
+            'system_config.update',
+            jsonb_build_object('config_key', p_key, 'config_value', p_value)
+        );
+    EXCEPTION WHEN OTHERS THEN
+        NULL;
+    END;
     
     RETURN TRUE;
 END;

@@ -360,6 +360,18 @@ const AdminTickets = {
         modal.querySelector('.modal-title').textContent = newStatus === 'RESOLVED' ? '解决工单' : '拒绝工单';
     },
 
+    getAdminAuthHeaders: async function () {
+        if (window.AdminAI?.getAuthHeaders) {
+            return window.AdminAI.getAuthHeaders();
+        }
+
+        const { data: { session } = {} } = await window.supabaseClient.auth.getSession();
+        return {
+            'Content-Type': 'application/json',
+            ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {})
+        };
+    },
+
     submitReply: async function () {
         const ticketId = document.getElementById('replyTicketId').value;
         const newStatus = document.getElementById('replyNewStatus').value;
@@ -377,83 +389,21 @@ const AdminTickets = {
         btn.innerHTML = '处理中...';
 
         try {
-            const ticket = this.tickets.find(t => t.id === ticketId);
-            if (!ticket) throw new Error("找不到该工单数据");
-
-            // Option: Automatic refund via points_balance + points_ledger
-            if (doRefund) {
-                // Get refund amount from shop_orders
-                const { data: orderData, error: orderErr } = await window.supabaseClient
-                    .from('shop_orders')
-                    .select('total_price')
-                    .eq('id', ticket.order_id)
-                    .single();
-
-                if (orderErr) throw new Error("未找到对应的订单号来提取退款积分额: " + orderErr.message);
-                const refundAmount = orderData.total_price;
-
-                if (refundAmount > 0) {
-                    // Read current balance, then update
-                    const { data: balData, error: balErr } = await window.supabaseClient
-                        .from('points_balance')
-                        .select('bonus_balance')
-                        .eq('user_id', ticket.user_id)
-                        .single();
-
-                    if (balErr) throw new Error("无法读取用户积分余额: " + balErr.message);
-
-                    const newBalance = (balData.bonus_balance || 0) + refundAmount;
-                    const { error: updateErr } = await window.supabaseClient
-                        .from('points_balance')
-                        .update({ bonus_balance: newBalance, updated_at: new Date().toISOString() })
-                        .eq('user_id', ticket.user_id);
-                    if (updateErr) throw new Error("退款失败: " + updateErr.message);
-
-                    // Log in points_ledger
-                    await window.supabaseClient.from('points_ledger').insert({
-                        user_id: ticket.user_id,
-                        amount: refundAmount,
-                        reason: `工单退款 (订单号: ${ticket.order_id.substring(0, 8)})`,
-                        reference_id: 'TICKET_REFUND_' + ticketId.substring(0, 8)
-                    });
-                }
-            }
-
-            // Update ticket status (column is admin_notes, not admin_reply)
-            const { data: updateData, error: tUpdateErr } = await window.supabaseClient
-                .from('shop_tickets')
-                .update({
-                    status: newStatus,
-                    admin_notes: adminReply || null,
-                    updated_at: new Date().toISOString()
+            const headers = await this.getAdminAuthHeaders();
+            const response = await fetch('/api/admin/tickets/process', {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                    ticketId,
+                    newStatus,
+                    adminReply,
+                    doRefund
                 })
-                .eq('id', ticketId)
-                .select(); // Ensure we get the updated row back
+            });
 
-            if (tUpdateErr) throw tUpdateErr;
-            if (!updateData || updateData.length === 0) {
-                throw new Error("更新失败：工单不存在或您没有管理员权限修改它");
-            }
-
-            // Notify User via existing notification system
-            const notifTitle = newStatus === 'RESOLVED' ? '工单已解决' : '工单已被拒绝';
-            const notifType = newStatus === 'RESOLVED' ? 'success' : 'warning';
-            let notifContent = `您的提问 (订单ID: ${ticket.order_id.substring(0, 8)}) 已经处理完毕。\n`;
-            if (adminReply) {
-                notifContent += `管理员回复: ${adminReply}`;
-            }
-
-            // Insert notification without throwing on error (non-critical)
-            try {
-                await window.supabaseClient.from('system_notifications').insert({
-                    user_id: ticket.user_id,
-                    title: notifTitle,
-                    content: notifContent,
-                    type: notifType,
-                    is_read: false
-                });
-            } catch (notifErr) {
-                console.warn("Failed to insert user notification:", notifErr);
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok || !result.success) {
+                throw new Error(result.message || '工单处理失败');
             }
 
             // Close modal

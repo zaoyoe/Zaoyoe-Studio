@@ -5,8 +5,8 @@
     "trailingSlash": false,
     "rewrites": [
         {
-            "source": "/api/:match*",
-            "destination": "https://q6nh03pq.api.lncldglobal.com/:match*"
+            "source": "/api/:path*",
+            "destination": "/api/:path*"
         },
         {
             "source": "/(.*)",
@@ -26,8 +26,28 @@
                     "value": "DENY"
                 },
                 {
-                    "key": "X-XSS-Protection",
-                    "value": "1; mode=block"
+                    "key": "Referrer-Policy",
+                    "value": "strict-origin-when-cross-origin"
+                },
+                {
+                    "key": "Permissions-Policy",
+                    "value": "camera=(), microphone=(), geolocation=()"
+                },
+                {
+                    "key": "Strict-Transport-Security",
+                    "value": "max-age=31536000; includeSubDomains; preload"
+                },
+                {
+                    "key": "Cross-Origin-Opener-Policy",
+                    "value": "same-origin-allow-popups"
+                },
+                {
+                    "key": "Cross-Origin-Resource-Policy",
+                    "value": "cross-origin"
+                },
+                {
+                    "key": "Content-Security-Policy",
+                    "value": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://cdn.sheetjs.com https://accounts.google.com https://www.gstatic.com; connect-src 'self' https://auth.zaoyoe.com https://mmkugdibsaeoevliebzk.supabase.co https://*.supabase.co wss://auth.zaoyoe.com wss://mmkugdibsaeoevliebzk.supabase.co wss://*.supabase.co https://zaoyoe-verify-server-production.up.railway.app https://iqless.icu https://ipinfo.io https://ipwho.is https://ipapi.co https://api.ipify.org https://api.qrserver.com https://accounts.google.com; frame-src https://accounts.google.com;"
                 },
                 {
                     "key": "Cache-Control",

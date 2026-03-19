@@ -50,9 +50,8 @@ CREATE POLICY "Public read homepage config"
 -- 仅管理员可写
 CREATE POLICY "Admins manage homepage config" 
     ON homepage_config FOR ALL 
-    USING (
-        (auth.jwt() ->> 'email') IN ('fjivvid@163.com', 'zaoyoe@gmail.com')
-    );
+    USING (public.is_admin())
+    WITH CHECK (public.is_admin());
 
 -- 初始化默认配置
 INSERT INTO homepage_config (section, content, display_order) VALUES
@@ -122,6 +121,41 @@ CREATE TRIGGER trigger_update_homepage_config_timestamp
     BEFORE UPDATE ON homepage_config
     FOR EACH ROW
     EXECUTE FUNCTION update_homepage_config_timestamp();
+
+CREATE OR REPLACE FUNCTION audit_homepage_config_changes()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF auth.uid() IS NOT NULL AND public.is_admin() THEN
+        BEGIN
+            INSERT INTO public.admin_audit_logs (admin_id, action_type, details)
+            VALUES (
+                auth.uid(),
+                CASE TG_OP
+                    WHEN 'INSERT' THEN 'homepage_config.create'
+                    WHEN 'DELETE' THEN 'homepage_config.delete'
+                    ELSE 'homepage_config.update'
+                END,
+                jsonb_build_object(
+                    'section', COALESCE(NEW.section, OLD.section),
+                    'operation', TG_OP,
+                    'old', CASE WHEN TG_OP = 'INSERT' THEN NULL ELSE to_jsonb(OLD) END,
+                    'new', CASE WHEN TG_OP = 'DELETE' THEN NULL ELSE to_jsonb(NEW) END
+                )
+            );
+        EXCEPTION WHEN OTHERS THEN
+            NULL;
+        END;
+    END IF;
+
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS trigger_audit_homepage_config_changes ON homepage_config;
+CREATE TRIGGER trigger_audit_homepage_config_changes
+    AFTER INSERT OR UPDATE OR DELETE ON homepage_config
+    FOR EACH ROW
+    EXECUTE FUNCTION audit_homepage_config_changes();
 
 -- 辅助函数：获取公开配置（供前端使用）
 CREATE OR REPLACE FUNCTION fn_get_homepage_config()

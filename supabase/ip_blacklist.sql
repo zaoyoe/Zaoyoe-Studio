@@ -27,12 +27,8 @@ DROP POLICY IF EXISTS "Admins can manage ip_blacklist" ON public.ip_blacklist;
 
 CREATE POLICY "Admins can manage ip_blacklist" ON public.ip_blacklist
     FOR ALL TO authenticated
-    USING (
-        EXISTS (
-            SELECT 1 FROM public.profiles 
-            WHERE id = auth.uid() AND email IN ('fjivvid@163.com', 'zaoyoe@gmail.com')
-        )
-    );
+    USING (public.is_admin())
+    WITH CHECK (public.is_admin());
 
 -- 3. Check if IP is blacklisted (supports manual list + auto-blocked + CIDR)
 CREATE OR REPLACE FUNCTION public.check_ip_blacklisted(client_ip TEXT)
@@ -166,15 +162,8 @@ RETURNS BOOLEAN
 LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
-DECLARE
-    v_is_admin BOOLEAN;
 BEGIN
-    SELECT EXISTS (
-        SELECT 1 FROM public.profiles 
-        WHERE id = auth.uid() AND email IN ('fjivvid@163.com', 'zaoyoe@gmail.com')
-    ) INTO v_is_admin;
-    
-    IF NOT v_is_admin THEN
+    IF NOT public.is_admin() THEN
         RAISE EXCEPTION 'Permission denied';
     END IF;
     
@@ -198,15 +187,8 @@ RETURNS BOOLEAN
 LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
-DECLARE
-    v_is_admin BOOLEAN;
 BEGIN
-    SELECT EXISTS (
-        SELECT 1 FROM public.profiles 
-        WHERE id = auth.uid() AND email IN ('fjivvid@163.com', 'zaoyoe@gmail.com')
-    ) INTO v_is_admin;
-    
-    IF NOT v_is_admin THEN
+    IF NOT public.is_admin() THEN
         RAISE EXCEPTION 'Permission denied';
     END IF;
     
@@ -229,6 +211,10 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
 BEGIN
+    IF NOT public.is_admin() THEN
+        RAISE EXCEPTION 'Permission denied';
+    END IF;
+
     RETURN QUERY
     SELECT 
         b.ip_address,
@@ -251,4 +237,3 @@ GRANT EXECUTE ON FUNCTION public.check_auto_blacklist_ip TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_add_ip_blacklist TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_remove_ip_blacklist TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_get_blocked_ips TO authenticated;
-

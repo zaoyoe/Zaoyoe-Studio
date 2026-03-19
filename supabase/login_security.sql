@@ -129,16 +129,8 @@ RETURNS BOOLEAN
 LANGUAGE plpgsql
 SECURITY DEFINER
 AS $func$
-DECLARE
-    v_is_admin BOOLEAN := FALSE;
 BEGIN
-    SELECT EXISTS(
-        SELECT 1 FROM public.profiles 
-        WHERE id = auth.uid() 
-        AND email IN ('fjivvid@163.com', 'zaoyoe@gmail.com')
-    ) INTO v_is_admin;
-    
-    IF NOT v_is_admin THEN
+    IF NOT public.is_super_admin() THEN
         RAISE EXCEPTION 'Unauthorized: only super admins can unlock accounts';
     END IF;
     
@@ -157,16 +149,9 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 AS $func$
 DECLARE
-    v_is_admin BOOLEAN := FALSE;
     v_count INTEGER := 0;
 BEGIN
-    SELECT EXISTS(
-        SELECT 1 FROM public.profiles 
-        WHERE id = auth.uid() 
-        AND email IN ('fjivvid@163.com', 'zaoyoe@gmail.com')
-    ) INTO v_is_admin;
-    
-    IF NOT v_is_admin THEN
+    IF NOT public.is_super_admin() THEN
         RAISE EXCEPTION 'Unauthorized: only super admins can unlock accounts';
     END IF;
     

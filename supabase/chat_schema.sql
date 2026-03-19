@@ -23,6 +23,19 @@ $$;
 
 grant execute on function public.current_chat_session_id() to anon, authenticated;
 
+create or replace function public.authenticated_chat_session_id(p_user_id uuid default auth.uid())
+returns text
+language sql
+stable
+as $$
+  select case
+    when p_user_id is null then null
+    else 'user_' || p_user_id::text
+  end;
+$$;
+
+grant execute on function public.authenticated_chat_session_id(uuid) to authenticated;
+
 -- Helper: safely evaluate admin status for both anon and authenticated requests
 create or replace function public.is_chat_admin()
 returns boolean
@@ -54,6 +67,10 @@ using (
     public.is_chat_admin()
     or (user_id is not null and auth.uid() = user_id)
     or (
+        auth.uid() is not null
+        and session_id = public.authenticated_chat_session_id()
+    )
+    or (
         coalesce(auth.jwt() ->> 'email', '') <> ''
         and lower(coalesce(session_id, '')) = lower(auth.jwt() ->> 'email')
     )
@@ -75,8 +92,7 @@ with check (
         is_admin = false
         and auth.uid() is not null
         and user_id = auth.uid()
-        and coalesce(auth.jwt() ->> 'email', '') <> ''
-        and lower(coalesce(session_id, '')) = lower(auth.jwt() ->> 'email')
+        and session_id = public.authenticated_chat_session_id()
     )
     or (
         is_admin = false
@@ -88,6 +104,6 @@ with check (
 );
 
 -- Realtime subscriptions now rely on:
--- 1. Authenticated users reading their own email-scoped sessions
+-- 1. Authenticated users reading their own user_id-scoped sessions
 -- 2. Guests carrying x-session-id in the browser Supabase client
 -- 3. Admins passing public.is_chat_admin()

@@ -6,9 +6,7 @@
 // ========================================
 // CONFIGURATION
 // ========================================
-const GEMINI_API_KEY = ''; // Will be set from environment or user input
 const GEMINI_MODEL = 'gemini-2.5-flash';
-const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
 // State
 let uploadedFiles = [];
@@ -33,6 +31,16 @@ function sanitizeImageUrl(url) {
     }
 
     return '';
+}
+
+async function auditPromptAction(actionType, details = {}) {
+    if (typeof window.logAdminAction !== 'function') return;
+
+    try {
+        await window.logAdminAction(actionType, null, details);
+    } catch (err) {
+        console.warn('Prompt audit log failed:', err);
+    }
 }
 
 // ========================================
@@ -490,7 +498,7 @@ async function editPrompt(id) {
             // Enable analyze button since we have images
             const analyzeBtn = document.getElementById('analyzeBtn');
             if (analyzeBtn) {
-                analyzeBtn.disabled = uploadedFiles.length === 0 || !window.GEMINI_API_KEY;
+                analyzeBtn.disabled = uploadedFiles.length === 0 || !window.AdminAI?.configured;
             }
         }
 
@@ -547,6 +555,7 @@ async function deletePrompt(id) {
         }
 
         console.log('Successfully deleted from database');
+        await auditPromptAction('prompt.delete', { prompt_id: id });
 
         // Remove from UI with animation
         const card = document.querySelector(`[data-id="${id}"]`);
@@ -579,185 +588,88 @@ async function deletePrompt(id) {
 
 // ========================================
 
-function checkApiKey() {
-    // Load API keys from localStorage
-    const storedKeys = JSON.parse(localStorage.getItem('gemini_api_keys') || '[]');
-    const activeIndex = parseInt(localStorage.getItem('gemini_active_key_index') || '0');
-
-    if (storedKeys.length > 0 && storedKeys[activeIndex]) {
-        const keyEntry = storedKeys[activeIndex];
-        // Handle both object format {name, key} and legacy string format
-        const apiKey = typeof keyEntry === 'object' ? keyEntry.key : keyEntry;
-
-        if (apiKey && typeof apiKey === 'string' && apiKey.length > 0) {
-            window.GEMINI_API_KEY = apiKey;
-            updateStatus('Ready', 'ready');
-            renderApiKeySelector();
-            console.log('✅ API Key loaded successfully');
-        } else {
-            console.warn('⚠️ Invalid API key format in localStorage');
-            promptForApiKey();
+async function checkApiKey() {
+    try {
+        if (!window.AdminAI) {
+            throw new Error('AdminAI client not loaded');
         }
-    } else {
-        promptForApiKey();
+
+        const payload = await window.AdminAI.checkHealth(true);
+        window.GEMINI_API_KEY = payload.configured ? '__server_proxy__' : '';
+
+        if (payload.configured) {
+            updateStatus('AI Proxy Ready', 'ready');
+        } else {
+            updateStatus('AI Proxy Missing', 'error');
+        }
+    } catch (err) {
+        console.warn('Failed to verify AI proxy:', err);
+        window.GEMINI_API_KEY = '';
+        updateStatus('AI Proxy Missing', 'error');
+    } finally {
+        renderApiKeySelector();
+        updateAnalyzeButton();
     }
 }
 
-
 function getApiKeys() {
-    return JSON.parse(localStorage.getItem('gemini_api_keys') || '[]');
+    return window.GEMINI_API_KEY ? [{ name: 'Server Proxy', key: '__server_proxy__' }] : [];
 }
 
 function getActiveKeyIndex() {
-    return parseInt(localStorage.getItem('gemini_active_key_index') || '0');
+    return 0;
 }
 
-function saveApiKeys(keys, activeIndex = 0) {
-    localStorage.setItem('gemini_api_keys', JSON.stringify(keys));
-    localStorage.setItem('gemini_active_key_index', activeIndex.toString());
-    if (keys[activeIndex]) {
-        const keyEntry = keys[activeIndex];
-        // Handle both object format {name, key} and legacy string format
-        window.GEMINI_API_KEY = typeof keyEntry === 'object' ? keyEntry.key : keyEntry;
-    }
+function saveApiKeys() {
+    return true;
 }
-
 
 function promptForApiKey() {
-    const key = prompt('请输入您的 Gemini API Key:\n(可从 https://aistudio.google.com 获取)');
-    if (key && key.trim()) {
-        const keys = getApiKeys();
-        const name = `Key ${keys.length + 1}`;
-        keys.push({ name, key: key.trim() });
-        saveApiKeys(keys, keys.length - 1);
-        updateStatus('Ready', 'ready');
-        showToast('API Key 已保存', 'success');
-        renderApiKeySelector();
-    } else if (getApiKeys().length === 0) {
-        updateStatus('No API Key', 'error');
-        showToast('需要 API Key 才能使用 AI 分析功能', 'error');
-    }
+    showToast('Gemini Key 已改为服务端托管，请在 Vercel 环境变量中设置 GEMINI_API_KEY。', 'info');
 }
 
-function switchApiKey(index) {
-    const keys = getApiKeys();
-    if (keys[index]) {
-        saveApiKeys(keys, index);
-        updateStatus('Ready', 'ready');
-        const keyEntry = keys[index];
-        const keyName = typeof keyEntry === 'object' ? keyEntry.name : `Key ${index + 1}`;
-        showToast(`已切换到 ${keyName}`, 'success');
-        renderApiKeySelector();
-    }
+function switchApiKey() {
+    showToast('当前只支持服务端统一 AI 代理。', 'info');
 }
-
 
 function addNewApiKey() {
-    const key = prompt('请输入新的 Gemini API Key:');
-    if (key && key.trim()) {
-        const keys = getApiKeys();
-        const name = prompt('为这个 Key 起个名字:', `Key ${keys.length + 1}`) || `Key ${keys.length + 1}`;
-        keys.push({ name, key: key.trim() });
-        saveApiKeys(keys, keys.length - 1);
-        showToast(`已添加 ${name}`, 'success');
-        renderApiKeySelector();
-    }
+    showToast('请在 Vercel 环境变量中新增或更新 GEMINI_API_KEY。', 'info');
 }
 
-function deleteApiKey(index) {
-    const keys = getApiKeys();
-    if (keys.length <= 1) {
-        showToast('至少需要保留一个 API Key', 'error');
-        return;
-    }
-    if (confirm(`确定删除 ${keys[index].name}?`)) {
-        keys.splice(index, 1);
-        const activeIndex = Math.min(getActiveKeyIndex(), keys.length - 1);
-        saveApiKeys(keys, activeIndex);
-        showToast('已删除', 'success');
-        renderApiKeySelector();
-    }
+function deleteApiKey() {
+    showToast('服务端托管密钥不能在浏览器中删除。', 'info');
 }
 
 function renderApiKeySelector() {
     const container = document.getElementById('apiKeySelector');
     const settingsList = document.getElementById('settingsApiKeysList');
-
-    const keys = getApiKeys();
-    const activeIndex = getActiveKeyIndex();
+    const isReady = Boolean(window.GEMINI_API_KEY);
 
     // Render header dropdown (simplified)
     if (container) {
-        if (keys.length === 0) {
-            container.innerHTML = `
-                <button class="api-key-btn add" onclick="promptForApiKey()">
-                    <i class="fas fa-plus"></i> 添加 API Key
+        container.innerHTML = `
+            <div class="api-key-dropdown">
+                <button class="api-key-current" type="button" onclick="promptForApiKey()">
+                    <i class="fas fa-shield-alt"></i>
+                    <span>${isReady ? 'Server Proxy' : 'AI Proxy 未配置'}</span>
                 </button>
-            `;
-        } else {
-            const activeKey = keys[activeIndex];
-            const activeKeyName = typeof activeKey === 'object' ? activeKey.name : `Key ${activeIndex + 1}`;
-
-            container.innerHTML = `
-                <div class="api-key-dropdown">
-                    <button class="api-key-current" onclick="toggleApiKeyDropdown()">
-                        <i class="fas fa-key"></i>
-                        <span>${activeKeyName}</span>
-                        <i class="fas fa-chevron-down"></i>
-                    </button>
-                    <div class="api-key-menu" id="apiKeyMenu">
-                        ${keys.map((k, i) => {
-                const keyName = typeof k === 'object' ? k.name : `Key ${i + 1}`;
-                const keyValue = typeof k === 'object' ? k.key : k;
-                const keyPreview = keyValue ? keyValue.slice(-6) : '???';
-                return `
-                            <div class="api-key-item ${i === activeIndex ? 'active' : ''}" onclick="switchApiKey(${i})">
-                                <span class="key-name">${keyName}</span>
-                                <span class="key-preview">...${keyPreview}</span>
-                                ${keys.length > 1 ? `<button class="key-delete" onclick="event.stopPropagation(); deleteApiKey(${i})"><i class="fas fa-times"></i></button>` : ''}
-                            </div>
-                        `}).join('')}
-                        <div class="api-key-item add" onclick="addNewApiKey()">
-                            <i class="fas fa-plus"></i> 添加新 Key
-                        </div>
-                    </div>
-                </div>
-            `;
-        }
+            </div>
+        `;
     }
 
     // Render settings page key list (full version)
     if (settingsList) {
-        if (keys.length === 0) {
-            settingsList.innerHTML = `<div class="empty-keys-hint">暂无 API Key，请添加</div>`;
-        } else {
-            settingsList.innerHTML = keys.map((k, i) => {
-                const keyName = typeof k === 'object' ? k.name : `Key ${i + 1}`;
-                const keyValue = typeof k === 'object' ? k.key : k;
-                const keyPreview = keyValue ? '••••••' + keyValue.slice(-6) : '???';
-                const isActive = i === activeIndex;
-
-                return `
-                    <div class="api-key-row ${isActive ? 'active' : ''}" data-index="${i}">
-                        <div class="key-info" onclick="switchApiKey(${i})">
-                            <span class="key-name-label">${keyName}</span>
-                            <span class="key-preview-label">${keyPreview}</span>
-                        </div>
-                        <div class="key-actions">
-                            ${isActive ? '<span class="key-active-badge">当前使用</span>' : ''}
-                            <button class="btn-icon" onclick="editApiKeyName(${i})" title="重命名">
-                                <i class="fas fa-edit"></i>
-                            </button>
-                            ${keys.length > 1 ? `
-                                <button class="btn-icon delete" onclick="deleteApiKey(${i})" title="删除">
-                                    <i class="fas fa-trash"></i>
-                                </button>
-                            ` : ''}
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        }
+        settingsList.innerHTML = `
+            <div class="api-key-row active" data-index="0">
+                <div class="key-info" onclick="promptForApiKey()">
+                    <span class="key-name-label">Server Proxy</span>
+                    <span class="key-preview-label">${isReady ? '由 Vercel 环境变量托管' : '请配置 GEMINI_API_KEY'}</span>
+                </div>
+                <div class="key-actions">
+                    <span class="key-active-badge">${isReady ? '当前使用' : '待配置'}</span>
+                </div>
+            </div>
+        `;
     }
 
     // Update API status in settings page
@@ -766,42 +678,24 @@ function renderApiKeySelector() {
         const dot = apiStatus.querySelector('.status-dot');
         const text = apiStatus.querySelector('span:last-child');
 
-        if (keys.length > 0 && window.GEMINI_API_KEY) {
+        if (isReady) {
             dot.className = 'status-dot ready';
-            text.textContent = 'Ready';
+            text.textContent = 'Server AI Ready';
         } else {
             dot.className = 'status-dot error';
-            text.textContent = '未配置 API Key';
+            text.textContent = '未配置 GEMINI_API_KEY';
         }
     }
 }
 
 // Edit API key name
-function editApiKeyName(index) {
-    const keys = getApiKeys();
-    if (!keys[index]) return;
-
-    const currentName = typeof keys[index] === 'object' ? keys[index].name : `Key ${index + 1}`;
-    const newName = prompt('重命名 API Key:', currentName);
-
-    if (newName && newName.trim()) {
-        if (typeof keys[index] === 'object') {
-            keys[index].name = newName.trim();
-        } else {
-            keys[index] = { name: newName.trim(), key: keys[index] };
-        }
-        saveApiKeys(keys, getActiveKeyIndex());
-        renderApiKeySelector();
-        showToast('已重命名', 'success');
-    }
+function editApiKeyName() {
+    showToast('服务端托管密钥名称不可在浏览器中修改。', 'info');
 }
 
 
 function toggleApiKeyDropdown() {
-    const menu = document.getElementById('apiKeyMenu');
-    if (menu) {
-        menu.classList.toggle('show');
-    }
+    promptForApiKey();
 }
 
 // Close dropdown when clicking outside
@@ -1149,7 +1043,7 @@ function removeFile(index) {
 
 function updateAnalyzeButton() {
     const btn = document.getElementById('analyzeBtn');
-    btn.disabled = uploadedFiles.length === 0 || !window.GEMINI_API_KEY;
+    btn.disabled = uploadedFiles.length === 0 || !window.AdminAI?.configured;
 }
 
 // ========================================
@@ -1160,10 +1054,9 @@ document.getElementById('analyzeBtn').addEventListener('click', analyzeImages);
 async function analyzeImages() {
     if (uploadedFiles.length === 0) return;
 
-    // 检查 API Key
-    if (!window.GEMINI_API_KEY) {
-        showToast('请先设置 API Key', 'error');
-        promptForApiKey();
+    if (!window.AdminAI?.configured) {
+        showToast('请先在 Vercel 环境变量中配置 GEMINI_API_KEY', 'error');
+        await checkApiKey();
         return;
     }
 
@@ -1253,37 +1146,26 @@ async function callGeminiVision(imageBase64) {
 
 IMPORTANT: Return ONLY valid JSON, no markdown formatting, no code blocks, no explanation.`;
 
-    const response = await fetch(`${GEMINI_API_URL}?key=${window.GEMINI_API_KEY}`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-            contents: [{
-                parts: [
-                    { text: analysisPrompt },
-                    {
-                        inline_data: {
-                            mime_type: 'image/jpeg',
-                            data: imageBase64
-                        }
+    const response = await window.AdminAI.generate({
+        model: GEMINI_MODEL,
+        contents: [{
+            parts: [
+                { text: analysisPrompt },
+                {
+                    inline_data: {
+                        mime_type: 'image/jpeg',
+                        data: imageBase64
                     }
-                ]
-            }],
-            generationConfig: {
-                temperature: 0.7,
-                maxOutputTokens: 4096
-            }
-        })
+                }
+            ]
+        }],
+        generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 4096
+        }
     });
 
-    if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error?.message || 'API request failed');
-    }
-
-    const data = await response.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    const text = window.AdminAI.extractText(response);
 
     if (!text) {
         throw new Error('No response from Gemini');
@@ -1464,7 +1346,7 @@ async function savePrompt(e) {
         }
 
         // Auto-translate missing bilingual fields using PromptTranslator
-        if (window.PromptTranslator && window.GEMINI_API_KEY) {
+        if (window.PromptTranslator && window.AdminAI?.configured) {
             try {
                 // Show translation UI feedback
                 updateStatus('Translating...', 'processing');
@@ -1555,6 +1437,14 @@ async function savePrompt(e) {
                     .update(updateData)
                     .eq('id', editingId)
                     .select());
+
+                if (!error) {
+                    await auditPromptAction('prompt.update', {
+                        prompt_id: editingId,
+                        title: updateData.title,
+                        tags: updateData.tags || []
+                    });
+                }
             } else {
                 // INSERT new prompt
                 ({ data, error } = await supabaseClient
@@ -1576,6 +1466,14 @@ async function savePrompt(e) {
                         prompt_text_zh: promptData.prompt_text_zh
                     }])
                     .select());
+
+                if (!error) {
+                    await auditPromptAction('prompt.create', {
+                        prompt_id: data?.[0]?.id || null,
+                        title: promptData.title,
+                        tags: promptData.tags || []
+                    });
+                }
             }
 
             if (error) throw error;
@@ -1862,10 +1760,10 @@ function updateStatus(text, state) {
     if (state === 'processing') dot.classList.add('processing');
     if (state === 'error') dot.classList.add('error');
 
-    // Make status clickable when no API key
-    if (text === 'No API Key') {
+    // Make status clickable when AI proxy is unavailable
+    if (text === 'AI Proxy Missing') {
         statusEl.classList.add('clickable');
-        statusEl.title = '点击添加 API Key';
+        statusEl.title = '点击查看服务端 AI 配置说明';
         statusEl.onclick = () => promptForApiKey();
     } else {
         statusEl.classList.remove('clickable');
@@ -2224,9 +2122,9 @@ const originalFormSubmit = document.getElementById('promptForm')?.onsubmit;
 // ========================================
 async function startBatchReanalyze() {
     // Check API key first
-    if (!window.GEMINI_API_KEY) {
-        showToast('请先设置 API Key', 'error');
-        promptForApiKey();
+    if (!window.AdminAI?.configured) {
+        showToast('请先在 Vercel 环境变量中配置 GEMINI_API_KEY', 'error');
+        await checkApiKey();
         return;
     }
 
@@ -2945,8 +2843,6 @@ const COLOR_MAP = {
 };
 
 // Gemini API for semantic search
-const GEMINI_2_0_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
-
 /**
  * Normalize prompt data from Supabase format
  * Handles field name differences (ai_tags vs aiTags, dominant_colors vs dominantColors)
@@ -3171,10 +3067,8 @@ function performLocalSearch(query, searchingForColor) {
 async function performAISemanticSearch(query) {
     const matchedIds = new Set();
 
-    // Get API key
-    const apiKey = window.GEMINI_API_KEY;
-    if (!apiKey) {
-        console.log('⚠️ No Gemini API key available for semantic search');
+    if (!window.AdminAI?.configured) {
+        console.log('⚠️ No server AI proxy available for semantic search');
         return matchedIds;
     }
 
@@ -3188,24 +3082,14 @@ Consider: art styles, moods, subjects, colors, techniques, scenes.
 Return ONLY a JSON array of lowercase tags, no explanation:
 ["tag1", "tag2", ...]`;
 
-        const response = await fetch(`${GEMINI_2_0_URL}?key=${apiKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: {
-                    temperature: 0.3,
-                    maxOutputTokens: 256
-                }
-            })
+        let text = await window.AdminAI.generateText(prompt, {
+            model: 'gemini-2.0-flash',
+            generationConfig: {
+                temperature: 0.3,
+                maxOutputTokens: 256
+            }
         });
-
-        if (!response.ok) {
-            throw new Error(`API error: ${response.status}`);
-        }
-
-        const data = await response.json();
-        let text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+        text = text?.trim();
 
         if (!text) return matchedIds;
 

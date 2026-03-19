@@ -70,8 +70,7 @@ CREATE POLICY "Admins manage products" ON shop_products FOR ALL USING (public.is
 
 -- Inventory: 管理员全权，用户只能看自己买到的
 CREATE POLICY "Admins manage inventory" ON shop_inventory FOR ALL USING (
-    public.is_admin() OR 
-    (auth.jwt() ->> 'email') IN ('fjivvid@163.com', 'zaoyoe@gmail.com')
+    public.is_admin()
 );
 CREATE POLICY "Users view purchased inventory" ON shop_inventory 
     FOR SELECT USING (buyer_id = auth.uid());
@@ -79,11 +78,12 @@ CREATE POLICY "Users view purchased inventory" ON shop_inventory
 -- Orders: 用户看自己的，管理员看所有
 CREATE POLICY "Users view own orders" ON shop_orders FOR SELECT USING (user_id = auth.uid());
 CREATE POLICY "Admins view all orders" ON shop_orders FOR SELECT USING (
-    public.is_admin() OR 
-    (auth.jwt() ->> 'email') IN ('fjivvid@163.com', 'zaoyoe@gmail.com')
+    public.is_admin()
 );
 
 -- Admin RPC to lookup order with content (bypasses RLS)
+DROP FUNCTION IF EXISTS fn_admin_lookup_order(UUID);
+
 CREATE OR REPLACE FUNCTION fn_admin_lookup_order(p_order_id UUID DEFAULT NULL)
 RETURNS TABLE (
     id UUID,
@@ -101,11 +101,7 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
 BEGIN
-    -- Check if caller is admin
-    IF NOT (
-        public.is_admin() OR 
-        (auth.jwt() ->> 'email') IN ('fjivvid@163.com', 'zaoyoe@gmail.com')
-    ) THEN
+    IF NOT public.is_admin() THEN
         RAISE EXCEPTION 'Access denied: Admin only';
     END IF;
 

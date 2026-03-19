@@ -28,7 +28,7 @@ CREATE POLICY "Users view own order items" ON shop_order_items FOR SELECT USING 
 
 DROP POLICY IF EXISTS "Admins view all order items" ON shop_order_items;
 CREATE POLICY "Admins view all order items" ON shop_order_items FOR SELECT USING (
-    public.is_admin() OR (auth.jwt() ->> 'email') IN ('fjivvid@163.com', 'zaoyoe@gmail.com')
+    public.is_admin()
 );
 
 -- 4. 升级 fn_purchase_shop_item 支持批量购买和阶梯定价

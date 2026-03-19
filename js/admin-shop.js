@@ -189,9 +189,8 @@ const ShopAdmin = {
 
     // Translate Chinese text to English using Gemini API
     translateToEnglish: async function (name, description) {
-        const apiKey = window.GEMINI_API_KEY;
-        if (!apiKey) {
-            console.warn('[ShopAdmin] No Gemini API key, skipping translation');
+        if (!window.AdminAI?.configured) {
+            console.warn('[ShopAdmin] No server AI proxy, skipping translation');
             return { name_en: null, description_en: null };
         }
 
@@ -204,20 +203,13 @@ Example output format:
 {"name": "English Name", "description": "English description"}`;
 
         try {
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    contents: [{ parts: [{ text: prompt }] }],
-                    generationConfig: { temperature: 0.1, maxOutputTokens: 500 }
-                })
+            const text = await window.AdminAI.generateText(prompt, {
+                model: 'gemini-2.0-flash',
+                generationConfig: { temperature: 0.1, maxOutputTokens: 500 }
             });
 
-            const data = await response.json();
-            const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-
             // Parse JSON from response
-            const jsonMatch = text.match(/\{[\s\S]*?\}/);
+            const jsonMatch = (text || '').match(/\{[\s\S]*?\}/);
             if (jsonMatch) {
                 const parsed = JSON.parse(jsonMatch[0]);
                 console.log('[ShopAdmin] Translation result:', parsed);
@@ -230,6 +222,37 @@ Example output format:
             console.error('[ShopAdmin] Translation failed:', err);
         }
         return { name_en: null, description_en: null };
+    },
+
+    getAdminAuthHeaders: async function () {
+        if (window.AdminAI?.getAuthHeaders) {
+            return window.AdminAI.getAuthHeaders();
+        }
+
+        const { data: { session } = {} } = await window.supabaseClient.auth.getSession();
+        return {
+            'Content-Type': 'application/json',
+            ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {})
+        };
+    },
+
+    callAdminMutation: async function (action, payload = {}) {
+        const headers = await this.getAdminAuthHeaders();
+        const response = await fetch('/api/admin/shop/mutate', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+                action,
+                ...payload
+            })
+        });
+
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result.success) {
+            throw new Error(result.message || '管理员接口调用失败');
+        }
+
+        return result;
     },
 
     // Category Filter Logic
@@ -1559,45 +1582,27 @@ Example output format:
             }
 
             try {
-                // If there's a pending new category, save it first
-                if (this.pendingCategory && payload.category === this.pendingCategory.name) {
-                    console.log('Saving pending category:', this.pendingCategory);
-                    const { error: catError } = await supabaseClient
-                        .from('shop_categories')
-                        .insert([{
-                            name: this.pendingCategory.name,
-                            color: this.pendingCategory.color,
-                            sort_order: (this.categoryData.length + 1) * 10
-                        }]);
-
-                    if (catError) {
-                        console.error('Failed to save new category:', catError);
-                        // Continue anyway, the product can still be saved with the category name
-                    }
-                }
-
-                let error;
+                let mutationResult;
                 if (id) {
                     const upsertPayload = this.buildExistingProductUpsertPayload(id, payload);
-                    const res = await supabaseClient
-                        .from('shop_products')
-                        .upsert(upsertPayload, { onConflict: 'id' })
-                        .select();
-                    error = res.error;
-                    console.log('[ShopAdmin] Upsert result:', res);
-                    if (!error && (!res.data || res.data.length === 0)) {
-                        throw new Error('更新失败：没有权限修改此商品，请确认您已登录管理员账号。\n(RLS policy blocked the update)');
-                    }
-                    if (!error && Array.isArray(res.data) && res.data[0]) {
-                        this.editingProductSnapshot = res.data[0];
+                    mutationResult = await this.callAdminMutation('upsert_product', {
+                        productId: id,
+                        payload: upsertPayload,
+                        pendingCategory: this.pendingCategory && payload.category === this.pendingCategory.name
+                            ? this.pendingCategory
+                            : null
+                    });
+                    if (mutationResult?.product) {
+                        this.editingProductSnapshot = mutationResult.product;
                     }
                 } else {
-                    const res = await supabaseClient.from('shop_products').insert(payload).select();
-                    error = res.error;
-                    console.log('[ShopAdmin] Insert result:', res);
+                    mutationResult = await this.callAdminMutation('upsert_product', {
+                        payload,
+                        pendingCategory: this.pendingCategory && payload.category === this.pendingCategory.name
+                            ? this.pendingCategory
+                            : null
+                    });
                 }
-
-                if (error) throw error;
 
                 // Clear pending category after successful save
                 this.pendingCategory = null;
@@ -1622,14 +1627,7 @@ Example output format:
         if (!confirm(`确定要删除商品 "${name}" 吗？\n商品将被下架但保留历史订单记录。`)) return;
 
         try {
-            // Soft delete: set is_active=false instead of hard delete
-            // This preserves order history (foreign key references)
-            const { error } = await supabaseClient
-                .from('shop_products')
-                .update({ is_active: false })
-                .eq('id', id);
-
-            if (error) throw error;
+            await this.callAdminMutation('soft_delete_product', { productId: id });
 
             alert('商品已删除');
             this.loadProducts();
@@ -1640,9 +1638,12 @@ Example output format:
 
     toggleStatus: async function (id, newStatus) {
         if (!confirm(`确定要${newStatus ? '上架' : '下架'} 该商品吗？`)) return;
-        const { error } = await supabaseClient.from('shop_products').update({ is_active: newStatus }).eq('id', id);
-        if (error) alert('Error: ' + error.message);
-        else this.loadProducts();
+        try {
+            await this.callAdminMutation('toggle_product', { productId: id, isActive: newStatus });
+            this.loadProducts();
+        } catch (err) {
+            alert('Error: ' + err.message);
+        }
     },
 
     // ==================== Inventory ====================
@@ -1724,37 +1725,17 @@ Example output format:
 
         const batchId = 'batch_' + Date.now();
         const importStatus = document.querySelector('input[name="importStatus"]:checked')?.value || 'available';
-        const inserts = lines.map(content => ({
-            product_id: this.selectedProductId,
-            content: content,
-            status: importStatus,
-            batch_id: batchId
-        }));
 
         try {
-            console.log(`[ShopAdmin] Importing ${inserts.length} items...`);
-            const { error } = await supabaseClient.from('shop_inventory').insert(inserts);
+            console.log(`[ShopAdmin] Importing ${lines.length} items...`);
+            await this.callAdminMutation('import_inventory', {
+                productId: this.selectedProductId,
+                lines,
+                importStatus,
+                batchId
+            });
 
-            if (error) {
-                console.error('[ShopAdmin] Insert Error:', error);
-                throw error;
-            }
-
-            // Sync stock_count: count actual available inventory
-            const { count, error: countError } = await supabaseClient
-                .from('shop_inventory')
-                .select('*', { count: 'exact', head: true })
-                .eq('product_id', this.selectedProductId)
-                .eq('status', 'available');
-
-            if (!countError) {
-                await supabaseClient
-                    .from('shop_products')
-                    .update({ stock_count: count || 0 })
-                    .eq('id', this.selectedProductId);
-            }
-
-            alert(`✅ 成功导入 ${inserts.length} 条库存`);
+            alert(`✅ 成功导入 ${lines.length} 条库存`);
 
             // Clear input
             input.value = '';
@@ -2523,12 +2504,9 @@ Example output format:
         if (!confirm(`确定删除这 ${selectedIds.length} 项库存吗？`)) return;
 
         try {
-            const { error } = await supabaseClient
-                .from('shop_inventory')
-                .delete()
-                .in('id', selectedIds);
-
-            if (error) throw error;
+            await this.callAdminMutation('inventory_batch_delete', {
+                inventoryIds: selectedIds
+            });
 
             // Refresh
             this.loadInventoryList(this.inventoryPage);
@@ -2861,8 +2839,7 @@ Example output format:
     deleteInventoryItem: async function (id) {
         if (!confirm('确定删除此库存项？')) return;
         try {
-            const { error } = await supabaseClient.from('shop_inventory').delete().eq('id', id);
-            if (error) throw error;
+            await this.callAdminMutation('inventory_delete', { inventoryId: id });
             this.loadInventoryList(this.inventoryPage);
         } catch (err) {
             alert('删除失败: ' + err.message);
@@ -2871,8 +2848,11 @@ Example output format:
 
     freezeInventoryItem: async function (id, freeze) {
         try {
-            const { error } = await supabaseClient.from('shop_inventory').update({ status: freeze ? 'frozen' : 'available' }).eq('id', id);
-            if (error) throw error;
+            await this.callAdminMutation('inventory_update_status', {
+                inventoryId: id,
+                status: freeze ? 'frozen' : 'available',
+                remark: freeze ? undefined : ''
+            });
             this.loadInventoryList(this.inventoryPage);
         } catch (err) {
             alert('操作失败: ' + err.message);
@@ -2881,8 +2861,11 @@ Example output format:
 
     releaseOne: async function (id) {
         try {
-            const { error } = await supabaseClient.from('shop_inventory').update({ status: 'available' }).eq('id', id);
-            if (error) throw error;
+            await this.callAdminMutation('inventory_update_status', {
+                inventoryId: id,
+                status: 'available',
+                remark: ''
+            });
             this.loadInventoryList(this.inventoryPage);
         } catch (err) {
             alert('上架失败: ' + err.message);
@@ -2984,15 +2967,11 @@ Example output format:
         }
 
         try {
-            const { error } = await supabaseClient
-                .from('shop_inventory')
-                .update({
-                    status: 'fault',
-                    remark: remark
-                })
-                .eq('id', itemId);
-
-            if (error) throw error;
+            await this.callAdminMutation('inventory_update_status', {
+                inventoryId: itemId,
+                status: 'fault',
+                remark
+            });
 
             document.getElementById('markFaultModal').remove();
 

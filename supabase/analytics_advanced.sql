@@ -180,7 +180,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- 基于 IP 的省份分布
 -- ============================================
 
-CREATE OR REPLACE FUNCTION get_geo_distribution()
+CREATE OR REPLACE FUNCTION get_geo_distribution_by_site(p_site VARCHAR DEFAULT NULL)
 RETURNS TABLE (
     region TEXT,
     user_count BIGINT,
@@ -191,15 +191,37 @@ DECLARE
 BEGIN
     PERFORM public.require_admin_access();
 
-    -- Note: This requires IP geo data in user_login_history
-    -- For now, return placeholder based on IP prefix patterns
-    SELECT COUNT(DISTINCT user_id) INTO v_total FROM public.user_login_history;
-    
+    SELECT COUNT(DISTINCT user_id) INTO v_total
+    FROM public.user_login_history
+    WHERE geo_info IS NOT NULL
+      AND (p_site IS NULL OR site = p_site);
+
+    IF v_total = 0 THEN
+        RETURN;
+    END IF;
+
     RETURN QUERY
     SELECT 
-        '未知地区'::TEXT as region,
-        v_total as user_count,
-        100.0::NUMERIC as percentage;
+        COALESCE(NULLIF(geo_info->>'region', ''), geo_info->>'country', '未知地区')::TEXT as region,
+        COUNT(DISTINCT user_id)::BIGINT as user_count,
+        ROUND(COUNT(DISTINCT user_id)::NUMERIC / NULLIF(v_total, 0) * 100, 1) as percentage
+    FROM public.user_login_history
+    WHERE geo_info IS NOT NULL
+      AND (p_site IS NULL OR site = p_site)
+    GROUP BY COALESCE(NULLIF(geo_info->>'region', ''), geo_info->>'country', '未知地区')
+    ORDER BY user_count DESC
+    LIMIT 10;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION get_geo_distribution()
+RETURNS TABLE (
+    region TEXT,
+    user_count BIGINT,
+    percentage NUMERIC
+) AS $$
+BEGIN
+    RETURN QUERY SELECT * FROM public.get_geo_distribution_by_site(NULL);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
@@ -210,4 +232,5 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 GRANT EXECUTE ON FUNCTION get_conversion_funnel(INTEGER) TO authenticated;
 GRANT EXECUTE ON FUNCTION get_retention_cohort(INTEGER) TO authenticated;
 GRANT EXECUTE ON FUNCTION get_points_flow(INTEGER) TO authenticated;
+GRANT EXECUTE ON FUNCTION get_geo_distribution_by_site(VARCHAR) TO authenticated;
 GRANT EXECUTE ON FUNCTION get_geo_distribution() TO authenticated;

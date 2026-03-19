@@ -16,9 +16,8 @@ const PromptTranslator = {
      * Translate Chinese text to English
      */
     translateToEnglish: async function (text) {
-        const apiKey = window.GEMINI_API_KEY;
-        if (!apiKey) {
-            console.warn('[PromptTranslator] No Gemini API key, skipping translation');
+        if (!window.AdminAI?.configured) {
+            console.warn('[PromptTranslator] No server AI proxy, skipping translation');
             return null;
         }
 
@@ -31,19 +30,13 @@ const PromptTranslator = {
 Text: ${text}`;
 
         try {
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    contents: [{ parts: [{ text: prompt }] }],
-                    generationConfig: { temperature: 0.1, maxOutputTokens: 1000 }
-                })
+            const translation = await window.AdminAI.generateText(prompt, {
+                model: 'gemini-2.0-flash',
+                generationConfig: { temperature: 0.1, maxOutputTokens: 1000 }
             });
-
-            const data = await response.json();
-            const translation = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null;
-            console.log('[PromptTranslator] EN translation:', translation);
-            return translation;
+            const normalized = translation?.trim() || null;
+            console.log('[PromptTranslator] EN translation:', normalized);
+            return normalized;
         } catch (err) {
             console.error('[PromptTranslator] Translation to English failed:', err);
             return null;
@@ -54,9 +47,8 @@ Text: ${text}`;
      * Translate English text to Chinese
      */
     translateToChinese: async function (text) {
-        const apiKey = window.GEMINI_API_KEY;
-        if (!apiKey) {
-            console.warn('[PromptTranslator] No Gemini API key, skipping translation');
+        if (!window.AdminAI?.configured) {
+            console.warn('[PromptTranslator] No server AI proxy, skipping translation');
             return null;
         }
 
@@ -69,19 +61,13 @@ Text: ${text}`;
 Text: ${text}`;
 
         try {
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    contents: [{ parts: [{ text: prompt }] }],
-                    generationConfig: { temperature: 0.1, maxOutputTokens: 1000 }
-                })
+            const translation = await window.AdminAI.generateText(prompt, {
+                model: 'gemini-2.0-flash',
+                generationConfig: { temperature: 0.1, maxOutputTokens: 1000 }
             });
-
-            const data = await response.json();
-            const translation = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null;
-            console.log('[PromptTranslator] ZH translation:', translation);
-            return translation;
+            const normalized = translation?.trim() || null;
+            console.log('[PromptTranslator] ZH translation:', normalized);
+            return normalized;
         } catch (err) {
             console.error('[PromptTranslator] Translation to Chinese failed:', err);
             return null;

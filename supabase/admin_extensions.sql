@@ -20,47 +20,17 @@ alter table public.admin_notes enable row level security;
 drop policy if exists "Admins can view all notes" on public.admin_notes;
 create policy "Admins can view all notes"
   on public.admin_notes for select
-  using (
-    exists (
-      select 1 from public.admin_roles
-      where user_id = auth.uid() and role_name = 'admin'
-    )
-    OR
-    exists (
-      select 1 from public.profiles
-      where id = auth.uid() and email in ('fjivvid@163.com', 'zaoyoe@gmail.com')
-    )
-  );
+  using (public.is_admin());
 
 drop policy if exists "Admins can insert notes" on public.admin_notes;
 create policy "Admins can insert notes"
   on public.admin_notes for insert
-  with check (
-    exists (
-      select 1 from public.admin_roles
-      where user_id = auth.uid() and role_name = 'admin'
-    )
-    OR
-    exists (
-      select 1 from public.profiles
-      where id = auth.uid() and email in ('fjivvid@163.com', 'zaoyoe@gmail.com')
-    )
-  );
+  with check (public.is_admin());
 
 drop policy if exists "Admins can delete notes" on public.admin_notes;
 create policy "Admins can delete notes"
   on public.admin_notes for delete
-  using (
-    exists (
-      select 1 from public.admin_roles
-      where user_id = auth.uid() and role_name = 'admin'
-    )
-    OR
-    exists (
-      select 1 from public.profiles
-      where id = auth.uid() and email in ('fjivvid@163.com', 'zaoyoe@gmail.com')
-    )
-  );
+  using (public.is_admin());
 
 -- VIEW: admin_notes_view (Joins with profiles for email)
 create or replace view public.admin_notes_view with (security_invoker = on) as
@@ -91,47 +61,17 @@ alter table public.admin_audit_logs enable row level security;
 drop policy if exists "Admins can view audit logs" on public.admin_audit_logs;
 create policy "Admins can view audit logs"
   on public.admin_audit_logs for select
-  using (
-    exists (
-      select 1 from public.admin_roles
-      where user_id = auth.uid() and role_name = 'admin'
-    )
-    OR
-    exists (
-      select 1 from public.profiles
-      where id = auth.uid() and email in ('fjivvid@163.com', 'zaoyoe@gmail.com')
-    )
-  );
+  using (public.is_admin());
 
 drop policy if exists "Admins can insert audit logs" on public.admin_audit_logs;
 create policy "Admins can insert audit logs"
   on public.admin_audit_logs for insert
-  with check (
-    exists (
-      select 1 from public.admin_roles
-      where user_id = auth.uid() and role_name = 'admin'
-    )
-    OR
-    exists (
-      select 1 from public.profiles
-      where id = auth.uid() and email in ('fjivvid@163.com', 'zaoyoe@gmail.com')
-    )
-  );
+  with check (public.is_admin());
 
 drop policy if exists "Admins can delete audit logs" on public.admin_audit_logs;
 create policy "Admins can delete audit logs"
   on public.admin_audit_logs for delete
-  using (
-    exists (
-      select 1 from public.admin_roles
-      where user_id = auth.uid() and role_name = 'admin'
-    )
-    OR
-    exists (
-      select 1 from public.profiles
-      where id = auth.uid() and email in ('fjivvid@163.com', 'zaoyoe@gmail.com')
-    )
-  );
+  using (public.is_super_admin());
 
 -- VIEW: admin_audit_logs_view
 create or replace view public.admin_audit_logs_view with (security_invoker = on) as
@@ -169,17 +109,7 @@ create policy "Users can view own notifications"
 drop policy if exists "Admins can send notifications" on public.system_notifications;
 create policy "Admins can send notifications"
   on public.system_notifications for insert
-  with check (
-    exists (
-      select 1 from public.admin_roles
-      where user_id = auth.uid() and role_name = 'admin'
-    )
-    OR
-    exists (
-      select 1 from public.profiles
-      where id = auth.uid() and email in ('fjivvid@163.com', 'zaoyoe@gmail.com')
-    )
-  );
+  with check (public.is_admin());
 
 drop policy if exists "Users can update own notifications" on public.system_notifications;
 create policy "Users can update own notifications"
@@ -215,6 +145,8 @@ left join public.profiles p on au.id = p.id;
 -- BUT auth.users is protected.
 -- Alternative: Create a function `get_admin_users()` that returns the data security definer.
 
+DROP FUNCTION IF EXISTS public.get_admin_users();
+
 CREATE OR REPLACE FUNCTION public.get_admin_users()
 RETURNS TABLE (
   id uuid,
@@ -227,14 +159,7 @@ RETURNS TABLE (
 SECURITY DEFINER
 AS $$
 BEGIN
-  -- Check if user is admin (using the existing admin check logic or simplified for now)
-  -- For now, we trust the caller has admin rights or we add a check here.
-  -- To keep it simple and robust:
-  IF NOT EXISTS (
-    SELECT 1 FROM public.admin_roles WHERE user_id = auth.uid() AND role_name = 'admin'
-    UNION 
-    SELECT 1 FROM public.profiles WHERE id = auth.uid() AND email IN ('fjivvid@163.com', 'zaoyoe@gmail.com')
-  ) THEN
+  IF NOT public.is_admin() THEN
     RAISE EXCEPTION 'Access denied';
   END IF;
 

@@ -4,6 +4,8 @@ class ChatWidget {
         this.isOpen = false;
         this.isVerifyPage = /(^|\/)verify(?:\.html)?\/?$/i.test(window.location.pathname || '');
         this.sessionId = this.getSessionId();
+        this.userSessionIds = [this.sessionId];
+        this.currentUser = null;
         this.supabase = window.supabaseClient; // Assuming global supabase client
         this.unreadCount = 0; // Track unread messages
         this.lastMessageTime = null; // Track last seen message
@@ -262,6 +264,41 @@ class ChatWidget {
         return sid;
     }
 
+    getAuthenticatedSessionId(user) {
+        if (!user?.id) return '';
+        return `user_${user.id}`;
+    }
+
+    getLegacyAuthenticatedSessionIds(user) {
+        const rawEmail = typeof user?.email === 'string' ? user.email.trim() : '';
+        const normalizedEmail = rawEmail.toLowerCase();
+        return [rawEmail, normalizedEmail].filter(Boolean);
+    }
+
+    getActiveUserSessionIds() {
+        if (Array.isArray(this.userSessionIds) && this.userSessionIds.length > 0) {
+            return [...new Set(this.userSessionIds.filter(Boolean))];
+        }
+        return this.sessionId ? [this.sessionId] : [];
+    }
+
+    async refreshUserSessionContext() {
+        const { data: { user } } = await this.supabase.auth.getUser();
+        this.currentUser = user || null;
+
+        if (user) {
+            const primarySessionId = this.getAuthenticatedSessionId(user);
+            this.userSessionIds = [primarySessionId, ...this.getLegacyAuthenticatedSessionIds(user)].filter(Boolean);
+            this.sessionId = primarySessionId;
+            return { user, sessionId: primarySessionId, sessionIds: this.getActiveUserSessionIds() };
+        }
+
+        const guestSessionId = this.getSessionId();
+        this.userSessionIds = [guestSessionId];
+        this.sessionId = guestSessionId;
+        return { user: null, sessionId: guestSessionId, sessionIds: this.getActiveUserSessionIds() };
+    }
+
     async init() {
         this.renderFAB();
         this.bindFabEvents();
@@ -290,12 +327,8 @@ class ChatWidget {
                 }
             });
         } else {
-            // For logged-in users, use their email as session_id instead of guest ID
             try {
-                const { data: { user } } = await this.supabase.auth.getUser();
-                if (user && user.email) {
-                    this.sessionId = user.email;
-                }
+                await this.refreshUserSessionContext();
             } catch (e) { console.error('Failed to get user for session:', e); }
 
             this.renderUserMode();
@@ -310,15 +343,25 @@ class ChatWidget {
 
     async checkAdminStatus() {
         try {
+            const sessionIds = this.getActiveUserSessionIds();
+            if (!sessionIds.length) {
+                this.unlockScroll();
+                return;
+            }
+
             // Find the latest message from an admin
-            const { data, error } = await this.supabase
+            let query = this.supabase
                 .from('chat_messages')
                 .select('created_at')
                 .eq('is_admin', true)
-                .eq('session_id', this.sessionId)
                 .order('created_at', { ascending: false })
-                .limit(1)
-                .single();
+                .limit(1);
+
+            query = sessionIds.length === 1
+                ? query.eq('session_id', sessionIds[0])
+                : query.in('session_id', sessionIds);
+
+            const { data, error } = await query.single();
 
             const statusText = this.chatWindow.querySelector('.target-admin-status');
             const statusDot = this.chatWindow.querySelector('.status-dot');
@@ -1853,21 +1896,42 @@ class ChatWidget {
     // 🔔 Create a system notification for user when admin replies
     async createNotificationForUser(sessionId, messageContent) {
         try {
-            // sessionId can be email (logged-in user) or guest_xxx (guest)
-            // Skip notification for guest users
             if (sessionId.startsWith('guest_')) {
                 console.log('⏭️ Skipping notification for guest user');
                 return;
             }
 
-            // Lookup user_id by email from auth.users or profiles
-            const { data: profile, error: profileError } = await this.supabase
-                .from('profiles')
-                .select('id')
-                .eq('email', sessionId)
-                .single();
+            let targetUserId = null;
 
-            if (profileError || !profile) {
+            if (sessionId.startsWith('user_')) {
+                targetUserId = sessionId.slice('user_'.length) || null;
+            } else {
+                const { data: profile, error: profileError } = await this.supabase
+                    .from('profiles')
+                    .select('id')
+                    .eq('email', sessionId)
+                    .single();
+
+                if (!profileError && profile?.id) {
+                    targetUserId = profile.id;
+                }
+            }
+
+            if (!targetUserId) {
+                const { data: messageRow, error: messageRowError } = await this.supabase
+                    .from('chat_messages')
+                    .select('user_id')
+                    .eq('session_id', sessionId)
+                    .not('user_id', 'is', null)
+                    .limit(1)
+                    .single();
+
+                if (!messageRowError && messageRow?.user_id) {
+                    targetUserId = messageRow.user_id;
+                }
+            }
+
+            if (!targetUserId) {
                 console.warn('Could not find user for notification:', sessionId);
                 return;
             }
@@ -1876,14 +1940,14 @@ class ChatWidget {
             await this.supabase
                 .from('system_notifications')
                 .insert({
-                    user_id: profile.id,
+                    user_id: targetUserId,
                     title: '客服回复',
                     content: messageContent.substring(0, 100) + (messageContent.length > 100 ? '...' : ''),
                     type: 'info',
                     is_read: false
                 });
 
-            console.log('🔔 Notification created for user:', profile.id);
+            console.log('🔔 Notification created for user:', targetUserId);
         } catch (err) {
             console.error('Failed to create notification:', err);
         }
@@ -1977,7 +2041,7 @@ class ChatWidget {
                 // Always show notification if not actively viewing the chat
                 if (!isViewingThisSession) {
                     const messageContent = msg.message_type === 'image' ? '📷 发送了一张图片' : msg.content;
-                    const senderName = msg.session_id.includes('@') ? msg.session_id.split('@')[0] : '访客';
+                    const senderName = msg.user_id ? '已登录用户' : '访客';
                     this.showNotification(messageContent, `💬 ${senderName}`, true); // forceShow for admin
 
                     // Mark session as unread
@@ -3234,11 +3298,8 @@ class ChatWidget {
         this.input.value = '';
 
         try {
-            // Check auth
-            const { data: { user } } = await this.supabase.auth.getUser();
+            const { user, sessionId } = await this.refreshUserSessionContext();
             const userId = user ? user.id : null;
-            // Use email as session_id for logged-in users, otherwise guest session
-            const sessionId = user?.email || this.sessionId;
 
             const { error } = await this.supabase
                 .from('chat_messages')
@@ -3328,10 +3389,8 @@ class ChatWidget {
             this.appendMessage(publicUrl, this.getMessageRenderType(false), 'image');
 
             // Save to DB
-            const { data: { user } } = await this.supabase.auth.getUser();
+            const { user, sessionId } = await this.refreshUserSessionContext();
             const userId = user ? user.id : null;
-            // Use email as session_id for logged-in users, otherwise guest session
-            const sessionId = user?.email || this.sessionId;
 
             await this.supabase
                 .from('chat_messages')
@@ -3419,17 +3478,25 @@ class ChatWidget {
     }
 
     subscribeToMessages() {
-        const channel = this.supabase
+        if (this.userMessageChannel) {
+            this.supabase.removeChannel(this.userMessageChannel);
+        }
+
+        this.userMessageChannel = this.supabase
             .channel('chat-room')
             .on(
                 'postgres_changes',
                 {
                     event: 'INSERT',
                     schema: 'public',
-                    table: 'chat_messages',
-                    filter: `session_id=eq.${this.sessionId}` // Only listen to own session replies (or admin replies)
+                    table: 'chat_messages'
                 },
                 (payload) => {
+                    const activeSessionIds = this.getActiveUserSessionIds();
+                    if (!activeSessionIds.includes(payload.new.session_id)) {
+                        return;
+                    }
+
                     // Only append if it's NOT from us (avoid duplicate since we did optimistic UI)
                     // Or check if is_admin is true
                     if (payload.new.is_admin) {
@@ -3456,11 +3523,19 @@ class ChatWidget {
         this.lockScroll();
 
         try {
-            const { data, error } = await this.supabase
+            const sessionIds = this.getActiveUserSessionIds();
+            if (!sessionIds.length) return;
+
+            let query = this.supabase
                 .from('chat_messages')
                 .select('*')
-                .eq('session_id', this.sessionId)
                 .order('created_at', { ascending: true });
+
+            query = sessionIds.length === 1
+                ? query.eq('session_id', sessionIds[0])
+                : query.in('session_id', sessionIds);
+
+            const { data, error } = await query;
 
             if (data) {
                 // Batch render all history messages before enabling scroll

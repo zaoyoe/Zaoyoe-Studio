@@ -15,7 +15,7 @@ ADD COLUMN IF NOT EXISTS geo_info JSONB DEFAULT NULL;
 COMMENT ON COLUMN public.user_login_history.geo_info IS 'IP 地理信息 {country, region, city}';
 
 -- Function to get geo distribution
-CREATE OR REPLACE FUNCTION get_geo_distribution()
+CREATE OR REPLACE FUNCTION get_geo_distribution_by_site(p_site VARCHAR DEFAULT NULL)
 RETURNS TABLE (
     region TEXT,
     user_count BIGINT,
@@ -24,30 +24,40 @@ RETURNS TABLE (
 DECLARE
     v_total BIGINT;
 BEGIN
+    PERFORM public.require_admin_access();
+
     -- Get total unique users
     SELECT COUNT(DISTINCT user_id) INTO v_total 
     FROM public.user_login_history
-    WHERE geo_info IS NOT NULL;
+    WHERE geo_info IS NOT NULL
+      AND (p_site IS NULL OR site = p_site);
 
     IF v_total = 0 THEN
-        -- Return placeholder if no geo data
-        RETURN QUERY
-        SELECT '未知地区'::TEXT, 
-               (SELECT COUNT(DISTINCT user_id) FROM public.user_login_history)::BIGINT,
-               100.0::NUMERIC;
         RETURN;
     END IF;
 
     RETURN QUERY
     SELECT 
-        COALESCE(geo_info->>'region', '未知')::TEXT as region,
+        COALESCE(NULLIF(geo_info->>'region', ''), geo_info->>'country', '未知地区')::TEXT as region,
         COUNT(DISTINCT user_id)::BIGINT as user_count,
         ROUND(COUNT(DISTINCT user_id)::NUMERIC / v_total * 100, 1) as percentage
     FROM public.user_login_history
     WHERE geo_info IS NOT NULL
-    GROUP BY geo_info->>'region'
+      AND (p_site IS NULL OR site = p_site)
+    GROUP BY COALESCE(NULLIF(geo_info->>'region', ''), geo_info->>'country', '未知地区')
     ORDER BY user_count DESC
     LIMIT 10;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION get_geo_distribution()
+RETURNS TABLE (
+    region TEXT,
+    user_count BIGINT,
+    percentage NUMERIC
+) AS $$
+BEGIN
+    RETURN QUERY SELECT * FROM public.get_geo_distribution_by_site(NULL);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
@@ -87,12 +97,7 @@ CREATE POLICY "Users can insert own events" ON public.user_events
 -- Policy: Admins can read all events
 CREATE POLICY "Admins can read all events" ON public.user_events
     FOR SELECT TO authenticated
-    USING (
-        EXISTS (
-            SELECT 1 FROM public.profiles 
-            WHERE id = auth.uid() AND email IN ('fjivvid@163.com', 'zaoyoe@gmail.com')
-        )
-    );
+    USING (public.is_admin());
 
 -- Function: Track event (for frontend SDK)
 CREATE OR REPLACE FUNCTION track_event(
@@ -198,12 +203,8 @@ ALTER TABLE public.ab_assignments ENABLE ROW LEVEL SECURITY;
 -- Policies: Only admins can manage experiments
 CREATE POLICY "Admins can manage experiments" ON public.ab_experiments
     FOR ALL TO authenticated
-    USING (
-        EXISTS (
-            SELECT 1 FROM public.profiles 
-            WHERE id = auth.uid() AND email IN ('fjivvid@163.com', 'zaoyoe@gmail.com')
-        )
-    );
+    USING (public.is_admin())
+    WITH CHECK (public.is_admin());
 
 CREATE POLICY "Users can read own assignments" ON public.ab_assignments
     FOR SELECT TO authenticated
@@ -211,12 +212,8 @@ CREATE POLICY "Users can read own assignments" ON public.ab_assignments
 
 CREATE POLICY "Admins can manage assignments" ON public.ab_assignments
     FOR ALL TO authenticated
-    USING (
-        EXISTS (
-            SELECT 1 FROM public.profiles 
-            WHERE id = auth.uid() AND email IN ('fjivvid@163.com', 'zaoyoe@gmail.com')
-        )
-    );
+    USING (public.is_admin())
+    WITH CHECK (public.is_admin());
 
 -- Function: Get user's experiment variant
 CREATE OR REPLACE FUNCTION get_experiment_variant(p_experiment_name TEXT)
@@ -276,14 +273,50 @@ RETURNS TABLE (
     conversion_rate NUMERIC
 ) AS $$
 BEGIN
+    PERFORM public.require_admin_access();
+
     RETURN QUERY
+    WITH experiment AS (
+        SELECT id, target_metric
+        FROM public.ab_experiments
+        WHERE id = p_experiment_id
+    ),
+    assignment_base AS (
+        SELECT a.user_id, a.variant_name, a.assigned_at
+        FROM public.ab_assignments a
+        WHERE a.experiment_id = p_experiment_id
+    ),
+    conversions AS (
+        SELECT DISTINCT
+            a.variant_name,
+            a.user_id
+        FROM assignment_base a
+        CROSS JOIN experiment e
+        JOIN public.user_events ue
+          ON ue.user_id = a.user_id
+         AND ue.created_at >= a.assigned_at
+         AND (
+            (COALESCE(e.target_metric, '') <> '' AND ue.event_name = e.target_metric)
+            OR (
+                COALESCE(e.target_metric, '') = ''
+                AND ue.event_type = 'conversion'
+            )
+            OR COALESCE(ue.event_data->>'experiment_id', '') = p_experiment_id::TEXT
+         )
+    )
     SELECT 
         a.variant_name::TEXT,
         COUNT(DISTINCT a.user_id)::BIGINT as user_count,
-        0::BIGINT as conversion_count,  -- Placeholder, needs metric tracking
-        0::NUMERIC as conversion_rate
-    FROM public.ab_assignments a
-    WHERE a.experiment_id = p_experiment_id
+        COUNT(DISTINCT c.user_id)::BIGINT as conversion_count,
+        ROUND(
+            COUNT(DISTINCT c.user_id)::NUMERIC
+            / NULLIF(COUNT(DISTINCT a.user_id), 0) * 100,
+            1
+        ) as conversion_rate
+    FROM assignment_base a
+    LEFT JOIN conversions c
+      ON c.variant_name = a.variant_name
+     AND c.user_id = a.user_id
     GROUP BY a.variant_name
     ORDER BY a.variant_name;
 END;
@@ -293,6 +326,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- GRANT PERMISSIONS
 -- ============================================
 
+GRANT EXECUTE ON FUNCTION get_geo_distribution_by_site(VARCHAR) TO authenticated;
 GRANT EXECUTE ON FUNCTION get_geo_distribution() TO authenticated;
 GRANT EXECUTE ON FUNCTION track_event(TEXT, TEXT, JSONB, TEXT, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION get_event_funnel(TEXT[], INTEGER) TO authenticated;
