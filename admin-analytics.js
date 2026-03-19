@@ -526,7 +526,7 @@ async function generateAIInsight() {
     }
 
     if (!hasAdminAI()) {
-        content.innerHTML = '<p class="ai-error">请先在 Vercel 环境变量中配置 GEMINI_API_KEY</p>';
+        content.innerHTML = '<p class="ai-error">请先在后台 API 配置或 Vercel 环境变量中配置 Gemini Key</p>';
         return;
     }
 
@@ -1621,7 +1621,7 @@ async function loadAIPrediction() {
     }
 
     if (!hasAdminAI()) {
-        container.innerHTML = '<p class="ai-error">请先在 Vercel 环境变量中配置 GEMINI_API_KEY</p>';
+        container.innerHTML = '<p class="ai-error">请先在后台 API 配置或 Vercel 环境变量中配置 Gemini Key</p>';
         return;
     }
 

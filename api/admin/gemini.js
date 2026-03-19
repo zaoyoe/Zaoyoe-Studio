@@ -1,19 +1,21 @@
 const {
-    getEnv,
     parseJsonBody,
     requireAdmin,
     sendJson
 } = require('../_lib/admin');
+const { resolveGeminiRuntimeConfig } = require('../_lib/secrets');
 
 module.exports = async (req, res) => {
     try {
-        const { user } = await requireAdmin(req);
+        const { supabase, user } = await requireAdmin(req);
 
         if (req.method === 'GET') {
+            const config = await resolveGeminiRuntimeConfig(supabase);
             return sendJson(res, 200, {
                 success: true,
-                configured: Boolean(process.env.GEMINI_API_KEY),
-                model: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
+                configured: config.configured,
+                source: config.source,
+                model: config.model,
                 adminId: user.id
             });
         }
@@ -23,13 +25,21 @@ module.exports = async (req, res) => {
             return sendJson(res, 405, { success: false, message: 'Method not allowed' });
         }
 
-        const apiKey = getEnv('GEMINI_API_KEY');
+        const runtimeConfig = await resolveGeminiRuntimeConfig(supabase);
+        const apiKey = String(runtimeConfig.apiKey || '').trim();
         const body = await parseJsonBody(req);
-        const model = String(body.model || process.env.GEMINI_MODEL || 'gemini-2.0-flash').trim();
+        const model = String(body.model || runtimeConfig.model || process.env.GEMINI_MODEL || 'gemini-2.0-flash').trim();
         const contents = Array.isArray(body.contents) ? body.contents : [];
         const generationConfig = body.generationConfig && typeof body.generationConfig === 'object'
             ? body.generationConfig
             : undefined;
+
+        if (!apiKey) {
+            return sendJson(res, 400, {
+                success: false,
+                message: 'Gemini API Key 未配置'
+            });
+        }
 
         if (!model.startsWith('gemini-')) {
             return sendJson(res, 400, { success: false, message: 'Unsupported Gemini model' });

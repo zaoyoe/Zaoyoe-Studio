@@ -596,6 +596,7 @@ async function checkApiKey() {
 
         const payload = await window.AdminAI.checkHealth(true);
         window.GEMINI_API_KEY = payload.configured ? '__server_proxy__' : '';
+        window.GEMINI_API_SOURCE = payload.source || (payload.configured ? 'environment' : 'missing');
 
         if (payload.configured) {
             updateStatus('AI Proxy Ready', 'ready');
@@ -605,6 +606,7 @@ async function checkApiKey() {
     } catch (err) {
         console.warn('Failed to verify AI proxy:', err);
         window.GEMINI_API_KEY = '';
+        window.GEMINI_API_SOURCE = 'missing';
         updateStatus('AI Proxy Missing', 'error');
     } finally {
         renderApiKeySelector();
@@ -613,7 +615,12 @@ async function checkApiKey() {
 }
 
 function getApiKeys() {
-    return window.GEMINI_API_KEY ? [{ name: 'Server Proxy', key: '__server_proxy__' }] : [];
+    if (!window.GEMINI_API_KEY) return [];
+    return [{
+        name: 'Server Proxy',
+        key: '__server_proxy__',
+        source: window.GEMINI_API_SOURCE || 'missing'
+    }];
 }
 
 function getActiveKeyIndex() {
@@ -624,26 +631,148 @@ function saveApiKeys() {
     return true;
 }
 
-function promptForApiKey() {
-    showToast('Gemini Key 已改为服务端托管，请在 Vercel 环境变量中设置 GEMINI_API_KEY。', 'info');
+function getGeminiSourceMeta() {
+    const source = window.GEMINI_API_SOURCE || 'missing';
+
+    if (source === 'stored') {
+        return {
+            source,
+            title: '后台安全存储',
+            preview: '由服务端加密保存，可在后台更新或删除',
+            badge: '后台托管',
+            statusText: 'Gemini Key 已由后台安全存储'
+        };
+    }
+
+    if (source === 'environment') {
+        return {
+            source,
+            title: 'Vercel 环境变量',
+            preview: '当前由 Vercel 环境变量托管，录入后将优先使用后台安全存储',
+            badge: '环境变量',
+            statusText: 'Gemini Key 当前由环境变量托管'
+        };
+    }
+
+    return {
+        source: 'missing',
+        title: '未配置',
+        preview: '暂未配置 Gemini Key，可在此录入后提交到服务端安全存储',
+        badge: '待配置',
+        statusText: '未配置 Gemini Key'
+    };
+}
+
+async function getAdminApiHeaders() {
+    if (!window.AdminAI?.getAuthHeaders) {
+        throw new Error('AdminAI client not loaded');
+    }
+
+    return window.AdminAI.getAuthHeaders();
+}
+
+async function saveServerManagedGeminiKey(apiKey) {
+    const headers = await getAdminApiHeaders();
+    const response = await fetch('/api/admin/settings/gemini-key', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ apiKey })
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.success) {
+        throw new Error(payload.message || '保存 Gemini Key 失败');
+    }
+
+    return payload;
+}
+
+async function deleteServerManagedGeminiKey() {
+    const headers = await getAdminApiHeaders();
+    const response = await fetch('/api/admin/settings/gemini-key', {
+        method: 'DELETE',
+        headers
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.success) {
+        throw new Error(payload.message || '删除 Gemini Key 失败');
+    }
+
+    return payload;
+}
+
+async function promptForApiKey() {
+    const meta = getGeminiSourceMeta();
+    const helperText = meta.source === 'stored'
+        ? '输入新的 Gemini API Key 将覆盖当前后台安全存储的 Key。'
+        : (meta.source === 'environment'
+            ? '当前使用的是 Vercel 环境变量。输入新的 Gemini API Key 后，将优先使用后台安全存储版本。'
+            : '请输入 Gemini API Key，提交后会由服务端加密保存。');
+
+    const input = window.prompt(`${helperText}\n\n请输入 Gemini API Key：`, '');
+    if (input === null) return;
+
+    const apiKey = String(input || '').trim();
+    if (!apiKey) {
+        showToast('未输入 Gemini API Key', 'warning');
+        return;
+    }
+
+    try {
+        showToast('正在安全保存 Gemini Key...', 'info');
+        const payload = await saveServerManagedGeminiKey(apiKey);
+        window.GEMINI_API_KEY = payload.configured ? '__server_proxy__' : '';
+        window.GEMINI_API_SOURCE = payload.source || 'stored';
+        window.AdminAI.configured = Boolean(payload.configured);
+        window.AdminAI.source = window.GEMINI_API_SOURCE;
+        renderApiKeySelector();
+        updateAnalyzeButton();
+        showToast(payload.message || 'Gemini Key 已安全保存到服务端。', 'success');
+    } catch (err) {
+        console.error('Failed to save Gemini key:', err);
+        showToast(err.message || '保存 Gemini Key 失败', 'error');
+    }
 }
 
 function switchApiKey() {
-    showToast('当前只支持服务端统一 AI 代理。', 'info');
+    showToast('当前始终优先使用后台安全存储，其次才是 Vercel 环境变量。', 'info');
 }
 
 function addNewApiKey() {
-    showToast('请在 Vercel 环境变量中新增或更新 GEMINI_API_KEY。', 'info');
+    promptForApiKey();
 }
 
-function deleteApiKey() {
-    showToast('服务端托管密钥不能在浏览器中删除。', 'info');
+async function deleteApiKey() {
+    if ((window.GEMINI_API_SOURCE || 'missing') !== 'stored') {
+        showToast('当前没有可删除的后台存储 Gemini Key。', 'info');
+        return;
+    }
+
+    if (!confirm('确定要删除当前后台安全存储的 Gemini Key 吗？')) {
+        return;
+    }
+
+    try {
+        const payload = await deleteServerManagedGeminiKey();
+        window.GEMINI_API_KEY = payload.configured ? '__server_proxy__' : '';
+        window.GEMINI_API_SOURCE = payload.source || 'missing';
+        window.AdminAI.configured = Boolean(payload.configured);
+        window.AdminAI.source = window.GEMINI_API_SOURCE;
+        renderApiKeySelector();
+        updateAnalyzeButton();
+        showToast(payload.message || 'Gemini Key 已删除', 'success');
+    } catch (err) {
+        console.error('Failed to delete Gemini key:', err);
+        showToast(err.message || '删除 Gemini Key 失败', 'error');
+    }
 }
 
 function renderApiKeySelector() {
     const container = document.getElementById('apiKeySelector');
     const settingsList = document.getElementById('settingsApiKeysList');
     const isReady = Boolean(window.GEMINI_API_KEY);
+    const meta = getGeminiSourceMeta();
 
     // Render header dropdown (simplified)
     if (container) {
@@ -651,7 +780,7 @@ function renderApiKeySelector() {
             <div class="api-key-dropdown">
                 <button class="api-key-current" type="button" onclick="promptForApiKey()">
                     <i class="fas fa-shield-alt"></i>
-                    <span>${isReady ? 'Server Proxy' : 'AI Proxy 未配置'}</span>
+                    <span>${isReady ? `Server Proxy · ${meta.title}` : 'AI Proxy 未配置'}</span>
                 </button>
             </div>
         `;
@@ -663,10 +792,18 @@ function renderApiKeySelector() {
             <div class="api-key-row active" data-index="0">
                 <div class="key-info" onclick="promptForApiKey()">
                     <span class="key-name-label">Server Proxy</span>
-                    <span class="key-preview-label">${isReady ? '由 Vercel 环境变量托管' : '请配置 GEMINI_API_KEY'}</span>
+                    <span class="key-preview-label">${meta.preview}</span>
                 </div>
-                <div class="key-actions">
-                    <span class="key-active-badge">${isReady ? '当前使用' : '待配置'}</span>
+                <div class="key-actions" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                    <span class="key-active-badge">${isReady ? meta.badge : '待配置'}</span>
+                    <button class="btn-add-config" type="button" onclick="promptForApiKey()" style="margin-top: 0; padding: 8px 12px;">
+                        ${isReady ? '更新 Key' : '录入 Key'}
+                    </button>
+                    ${meta.source === 'stored' ? `
+                        <button class="btn-add-config" type="button" onclick="deleteApiKey()" style="margin-top: 0; padding: 8px 12px; border-color: rgba(248, 113, 113, 0.35); color: #fecaca;">
+                            删除 Key
+                        </button>
+                    ` : ''}
                 </div>
             </div>
         `;
@@ -680,17 +817,17 @@ function renderApiKeySelector() {
 
         if (isReady) {
             dot.className = 'status-dot ready';
-            text.textContent = 'Server AI Ready';
+            text.textContent = meta.statusText;
         } else {
             dot.className = 'status-dot error';
-            text.textContent = '未配置 GEMINI_API_KEY';
+            text.textContent = '未配置 Gemini Key';
         }
     }
 }
 
 // Edit API key name
 function editApiKeyName() {
-    showToast('服务端托管密钥名称不可在浏览器中修改。', 'info');
+    showToast('当前仅支持一个 Gemini 服务端代理密钥。', 'info');
 }
 
 
@@ -1055,7 +1192,7 @@ async function analyzeImages() {
     if (uploadedFiles.length === 0) return;
 
     if (!window.AdminAI?.configured) {
-        showToast('请先在 Vercel 环境变量中配置 GEMINI_API_KEY', 'error');
+        showToast('请先在后台 API 配置或 Vercel 环境变量中配置 Gemini Key', 'error');
         await checkApiKey();
         return;
     }
@@ -2123,7 +2260,7 @@ const originalFormSubmit = document.getElementById('promptForm')?.onsubmit;
 async function startBatchReanalyze() {
     // Check API key first
     if (!window.AdminAI?.configured) {
-        showToast('请先在 Vercel 环境变量中配置 GEMINI_API_KEY', 'error');
+        showToast('请先在后台 API 配置或 Vercel 环境变量中配置 Gemini Key', 'error');
         await checkApiKey();
         return;
     }

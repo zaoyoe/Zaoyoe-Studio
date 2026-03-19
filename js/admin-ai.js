@@ -4,6 +4,7 @@
     const AdminAI = {
         configured: false,
         defaultModel: 'gemini-2.0-flash',
+        source: 'missing',
         _healthPromise: null,
 
         async getAuthHeaders() {
@@ -43,6 +44,7 @@
 
                 this.configured = Boolean(payload.configured);
                 this.defaultModel = payload.model || this.defaultModel;
+                this.source = payload.source || (payload.configured ? 'environment' : 'missing');
                 return payload;
             })();
 
