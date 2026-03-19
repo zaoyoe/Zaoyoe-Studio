@@ -590,7 +590,7 @@ BEGIN
         COALESCE(rc.points_amount, ao.points, 0),
         COALESCE(rc.status = 'used', ao.is_redeemed, false),
         ao.created_at,
-        COALESCE(po.status, ao.payment_status, 'pending'),
+        COALESCE(po.status, ao.payment_status, 'pending')::TEXT,
         COALESCE(po.sign_verified, ao.sign_verified, false),
         COALESCE(po.amount_verified, ao.amount_verified, false),
         po.last_error
@@ -628,7 +628,7 @@ BEGIN
         COALESCE(rc.points_amount, ao.points, 0),
         COALESCE(rc.status = 'used', ao.is_redeemed, false),
         ao.created_at,
-        COALESCE(po.status, ao.payment_status, 'pending')
+        COALESCE(po.status, ao.payment_status, 'pending')::TEXT
     FROM public.afdian_orders ao
     LEFT JOIN public.payment_orders po
         ON po.id = ao.payment_order_id
