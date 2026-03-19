@@ -24,6 +24,10 @@
         return host === 'localhost' || host === '127.0.0.1';
     }
 
+    function isSimulatedPaymentAllowed(options = {}) {
+        return options?.allowSimulatedPayment === true || isUnsafeDirectRechargeAllowed();
+    }
+
     const PointsService = {
         // Cached session to avoid redundant getSession() calls
         _cachedUserId: null,
@@ -129,9 +133,9 @@
         /**
          * Mock payment - accepts optional package data to skip DB fetch
          */
-        async mockPay(packageId, packageData) {
-            if (!isUnsafeDirectRechargeAllowed()) {
-                throw new Error('在线充值已切换为真实支付流程，请前往爱发电完成支付后输入订单号领取兑换码');
+        async mockPay(packageId, packageData, options = {}) {
+            if (!isSimulatedPaymentAllowed(options)) {
+                throw new Error('当前未开启模拟支付，请使用真实支付流程');
             }
 
             const userId = await this._getUserId();
@@ -166,9 +170,9 @@
         /**
          * Custom recharge points
          */
-        async customRecharge(pointsAmount) {
-            if (!isUnsafeDirectRechargeAllowed()) {
-                throw new Error('自定义充值仅在本地开发环境开放，请使用真实支付流程');
+        async customRecharge(pointsAmount, options = {}) {
+            if (!isSimulatedPaymentAllowed(options)) {
+                throw new Error('当前未开启模拟支付，请使用真实支付流程');
             }
 
             const userId = await this._getUserId();

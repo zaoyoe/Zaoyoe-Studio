@@ -1881,7 +1881,8 @@
 
         getDefaultRechargeOptionsConfig() {
             return {
-                custom_amount_enabled: false
+                custom_amount_enabled: false,
+                mock_payment_enabled: false
             };
         },
 
@@ -1892,7 +1893,10 @@
             return {
                 custom_amount_enabled: source.custom_amount_enabled === true || String(source.custom_amount_enabled) === 'true'
                     ? true
-                    : defaults.custom_amount_enabled
+                    : defaults.custom_amount_enabled,
+                mock_payment_enabled: source.mock_payment_enabled === true || String(source.mock_payment_enabled) === 'true'
+                    ? true
+                    : defaults.mock_payment_enabled
             };
         },
 
@@ -1928,7 +1932,8 @@
 
             const normalizedConfig = this.normalizeRechargeOptionsConfig(config);
             const isFeatureEnabled = normalizedConfig.custom_amount_enabled === true;
-            const isDirectRechargeAllowed = window.PointsService?.isUnsafeDirectRechargeAllowed?.() === true;
+            const isSimulationEnabled = normalizedConfig.mock_payment_enabled === true;
+            const isDirectRechargeAllowed = isSimulationEnabled || window.PointsService?.isUnsafeDirectRechargeAllowed?.() === true;
 
             section.style.display = isFeatureEnabled ? '' : 'none';
 
@@ -1945,17 +1950,23 @@
 
             if (subtitle) {
                 subtitle.textContent = isDirectRechargeAllowed
-                    ? '输入要充值的积分数量，支持 0.1 精度。'
+                    ? (isSimulationEnabled
+                        ? '已开启临时模拟支付，提交后会直接到账积分。'
+                        : '输入要充值的积分数量，支持 0.1 精度。')
                     : '输入想购买的积分数量，我们会引导你完成真实支付。';
             }
 
             if (badge) {
-                badge.textContent = isDirectRechargeAllowed ? '按需充值' : '真实支付';
+                badge.textContent = isDirectRechargeAllowed
+                    ? (isSimulationEnabled ? '模拟支付' : '按需充值')
+                    : '真实支付';
             }
 
             if (meta) {
                 meta.textContent = isDirectRechargeAllowed
-                    ? '该入口由管理员在后台控制显示，用于用户自行决定本次充值的积分数量。'
+                    ? (isSimulationEnabled
+                        ? '当前为临时模拟支付模式，仅用于正式支付接入前过渡。用户提交后会直接到账，请谨慎使用。'
+                        : '该入口由管理员在后台控制显示，用于用户自行决定本次充值的积分数量。')
                     : '该入口由管理员在后台控制显示。正式站点已关闭浏览器直充；填写数量后会打开支付页，完成支付后请返回这里输入订单号领取兑换码。';
             }
 
@@ -3049,9 +3060,32 @@
         async buyPackage(packageId, packageName) {
             const overlay = document.getElementById('wallet-modal-overlay');
             const afdianUrl = window.PAYMENT_AFDIAN_URL || 'https://afdian.com/a/zaoyoe';
+            const rechargeOptions = this.normalizeRechargeOptionsConfig(this.rechargeOptionsConfig);
+            const allowSimulatedPayment = rechargeOptions.mock_payment_enabled === true
+                || window.PointsService?.isUnsafeDirectRechargeAllowed?.() === true;
+            const packageData = Array.isArray(this._packagesCache)
+                ? this._packagesCache.find(pkg => String(pkg.id) === String(packageId))
+                : null;
 
             try {
                 if (overlay) overlay.classList.add('loading');
+
+                if (allowSimulatedPayment) {
+                    await PointsService.mockPay(packageId, packageData, { allowSimulatedPayment: true });
+
+                    if (overlay) overlay.classList.remove('loading');
+                    this.showToast(`✅ 已使用模拟支付为你充值「${packageName}」`, 'success');
+
+                    this.invalidateOrderRecordsCache();
+                    this.loadOrders({
+                        searchQuery: this.orderSearchActiveQuery || this.orderSearchQuery,
+                        ignorePrefetch: true
+                    }).catch(e => console.error('Order reload after mock package purchase failed:', e));
+
+                    this.loadData().catch(e => console.error('Wallet reload after mock package purchase failed:', e));
+                    return;
+                }
+
                 if (overlay) overlay.classList.remove('loading');
                 window.open(afdianUrl, '_blank', 'noopener,noreferrer');
                 this.showToast(`请在爱发电完成「${packageName}」支付后，返回这里输入订单号领取兑换码`, 'success');
@@ -3069,7 +3103,9 @@
             const button = document.getElementById('wallet-custom-recharge-btn');
             const rawValue = input?.value ?? '';
             const normalizedAmount = this.normalizePointValue(rawValue);
-            const allowUnsafeDirectRecharge = window.PointsService?.isUnsafeDirectRechargeAllowed?.() === true;
+            const rechargeOptions = this.normalizeRechargeOptionsConfig(this.rechargeOptionsConfig);
+            const allowSimulatedPayment = rechargeOptions.mock_payment_enabled === true
+                || window.PointsService?.isUnsafeDirectRechargeAllowed?.() === true;
             const afdianUrl = window.PAYMENT_AFDIAN_URL || 'https://afdian.com/a/zaoyoe';
 
             if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
@@ -3082,7 +3118,7 @@
                 if (button) button.disabled = true;
                 if (overlay) overlay.classList.add('loading');
 
-                if (!allowUnsafeDirectRecharge) {
+                if (!allowSimulatedPayment) {
                     if (overlay) overlay.classList.remove('loading');
 
                     const popup = window.open(afdianUrl, '_blank', 'noopener,noreferrer');
@@ -3094,7 +3130,7 @@
                     return;
                 }
 
-                await PointsService.customRecharge(normalizedAmount);
+                await PointsService.customRecharge(normalizedAmount, { allowSimulatedPayment: true });
 
                 if (input) {
                     input.value = '';

@@ -17,7 +17,8 @@ function getDefaultCheckinConfig() {
 
 function getDefaultRechargeOptionsConfig() {
     return {
-        custom_amount_enabled: false
+        custom_amount_enabled: false,
+        mock_payment_enabled: false
     };
 }
 
@@ -118,7 +119,8 @@ function normalizeRechargeOptionsConfig(raw) {
     const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
 
     return {
-        custom_amount_enabled: source.custom_amount_enabled === true || String(source.custom_amount_enabled) === 'true'
+        custom_amount_enabled: source.custom_amount_enabled === true || String(source.custom_amount_enabled) === 'true',
+        mock_payment_enabled: source.mock_payment_enabled === true || String(source.mock_payment_enabled) === 'true'
     };
 }
 
@@ -253,6 +255,11 @@ function renderPackagesConfig() {
     const customRechargeToggle = document.getElementById('customRechargeStatusToggle');
     if (customRechargeToggle) {
         customRechargeToggle.classList.toggle('active', rechargeOptions.custom_amount_enabled);
+    }
+
+    const mockPaymentToggle = document.getElementById('mockPaymentStatusToggle');
+    if (mockPaymentToggle) {
+        mockPaymentToggle.classList.toggle('active', rechargeOptions.mock_payment_enabled);
     }
 }
 
@@ -882,6 +889,34 @@ async function toggleCustomRechargeEntryStatus() {
     }
 
     showConfigSavedToast(nextValue ? '已开启自定义充值入口' : '已关闭自定义充值入口');
+    return true;
+}
+
+async function toggleMockPaymentStatus() {
+    const config = normalizeRechargeOptionsConfig(systemConfigCache['recharge_options']);
+    const toggleEl = document.getElementById('mockPaymentStatusToggle');
+    const nextValue = !config.mock_payment_enabled;
+
+    config.mock_payment_enabled = nextValue;
+
+    if (toggleEl) {
+        toggleEl.classList.toggle('active', nextValue);
+        toggleEl.style.transform = 'scale(1.1)';
+        setTimeout(() => {
+            toggleEl.style.transform = '';
+        }, 150);
+    }
+
+    const success = await saveConfig('recharge_options', config);
+    if (!success) {
+        config.mock_payment_enabled = !nextValue;
+        if (toggleEl) {
+            toggleEl.classList.toggle('active', config.mock_payment_enabled);
+        }
+        return false;
+    }
+
+    showConfigSavedToast(nextValue ? '已开启临时模拟支付' : '已关闭临时模拟支付');
     return true;
 }
 
@@ -2386,6 +2421,7 @@ window.togglePackageStatus = togglePackageStatus;
 window.deletePackage = deletePackage;
 window.addPackageRow = addPackageRow;
 window.toggleCustomRechargeEntryStatus = toggleCustomRechargeEntryStatus;
+window.toggleMockPaymentStatus = toggleMockPaymentStatus;
 window.deleteChannel = deleteChannel;
 window.addChannel = addChannel;
 window.saveIpBlacklist = saveIpBlacklist;

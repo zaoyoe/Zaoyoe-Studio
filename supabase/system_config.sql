@@ -62,7 +62,8 @@ ON CONFLICT (config_key) DO NOTHING;
 -- 充值入口配置
 INSERT INTO public.system_config (config_key, config_value, description) VALUES
 ('recharge_options', '{
-    "custom_amount_enabled": false
+    "custom_amount_enabled": false,
+    "mock_payment_enabled": false
 }'::jsonb, '充值入口配置')
 ON CONFLICT (config_key) DO NOTHING;
 
