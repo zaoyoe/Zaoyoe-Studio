@@ -1558,6 +1558,8 @@ const DISABLE_OAUTH_REDIRECT_FALLBACK = true;
 const GOOGLE_POPUP_MESSAGE_TYPE = 'zaoyoe:google-auth-popup';
 const GOOGLE_POPUP_WINDOW_NAME = 'google_login';
 const GOOGLE_POPUP_RESULT_STORAGE_KEY = 'zaoyoe_google_popup_auth_result_v1';
+const GOOGLE_POPUP_STATE_PREFIX = 'zaoyoe_google_popup:';
+const GOOGLE_POPUP_STATE_STORAGE_KEY = 'zaoyoe_google_popup_state_v1';
 let googleIdentityScriptPromise = null;
 window.currentGoogleNonce = null;
 window.currentGoogleNonceHash = null;
@@ -1624,6 +1626,32 @@ function isGooglePopupWindow() {
     );
 }
 
+function createGooglePopupState() {
+    const state = `${GOOGLE_POPUP_STATE_PREFIX}${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
+    try {
+        localStorage.setItem(GOOGLE_POPUP_STATE_STORAGE_KEY, state);
+    } catch (err) {
+        console.warn('Failed to persist Google popup state:', err);
+    }
+    return state;
+}
+
+function isGooglePopupState(value) {
+    return typeof value === 'string' && value.startsWith(GOOGLE_POPUP_STATE_PREFIX);
+}
+
+function clearGooglePopupState(value = '') {
+    try {
+        const currentState = localStorage.getItem(GOOGLE_POPUP_STATE_STORAGE_KEY);
+        if (!currentState) return;
+        if (!value || currentState === value) {
+            localStorage.removeItem(GOOGLE_POPUP_STATE_STORAGE_KEY);
+        }
+    } catch (err) {
+        console.warn('Failed to clear Google popup state:', err);
+    }
+}
+
 function buildGooglePopupRedirectUrl(mode = 'callback') {
     const popupUrl = new URL('/auth-callback.html', window.location.origin);
     popupUrl.searchParams.set('popup', '1');
@@ -1655,8 +1683,8 @@ function broadcastGooglePopupResult(payload) {
     }
 }
 
-function attemptCloseCurrentGooglePopup() {
-    if (!isGooglePopupWindow()) return false;
+function attemptCloseCurrentGooglePopup(force = false) {
+    if (!force && !isGooglePopupWindow()) return false;
 
     const tryClose = () => {
         try {
@@ -1670,11 +1698,10 @@ function attemptCloseCurrentGooglePopup() {
     setTimeout(() => {
         if (window.closed) return;
         try {
-            window.open('', '_self');
+            window.location.replace(buildGooglePopupRedirectUrl('close'));
         } catch (_) {
             // ignore
         }
-        tryClose();
     }, 120);
 
     return true;
@@ -1751,6 +1778,7 @@ function ensureGooglePopupMessageBridge() {
         googlePopupAuthResultHandled = true;
         stopGooglePopupMonitor();
         closeTrackedGooglePopup();
+        clearGooglePopupState();
         setGoogleButtonsLoading(false);
 
         if (payload.status === 'success') {
@@ -1983,11 +2011,13 @@ function openGooglePopupFallback() {
     const clientId = '1017068787594-ep4bj8cdirkllqlpbmlfk436br0vbifp.apps.googleusercontent.com';
     const redirectUri = window.location.origin;
     const scope = 'openid email profile';
+    const popupState = createGooglePopupState();
     const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
         `client_id=${encodeURIComponent(clientId)}` +
         `&redirect_uri=${encodeURIComponent(redirectUri)}` +
         `&response_type=id_token` +
         `&scope=${encodeURIComponent(scope)}` +
+        `&state=${encodeURIComponent(popupState)}` +
         `&nonce=${Date.now()}` +
         `&prompt=select_account`;
 
@@ -2019,6 +2049,7 @@ function openGooglePopupFallback() {
         if (!googlePopupWindowRef || googlePopupWindowRef.closed) {
             stopGooglePopupMonitor();
             googlePopupWindowRef = null;
+            clearGooglePopupState();
 
             if (!googlePopupAuthResultHandled) {
                 setGoogleButtonsLoading(false);
@@ -2034,6 +2065,7 @@ function openGooglePopupFallback() {
         if (Date.now() - popupOpenedAt > 120000) {
             stopGooglePopupMonitor();
             closeTrackedGooglePopup();
+            clearGooglePopupState();
             setGoogleButtonsLoading(false);
             showAuthFeedback(
                 authT('auth.googlePopupTimeout', 'Google 登录超时，请重试'),
@@ -2098,7 +2130,7 @@ async function handleGoogleCredentialResponse(response, options = {}) {
                 userId: data?.user?.id || null
             });
             setTimeout(() => {
-                attemptCloseCurrentGooglePopup();
+                attemptCloseCurrentGooglePopup(true);
             }, 80);
             return;
         }
@@ -2115,13 +2147,13 @@ async function handleGoogleCredentialResponse(response, options = {}) {
         }
     } catch (error) {
         console.error('❌ Google ID Token login error:', error);
-        if (isGooglePopupWindow()) {
+        if (isGooglePopupWindow() || options.closePopup === true) {
             notifyGooglePopupResultToOpener({
                 status: 'error',
                 message: error.message || authT('auth.tryAgainLater', '请稍后重试')
             });
             setTimeout(() => {
-                attemptCloseCurrentGooglePopup();
+                attemptCloseCurrentGooglePopup(true);
             }, 120);
             return;
         }
@@ -2413,6 +2445,15 @@ async function initializeAuthPageBoot() {
     const oauthCode = urlParams.get('code');
     const hashHasToken = window.location.hash && window.location.hash.includes('access_token=');
     const hashHasIdToken = window.location.hash && window.location.hash.includes('id_token=');
+    const hashParams = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
+    const popupStateFromHash = hashParams.get('state') || '';
+    const popupStateFromQuery = urlParams.get('state') || '';
+    const popupState = popupStateFromHash || popupStateFromQuery;
+    const popupStateMatched = isGooglePopupState(popupState);
+
+    if (popupStateMatched) {
+        clearGooglePopupState(popupState);
+    }
 
     if (oauthCode) {
         // ===== PKCE Flow (default for signInWithOAuth) =====
@@ -2435,14 +2476,13 @@ async function initializeAuthPageBoot() {
         window.history.replaceState({}, document.title, `${url.pathname}${url.search}` || '/');
     } else if (hashHasIdToken) {
         console.log('🔐 Detected Google ID token in URL hash, completing popup login...');
-        const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
         const idToken = hashParams.get('id_token');
         const url = new URL(window.location.href);
         window.history.replaceState({}, document.title, `${url.pathname}${url.search}` || '/');
 
         if (idToken) {
             await handleGoogleCredentialResponse({ credential: idToken }, {
-                closePopup: isGooglePopupWindow()
+                closePopup: isGooglePopupWindow() || popupStateMatched
             });
         } else {
             console.warn('⚠️ Google ID token hash detected without id_token value.');
