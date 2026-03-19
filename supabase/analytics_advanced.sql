@@ -117,7 +117,7 @@ CREATE OR REPLACE FUNCTION get_points_flow(p_days INTEGER DEFAULT 30)
 RETURNS TABLE (
     source_node TEXT,
     target_node TEXT,
-    value BIGINT
+    value NUMERIC
 ) AS $$
 DECLARE
     v_start_date TIMESTAMPTZ := NOW() - (p_days || ' days')::INTERVAL;
@@ -132,7 +132,7 @@ BEGIN
             ELSE '其他收入'
         END::TEXT as source_node,
         '用户余额'::TEXT as target_node,
-        ABS(SUM(amount)) as value
+        ROUND(ABS(SUM(amount)), 1)::NUMERIC as value
     FROM public.points_ledger
     WHERE created_at >= v_start_date AND amount > 0
     GROUP BY 1
@@ -147,7 +147,7 @@ BEGIN
             WHEN reason LIKE '%扣除%' OR reason LIKE '%deduct%' THEN '管理扣除'
             ELSE '其他消费'
         END::TEXT as target_node,
-        ABS(SUM(amount)) as value
+        ROUND(ABS(SUM(amount)), 1)::NUMERIC as value
     FROM public.points_ledger
     WHERE created_at >= v_start_date AND amount < 0
     GROUP BY 2

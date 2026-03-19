@@ -17,6 +17,8 @@ let userTrendChart = null;
 let channelChart = null;
 let contentTrendChart = null;
 let communityChart = null;
+let pointsDistributionChart = null;
+let redemptionFunnelChart = null;
 
 // AI Insight cache and debounce
 let aiInsightCache = null;
@@ -620,14 +622,20 @@ function formatAIResponse(text) {
 
 // Helper: Format Number
 function formatNumber(num) {
-    if (num === null || num === undefined) return '--';
-    if (num >= 10000) {
-        return (num / 10000).toFixed(1) + 'w';
+    const value = toNumericValue(num);
+    if (value === null) return '--';
+
+    const absValue = Math.abs(value);
+    if (absValue >= 10000) {
+        return trimTrailingZeros((value / 10000).toFixed(1)) + 'w';
     }
-    if (num >= 1000) {
-        return (num / 1000).toFixed(1) + 'k';
+    if (absValue >= 1000) {
+        return trimTrailingZeros((value / 1000).toFixed(1)) + 'k';
     }
-    return num.toString();
+    if (!Number.isInteger(value)) {
+        return trimTrailingZeros(value.toFixed(1));
+    }
+    return value.toString();
 }
 
 // Helper: Format Date
@@ -642,6 +650,284 @@ function truncate(str, len) {
     return str.length > len ? str.slice(0, len) + '...' : str;
 }
 
+function toNumericValue(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const parsed = typeof value === 'number' ? value : Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function roundTo(value, digits = 1) {
+    const numericValue = toNumericValue(value);
+    if (numericValue === null) return null;
+    const factor = 10 ** digits;
+    return Math.round(numericValue * factor) / factor;
+}
+
+function trimTrailingZeros(value) {
+    return String(value)
+        .replace(/(\.\d*?[1-9])0+$/, '$1')
+        .replace(/\.0+$/, '');
+}
+
+function formatPercent(value) {
+    const numericValue = toNumericValue(value);
+    if (numericValue === null) return '--';
+    return `${trimTrailingZeros(numericValue.toFixed(2))}%`;
+}
+
+function renderHintState(iconClass, message, variant = 'empty') {
+    const className = variant === 'error' ? 'error-state' : 'empty-state-hint';
+    return `<div class="${className}">
+        <i class="${iconClass}"></i>
+        <span>${message}</span>
+    </div>`;
+}
+
+function getPointsFlowIncomeLabel(reason = '') {
+    if (/兑换码|redeem/i.test(reason)) return '兑换码';
+    if (/充值|recharge|purchase|top-?up/i.test(reason)) return '充值';
+    if (/奖励|reward|bonus|签到|check-?in|返佣|commission|拉新|signup/i.test(reason)) return '系统奖励';
+    return '其他收入';
+}
+
+function getPointsFlowExpenseLabel(reason = '') {
+    if (/解锁|unlock|consume|download|generate/i.test(reason)) return '内容解锁';
+    if (/扣除|deduct|admin/i.test(reason)) return '管理扣除';
+    return '其他消费';
+}
+
+function buildPointsFlowFromLedger(rows = []) {
+    const incomes = new Map();
+    const outflows = new Map();
+
+    rows.forEach((row) => {
+        const amount = toNumericValue(row.amount);
+        if (amount === null || amount === 0) return;
+
+        const reason = String(row.reason || '');
+        const absAmount = Math.abs(amount);
+
+        if (amount > 0) {
+            const label = getPointsFlowIncomeLabel(reason);
+            incomes.set(label, (incomes.get(label) || 0) + absAmount);
+        } else {
+            const label = getPointsFlowExpenseLabel(reason);
+            outflows.set(label, (outflows.get(label) || 0) + absAmount);
+        }
+    });
+
+    const data = [];
+
+    incomes.forEach((value, label) => {
+        data.push({
+            source_node: label,
+            target_node: '用户余额',
+            value: roundTo(value, 1) || 0
+        });
+    });
+
+    outflows.forEach((value, label) => {
+        data.push({
+            source_node: '用户余额',
+            target_node: label,
+            value: roundTo(value, 1) || 0
+        });
+    });
+
+    return data.sort((a, b) => (toNumericValue(b.value) || 0) - (toNumericValue(a.value) || 0));
+}
+
+function sumPointsFlow(items = [], direction = 'in') {
+    return roundTo(items.reduce((sum, item) => {
+        const value = toNumericValue(item.value) || 0;
+
+        if (direction === 'in' && item.target_node === '用户余额') {
+            return sum + value;
+        }
+
+        if (direction === 'out' && item.source_node === '用户余额') {
+            return sum + value;
+        }
+
+        return sum;
+    }, 0), 1) || 0;
+}
+
+async function fetchPointsHealthData() {
+    try {
+        const { data, error } = await supabaseClient.rpc('get_points_health', { p_site: getAnalyticsSiteParam() });
+        if (error) throw error;
+        if (data && typeof data === 'object') return data;
+    } catch (err) {
+        console.warn('[Analytics] get_points_health RPC failed, falling back to direct queries:', err);
+    }
+
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    let balanceQuery = supabaseClient.from('points_balance').select('user_id,total_balance');
+    balanceQuery = window.AdminSiteFilter?.applySiteFilter(balanceQuery) || balanceQuery;
+
+    let ledgerQuery = supabaseClient
+        .from('points_ledger')
+        .select('user_id,amount,created_at')
+        .lt('amount', 0)
+        .gte('created_at', thirtyDaysAgo.toISOString());
+    ledgerQuery = window.AdminSiteFilter?.applySiteFilter(ledgerQuery) || ledgerQuery;
+
+    const [{ data: balanceRows, error: balanceError }, { data: spendRows, error: spendError }] = await Promise.all([
+        balanceQuery,
+        ledgerQuery
+    ]);
+
+    if (balanceError) throw balanceError;
+    if (spendError) throw spendError;
+
+    let totalCirculation = 0;
+    let activeHolders = 0;
+
+    (balanceRows || []).forEach((row) => {
+        const balance = toNumericValue(row.total_balance) || 0;
+        totalCirculation += balance;
+        if (balance > 0) activeHolders += 1;
+    });
+
+    let monthlySpend = 0;
+    const recentSpenders = new Set();
+
+    (spendRows || []).forEach((row) => {
+        const amount = toNumericValue(row.amount);
+        if (amount === null || amount >= 0) return;
+
+        monthlySpend += Math.abs(amount);
+        if (row.user_id) recentSpenders.add(row.user_id);
+    });
+
+    const hoardingUsers = Math.max(activeHolders - recentSpenders.size, 0);
+    const velocity = totalCirculation > 0 ? roundTo((monthlySpend / totalCirculation) * 100, 2) : 0;
+    const hoardingRate = activeHolders > 0 ? roundTo((hoardingUsers / activeHolders) * 100, 2) : 0;
+
+    return {
+        total_circulation: roundTo(totalCirculation, 1) || 0,
+        monthly_spend: roundTo(monthlySpend, 1) || 0,
+        velocity: velocity || 0,
+        hoarding_rate: hoardingRate || 0,
+        active_holders: activeHolders,
+        hoarding_users: hoardingUsers
+    };
+}
+
+async function fetchPointsFlowData(days = 30) {
+    try {
+        const { data, error } = await supabaseClient.rpc('get_points_flow', {
+            p_days: days,
+            p_site: getAnalyticsSiteParam()
+        });
+
+        if (error) throw error;
+        if (Array.isArray(data)) {
+            return data.map((item) => ({
+                ...item,
+                value: roundTo(item.value, 1) || 0
+            }));
+        }
+    } catch (err) {
+        console.warn('[Analytics] get_points_flow RPC failed, falling back to direct ledger query:', err);
+    }
+
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+
+    let query = supabaseClient
+        .from('points_ledger')
+        .select('amount,reason,created_at')
+        .gte('created_at', startDate.toISOString());
+    query = window.AdminSiteFilter?.applySiteFilter(query) || query;
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    return buildPointsFlowFromLedger(data || []);
+}
+
+async function fetchPointsLeaderboardData(limit = 10) {
+    try {
+        const { data, error } = await supabaseClient.rpc('get_points_leaderboard', {
+            p_limit: limit,
+            p_site: getAnalyticsSiteParam()
+        });
+
+        if (error) throw error;
+        if (Array.isArray(data)) {
+            return data.map((row) => ({
+                ...row,
+                balance: roundTo(row.balance, 1) || 0,
+                total_spent: roundTo(row.total_spent, 1) || 0
+            }));
+        }
+    } catch (err) {
+        console.warn('[Analytics] get_points_leaderboard RPC failed, falling back to direct queries:', err);
+    }
+
+    let balanceQuery = supabaseClient.from('points_balance').select('user_id,total_balance');
+    balanceQuery = window.AdminSiteFilter?.applySiteFilter(balanceQuery) || balanceQuery;
+
+    const { data: balanceRows, error: balanceError } = await balanceQuery;
+    if (balanceError) throw balanceError;
+
+    const balanceByUser = new Map();
+    (balanceRows || []).forEach((row) => {
+        if (!row.user_id) return;
+        const amount = toNumericValue(row.total_balance) || 0;
+        balanceByUser.set(row.user_id, (balanceByUser.get(row.user_id) || 0) + amount);
+    });
+
+    const topUsers = Array.from(balanceByUser.entries())
+        .map(([user_id, balance]) => ({ user_id, balance: roundTo(balance, 1) || 0 }))
+        .sort((a, b) => b.balance - a.balance)
+        .slice(0, limit);
+
+    if (topUsers.length === 0) return [];
+
+    const userIds = topUsers.map((row) => row.user_id);
+
+    const [{ data: profiles, error: profileError }, { data: spentRows, error: spentError }] = await Promise.all([
+        supabaseClient.from('profiles').select('id,username,avatar_url').in('id', userIds),
+        (() => {
+            let query = supabaseClient
+                .from('points_ledger')
+                .select('user_id,amount')
+                .in('user_id', userIds)
+                .lt('amount', 0);
+            query = window.AdminSiteFilter?.applySiteFilter(query) || query;
+            return query;
+        })()
+    ]);
+
+    if (profileError) throw profileError;
+    if (spentError) throw spentError;
+
+    const profileMap = new Map((profiles || []).map((profile) => [profile.id, profile]));
+    const spentByUser = new Map();
+
+    (spentRows || []).forEach((row) => {
+        const amount = Math.abs(toNumericValue(row.amount) || 0);
+        spentByUser.set(row.user_id, (spentByUser.get(row.user_id) || 0) + amount);
+    });
+
+    return topUsers.map((row) => {
+        const profile = profileMap.get(row.user_id) || {};
+
+        return {
+            user_id: row.user_id,
+            username: profile.username || '匿名用户',
+            avatar_url: profile.avatar_url || '',
+            balance: row.balance,
+            total_spent: roundTo(spentByUser.get(row.user_id) || 0, 1) || 0
+        };
+    });
+}
+
 // Export for global access
 // ============================================
 // POINTS ANALYTICS (PHASE 2)
@@ -650,30 +936,45 @@ function truncate(str, len) {
 // Load Points Health Stats
 async function loadPointsStats() {
     try {
-        const { data, error } = await supabaseClient.rpc('get_points_health', { p_site: getAnalyticsSiteParam() });
+        const [data, weeklyFlow] = await Promise.all([
+            fetchPointsHealthData(),
+            fetchPointsFlowData(7)
+        ]);
 
-        if (error) throw error;
+        const totalCirculation = toNumericValue(data?.total_circulation);
+        const weeklyIncome = toNumericValue(data?.weekly_income) ?? sumPointsFlow(weeklyFlow, 'in');
+        const weeklySpend = toNumericValue(data?.weekly_spend) ?? sumPointsFlow(weeklyFlow, 'out');
 
-        // data: { velocity, hoarding_rate, total_circulation, ... }
+        const circulationEl = document.getElementById('kpiPointsValue');
+        if (circulationEl && totalCirculation !== null) {
+            circulationEl.textContent = formatNumber(totalCirculation);
+        }
 
-        // Update KPIs if elements exist
+        const incomeEl = document.getElementById('kpiPointsInValue');
+        if (incomeEl) {
+            incomeEl.textContent = formatNumber(weeklyIncome);
+        }
+
+        const spendEl = document.getElementById('kpiPointsOutValue');
+        if (spendEl) {
+            spendEl.textContent = formatNumber(weeklySpend);
+        }
+
         const velocityEl = document.getElementById('kpiPointsVelocityValue');
         if (velocityEl) {
-            velocityEl.textContent = (data.velocity || 0) + '%';
+            velocityEl.textContent = formatPercent(data?.velocity || 0);
         }
-
-        // Hoarding Rate - currently no dedicated KPI card in HTML
-        /*
-        const hoardingEl = document.getElementById('kpiPointsHoardingValue');
-        if (hoardingEl) {
-            hoardingEl.textContent = (data.hoarding_rate || 0) + '%';
-        }
-        */
-
-        // We could also update circulation if needed, but overview handles it
 
     } catch (err) {
         console.error('[Analytics] Failed to load points health:', err);
+
+        const incomeEl = document.getElementById('kpiPointsInValue');
+        const spendEl = document.getElementById('kpiPointsOutValue');
+        const velocityEl = document.getElementById('kpiPointsVelocityValue');
+
+        if (incomeEl) incomeEl.textContent = '--';
+        if (spendEl) spendEl.textContent = '--';
+        if (velocityEl) velocityEl.textContent = '--';
     }
 }
 
@@ -688,7 +989,11 @@ async function loadPointsDistribution() {
 
         const theme = getChartTheme();
 
-        new Chart(ctx, {
+        if (pointsDistributionChart) {
+            pointsDistributionChart.destroy();
+        }
+
+        pointsDistributionChart = new Chart(ctx, {
             type: 'bar',
             data: {
                 labels: data.map(d => d.range_label),
@@ -726,20 +1031,22 @@ async function loadPointsDistribution() {
 
     } catch (err) {
         console.error('[Analytics] Failed to load points distribution:', err);
+        const ctx = document.getElementById('pointsDistChart');
+        if (ctx?.parentElement) {
+            ctx.parentElement.innerHTML = renderHintState('fas fa-chart-bar', '积分分布加载失败', 'error');
+        }
     }
 }
 
 // Load Points Leaderboard
 async function loadPointsLeaderboard() {
     try {
-        const { data, error } = await supabaseClient.rpc('get_points_leaderboard', { p_limit: 10, p_site: getAnalyticsSiteParam() });
-        if (error) throw error;
-
+        const data = await fetchPointsLeaderboardData(10);
         const container = document.getElementById('pointsLeaderboard');
         if (!container) return;
 
         if (!data || data.length === 0) {
-            container.innerHTML = '<div class="empty-state">暂无数据</div>';
+            container.innerHTML = renderHintState('fas fa-trophy', '暂无积分排行榜数据');
             return;
         }
 
@@ -761,6 +1068,10 @@ async function loadPointsLeaderboard() {
 
     } catch (err) {
         console.error('[Analytics] Failed to load leaderboard:', err);
+        const container = document.getElementById('pointsLeaderboard');
+        if (container) {
+            container.innerHTML = renderHintState('fas fa-triangle-exclamation', '积分富豪榜加载失败', 'error');
+        }
     }
 }
 
@@ -796,7 +1107,11 @@ async function loadRedemptionFunnel() {
 
         const theme = getChartTheme();
 
-        new Chart(ctx, {
+        if (redemptionFunnelChart) {
+            redemptionFunnelChart.destroy();
+        }
+
+        redemptionFunnelChart = new Chart(ctx, {
             type: 'bar',
             data: {
                 labels: data.map(d => d.step),
@@ -836,6 +1151,10 @@ async function loadRedemptionFunnel() {
 
     } catch (err) {
         console.error('[Analytics] Failed to load redemption funnel:', err);
+        const ctx = document.getElementById('redemptionFunnelChart');
+        if (ctx?.parentElement) {
+            ctx.parentElement.innerHTML = renderHintState('fas fa-ticket-alt', '兑换漏斗加载失败', 'error');
+        }
     }
 }
 
@@ -1241,18 +1560,12 @@ async function loadRetentionCohort() {
 // Load Points Flow (Sankey-style list)
 async function loadPointsFlow() {
     try {
-        const { data, error } = await supabaseClient.rpc('get_points_flow', { p_days: 30, p_site: getAnalyticsSiteParam() });
-
-        if (error) throw error;
-
+        const data = await fetchPointsFlowData(30);
         const container = document.getElementById('pointsFlow');
         if (!container) return;
 
         if (!data || data.length === 0) {
-            container.innerHTML = `<div class="empty-state-hint">
-                <i class="fas fa-exchange-alt"></i>
-                <span>暂无积分流向数据</span>
-            </div>`;
+            container.innerHTML = renderHintState('fas fa-exchange-alt', '暂无积分流向数据');
             return;
         }
 
@@ -1286,6 +1599,10 @@ async function loadPointsFlow() {
 
     } catch (err) {
         console.error('[Analytics] Failed to load points flow:', err);
+        const container = document.getElementById('pointsFlow');
+        if (container) {
+            container.innerHTML = renderHintState('fas fa-triangle-exclamation', '积分流向加载失败', 'error');
+        }
     }
 }
 
@@ -3284,4 +3601,3 @@ refreshAllAnalytics = async function () {
 };
 
 window.dismissAllAlerts = dismissAllAlerts;
-

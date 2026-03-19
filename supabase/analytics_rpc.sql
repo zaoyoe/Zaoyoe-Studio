@@ -560,8 +560,8 @@ RETURNS TABLE (
     user_id UUID,
     username TEXT,
     avatar_url TEXT,
-    balance INTEGER,
-    total_spent INTEGER
+    balance NUMERIC,
+    total_spent NUMERIC
 ) AS $$
 BEGIN
     RETURN QUERY
@@ -573,7 +573,7 @@ BEGIN
         COALESCE(
             (SELECT ABS(SUM(amount)) FROM public.points_ledger pl 
              WHERE pl.user_id = up.user_id AND pl.amount < 0), 0
-        )::INTEGER AS total_spent
+        )::NUMERIC AS total_spent
     FROM public.user_points up
     LEFT JOIN public.profiles p ON p.id = up.user_id
     ORDER BY up.balance DESC
@@ -588,11 +588,14 @@ DECLARE
     v_total_users BIGINT;
     v_users_with_points BIGINT;
     v_hoarding_users BIGINT; -- Users with points but no spend in 30 days
-    v_total_circulation BIGINT;
-    v_monthly_spend BIGINT;
+    v_total_circulation NUMERIC(12,1);
+    v_monthly_spend NUMERIC(12,1);
+    v_weekly_income NUMERIC(12,1);
+    v_weekly_spend NUMERIC(12,1);
     v_velocity NUMERIC;
     v_hoarding_rate NUMERIC;
     v_30_days_ago TIMESTAMP := NOW() - INTERVAL '30 days';
+    v_7_days_ago TIMESTAMP := NOW() - INTERVAL '7 days';
 BEGIN
     -- Total circulation
     SELECT COALESCE(SUM(balance), 0) INTO v_total_circulation FROM public.user_points;
@@ -601,6 +604,14 @@ BEGIN
     SELECT COALESCE(ABS(SUM(amount)), 0) INTO v_monthly_spend
     FROM public.points_ledger
     WHERE amount < 0 AND created_at >= v_30_days_ago;
+
+    SELECT COALESCE(SUM(amount), 0) INTO v_weekly_income
+    FROM public.points_ledger
+    WHERE amount > 0 AND created_at >= v_7_days_ago;
+
+    SELECT COALESCE(ABS(SUM(amount)), 0) INTO v_weekly_spend
+    FROM public.points_ledger
+    WHERE amount < 0 AND created_at >= v_7_days_ago;
     
     -- Velocity = Monthly Spend / Total Circulation (Turnover rate)
     IF v_total_circulation > 0 THEN
@@ -634,6 +645,8 @@ BEGIN
     RETURN jsonb_build_object(
         'total_circulation', v_total_circulation,
         'monthly_spend', v_monthly_spend,
+        'weekly_income', COALESCE(v_weekly_income, 0),
+        'weekly_spend', COALESCE(v_weekly_spend, 0),
         'velocity', v_velocity, -- % turnover per month
         'hoarding_rate', v_hoarding_rate, -- % of inactive holders
         'active_holders', v_users_with_points,
@@ -674,4 +687,3 @@ BEGIN
         CASE WHEN v_redeemed > 0 THEN ROUND((v_users::NUMERIC / v_redeemed::NUMERIC) * 100, 2) ELSE 0 END;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-
