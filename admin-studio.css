@@ -3271,6 +3271,26 @@ body {
     border: 1px solid rgba(239, 68, 68, 0.2);
 }
 
+/* Keep user-list status pills centered even if later generic badge styles override them */
+.users-table th.col-status,
+.users-table td:has(.status-badge) {
+    text-align: center;
+}
+
+.users-table .status-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-width: 92px;
+    margin: 0 auto;
+    text-align: center;
+}
+
+.users-table .status-badge i {
+    flex: 0 0 auto;
+}
+
 /* Cells */
 .user-cell {
     display: flex;
