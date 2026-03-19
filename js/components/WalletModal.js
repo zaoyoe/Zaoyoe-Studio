@@ -898,6 +898,61 @@
             return normalizedRef;
         },
 
+        isAffiliateRewardReason(reason = '', referenceId = '') {
+            const rawReason = String(reason || '').trim();
+            const normalizedRef = String(referenceId || '').trim().toUpperCase();
+
+            return rawReason.startsWith('推广返佣')
+                || rawReason.startsWith('拉新固定奖励')
+                || rawReason.startsWith('邀请拉新奖励')
+                || normalizedRef.startsWith('AFFILIATE_REWARD_')
+                || normalizedRef.startsWith('AFF_REW_')
+                || normalizedRef.startsWith('REG_REWARD_');
+        },
+
+        getAffiliateRewardMeta(reason = '', referenceId = '') {
+            const rawReason = String(reason || '').trim();
+            const normalizedRef = String(referenceId || '').trim().toUpperCase();
+
+            if (normalizedRef.startsWith('REG_REWARD_UNLOCK_RECHARGE_') || rawReason.includes('首充激活')) {
+                return {
+                    rewardType: 'registration_reward',
+                    sourceKind: 'recharge',
+                    label: '邀请首充奖励',
+                    icon: 'fa-gift',
+                    color: '#34d399'
+                };
+            }
+
+            if (normalizedRef.startsWith('REG_REWARD_UNLOCK_') || rawReason.includes('首单激活')) {
+                return {
+                    rewardType: 'registration_reward',
+                    sourceKind: 'purchase',
+                    label: '邀请消费奖励',
+                    icon: 'fa-seedling',
+                    color: '#f59e0b'
+                };
+            }
+
+            if (normalizedRef.startsWith('REG_REWARD_') || rawReason.startsWith('邀请拉新奖励')) {
+                return {
+                    rewardType: 'registration_reward',
+                    sourceKind: 'register',
+                    label: '邀请注册奖励',
+                    icon: 'fa-user-check',
+                    color: '#8b5cf6'
+                };
+            }
+
+            return {
+                rewardType: 'commission',
+                sourceKind: 'purchase',
+                label: '推广返佣',
+                icon: 'fa-share-alt',
+                color: '#38bdf8'
+            };
+        },
+
         getRechargeDisplayName(reason = '') {
             const rawReason = String(reason || '').trim();
             if (!rawReason) {
@@ -1601,44 +1656,79 @@
                                 </div>
                             </div>
 
-                            <div class="wallet-view wallet-view-flex" id="view-affiliate" style="flex-direction:column; gap:20px;">
-                                <!-- Top Stats Cards -->
-                                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px;">
-                                    <div class="stat-box" style="background: linear-gradient(135deg, rgba(245,158,11,0.1), rgba(217,119,6,0.15)); border:1px solid rgba(245,158,11,0.25); padding:20px; border-radius:16px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; transition:transform 0.2s; cursor:default;" onmouseover="this.style.transform='scale(1.02)'" onmouseout="this.style.transform='scale(1)'">
-                                        <div style="font-size:13px; color:#fcd34d; margin-bottom:10px; display:flex; align-items:center; gap:6px;"><i class="fas fa-coins"></i> ${window.i18n?.t('wallet.totalCommission') || '累计获得佣金'}</div>
-                                        <div id="affiliate-commission" style="font-size:36px; font-weight:700; color:#fff; font-family:monospace; line-height:1;">0</div>
-                                    </div>
-                                    
-                                    <div class="stat-box" style="background: linear-gradient(135deg, rgba(59,130,246,0.1), rgba(37,99,235,0.15)); border:1px solid rgba(59,130,246,0.25); padding:20px; border-radius:16px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; transition:transform 0.2s; cursor:default;" onmouseover="this.style.transform='scale(1.02)'" onmouseout="this.style.transform='scale(1)'">
-                                        <div style="font-size:13px; color:#93c5fd; margin-bottom:10px; display:flex; align-items:center; gap:6px;"><i class="fas fa-users"></i> ${window.i18n?.t('wallet.invitedCount') || '成功邀请人数'}</div>
-                                        <div id="affiliate-count" style="font-size:36px; font-weight:700; color:#fff; font-family:monospace; line-height:1; display:flex; align-items:baseline; gap:4px;">0 <span style="font-size:14px; color:rgba(255,255,255,0.5); font-weight:normal; font-family:sans-serif;">人</span></div>
-                                    </div>
-                                </div>
-
-                                <!-- Link Section -->
-                                <div class="premium-panel" style="padding:24px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:16px; display:flex; flex-direction:column; gap:16px; box-shadow:0 10px 30px rgba(0,0,0,0.2);">
-                                    <div>
-                                        <h3 style="margin:0 0 8px 0; color:#fff; font-size:16px; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
-                                            <span style="display:flex; align-items:center; gap:8px;">
-                                                <i class="fas fa-link" style="color:#10b981;"></i> ${window.i18n?.t('wallet.getInviteLink') || '获取专属推广链接'}
-                                            </span>
-                                            <span class="affiliate-reward-guide" id="affiliate-reward-guide">奖励说明</span>
-                                        </h3>
-                                        <p id="affiliate-desc-text" style="margin:0; color:rgba(255,255,255,0.5); font-size:13px; line-height:1.6;">
-                                            加载中...
-                                        </p>
-                                    </div>
-                                    
-                                    <div style="display:flex; gap:12px; align-items:center; background:rgba(0,0,0,0.4); border:1px solid rgba(255,255,255,0.1); border-radius:12px; padding:6px; padding-left:16px;">
-                                        <input type="text" id="affiliate-link" readonly style="flex:1; background:transparent; border:none; color:#10b981; font-family:monospace; font-size:14px; outline:none; white-space:nowrap; text-overflow:ellipsis; cursor:pointer;" onclick="this.select()" />
-                                        <button onclick="WalletModal.copyAffiliateLink()" style="background:#fff; color:#000; border:none; padding:10px 20px; border-radius:8px; font-weight:600; cursor:pointer; font-size:13px; transition:all 0.2s; white-space:nowrap;" onmouseover="this.style.background='#f0f0f0';this.style.transform='scale(1.05)'" onmouseout="this.style.background='#fff';this.style.transform='scale(1)'">
-                                            ${window.i18n?.t('wallet.copyLink') || '复制链接'}
-                                        </button>
+                            <div class="wallet-view wallet-view-flex wallet-affiliate-view" id="view-affiliate">
+                                <div class="wallet-affiliate-shell">
+                                    <div class="wallet-affiliate-stats">
+                                        <div class="affiliate-stat-card affiliate-stat-card-gold">
+                                            <div class="affiliate-stat-label"><i class="fas fa-coins"></i> 累计推广奖励</div>
+                                            <div class="affiliate-stat-value" id="affiliate-commission">0</div>
+                                            <div class="affiliate-stat-meta" id="affiliate-reward-breakdown">返佣 0 · 拉新 0</div>
+                                        </div>
+                                        <div class="affiliate-stat-card affiliate-stat-card-blue">
+                                            <div class="affiliate-stat-label"><i class="fas fa-user-plus"></i> 成功邀请人数</div>
+                                            <div class="affiliate-stat-value" id="affiliate-count">0</div>
+                                            <div class="affiliate-stat-meta" id="affiliate-count-meta">已消费 0 人</div>
+                                        </div>
+                                        <div class="affiliate-stat-card affiliate-stat-card-teal">
+                                            <div class="affiliate-stat-label"><i class="fas fa-bolt"></i> 已完成首充</div>
+                                            <div class="affiliate-stat-value" id="affiliate-recharge-count">0</div>
+                                            <div class="affiliate-stat-meta" id="affiliate-recharge-meta">待激活 0 人</div>
+                                        </div>
+                                        <div class="affiliate-stat-card affiliate-stat-card-rose">
+                                            <div class="affiliate-stat-label"><i class="fas fa-chart-line"></i> 累计贡献消费</div>
+                                            <div class="affiliate-stat-value" id="affiliate-spend-total">0</div>
+                                            <div class="affiliate-stat-meta" id="affiliate-spend-meta">持续返佣 0 积分</div>
+                                        </div>
                                     </div>
 
-                                    <button onclick="WalletModal.generateAffiliatePoster()" style="margin-top:8px; width:100%; border:none; padding:14px; border-radius:12px; background:linear-gradient(135deg, #10b981, #059669); color:#fff; font-weight:600; font-size:14px; cursor:pointer; box-shadow:0 10px 20px rgba(16,185,129,0.2); transition:all 0.25s; display:flex; align-items:center; justify-content:center; gap:8px;" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 15px 25px rgba(16,185,129,0.3)';" onmouseout="this.style.transform='translateY(0)';this.style.boxShadow='0 10px 20px rgba(16,185,129,0.2)';">
-                                        <i class="fas fa-image"></i> ${window.i18n?.t('wallet.generatePoster') || '生成海报'}
-                                    </button>
+                                    <div class="wallet-affiliate-panels">
+                                        <section class="wallet-affiliate-panel wallet-affiliate-link-panel">
+                                            <div class="wallet-affiliate-panel-head">
+                                                <div>
+                                                    <h3>
+                                                        <i class="fas fa-link" style="color:#10b981;"></i>
+                                                        ${window.i18n?.t('wallet.getInviteLink') || '获取专属推广链接'}
+                                                    </h3>
+                                                    <p id="affiliate-desc-text" class="wallet-affiliate-desc">
+                                                        加载中...
+                                                    </p>
+                                                </div>
+                                                <span class="affiliate-reward-guide" id="affiliate-reward-guide">奖励说明</span>
+                                            </div>
+
+                                            <div class="wallet-affiliate-link-row">
+                                                <input type="text" id="affiliate-link" readonly class="wallet-affiliate-link-input" onclick="this.select()" />
+                                                <button class="wallet-affiliate-copy-btn" onclick="WalletModal.copyAffiliateLink()">
+                                                    ${window.i18n?.t('wallet.copyLink') || '复制链接'}
+                                                </button>
+                                            </div>
+
+                                            <button class="wallet-affiliate-poster-btn" onclick="WalletModal.generateAffiliatePoster()">
+                                                <i class="fas fa-image"></i> ${window.i18n?.t('wallet.generatePoster') || '生成海报'}
+                                            </button>
+                                        </section>
+
+                                        <section class="wallet-affiliate-panel wallet-affiliate-journey-panel">
+                                            <div class="wallet-affiliate-panel-head wallet-affiliate-panel-head-compact">
+                                                <div>
+                                                    <h3>
+                                                        <i class="fas fa-road" style="color:#8ab4ff;"></i>
+                                                        邀请旅程
+                                                    </h3>
+                                                    <p class="wallet-affiliate-subtitle">一眼看到谁已注册、谁完成首充、谁已经开始贡献返佣。</p>
+                                                </div>
+                                                <div class="affiliate-stage-summary" id="affiliate-stage-summary">
+                                                    <span class="affiliate-stage-pill">注册 0</span>
+                                                    <span class="affiliate-stage-pill">首充 0</span>
+                                                    <span class="affiliate-stage-pill">消费 0</span>
+                                                </div>
+                                            </div>
+
+                                            <div class="affiliate-member-list" id="affiliate-members">
+                                                <div class="loading-text">${window.i18n?.t('common.loading') || '加载中...'}</div>
+                                            </div>
+                                        </section>
+                                    </div>
                                 </div>
                             </div>
                             </div>
@@ -2073,6 +2163,164 @@
             return lines.join('\n');
         },
 
+        getAffiliateStageMeta(member = {}) {
+            const stageStep = Math.max(1, Number(member.stage_step) || 1);
+            const grantedReward = this.normalizePointValue(member.registration_reward_granted);
+            const pendingReward = this.normalizePointValue(member.registration_reward_pending);
+
+            if (stageStep >= 3) {
+                return {
+                    label: '已消费',
+                    hint: '已完成首笔消费，持续返佣已开始',
+                    tone: 'success',
+                    rewardText: grantedReward > 0
+                        ? `拉新奖励 +${this.formatPoints(grantedReward)} 积分`
+                        : '已进入持续返佣阶段'
+                };
+            }
+
+            if (stageStep >= 2) {
+                return {
+                    label: '已首充',
+                    hint: '已完成首充，等待首笔消费继续贡献返佣',
+                    tone: 'active',
+                    rewardText: grantedReward > 0
+                        ? `拉新奖励 +${this.formatPoints(grantedReward)} 积分`
+                        : (pendingReward > 0 ? `奖励待处理 ${this.formatPoints(pendingReward)} 积分` : '已进入激活阶段')
+                };
+            }
+
+            return {
+                label: '已注册',
+                hint: pendingReward > 0
+                    ? `等待首充激活 ${this.formatPoints(pendingReward)} 积分拉新奖励`
+                    : '等待后续首充或消费',
+                tone: 'pending',
+                rewardText: pendingReward > 0
+                    ? `待激活 ${this.formatPoints(pendingReward)} 积分`
+                    : '当前无额外拉新奖励'
+            };
+        },
+
+        renderAffiliateMembers(stats = this.affiliateStats || {}) {
+            const container = document.getElementById('affiliate-members');
+            const summaryEl = document.getElementById('affiliate-stage-summary');
+            if (!container) return;
+
+            const members = Array.isArray(stats.members) ? stats.members : [];
+            const invitedCount = Number(stats.invited_count) || 0;
+            const rechargeCount = Number(stats.first_recharge_count) || 0;
+            const consumedCount = Number(stats.consumed_count) || 0;
+
+            if (summaryEl) {
+                summaryEl.innerHTML = `
+                    <span class="affiliate-stage-pill">注册 ${invitedCount}</span>
+                    <span class="affiliate-stage-pill">首充 ${rechargeCount}</span>
+                    <span class="affiliate-stage-pill">消费 ${consumedCount}</span>
+                `;
+            }
+
+            if (members.length === 0) {
+                container.innerHTML = `
+                    <div class="affiliate-empty-state">
+                        <div class="affiliate-empty-icon"><i class="fas fa-users"></i></div>
+                        <div class="affiliate-empty-title">还没有邀请记录</div>
+                        <div class="affiliate-empty-copy">分享上面的专属链接后，这里会按“注册 → 首充 → 消费”的旅程自动更新。</div>
+                    </div>
+                `;
+                return;
+            }
+
+            const pointsUnit = window.i18n?.t('wallet.pointsUnit') || '积分';
+
+            container.innerHTML = members.map((member) => {
+                const displayName = String(member.display_name || member.username || member.masked_email || '新用户').trim();
+                const maskedEmail = String(member.masked_email || '').trim();
+                const registeredAt = this.formatOrderDateTime(member.registered_at);
+                const firstRechargeAt = member.first_recharge_at ? this.formatOrderDateTime(member.first_recharge_at) : '未完成';
+                const firstPurchaseAt = member.first_purchase_at ? this.formatOrderDateTime(member.first_purchase_at) : '未完成';
+                const stageMeta = this.getAffiliateStageMeta(member);
+                const totalSpend = this.formatPoints(member.total_spend || 0);
+                const commissionEarned = this.formatPoints(member.commission_earned || 0);
+                const registrationRewardGranted = this.normalizePointValue(member.registration_reward_granted || 0);
+                const pendingReward = this.normalizePointValue(member.registration_reward_pending || 0);
+                const rewardText = registrationRewardGranted > 0
+                    ? `${this.formatPoints(registrationRewardGranted)} ${pointsUnit}`
+                    : (pendingReward > 0 ? `待激活 ${this.formatPoints(pendingReward)} ${pointsUnit}` : '未开启');
+                const lastOrderName = String(member.last_order_name || '').trim();
+                const lastOrderAmount = Number(member.last_order_amount);
+                const latestLabel = lastOrderName
+                    ? `${this.escapeHtml(lastOrderName)}${Number.isFinite(lastOrderAmount) ? ` · ${this.formatPoints(lastOrderAmount)} ${pointsUnit}` : ''}`
+                    : `注册于 ${this.escapeHtml(registeredAt)}`;
+                const badgeClass = `affiliate-member-badge affiliate-member-badge-${stageMeta.tone}`;
+                const avatarLabel = this.escapeHtml(displayName.charAt(0).toUpperCase() || 'U');
+                const secondaryLine = [maskedEmail, `注册于 ${registeredAt}`].filter(Boolean).join(' · ');
+
+                return `
+                    <article class="affiliate-member-card">
+                        <div class="affiliate-member-head">
+                            <div class="affiliate-member-avatar">
+                                ${member.avatar_url
+                                    ? `<img src="${this.escapeHtml(member.avatar_url)}" alt="${this.escapeHtml(displayName)}" />`
+                                    : `<span>${avatarLabel}</span>`}
+                            </div>
+                            <div class="affiliate-member-ident">
+                                <div class="affiliate-member-name-row">
+                                    <div class="affiliate-member-name">${this.escapeHtml(displayName)}</div>
+                                    <span class="${badgeClass}">${stageMeta.label}</span>
+                                </div>
+                                <div class="affiliate-member-sub">${this.escapeHtml(secondaryLine || '新邀请用户')}</div>
+                                <div class="affiliate-member-note">${this.escapeHtml(stageMeta.hint)}</div>
+                            </div>
+                        </div>
+
+                        <div class="affiliate-stage-track">
+                            <div class="affiliate-stage-node affiliate-stage-node-done">
+                                <span class="affiliate-stage-dot"></span>
+                                <div class="affiliate-stage-copy">
+                                    <strong>注册</strong>
+                                    <span>${this.escapeHtml(registeredAt)}</span>
+                                </div>
+                            </div>
+                            <div class="affiliate-stage-node ${member.first_recharge_at ? 'affiliate-stage-node-done' : 'affiliate-stage-node-todo'}">
+                                <span class="affiliate-stage-dot"></span>
+                                <div class="affiliate-stage-copy">
+                                    <strong>首充</strong>
+                                    <span>${this.escapeHtml(firstRechargeAt)}</span>
+                                </div>
+                            </div>
+                            <div class="affiliate-stage-node ${member.first_purchase_at ? 'affiliate-stage-node-done' : 'affiliate-stage-node-todo'}">
+                                <span class="affiliate-stage-dot"></span>
+                                <div class="affiliate-stage-copy">
+                                    <strong>消费</strong>
+                                    <span>${this.escapeHtml(firstPurchaseAt)}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="affiliate-member-metrics">
+                            <div class="affiliate-member-metric">
+                                <span>累计贡献</span>
+                                <strong>${totalSpend} ${pointsUnit}</strong>
+                            </div>
+                            <div class="affiliate-member-metric">
+                                <span>返佣贡献</span>
+                                <strong>${commissionEarned} ${pointsUnit}</strong>
+                            </div>
+                            <div class="affiliate-member-metric">
+                                <span>拉新奖励</span>
+                                <strong>${this.escapeHtml(rewardText)}</strong>
+                            </div>
+                            <div class="affiliate-member-metric">
+                                <span>${lastOrderName ? '最近订单' : '最近动态'}</span>
+                                <strong>${latestLabel}</strong>
+                            </div>
+                        </div>
+                    </article>
+                `;
+            }).join('');
+        },
+
         renderAffiliateDescription(stats = this.affiliateStats || {}) {
             const descEl = document.getElementById('affiliate-desc-text');
             if (!descEl) return;
@@ -2098,7 +2346,7 @@
             }
 
             if (safeRegistrationReward > 0) {
-                descEl.innerHTML = `分享专属链接邀请新用户。当好友注册并在商城<strong>${rewardTriggerText}</strong>后，您将获得 <strong style="color:#10b981; font-weight:600;">${rewardPointsText} 积分</strong> 专属拉新奖励；此外，好友后续所有商城订单还会持续按 <strong style="color:#f59e0b; font-weight:600;">${ratePercent}</strong> 自动返佣。<span class="affiliate-legal-note">${this.escapeHtml(legalDisclaimer)}</span>`;
+                descEl.innerHTML = `分享专属链接邀请新用户。当好友注册并<strong>${rewardTriggerText}</strong>后，您将获得 <strong style="color:#10b981; font-weight:600;">${rewardPointsText} 积分</strong> 专属拉新奖励；此外，好友后续所有商城订单还会持续按 <strong style="color:#f59e0b; font-weight:600;">${ratePercent}</strong> 自动返佣。<span class="affiliate-legal-note">${this.escapeHtml(legalDisclaimer)}</span>`;
                 return;
             }
 
@@ -2147,24 +2395,59 @@
                         invite_code: rawStats.invite_code
                     };
                     const commissionEl = document.getElementById('affiliate-commission');
+                    const rewardBreakdownEl = document.getElementById('affiliate-reward-breakdown');
                     const countEl = document.getElementById('affiliate-count');
+                    const countMetaEl = document.getElementById('affiliate-count-meta');
+                    const rechargeCountEl = document.getElementById('affiliate-recharge-count');
+                    const rechargeMetaEl = document.getElementById('affiliate-recharge-meta');
+                    const spendTotalEl = document.getElementById('affiliate-spend-total');
+                    const spendMetaEl = document.getElementById('affiliate-spend-meta');
                     const linkEl = document.getElementById('affiliate-link');
-                    const peopleLabel = window.i18n?.t('wallet.people') || '人';
-                    const totalCommission = Number(stats.total_commission);
+                    const totalRewards = Number(stats.total_rewards ?? stats.total_commission);
+                    const totalOrderCommission = Number(stats.total_order_commission);
+                    const totalRegistrationRewards = Number(stats.total_registration_rewards);
                     const invitedCount = Number(stats.invited_count);
+                    const rechargeCount = Number(stats.first_recharge_count);
+                    const consumedCount = Number(stats.consumed_count);
+                    const pendingRewardCount = Number(stats.pending_reward_count);
+                    const totalInviteeSpend = Number(stats.total_invitee_spend);
                     const inviteCode = typeof stats.invite_code === 'string' ? stats.invite_code.trim() : '';
                     const posterConfig = this.normalizeAffiliatePosterConfig(posterResult.data);
-                    const activeTemplate = posterConfig.templates.find(template => template.id === posterConfig.active_template_id) || posterConfig.templates[0];
 
                     if (commissionEl) {
-                        commissionEl.textContent = Number.isFinite(totalCommission)
-                            ? this.formatPoints(totalCommission)
+                        commissionEl.textContent = Number.isFinite(totalRewards)
+                            ? this.formatPoints(totalRewards)
                             : '0';
                     }
 
+                    if (rewardBreakdownEl) {
+                        rewardBreakdownEl.textContent = `返佣 ${this.formatPoints(Number.isFinite(totalOrderCommission) ? totalOrderCommission : 0)} · 拉新 ${this.formatPoints(Number.isFinite(totalRegistrationRewards) ? totalRegistrationRewards : 0)}`;
+                    }
+
                     if (countEl) {
-                        const safeInvitedCount = Number.isFinite(invitedCount) ? invitedCount : 0;
-                        countEl.innerHTML = `${safeInvitedCount} <span style="font-size:14px; color:rgba(255,255,255,0.5); font-weight:normal; font-family:sans-serif;">${peopleLabel}</span>`;
+                        countEl.textContent = String(Number.isFinite(invitedCount) ? invitedCount : 0);
+                    }
+
+                    if (countMetaEl) {
+                        countMetaEl.textContent = `已消费 ${Number.isFinite(consumedCount) ? consumedCount : 0} 人`;
+                    }
+
+                    if (rechargeCountEl) {
+                        rechargeCountEl.textContent = String(Number.isFinite(rechargeCount) ? rechargeCount : 0);
+                    }
+
+                    if (rechargeMetaEl) {
+                        rechargeMetaEl.textContent = `待激活 ${Number.isFinite(pendingRewardCount) ? pendingRewardCount : 0} 人`;
+                    }
+
+                    if (spendTotalEl) {
+                        spendTotalEl.textContent = Number.isFinite(totalInviteeSpend)
+                            ? this.formatPoints(totalInviteeSpend)
+                            : '0';
+                    }
+
+                    if (spendMetaEl) {
+                        spendMetaEl.textContent = `持续返佣 ${this.formatPoints(Number.isFinite(totalOrderCommission) ? totalOrderCommission : 0)} 积分`;
                     }
 
                     this.affiliateStats = stats;
@@ -2191,6 +2474,7 @@
                     };
 
                     this.renderAffiliateDescription(stats);
+                    this.renderAffiliateMembers(stats);
 
                     if (linkEl && inviteCode) {
                         const baseUrl = window.location.origin + window.location.pathname;
@@ -2203,8 +2487,12 @@
             } catch (err) {
                 console.error('[WalletModal] Load Affiliate Error:', err);
                 const descEl = document.getElementById('affiliate-desc-text');
+                const membersEl = document.getElementById('affiliate-members');
                 if (descEl) {
                     descEl.textContent = '推广信息加载失败，请稍后重试。';
+                }
+                if (membersEl) {
+                    membersEl.innerHTML = '<div class="empty-text">推广旅程加载失败</div>';
                 }
             }
         },
@@ -4251,7 +4539,7 @@
             } else if (typeFilter === 'prompt') {
                 filtered = filtered.filter(order => order.transactionType === 'prompt');
             } else if (typeFilter === 'recharge') {
-                filtered = filtered.filter(order => order.transactionType === 'recharge');
+                filtered = filtered.filter(order => order.transactionType === 'recharge' || order.transactionType === 'affiliate');
             } else if (typeFilter === 'redeem') {
                 filtered = filtered.filter(order => order.transactionType === 'redeem');
             }
@@ -4465,6 +4753,7 @@
                     let displayName = entry.reason || '交易';
                     let icon = '💳';
                     let shopOrderId = '';
+                    let affiliateRewardMeta = null;
 
                     if (entry.reason === 'unlock_prompt') {
                         transactionType = 'prompt';
@@ -4482,6 +4771,11 @@
                             .trim() || (window.i18n?.t('wallet.shopPurchase') || '商品');
                         icon = '🛒';
                         shopOrderId = this.getShopOrderIdFromReference(entry.reference_id);
+                    } else if (this.isAffiliateRewardReason(entry.reason, entry.reference_id)) {
+                        affiliateRewardMeta = this.getAffiliateRewardMeta(entry.reason, entry.reference_id);
+                        transactionType = 'affiliate';
+                        displayName = affiliateRewardMeta.label;
+                        icon = '🤝';
                     } else if (entry.reason === 'daily_checkin') {
                         transactionType = 'recharge';
                         displayName = window.i18n?.t('wallet.dailyCheckin') || '每日签到';
@@ -4532,13 +4826,15 @@
                         isPromptUnlock: transactionType === 'prompt',
                         isVerifyOrder: transactionType === 'verify',
                         isRecharge: transactionType === 'recharge',
+                        isAffiliateReward: transactionType === 'affiliate',
                         isRedeem: transactionType === 'redeem',
                         promptId: entry.reason === 'unlock_prompt' ? entry.reference_id : null,
                         redeemCode: transactionType === 'redeem' ? entry.reference_id : null,
                         referenceId: entry.reference_id || '',
                         shopOrderId,
                         rawReason: entry.reason || '',
-                        icon
+                        icon,
+                        affiliateRewardMeta
                     };
                 });
 
@@ -4674,6 +4970,10 @@
                     const statusInfo = statusMap[order.status] || { text: completedText, class: 'status-completed' };
                     statusText = statusInfo.text;
                     statusClass = statusInfo.class;
+                } else if (order.transactionType === 'affiliate') {
+                    const meta = order.affiliateRewardMeta || this.getAffiliateRewardMeta(order.rawReason, order.referenceId);
+                    displayName = `<i class="fas ${meta.icon}" style="color: ${meta.color};"></i> ${this.escapeHtml(meta.label)}`;
+                    clickHandler = `WalletModal.showAffiliateRewardDetail('${String(order.id).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}', ${this.normalizePointValue(order.amount || order.total_price || 0)}, '${order.created_at}', '${String(order.rawReason || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}', '${String(order.referenceId || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')`;
                 } else if (order.transactionType === 'recharge') {
                     displayName = `<i class="fas fa-bolt" style="color: #fbbf24;"></i> ${this.escapeHtml(order.snapshot_product_name)}`;
                     clickHandler = `WalletModal.showRechargeOrderDetail('${order.id}', ${this.normalizePointValue(order.amount || order.total_price || 0)}, '${order.created_at}', '${String(order.rawReason || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}', '${String(order.referenceId || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')`;
@@ -4831,6 +5131,190 @@
             `;
 
             document.body.appendChild(detailOverlay);
+        },
+
+        async showAffiliateRewardDetail(orderId, amount, createdAt, reason = '', referenceId = '') {
+            this._ensureOrderDetailStyles();
+
+            const detailOverlay = document.createElement('div');
+            detailOverlay.className = 'wallet-order-modal-overlay';
+            detailOverlay.id = `affiliate-reward-detail-${orderId}`;
+            detailOverlay.onclick = (e) => {
+                if (e.target === detailOverlay) detailOverlay.remove();
+            };
+
+            detailOverlay.innerHTML = `
+                <div class="wallet-order-modal" style="display: flex; align-items: center; justify-content: center; min-height: 200px;">
+                    <div style="text-align: center; color: #6b9ece;">
+                        <i class="fas fa-circle-notch fa-spin" style="font-size: 32px; margin-bottom: 12px;"></i>
+                        <div style="font-size: 13px; opacity: 0.8;">${window.i18n?.t('wallet.loading') || '加载中...'}</div>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(detailOverlay);
+
+            try {
+                const { data: { session } } = await window.supabaseClient.auth.getSession();
+                const user = session?.user;
+                if (!user) {
+                    detailOverlay.remove();
+                    this.showToast(window.i18n?.t('security.loginRequired') || '请先登录', 'error');
+                    return;
+                }
+
+                const { data, error } = await window.supabaseClient.rpc('fn_get_affiliate_reward_detail', {
+                    p_user_id: user.id,
+                    p_ledger_id: orderId
+                });
+
+                if (error) throw error;
+
+                const detail = data && typeof data === 'object' ? data : null;
+                if (!detail?.found) {
+                    detailOverlay.remove();
+                    this.showRechargeOrderDetail(orderId, amount, createdAt, reason, referenceId);
+                    return;
+                }
+
+                const meta = this.getAffiliateRewardMeta(detail.reward_reason || reason, detail.reference_id || referenceId);
+                const rewardAmount = this.formatPoints(detail.reward_amount ?? amount ?? 0);
+                const rewardTimeText = this.formatOrderDateTime(detail.reward_created_at || createdAt);
+                const inviteeName = String(detail.invitee_name || detail.invitee_username || detail.invitee_masked_email || '被邀请用户').trim();
+                const inviteeLine = [
+                    detail.invitee_masked_email || '',
+                    detail.invitee_registered_at ? `注册于 ${this.formatOrderDateTime(detail.invitee_registered_at)}` : ''
+                ].filter(Boolean).join(' · ');
+                const sourceKind = String(detail.source_kind || meta.sourceKind || '').trim();
+                const sourceName = sourceKind === 'recharge'
+                    ? this.getRechargeDisplayName(detail.source_reason || '')
+                    : String(detail.source_name || '').trim();
+                const sourceAmount = Number(detail.source_amount);
+                const sourceAmountText = Number.isFinite(sourceAmount)
+                    ? `${this.formatPoints(sourceAmount)} ${window.i18n?.t('wallet.pointsUnit') || '积分'}`
+                    : '--';
+                const sourceTimeText = detail.source_created_at
+                    ? this.formatOrderDateTime(detail.source_created_at)
+                    : '--';
+                const sourceStageText = String(detail.source_stage || '').trim() || '推广奖励';
+                const commissionRate = Number(detail.commission_rate);
+                const commissionRateText = Number.isFinite(commissionRate) ? `${this.formatPoints(commissionRate)}%` : '--';
+                const shortLedgerId = orderId ? `${orderId.substring(0, 8)}...${orderId.slice(-4)}` : '--';
+                const shortSourceId = detail.source_order_id
+                    ? `${String(detail.source_order_id).substring(0, 8)}...${String(detail.source_order_id).slice(-4)}`
+                    : (detail.source_ledger_id
+                        ? `${String(detail.source_ledger_id).substring(0, 8)}...${String(detail.source_ledger_id).slice(-4)}`
+                        : '--');
+                const modal = detailOverlay.querySelector('.wallet-order-modal');
+                if (!modal) return;
+
+                modal.style.alignItems = 'stretch';
+                modal.style.justifyContent = 'flex-start';
+                modal.style.minHeight = 'auto';
+                modal.style.background = '';
+
+                modal.innerHTML = `
+                    <div class="wallet-order-modal-header">
+                        <div class="wallet-order-modal-title">
+                            <i class="fas ${meta.icon}" style="color: ${meta.color};"></i> ${this.escapeHtml(detail.reward_label || meta.label)}
+                        </div>
+                        <button class="wallet-order-close-btn" onclick="this.closest('.wallet-order-modal-overlay').remove()">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div class="wallet-order-modal-body" style="animation: fadeIn 0.2s ease-out;">
+                        <div class="meta-section">
+                            <div class="detail-row">
+                                <span class="detail-label">${window.i18n?.t('wallet.orderNumber') || '订单编号'}</span>
+                                <span class="detail-val mono js-copy-affiliate-ledger" style="cursor:pointer;" title="${window.i18n?.t('wallet.clickToCopy') || '点击复制'}">${this.escapeHtml(shortLedgerId)}</span>
+                            </div>
+                            ${(detail.source_order_id || detail.source_ledger_id) ? `
+                            <div class="detail-row">
+                                <span class="detail-label">${sourceKind === 'purchase' ? '关联订单' : '关联流水'}</span>
+                                <span class="detail-val mono js-copy-affiliate-source" style="cursor:pointer;" title="${window.i18n?.t('wallet.clickToCopy') || '点击复制'}">${this.escapeHtml(shortSourceId)}</span>
+                            </div>
+                            ` : ''}
+                            <div class="detail-row">
+                                <span class="detail-label">奖励类型</span>
+                                <span class="detail-val" style="color: ${meta.color};">${this.escapeHtml(detail.reward_label || meta.label)}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">奖励阶段</span>
+                                <span class="detail-val">${this.escapeHtml(sourceStageText)}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">奖励时间</span>
+                                <span class="detail-val">${this.escapeHtml(rewardTimeText)}</span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">${window.i18n?.t('wallet.receivedPoints') || '获得积分'}</span>
+                                <span class="detail-val" style="color: #10b981; font-weight: 700;">+${this.escapeHtml(rewardAmount)} ${window.i18n?.t('wallet.pointsUnit') || '积分'}</span>
+                            </div>
+                            ${meta.rewardType === 'commission' ? `
+                            <div class="detail-row">
+                                <span class="detail-label">返佣比例</span>
+                                <span class="detail-val">${this.escapeHtml(commissionRateText)}</span>
+                            </div>
+                            ` : ''}
+                        </div>
+
+                        <div class="content-section">
+                            <div class="content-section-title">被邀请人</div>
+                            <div class="content-card" style="padding: 14px 14px 12px !important;">
+                                <div style="display:flex; align-items:center; gap:12px;">
+                                    <div class="affiliate-detail-avatar">
+                                        ${detail.invitee_avatar_url
+                                            ? `<img src="${this.escapeHtml(detail.invitee_avatar_url)}" alt="${this.escapeHtml(inviteeName)}" />`
+                                            : `<span>${this.escapeHtml((inviteeName.charAt(0) || 'U').toUpperCase())}</span>`}
+                                    </div>
+                                    <div style="min-width:0;">
+                                        <div style="font-size:14px; font-weight:700; color:#f8fafc;">${this.escapeHtml(inviteeName)}</div>
+                                        <div style="font-size:12px; color:rgba(226,232,240,0.62); margin-top:4px;">${this.escapeHtml(inviteeLine || '邀请用户')}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        ${(sourceName || sourceKind) ? `
+                        <div class="content-section">
+                            <div class="content-section-title">${sourceKind === 'purchase' ? '关联订单详情' : sourceKind === 'recharge' ? '关联首充详情' : '关联动作'}</div>
+                            <div class="content-card" style="padding: 14px 14px 12px !important;">
+                                <div class="detail-row" style="margin-bottom: 8px;">
+                                    <span class="detail-label">${sourceKind === 'purchase' ? '商品 / 订单' : sourceKind === 'recharge' ? '充值类型' : '触发动作'}</span>
+                                    <span class="detail-val">${this.escapeHtml(sourceName || sourceStageText)}</span>
+                                </div>
+                                <div class="detail-row" style="margin-bottom: 8px;">
+                                    <span class="detail-label">${sourceKind === 'register' ? '完成时间' : '动作时间'}</span>
+                                    <span class="detail-val">${this.escapeHtml(sourceTimeText)}</span>
+                                </div>
+                                ${sourceKind !== 'register' ? `
+                                <div class="detail-row" style="margin-bottom: 0;">
+                                    <span class="detail-label">${sourceKind === 'purchase' ? '订单金额' : '充值金额'}</span>
+                                    <span class="detail-val">${this.escapeHtml(sourceAmountText)}</span>
+                                </div>
+                                ` : ''}
+                            </div>
+                        </div>
+                        ` : ''}
+                    </div>
+                `;
+
+                modal.querySelector('.js-copy-affiliate-ledger')?.addEventListener('click', (event) => {
+                    this.copyToClipboard(orderId, event);
+                });
+
+                if (detail.source_order_id || detail.source_ledger_id) {
+                    modal.querySelector('.js-copy-affiliate-source')?.addEventListener('click', (event) => {
+                        this.copyToClipboard(detail.source_order_id || detail.source_ledger_id, event);
+                    });
+                }
+            } catch (err) {
+                console.error('[WalletModal] Show affiliate reward detail failed:', err);
+                if (document.getElementById(`affiliate-reward-detail-${orderId}`)) {
+                    detailOverlay.remove();
+                }
+                this.showToast('加载推广奖励详情失败', 'error');
+            }
         },
 
         showRechargeOrderDetail(orderId, amount, createdAt, reason = '', referenceId = '') {

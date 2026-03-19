@@ -251,7 +251,7 @@ BEGIN
     -- 3. Leverage Affiliate Commission & Agent Markup Reward
     DECLARE
         v_inviter_id UUID;
-        v_commission INT := 0;
+        v_commission NUMERIC(12,1) := 0;
         v_agent_profit INT := 0;
         v_commission_rate FLOAT;
         v_affiliate_config JSONB;
@@ -269,7 +269,7 @@ BEGIN
         -- Handle global affiliate referral
         SELECT invited_by INTO v_inviter_id FROM profiles WHERE id = p_user_id;
         IF v_inviter_id IS NOT NULL AND v_total_price > 0 THEN
-            v_commission := FLOOR(v_base_unit_price * p_quantity * v_commission_rate);
+            v_commission := ROUND((v_base_unit_price * p_quantity * v_commission_rate)::NUMERIC, 1);
             IF v_commission > 0 THEN
                 UPDATE points_balance SET bonus_balance = bonus_balance + v_commission, updated_at = NOW() WHERE user_id = v_inviter_id;
                 INSERT INTO points_ledger (user_id, amount, reason, reference_id) VALUES (v_inviter_id, v_commission, '推广返佣 (' || (v_commission_rate * 100) || '%): 下线购买分销资源', 'AFF_REW_' || v_order_id);

@@ -264,7 +264,552 @@ body.wallet-modal-lock {
     line-height: 1.55;
 }
 
+.wallet-affiliate-view {
+    min-height: 0;
+}
+
+.wallet-affiliate-shell {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    width: 100%;
+    min-height: 0;
+    padding-right: 2px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+}
+
+.wallet-affiliate-shell::-webkit-scrollbar {
+    width: 4px;
+}
+
+.wallet-affiliate-shell::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.wallet-affiliate-shell::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 999px;
+}
+
+.wallet-affiliate-stats {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.affiliate-stat-card {
+    position: relative;
+    overflow: hidden;
+    padding: 18px 18px 16px;
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background:
+        radial-gradient(circle at top right, rgba(255, 255, 255, 0.1), transparent 46%),
+        rgba(255, 255, 255, 0.04);
+    box-shadow:
+        0 16px 34px rgba(0, 0, 0, 0.22),
+        inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(16px) saturate(118%);
+    -webkit-backdrop-filter: blur(16px) saturate(118%);
+}
+
+.affiliate-stat-card::after {
+    content: '';
+    position: absolute;
+    inset: auto -18% -42% auto;
+    width: 140px;
+    height: 140px;
+    border-radius: 50%;
+    opacity: 0.34;
+    filter: blur(0);
+    pointer-events: none;
+}
+
+.affiliate-stat-card-gold {
+    background:
+        radial-gradient(circle at top right, rgba(251, 191, 36, 0.16), transparent 48%),
+        linear-gradient(135deg, rgba(251, 191, 36, 0.12), rgba(120, 53, 15, 0.18));
+    border-color: rgba(251, 191, 36, 0.24);
+}
+
+.affiliate-stat-card-gold::after {
+    background: radial-gradient(circle, rgba(251, 191, 36, 0.24) 0%, transparent 68%);
+}
+
+.affiliate-stat-card-blue {
+    background:
+        radial-gradient(circle at top right, rgba(96, 165, 250, 0.16), transparent 48%),
+        linear-gradient(135deg, rgba(59, 130, 246, 0.12), rgba(30, 58, 138, 0.18));
+    border-color: rgba(96, 165, 250, 0.22);
+}
+
+.affiliate-stat-card-blue::after {
+    background: radial-gradient(circle, rgba(96, 165, 250, 0.22) 0%, transparent 68%);
+}
+
+.affiliate-stat-card-teal {
+    background:
+        radial-gradient(circle at top right, rgba(45, 212, 191, 0.16), transparent 48%),
+        linear-gradient(135deg, rgba(20, 184, 166, 0.12), rgba(17, 94, 89, 0.18));
+    border-color: rgba(45, 212, 191, 0.2);
+}
+
+.affiliate-stat-card-teal::after {
+    background: radial-gradient(circle, rgba(45, 212, 191, 0.2) 0%, transparent 68%);
+}
+
+.affiliate-stat-card-rose {
+    background:
+        radial-gradient(circle at top right, rgba(244, 114, 182, 0.15), transparent 48%),
+        linear-gradient(135deg, rgba(236, 72, 153, 0.1), rgba(131, 24, 67, 0.18));
+    border-color: rgba(244, 114, 182, 0.2);
+}
+
+.affiliate-stat-card-rose::after {
+    background: radial-gradient(circle, rgba(244, 114, 182, 0.2) 0%, transparent 68%);
+}
+
+.affiliate-stat-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: rgba(226, 232, 240, 0.76);
+    letter-spacing: 0.04em;
+}
+
+.affiliate-stat-value {
+    margin-top: 12px;
+    font-size: clamp(28px, 5vw, 34px);
+    line-height: 1;
+    font-weight: 700;
+    color: #f8fafc;
+    font-family: 'Outfit', 'SF Pro Display', 'Segoe UI', sans-serif;
+}
+
+.affiliate-stat-meta {
+    margin-top: 10px;
+    font-size: 12px;
+    color: rgba(226, 232, 240, 0.56);
+    line-height: 1.55;
+}
+
+.wallet-affiliate-panels {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.wallet-affiliate-panel {
+    position: relative;
+    overflow: hidden;
+    padding: 20px;
+    border-radius: 22px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02)),
+        rgba(8, 12, 18, 0.66);
+    box-shadow:
+        0 16px 34px rgba(0, 0, 0, 0.2),
+        inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.wallet-affiliate-panel::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+        radial-gradient(circle at top right, rgba(159, 202, 255, 0.08), transparent 34%),
+        radial-gradient(circle at bottom left, rgba(16, 185, 129, 0.06), transparent 30%);
+    pointer-events: none;
+}
+
+.wallet-affiliate-panel > * {
+    position: relative;
+    z-index: 1;
+}
+
+.wallet-affiliate-panel-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+}
+
+.wallet-affiliate-panel-head h3 {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 16px;
+    color: #f8fafc;
+}
+
+.wallet-affiliate-panel-head p,
+.wallet-affiliate-desc,
+.wallet-affiliate-subtitle {
+    margin: 8px 0 0;
+    color: rgba(226, 232, 240, 0.58);
+    font-size: 13px;
+    line-height: 1.7;
+}
+
+.wallet-affiliate-panel-head-compact {
+    align-items: center;
+}
+
+.wallet-affiliate-link-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-top: 18px;
+    padding: 8px;
+    padding-left: 16px;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(4, 7, 12, 0.54);
+}
+
+.wallet-affiliate-link-input {
+    flex: 1;
+    min-width: 0;
+    background: transparent;
+    border: 0;
+    color: #7ef6bf;
+    font-size: 14px;
+    font-family: 'JetBrains Mono', 'SFMono-Regular', monospace;
+    outline: none;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.wallet-affiliate-copy-btn,
+.wallet-affiliate-poster-btn {
+    border: 0;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: transform 0.22s ease, box-shadow 0.22s ease, filter 0.22s ease;
+    font-weight: 700;
+}
+
+.wallet-affiliate-copy-btn {
+    padding: 11px 18px;
+    background: linear-gradient(135deg, #f8fafc, #dbeafe);
+    color: #050816;
+    white-space: nowrap;
+}
+
+.wallet-affiliate-copy-btn:hover,
+.wallet-affiliate-poster-btn:hover {
+    transform: translateY(-1px);
+    filter: brightness(1.04);
+}
+
+.wallet-affiliate-poster-btn {
+    width: 100%;
+    margin-top: 14px;
+    padding: 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: linear-gradient(135deg, #34d399, #059669);
+    color: #f8fafc;
+    box-shadow: 0 12px 24px rgba(5, 150, 105, 0.22);
+}
+
+.affiliate-stage-summary {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.affiliate-stage-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 30px;
+    padding: 0 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+    color: rgba(241, 245, 249, 0.82);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.affiliate-member-list {
+    margin-top: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.affiliate-member-card {
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02)),
+        rgba(11, 16, 23, 0.78);
+    padding: 16px;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.04),
+        0 12px 28px rgba(0, 0, 0, 0.16);
+}
+
+.affiliate-member-head {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+}
+
+.affiliate-member-avatar,
+.affiliate-detail-avatar {
+    width: 46px;
+    height: 46px;
+    flex-shrink: 0;
+    border-radius: 16px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, rgba(107, 158, 206, 0.48), rgba(16, 185, 129, 0.28));
+    color: #f8fafc;
+    font-weight: 700;
+    font-size: 18px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+.affiliate-member-avatar img,
+.affiliate-detail-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.affiliate-member-ident {
+    min-width: 0;
+    flex: 1;
+}
+
+.affiliate-member-name-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.affiliate-member-name {
+    min-width: 0;
+    font-size: 15px;
+    font-weight: 700;
+    color: #f8fafc;
+}
+
+.affiliate-member-sub,
+.affiliate-member-note {
+    margin-top: 5px;
+    font-size: 12px;
+    line-height: 1.55;
+}
+
+.affiliate-member-sub {
+    color: rgba(226, 232, 240, 0.56);
+}
+
+.affiliate-member-note {
+    color: rgba(226, 232, 240, 0.7);
+}
+
+.affiliate-member-badge {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 28px;
+    padding: 0 12px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.affiliate-member-badge-success {
+    color: #d1fae5;
+    background: rgba(16, 185, 129, 0.14);
+    border: 1px solid rgba(16, 185, 129, 0.18);
+}
+
+.affiliate-member-badge-active {
+    color: #dbeafe;
+    background: rgba(59, 130, 246, 0.14);
+    border: 1px solid rgba(96, 165, 250, 0.18);
+}
+
+.affiliate-member-badge-pending {
+    color: #fef3c7;
+    background: rgba(245, 158, 11, 0.14);
+    border: 1px solid rgba(245, 158, 11, 0.18);
+}
+
+.affiliate-stage-track {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 15px;
+}
+
+.affiliate-stage-node {
+    position: relative;
+    min-height: 78px;
+    padding: 12px 12px 12px 14px;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.affiliate-stage-node-done {
+    border-color: rgba(96, 165, 250, 0.24);
+    background: linear-gradient(145deg, rgba(59, 130, 246, 0.12), rgba(59, 130, 246, 0.04));
+}
+
+.affiliate-stage-node-todo {
+    opacity: 0.78;
+}
+
+.affiliate-stage-dot {
+    position: absolute;
+    top: 14px;
+    left: 14px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: rgba(148, 163, 184, 0.62);
+    box-shadow: 0 0 0 4px rgba(148, 163, 184, 0.08);
+}
+
+.affiliate-stage-node-done .affiliate-stage-dot {
+    background: #93c5fd;
+    box-shadow: 0 0 0 4px rgba(96, 165, 250, 0.14);
+}
+
+.affiliate-stage-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-left: 16px;
+}
+
+.affiliate-stage-copy strong {
+    font-size: 13px;
+    color: #f8fafc;
+}
+
+.affiliate-stage-copy span {
+    font-size: 12px;
+    line-height: 1.5;
+    color: rgba(226, 232, 240, 0.58);
+}
+
+.affiliate-member-metrics {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 14px;
+}
+
+.affiliate-member-metric {
+    padding: 12px 13px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.035);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.affiliate-member-metric span {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 11px;
+    color: rgba(226, 232, 240, 0.48);
+    letter-spacing: 0.04em;
+}
+
+.affiliate-member-metric strong {
+    display: block;
+    font-size: 13px;
+    line-height: 1.5;
+    color: #f8fafc;
+    word-break: break-word;
+}
+
+.affiliate-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 10px;
+    padding: 34px 18px;
+    border-radius: 18px;
+    border: 1px dashed rgba(159, 202, 255, 0.16);
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.affiliate-empty-icon {
+    width: 52px;
+    height: 52px;
+    border-radius: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, rgba(107, 158, 206, 0.18), rgba(16, 185, 129, 0.16));
+    color: #dbeafe;
+    font-size: 20px;
+}
+
+.affiliate-empty-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #f8fafc;
+}
+
+.affiliate-empty-copy {
+    max-width: 360px;
+    color: rgba(226, 232, 240, 0.58);
+    font-size: 13px;
+    line-height: 1.7;
+}
+
 @media (max-width: 600px) {
+    .wallet-affiliate-stats,
+    .affiliate-member-metrics,
+    .affiliate-stage-track {
+        grid-template-columns: 1fr;
+    }
+
+    .wallet-affiliate-panel,
+    .affiliate-member-card {
+        padding: 16px;
+    }
+
+    .wallet-affiliate-panel-head,
+    .wallet-affiliate-panel-head-compact,
+    .affiliate-member-name-row,
+    .wallet-affiliate-link-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .wallet-affiliate-copy-btn {
+        width: 100%;
+    }
+
+    .affiliate-stage-summary {
+        justify-content: flex-start;
+    }
+
     .affiliate-reward-guide::after {
         top: auto;
         bottom: calc(100% + 12px);
