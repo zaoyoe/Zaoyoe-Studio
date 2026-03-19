@@ -5185,6 +5185,401 @@ input:checked+.toggle-slider:before {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
+.affiliate-admin-shell {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    padding-top: 12px;
+}
+
+.affiliate-admin-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1.8fr) minmax(260px, 0.9fr);
+    gap: 16px;
+    padding: 20px;
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background:
+        radial-gradient(circle at top right, rgba(96, 165, 250, 0.16), transparent 35%),
+        radial-gradient(circle at bottom left, rgba(16, 185, 129, 0.12), transparent 30%),
+        rgba(255, 255, 255, 0.03);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 18px 40px rgba(2, 6, 23, 0.22);
+}
+
+.affiliate-admin-kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: rgba(96, 165, 250, 0.14);
+    color: #bfdbfe;
+    font-size: 0.76rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.affiliate-admin-hero h3 {
+    margin: 12px 0 8px;
+    font-size: 1.45rem;
+    color: #f8fafc;
+}
+
+.affiliate-admin-hero p {
+    margin: 0;
+    color: rgba(226, 232, 240, 0.72);
+    line-height: 1.7;
+}
+
+.affiliate-admin-chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 16px;
+}
+
+.affiliate-admin-chip,
+.affiliate-admin-mini-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 30px;
+    padding: 0 12px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    color: rgba(241, 245, 249, 0.84);
+    font-size: 0.78rem;
+    white-space: nowrap;
+}
+
+.affiliate-admin-mini-chip {
+    min-height: 28px;
+    font-size: 0.75rem;
+    color: rgba(226, 232, 240, 0.76);
+}
+
+.affiliate-admin-link-card,
+.affiliate-admin-panel,
+.affiliate-admin-stat-card,
+.affiliate-admin-detail-card,
+.affiliate-admin-reward-card {
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.03);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.affiliate-admin-link-card {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 18px;
+}
+
+.affiliate-admin-link-label,
+.affiliate-admin-panel-head p,
+.affiliate-admin-member-sub,
+.affiliate-admin-link-meta,
+.affiliate-admin-detail-card .meta,
+.affiliate-admin-reward-grid span,
+.affiliate-admin-stat-card .stat-label,
+.affiliate-admin-stat-card .stat-meta {
+    color: rgba(148, 163, 184, 0.82);
+}
+
+.affiliate-admin-link-value {
+    font-size: 0.95rem;
+    font-family: 'JetBrains Mono', 'SFMono-Regular', monospace;
+    line-height: 1.7;
+    color: #dbeafe;
+    word-break: break-all;
+}
+
+.affiliate-admin-stats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.affiliate-admin-stat-card {
+    padding: 18px;
+    min-height: 132px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.affiliate-admin-stat-card strong {
+    display: block;
+    margin-top: 8px;
+    font-size: 1.8rem;
+    color: #f8fafc;
+}
+
+.affiliate-admin-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.95fr);
+    gap: 16px;
+}
+
+.affiliate-admin-panel {
+    padding: 18px;
+}
+
+.affiliate-admin-panel-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+    margin-bottom: 16px;
+}
+
+.affiliate-admin-panel-head h4 {
+    margin: 0;
+    color: #f8fafc;
+    font-size: 1.02rem;
+}
+
+.affiliate-admin-panel-head p {
+    margin: 8px 0 0;
+    line-height: 1.65;
+    font-size: 0.84rem;
+}
+
+.affiliate-admin-panel-meta {
+    min-width: fit-content;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.04);
+    color: rgba(226, 232, 240, 0.76);
+    font-size: 0.78rem;
+}
+
+.affiliate-admin-members,
+.affiliate-admin-rewards {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.affiliate-admin-member {
+    overflow: hidden;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.025);
+}
+
+.affiliate-admin-member summary {
+    list-style: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 16px 18px;
+    cursor: pointer;
+}
+
+.affiliate-admin-member summary::-webkit-details-marker {
+    display: none;
+}
+
+.affiliate-admin-member[open] summary {
+    background: rgba(255, 255, 255, 0.025);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.affiliate-admin-member-main {
+    min-width: 0;
+    flex: 1;
+}
+
+.affiliate-admin-member-title-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.affiliate-admin-member-title-row strong {
+    color: #f8fafc;
+    font-size: 0.98rem;
+}
+
+.affiliate-admin-member-sub {
+    margin-top: 6px;
+    font-size: 0.8rem;
+}
+
+.affiliate-admin-member-chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.affiliate-admin-member summary i.fa-chevron-down {
+    color: rgba(226, 232, 240, 0.6);
+    transition: transform 0.22s ease;
+}
+
+.affiliate-admin-member[open] summary i.fa-chevron-down {
+    transform: rotate(180deg);
+}
+
+.affiliate-admin-member-body {
+    padding: 16px 18px 18px;
+}
+
+.affiliate-admin-member-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.affiliate-admin-detail-card {
+    padding: 14px;
+}
+
+.affiliate-admin-detail-card .label,
+.affiliate-admin-reward-grid div span {
+    display: block;
+    font-size: 0.76rem;
+    margin-bottom: 8px;
+}
+
+.affiliate-admin-detail-card strong,
+.affiliate-admin-reward-grid strong {
+    color: #f8fafc;
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+
+.affiliate-admin-metrics-row,
+.affiliate-admin-reward-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 14px;
+}
+
+.affiliate-admin-metrics-row .metric {
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: rgba(2, 6, 23, 0.24);
+    border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.affiliate-admin-metrics-row .metric span {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 0.76rem;
+    color: rgba(148, 163, 184, 0.8);
+}
+
+.affiliate-admin-metrics-row .metric strong {
+    color: #f8fafc;
+    font-size: 1rem;
+}
+
+.affiliate-admin-stage {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 68px;
+    min-height: 28px;
+    padding: 0 12px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.affiliate-admin-stage.stage-success {
+    background: rgba(16, 185, 129, 0.12);
+    color: #6ee7b7;
+    border: 1px solid rgba(16, 185, 129, 0.24);
+}
+
+.affiliate-admin-stage.stage-warning {
+    background: rgba(245, 158, 11, 0.14);
+    color: #fcd34d;
+    border: 1px solid rgba(245, 158, 11, 0.24);
+}
+
+.affiliate-admin-stage.stage-muted {
+    background: rgba(148, 163, 184, 0.14);
+    color: #cbd5e1;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+}
+
+.affiliate-admin-reward-card {
+    padding: 16px;
+}
+
+.affiliate-admin-reward-card.has-warning {
+    border-color: rgba(245, 158, 11, 0.18);
+    box-shadow: inset 0 1px 0 rgba(245, 158, 11, 0.08);
+}
+
+.affiliate-admin-reward-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+}
+
+.affiliate-admin-reward-top h5 {
+    margin: 8px 0 4px;
+    color: #f8fafc;
+    font-size: 1rem;
+}
+
+.affiliate-admin-reward-top .reward-type {
+    display: inline-flex;
+    align-items: center;
+    min-height: 26px;
+    padding: 0 10px;
+    border-radius: 999px;
+    background: rgba(59, 130, 246, 0.14);
+    color: #bfdbfe;
+    font-size: 0.74rem;
+    font-weight: 700;
+}
+
+.affiliate-admin-reward-top .reward-sub {
+    color: rgba(148, 163, 184, 0.8);
+    font-size: 0.82rem;
+}
+
+.affiliate-admin-reward-top .reward-amount {
+    font-size: 1.15rem;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.affiliate-admin-reward-top .reward-amount.positive {
+    color: #34d399;
+}
+
+.affiliate-admin-reward-top .reward-amount.negative {
+    color: #f87171;
+}
+
+.affiliate-admin-reward-warning {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 14px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: rgba(245, 158, 11, 0.08);
+    border: 1px solid rgba(245, 158, 11, 0.16);
+    color: #fcd34d;
+    font-size: 0.8rem;
+    line-height: 1.6;
+}
+
 /* Modal Footer Actions */
 .user-modal-actions {
     display: flex;
@@ -5386,6 +5781,95 @@ input:checked+.toggle-slider:before {
 :root:not([data-theme="dark"]) .btn-export:hover {
     background: #f1f5f9;
     color: #1e293b;
+}
+
+:root:not([data-theme="dark"]) .affiliate-admin-hero {
+    background:
+        radial-gradient(circle at top right, rgba(59, 130, 246, 0.12), transparent 36%),
+        radial-gradient(circle at bottom left, rgba(16, 185, 129, 0.1), transparent 28%),
+        rgba(255, 255, 255, 0.9);
+    border-color: rgba(15, 23, 42, 0.08);
+}
+
+:root:not([data-theme="dark"]) .affiliate-admin-hero h3,
+:root:not([data-theme="dark"]) .affiliate-admin-stat-card strong,
+:root:not([data-theme="dark"]) .affiliate-admin-panel-head h4,
+:root:not([data-theme="dark"]) .affiliate-admin-member-title-row strong,
+:root:not([data-theme="dark"]) .affiliate-admin-detail-card strong,
+:root:not([data-theme="dark"]) .affiliate-admin-metrics-row .metric strong,
+:root:not([data-theme="dark"]) .affiliate-admin-reward-top h5,
+:root:not([data-theme="dark"]) .affiliate-admin-reward-grid strong {
+    color: #0f172a;
+}
+
+:root:not([data-theme="dark"]) .affiliate-admin-chip,
+:root:not([data-theme="dark"]) .affiliate-admin-mini-chip,
+:root:not([data-theme="dark"]) .affiliate-admin-link-card,
+:root:not([data-theme="dark"]) .affiliate-admin-panel,
+:root:not([data-theme="dark"]) .affiliate-admin-stat-card,
+:root:not([data-theme="dark"]) .affiliate-admin-detail-card,
+:root:not([data-theme="dark"]) .affiliate-admin-reward-card,
+:root:not([data-theme="dark"]) .affiliate-admin-member,
+:root:not([data-theme="dark"]) .affiliate-admin-metrics-row .metric {
+    background: rgba(255, 255, 255, 0.88);
+    border-color: rgba(15, 23, 42, 0.08);
+}
+
+:root:not([data-theme="dark"]) .affiliate-admin-link-label,
+:root:not([data-theme="dark"]) .affiliate-admin-panel-head p,
+:root:not([data-theme="dark"]) .affiliate-admin-member-sub,
+:root:not([data-theme="dark"]) .affiliate-admin-link-meta,
+:root:not([data-theme="dark"]) .affiliate-admin-detail-card .meta,
+:root:not([data-theme="dark"]) .affiliate-admin-reward-grid span,
+:root:not([data-theme="dark"]) .affiliate-admin-stat-card .stat-label,
+:root:not([data-theme="dark"]) .affiliate-admin-stat-card .stat-meta,
+:root:not([data-theme="dark"]) .affiliate-admin-reward-top .reward-sub {
+    color: #64748b;
+}
+
+:root:not([data-theme="dark"]) .affiliate-admin-link-value {
+    color: #2563eb;
+}
+
+@media (max-width: 1280px) {
+    .affiliate-admin-hero,
+    .affiliate-admin-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .affiliate-admin-stats {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 768px) {
+    .affiliate-admin-shell {
+        gap: 14px;
+    }
+
+    .affiliate-admin-hero,
+    .affiliate-admin-panel,
+    .affiliate-admin-stat-card {
+        padding: 16px;
+    }
+
+    .affiliate-admin-stats,
+    .affiliate-admin-member-grid,
+    .affiliate-admin-metrics-row,
+    .affiliate-admin-reward-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .affiliate-admin-panel-head,
+    .affiliate-admin-reward-top,
+    .affiliate-admin-member summary {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .affiliate-admin-member summary i.fa-chevron-down {
+        align-self: flex-end;
+    }
 }
 
 :root:not([data-theme="dark"]) .filter-option:hover {

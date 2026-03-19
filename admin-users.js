@@ -1415,6 +1415,191 @@ async function fetchActiveBans(userId) {
     return data || [];
 }
 
+function createEmptyAffiliateModalState() {
+    return {
+        loaded: false,
+        loading: false,
+        error: null,
+        stats: null,
+        rewards: [],
+        loadedAt: null
+    };
+}
+
+function formatAdminPointValue(value) {
+    const numericValue = Number(value || 0);
+    if (!Number.isFinite(numericValue)) return '0';
+    const hasDecimal = Math.abs(numericValue % 1) > 0.001;
+    return new Intl.NumberFormat('zh-CN', {
+        minimumFractionDigits: hasDecimal ? 1 : 0,
+        maximumFractionDigits: 1
+    }).format(numericValue);
+}
+
+function formatAdminPercentValue(value) {
+    const numericValue = Number(value || 0);
+    if (!Number.isFinite(numericValue)) return '0%';
+    return `${formatAdminPointValue(numericValue)}%`;
+}
+
+function formatAdminDateTime(value) {
+    if (!value) return '未发生';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '未发生';
+    return date.toLocaleString('zh-CN', {
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
+
+function getAffiliateMemberStageMeta(member = {}) {
+    if (member.first_purchase_at) {
+        return {
+            label: '已消费',
+            className: 'stage-success',
+            hint: '已完成首单消费，开始贡献返佣',
+            step: 3
+        };
+    }
+    if (member.first_recharge_at) {
+        return {
+            label: '已首充',
+            className: 'stage-warning',
+            hint: '已完成首充，等待首单消费',
+            step: 2
+        };
+    }
+    return {
+        label: '已注册',
+        className: 'stage-muted',
+        hint: '已完成注册，尚未首充',
+        step: 1
+    };
+}
+
+function normalizeAffiliateMembers(members = []) {
+    return (Array.isArray(members) ? members : [])
+        .map(member => {
+            const stageMeta = getAffiliateMemberStageMeta(member);
+            return {
+                ...member,
+                stageMeta,
+                total_rewards: Number(member.total_rewards || 0),
+                commission_earned: Number(member.commission_earned || 0),
+                total_spend: Number(member.total_spend || 0),
+                registration_reward_granted: Number(member.registration_reward_granted || 0),
+                registration_reward_pending: Number(member.registration_reward_pending || 0)
+            };
+        })
+        .sort((a, b) => {
+            const stageDiff = (b.stageMeta?.step || 0) - (a.stageMeta?.step || 0);
+            if (stageDiff !== 0) return stageDiff;
+            const rewardDiff = (b.total_rewards || 0) - (a.total_rewards || 0);
+            if (rewardDiff !== 0) return rewardDiff;
+            return (b.total_spend || 0) - (a.total_spend || 0);
+        });
+}
+
+async function fetchUserAffiliateStats(userId) {
+    const { data, error } = await window.supabaseClient.rpc('fn_get_affiliate_stats', {
+        p_user_id: userId
+    });
+
+    if (error) throw error;
+    return (data && typeof data === 'object' && !Array.isArray(data)) ? data : {};
+}
+
+async function fetchUserAffiliateRewards(userId) {
+    const { data, error } = await window.supabaseClient
+        .from('points_ledger')
+        .select('id, amount, reason, reference_id, created_at')
+        .eq('user_id', userId)
+        .or('reference_id.like.AFFILIATE_REWARD_%,reference_id.like.AFF_REW_%,reference_id.like.REG_REWARD_%')
+        .order('created_at', { ascending: false })
+        .limit(18);
+
+    if (error) throw error;
+
+    const rows = Array.isArray(data) ? data : [];
+    if (!rows.length) return [];
+
+    const details = await Promise.all(rows.map(async row => {
+        try {
+            const { data: detail, error: detailError } = await window.supabaseClient.rpc('fn_get_affiliate_reward_detail', {
+                p_user_id: userId,
+                p_ledger_id: row.id
+            });
+
+            if (detailError || !detail || detail.found === false) {
+                return {
+                    found: false,
+                    ledger_id: row.id,
+                    reward_amount: Number(row.amount || 0),
+                    reward_reason: row.reason,
+                    reward_created_at: row.created_at,
+                    reference_id: row.reference_id
+                };
+            }
+
+            return detail;
+        } catch (detailErr) {
+            console.warn('Failed to fetch affiliate reward detail:', detailErr);
+            return {
+                found: false,
+                ledger_id: row.id,
+                reward_amount: Number(row.amount || 0),
+                reward_reason: row.reason,
+                reward_created_at: row.created_at,
+                reference_id: row.reference_id
+            };
+        }
+    }));
+
+    return details;
+}
+
+async function ensureAffiliateModalData(userId) {
+    if (!currentModalData.affiliate) {
+        currentModalData.affiliate = createEmptyAffiliateModalState();
+    }
+
+    if (currentModalData.affiliate.loading || currentModalData.affiliate.loaded) {
+        return;
+    }
+
+    currentModalData.affiliate.loading = true;
+    currentModalData.affiliate.error = null;
+
+    try {
+        const [stats, rewards] = await Promise.all([
+            fetchUserAffiliateStats(userId),
+            fetchUserAffiliateRewards(userId)
+        ]);
+
+        currentModalData.affiliate = {
+            loaded: true,
+            loading: false,
+            error: null,
+            stats,
+            rewards,
+            loadedAt: new Date().toISOString()
+        };
+    } catch (err) {
+        console.error('Failed to load affiliate data:', err);
+        currentModalData.affiliate = {
+            ...createEmptyAffiliateModalState(),
+            error: err.message || '推广数据加载失败'
+        };
+    }
+
+    if (currentModalUser?.id === userId && currentTab === 'affiliate') {
+        renderUserTab('affiliate');
+    }
+}
+
 // Open User Modal
 async function openUserModal(userId) {
     const user = userState.users.find(u => u.id === userId);
@@ -1452,7 +1637,16 @@ async function openUserModal(userId) {
         console.log('✅ Data fetched:', { contentLog, blockHistory, relatedAccounts, roleInfo, pointsLedger, isSuperAdmin, activeBans });
 
         // Store data for tabs
-        currentModalData = { contentLog, blockHistory, relatedAccounts, roleInfo, pointsLedger, isSuperAdmin, activeBans };
+        currentModalData = {
+            contentLog,
+            blockHistory,
+            relatedAccounts,
+            roleInfo,
+            pointsLedger,
+            isSuperAdmin,
+            activeBans,
+            affiliate: createEmptyAffiliateModalState()
+        };
 
         // Render left panel
         renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans);
@@ -1799,6 +1993,9 @@ function renderUserTab(tabName) {
         case 'blocks':
             renderBlocksTab(container);
             break;
+        case 'affiliate':
+            renderAffiliateTab(container);
+            break;
         case 'relatives':
             renderRelatedTab(container);
             break;
@@ -2143,6 +2340,238 @@ function renderRelatedTab(container) {
     `;
 }
 
+function renderAffiliateTab(container) {
+    const affiliateState = currentModalData.affiliate || createEmptyAffiliateModalState();
+    currentModalData.affiliate = affiliateState;
+
+    if (!currentModalUser?.id) {
+        container.innerHTML = '<div class="empty-state" style="text-align:center;padding:40px;color:var(--text-dim);">未找到用户</div>';
+        return;
+    }
+
+    if (!affiliateState.loaded && !affiliateState.loading) {
+        container.innerHTML = '<div class="modal-loading"><i class="fas fa-spinner fa-spin"></i> 加载推广数据...</div>';
+        ensureAffiliateModalData(currentModalUser.id);
+        return;
+    }
+
+    if (affiliateState.loading) {
+        container.innerHTML = '<div class="modal-loading"><i class="fas fa-spinner fa-spin"></i> 加载推广数据...</div>';
+        return;
+    }
+
+    if (affiliateState.error) {
+        container.innerHTML = `
+            <div class="empty-state" style="text-align:center;padding:48px;color:var(--text-dim);">
+                <div style="font-size:1rem;color:#fca5a5;margin-bottom:10px;">推广数据加载失败</div>
+                <div style="margin-bottom:18px;">${escapeHtml(affiliateState.error)}</div>
+                <button class="btn-export" onclick="currentModalData.affiliate = createEmptyAffiliateModalState(); renderUserTab('affiliate');">
+                    <i class="fas fa-rotate-right"></i> 重新加载
+                </button>
+            </div>
+        `;
+        return;
+    }
+
+    const stats = affiliateState.stats || {};
+    const members = normalizeAffiliateMembers(stats.members || []);
+    const rewards = Array.isArray(affiliateState.rewards) ? affiliateState.rewards : [];
+
+    const inviteCode = typeof stats.invite_code === 'string' ? stats.invite_code.trim() : '';
+    const inviteLink = inviteCode ? `${window.location.origin}/?ref=${encodeURIComponent(inviteCode)}` : '';
+    const totalRewards = Number(stats.total_rewards || stats.total_commission || 0);
+    const totalOrderCommission = Number(stats.total_order_commission || 0);
+    const totalRegistrationRewards = Number(stats.total_registration_rewards || 0);
+    const totalInviteeSpend = Number(stats.total_invitee_spend || 0);
+    const invitedCount = Number(stats.invited_count || 0);
+    const firstRechargeCount = Number(stats.first_recharge_count || 0);
+    const consumedCount = Number(stats.consumed_count || 0);
+    const pendingRewardCount = Number(stats.pending_reward_count || 0);
+    const rechargeRate = invitedCount > 0 ? (firstRechargeCount / invitedCount) * 100 : 0;
+    const consumeRate = invitedCount > 0 ? (consumedCount / invitedCount) * 100 : 0;
+    const shopCommissionRate = Number(stats.commission_rate_shop || 0) * 100;
+    const agentCommissionRate = Number(stats.commission_rate_agent || 0) * 100;
+    const registrationRewardPoints = Number(stats.registration_reward_points || 0);
+
+    container.innerHTML = `
+        <div class="affiliate-admin-shell">
+            <section class="affiliate-admin-hero">
+                <div class="affiliate-admin-hero-copy">
+                    <div class="affiliate-admin-kicker">推广概览</div>
+                    <h3>${escapeHtml(currentModalUser.username || '该用户')} 的推广面板</h3>
+                    <p>这里汇总该用户的邀请码、转化阶段、每位被邀请人的旅程节点，以及每一笔推广奖励的来源与贡献。</p>
+                    <div class="affiliate-admin-chip-row">
+                        <span class="affiliate-admin-chip"><i class="fas fa-ticket-alt"></i> 邀请码 ${escapeHtml(inviteCode || '未生成')}</span>
+                        <span class="affiliate-admin-chip"><i class="fas fa-percentage"></i> 基础商品 ${formatAdminPercentValue(shopCommissionRate)}</span>
+                        <span class="affiliate-admin-chip"><i class="fas fa-user-tie"></i> 分销渠道 ${formatAdminPercentValue(agentCommissionRate)}</span>
+                        <span class="affiliate-admin-chip"><i class="fas fa-gift"></i> 拉新奖励 ${formatAdminPointValue(registrationRewardPoints)} 积分</span>
+                    </div>
+                </div>
+                <div class="affiliate-admin-link-card">
+                    <div class="affiliate-admin-link-label">推广链接</div>
+                    <div class="affiliate-admin-link-value">${escapeHtml(inviteLink || '暂未生成推广链接')}</div>
+                    <div class="affiliate-admin-link-meta">最后刷新：${formatAdminDateTime(affiliateState.loadedAt)}</div>
+                </div>
+            </section>
+
+            <section class="affiliate-admin-stats">
+                <article class="affiliate-admin-stat-card">
+                    <span class="stat-label">累计推广奖励</span>
+                    <strong>${formatAdminPointValue(totalRewards)}</strong>
+                    <span class="stat-meta">订单返佣 ${formatAdminPointValue(totalOrderCommission)} · 拉新奖励 ${formatAdminPointValue(totalRegistrationRewards)}</span>
+                </article>
+                <article class="affiliate-admin-stat-card">
+                    <span class="stat-label">邀请人数</span>
+                    <strong>${invitedCount}</strong>
+                    <span class="stat-meta">首充 ${firstRechargeCount} · 已消费 ${consumedCount}</span>
+                </article>
+                <article class="affiliate-admin-stat-card">
+                    <span class="stat-label">累计邀请消费</span>
+                    <strong>${formatAdminPointValue(totalInviteeSpend)}</strong>
+                    <span class="stat-meta">待激活奖励 ${pendingRewardCount} 笔</span>
+                </article>
+                <article class="affiliate-admin-stat-card">
+                    <span class="stat-label">转化效率</span>
+                    <strong>${formatAdminPercentValue(consumeRate)}</strong>
+                    <span class="stat-meta">首充转化 ${formatAdminPercentValue(rechargeRate)}</span>
+                </article>
+            </section>
+
+            <div class="affiliate-admin-grid">
+                <section class="affiliate-admin-panel">
+                    <div class="affiliate-admin-panel-head">
+                        <div>
+                            <h4>邀请旅程</h4>
+                            <p>按阶段与贡献排序，展开可查看每位被邀请人的节点、贡献消费与奖励构成。</p>
+                        </div>
+                        <button class="btn-export" onclick="exportTabData('affiliate')">
+                            <i class="fas fa-download"></i> 导出推广记录
+                        </button>
+                    </div>
+                    <div class="affiliate-admin-members">
+                        ${members.length ? members.map((member, index) => {
+        const stageMeta = member.stageMeta || getAffiliateMemberStageMeta(member);
+        const displayName = member.display_name || member.username || member.masked_email || '新用户';
+        const subline = member.masked_email || member.username || '未绑定邮箱';
+        const rewardStatus = member.reward_status || (member.registration_reward_pending > 0 ? '待激活' : '已发放');
+        return `
+                            <details class="affiliate-admin-member" ${index < 3 ? 'open' : ''}>
+                                <summary>
+                                    <div class="affiliate-admin-member-main">
+                                        <div class="affiliate-admin-member-title-row">
+                                            <strong>${escapeHtml(displayName)}</strong>
+                                            <span class="affiliate-admin-stage ${stageMeta.className}">${stageMeta.label}</span>
+                                        </div>
+                                        <div class="affiliate-admin-member-sub">${escapeHtml(subline)}</div>
+                                        <div class="affiliate-admin-member-chip-row">
+                                            <span class="affiliate-admin-mini-chip">贡献 ${formatAdminPointValue(member.total_spend)} 分</span>
+                                            <span class="affiliate-admin-mini-chip">返佣 ${formatAdminPointValue(member.commission_earned)} 分</span>
+                                            <span class="affiliate-admin-mini-chip">拉新 ${formatAdminPointValue(member.registration_reward_granted || member.registration_reward_pending)} 分</span>
+                                        </div>
+                                    </div>
+                                    <i class="fas fa-chevron-down"></i>
+                                </summary>
+                                <div class="affiliate-admin-member-body">
+                                    <div class="affiliate-admin-member-grid">
+                                        <div class="affiliate-admin-detail-card">
+                                            <span class="label">注册时间</span>
+                                            <strong>${formatAdminDateTime(member.registered_at)}</strong>
+                                            <span class="meta">${escapeHtml(stageMeta.hint)}</span>
+                                        </div>
+                                        <div class="affiliate-admin-detail-card">
+                                            <span class="label">首充时间</span>
+                                            <strong>${formatAdminDateTime(member.first_recharge_at)}</strong>
+                                            <span class="meta">奖励状态：${escapeHtml(rewardStatus)}</span>
+                                        </div>
+                                        <div class="affiliate-admin-detail-card">
+                                            <span class="label">首单消费</span>
+                                            <strong>${formatAdminDateTime(member.first_purchase_at)}</strong>
+                                            <span class="meta">订单数 ${Number(member.paid_order_count || 0)}</span>
+                                        </div>
+                                        <div class="affiliate-admin-detail-card">
+                                            <span class="label">最近订单</span>
+                                            <strong>${escapeHtml(member.last_order_name || '暂无订单')}</strong>
+                                            <span class="meta">${formatAdminPointValue(member.last_order_amount || 0)} 分 · ${formatAdminDateTime(member.last_order_at)}</span>
+                                        </div>
+                                    </div>
+                                    <div class="affiliate-admin-metrics-row">
+                                        <div class="metric">
+                                            <span>累计消费</span>
+                                            <strong>${formatAdminPointValue(member.total_spend)}</strong>
+                                        </div>
+                                        <div class="metric">
+                                            <span>订单返佣</span>
+                                            <strong>${formatAdminPointValue(member.commission_earned)}</strong>
+                                        </div>
+                                        <div class="metric">
+                                            <span>拉新奖励已发</span>
+                                            <strong>${formatAdminPointValue(member.registration_reward_granted)}</strong>
+                                        </div>
+                                        <div class="metric">
+                                            <span>待激活奖励</span>
+                                            <strong>${formatAdminPointValue(member.registration_reward_pending)}</strong>
+                                        </div>
+                                        <div class="metric">
+                                            <span>总贡献奖励</span>
+                                            <strong>${formatAdminPointValue(member.total_rewards)}</strong>
+                                        </div>
+                                    </div>
+                                </div>
+                            </details>
+                        `;
+    }).join('') : '<div class="empty-state">该用户暂时还没有邀请到任何成员。</div>'}
+                    </div>
+                </section>
+
+                <section class="affiliate-admin-panel">
+                    <div class="affiliate-admin-panel-head">
+                        <div>
+                            <h4>奖励记录</h4>
+                            <p>展示最近的推广返佣、首充奖励、注册奖励，并附上触发来源、应返比例与实际到账比例。</p>
+                        </div>
+                        <div class="affiliate-admin-panel-meta">${rewards.length} 条记录</div>
+                    </div>
+                    <div class="affiliate-admin-rewards">
+                        ${rewards.length ? rewards.map(reward => {
+        const rewardAmount = Number(reward.reward_amount || 0);
+        const declaredRate = Number(reward.declared_commission_rate || 0);
+        const actualRate = Number(reward.commission_rate || 0);
+        const expectedAmount = Number(reward.expected_reward_amount || 0);
+        const rateMismatch = declaredRate > 0 && expectedAmount > 0 && Math.abs(expectedAmount - rewardAmount) >= 0.1;
+        return `
+                            <article class="affiliate-admin-reward-card ${rateMismatch ? 'has-warning' : ''}">
+                                <div class="affiliate-admin-reward-top">
+                                    <div>
+                                        <span class="reward-type">${escapeHtml(reward.reward_label || '推广奖励')}</span>
+                                        <h5>${escapeHtml(reward.invitee_name || reward.invitee_username || '匿名用户')}</h5>
+                                        <div class="reward-sub">${escapeHtml(reward.source_stage || reward.reward_reason || '未知来源')}</div>
+                                    </div>
+                                    <div class="reward-amount ${rewardAmount >= 0 ? 'positive' : 'negative'}">${rewardAmount >= 0 ? '+' : ''}${formatAdminPointValue(rewardAmount)} 分</div>
+                                </div>
+                                <div class="affiliate-admin-reward-grid">
+                                    <div><span>来源对象</span><strong>${escapeHtml(reward.source_name || reward.source_reason || '未命名记录')}</strong></div>
+                                    <div><span>触发时间</span><strong>${formatAdminDateTime(reward.reward_created_at)}</strong></div>
+                                    <div><span>订单/来源金额</span><strong>${formatAdminPointValue(reward.source_amount || 0)} 分</strong></div>
+                                    <div><span>配置比例</span><strong>${declaredRate ? formatAdminPercentValue(declaredRate) : '未记录'}</strong></div>
+                                    <div><span>实际到账比例</span><strong>${actualRate ? formatAdminPercentValue(actualRate) : '未记录'}</strong></div>
+                                    <div><span>按配置应返</span><strong>${expectedAmount ? `${formatAdminPointValue(expectedAmount)} 分` : '未记录'}</strong></div>
+                                </div>
+                                ${rateMismatch ? `
+                                    <div class="affiliate-admin-reward-warning">
+                                        <i class="fas fa-triangle-exclamation"></i>
+                                        <span>这笔奖励的应返与实返不一致，通常说明它来自历史修复前的旧流水。</span>
+                                    </div>
+                                ` : ''}
+                            </article>
+                        `;
+    }).join('') : '<div class="empty-state">该用户暂时还没有推广奖励记录。</div>'}
+                    </div>
+                </section>
+            </div>
+        </div>
+    `;
+}
+
 // Close Modal
 function closeUserModal() {
     const overlay = document.getElementById('userModalOverlay');
@@ -2236,6 +2665,20 @@ function exportTabData(tabName) {
                 '时间': new Date(r.created_at).toLocaleString()
             }));
             filename = `${username}_封禁记录_${date}.csv`;
+            break;
+        case 'affiliate':
+            data = (currentModalData.affiliate?.rewards || []).map(r => ({
+                '奖励类型': r.reward_label || '推广奖励',
+                '被邀请人': r.invitee_name || r.invitee_username || '',
+                '奖励阶段': r.source_stage || '',
+                '奖励积分': Number(r.reward_amount || 0),
+                '来源对象': r.source_name || r.source_reason || '',
+                '来源金额': Number(r.source_amount || 0),
+                '配置比例': r.declared_commission_rate ? `${r.declared_commission_rate}%` : '',
+                '实际到账比例': r.commission_rate ? `${r.commission_rate}%` : '',
+                '时间': r.reward_created_at ? new Date(r.reward_created_at).toLocaleString() : ''
+            }));
+            filename = `${username}_推广记录_${date}.csv`;
             break;
     }
 
