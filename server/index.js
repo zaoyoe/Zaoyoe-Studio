@@ -7,6 +7,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
@@ -95,6 +96,145 @@ function getApiErrorCode(payload) {
 function getApiErrorMessage(payload, fallback) {
     const detail = getApiErrorDetail(payload);
     return detail?.message || payload?.message || payload?.error || fallback;
+}
+
+const LEGACY_AFDIAN_PRICE_TO_POINTS = {
+    5: 5,
+    20: 20,
+    50: 50
+};
+
+function roundCurrencyAmount(value) {
+    const numericValue = Number(value);
+    return Number.isFinite(numericValue) ? Math.round(numericValue * 100) / 100 : 0;
+}
+
+function amountsMatch(expected, actual, epsilon = 0.01) {
+    const left = roundCurrencyAmount(expected);
+    const right = roundCurrencyAmount(actual);
+    return Math.abs(left - right) <= epsilon;
+}
+
+function buildAfdianEventKey(orderNo, status, payload) {
+    const hash = crypto
+        .createHash('sha256')
+        .update(JSON.stringify(payload || {}))
+        .digest('hex')
+        .slice(0, 24);
+    return `afdian:${orderNo || 'unknown'}:${status || 'na'}:${hash}`;
+}
+
+function getBearerToken(req) {
+    const authHeader = req.headers.authorization || req.headers.Authorization || '';
+    const match = authHeader.match(/^Bearer\s+(.+)$/i);
+    return match?.[1] || '';
+}
+
+async function getAuthenticatedUser(req) {
+    const token = getBearerToken(req);
+    if (!token) return null;
+
+    const { data, error } = await supabase.auth.getUser(token);
+    if (error || !data?.user) {
+        return null;
+    }
+
+    return data.user;
+}
+
+async function recordPaymentEvent(eventPayload) {
+    const { data, error } = await supabase
+        .from('payment_events')
+        .insert(eventPayload)
+        .select('id')
+        .limit(1);
+
+    if (error) {
+        if (error.code === '23505') {
+            return { duplicate: true, id: null };
+        }
+        throw error;
+    }
+
+    return {
+        duplicate: false,
+        id: data?.[0]?.id || null
+    };
+}
+
+async function finalizePaymentEvent(eventKey, patch = {}) {
+    const payload = {
+        ...patch,
+        processed_at: new Date().toISOString()
+    };
+
+    const { error } = await supabase
+        .from('payment_events')
+        .update(payload)
+        .eq('event_key', eventKey);
+
+    if (error) {
+        console.warn('[Payments] Failed to finalize payment event:', error.message);
+    }
+}
+
+async function resolveAfdianPackage({ planId, amount }) {
+    const normalizedAmount = roundCurrencyAmount(amount);
+
+    if (planId) {
+        const { data, error } = await supabase
+            .from('points_packages')
+            .select('id, name, points_amount, bonus_points, price_cny, sku_id, is_active')
+            .eq('is_active', true)
+            .eq('sku_id', planId)
+            .maybeSingle();
+
+        if (!error && data) {
+            const paidPoints = Number(data.points_amount) || 0;
+            const bonusPoints = Number(data.bonus_points) || 0;
+            return {
+                packageId: data.id,
+                packageName: data.name,
+                expectedAmount: roundCurrencyAmount(data.price_cny),
+                pointsTotal: paidPoints + bonusPoints,
+                matchType: 'sku'
+            };
+        }
+    }
+
+    const { data: packages, error: packagesError } = await supabase
+        .from('points_packages')
+        .select('id, name, points_amount, bonus_points, price_cny, sku_id, is_active')
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true });
+
+    if (!packagesError) {
+        const matchedPackage = (packages || []).find((pkg) => amountsMatch(pkg.price_cny, normalizedAmount));
+        if (matchedPackage) {
+            const paidPoints = Number(matchedPackage.points_amount) || 0;
+            const bonusPoints = Number(matchedPackage.bonus_points) || 0;
+            return {
+                packageId: matchedPackage.id,
+                packageName: matchedPackage.name,
+                expectedAmount: roundCurrencyAmount(matchedPackage.price_cny),
+                pointsTotal: paidPoints + bonusPoints,
+                matchType: 'amount'
+            };
+        }
+    }
+
+    const legacyPoints = LEGACY_AFDIAN_PRICE_TO_POINTS[Math.round(normalizedAmount)];
+    if (legacyPoints) {
+        return {
+            packageId: null,
+            packageName: `Afdian ${normalizedAmount} CNY`,
+            expectedAmount: normalizedAmount,
+            pointsTotal: legacyPoints,
+            matchType: 'legacy_amount'
+        };
+    }
+
+    return null;
 }
 
 function buildClientStatusMessage(job) {
@@ -960,121 +1100,179 @@ app.post('/api/cancel', async (req, res) => {
     });
 });
 
-// =============================================
-// Afdian (爱发电) Webhook Endpoint
-// =============================================
-const crypto = require('crypto');
-
-// Price to points mapping
-const AFDIAN_PRICE_TO_POINTS = {
-    5: 5,
-    20: 20,
-    50: 50
-};
-
 // POST /api/afdian/webhook
 app.post('/api/afdian/webhook', async (req, res) => {
     console.log('[Afdian] Webhook received');
 
+    const payload = req.body || {};
+    const data = payload.data || {};
+    const order = data.order || {};
+    const orderNo = String(order.out_trade_no || '').trim();
+    const status = Number(order.status);
+    const eventKey = buildAfdianEventKey(orderNo, status, payload);
+
     try {
-        const { ec, em, data } = req.body;
+        console.log('[Afdian] Raw payload:', JSON.stringify(payload).substring(0, 500));
 
-        // Log raw request for debugging
-        console.log('[Afdian] Raw payload:', JSON.stringify(req.body).substring(0, 500));
+        const eventInsert = await recordPaymentEvent({
+            provider: 'afdian',
+            provider_order_no: orderNo || null,
+            event_key: eventKey,
+            event_type: 'webhook',
+            signature_valid: false,
+            payload,
+            processing_result: 'received'
+        });
 
-        // Verify request is from Afdian (basic check)
-        if (ec !== 200) {
-            console.warn('[Afdian] Non-200 ec code:', ec, em);
-            return res.json({ ec: 200, em: '' }); // Still return 200 to prevent retries
+        if (eventInsert.duplicate) {
+            console.log('[Afdian] Duplicate webhook ignored:', eventKey);
+            return res.json({ ec: 200, em: '' });
         }
 
-        // Verify signature if token is configured
-        const afdianToken = process.env.AFDIAN_TOKEN;
-        const afdianUserId = process.env.AFDIAN_USER_ID;
-
-        if (afdianToken && req.body.sign) {
-            // Afdian signature: md5(token + params_json)
-            const paramsJson = JSON.stringify(req.body.data || {});
-            const expectedSign = crypto.createHash('md5')
-                .update(afdianToken + paramsJson)
-                .digest('hex');
-
-            if (req.body.sign !== expectedSign) {
-                console.warn('[Afdian] Signature mismatch');
-                // Continue anyway for now, log for debugging
-            }
-        }
-
-        // Handle order notification
-        if (data?.type === 'order' && data?.order) {
-            const order = data.order;
-            const orderNo = order.out_trade_no;
-            const amount = parseFloat(order.total_amount || 0);
-            const planId = order.plan_id;
-            const afdianUid = order.user_id;
-            const remark = order.remark || '';
-            const status = order.status; // 2 = success
-
-            console.log(`[Afdian] Order: ${orderNo}, Amount: ${amount}, Status: ${status}`);
-
-            // Only process successful orders
-            if (status !== 2) {
-                console.log('[Afdian] Order not successful, skipping');
-                return res.json({ ec: 200, em: '' });
-            }
-
-            // Map amount to points
-            const roundedAmount = Math.round(amount);
-            const points = AFDIAN_PRICE_TO_POINTS[roundedAmount];
-
-            if (!points) {
-                console.warn(`[Afdian] Unknown amount: ${amount}, no points mapping`);
-                // Still create order but with 0 points, admin can fix manually
-            }
-
-            // Create order and generate code
-            const { data: codeResult, error: createError } = await supabase.rpc('fn_create_afdian_order', {
-                p_order_no: orderNo,
-                p_afdian_user_id: afdianUid,
-                p_plan_id: planId,
-                p_amount: amount,
-                p_points: points || 0,
-                p_remark: remark,
-                p_payload: req.body
+        if (!orderNo) {
+            await finalizePaymentEvent(eventKey, {
+                processing_result: 'invalid_order_no',
+                error_message: 'missing out_trade_no'
             });
-
-            if (createError) {
-                console.error('[Afdian] Failed to create order:', createError);
-            } else {
-                console.log(`[Afdian] Order created successfully, code: ${codeResult}`);
-            }
+            return res.status(400).json({ ec: 400, em: 'missing order number' });
         }
 
-        // Always respond with success to prevent retries
-        return res.json({ ec: 200, em: '' });
+        if (payload.ec !== 200) {
+            console.warn('[Afdian] Non-success payload:', payload.ec, payload.em);
+            await finalizePaymentEvent(eventKey, {
+                processing_result: 'ignored_non_success_ec',
+                error_message: payload.em || 'non-success ec'
+            });
+            return res.json({ ec: 200, em: '' });
+        }
 
+        if (data?.type !== 'order' || !data?.order) {
+            await finalizePaymentEvent(eventKey, {
+                processing_result: 'ignored_non_order_event'
+            });
+            return res.json({ ec: 200, em: '' });
+        }
+
+        if (status !== 2) {
+            await finalizePaymentEvent(eventKey, {
+                processing_result: 'ignored_non_paid_status'
+            });
+            return res.json({ ec: 200, em: '' });
+        }
+
+        const afdianToken = process.env.AFDIAN_TOKEN;
+        if (!afdianToken) {
+            await finalizePaymentEvent(eventKey, {
+                processing_result: 'missing_afdian_token',
+                error_message: 'AFDIAN_TOKEN is not configured'
+            });
+            return res.status(503).json({ ec: 503, em: 'payment webhook not configured' });
+        }
+
+        if (!payload.sign) {
+            await finalizePaymentEvent(eventKey, {
+                processing_result: 'missing_signature',
+                error_message: 'missing sign'
+            });
+            return res.status(401).json({ ec: 401, em: 'missing signature' });
+        }
+
+        const paramsJson = JSON.stringify(payload.data || {});
+        const expectedSign = crypto
+            .createHash('md5')
+            .update(afdianToken + paramsJson)
+            .digest('hex');
+        const signatureValid = payload.sign === expectedSign;
+        const amount = roundCurrencyAmount(order.total_amount || 0);
+        const resolvedPackage = await resolveAfdianPackage({
+            planId: order.plan_id,
+            amount
+        });
+        const amountValid = !!resolvedPackage && amountsMatch(resolvedPackage.expectedAmount, amount);
+        const processError = !signatureValid
+            ? 'signature_mismatch'
+            : !resolvedPackage
+                ? 'package_not_found'
+                : !amountValid
+                    ? `amount_mismatch_expected_${resolvedPackage.expectedAmount}`
+                    : null;
+
+        const { data: processResult, error: processRpcError } = await supabase.rpc('fn_process_afdian_payment', {
+            p_order_no: orderNo,
+            p_afdian_user_id: String(order.user_id || ''),
+            p_plan_id: order.plan_id || null,
+            p_paid_amount: amount,
+            p_expected_amount: resolvedPackage?.expectedAmount ?? amount,
+            p_points: resolvedPackage?.pointsTotal ?? 0,
+            p_package_id: resolvedPackage?.packageId ?? null,
+            p_package_name: resolvedPackage?.packageName ?? null,
+            p_site: getCurrentSite(req),
+            p_signature_valid: signatureValid,
+            p_amount_valid: amountValid,
+            p_payload: payload,
+            p_error: processError
+        });
+
+        if (processRpcError) {
+            await finalizePaymentEvent(eventKey, {
+                processing_result: 'process_rpc_failed',
+                error_message: processRpcError.message
+            });
+            console.error('[Afdian] Failed to process payment:', processRpcError);
+            return res.status(500).json({ ec: 500, em: 'internal error' });
+        }
+
+        await finalizePaymentEvent(eventKey, {
+            payment_order_id: processResult?.payment_order_id || null,
+            signature_valid: signatureValid,
+            amount_valid: amountValid,
+            processing_result: signatureValid && amountValid ? 'processed_paid' : (processResult?.status || 'pending_review'),
+            error_message: processError || null
+        });
+
+        if (!signatureValid) {
+            return res.status(401).json({ ec: 401, em: 'invalid signature' });
+        }
+
+        if (!amountValid) {
+            return res.json({ ec: 200, em: 'pending review' });
+        }
+
+        return res.json({ ec: 200, em: '' });
     } catch (error) {
         console.error('[Afdian] Webhook error:', error);
-        // Still return 200 to prevent infinite retries
-        return res.json({ ec: 200, em: 'internal error' });
+        await finalizePaymentEvent(eventKey, {
+            processing_result: 'webhook_exception',
+            error_message: error.message
+        });
+        return res.status(500).json({ ec: 500, em: 'internal error' });
     }
 });
 
 // GET /api/afdian/query - Query redemption code by order number
 app.get('/api/afdian/query', async (req, res) => {
-    const { order_no } = req.query;
+    const orderNo = String(req.query.order_no || '').trim();
 
-    if (!order_no) {
+    if (!orderNo) {
         return res.status(400).json({ success: false, message: '请输入订单号' });
     }
 
     try {
-        const { data, error } = await supabase.rpc('fn_query_afdian_code', {
-            p_order_no: order_no
+        const user = await getAuthenticatedUser(req);
+        if (!user) {
+            return res.status(401).json({ success: false, message: '请先登录后再查询订单' });
+        }
+
+        const { data, error } = await supabase.rpc('fn_claim_and_query_afdian_code', {
+            p_order_no: orderNo,
+            p_user_id: user.id
         });
 
         if (error) {
             console.error('[Afdian] Query error:', error);
+            if (/Access denied/i.test(error.message || '')) {
+                return res.status(403).json({ success: false, message: '该订单已归属其他账号，无法查询' });
+            }
             return res.status(500).json({ success: false, message: '查询失败' });
         }
 
@@ -1083,12 +1281,27 @@ app.get('/api/afdian/query', async (req, res) => {
         }
 
         const orderInfo = data[0];
+        if (!orderInfo.code) {
+            const currentStatus = String(orderInfo.payment_status || 'pending_review');
+            const message = currentStatus === 'rejected'
+                ? '订单验签失败，已拦截，请联系客服'
+                : currentStatus === 'amount_mismatch'
+                    ? '订单金额校验异常，正在审核'
+                    : '订单已记录，兑换码生成中，请稍后再试';
+            return res.json({
+                success: false,
+                message,
+                status: currentStatus
+            });
+        }
+
         return res.json({
             success: true,
             code: orderInfo.code,
             points: orderInfo.points,
             is_redeemed: orderInfo.is_redeemed,
-            created_at: orderInfo.created_at
+            created_at: orderInfo.created_at,
+            payment_status: orderInfo.payment_status
         });
 
     } catch (error) {

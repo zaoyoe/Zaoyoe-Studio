@@ -592,6 +592,7 @@ DECLARE
     v_batch_record RECORD;
     v_package RECORD;
     v_points_amount INT;
+    v_package_name TEXT;
     v_effective_expires_at TIMESTAMPTZ;
 BEGIN
     p_code := UPPER(TRIM(p_code));
@@ -624,16 +625,22 @@ BEGIN
 
     SELECT * INTO v_package FROM points_packages WHERE id = v_code_record.package_id;
     IF v_package IS NULL THEN
-        RETURN json_build_object('success', false, 'message', '关联的套餐不存在');
+        IF COALESCE(v_code_record.points_amount, 0) > 0 THEN
+            v_points_amount := v_code_record.points_amount;
+            v_package_name := '自定义积分';
+        ELSE
+            RETURN json_build_object('success', false, 'message', '关联的套餐不存在');
+        END IF;
+    ELSE
+        v_points_amount := v_package.points_amount + COALESCE(v_package.bonus_points, 0);
+        v_package_name := v_package.name;
     END IF;
-
-    v_points_amount := v_package.points_amount + COALESCE(v_package.bonus_points, 0);
 
     -- 调用带 site 的 fn_add_points
     PERFORM fn_add_points(
         auth.uid(),
         v_points_amount,
-        '兑换码充值: ' || v_package.name,
+        '兑换码充值: ' || v_package_name,
         'redeem_' || p_code,
         p_site
     );
@@ -649,7 +656,7 @@ BEGIN
         'success', true,
         'message', '兑换成功！',
         'points', v_points_amount,
-        'package_name', v_package.name
+        'package_name', v_package_name
     );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;

@@ -69,7 +69,11 @@ BEGIN
         'code', v_code_record.code,
         'external_order_id', v_code_record.external_order_id,
         'package_name', COALESCE(v_package.name, '自定义积分'),
-        'points', COALESCE(v_package.points_amount + COALESCE(v_package.bonus_points, 0), v_code_record.points_granted),
+        'points', COALESCE(
+            v_package.points_amount + COALESCE(v_package.bonus_points, 0),
+            v_code_record.points_amount,
+            v_code_record.points_granted
+        ),
         'expires_at', v_code_record.batch_expires_at,
         'used_at', v_code_record.used_at,
         'used_by', v_used_by_name,

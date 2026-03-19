@@ -19,9 +19,15 @@
         return Number.isFinite(parsed) ? Math.round(parsed * 10) / 10 : fallback;
     }
 
+    function isUnsafeDirectRechargeAllowed() {
+        const host = String(window.location.hostname || '').toLowerCase();
+        return host === 'localhost' || host === '127.0.0.1';
+    }
+
     const PointsService = {
         // Cached session to avoid redundant getSession() calls
         _cachedUserId: null,
+        isUnsafeDirectRechargeAllowed,
 
         async _getUserId() {
             if (this._cachedUserId) return this._cachedUserId;
@@ -124,6 +130,10 @@
          * Mock payment - accepts optional package data to skip DB fetch
          */
         async mockPay(packageId, packageData) {
+            if (!isUnsafeDirectRechargeAllowed()) {
+                throw new Error('在线充值已切换为真实支付流程，请前往爱发电完成支付后输入订单号领取兑换码');
+            }
+
             const userId = await this._getUserId();
             if (!userId) throw new Error('请先登录');
 
@@ -157,6 +167,10 @@
          * Custom recharge points
          */
         async customRecharge(pointsAmount) {
+            if (!isUnsafeDirectRechargeAllowed()) {
+                throw new Error('自定义充值仅在本地开发环境开放，请使用真实支付流程');
+            }
+
             const userId = await this._getUserId();
             if (!userId) throw new Error('请先登录');
 

@@ -1924,7 +1924,8 @@
             if (!section) return;
 
             const normalizedConfig = this.normalizeRechargeOptionsConfig(config);
-            const isEnabled = normalizedConfig.custom_amount_enabled;
+            const isEnabled = normalizedConfig.custom_amount_enabled
+                && window.PointsService?.isUnsafeDirectRechargeAllowed?.() === true;
 
             section.style.display = isEnabled ? '' : 'none';
 
@@ -3026,36 +3027,18 @@
          */
         async buyPackage(packageId, packageName) {
             const overlay = document.getElementById('wallet-modal-overlay');
+            const afdianUrl = window.PAYMENT_AFDIAN_URL || 'https://afdian.com/a/zaoyoe';
 
             try {
-                // Show loading state
                 if (overlay) overlay.classList.add('loading');
-
-                // Use cached package data to skip the DB fetch in mockPay
-                const cachedPkg = (this._packagesCache || []).find(p => p.id === packageId);
-                await PointsService.mockPay(packageId, cachedPkg);
-
-                // Remove loading state BEFORE refreshing data
                 if (overlay) overlay.classList.remove('loading');
-
-                // Show success toast immediately (don't wait for data refresh)
-                this.showToast('✅ 充值成功！', 'success');
-
-                // Refresh order data immediately so new recharge records appear without reopening the wallet
-                this.invalidateOrderRecordsCache();
-                this.loadOrders({
-                    searchQuery: this.orderSearchActiveQuery || this.orderSearchQuery,
-                    ignorePrefetch: true
-                }).catch(e => console.error('Order reload after recharge failed:', e));
-
-                // Refresh data in background to show new balance
-                this.loadData();
+                window.open(afdianUrl, '_blank', 'noopener,noreferrer');
+                this.showToast(`请在爱发电完成「${packageName}」支付后，返回这里输入订单号领取兑换码`, 'success');
 
             } catch (err) {
                 console.error('[WalletModal] Purchase failed:', err);
-                // Remove loading state on error
                 if (overlay) overlay.classList.remove('loading');
-                alert('❌ 支付失败: ' + (err.message || '未知错误'));
+                alert('❌ 无法打开支付链接: ' + (err.message || '未知错误'));
             }
         },
 
@@ -3491,30 +3474,57 @@
                     queryBtn.disabled = true;
                 }
 
+                const { data: { session } } = await window.supabaseClient.auth.getSession();
+                if (!session?.access_token) {
+                    throw new Error('请先登录后再查询订单');
+                }
+
                 // Get server URL from verify config or default
                 const serverUrl = window.VERIFY_SERVER_URL || 'https://zaoyoe-verify-server-production.up.railway.app';
+                const response = await fetch(`${serverUrl}/api/afdian/query?order_no=${encodeURIComponent(orderNo)}`, {
+                    headers: {
+                        Authorization: `Bearer ${session.access_token}`
+                    }
+                });
+                const data = await response.json().catch(() => ({}));
 
-                const response = await fetch(`${serverUrl}/api/afdian/query?order_no=${encodeURIComponent(orderNo)}`);
-                const data = await response.json();
+                resultDiv.innerHTML = '';
+                const wrapper = document.createElement('div');
 
-                if (data.success) {
-                    // Show code in result area
-                    resultDiv.innerHTML = `
-                        <div class="afdian-code-result">
-                            <div class="code-label">您的兑换码（${data.points}积分）：</div>
-                            <div class="code-value" onclick="WalletModal.copyAfdianCode('${data.code}')">${data.code}</div>
-                            <div class="code-hint">${data.is_redeemed ? '⚠️ 该兑换码已使用' : '点击复制，然后在余额页使用'}</div>
-                        </div>
-                    `;
-                    resultDiv.style.display = 'block';
+                if (response.ok && data.success) {
+                    wrapper.className = 'afdian-code-result';
+
+                    const label = document.createElement('div');
+                    label.className = 'code-label';
+                    label.textContent = `您的兑换码（${data.points}积分）：`;
+
+                    const codeValue = document.createElement('div');
+                    codeValue.className = 'code-value';
+                    codeValue.textContent = data.code;
+                    codeValue.addEventListener('click', () => this.copyAfdianCode(data.code));
+
+                    const hint = document.createElement('div');
+                    hint.className = 'code-hint';
+                    hint.textContent = data.is_redeemed ? '⚠️ 该兑换码已使用' : '点击复制，然后在余额页使用';
+
+                    wrapper.appendChild(label);
+                    wrapper.appendChild(codeValue);
+                    wrapper.appendChild(hint);
                 } else {
-                    resultDiv.innerHTML = `<div class="afdian-error">${data.message || '查询失败'}</div>`;
-                    resultDiv.style.display = 'block';
+                    wrapper.className = 'afdian-error';
+                    wrapper.textContent = data.message || '查询失败';
                 }
+
+                resultDiv.appendChild(wrapper);
+                resultDiv.style.display = 'block';
 
             } catch (err) {
                 console.error('[WalletModal] Afdian query failed:', err);
-                resultDiv.innerHTML = `<div class="afdian-error">查询失败，请稍后重试</div>`;
+                resultDiv.innerHTML = '';
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'afdian-error';
+                errorDiv.textContent = err.message || '查询失败，请稍后重试';
+                resultDiv.appendChild(errorDiv);
                 resultDiv.style.display = 'block';
             } finally {
                 if (queryBtn) {
