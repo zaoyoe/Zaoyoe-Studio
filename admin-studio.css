@@ -4808,13 +4808,9 @@ input:checked+.toggle-slider:before {
     justify-content: space-between;
     align-items: center;
     padding: 18px 24px;
-    background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.04)),
-        rgba(15, 23, 42, 0.58);
+    background: #23324a;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    backdrop-filter: blur(18px) saturate(150%);
-    -webkit-backdrop-filter: blur(18px) saturate(150%);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .user-modal-header h2 {
@@ -5933,12 +5929,8 @@ input:checked+.toggle-slider:before {
     gap: 12px;
     padding: 16px 24px;
     border-top: 1px solid rgba(255, 255, 255, 0.08);
-    background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03)),
-        rgba(15, 23, 42, 0.62);
-    backdrop-filter: blur(20px) saturate(150%);
-    -webkit-backdrop-filter: blur(20px) saturate(150%);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    background: #223149;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .modal-action-btn {
@@ -6022,13 +6014,9 @@ input:checked+.toggle-slider:before {
 }
 
 :root:not([data-theme="dark"]) .user-modal-header {
-    background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0.58)),
-        rgba(255, 255, 255, 0.52);
+    background: #f7f9fc;
     border-bottom-color: rgba(0, 0, 0, 0.06);
-    backdrop-filter: blur(18px) saturate(150%);
-    -webkit-backdrop-filter: blur(18px) saturate(150%);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.66);
+    box-shadow: inset 0 -1px 0 rgba(15, 23, 42, 0.04);
 }
 
 :root:not([data-theme="dark"]) .user-modal-header h2 {
@@ -6421,13 +6409,9 @@ input:checked+.toggle-slider:before {
 
 /* Light Mode - Footer Actions */
 :root:not([data-theme="dark"]) .user-modal-actions {
-    background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(248, 250, 252, 0.7)),
-        rgba(248, 250, 252, 0.58);
+    background: #f6f8fb;
     border-top-color: rgba(0, 0, 0, 0.06);
-    backdrop-filter: blur(18px) saturate(150%);
-    -webkit-backdrop-filter: blur(18px) saturate(150%);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.58);
 }
 
 :root:not([data-theme="dark"]) .modal-action-btn {
@@ -6595,11 +6579,7 @@ input:checked+.toggle-slider:before {
         flex-shrink: 0;
         position: sticky;
         bottom: 0;
-        background:
-            linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.04)),
-            rgba(15, 23, 42, 0.68);
-        backdrop-filter: blur(20px) saturate(150%);
-        -webkit-backdrop-filter: blur(20px) saturate(150%);
+        background: #223149;
         padding: 12px 16px;
         border-top: 1px solid rgba(255, 255, 255, 0.08);
     }
@@ -18167,11 +18147,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
         grid-template-columns: repeat(6, 1fr) !important;
         gap: 10px !important;
         padding: 12px !important;
-        background:
-            linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.04)),
-            rgba(15, 23, 42, 0.68) !important;
-        backdrop-filter: blur(20px) saturate(150%) !important;
-        -webkit-backdrop-filter: blur(20px) saturate(150%) !important;
+        background: #223149 !important;
     }
 
     .user-modal-actions .modal-action-btn {
