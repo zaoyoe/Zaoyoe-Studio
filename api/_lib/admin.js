@@ -1,7 +1,9 @@
 const { createClient } = require('@supabase/supabase-js');
 
 let supabaseAdmin = null;
+let supabasePublic = null;
 const DEFAULT_SUPABASE_URL = 'https://auth.zaoyoe.com';
+const DEFAULT_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_lwkiF-sQ80z8e9oMcejFPQ_j7oezjcF';
 
 function getEnv(name) {
     const value = process.env[name];
@@ -22,6 +24,15 @@ function getSupabaseServiceRoleKey() {
     return process.env.SUPABASE_SERVICE_ROLE_KEY
         || process.env.SUPABASE_SERVICE_KEY
         || '';
+}
+
+function getSupabasePublishableKey() {
+    return process.env.SUPABASE_PUBLISHABLE_KEY
+        || process.env.SUPABASE_ANON_KEY
+        || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+        || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+        || process.env.PUBLIC_SUPABASE_ANON_KEY
+        || DEFAULT_SUPABASE_PUBLISHABLE_KEY;
 }
 
 function getSupabaseAdmin() {
@@ -46,6 +57,44 @@ function getSupabaseAdmin() {
     );
 
     return supabaseAdmin;
+}
+
+function getSupabasePublicClient() {
+    if (supabasePublic) return supabasePublic;
+
+    supabasePublic = createClient(
+        getSupabaseUrl(),
+        getSupabasePublishableKey(),
+        {
+            auth: {
+                persistSession: false,
+                autoRefreshToken: false,
+                detectSessionInUrl: false
+            }
+        }
+    );
+
+    return supabasePublic;
+}
+
+function createSupabaseRequestClient(req) {
+    const token = getBearerToken(req);
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+    return createClient(
+        getSupabaseUrl(),
+        getSupabasePublishableKey(),
+        {
+            auth: {
+                persistSession: false,
+                autoRefreshToken: false,
+                detectSessionInUrl: false
+            },
+            global: {
+                headers
+            }
+        }
+    );
 }
 
 function sendJson(res, status, payload) {
@@ -87,7 +136,9 @@ async function getAuthenticatedUser(req) {
         return { token: '', user: null };
     }
 
-    const supabase = getSupabaseAdmin();
+    const supabase = getSupabaseServiceRoleKey()
+        ? getSupabaseAdmin()
+        : getSupabasePublicClient();
     const { data, error } = await supabase.auth.getUser(token);
     if (error || !data?.user) {
         return { token, user: null, error };
@@ -104,7 +155,8 @@ async function requireAdmin(req) {
         throw authError;
     }
 
-    const supabase = getSupabaseAdmin();
+    const hasServiceRole = Boolean(getSupabaseServiceRoleKey());
+    const supabase = hasServiceRole ? getSupabaseAdmin() : createSupabaseRequestClient(req);
     let activeRoles = [];
 
     // Prefer the existing permission RPC so the API stays compatible
@@ -173,6 +225,8 @@ module.exports = {
     getEnv,
     getSupabaseAdmin,
     getBearerToken,
+    getSupabasePublishableKey,
+    getSupabasePublicClient,
     getSupabaseUrl,
     parseJsonBody,
     requireAdmin,
