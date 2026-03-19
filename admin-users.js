@@ -1455,6 +1455,83 @@ function formatAdminDateTime(value) {
     });
 }
 
+function normalizeAdminIpValue(value) {
+    if (!value) return '';
+    return String(value).trim();
+}
+
+function formatAdminGeoLocation(geoInfo) {
+    if (!geoInfo || typeof geoInfo !== 'object' || Array.isArray(geoInfo)) {
+        return '';
+    }
+
+    const rawParts = [
+        geoInfo.country,
+        geoInfo.region || geoInfo.province,
+        geoInfo.city
+    ];
+
+    const parts = [];
+    rawParts.forEach(part => {
+        const text = String(part || '').trim();
+        if (!text || parts.includes(text)) return;
+        parts.push(text);
+    });
+
+    return parts.join(' · ');
+}
+
+async function fetchUserRegistrationOrigin(userId) {
+    const emptyResult = {
+        registration_ip: '',
+        registration_location: '未记录',
+        registration_location_title: ''
+    };
+
+    try {
+        const [profileResult, loginResult] = await Promise.all([
+            window.supabaseClient
+                .from('profiles')
+                .select('*')
+                .eq('id', userId)
+                .maybeSingle(),
+            window.supabaseClient
+                .from('user_login_history')
+                .select('*')
+                .eq('user_id', userId)
+                .order('created_at', { ascending: true })
+                .limit(10)
+        ]);
+
+        if (profileResult?.error) {
+            console.warn('Failed to load registration profile info:', profileResult.error);
+        }
+        if (loginResult?.error) {
+            console.warn('Failed to load registration geo info:', loginResult.error);
+        }
+
+        const profile = profileResult?.data || null;
+        const loginRows = Array.isArray(loginResult?.data) ? loginResult.data : [];
+        const registrationIp = normalizeAdminIpValue(profile?.registration_ip);
+
+        const matchingLog = registrationIp
+            ? loginRows.find(row => normalizeAdminIpValue(row?.ip_address) === registrationIp)
+            : null;
+        const sourceLog = matchingLog || loginRows[0] || null;
+        const sourceIp = registrationIp || normalizeAdminIpValue(sourceLog?.ip_address);
+        const location = formatAdminGeoLocation(sourceLog?.geo_info);
+
+        return {
+            registration_ip: sourceIp,
+            registration_location: location || (sourceIp ? '未知地区' : '未记录'),
+            registration_location_title: sourceIp ? `注册 IP：${sourceIp}` : ''
+        };
+    } catch (err) {
+        console.warn('Failed to resolve registration origin:', err);
+        return emptyResult;
+    }
+}
+
 function getAffiliateMemberStageMeta(member = {}) {
     if (member.first_purchase_at) {
         return {
@@ -1624,17 +1701,21 @@ async function openUserModal(userId) {
     try {
         // Fetch all data in parallel
         console.log('📡 Fetching user data for:', userId);
-        const [contentLog, blockHistory, relatedAccounts, roleInfo, pointsLedger, isSuperAdmin, activeBans] = await Promise.all([
+        const [contentLog, blockHistory, relatedAccounts, roleInfo, pointsLedger, isSuperAdmin, activeBans, registrationOrigin] = await Promise.all([
             fetchUserContentLog(userId),
             fetchUserBlockHistory(userId),
             fetchRelatedAccounts(userId),
             fetchUserRoleInfo(userId),
             fetchPointsLedger(userId),
             checkSuperAdmin(),
-            fetchActiveBans(userId)
+            fetchActiveBans(userId),
+            fetchUserRegistrationOrigin(userId)
         ]);
 
-        console.log('✅ Data fetched:', { contentLog, blockHistory, relatedAccounts, roleInfo, pointsLedger, isSuperAdmin, activeBans });
+        Object.assign(user, registrationOrigin || {});
+        currentModalUser = user;
+
+        console.log('✅ Data fetched:', { contentLog, blockHistory, relatedAccounts, roleInfo, pointsLedger, isSuperAdmin, activeBans, registrationOrigin });
 
         // Store data for tabs
         currentModalData = {
@@ -1677,6 +1758,8 @@ async function openUserModal(userId) {
 function renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans) {
     const leftPanel = document.getElementById('userModalLeft');
     const fullEmail = user.email || 'Not available';
+    const registrationLocation = user.registration_location || '未记录';
+    const registrationLocationTitle = user.registration_location_title || '';
 
     // Format ban details for tooltip
     let banTooltip = '账号已封禁';
@@ -1703,6 +1786,7 @@ function renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans) {
                 <div class="user-name">${escapeHtml(user.username)}</div>
                 <div class="user-email">${fullEmail}</div>
                 <div class="user-registered-at">注册于 ${user.created_at ? formatAdminDateTime(user.created_at) : '未知'}</div>
+                <div class="user-registration-origin"${registrationLocationTitle ? ` title="${escapeHtml(registrationLocationTitle)}"` : ''}>注册地 ${escapeHtml(registrationLocation)}</div>
                 
                 <div class="user-meta-icons">
                     ${user.is_banned

@@ -4905,7 +4905,14 @@ input:checked+.toggle-slider:before {
 .user-modal-left .user-registered-at {
     font-size: 0.78rem;
     color: rgba(148, 163, 184, 0.78);
-    margin-bottom: 6px;
+    margin-bottom: 2px;
+}
+
+.user-modal-left .user-registration-origin {
+    font-size: 0.78rem;
+    color: rgba(148, 163, 184, 0.72);
+    line-height: 1.45;
+    margin-bottom: 8px;
 }
 
 .user-modal-left .user-meta-icons {
@@ -5725,6 +5732,10 @@ input:checked+.toggle-slider:before {
 }
 
 :root:not([data-theme="dark"]) .user-modal-left .user-registered-at {
+    color: #64748b;
+}
+
+:root:not([data-theme="dark"]) .user-modal-left .user-registration-origin {
     color: #64748b;
 }
 
