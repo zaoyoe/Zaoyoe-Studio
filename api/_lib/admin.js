@@ -1,6 +1,7 @@
 const { createClient } = require('@supabase/supabase-js');
 
 let supabaseAdmin = null;
+const DEFAULT_SUPABASE_URL = 'https://auth.zaoyoe.com';
 
 function getEnv(name) {
     const value = process.env[name];
@@ -10,12 +11,31 @@ function getEnv(name) {
     return value;
 }
 
+function getSupabaseUrl() {
+    return process.env.SUPABASE_URL
+        || process.env.NEXT_PUBLIC_SUPABASE_URL
+        || process.env.PUBLIC_SUPABASE_URL
+        || DEFAULT_SUPABASE_URL;
+}
+
+function getSupabaseServiceRoleKey() {
+    return process.env.SUPABASE_SERVICE_ROLE_KEY
+        || process.env.SUPABASE_SERVICE_KEY
+        || '';
+}
+
 function getSupabaseAdmin() {
     if (supabaseAdmin) return supabaseAdmin;
 
+    const supabaseUrl = getSupabaseUrl();
+    const serviceRoleKey = getSupabaseServiceRoleKey();
+    if (!serviceRoleKey) {
+        throw new Error('Missing required environment variable: SUPABASE_SERVICE_ROLE_KEY');
+    }
+
     supabaseAdmin = createClient(
-        getEnv('SUPABASE_URL'),
-        getEnv('SUPABASE_SERVICE_ROLE_KEY'),
+        supabaseUrl,
+        serviceRoleKey,
         {
             auth: {
                 persistSession: false,
@@ -153,6 +173,7 @@ module.exports = {
     getEnv,
     getSupabaseAdmin,
     getBearerToken,
+    getSupabaseUrl,
     parseJsonBody,
     requireAdmin,
     sendJson,
