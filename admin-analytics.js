@@ -30,6 +30,169 @@ function hasAdminAI() {
     return Boolean(window.AdminAI?.configured);
 }
 
+function normalizeAnalyticsNumber(value) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function averageAnalyticsValues(values) {
+    if (!values.length) return 0;
+    return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function isGeminiQuotaError(error) {
+    const message = String(error?.message || '');
+    return Boolean(
+        error?.isRateLimited
+        || error?.status === 429
+        || /resource exhausted|quota|429/i.test(message)
+    );
+}
+
+function buildQuotaFallbackHint(label = '已切换为本地估算') {
+    return `<p class="ai-cache-hint">Gemini 配额暂时不足，${escapeHtml(label)}。</p>`;
+}
+
+function buildLocalAnalyticsInsight(data) {
+    const overview = data?.overview || {};
+    const dau = normalizeAnalyticsNumber(overview.dau);
+    const mau = normalizeAnalyticsNumber(overview.mau);
+    const newUsers = normalizeAnalyticsNumber(overview.new_users_week);
+    const totalPoints = normalizeAnalyticsNumber(overview.total_points);
+    const totalComments = normalizeAnalyticsNumber(overview.total_comments);
+    const dauMauRatio = mau > 0 ? (dau / mau) * 100 : 0;
+
+    const trendRows = Array.isArray(data?.user_trend) ? data.user_trend : [];
+    const trendValues = trendRows
+        .map((item) => normalizeAnalyticsNumber(item?.new_users ?? item?.dau ?? item?.user_count ?? item?.value))
+        .filter((value) => Number.isFinite(value));
+    const recentWindow = trendValues.slice(-3);
+    const previousWindow = trendValues.slice(-6, -3);
+    const recentAvg = averageAnalyticsValues(recentWindow);
+    const previousAvg = averageAnalyticsValues(previousWindow);
+    const trendDelta = recentAvg - previousAvg;
+
+    const channels = (Array.isArray(data?.channel_breakdown) ? data.channel_breakdown : [])
+        .map((item) => {
+            const numericKeys = ['user_count', 'count', 'orders', 'value', 'total', 'total_amount'];
+            const volume = numericKeys
+                .map((key) => normalizeAnalyticsNumber(item?.[key]))
+                .find((value) => value > 0) || 0;
+            return {
+                name: String(item?.channel || item?.name || item?.source || '未知渠道'),
+                volume
+            };
+        })
+        .sort((left, right) => right.volume - left.volume);
+
+    const channelTotal = channels.reduce((sum, item) => sum + item.volume, 0);
+    const topChannel = channels[0] || null;
+    const topChannelShare = topChannel && channelTotal > 0
+        ? (topChannel.volume / channelTotal) * 100
+        : 0;
+
+    const highlights = [];
+    if (dauMauRatio >= 20) {
+        highlights.push(`- DAU/MAU 约 ${dauMauRatio.toFixed(1)}%，近期活跃度表现稳健。`);
+    } else if (dau > 0 || mau > 0) {
+        highlights.push(`- 当前 DAU ${dau}、MAU ${mau}，活跃基础仍在持续累积。`);
+    }
+    if (newUsers > 0) {
+        highlights.push(`- 最近 7 天新增用户 ${newUsers} 人，仍有持续拉新能力。`);
+    }
+    if (trendValues.length >= 6) {
+        const trendText = trendDelta >= 0
+            ? `近 3 天均值较前一阶段提升约 ${Math.abs(trendDelta).toFixed(1)}`
+            : `近 3 天均值较前一阶段回落约 ${Math.abs(trendDelta).toFixed(1)}`;
+        highlights.push(`- 用户趋势显示 ${trendText}。`);
+    }
+    if (topChannel && topChannel.volume > 0) {
+        highlights.push(`- 当前主要渠道为 ${topChannel.name}，占样本约 ${topChannelShare.toFixed(1)}%。`);
+    }
+    if (!highlights.length) {
+        highlights.push('- 当前统计样本较少，建议继续观察近 7 天的真实行为数据。');
+    }
+
+    const risks = [];
+    if (mau > 0 && dauMauRatio < 12) {
+        risks.push('- DAU/MAU 偏低，短期活跃留存还有提升空间。');
+    }
+    if (trendValues.length >= 6 && trendDelta < 0) {
+        risks.push('- 最近 3 天新增/活跃趋势走弱，需要关注拉新效率是否下滑。');
+    }
+    if (topChannelShare >= 65) {
+        risks.push(`- 渠道流量过度依赖 ${topChannel?.name}，波动风险偏高。`);
+    }
+    if (totalComments <= 0) {
+        risks.push('- 评论互动偏少，社区反馈数据不足。');
+    }
+    if (!risks.length) {
+        risks.push('- 当前未发现明显异常，建议继续监控流量结构和留存波动。');
+    }
+
+    const suggestions = [];
+    if (topChannelShare >= 65) {
+        suggestions.push('- 增加第二增长渠道投放，降低单一渠道依赖。');
+    } else {
+        suggestions.push('- 对表现最好的渠道继续做素材复盘，放大稳定来源。');
+    }
+    if (dauMauRatio < 20) {
+        suggestions.push('- 针对近 7 天新增用户做签到、提醒或权益触达，提升次日留存。');
+    } else {
+        suggestions.push('- 可以把活跃用户转化到评论、签到或积分任务，提升复访深度。');
+    }
+    if (totalPoints > 0) {
+        suggestions.push('- 联动积分消费与内容解锁活动，提升积分流通和转化。');
+    } else {
+        suggestions.push('- 先补齐积分或互动活动数据，后续 AI 分析会更稳定。');
+    }
+
+    return [
+        '1. 数据亮点',
+        ...highlights.slice(0, 3),
+        '',
+        '2. 潜在风险',
+        ...risks.slice(0, 2),
+        '',
+        '3. 运营建议',
+        ...suggestions.slice(0, 3)
+    ].join('\n');
+}
+
+function buildLocalPrediction(values, horizon = 7) {
+    const series = (Array.isArray(values) ? values : [])
+        .map((value) => Math.max(0, Math.round(normalizeAnalyticsNumber(value))))
+        .filter((value) => Number.isFinite(value));
+
+    if (!series.length) {
+        return Array.from({ length: horizon }, () => 0);
+    }
+
+    const recentWindow = series.slice(-7);
+    const base = recentWindow[recentWindow.length - 1] * 0.55 + averageAnalyticsValues(recentWindow) * 0.45;
+    const earlierWindow = recentWindow.slice(0, Math.max(1, Math.floor(recentWindow.length / 2)));
+    const laterWindow = recentWindow.slice(Math.max(1, Math.floor(recentWindow.length / 2)));
+    const rawSlope = averageAnalyticsValues(laterWindow) - averageAnalyticsValues(earlierWindow);
+    const normalizedSlope = Math.abs(rawSlope) > base ? Math.sign(rawSlope) * Math.max(1, Math.round(base * 0.18)) : rawSlope;
+
+    return Array.from({ length: horizon }, (_, index) => {
+        const drift = normalizedSlope * ((index + 1) / Math.max(2, recentWindow.length));
+        return Math.max(0, Math.round(base + drift));
+    });
+}
+
+function renderPredictionMarkup(predictions, note = '') {
+    return `
+        <div class="prediction-result">
+            <p><strong>未来7天预测:</strong></p>
+            <div class="prediction-values">
+                ${predictions.map((value, index) => `<span class="pred-day">D${index + 1}: ${value}</span>`).join('')}
+            </div>
+            ${note ? buildQuotaFallbackHint(note) : ''}
+        </div>
+    `;
+}
+
 // Chart theme colors
 const chartColors = {
     primary: '#6b9ece',
@@ -499,6 +662,7 @@ function setupAnalyticsEvents() {
 async function generateAIInsight() {
     const btn = document.getElementById('generateInsightBtn');
     const content = document.getElementById('aiInsightContent');
+    let aiSummaryData = null;
 
     if (!btn || !content) return;
 
@@ -544,6 +708,7 @@ async function generateAIInsight() {
 
         if (error) throw error;
         if (!data || !data.overview) throw new Error('数据获取失败');
+        aiSummaryData = data;
 
         console.log('[Analytics] AI Summary Data:', data);
 
@@ -579,10 +744,10 @@ ${JSON.stringify(data.channel_breakdown || [], null, 2)}
 请用简洁的要点形式，每条不超过一行。`;
 
         const text = await window.AdminAI.generateText(prompt, {
-            model: 'gemini-2.0-flash',
+            model: window.AdminAI?.defaultModel || 'gemini-2.0-flash',
             generationConfig: {
-                temperature: 0.4,
-                maxOutputTokens: 2048
+                temperature: 0.3,
+                maxOutputTokens: 1024
             }
         });
 
@@ -595,8 +760,14 @@ ${JSON.stringify(data.channel_breakdown || [], null, 2)}
 
     } catch (err) {
         console.error('[Analytics] AI insight error:', err);
-        const errMsg = err.message || (err.details ? err.details : '未知错误');
-        content.innerHTML = `<p class="ai-error">分析失败：${errMsg}</p>`;
+        if (isGeminiQuotaError(err)) {
+            aiInsightCache = buildLocalAnalyticsInsight(aiSummaryData || {});
+            aiInsightCacheTime = Date.now();
+            content.innerHTML = `<div class="ai-report">${formatAIResponse(aiInsightCache)}</div>${buildQuotaFallbackHint('已切换为本地规则洞察')}`;
+        } else {
+            const errMsg = err.message || (err.details ? err.details : '未知错误');
+            content.innerHTML = `<p class="ai-error">分析失败：${errMsg}</p>`;
+        }
     } finally {
         btn.disabled = false;
         btn.innerHTML = '<i class="fas fa-magic"></i> 生成分析';
@@ -1611,6 +1782,7 @@ async function loadPointsFlow() {
 async function loadAIPrediction() {
     const container = document.getElementById('aiPredictionContent');
     if (!container) return;
+    let trendSeries = [];
 
     if (!hasAdminAI()) {
         try {
@@ -1631,17 +1803,18 @@ async function loadAIPrediction() {
         // Get trend data
         const { data, error } = await supabaseClient.rpc('get_user_trend', { p_days: 30, p_site: getAnalyticsSiteParam() });
         if (error) throw error;
+        trendSeries = Array.isArray(data) ? data.map((item) => item?.new_users) : [];
 
         const prompt = `基于以下30天的用户数据趋势，预测未来7天的走势（每天一个数字）。
 只返回JSON数组格式，例如: [15, 18, 20, 22, 19, 21, 25]
 
-数据：${JSON.stringify(data.map(d => d.new_users))}`;
+数据：${JSON.stringify(trendSeries)}`;
 
         const text = await window.AdminAI.generateText(prompt, {
-            model: 'gemini-2.0-flash',
+            model: window.AdminAI?.defaultModel || 'gemini-2.0-flash',
             generationConfig: {
                 temperature: 0.2,
-                maxOutputTokens: 512
+                maxOutputTokens: 256
             }
         });
 
@@ -1649,21 +1822,19 @@ async function loadAIPrediction() {
         const match = (text || '[]').match(/\[[\d,\s]+\]/);
         if (match) {
             const predictions = JSON.parse(match[0]);
-            container.innerHTML = `
-                <div class="prediction-result">
-                    <p><strong>未来7天预测:</strong></p>
-                    <div class="prediction-values">
-                        ${predictions.map((v, i) => `<span class="pred-day">D${i + 1}: ${v}</span>`).join('')}
-                    </div>
-                </div>
-            `;
+            container.innerHTML = renderPredictionMarkup(predictions);
         } else {
             container.innerHTML = '<p class="ai-error">预测解析失败</p>';
         }
 
     } catch (err) {
         console.error('[Analytics] AI prediction error:', err);
-        container.innerHTML = `<p class="ai-error">预测失败: ${err.message}</p>`;
+        if (isGeminiQuotaError(err)) {
+            const fallbackPredictions = buildLocalPrediction(trendSeries, 7);
+            container.innerHTML = renderPredictionMarkup(fallbackPredictions, '已切换为本地趋势估算');
+        } else {
+            container.innerHTML = `<p class="ai-error">预测失败: ${err.message}</p>`;
+        }
     }
 }
 

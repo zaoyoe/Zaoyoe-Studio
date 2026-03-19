@@ -71,7 +71,12 @@
 
             const payload = await response.json().catch(() => ({}));
             if (!response.ok || !payload.success) {
-                throw new Error(payload.message || 'AI request failed');
+                const error = new Error(payload.message || 'AI request failed');
+                error.status = response.status;
+                error.details = payload.error || null;
+                error.isRateLimited = response.status === 429
+                    || /resource exhausted|quota|429/i.test(String(error.message || ''));
+                throw error;
             }
 
             this.configured = true;

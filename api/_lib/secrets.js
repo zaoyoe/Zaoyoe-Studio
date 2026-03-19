@@ -20,7 +20,7 @@ function getEncryptionSeed() {
 function getEncryptionKey() {
     const seed = getEncryptionSeed();
     if (!seed) {
-        throw new Error('Missing encryption secret for admin secret storage');
+        throw new Error('请先在 Vercel 环境变量中配置 ADMIN_CONFIG_ENCRYPTION_KEY，用于加密后台密钥存储');
     }
 
     return crypto.createHash('sha256').update(seed).digest();
