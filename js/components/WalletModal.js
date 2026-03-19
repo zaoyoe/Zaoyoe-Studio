@@ -1683,7 +1683,7 @@
 
                                     <div class="wallet-affiliate-panels">
                                         <section class="wallet-affiliate-panel wallet-affiliate-link-panel">
-                                            <div class="wallet-affiliate-panel-head">
+                                            <div class="wallet-affiliate-panel-head wallet-affiliate-panel-head-link">
                                                 <div>
                                                     <h3>
                                                         <i class="fas fa-link" style="color:#10b981;"></i>
@@ -1715,7 +1715,6 @@
                                                         <i class="fas fa-road" style="color:#8ab4ff;"></i>
                                                         邀请旅程
                                                     </h3>
-                                                    <p class="wallet-affiliate-subtitle">一眼看到谁已注册、谁完成首充、谁已经开始贡献返佣。</p>
                                                 </div>
                                                 <div class="affiliate-stage-summary" id="affiliate-stage-summary">
                                                     <span class="affiliate-stage-pill">注册 0</span>
@@ -2234,6 +2233,7 @@
             const pointsUnit = window.i18n?.t('wallet.pointsUnit') || '积分';
 
             container.innerHTML = members.map((member) => {
+                const memberId = String(member.user_id || member.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                 const displayName = String(member.display_name || member.username || member.masked_email || '新用户').trim();
                 const maskedEmail = String(member.masked_email || '').trim();
                 const registeredAt = this.formatOrderDateTime(member.registered_at);
@@ -2255,70 +2255,117 @@
                 const badgeClass = `affiliate-member-badge affiliate-member-badge-${stageMeta.tone}`;
                 const avatarLabel = this.escapeHtml(displayName.charAt(0).toUpperCase() || 'U');
                 const secondaryLine = [maskedEmail, `注册于 ${registeredAt}`].filter(Boolean).join(' · ');
+                const quickContribution = `${totalSpend} ${pointsUnit}`;
+                const quickCommission = `${commissionEarned} ${pointsUnit}`;
+                const quickReward = registrationRewardGranted > 0
+                    ? `${this.formatPoints(registrationRewardGranted)} ${pointsUnit}`
+                    : (pendingReward > 0 ? `待激活 ${this.formatPoints(pendingReward)} ${pointsUnit}` : '未开启');
 
                 return `
-                    <article class="affiliate-member-card">
-                        <div class="affiliate-member-head">
-                            <div class="affiliate-member-avatar">
-                                ${member.avatar_url
-                                    ? `<img src="${this.escapeHtml(member.avatar_url)}" alt="${this.escapeHtml(displayName)}" />`
-                                    : `<span>${avatarLabel}</span>`}
-                            </div>
-                            <div class="affiliate-member-ident">
-                                <div class="affiliate-member-name-row">
-                                    <div class="affiliate-member-name">${this.escapeHtml(displayName)}</div>
-                                    <span class="${badgeClass}">${stageMeta.label}</span>
+                    <article class="affiliate-member-card" data-member-id="${this.escapeHtml(memberId)}">
+                        <button class="affiliate-member-summary" type="button" aria-expanded="false" onclick="WalletModal.toggleAffiliateMemberDetails(event)">
+                            <div class="affiliate-member-summary-main">
+                                <div class="affiliate-member-head">
+                                    <div class="affiliate-member-avatar">
+                                        ${member.avatar_url
+                                            ? `<img src="${this.escapeHtml(member.avatar_url)}" alt="${this.escapeHtml(displayName)}" />`
+                                            : `<span>${avatarLabel}</span>`}
+                                    </div>
+                                    <div class="affiliate-member-ident">
+                                        <div class="affiliate-member-name-row">
+                                            <div class="affiliate-member-name">${this.escapeHtml(displayName)}</div>
+                                            <span class="${badgeClass}">${stageMeta.label}</span>
+                                        </div>
+                                        <div class="affiliate-member-sub">${this.escapeHtml(secondaryLine || '新邀请用户')}</div>
+                                        <div class="affiliate-member-note">${this.escapeHtml(stageMeta.hint)}</div>
+                                    </div>
                                 </div>
-                                <div class="affiliate-member-sub">${this.escapeHtml(secondaryLine || '新邀请用户')}</div>
-                                <div class="affiliate-member-note">${this.escapeHtml(stageMeta.hint)}</div>
+                                <div class="affiliate-member-quick-metrics">
+                                    <span class="affiliate-member-chip">贡献 ${quickContribution}</span>
+                                    <span class="affiliate-member-chip">返佣 ${quickCommission}</span>
+                                    <span class="affiliate-member-chip">拉新 ${this.escapeHtml(quickReward)}</span>
+                                </div>
                             </div>
-                        </div>
+                            <span class="affiliate-member-chevron" aria-hidden="true">
+                                <i class="fas fa-chevron-down"></i>
+                            </span>
+                        </button>
 
-                        <div class="affiliate-stage-track">
-                            <div class="affiliate-stage-node affiliate-stage-node-done">
-                                <span class="affiliate-stage-dot"></span>
-                                <div class="affiliate-stage-copy">
-                                    <strong>注册</strong>
-                                    <span>${this.escapeHtml(registeredAt)}</span>
+                        <div class="affiliate-member-details" hidden>
+                            <div class="affiliate-stage-track">
+                                <div class="affiliate-stage-node affiliate-stage-node-done">
+                                    <span class="affiliate-stage-dot"></span>
+                                    <div class="affiliate-stage-copy">
+                                        <strong>注册</strong>
+                                        <span>${this.escapeHtml(registeredAt)}</span>
+                                    </div>
+                                </div>
+                                <div class="affiliate-stage-node ${member.first_recharge_at ? 'affiliate-stage-node-done' : 'affiliate-stage-node-todo'}">
+                                    <span class="affiliate-stage-dot"></span>
+                                    <div class="affiliate-stage-copy">
+                                        <strong>首充</strong>
+                                        <span>${this.escapeHtml(firstRechargeAt)}</span>
+                                    </div>
+                                </div>
+                                <div class="affiliate-stage-node ${member.first_purchase_at ? 'affiliate-stage-node-done' : 'affiliate-stage-node-todo'}">
+                                    <span class="affiliate-stage-dot"></span>
+                                    <div class="affiliate-stage-copy">
+                                        <strong>消费</strong>
+                                        <span>${this.escapeHtml(firstPurchaseAt)}</span>
+                                    </div>
                                 </div>
                             </div>
-                            <div class="affiliate-stage-node ${member.first_recharge_at ? 'affiliate-stage-node-done' : 'affiliate-stage-node-todo'}">
-                                <span class="affiliate-stage-dot"></span>
-                                <div class="affiliate-stage-copy">
-                                    <strong>首充</strong>
-                                    <span>${this.escapeHtml(firstRechargeAt)}</span>
-                                </div>
-                            </div>
-                            <div class="affiliate-stage-node ${member.first_purchase_at ? 'affiliate-stage-node-done' : 'affiliate-stage-node-todo'}">
-                                <span class="affiliate-stage-dot"></span>
-                                <div class="affiliate-stage-copy">
-                                    <strong>消费</strong>
-                                    <span>${this.escapeHtml(firstPurchaseAt)}</span>
-                                </div>
-                            </div>
-                        </div>
 
-                        <div class="affiliate-member-metrics">
-                            <div class="affiliate-member-metric">
-                                <span>累计贡献</span>
-                                <strong>${totalSpend} ${pointsUnit}</strong>
-                            </div>
-                            <div class="affiliate-member-metric">
-                                <span>返佣贡献</span>
-                                <strong>${commissionEarned} ${pointsUnit}</strong>
-                            </div>
-                            <div class="affiliate-member-metric">
-                                <span>拉新奖励</span>
-                                <strong>${this.escapeHtml(rewardText)}</strong>
-                            </div>
-                            <div class="affiliate-member-metric">
-                                <span>${lastOrderName ? '最近订单' : '最近动态'}</span>
-                                <strong>${latestLabel}</strong>
+                            <div class="affiliate-member-metrics">
+                                <div class="affiliate-member-metric">
+                                    <span>累计贡献</span>
+                                    <strong>${totalSpend} ${pointsUnit}</strong>
+                                </div>
+                                <div class="affiliate-member-metric">
+                                    <span>返佣贡献</span>
+                                    <strong>${commissionEarned} ${pointsUnit}</strong>
+                                </div>
+                                <div class="affiliate-member-metric">
+                                    <span>拉新奖励</span>
+                                    <strong>${this.escapeHtml(rewardText)}</strong>
+                                </div>
+                                <div class="affiliate-member-metric">
+                                    <span>${lastOrderName ? '最近订单' : '最近动态'}</span>
+                                    <strong>${latestLabel}</strong>
+                                </div>
                             </div>
                         </div>
                     </article>
                 `;
             }).join('');
+        },
+
+        toggleAffiliateMemberDetails(event) {
+            const trigger = event?.currentTarget || event?.target;
+            const card = trigger?.closest?.('.affiliate-member-card');
+            const list = card?.closest?.('.affiliate-member-list');
+            if (!card || !list) return;
+
+            const details = card.querySelector('.affiliate-member-details');
+            const button = card.querySelector('.affiliate-member-summary');
+            const shouldExpand = !card.classList.contains('expanded');
+
+            list.querySelectorAll('.affiliate-member-card.expanded').forEach((openCard) => {
+                openCard.classList.remove('expanded');
+                openCard.querySelector('.affiliate-member-details')?.setAttribute('hidden', 'hidden');
+                openCard.querySelector('.affiliate-member-summary')?.setAttribute('aria-expanded', 'false');
+            });
+
+            if (shouldExpand) {
+                card.classList.add('expanded');
+                details?.removeAttribute('hidden');
+                button?.setAttribute('aria-expanded', 'true');
+                return;
+            }
+
+            card.classList.remove('expanded');
+            details?.setAttribute('hidden', 'hidden');
+            button?.setAttribute('aria-expanded', 'false');
         },
 
         renderAffiliateDescription(stats = this.affiliateStats || {}) {
