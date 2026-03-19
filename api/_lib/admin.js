@@ -4,10 +4,6 @@ let supabaseAdmin = null;
 let supabasePublic = null;
 const DEFAULT_SUPABASE_URL = 'https://mmkugdibsaeoevliebzk.supabase.co';
 const DEFAULT_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_lwkiF-sQ80z8e9oMcejFPQ_j7oezjcF';
-const LEGACY_SUPABASE_HOSTS = new Set([
-    'auth.zaoyoe.com',
-    'www.auth.zaoyoe.com'
-]);
 
 function getEnv(name) {
     const value = process.env[name];
@@ -18,21 +14,7 @@ function getEnv(name) {
 }
 
 function getSupabaseUrl() {
-    const resolved = process.env.SUPABASE_URL
-        || process.env.NEXT_PUBLIC_SUPABASE_URL
-        || process.env.PUBLIC_SUPABASE_URL
-        || DEFAULT_SUPABASE_URL;
-
-    try {
-        const parsed = new URL(resolved);
-        if (LEGACY_SUPABASE_HOSTS.has(parsed.hostname)) {
-            return DEFAULT_SUPABASE_URL;
-        }
-    } catch (_) {
-        // ignore malformed env values and let the caller surface the failure
-    }
-
-    return resolved;
+    return DEFAULT_SUPABASE_URL;
 }
 
 function getSupabaseServiceRoleKey() {
@@ -42,16 +24,7 @@ function getSupabaseServiceRoleKey() {
 }
 
 function getSupabasePublishableKey() {
-    if (getSupabaseUrl() === DEFAULT_SUPABASE_URL) {
-        return DEFAULT_SUPABASE_PUBLISHABLE_KEY;
-    }
-
-    return process.env.SUPABASE_PUBLISHABLE_KEY
-        || process.env.SUPABASE_ANON_KEY
-        || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-        || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
-        || process.env.PUBLIC_SUPABASE_ANON_KEY
-        || DEFAULT_SUPABASE_PUBLISHABLE_KEY;
+    return DEFAULT_SUPABASE_PUBLISHABLE_KEY;
 }
 
 function getSupabaseAdmin() {
