@@ -4902,6 +4902,12 @@ input:checked+.toggle-slider:before {
     margin-bottom: 4px;
 }
 
+.user-modal-left .user-registered-at {
+    font-size: 0.78rem;
+    color: rgba(148, 163, 184, 0.78);
+    margin-bottom: 6px;
+}
+
 .user-modal-left .user-meta-icons {
     display: flex;
     justify-content: flex-start;
@@ -5279,6 +5285,12 @@ input:checked+.toggle-slider:before {
     padding: 18px;
 }
 
+.affiliate-admin-export-btn {
+    align-self: flex-start;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
 .affiliate-admin-link-label,
 .affiliate-admin-panel-head p,
 .affiliate-admin-member-sub,
@@ -5300,7 +5312,7 @@ input:checked+.toggle-slider:before {
 
 .affiliate-admin-stats {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 14px;
 }
 
@@ -5320,8 +5332,8 @@ input:checked+.toggle-slider:before {
 }
 
 .affiliate-admin-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.95fr);
+    display: flex;
+    flex-direction: column;
     gap: 16px;
 }
 
@@ -5347,6 +5359,7 @@ input:checked+.toggle-slider:before {
     margin: 8px 0 0;
     line-height: 1.65;
     font-size: 0.84rem;
+    max-width: 720px;
 }
 
 .affiliate-admin-panel-meta {
@@ -5430,6 +5443,7 @@ input:checked+.toggle-slider:before {
 
 .affiliate-admin-member-body {
     padding: 16px 18px 18px;
+    background: rgba(2, 6, 23, 0.14);
 }
 
 .affiliate-admin-member-grid {
@@ -5580,6 +5594,14 @@ input:checked+.toggle-slider:before {
     line-height: 1.6;
 }
 
+.affiliate-admin-rewards .empty-state,
+.affiliate-admin-members .empty-state {
+    padding: 48px 20px;
+    border-radius: 16px;
+    border: 1px dashed rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.02);
+}
+
 /* Modal Footer Actions */
 .user-modal-actions {
     display: flex;
@@ -5699,6 +5721,10 @@ input:checked+.toggle-slider:before {
 }
 
 :root:not([data-theme="dark"]) .user-modal-left .user-email {
+    color: #64748b;
+}
+
+:root:not([data-theme="dark"]) .user-modal-left .user-registered-at {
     color: #64748b;
 }
 
@@ -5835,10 +5861,6 @@ input:checked+.toggle-slider:before {
     .affiliate-admin-hero,
     .affiliate-admin-grid {
         grid-template-columns: 1fr;
-    }
-
-    .affiliate-admin-stats {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
 
@@ -7757,6 +7779,68 @@ input:checked+.toggle-slider:before {
 .tab-indicator {
     bottom: -1px !important;
     height: 2px !important;
+}
+
+/* User detail tabs: allow wrapping instead of squeezing every tab into one row */
+.user-modal-right .user-tab-nav {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    justify-content: flex-start !important;
+    height: auto !important;
+    min-height: auto !important;
+    gap: 8px !important;
+    padding: 14px 18px 10px !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
+}
+
+.user-modal-right .user-tab-btn {
+    flex: 0 0 auto !important;
+    min-width: 104px !important;
+    padding: 0 14px !important;
+    height: 36px !important;
+    border-radius: 999px !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    background: rgba(255, 255, 255, 0.03) !important;
+    color: #94a3b8 !important;
+    white-space: nowrap !important;
+}
+
+.user-modal-right .user-tab-btn:hover {
+    background: rgba(255, 255, 255, 0.06) !important;
+    color: #e2e8f0 !important;
+}
+
+.user-modal-right .user-tab-btn.active {
+    background: rgba(107, 158, 206, 0.14) !important;
+    border-color: rgba(107, 158, 206, 0.24) !important;
+    color: #dbeafe !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+}
+
+.user-modal-right .user-tab-btn::after,
+.user-modal-right .tab-indicator {
+    display: none !important;
+}
+
+.user-modal-right .user-tab-content {
+    padding: 18px 24px 28px !important;
+}
+
+@media (max-width: 768px) {
+    .user-modal-right .user-tab-nav {
+        padding: 12px 14px 8px !important;
+        gap: 8px !important;
+    }
+
+    .user-modal-right .user-tab-btn {
+        min-width: calc(50% - 4px) !important;
+        justify-content: flex-start !important;
+        padding: 0 12px !important;
+    }
+
+    .user-modal-right .user-tab-content {
+        padding: 14px 16px 24px !important;
+    }
 }
 
 /* 2. Micro Toolbar (Inside Tab Content) */

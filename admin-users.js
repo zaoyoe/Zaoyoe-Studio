@@ -1702,6 +1702,7 @@ function renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans) {
             <div class="user-details">
                 <div class="user-name">${escapeHtml(user.username)}</div>
                 <div class="user-email">${fullEmail}</div>
+                <div class="user-registered-at">注册于 ${user.created_at ? formatAdminDateTime(user.created_at) : '未知'}</div>
                 
                 <div class="user-meta-icons">
                     ${user.is_banned
@@ -2399,7 +2400,7 @@ function renderAffiliateTab(container) {
                 <div class="affiliate-admin-hero-copy">
                     <div class="affiliate-admin-kicker">推广概览</div>
                     <h3>${escapeHtml(currentModalUser.username || '该用户')} 的推广面板</h3>
-                    <p>这里汇总该用户的邀请码、转化阶段、每位被邀请人的旅程节点，以及每一笔推广奖励的来源与贡献。</p>
+                    <p>集中查看邀请码、返佣配置、当前转化情况，以及每位被邀请人的旅程节点与贡献明细。</p>
                     <div class="affiliate-admin-chip-row">
                         <span class="affiliate-admin-chip"><i class="fas fa-ticket-alt"></i> 邀请码 ${escapeHtml(inviteCode || '未生成')}</span>
                         <span class="affiliate-admin-chip"><i class="fas fa-percentage"></i> 基础商品 ${formatAdminPercentValue(shopCommissionRate)}</span>
@@ -2411,6 +2412,9 @@ function renderAffiliateTab(container) {
                     <div class="affiliate-admin-link-label">推广链接</div>
                     <div class="affiliate-admin-link-value">${escapeHtml(inviteLink || '暂未生成推广链接')}</div>
                     <div class="affiliate-admin-link-meta">最后刷新：${formatAdminDateTime(affiliateState.loadedAt)}</div>
+                    <button class="btn-export affiliate-admin-export-btn" onclick="exportTabData('affiliate')">
+                        <i class="fas fa-download"></i> 导出推广记录
+                    </button>
                 </div>
             </section>
 
@@ -2441,12 +2445,10 @@ function renderAffiliateTab(container) {
                 <section class="affiliate-admin-panel">
                     <div class="affiliate-admin-panel-head">
                         <div>
-                            <h4>邀请旅程</h4>
-                            <p>按阶段与贡献排序，展开可查看每位被邀请人的节点、贡献消费与奖励构成。</p>
+                            <h4>邀请成员</h4>
+                            <p>先看当前阶段和贡献概览，展开后再看注册、首充、首单消费与奖励构成。</p>
                         </div>
-                        <button class="btn-export" onclick="exportTabData('affiliate')">
-                            <i class="fas fa-download"></i> 导出推广记录
-                        </button>
+                        <div class="affiliate-admin-panel-meta">${members.length} 位成员</div>
                     </div>
                     <div class="affiliate-admin-members">
                         ${members.length ? members.map((member, index) => {
@@ -2527,7 +2529,7 @@ function renderAffiliateTab(container) {
                     <div class="affiliate-admin-panel-head">
                         <div>
                             <h4>奖励记录</h4>
-                            <p>展示最近的推广返佣、首充奖励、注册奖励，并附上触发来源、应返比例与实际到账比例。</p>
+                            <p>按时间倒序展示最近奖励，并附上来源对象、配置比例、实际到账比例与应返金额。</p>
                         </div>
                         <div class="affiliate-admin-panel-meta">${rewards.length} 条记录</div>
                     </div>
