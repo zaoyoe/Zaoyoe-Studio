@@ -202,10 +202,17 @@ body.wallet-modal-lock {
     width: min(340px, calc(100vw - 72px));
     padding: 12px 14px;
     border-radius: 14px;
-    background: rgba(12, 18, 30, 0.96);
-    border: 1px solid rgba(148, 163, 184, 0.18);
-    box-shadow: 0 18px 38px rgba(2, 6, 23, 0.42);
-    color: #e2e8f0;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.02) 100%),
+        rgba(0, 0, 0, 0.82);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow:
+        0 24px 56px rgba(0, 0, 0, 0.55),
+        inset 0 1px 0 rgba(255, 255, 255, 0.14),
+        inset 0 -1px 0 rgba(255, 255, 255, 0.04);
+    backdrop-filter: blur(18px) saturate(135%);
+    -webkit-backdrop-filter: blur(18px) saturate(135%);
+    color: rgba(248, 250, 252, 0.96);
     font-size: 12px;
     line-height: 1.65;
     white-space: pre-line;
@@ -225,9 +232,13 @@ body.wallet-modal-lock {
     right: 18px;
     width: 10px;
     height: 10px;
-    background: rgba(12, 18, 30, 0.96);
-    border-left: 1px solid rgba(148, 163, 184, 0.18);
-    border-top: 1px solid rgba(148, 163, 184, 0.18);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.02) 100%),
+        rgba(0, 0, 0, 0.82);
+    border-left: 1px solid rgba(255, 255, 255, 0.12);
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(18px) saturate(135%);
+    -webkit-backdrop-filter: blur(18px) saturate(135%);
     transform: rotate(45deg);
     opacity: 0;
     visibility: hidden;
