@@ -1513,13 +1513,18 @@ async function fetchUserRegistrationOrigin(userId) {
         const profile = profileResult?.data || null;
         const loginRows = Array.isArray(loginResult?.data) ? loginResult.data : [];
         const registrationIp = normalizeAdminIpValue(profile?.registration_ip);
+        const profileLocation = formatAdminGeoLocation({
+            country: profile?.registration_country || profile?.registration_geo_info?.country,
+            region: profile?.registration_region || profile?.registration_geo_info?.region || profile?.registration_geo_info?.province,
+            city: profile?.registration_city || profile?.registration_geo_info?.city
+        });
 
         const matchingLog = registrationIp
             ? loginRows.find(row => normalizeAdminIpValue(row?.ip_address) === registrationIp)
             : null;
         const sourceLog = matchingLog || loginRows[0] || null;
         const sourceIp = registrationIp || normalizeAdminIpValue(sourceLog?.ip_address);
-        const location = formatAdminGeoLocation(sourceLog?.geo_info);
+        const location = profileLocation || formatAdminGeoLocation(sourceLog?.geo_info);
 
         return {
             registration_ip: sourceIp,

@@ -63,6 +63,223 @@ function closeUserDropdown() {
 
 window.closeUserDropdown = closeUserDropdown;
 
+const AUTH_ORIGIN_CACHE_KEY = 'zaoyoe_auth_origin_cache_v1';
+const PENDING_AUTH_ORIGIN_KEY = 'zaoyoe_pending_auth_origin_v1';
+const AUTH_ORIGIN_CACHE_TTL = 10 * 60 * 1000;
+
+function getCurrentAuthSite() {
+    return String(window.SiteConfig?.site || 'cn').trim() || 'cn';
+}
+
+function normalizeGeoText(value) {
+    if (value === null || value === undefined) return '';
+    return String(value).trim();
+}
+
+function normalizeGeoPayload(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+
+    const country = normalizeGeoText(raw.country_name || raw.country || raw.countryCode || raw.country_code);
+    const region = normalizeGeoText(raw.region || raw.regionName || raw.province || raw.state);
+    const city = normalizeGeoText(raw.city);
+
+    if (!country && !region && !city) return null;
+
+    return {
+        country: country || '未知',
+        region: region || '未知',
+        city: city || '未知'
+    };
+}
+
+function readCachedAuthOriginContext() {
+    try {
+        const raw = sessionStorage.getItem(AUTH_ORIGIN_CACHE_KEY);
+        if (!raw) return null;
+
+        const parsed = JSON.parse(raw);
+        if (!parsed?.cachedAt || Date.now() - parsed.cachedAt > AUTH_ORIGIN_CACHE_TTL) {
+            sessionStorage.removeItem(AUTH_ORIGIN_CACHE_KEY);
+            return null;
+        }
+
+        return parsed;
+    } catch (err) {
+        console.warn('Failed to read cached auth origin context:', err);
+        return null;
+    }
+}
+
+function writeCachedAuthOriginContext(payload) {
+    try {
+        sessionStorage.setItem(AUTH_ORIGIN_CACHE_KEY, JSON.stringify({
+            ...payload,
+            cachedAt: Date.now()
+        }));
+    } catch (err) {
+        console.warn('Failed to cache auth origin context:', err);
+    }
+}
+
+async function fetchJsonWithTimeout(url, timeoutMs = 4500) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+        const response = await fetch(url, {
+            signal: controller.signal,
+            cache: 'no-store'
+        });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        return await response.json();
+    } finally {
+        clearTimeout(timeoutId);
+    }
+}
+
+async function resolveClientNetworkContext(forceRefresh = false) {
+    if (!forceRefresh) {
+        const cached = readCachedAuthOriginContext();
+        if (cached?.ip || cached?.geoInfo) {
+            return cached;
+        }
+    }
+
+    const resolvers = [
+        async () => {
+            const data = await fetchJsonWithTimeout('https://ipinfo.io/json');
+            return {
+                ip: normalizeGeoText(data?.ip),
+                geoInfo: normalizeGeoPayload(data),
+                source: 'ipinfo'
+            };
+        },
+        async () => {
+            const data = await fetchJsonWithTimeout('https://ipwho.is/');
+            return {
+                ip: normalizeGeoText(data?.ip),
+                geoInfo: normalizeGeoPayload(data),
+                source: 'ipwho.is'
+            };
+        },
+        async () => {
+            const data = await fetchJsonWithTimeout('https://ipapi.co/json/');
+            return {
+                ip: normalizeGeoText(data?.ip),
+                geoInfo: normalizeGeoPayload(data),
+                source: 'ipapi'
+            };
+        },
+        async () => {
+            const data = await fetchJsonWithTimeout('https://api.ipify.org?format=json');
+            return {
+                ip: normalizeGeoText(data?.ip),
+                geoInfo: null,
+                source: 'ipify'
+            };
+        }
+    ];
+
+    for (const resolver of resolvers) {
+        try {
+            const result = await resolver();
+            if (result?.ip || result?.geoInfo) {
+                writeCachedAuthOriginContext(result);
+                return result;
+            }
+        } catch (err) {
+            console.warn('Auth origin resolver failed:', err?.message || err);
+        }
+    }
+
+    return {
+        ip: '',
+        geoInfo: null,
+        source: 'unavailable'
+    };
+}
+
+function queuePendingAuthOrigin(userId, context = 'login') {
+    if (!userId) return;
+    try {
+        sessionStorage.setItem(PENDING_AUTH_ORIGIN_KEY, JSON.stringify({
+            userId: String(userId),
+            context: context || 'login',
+            queuedAt: Date.now()
+        }));
+    } catch (err) {
+        console.warn('Failed to queue auth origin task:', err);
+    }
+}
+
+function readPendingAuthOrigin() {
+    try {
+        const raw = sessionStorage.getItem(PENDING_AUTH_ORIGIN_KEY);
+        return raw ? JSON.parse(raw) : null;
+    } catch (err) {
+        console.warn('Failed to read pending auth origin task:', err);
+        return null;
+    }
+}
+
+function clearPendingAuthOrigin(userId = '') {
+    const pending = readPendingAuthOrigin();
+    if (!pending) return;
+    if (userId && String(pending.userId) !== String(userId)) return;
+    sessionStorage.removeItem(PENDING_AUTH_ORIGIN_KEY);
+}
+
+async function persistAuthOrigin(userId, context = 'login', options = {}) {
+    if (!userId || !window.supabaseClient) return false;
+
+    const { forceRefresh = false, queueOnFailure = true } = options;
+
+    try {
+        const networkContext = await resolveClientNetworkContext(forceRefresh);
+        const ip = normalizeGeoText(networkContext?.ip);
+        const geoInfo = networkContext?.geoInfo || null;
+
+        if (!ip && !geoInfo) {
+            if (queueOnFailure) queuePendingAuthOrigin(userId, context);
+            return false;
+        }
+
+        const { error } = await window.supabaseClient.rpc('fn_upsert_user_auth_origin', {
+            p_user_id: userId,
+            p_ip: ip || null,
+            p_geo_info: geoInfo,
+            p_user_agent: navigator.userAgent || null,
+            p_site: getCurrentAuthSite(),
+            p_context: context || 'login'
+        });
+
+        if (error) throw error;
+
+        clearPendingAuthOrigin(userId);
+        return true;
+    } catch (err) {
+        console.warn('Failed to persist auth origin:', err?.message || err);
+        if (queueOnFailure) {
+            queuePendingAuthOrigin(userId, context);
+        }
+        return false;
+    }
+}
+
+async function flushPendingAuthOrigin(userId) {
+    const pending = readPendingAuthOrigin();
+    if (!pending || String(pending.userId) !== String(userId)) {
+        return false;
+    }
+
+    return persistAuthOrigin(userId, pending.context || 'login', {
+        forceRefresh: false,
+        queueOnFailure: true
+    });
+}
+
 // ==================== 注册功能 (Supabase 版本) ====================
 async function handleRegister(event) {
     event.preventDefault();
@@ -122,6 +339,14 @@ async function handleRegister(event) {
         if (error) throw error;
 
         console.log('✅ User created:', data.user.id);
+
+        if (data.user?.id) {
+            queuePendingAuthOrigin(data.user.id, 'register');
+            await persistAuthOrigin(data.user.id, 'register', {
+                forceRefresh: true,
+                queueOnFailure: true
+            });
+        }
 
         // 关闭模态框
         if (typeof window.closeLoginModal === 'function') {
@@ -296,7 +521,10 @@ async function handleLogin(event) {
         });
 
         // 记录登录 IP（用于多账号检测）
-        recordLoginIP(data.user.id);
+        persistAuthOrigin(data.user.id, 'login', {
+            forceRefresh: true,
+            queueOnFailure: true
+        });
 
         // 🔒 Step 4: 启动会话超时监控
         startSessionTimeoutMonitor();
@@ -354,11 +582,12 @@ async function handleLogin(event) {
 // 获取客户端 IP 地址
 async function getClientIP() {
     try {
-        // 优先使用 ipify（更快更稳定）
-        const response = await fetch('https://api.ipify.org?format=json');
-        const data = await response.json();
-        console.log('🌐 客户端 IP:', data.ip);
-        return data.ip;
+        const context = await resolveClientNetworkContext();
+        if (context?.ip) {
+            console.log('🌐 客户端 IP:', context.ip);
+            return context.ip;
+        }
+        return null;
     } catch (e) {
         console.warn('无法获取客户端 IP:', e.message);
         return null;
@@ -2061,6 +2290,7 @@ async function initializeAuthPageBoot() {
             if (session) {
                 console.log('🔔 INITIAL_SESSION has session, updating UI...');
                 checkAuthState();
+                flushPendingAuthOrigin(session.user.id);
             } else if (window._localJwtRestored) {
                 console.log('🔔 INITIAL_SESSION is null, but local JWT already restored. Ignored.');
             }
@@ -2077,8 +2307,15 @@ async function initializeAuthPageBoot() {
                 // 只有在非初始化阶段才重新检查状态
                 if (authStateInitialized) {
                     checkAuthState();
-                    // Record login IP for OAuth logins (Google, etc.)
-                    recordLoginIP(session.user.id);
+                    // Record auth origin for OAuth logins and flush pending register tasks.
+                    const pendingOrigin = readPendingAuthOrigin();
+                    if (pendingOrigin && String(pendingOrigin.userId) === String(session.user.id)) {
+                        flushPendingAuthOrigin(session.user.id);
+                    } else {
+                        persistAuthOrigin(session.user.id, 'login', {
+                            queueOnFailure: true
+                        });
+                    }
                 }
             } else if (event === 'SIGNED_OUT') {
                 // 🛡️ Guard: Suppress SIGNED_OUT during initialization period.
@@ -3148,55 +3385,11 @@ async function saveNickname() {
 
 window.saveNickname = saveNickname;
 
-// ==================== 记录登录 IP + 地理位置 ====================
-async function recordLoginIP(userId) {
-    try {
-        // 获取用户 IP 和地理信息（通过 HTTPS ipinfo.io）
-        let userIP = '';
-        let geoInfo = null;
-
-        try {
-            // 使用 HTTPS API 避免 Mixed Content 错误
-            const geoResponse = await fetch('https://ipinfo.io/json');
-            const geoData = await geoResponse.json();
-
-            if (geoData.ip) {
-                userIP = geoData.ip;
-                geoInfo = {
-                    country: geoData.country || '未知',
-                    region: geoData.region || '未知',
-                    city: geoData.city || '未知'
-                };
-                console.log('📍 Geo info:', geoInfo);
-            }
-        } catch (geoErr) {
-            console.warn('Geo API failed, fallback to IP only:', geoErr);
-            // Fallback to ipify
-            const ipResponse = await fetch('https://api.ipify.org?format=json');
-            const ipData = await ipResponse.json();
-            userIP = ipData.ip;
-        }
-
-        console.log('📍 Recording login IP:', userIP);
-
-        // 插入登录记录（包含地理信息）
-        const { error } = await window.supabaseClient
-            .from('user_login_history')
-            .insert({
-                user_id: userId,
-                ip_address: userIP,
-                user_agent: navigator.userAgent,
-                geo_info: geoInfo
-            });
-
-        if (error) {
-            console.warn('IP recording failed:', error.message);
-        } else {
-            console.log('✅ Login IP + Geo recorded');
-        }
-    } catch (err) {
-        console.warn('Failed to record IP:', err.message);
-    }
+// ==================== 记录登录/注册来源 + 地理位置 ====================
+async function recordLoginIP(userId, context = 'login') {
+    return persistAuthOrigin(userId, context, {
+        queueOnFailure: true
+    });
 }
 
 window.recordLoginIP = recordLoginIP;
