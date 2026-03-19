@@ -1616,10 +1616,21 @@ function setGoogleButtonsLoading(isLoading, text = authT('auth.signingIn', 'æ­£å
 }
 
 function isGooglePopupWindow() {
+    const urlParams = new URLSearchParams(window.location.search);
     return !!(
         (window.opener && window.opener !== window) ||
-        window.name === GOOGLE_POPUP_WINDOW_NAME
+        window.name === GOOGLE_POPUP_WINDOW_NAME ||
+        urlParams.get('popup') === '1'
     );
+}
+
+function buildGooglePopupRedirectUrl(mode = 'callback') {
+    const popupUrl = new URL('/auth-callback.html', window.location.origin);
+    popupUrl.searchParams.set('popup', '1');
+    if (mode === 'close') {
+        popupUrl.searchParams.set('close', '1');
+    }
+    return popupUrl.toString();
 }
 
 function broadcastGooglePopupResult(payload) {
@@ -1701,6 +1712,12 @@ function closeTrackedGooglePopup() {
 
         setTimeout(() => {
             if (!trackedPopup.closed) {
+                try {
+                    trackedPopup.location.replace(buildGooglePopupRedirectUrl('close'));
+                } catch (_) {
+                    // ignore navigation failure
+                }
+
                 try {
                     trackedPopup.close();
                 } catch (_) {
@@ -1964,7 +1981,7 @@ window.triggerGoogleLogin = async () => {
 // Fallback: Open Google OAuth in a popup window when One Tap is blocked
 function openGooglePopupFallback() {
     const clientId = '1017068787594-ep4bj8cdirkllqlpbmlfk436br0vbifp.apps.googleusercontent.com';
-    const redirectUri = window.location.origin;
+    const redirectUri = buildGooglePopupRedirectUrl();
     const scope = 'openid email profile';
     const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
         `client_id=${encodeURIComponent(clientId)}` +
