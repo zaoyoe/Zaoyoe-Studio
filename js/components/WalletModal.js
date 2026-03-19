@@ -1515,9 +1515,9 @@
                                     <div class="custom-recharge-header">
                                         <div>
                                             <div class="custom-recharge-title">自定义充值</div>
-                                            <div class="custom-recharge-subtitle">输入要充值的积分数量，支持 0.1 精度。</div>
+                                            <div class="custom-recharge-subtitle" id="wallet-custom-recharge-subtitle">输入要充值的积分数量，支持 0.1 精度。</div>
                                         </div>
-                                        <span class="custom-recharge-badge">按需充值</span>
+                                        <span class="custom-recharge-badge" id="wallet-custom-recharge-badge">按需充值</span>
                                     </div>
                                     <div class="custom-recharge-row">
                                         <input type="number"
@@ -1530,7 +1530,7 @@
                                                onkeyup="if(event.key==='Enter') WalletModal.customRecharge()" />
                                         <button class="custom-recharge-btn" id="wallet-custom-recharge-btn" onclick="WalletModal.customRecharge()">立即充值</button>
                                     </div>
-                                    <div class="custom-recharge-meta">该入口由管理员在后台控制显示，用于用户自行决定本次充值的积分数量。</div>
+                                    <div class="custom-recharge-meta" id="wallet-custom-recharge-meta">该入口由管理员在后台控制显示，用于用户自行决定本次充值的积分数量。</div>
                                 </div>
                                 
                                 <!-- Afdian Code Query Section -->
@@ -1921,21 +1921,42 @@
             const section = document.getElementById('wallet-custom-recharge-section');
             const input = document.getElementById('wallet-custom-recharge-input');
             const button = document.getElementById('wallet-custom-recharge-btn');
+            const subtitle = document.getElementById('wallet-custom-recharge-subtitle');
+            const badge = document.getElementById('wallet-custom-recharge-badge');
+            const meta = document.getElementById('wallet-custom-recharge-meta');
             if (!section) return;
 
             const normalizedConfig = this.normalizeRechargeOptionsConfig(config);
-            const isEnabled = normalizedConfig.custom_amount_enabled
-                && window.PointsService?.isUnsafeDirectRechargeAllowed?.() === true;
+            const isFeatureEnabled = normalizedConfig.custom_amount_enabled === true;
+            const isDirectRechargeAllowed = window.PointsService?.isUnsafeDirectRechargeAllowed?.() === true;
 
-            section.style.display = isEnabled ? '' : 'none';
+            section.style.display = isFeatureEnabled ? '' : 'none';
 
             if (input) {
-                input.disabled = !isEnabled;
-                if (!isEnabled) input.value = '';
+                input.disabled = !isFeatureEnabled;
+                input.placeholder = isDirectRechargeAllowed ? '例如 100 或 0.1' : '例如 100';
+                if (!isFeatureEnabled) input.value = '';
             }
 
             if (button) {
-                button.disabled = !isEnabled;
+                button.disabled = !isFeatureEnabled;
+                button.textContent = isDirectRechargeAllowed ? '立即充值' : '前往充值';
+            }
+
+            if (subtitle) {
+                subtitle.textContent = isDirectRechargeAllowed
+                    ? '输入要充值的积分数量，支持 0.1 精度。'
+                    : '输入想购买的积分数量，我们会引导你完成真实支付。';
+            }
+
+            if (badge) {
+                badge.textContent = isDirectRechargeAllowed ? '按需充值' : '真实支付';
+            }
+
+            if (meta) {
+                meta.textContent = isDirectRechargeAllowed
+                    ? '该入口由管理员在后台控制显示，用于用户自行决定本次充值的积分数量。'
+                    : '该入口由管理员在后台控制显示。正式站点已关闭浏览器直充；填写数量后会打开支付页，完成支付后请返回这里输入订单号领取兑换码。';
             }
 
             requestWalletRechargeScrollCueUpdate();
@@ -3048,6 +3069,8 @@
             const button = document.getElementById('wallet-custom-recharge-btn');
             const rawValue = input?.value ?? '';
             const normalizedAmount = this.normalizePointValue(rawValue);
+            const allowUnsafeDirectRecharge = window.PointsService?.isUnsafeDirectRechargeAllowed?.() === true;
+            const afdianUrl = window.PAYMENT_AFDIAN_URL || 'https://afdian.com/a/zaoyoe';
 
             if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
                 this.showToast('请输入大于 0 的充值积分', 'error');
@@ -3058,6 +3081,18 @@
             try {
                 if (button) button.disabled = true;
                 if (overlay) overlay.classList.add('loading');
+
+                if (!allowUnsafeDirectRecharge) {
+                    if (overlay) overlay.classList.remove('loading');
+
+                    const popup = window.open(afdianUrl, '_blank', 'noopener,noreferrer');
+                    if (!popup) {
+                        throw new Error('支付页面被浏览器拦截，请允许弹窗后重试');
+                    }
+
+                    this.showToast(`已打开支付页。建议备注需要充值 ${this.formatPoints(normalizedAmount)} 积分，支付后返回这里输入订单号领取兑换码。`, 'success');
+                    return;
+                }
 
                 await PointsService.customRecharge(normalizedAmount);
 
