@@ -2093,7 +2093,8 @@
 
             if (rewardGuideEl) {
                 rewardGuideEl.setAttribute('data-tooltip', guideText);
-                rewardGuideEl.setAttribute('title', guideText);
+                rewardGuideEl.setAttribute('aria-label', guideText);
+                rewardGuideEl.removeAttribute('title');
             }
 
             if (safeRegistrationReward > 0) {

@@ -202,9 +202,7 @@ body.wallet-modal-lock {
     width: min(340px, calc(100vw - 72px));
     padding: 12px 14px;
     border-radius: 14px;
-    background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.02) 100%),
-        rgba(0, 0, 0, 0.82);
+    background: rgba(0, 0, 0, 0.82);
     border: 1px solid rgba(255, 255, 255, 0.12);
     box-shadow:
         0 24px 56px rgba(0, 0, 0, 0.55),
@@ -232,9 +230,7 @@ body.wallet-modal-lock {
     right: 18px;
     width: 10px;
     height: 10px;
-    background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.02) 100%),
-        rgba(0, 0, 0, 0.82);
+    background: rgba(0, 0, 0, 0.82);
     border-left: 1px solid rgba(255, 255, 255, 0.12);
     border-top: 1px solid rgba(255, 255, 255, 0.12);
     backdrop-filter: blur(18px) saturate(135%);
