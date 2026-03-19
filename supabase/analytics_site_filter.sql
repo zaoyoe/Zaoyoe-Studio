@@ -4,6 +4,17 @@
 -- p_site = NULL 时返回所有站点数据
 -- ============================================
 
+CREATE OR REPLACE FUNCTION public.require_admin_access()
+RETURNS VOID AS $$
+BEGIN
+    IF NOT public.is_admin() THEN
+        RAISE EXCEPTION 'admin access required' USING ERRCODE = '42501';
+    END IF;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+GRANT EXECUTE ON FUNCTION public.require_admin_access() TO authenticated;
+
 -- ============================================
 -- 1. OVERVIEW STATS (带站点过滤)
 -- ============================================
@@ -21,6 +32,8 @@ DECLARE
     v_week_ago DATE := v_today - INTERVAL '7 days';
     v_month_ago DATE := v_today - INTERVAL '30 days';
 BEGIN
+    PERFORM public.require_admin_access();
+
     -- DAU: Unique users who logged in today
     IF p_site IS NULL THEN
         SELECT COUNT(DISTINCT user_id) INTO v_dau
@@ -97,6 +110,8 @@ RETURNS TABLE (
 DECLARE
     v_start_date DATE := (NOW() AT TIME ZONE 'Asia/Shanghai')::date - p_days;
 BEGIN
+    PERFORM public.require_admin_access();
+
     RETURN QUERY
     WITH date_series AS (
         SELECT generate_series(
@@ -150,6 +165,8 @@ RETURNS TABLE (
 DECLARE
     v_start_date DATE := (NOW() AT TIME ZONE 'Asia/Shanghai')::date - p_days;
 BEGIN
+    PERFORM public.require_admin_access();
+
     RETURN QUERY
     WITH date_series AS (
         SELECT generate_series(
@@ -215,6 +232,8 @@ RETURNS TABLE (
 DECLARE
     v_start_date DATE := (NOW() AT TIME ZONE 'Asia/Shanghai')::date - p_days;
 BEGIN
+    PERFORM public.require_admin_access();
+
     RETURN QUERY
     WITH date_series AS (
         SELECT generate_series(
@@ -271,6 +290,8 @@ RETURNS TABLE (
     score NUMERIC
 ) AS $$
 BEGIN
+    PERFORM public.require_admin_access();
+
     RETURN QUERY
     SELECT 
         p.id AS prompt_id,
@@ -306,6 +327,8 @@ RETURNS TABLE (
 DECLARE
     v_start_date DATE := (NOW() AT TIME ZONE 'Asia/Shanghai')::date - p_days;
 BEGIN
+    PERFORM public.require_admin_access();
+
     RETURN QUERY
     WITH date_series AS (
         SELECT generate_series(
@@ -370,6 +393,8 @@ RETURNS TABLE (
 DECLARE
     v_start_date TIMESTAMPTZ := NOW() - (p_days || ' days')::INTERVAL;
 BEGIN
+    PERFORM public.require_admin_access();
+
     RETURN QUERY
     SELECT 
         EXTRACT(DOW FROM created_at AT TIME ZONE 'Asia/Shanghai')::INTEGER AS day_of_week,
@@ -401,6 +426,8 @@ RETURNS TABLE (
     contribution_score NUMERIC
 ) AS $$
 BEGIN
+    PERFORM public.require_admin_access();
+
     RETURN QUERY
     WITH user_comments AS (
         SELECT pc.user_id, COUNT(*) AS cnt
@@ -463,6 +490,8 @@ RETURNS TABLE (
     total_spent NUMERIC
 ) AS $$
 BEGIN
+    PERFORM public.require_admin_access();
+
     RETURN QUERY
     SELECT 
         pb.user_id,
@@ -504,6 +533,8 @@ DECLARE
     v_30_days_ago TIMESTAMP := NOW() - INTERVAL '30 days';
     v_7_days_ago TIMESTAMP := NOW() - INTERVAL '7 days';
 BEGIN
+    PERFORM public.require_admin_access();
+
     -- Total circulation
     IF p_site IS NULL THEN
         SELECT COALESCE(SUM(total_balance), 0) INTO v_total_circulation FROM public.points_balance;
@@ -597,6 +628,8 @@ RETURNS TABLE (
     sort_order INTEGER
 ) AS $$
 BEGIN
+    PERFORM public.require_admin_access();
+
     RETURN QUERY
     WITH all_ranges AS (
         SELECT '0'::TEXT AS range_group, 1 AS order_rank, 0 AS min_val, 0 AS max_val
@@ -653,6 +686,8 @@ DECLARE
     v_channel_breakdown JSONB;
     v_top_content JSONB;
 BEGIN
+    PERFORM public.require_admin_access();
+
     SELECT get_overview_stats(p_site) INTO v_overview;
 
     SELECT jsonb_agg(t) INTO v_user_trend
@@ -693,6 +728,8 @@ DECLARE
     v_yesterday DATE := v_today - 1;
     v_prev_week DATE := v_today - 7;
 BEGIN
+    PERFORM public.require_admin_access();
+
     v_base := get_overview_stats(p_site);
 
     -- Previous DAU

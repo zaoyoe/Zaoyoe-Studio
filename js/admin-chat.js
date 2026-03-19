@@ -16,6 +16,65 @@ class AdminChat {
         return fallback || key;
     }
 
+    sanitizeImageUrl(url) {
+        if (typeof url !== 'string' || !url.trim()) return '';
+
+        const trimmed = url.trim();
+        if (trimmed.startsWith('data:image/')) return trimmed;
+
+        try {
+            const parsed = new URL(trimmed, window.location.origin);
+            if (['http:', 'https:', 'blob:'].includes(parsed.protocol)) {
+                return parsed.href;
+            }
+        } catch (err) {
+            console.warn('[AdminChat] Blocked unsafe image URL:', trimmed, err);
+        }
+
+        return '';
+    }
+
+    createImageElement(url, { alt = '', className = '', style = '' } = {}) {
+        const safeUrl = this.sanitizeImageUrl(url);
+        if (!safeUrl) return null;
+
+        const img = document.createElement('img');
+        img.src = safeUrl;
+        img.alt = alt;
+        img.loading = 'lazy';
+        img.decoding = 'async';
+        img.referrerPolicy = 'no-referrer';
+        if (className) img.className = className;
+        if (style) img.style.cssText = style;
+        img.addEventListener('click', () => window.open(safeUrl, '_blank', 'noopener'));
+        return img;
+    }
+
+    createSessionAvatar(session, displayName) {
+        const avatar = document.createElement('div');
+        avatar.className = 'session-avatar';
+
+        const initialSeed = (session.sessionId || displayName || '?').trim();
+        const defaultInitials = initialSeed.substring(0, 2).toUpperCase() || '?';
+
+        if (session.profile?.avatar_url) {
+            const img = this.createImageElement(session.profile.avatar_url, {
+                alt: `${displayName || this.t('chat.user', '用户')} avatar`,
+                style: 'width:100%;height:100%;object-fit:cover;'
+            });
+
+            if (img) {
+                avatar.style.overflow = 'hidden';
+                avatar.style.background = 'transparent';
+                avatar.appendChild(img);
+                return avatar;
+            }
+        }
+
+        avatar.textContent = session.profile ? (displayName || '?').substring(0, 1).toUpperCase() : defaultInitials;
+        return avatar;
+    }
+
     init() {
         // If targetContainer is provided, use it. Otherwise look for default admin page container.
         const container = this.targetContainer || document.getElementById('chat-admin-container');
@@ -206,7 +265,7 @@ class AdminChat {
 
     renderSessionList(filter = '') {
         const listEl = document.getElementById('sessionList');
-        listEl.innerHTML = '';
+        listEl.replaceChildren();
 
         this.sessions
             .filter(s => {
@@ -218,48 +277,57 @@ class AdminChat {
             .forEach(session => {
                 const el = document.createElement('div');
                 el.className = `session-item ${this.currentSessionId === session.sessionId ? 'active' : ''}`;
-                el.onclick = () => this.loadSession(session.sessionId);
+                el.addEventListener('click', () => this.loadSession(session.sessionId));
 
                 const timeStr = session.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
                 // Determine Display Info
                 let displayName = this.t('chat.guest', '访客');
                 let displaySub = session.sessionId.substr(0, 8) + '...';
-                let avatarContent = session.sessionId.substr(0, 2).toUpperCase();
-                let avatarImg = '';
 
                 if (session.profile) {
                     displayName = session.profile.username || this.t('chat.unnamed', '未命名用户');
                     displaySub = session.profile.email || this.t('chat.noEmail', '无邮箱');
-
-                    if (session.profile.avatar_url) {
-                        // Handle potential external vs Supabase storage URLs? Assume standard URL
-                        avatarImg = `<img src="${session.profile.avatar_url}" style="width:100%;height:100%;object-fit:cover;">`;
-                    } else {
-                        avatarContent = displayName.substr(0, 1).toUpperCase();
-                    }
                 } else if (session.sessionId.startsWith('guest')) {
                     displayName = this.t('chat.guest', '访客');
                 }
 
-                // Avatar Container Style
-                const avatarStyle = session.profile?.avatar_url
-                    ? 'overflow:hidden; background:transparent;'
-                    : '';
+                const avatarEl = this.createSessionAvatar(session, displayName);
 
-                el.innerHTML = `
-                    <div class="session-avatar" style="${avatarStyle}">
-                        ${avatarImg || avatarContent}
-                    </div>
-                    <div class="session-info">
-                        <div class="session-header">
-                            <span class="session-name">${displayName}</span>
-                            <span class="session-time">${timeStr}</span>
-                        </div>
-                        <div class="session-preview" style="font-size:12px; color:#94a3b8; margin-bottom:2px;">${displaySub}</div>
-                        <div class="session-preview">${session.lastMessage}</div>
-                    </div>
-                `;
+                const infoEl = document.createElement('div');
+                infoEl.className = 'session-info';
+
+                const headerEl = document.createElement('div');
+                headerEl.className = 'session-header';
+
+                const nameEl = document.createElement('span');
+                nameEl.className = 'session-name';
+                nameEl.textContent = displayName;
+
+                const timeEl = document.createElement('span');
+                timeEl.className = 'session-time';
+                timeEl.textContent = timeStr;
+
+                headerEl.appendChild(nameEl);
+                headerEl.appendChild(timeEl);
+
+                const subEl = document.createElement('div');
+                subEl.className = 'session-preview';
+                subEl.style.fontSize = '12px';
+                subEl.style.color = '#94a3b8';
+                subEl.style.marginBottom = '2px';
+                subEl.textContent = displaySub;
+
+                const previewEl = document.createElement('div');
+                previewEl.className = 'session-preview';
+                previewEl.textContent = session.lastMessage || '';
+
+                infoEl.appendChild(headerEl);
+                infoEl.appendChild(subEl);
+                infoEl.appendChild(previewEl);
+
+                el.appendChild(avatarEl);
+                el.appendChild(infoEl);
                 listEl.appendChild(el);
             });
     }
@@ -319,9 +387,20 @@ class AdminChat {
         const isSentByAdmin = msg.is_admin;
 
         d.className = `admin-message ${isSentByAdmin ? 'sent' : 'received'}`;
+        if (msg.id) {
+            d.dataset.id = msg.id;
+        }
 
         if (msg.message_type === 'image') {
-            d.innerHTML = `<img src="${msg.content}" onclick="window.open(this.src)">`;
+            const img = this.createImageElement(msg.content, {
+                alt: this.t('chat.image', '聊天图片')
+            });
+
+            if (img) {
+                d.appendChild(img);
+            } else {
+                d.textContent = this.t('chat.imageUnavailable', '[图片地址无效]');
+            }
         } else {
             d.textContent = msg.content;
         }

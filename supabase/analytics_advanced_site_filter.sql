@@ -4,6 +4,17 @@
 -- p_site = NULL 时返回所有站点数据
 -- ============================================
 
+CREATE OR REPLACE FUNCTION public.require_admin_access()
+RETURNS VOID AS $$
+BEGIN
+    IF NOT public.is_admin() THEN
+        RAISE EXCEPTION 'admin access required' USING ERRCODE = '42501';
+    END IF;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+GRANT EXECUTE ON FUNCTION public.require_admin_access() TO authenticated;
+
 -- ============================================
 -- 1. CONVERSION FUNNEL (解锁转化漏斗)
 -- ============================================
@@ -21,6 +32,8 @@ DECLARE
     v_prompt_viewers BIGINT;
     v_unlockers BIGINT;
 BEGIN
+    PERFORM public.require_admin_access();
+
     -- Step 1: Total active users (logged in)
     IF p_site IS NULL THEN
         SELECT COUNT(DISTINCT user_id) INTO v_total_visitors
@@ -90,6 +103,8 @@ RETURNS TABLE (
     week_4 INTEGER
 ) AS $$
 BEGIN
+    PERFORM public.require_admin_access();
+
     RETURN QUERY
     WITH cohorts AS (
         SELECT 
@@ -150,6 +165,8 @@ RETURNS TABLE (
 DECLARE
     v_start_date TIMESTAMPTZ := NOW() - (p_days || ' days')::INTERVAL;
 BEGIN
+    PERFORM public.require_admin_access();
+
     RETURN QUERY
     -- Income sources
     SELECT 
@@ -204,6 +221,8 @@ DECLARE
     v_redeemed BIGINT;
     v_users BIGINT;
 BEGIN
+    PERFORM public.require_admin_access();
+
     -- 1. Generated Codes
     IF p_site IS NULL THEN
         SELECT COUNT(*) INTO v_generated FROM public.redemption_codes;
@@ -256,6 +275,8 @@ RETURNS TABLE (
     redemption_rate NUMERIC
 ) AS $$
 BEGIN
+    PERFORM public.require_admin_access();
+
     RETURN QUERY
     SELECT 
         COALESCE(b.channel, '未分类')::TEXT AS channel,

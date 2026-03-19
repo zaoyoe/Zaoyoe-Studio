@@ -270,9 +270,13 @@ class ChatWidget {
         let isAdmin = false;
         try {
             const { data: { user } } = await this.supabase.auth.getUser();
-            // Hardcoded check for super admin as per request logic
-            if (user && user.email === 'zaoyoe@gmail.com') {
-                isAdmin = true;
+            if (user) {
+                const { data: adminFlag, error: adminError } = await this.supabase.rpc('is_admin');
+                if (adminError) {
+                    console.warn('[ChatWidget] Failed to verify admin status:', adminError);
+                } else {
+                    isAdmin = Boolean(adminFlag);
+                }
             }
         } catch (e) { console.error(e); }
 
@@ -311,6 +315,7 @@ class ChatWidget {
                 .from('chat_messages')
                 .select('created_at')
                 .eq('is_admin', true)
+                .eq('session_id', this.sessionId)
                 .order('created_at', { ascending: false })
                 .limit(1)
                 .single();
@@ -465,6 +470,24 @@ class ChatWidget {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    sanitizeMediaUrl(url) {
+        if (typeof url !== 'string' || !url.trim()) return '';
+
+        const trimmed = url.trim();
+        if (trimmed.startsWith('data:image/')) return trimmed;
+
+        try {
+            const parsed = new URL(trimmed, window.location.origin);
+            if (['http:', 'https:', 'blob:'].includes(parsed.protocol)) {
+                return parsed.href;
+            }
+        } catch (err) {
+            console.warn('[ChatWidget] Blocked unsafe media URL:', trimmed, err);
+        }
+
+        return '';
     }
 
     playNotificationSound() {
@@ -3357,7 +3380,22 @@ class ChatWidget {
         msgDiv.className = `message ${type}${isNewMessage ? ' new-message' : ''}`;
 
         if (messageType === 'image') {
-            msgDiv.innerHTML = `<img src="${content}" class="message-image" onclick="window.open(this.src, '_blank')">`;
+            const safeUrl = this.sanitizeMediaUrl(content);
+            if (safeUrl) {
+                const img = document.createElement('img');
+                img.src = safeUrl;
+                img.className = 'message-image';
+                img.loading = 'lazy';
+                img.decoding = 'async';
+                img.referrerPolicy = 'no-referrer';
+                img.addEventListener('click', () => window.open(safeUrl, '_blank', 'noopener'));
+                msgDiv.appendChild(img);
+            } else {
+                const fallback = document.createElement('span');
+                fallback.className = 'message-text';
+                fallback.textContent = this.t('chat.imageUnavailable', '[图片地址无效]');
+                msgDiv.appendChild(fallback);
+            }
         } else {
             msgDiv.innerHTML = `<span class="message-text">${this.escapeHtml(content)}</span>`;
         }

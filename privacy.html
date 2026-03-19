@@ -202,7 +202,22 @@
     <script>
         const SUPABASE_URL = 'https://auth.zaoyoe.com';
         const SUPABASE_KEY = 'sb_publishable_lwkiF-sQ80z8e9oMcejFPQ_j7oezjcF';
-        window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        const chatSessionId = (() => {
+            let sid = localStorage.getItem('chat_session_id');
+            if (!sid) {
+                const randomId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+                    ? crypto.randomUUID().replace(/-/g, '').slice(0, 12)
+                    : Math.random().toString(36).slice(2, 14);
+                sid = `guest_${randomId}`;
+                localStorage.setItem('chat_session_id', sid);
+            }
+            return sid;
+        })();
+        window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+            global: {
+                headers: { 'x-session-id': chatSessionId }
+            }
+        });
     </script>
 
     <!-- Chat Widget -->

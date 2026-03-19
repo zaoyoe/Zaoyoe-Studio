@@ -3,6 +3,17 @@
 -- 深度分析功能 SQL
 -- ============================================
 
+CREATE OR REPLACE FUNCTION public.require_admin_access()
+RETURNS VOID AS $$
+BEGIN
+    IF NOT public.is_admin() THEN
+        RAISE EXCEPTION 'admin access required' USING ERRCODE = '42501';
+    END IF;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+GRANT EXECUTE ON FUNCTION public.require_admin_access() TO authenticated;
+
 -- ============================================
 -- 1. CONVERSION FUNNEL (解锁转化漏斗)
 -- 访问 -> 浏览 -> 解锁
@@ -21,6 +32,8 @@ DECLARE
     v_prompt_viewers BIGINT;
     v_unlockers BIGINT;
 BEGIN
+    PERFORM public.require_admin_access();
+
     -- Step 1: Total active users (logged in)
     SELECT COUNT(DISTINCT user_id) INTO v_total_visitors
     FROM public.user_login_history
@@ -67,6 +80,8 @@ RETURNS TABLE (
     week_4 INTEGER
 ) AS $$
 BEGIN
+    PERFORM public.require_admin_access();
+
     RETURN QUERY
     WITH cohorts AS (
         SELECT 
@@ -124,6 +139,8 @@ RETURNS TABLE (
 DECLARE
     v_start_date TIMESTAMPTZ := NOW() - (p_days || ' days')::INTERVAL;
 BEGIN
+    PERFORM public.require_admin_access();
+
     RETURN QUERY
     -- Income sources
     SELECT 
@@ -172,6 +189,8 @@ RETURNS TABLE (
 DECLARE
     v_total BIGINT;
 BEGIN
+    PERFORM public.require_admin_access();
+
     -- Note: This requires IP geo data in user_login_history
     -- For now, return placeholder based on IP prefix patterns
     SELECT COUNT(DISTINCT user_id) INTO v_total FROM public.user_login_history;

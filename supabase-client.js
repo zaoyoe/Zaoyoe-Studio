@@ -11,6 +11,26 @@ window._pageLoadTime = Date.now();
 const SUPABASE_URL = 'https://auth.zaoyoe.com';
 const SUPABASE_KEY = 'sb_publishable_lwkiF-sQ80z8e9oMcejFPQ_j7oezjcF';
 
+const getOrCreateChatSessionId = () => {
+    try {
+        let sid = localStorage.getItem('chat_session_id');
+        if (!sid) {
+            const randomId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+                ? crypto.randomUUID().replace(/-/g, '').slice(0, 12)
+                : Math.random().toString(36).slice(2, 14);
+            sid = `guest_${randomId}`;
+            localStorage.setItem('chat_session_id', sid);
+        }
+        return sid;
+    } catch (err) {
+        console.warn('⚠️ Failed to initialize chat session header:', err);
+        return '';
+    }
+};
+
+const CHAT_SESSION_ID = getOrCreateChatSessionId();
+window.getChatSessionId = getOrCreateChatSessionId;
+
 // ==================== Session Snapshot (before Supabase touches anything) ====================
 // Auto-detect the session key by scanning localStorage for Supabase session pattern
 const _findSessionKey = () => {
@@ -72,6 +92,9 @@ if (typeof supabase !== 'undefined' && supabase.createClient) {
             detectSessionInUrl: false,
             flowType: 'implicit',
             storage: guardStorage
+        },
+        global: {
+            headers: CHAT_SESSION_ID ? { 'x-session-id': CHAT_SESSION_ID } : {}
         }
     });
 

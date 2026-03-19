@@ -17,6 +17,24 @@ window.currentUserPermissions = [];
 window.isSuperAdmin = false;
 window.isAdmin = false;
 
+function sanitizeImageUrl(url) {
+    if (typeof url !== 'string' || !url.trim()) return '';
+
+    const trimmed = url.trim();
+    if (trimmed.startsWith('data:image/')) return trimmed;
+
+    try {
+        const parsed = new URL(trimmed, window.location.origin);
+        if (['http:', 'https:', 'blob:'].includes(parsed.protocol)) {
+            return parsed.href;
+        }
+    } catch (err) {
+        console.warn('Blocked unsafe image URL:', trimmed, err);
+    }
+
+    return '';
+}
+
 // ========================================
 // THEME INITIALIZATION - Sync with Gallery
 // ========================================
@@ -81,16 +99,13 @@ window.loadUserPermissions = async function () {
         const { data: { user } } = await window.supabaseClient.auth.getUser();
         if (!user) return;
 
-        // Force super admin for known emails (frontend override)
-        const isForceSuper = ['fjivvid@163.com', 'zaoyoe@gmail.com'].includes(user.email);
-
         const { data, error } = await window.supabaseClient
             .rpc('get_user_permissions', { p_user_id: user.id });
 
         if (error) throw error;
 
-        window.isSuperAdmin = data.is_super_admin || isForceSuper;
-        window.isAdmin = data.is_admin || isForceSuper;
+        window.isSuperAdmin = Boolean(data?.is_super_admin);
+        window.isAdmin = Boolean(data?.is_admin || data?.is_super_admin);
         window.currentUserPermissions = data.permissions || [];
 
         console.log('🛡️ Permissions loaded:', {
@@ -243,7 +258,11 @@ async function loadAdminPrompts() {
         allPrompts = data || [];
 
         if (data && data.length > 0) {
-            grid.innerHTML = data.map(prompt => renderAdminCard(prompt)).join('');
+            const fragment = document.createDocumentFragment();
+            data.forEach((prompt) => {
+                fragment.appendChild(renderAdminCard(prompt));
+            });
+            grid.replaceChildren(fragment);
         } else {
             grid.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: var(--text-dim);">No prompts yet. Create your first one!</p>';
         }
@@ -260,40 +279,100 @@ async function loadAdminPrompts() {
 // RENDER ADMIN CARD
 // ========================================
 function renderAdminCard(prompt) {
-    const imageUrl = prompt.images && prompt.images.length > 0 ? prompt.images[0] : '';
+    const card = document.createElement('div');
+    card.className = 'admin-card';
+    card.dataset.id = String(prompt.id ?? '');
 
-    return `
-        <div class="admin-card" data-id="${prompt.id}">
-            <span class="select-checkbox"><i class="fas fa-check"></i></span>
-            <img src="${imageUrl}" class="admin-card-image" alt="${prompt.title}">
-            <div class="admin-card-content">
-                <div class="admin-card-title">${prompt.title}</div>
-            </div>
-            <!-- Hover Quick Actions - Left (Edit) -->
-            <div class="admin-card-hover-actions left">
-                <button class="hover-action-btn edit" onclick="event.stopPropagation(); editPrompt(${prompt.id})" title="编辑">
-                    <i class="fas fa-edit"></i>
-                </button>
-            </div>
-            <!-- Hover Quick Actions - Right (Delete + Jump) -->
-            <div class="admin-card-hover-actions right">
-                <button class="hover-action-btn delete" onclick="event.stopPropagation(); deletePrompt(${prompt.id})" title="删除">
-                    <i class="fas fa-trash"></i>
-                </button>
-                <button class="hover-action-btn jump" onclick="event.stopPropagation(); window.open('prompts.html?id=${prompt.supabaseId || prompt.id}', '_blank')" title="在画廊查看">
-                    <i class="fas fa-external-link-alt"></i>
-                </button>
-            </div>
-            <div class="admin-card-actions">
-                <button class="admin-action-btn" onclick="editPrompt(${prompt.id})">
-                    <i class="fas fa-edit"></i> Edit
-                </button>
-                <button class="admin-action-btn delete" onclick="deletePrompt(${prompt.id})">
-                    <i class="fas fa-trash"></i> Delete
-                </button>
-            </div>
-        </div>
-    `;
+    const checkbox = document.createElement('span');
+    checkbox.className = 'select-checkbox';
+    checkbox.innerHTML = '<i class="fas fa-check"></i>';
+    card.appendChild(checkbox);
+
+    const image = document.createElement('img');
+    image.className = 'admin-card-image';
+    image.alt = prompt.title || 'Prompt cover';
+    image.loading = 'lazy';
+    image.decoding = 'async';
+    image.referrerPolicy = 'no-referrer';
+
+    const imageUrl = sanitizeImageUrl(Array.isArray(prompt.images) ? prompt.images[0] : '');
+    if (imageUrl) {
+        image.src = imageUrl;
+    } else {
+        image.removeAttribute('src');
+    }
+    card.appendChild(image);
+
+    const content = document.createElement('div');
+    content.className = 'admin-card-content';
+    const title = document.createElement('div');
+    title.className = 'admin-card-title';
+    title.textContent = prompt.title || 'Untitled Prompt';
+    content.appendChild(title);
+    card.appendChild(content);
+
+    const hoverLeft = document.createElement('div');
+    hoverLeft.className = 'admin-card-hover-actions left';
+    const hoverEdit = document.createElement('button');
+    hoverEdit.className = 'hover-action-btn edit';
+    hoverEdit.type = 'button';
+    hoverEdit.title = '编辑';
+    hoverEdit.innerHTML = '<i class="fas fa-edit"></i>';
+    hoverEdit.addEventListener('click', (event) => {
+        event.stopPropagation();
+        editPrompt(prompt.id);
+    });
+    hoverLeft.appendChild(hoverEdit);
+    card.appendChild(hoverLeft);
+
+    const hoverRight = document.createElement('div');
+    hoverRight.className = 'admin-card-hover-actions right';
+
+    const hoverDelete = document.createElement('button');
+    hoverDelete.className = 'hover-action-btn delete';
+    hoverDelete.type = 'button';
+    hoverDelete.title = '删除';
+    hoverDelete.innerHTML = '<i class="fas fa-trash"></i>';
+    hoverDelete.addEventListener('click', (event) => {
+        event.stopPropagation();
+        deletePrompt(prompt.id);
+    });
+
+    const hoverJump = document.createElement('button');
+    hoverJump.className = 'hover-action-btn jump';
+    hoverJump.type = 'button';
+    hoverJump.title = '在画廊查看';
+    hoverJump.innerHTML = '<i class="fas fa-external-link-alt"></i>';
+    hoverJump.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const promptTarget = encodeURIComponent(String(prompt.supabaseId || prompt.id || ''));
+        window.open(`prompts.html?id=${promptTarget}`, '_blank', 'noopener');
+    });
+
+    hoverRight.appendChild(hoverDelete);
+    hoverRight.appendChild(hoverJump);
+    card.appendChild(hoverRight);
+
+    const actions = document.createElement('div');
+    actions.className = 'admin-card-actions';
+
+    const editBtn = document.createElement('button');
+    editBtn.className = 'admin-action-btn';
+    editBtn.type = 'button';
+    editBtn.innerHTML = '<i class="fas fa-edit"></i> Edit';
+    editBtn.addEventListener('click', () => editPrompt(prompt.id));
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'admin-action-btn delete';
+    deleteBtn.type = 'button';
+    deleteBtn.innerHTML = '<i class="fas fa-trash"></i> Delete';
+    deleteBtn.addEventListener('click', () => deletePrompt(prompt.id));
+
+    actions.appendChild(editBtn);
+    actions.appendChild(deleteBtn);
+    card.appendChild(actions);
+
+    return card;
 }
 
 // ========================================
