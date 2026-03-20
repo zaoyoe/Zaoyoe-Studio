@@ -692,232 +692,238 @@
 
                 <!-- PRICING VIEW -->
                 <div id="settings-view-pricing" class="view-section active">
-                    <div class="module-content">
-                        <!-- Unlock Pricing Card -->
-                        <div class="config-card" data-config="unlock_pricing">
-                            <div class="config-card-header">
-                                <div class="config-card-title">
-                                    <i class="fas fa-unlock-alt"></i>
-                                    <span>解锁定价</span>
-                                </div>
-                            </div>
-                            <div class="config-card-body">
-                                <div class="config-row">
-                                    <label>默认解锁积分</label>
-                                    <div class="config-input-wrapper">
-                                        <input type="number" class="config-input" id="cfgUnlockPoints" min="1"
-                                            max="1000">
-                                        <span class="config-unit">分</span>
-                                        <span class="config-save-indicator">✓</span>
+                    <div class="module-content pricing-settings-layout">
+                        <div class="pricing-settings-column pricing-settings-column--left">
+                            <!-- Unlock Pricing Card -->
+                            <div class="config-card" data-config="unlock_pricing">
+                                <div class="config-card-header">
+                                    <div class="config-card-title">
+                                        <i class="fas fa-unlock-alt"></i>
+                                        <span>解锁定价</span>
                                     </div>
                                 </div>
-                                <div class="config-row">
-                                    <label>VIP 用户折扣</label>
-                                    <div class="config-input-wrapper">
-                                        <input type="number" class="config-input" id="cfgVipDiscount" min="50" max="100"
-                                            step="5">
-                                        <span class="config-unit">%</span>
-                                        <span class="config-save-indicator">✓</span>
+                                <div class="config-card-body">
+                                    <div class="config-row">
+                                        <label>默认解锁积分</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" class="config-input" id="cfgUnlockPoints" min="1"
+                                                max="1000">
+                                            <span class="config-unit">分</span>
+                                            <span class="config-save-indicator">✓</span>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <label>VIP 用户折扣</label>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" class="config-input" id="cfgVipDiscount" min="50" max="100"
+                                                step="5">
+                                            <span class="config-unit">%</span>
+                                            <span class="config-save-indicator">✓</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Channels Card -->
+                            <div class="config-card" data-config="channels">
+                                <div class="config-card-header">
+                                    <div class="config-card-title">
+                                        <i class="fas fa-store"></i>
+                                        <span>销售渠道</span>
+                                    </div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="channel-tags" id="channelTags">
+                                        <!-- Dynamic tags -->
+                                    </div>
+                                    <div class="add-channel-row">
+                                        <input type="text" id="newChannelName" placeholder="新渠道名称">
+                                        <button class="btn-add-config" onclick="addChannel()">
+                                            <i class="fas fa-plus"></i>
+                                        </button>
                                     </div>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Packages Card -->
-                        <div class="config-card" data-config="packages">
-                            <div class="config-card-header">
-                                <div class="config-card-title">
-                                    <i class="fas fa-gift"></i>
-                                    <span>礼包配置</span>
+                        <div class="pricing-settings-column pricing-settings-column--center">
+                            <!-- Packages Card -->
+                            <div class="config-card" data-config="packages">
+                                <div class="config-card-header">
+                                    <div class="config-card-title">
+                                        <i class="fas fa-gift"></i>
+                                        <span>礼包配置</span>
+                                    </div>
+                                </div>
+                                <div class="config-card-body">
+                                    <table class="config-table" id="packagesTable">
+                                        <thead>
+                                            <tr>
+                                                <th>名称</th>
+                                                <th>积分</th>
+                                                <th>赠送</th>
+                                                <th>价格 (¥)</th>
+                                                <th>状态</th>
+                                                <th></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="packagesTableBody">
+                                            <!-- Dynamic rows -->
+                                        </tbody>
+                                    </table>
+                                    <button class="btn-add-config" onclick="addPackageRow()">
+                                        <i class="fas fa-plus"></i> 添加礼包
+                                    </button>
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">自定义充值入口</div>
+                                            <div class="config-desc">开启后，“我的钱包 > 充值”会显示一个自定义充值入口，用户可自行输入要充值的积分数量。</div>
+                                        </div>
+                                        <div class="status-toggle" id="customRechargeStatusToggle" onclick="toggleCustomRechargeEntryStatus()"></div>
+                                    </div>
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">模拟支付（临时）</div>
+                                            <div class="config-desc">开启后，礼包充值和自定义充值都会暂时跳过真实支付，直接到账积分。仅建议在虎皮椒等正式支付接入前短期使用。</div>
+                                        </div>
+                                        <div class="status-toggle" id="mockPaymentStatusToggle" onclick="toggleMockPaymentStatus()"></div>
+                                    </div>
                                 </div>
                             </div>
-                            <div class="config-card-body">
-                                <table class="config-table" id="packagesTable">
-                                    <thead>
-                                        <tr>
-                                            <th>名称</th>
-                                            <th>积分</th>
-                                            <th>赠送</th>
-                                            <th>价格 (¥)</th>
-                                            <th>状态</th>
-                                            <th></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="packagesTableBody">
-                                        <!-- Dynamic rows -->
-                                    </tbody>
-                                </table>
-                                <button class="btn-add-config" onclick="addPackageRow()">
-                                    <i class="fas fa-plus"></i> 添加礼包
-                                </button>
-                                <div class="config-row">
-                                    <div class="config-info">
-                                        <div class="config-label">自定义充值入口</div>
-                                        <div class="config-desc">开启后，“我的钱包 > 充值”会显示一个自定义充值入口，用户可自行输入要充值的积分数量。</div>
+
+                            <!-- Rewards Card -->
+                            <div class="config-card" data-config="rewards">
+                                <div class="config-card-header">
+                                    <div class="config-card-title">
+                                        <i class="fas fa-coins"></i>
+                                        <span>积分奖励</span>
                                     </div>
-                                    <div class="status-toggle" id="customRechargeStatusToggle" onclick="toggleCustomRechargeEntryStatus()"></div>
                                 </div>
-                                <div class="config-row">
-                                    <div class="config-info">
-                                        <div class="config-label">模拟支付（临时）</div>
-                                        <div class="config-desc">开启后，礼包充值和自定义充值都会暂时跳过真实支付，直接到账积分。仅建议在虎皮椒等正式支付接入前短期使用。</div>
+                                <div class="config-card-body">
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">首次注册赠送</div>
+                                            <div class="config-desc">新用户注册成功后自动发放的固定积分，填 0 则关闭。</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" class="config-input" id="cfgSignupBonus" min="0" step="0.1">
+                                            <span class="config-unit">分</span>
+                                            <span class="config-save-indicator">✓</span>
+                                        </div>
                                     </div>
-                                    <div class="status-toggle" id="mockPaymentStatusToggle" onclick="toggleMockPaymentStatus()"></div>
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">每日签到基础积分</div>
+                                            <div class="config-desc">已接入签到 V2，作为每天签到时的基础奖励，支持 0.1 精度。</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" class="config-input" id="cfgDailyCheckin" min="0" step="0.1">
+                                            <span class="config-unit">分</span>
+                                            <span class="config-save-indicator">✓</span>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">连续 7 天额外奖励</div>
+                                            <div class="config-desc">连续签到达到 7 / 14 / 21 / 28 天时额外发放的积分。</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" class="config-input" id="cfgCheckinStreakBonus" min="0" step="0.1">
+                                            <span class="config-unit">分</span>
+                                            <span class="config-save-indicator">✓</span>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">全月全勤奖励</div>
+                                            <div class="config-desc">用户达成当月全勤时额外发放的积分。</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" class="config-input" id="cfgCheckinPerfectBonus" min="0" step="0.1">
+                                            <span class="config-unit">分</span>
+                                            <span class="config-save-indicator">✓</span>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">补签消耗积分</div>
+                                            <div class="config-desc">用户对漏签日期进行补签时，需要扣除的积分。</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" class="config-input" id="cfgCheckinMakeupCost" min="0" step="0.1">
+                                            <span class="config-unit">分</span>
+                                            <span class="config-save-indicator">✓</span>
+                                        </div>
+                                    </div>
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">评论奖励</div>
+                                            <div class="config-desc">评论奖励积分，填 0 则关闭该奖励。</div>
+                                        </div>
+                                        <div class="config-input-wrapper">
+                                            <input type="number" class="config-input" id="cfgCommentReward" min="0" step="0.1">
+                                            <span class="config-unit">分</span>
+                                            <span class="config-save-indicator">✓</span>
+                                        </div>
+                                    </div>
+                                    <div class="config-inline-note">
+                                        <i class="fas fa-route"></i>
+                                        <span>“邀请奖励”已并入“推广返现 &gt; 拉新注册奖励”，避免两套配置重复或互相打架。</span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
 
-                        <div class="config-card payment-channel-summary-card" data-config="payment-channels">
-                            <div class="config-card-header">
-                                <div class="config-card-title">
-                                    <i class="fas fa-credit-card"></i>
-                                    <span>支付通道</span>
-                                </div>
-                                <button type="button" class="payment-channel-open-btn" onclick="openPaymentChannelsModal()">
-                                    <i class="fas fa-sliders-h"></i>
-                                    <span>配置通道</span>
-                                </button>
-                            </div>
-                            <div class="config-card-body">
-                                <div class="payment-channel-hero">
-                                    <div class="payment-channel-hero-copy">
-                                        <div class="payment-channel-eyebrow">当前主通道</div>
-                                        <div class="payment-channel-active-line">
-                                            <span class="payment-channel-active-name" id="paymentChannelActiveLabel">模拟支付</span>
-                                            <span class="payment-channel-active-pill">钱包充值默认</span>
-                                        </div>
-                                        <p class="payment-channel-hero-desc">把主通道切到模拟支付、爱发电或虎皮椒，钱包页会自动同步对应充值链路。</p>
+                        <div class="pricing-settings-column pricing-settings-column--right">
+                            <div class="config-card payment-channel-summary-card" data-config="payment-channels">
+                                <div class="config-card-header">
+                                    <div class="config-card-title">
+                                        <i class="fas fa-credit-card"></i>
+                                        <span>支付通道</span>
                                     </div>
-                                </div>
-                                <div class="config-inline-note" id="paymentChannelSummary">
-                                    <i class="fas fa-shield-alt"></i>
-                                    <span>公开配置保存在系统设置中；敏感密钥会通过服务端加密保存，不再存浏览器。</span>
-                                </div>
-                                <div class="payment-channel-provider-grid">
-                                    <div class="payment-provider-summary-card" id="paymentProviderSummaryMock">
-                                        <div class="payment-provider-summary-top">
-                                            <span class="payment-provider-summary-name" id="paymentProviderSummaryNameMock">模拟支付</span>
-                                            <span class="payment-provider-summary-status" id="paymentProviderSummaryStatusMock">已启用</span>
-                                        </div>
-                                        <div class="payment-provider-summary-meta" id="paymentProviderSummaryMetaMock">直接到账，适合短期过渡验证。</div>
-                                    </div>
-                                    <div class="payment-provider-summary-card" id="paymentProviderSummaryAfdian">
-                                        <div class="payment-provider-summary-top">
-                                            <span class="payment-provider-summary-name" id="paymentProviderSummaryNameAfdian">爱发电</span>
-                                            <span class="payment-provider-summary-status" id="paymentProviderSummaryStatusAfdian">已停用</span>
-                                        </div>
-                                        <div class="payment-provider-summary-meta" id="paymentProviderSummaryMetaAfdian">支付后输入订单号领取兑换码。</div>
-                                    </div>
-                                    <div class="payment-provider-summary-card" id="paymentProviderSummaryHupijiao">
-                                        <div class="payment-provider-summary-top">
-                                            <span class="payment-provider-summary-name" id="paymentProviderSummaryNameHupijiao">虎皮椒</span>
-                                            <span class="payment-provider-summary-status" id="paymentProviderSummaryStatusHupijiao">已停用</span>
-                                        </div>
-                                        <div class="payment-provider-summary-meta" id="paymentProviderSummaryMetaHupijiao">网关参数和密钥配置完成后即可切换上线。</div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Channels Card -->
-                        <div class="config-card" data-config="channels">
-                            <div class="config-card-header">
-                                <div class="config-card-title">
-                                    <i class="fas fa-store"></i>
-                                    <span>销售渠道</span>
-                                </div>
-                            </div>
-                            <div class="config-card-body">
-                                <div class="channel-tags" id="channelTags">
-                                    <!-- Dynamic tags -->
-                                </div>
-                                <div class="add-channel-row">
-                                    <input type="text" id="newChannelName" placeholder="新渠道名称">
-                                    <button class="btn-add-config" onclick="addChannel()">
-                                        <i class="fas fa-plus"></i>
+                                    <button type="button" class="payment-channel-open-btn" onclick="openPaymentChannelsModal()">
+                                        <i class="fas fa-sliders-h"></i>
+                                        <span>配置通道</span>
                                     </button>
                                 </div>
-                            </div>
-                        </div>
-
-                        <!-- Rewards Card -->
-                        <div class="config-card" data-config="rewards">
-                            <div class="config-card-header">
-                                <div class="config-card-title">
-                                    <i class="fas fa-coins"></i>
-                                    <span>积分奖励</span>
-                                </div>
-                            </div>
-                            <div class="config-card-body">
-                                <div class="config-row">
-                                    <div class="config-info">
-                                        <div class="config-label">首次注册赠送</div>
-                                        <div class="config-desc">新用户注册成功后自动发放的固定积分，填 0 则关闭。</div>
+                                <div class="config-card-body">
+                                    <div class="payment-channel-hero">
+                                        <div class="payment-channel-hero-copy">
+                                            <div class="payment-channel-eyebrow">当前主通道</div>
+                                            <div class="payment-channel-active-line">
+                                                <span class="payment-channel-active-name" id="paymentChannelActiveLabel">模拟支付</span>
+                                                <span class="payment-channel-active-pill">钱包充值默认</span>
+                                            </div>
+                                            <p class="payment-channel-hero-desc">把主通道切到模拟支付、爱发电或虎皮椒，钱包页会自动同步对应充值链路。</p>
+                                        </div>
                                     </div>
-                                    <div class="config-input-wrapper">
-                                        <input type="number" class="config-input" id="cfgSignupBonus" min="0" step="0.1">
-                                        <span class="config-unit">分</span>
-                                        <span class="config-save-indicator">✓</span>
+                                    <div class="config-inline-note" id="paymentChannelSummary">
+                                        <i class="fas fa-shield-alt"></i>
+                                        <span>公开配置保存在系统设置中；敏感密钥会通过服务端加密保存，不再存浏览器。</span>
                                     </div>
-                                </div>
-                                <div class="config-row">
-                                    <div class="config-info">
-                                        <div class="config-label">每日签到基础积分</div>
-                                        <div class="config-desc">已接入签到 V2，作为每天签到时的基础奖励，支持 0.1 精度。</div>
+                                    <div class="payment-channel-provider-grid">
+                                        <div class="payment-provider-summary-card" id="paymentProviderSummaryMock">
+                                            <div class="payment-provider-summary-top">
+                                                <span class="payment-provider-summary-name" id="paymentProviderSummaryNameMock">模拟支付</span>
+                                                <span class="payment-provider-summary-status" id="paymentProviderSummaryStatusMock">已启用</span>
+                                            </div>
+                                            <div class="payment-provider-summary-meta" id="paymentProviderSummaryMetaMock">直接到账，适合短期过渡验证。</div>
+                                        </div>
+                                        <div class="payment-provider-summary-card" id="paymentProviderSummaryAfdian">
+                                            <div class="payment-provider-summary-top">
+                                                <span class="payment-provider-summary-name" id="paymentProviderSummaryNameAfdian">爱发电</span>
+                                                <span class="payment-provider-summary-status" id="paymentProviderSummaryStatusAfdian">已停用</span>
+                                            </div>
+                                            <div class="payment-provider-summary-meta" id="paymentProviderSummaryMetaAfdian">支付后输入订单号领取兑换码。</div>
+                                        </div>
+                                        <div class="payment-provider-summary-card" id="paymentProviderSummaryHupijiao">
+                                            <div class="payment-provider-summary-top">
+                                                <span class="payment-provider-summary-name" id="paymentProviderSummaryNameHupijiao">虎皮椒</span>
+                                                <span class="payment-provider-summary-status" id="paymentProviderSummaryStatusHupijiao">已停用</span>
+                                            </div>
+                                            <div class="payment-provider-summary-meta" id="paymentProviderSummaryMetaHupijiao">网关参数和密钥配置完成后即可切换上线。</div>
+                                        </div>
                                     </div>
-                                    <div class="config-input-wrapper">
-                                        <input type="number" class="config-input" id="cfgDailyCheckin" min="0" step="0.1">
-                                        <span class="config-unit">分</span>
-                                        <span class="config-save-indicator">✓</span>
-                                    </div>
-                                </div>
-                                <div class="config-row">
-                                    <div class="config-info">
-                                        <div class="config-label">连续 7 天额外奖励</div>
-                                        <div class="config-desc">连续签到达到 7 / 14 / 21 / 28 天时额外发放的积分。</div>
-                                    </div>
-                                    <div class="config-input-wrapper">
-                                        <input type="number" class="config-input" id="cfgCheckinStreakBonus" min="0" step="0.1">
-                                        <span class="config-unit">分</span>
-                                        <span class="config-save-indicator">✓</span>
-                                    </div>
-                                </div>
-                                <div class="config-row">
-                                    <div class="config-info">
-                                        <div class="config-label">全月全勤奖励</div>
-                                        <div class="config-desc">用户达成当月全勤时额外发放的积分。</div>
-                                    </div>
-                                    <div class="config-input-wrapper">
-                                        <input type="number" class="config-input" id="cfgCheckinPerfectBonus" min="0" step="0.1">
-                                        <span class="config-unit">分</span>
-                                        <span class="config-save-indicator">✓</span>
-                                    </div>
-                                </div>
-                                <div class="config-row">
-                                    <div class="config-info">
-                                        <div class="config-label">补签消耗积分</div>
-                                        <div class="config-desc">用户对漏签日期进行补签时，需要扣除的积分。</div>
-                                    </div>
-                                    <div class="config-input-wrapper">
-                                        <input type="number" class="config-input" id="cfgCheckinMakeupCost" min="0" step="0.1">
-                                        <span class="config-unit">分</span>
-                                        <span class="config-save-indicator">✓</span>
-                                    </div>
-                                </div>
-                                <div class="config-row">
-                                    <div class="config-info">
-                                        <div class="config-label">评论奖励</div>
-                                        <div class="config-desc">评论奖励积分，填 0 则关闭该奖励。</div>
-                                    </div>
-                                    <div class="config-input-wrapper">
-                                        <input type="number" class="config-input" id="cfgCommentReward" min="0" step="0.1">
-                                        <span class="config-unit">分</span>
-                                        <span class="config-save-indicator">✓</span>
-                                    </div>
-                                </div>
-                                <div class="config-inline-note">
-                                    <i class="fas fa-route"></i>
-                                    <span>“邀请奖励”已并入“推广返现 &gt; 拉新注册奖励”，避免两套配置重复或互相打架。</span>
                                 </div>
                             </div>
                         </div>

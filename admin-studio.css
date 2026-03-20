@@ -14981,13 +14981,35 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     padding: 20px 24px;
 }
 
-#settings-view-pricing .module-content {
+#settings-view-pricing .module-content.pricing-settings-layout {
+    display: grid;
+    grid-template-columns: minmax(260px, 0.9fr) minmax(320px, 0.95fr) minmax(320px, 1fr);
     align-items: start;
+    gap: 20px;
+}
+
+#settings-view-pricing .pricing-settings-column {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    min-width: 0;
+}
+
+#settings-view-pricing .pricing-settings-column .config-card {
+    width: 100%;
 }
 
 @media (max-width: 1024px) {
     #module-settings .module-content {
         grid-template-columns: repeat(2, 1fr);
+    }
+
+    #settings-view-pricing .module-content.pricing-settings-layout {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    #settings-view-pricing .pricing-settings-column--right {
+        grid-column: 1 / -1;
     }
 }
 
@@ -14997,6 +15019,16 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
         flex-direction: column;
         /* Stack vertically on mobile */
         padding: 16px;
+        gap: 16px;
+    }
+
+    #settings-view-pricing .module-content.pricing-settings-layout {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+    }
+
+    #settings-view-pricing .pricing-settings-column {
         gap: 16px;
     }
 }
