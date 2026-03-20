@@ -6,6 +6,8 @@
         loading: false,
         cleanupLoading: false,
         days: 30,
+        activeTab: 'overview',
+        listenersBound: false,
         summary: null,
         cleanupPreview: null
     };
@@ -85,6 +87,15 @@
         return map[String(provider || '').trim().toLowerCase()] || String(provider || '未知通道');
     }
 
+    function getProviderIcon(provider) {
+        const map = {
+            mock: 'fas fa-bolt',
+            afdian: 'fas fa-heart',
+            hupijiao: 'fas fa-pepper-hot'
+        };
+        return map[String(provider || '').trim().toLowerCase()] || 'fas fa-credit-card';
+    }
+
     function getSeverityLabel(severity) {
         const map = {
             critical: '高危',
@@ -92,6 +103,17 @@
             info: '提示'
         };
         return map[String(severity || '')] || '提示';
+    }
+
+    function getRangeLabel(days) {
+        const num = Number(days || state.days || 30);
+        const labels = {
+            7: '最近 7 天',
+            30: '最近 30 天',
+            90: '最近 90 天',
+            365: '最近 1 年'
+        };
+        return labels[num] || `最近 ${num} 天`;
     }
 
     async function getAccessToken() {
@@ -150,6 +172,100 @@
         target.dataset.tone = tone;
     }
 
+    function updateRangeLabel() {
+        const label = document.getElementById('paymentsRangeLabel');
+        if (label) {
+            label.textContent = getRangeLabel(state.days);
+        }
+
+        document.querySelectorAll('.payments-range-btn').forEach((button) => {
+            const buttonDays = Number(button.dataset.days || 0);
+            button.classList.toggle('active', buttonDays === state.days);
+        });
+    }
+
+    function closeRangeMenu() {
+        const dropdown = document.getElementById('paymentsRangeDropdown');
+        if (dropdown) {
+            dropdown.classList.remove('open');
+        }
+    }
+
+    function toggleRangeMenu(event) {
+        if (event) event.stopPropagation();
+        const dropdown = document.getElementById('paymentsRangeDropdown');
+        if (!dropdown) return;
+        dropdown.classList.toggle('open');
+    }
+
+    function updateToolbarHighlights(data) {
+        const target = document.getElementById('paymentsToolbarHighlights');
+        if (!target) return;
+
+        const overview = data?.overview || {};
+        const anomaly = data?.anomaly_summary || {};
+        const sitewide = data?.sitewide_summary || {};
+        const providerCount = Array.isArray(data?.provider_stats) ? data.provider_stats.length : 0;
+        const anomalyCount = Number(anomaly.review_orders || 0)
+            + Number(anomaly.failed_orders || 0)
+            + Number(anomaly.recent_event_anomalies || 0);
+
+        target.innerHTML = `
+            <div class="payments-highlight-pill">
+                <i class="fas fa-credit-card"></i>
+                <span>通道 ${escapeHtml(formatNumber(providerCount))}</span>
+            </div>
+            <div class="payments-highlight-pill">
+                <i class="fas fa-circle-check"></i>
+                <span>成功率 ${escapeHtml(formatPercent(overview.paid_rate))}</span>
+            </div>
+            <div class="payments-highlight-pill ${anomalyCount > 0 ? 'warning' : ''}">
+                <i class="fas fa-triangle-exclamation"></i>
+                <span>异常 ${escapeHtml(formatNumber(anomalyCount))}</span>
+            </div>
+            <div class="payments-highlight-pill">
+                <i class="fas fa-wallet"></i>
+                <span>收入 ${escapeHtml(formatCurrency(sitewide.recharge_amount))}</span>
+            </div>
+        `;
+    }
+
+    function syncTabIndicator() {
+        const nav = document.getElementById('paymentsTabsNav');
+        if (!nav) return;
+        const activeButton = nav.querySelector('.admin-tab.active');
+        if (!activeButton) return;
+
+        if (typeof window.updateAdminTabIndicator === 'function') {
+            window.updateAdminTabIndicator(activeButton);
+            return;
+        }
+
+        const indicator = nav.querySelector('.admin-tab-indicator');
+        if (indicator) {
+            indicator.style.left = `${activeButton.offsetLeft}px`;
+            indicator.style.width = `${activeButton.offsetWidth}px`;
+            indicator.style.opacity = '1';
+        }
+    }
+
+    function switchTab(tabId) {
+        state.activeTab = String(tabId || 'overview');
+        const nav = document.getElementById('paymentsTabsNav');
+        if (nav) {
+            nav.querySelectorAll('.admin-tab').forEach((button) => {
+                button.classList.toggle('active', button.dataset.tab === state.activeTab);
+            });
+        }
+
+        document.querySelectorAll('.payments-tab-content').forEach((section) => {
+            section.classList.toggle('active', section.id === `payments-tab-${state.activeTab}`);
+        });
+
+        syncTabIndicator();
+        window.dispatchEvent(new Event('resize'));
+    }
+
     function renderAccessState(message, tone = 'warning') {
         const stateEl = document.getElementById('paymentsAccessState');
         const bodyEl = document.getElementById('paymentsDashboardBody');
@@ -178,8 +294,9 @@
         if (refreshBtn) {
             refreshBtn.disabled = loading;
             refreshBtn.innerHTML = loading
-                ? '<i class="fas fa-spinner fa-spin"></i> 加载中'
-                : '<i class="fas fa-rotate-right"></i> 刷新';
+                ? '<i class="fas fa-spinner fa-spin"></i>'
+                : '<i class="fas fa-sync-alt"></i>';
+            refreshBtn.title = loading ? '正在刷新支付数据' : '刷新支付数据';
         }
         setToolbarMeta(loading ? '正在刷新支付数据…' : '支付数据已同步', loading ? 'info' : 'ready');
     }
@@ -199,6 +316,26 @@
         }
     }
 
+    function renderMetricCards(target, cards) {
+        if (!target) return;
+
+        target.innerHTML = cards.map((card) => `
+            <div class="kpi-card payments-kpi-card-visual ${card.tone ? `is-${card.tone}` : ''}">
+                <div class="kpi-icon payments-kpi-icon">
+                    <i class="${escapeHtml(card.icon || 'fas fa-chart-line')}"></i>
+                </div>
+                <div class="kpi-content">
+                    <div class="kpi-value-row">
+                        <div class="kpi-value">${escapeHtml(card.value)}</div>
+                        ${card.badge ? `<div class="kpi-trend ${card.badgeTone ? `trend-${card.badgeTone}` : ''}">${escapeHtml(card.badge)}</div>` : ''}
+                    </div>
+                    <div class="kpi-label">${escapeHtml(card.label)}</div>
+                    <div class="payments-kpi-footnote">${escapeHtml(card.hint)}</div>
+                </div>
+            </div>
+        `).join('');
+    }
+
     function renderOverviewCards(data) {
         const overview = data?.overview || {};
         const anomaly = data?.anomaly_summary || {};
@@ -207,44 +344,52 @@
 
         const cards = [
             {
+                icon: 'fas fa-file-invoice-dollar',
                 label: '总订单',
                 value: formatNumber(overview.total_orders),
                 hint: `近 ${state.days} 天支付订单总数`
             },
             {
+                icon: 'fas fa-circle-check',
                 label: '支付成功率',
                 value: formatPercent(overview.paid_rate),
                 hint: `${formatNumber(overview.paid_orders)} 笔已支付/已兑换`
             },
             {
+                icon: 'fas fa-user-check',
                 label: '认领率',
                 value: formatPercent(overview.claim_rate),
                 hint: `${formatNumber(overview.claimed_orders)} 笔已认领`
             },
             {
+                icon: 'fas fa-sack-dollar',
                 label: '支付金额',
                 value: formatCurrency(overview.total_amount),
                 hint: `${formatNumber(overview.total_points)} 积分已入账`
             },
             {
+                icon: 'fas fa-hourglass-half',
                 label: '待审核',
                 value: formatNumber(anomaly.review_orders),
                 hint: '套餐匹配、金额或签名需人工确认',
                 tone: 'warning'
             },
             {
+                icon: 'fas fa-triangle-exclamation',
                 label: '失败订单',
                 value: formatNumber(anomaly.failed_orders),
                 hint: '签名失败或金额校验失败',
                 tone: 'critical'
             },
             {
+                icon: 'fas fa-unlink',
                 label: '未认领订单',
                 value: formatNumber(anomaly.unclaimed_paid_orders),
                 hint: '已支付但尚未输入订单号',
                 tone: 'info'
             },
             {
+                icon: 'fas fa-wave-square',
                 label: '异常回调',
                 value: formatNumber(anomaly.recent_event_anomalies),
                 hint: `${formatNumber(anomaly.duplicate_webhook_orders)} 个订单出现重复回调`,
@@ -252,13 +397,7 @@
             }
         ];
 
-        target.innerHTML = cards.map((card) => `
-            <div class="payments-kpi-card ${card.tone ? `is-${card.tone}` : ''}">
-                <div class="payments-kpi-label">${escapeHtml(card.label)}</div>
-                <div class="payments-kpi-value">${escapeHtml(card.value)}</div>
-                <div class="payments-kpi-hint">${escapeHtml(card.hint)}</div>
-            </div>
-        `).join('');
+        renderMetricCards(target, cards);
     }
 
     function renderProviderStats(data) {
@@ -274,7 +413,7 @@
         target.innerHTML = providerStats.map((item) => `
             <div class="payments-provider-row">
                 <div class="payments-provider-copy">
-                    <div class="payments-provider-name">${escapeHtml(getProviderLabel(item.provider))}</div>
+                    <div class="payments-provider-name"><i class="${escapeHtml(getProviderIcon(item.provider))}"></i>${escapeHtml(getProviderLabel(item.provider))}</div>
                     <div class="payments-provider-meta">
                         ${escapeHtml(formatNumber(item.total_orders))} 单
                         · 支付成功 ${escapeHtml(formatPercent(item.paid_rate))}
@@ -300,45 +439,45 @@
         const summary = data?.sitewide_summary || {};
         const cards = [
             {
+                icon: 'fas fa-wallet',
                 label: '充值收入',
                 value: formatCurrency(summary.recharge_amount),
                 hint: `${formatNumber(summary.recharge_order_count)} 笔充值 · ${formatPoints(summary.recharge_points)}`
             },
             {
+                icon: 'fas fa-store',
                 label: '商城消费',
                 value: formatPoints(summary.shop_points_spent),
                 hint: `${formatNumber(summary.shop_order_count)} 笔消费 · 退款 ${formatPoints(summary.refunded_shop_points)}`
             },
             {
+                icon: 'fas fa-arrow-trend-up',
                 label: '积分流入',
                 value: formatPoints(summary.points_inflow),
                 hint: '包含充值、兑换码、奖励和管理入账'
             },
             {
+                icon: 'fas fa-arrow-trend-down',
                 label: '积分流出',
                 value: formatPoints(summary.points_outflow),
                 hint: '包含商城消费、内容解锁、验证和管理扣减',
                 tone: 'warning'
             },
             {
+                icon: 'fas fa-scale-balanced',
                 label: '净积分流动',
                 value: formatSignedPoints(summary.net_points_flow),
                 hint: '流入减去流出后的净变化'
             },
             {
+                icon: 'fas fa-coins',
                 label: '当前流通余额',
                 value: formatPoints(summary.circulating_points),
                 hint: `付费 ${formatPoints(summary.paid_balance)} · 奖励 ${formatPoints(summary.bonus_balance)}`
             }
         ];
 
-        target.innerHTML = cards.map((card) => `
-            <div class="payments-kpi-card ${card.tone ? `is-${card.tone}` : ''}">
-                <div class="payments-kpi-label">${escapeHtml(card.label)}</div>
-                <div class="payments-kpi-value">${escapeHtml(card.value)}</div>
-                <div class="payments-kpi-hint">${escapeHtml(card.hint)}</div>
-            </div>
-        `).join('');
+        renderMetricCards(target, cards);
     }
 
     function renderBusinessBreakdown(data) {
@@ -586,6 +725,7 @@
 
         const payload = await fetchAdminJson(`/api/admin/payments/summary?${query.toString()}`);
         state.summary = payload;
+        updateToolbarHighlights(payload);
         renderOverviewCards(payload);
         renderProviderStats(payload);
         renderSitewideSummary(payload);
@@ -596,7 +736,7 @@
         renderOrders(payload);
 
         const siteLabel = site ? `站点 ${(site || '').toUpperCase()}` : '全部站点';
-        setToolbarMeta(`${siteLabel} · 最近 ${state.days} 天 · 更新于 ${formatDateTime(new Date().toISOString())}`, 'ready');
+        setToolbarMeta(`${siteLabel} · ${getRangeLabel(state.days)} · 更新于 ${formatDateTime(new Date().toISOString())}`, 'ready');
     }
 
     async function loadCleanupPreview({ silent = false } = {}) {
@@ -616,16 +756,25 @@
         clearAccessState();
 
         if (state.initialized) {
+            updateRangeLabel();
+            switchTab(state.activeTab);
             return reload();
         }
 
         state.initialized = true;
 
-        const select = document.getElementById('paymentsRangeSelect');
-        if (select) {
-            select.value = String(state.days);
+        if (!state.listenersBound) {
+            document.addEventListener('click', (event) => {
+                if (!event.target.closest('#paymentsRangeDropdown')) {
+                    closeRangeMenu();
+                }
+            });
+            window.addEventListener('resize', syncTabIndicator);
+            state.listenersBound = true;
         }
 
+        updateRangeLabel();
+        switchTab(state.activeTab);
         await reload();
     }
 
@@ -637,6 +786,7 @@
 
         try {
             clearAccessState();
+            syncTabIndicator();
             setLoading(true);
             await loadSummary();
 
@@ -712,9 +862,13 @@
         }
     }
 
-    function setDays(value) {
+    function setDays(value, shouldCloseMenu = false) {
         const next = Number.parseInt(value, 10);
         state.days = Number.isFinite(next) && next > 0 ? next : 30;
+        updateRangeLabel();
+        if (shouldCloseMenu) {
+            closeRangeMenu();
+        }
         if (state.initialized) {
             reload();
         }
@@ -723,7 +877,9 @@
     window.AdminPayments = {
         init,
         reload,
+        switchTab,
         setDays,
+        toggleRangeMenu,
         previewCleanup,
         cleanupTestData
     };

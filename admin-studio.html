@@ -5404,78 +5404,155 @@
             <!-- ========== PAYMENTS MODULE ========== -->
             <div id="module-payments" class="module-container">
                 <div class="payments-dashboard">
-                    <div class="payments-toolbar">
-                        <div class="payments-toolbar-left">
-                            <div class="payments-toolbar-field">
-                                <label for="paymentsRangeSelect">统计范围</label>
-                                <select id="paymentsRangeSelect" class="config-input" onchange="AdminPayments.setDays(this.value)">
-                                    <option value="7">最近 7 天</option>
-                                    <option value="30" selected>最近 30 天</option>
-                                    <option value="90">最近 90 天</option>
-                                    <option value="365">最近 1 年</option>
-                                </select>
+                    <nav class="admin-tabs payments-tabs" id="paymentsTabsNav">
+                        <button class="admin-tab active" data-tab="overview" onclick="AdminPayments.switchTab('overview')">支付总览</button>
+                        <button class="admin-tab" data-tab="finance" onclick="AdminPayments.switchTab('finance')">全站收支</button>
+                        <button class="admin-tab" data-tab="ops" onclick="AdminPayments.switchTab('ops')">异常运维</button>
+                        <div class="admin-tab-indicator"></div>
+                    </nav>
+
+                    <div class="analytics-toolbar payments-toolbar-shell">
+                        <div class="toolbar-left">
+                            <div class="date-range-dropdown" id="paymentsRangeDropdown">
+                                <button class="date-range-trigger" type="button" onclick="AdminPayments.toggleRangeMenu(event)">
+                                    <i class="fas fa-calendar-alt"></i>
+                                    <span id="paymentsRangeLabel">最近 30 天</span>
+                                    <i class="fas fa-chevron-down dropdown-arrow"></i>
+                                </button>
+                                <div class="date-range-menu payments-date-menu" id="paymentsRangeMenu">
+                                    <div class="date-range-presets">
+                                        <button class="preset-btn payments-range-btn" data-days="7" type="button" onclick="AdminPayments.setDays(7, true)">最近 7 天</button>
+                                        <button class="preset-btn payments-range-btn active" data-days="30" type="button" onclick="AdminPayments.setDays(30, true)">最近 30 天</button>
+                                        <button class="preset-btn payments-range-btn" data-days="90" type="button" onclick="AdminPayments.setDays(90, true)">最近 90 天</button>
+                                        <button class="preset-btn payments-range-btn" data-days="365" type="button" onclick="AdminPayments.setDays(365, true)">最近 1 年</button>
+                                    </div>
+                                </div>
                             </div>
-                            <button type="button" class="btn-sm btn-secondary" id="paymentsRefreshBtn" onclick="AdminPayments.reload()">
-                                <i class="fas fa-rotate-right"></i> 刷新
-                            </button>
                         </div>
-                        <div class="payments-toolbar-right" id="paymentsToolbarMeta">等待载入支付数据</div>
+                        <div class="toolbar-center">
+                            <div class="payments-toolbar-highlights" id="paymentsToolbarHighlights">
+                                <div class="payments-highlight-pill">
+                                    <i class="fas fa-credit-card"></i>
+                                    <span>通道 0</span>
+                                </div>
+                                <div class="payments-highlight-pill">
+                                    <i class="fas fa-triangle-exclamation"></i>
+                                    <span>异常 0</span>
+                                </div>
+                                <div class="payments-highlight-pill">
+                                    <i class="fas fa-wallet"></i>
+                                    <span>收入 ¥0</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="toolbar-right">
+                            <button type="button" class="toolbar-icon-btn" id="paymentsRefreshBtn" onclick="AdminPayments.reload()" title="刷新支付数据">
+                                <i class="fas fa-sync-alt"></i>
+                            </button>
+                            <div class="last-update-compact payments-last-update">
+                                <span id="paymentsToolbarMeta">等待载入支付数据</span>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="payments-access-state" id="paymentsAccessState" hidden></div>
 
                     <div id="paymentsDashboardBody">
-                        <div class="payments-section">
-                            <div class="payments-section-header">
-                                <div>
-                                    <h2>支付通道对账</h2>
-                                    <p>统一查看充值支付结果、认领表现、异常队列和测试数据收尾。</p>
+                        <div id="payments-tab-overview" class="payments-tab-content active">
+                            <div class="payments-page-intro">
+                                <div class="payments-page-copy">
+                                    <h2><i class="fas fa-credit-card"></i> 支付总览</h2>
+                                    <p>聚焦充值支付通道、认领效率、成功率与回调稳定性，适合快速判断当前支付链路是否健康。</p>
                                 </div>
                             </div>
-                            <div class="payments-overview-grid" id="paymentsOverviewGrid"></div>
-                        </div>
-
-                        <div class="payments-section payments-two-column">
-                            <div class="payments-panel">
-                                <div class="payments-panel-header">
-                                    <h3>通道表现</h3>
-                                    <span>按当前站点筛选同步</span>
+                            <div class="kpi-cards-row payments-kpi-grid" id="paymentsOverviewGrid"></div>
+                            <div class="charts-grid payments-charts-grid">
+                                <div class="chart-card glass-panel payments-card">
+                                    <div class="chart-header">
+                                        <h3><i class="fas fa-layer-group"></i> 通道表现</h3>
+                                        <span>按当前站点筛选同步</span>
+                                    </div>
+                                    <div class="chart-body payments-card-body">
+                                        <div class="payments-provider-stats" id="paymentsProviderStats"></div>
+                                    </div>
                                 </div>
-                                <div class="payments-provider-stats" id="paymentsProviderStats"></div>
-                            </div>
 
-                            <div class="payments-panel">
-                                <div class="payments-panel-header">
-                                    <h3>最近 24 小时异常趋势</h3>
-                                    <span>快速判断回调是否稳定</span>
+                                <div class="chart-card glass-panel payments-card">
+                                    <div class="chart-header">
+                                        <h3><i class="fas fa-wave-square"></i> 最近 24 小时异常趋势</h3>
+                                        <span>快速判断回调是否稳定</span>
+                                    </div>
+                                    <div class="chart-body payments-card-body payments-card-body-trend">
+                                        <div class="payments-trend-chart" id="paymentsTrendChart"></div>
+                                        <div class="payments-trend-legend" id="paymentsTrendLegend"></div>
+                                    </div>
                                 </div>
-                                <div class="payments-trend-chart" id="paymentsTrendChart"></div>
-                                <div class="payments-trend-legend" id="paymentsTrendLegend"></div>
-                            </div>
-                        </div>
-
-                        <div class="payments-section payments-two-column">
-                            <div class="payments-panel">
-                                <div class="payments-panel-header">
-                                    <h3>异常队列</h3>
-                                    <span>待审核、失败、重复回调与未认领订单</span>
-                                </div>
-                                <div class="payments-anomaly-list" id="paymentsAnomalyList"></div>
-                            </div>
-
-                            <div class="payments-panel">
-                                <div class="payments-panel-header">
-                                    <h3>最近订单</h3>
-                                    <span>人工核对支付、认领与站点归属</span>
-                                </div>
-                                <div class="payments-orders-table" id="paymentsOrdersTable"></div>
                             </div>
                         </div>
 
-                        <div class="payments-section">
-                            <div class="payments-panel payments-panel-wide">
-                                <div class="payments-panel-header">
-                                    <h3>测试数据清理</h3>
+                        <div id="payments-tab-finance" class="payments-tab-content">
+                            <div class="payments-page-intro">
+                                <div class="payments-page-copy">
+                                    <h2><i class="fas fa-sack-dollar"></i> 全站资金 / 积分收支</h2>
+                                    <p>把充值入账、商城消费、积分流入流出和站内余额拆开看，方便判断全站经营健康度。</p>
+                                </div>
+                            </div>
+                            <div class="kpi-cards-row payments-kpi-grid" id="paymentsSitewideGrid"></div>
+                            <div class="charts-grid payments-charts-grid">
+                                <div class="chart-card glass-panel payments-card">
+                                    <div class="chart-header">
+                                        <h3><i class="fas fa-briefcase"></i> 业务收支拆分</h3>
+                                        <span>充值、商城、模拟支付与当前积分存量</span>
+                                    </div>
+                                    <div class="chart-body payments-card-body">
+                                        <div class="payments-business-breakdown" id="paymentsBusinessBreakdown"></div>
+                                    </div>
+                                </div>
+
+                                <div class="chart-card glass-panel payments-card">
+                                    <div class="chart-header">
+                                        <h3><i class="fas fa-coins"></i> 积分流水分类</h3>
+                                        <span>按充值、奖励、商城消费、验证消耗等维度聚合</span>
+                                    </div>
+                                    <div class="chart-body payments-card-body">
+                                        <div class="payments-points-breakdown" id="paymentsPointsBreakdown"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="payments-tab-ops" class="payments-tab-content">
+                            <div class="payments-page-intro">
+                                <div class="payments-page-copy">
+                                    <h2><i class="fas fa-shield-heart"></i> 异常运维</h2>
+                                    <p>集中处理异常队列、最近订单和测试数据清理，适合排查支付链路问题与上线收尾。</p>
+                                </div>
+                            </div>
+                            <div class="charts-grid payments-charts-grid">
+                                <div class="chart-card glass-panel payments-card">
+                                    <div class="chart-header">
+                                        <h3><i class="fas fa-triangle-exclamation"></i> 异常队列</h3>
+                                        <span>待审核、失败、重复回调与未认领订单</span>
+                                    </div>
+                                    <div class="chart-body payments-card-body">
+                                        <div class="payments-anomaly-list" id="paymentsAnomalyList"></div>
+                                    </div>
+                                </div>
+
+                                <div class="chart-card glass-panel payments-card">
+                                    <div class="chart-header">
+                                        <h3><i class="fas fa-receipt"></i> 最近订单</h3>
+                                        <span>人工核对支付、认领与站点归属</span>
+                                    </div>
+                                    <div class="chart-body payments-card-body">
+                                        <div class="payments-orders-table" id="paymentsOrdersTable"></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="chart-card glass-panel payments-card payments-card-wide">
+                                <div class="chart-header">
+                                    <h3><i class="fas fa-broom"></i> 测试数据清理</h3>
                                     <span>专门清理 AUTO_CDX_* 与 codex.*@example.com</span>
                                 </div>
                                 <div class="payments-cleanup-actions">
@@ -5486,35 +5563,9 @@
                                         <i class="fas fa-broom"></i> 清理测试数据
                                     </button>
                                 </div>
-                                <div class="payments-cleanup-preview" id="paymentsCleanupPreview"></div>
-                            </div>
-                        </div>
-
-                        <div class="payments-section">
-                            <div class="payments-section-header">
-                                <div>
-                                    <h2>全站资金 / 积分收支</h2>
-                                    <p>单独汇总充值入账、商城消耗、积分流通和业务净流向。</p>
+                                <div class="chart-body payments-card-body">
+                                    <div class="payments-cleanup-preview" id="paymentsCleanupPreview"></div>
                                 </div>
-                            </div>
-                            <div class="payments-sitewide-grid" id="paymentsSitewideGrid"></div>
-                        </div>
-
-                        <div class="payments-section payments-two-column">
-                            <div class="payments-panel">
-                                <div class="payments-panel-header">
-                                    <h3>业务收支拆分</h3>
-                                    <span>把充值、商城、模拟支付和积分存量拆开看</span>
-                                </div>
-                                <div class="payments-business-breakdown" id="paymentsBusinessBreakdown"></div>
-                            </div>
-
-                            <div class="payments-panel">
-                                <div class="payments-panel-header">
-                                    <h3>积分流水分类</h3>
-                                    <span>按充值、奖励、商城消费、验证消耗等分类聚合</span>
-                                </div>
-                                <div class="payments-points-breakdown" id="paymentsPointsBreakdown"></div>
                             </div>
                         </div>
                     </div>
