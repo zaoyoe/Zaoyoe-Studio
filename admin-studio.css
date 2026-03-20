@@ -13346,6 +13346,13 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     min-height: 120px;
 }
 
+.payments-points-table {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    width: 100%;
+}
+
 .payments-breakdown-card,
 .payments-points-row {
     border: 1px solid rgba(148, 163, 184, 0.14);
