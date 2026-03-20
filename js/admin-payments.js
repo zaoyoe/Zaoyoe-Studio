@@ -291,6 +291,7 @@
         if (!target) return;
         target.textContent = text || '';
         target.dataset.tone = tone;
+        target.parentElement?.classList.toggle('is-loading', tone === 'info');
     }
 
     function updateRangeLabel() {
@@ -354,6 +355,25 @@
         `;
     }
 
+    function updateOverviewBanner(data) {
+        if (state.activeTab !== 'overview') {
+            clearAccessState();
+            return;
+        }
+
+        const anomaly = data?.anomaly_summary || {};
+        const anomalyCount = Number(anomaly.review_orders || 0)
+            + Number(anomaly.failed_orders || 0)
+            + Number(anomaly.recent_event_anomalies || 0);
+
+        if (anomalyCount > 0) {
+            renderAccessState(`当前有 ${formatNumber(anomalyCount)} 项异常需要关注，请优先查看失败订单、待审核与异常回调。`, 'warning', { preserveBody: true });
+            return;
+        }
+
+        clearAccessState();
+    }
+
     function syncTabIndicator() {
         const nav = document.getElementById('paymentsTabsNav');
         if (!nav) return;
@@ -400,11 +420,18 @@
         const bodyEl = document.getElementById('paymentsDashboardBody');
         if (!stateEl || !bodyEl) return;
         const preserveBody = options.preserveBody === true;
+        const normalizedMessage = String(message || '').trim();
+
+        if (!normalizedMessage) {
+            stateEl.hidden = true;
+            bodyEl.hidden = false;
+            return;
+        }
 
         stateEl.className = `payments-access-state ${tone}`;
         stateEl.innerHTML = `
             <i class="fas ${tone === 'error' ? 'fa-ban' : 'fa-shield-alt'}"></i>
-            <span>${escapeHtml(message)}</span>
+            <span>${escapeHtml(normalizedMessage)}</span>
         `;
         stateEl.hidden = false;
         bodyEl.hidden = preserveBody ? false : true;
@@ -428,7 +455,7 @@
                 : '<i class="fas fa-sync-alt"></i>';
             refreshBtn.title = loading ? '正在刷新支付数据' : '刷新支付数据';
         }
-        setToolbarMeta(loading ? '正在刷新支付数据…' : '支付数据已同步', loading ? 'info' : 'ready');
+        setToolbarMeta(loading ? '同步中…' : '已同步', loading ? 'info' : 'ready');
     }
 
     function setCleanupLoading(loading) {
@@ -451,17 +478,16 @@
 
         target.innerHTML = cards.map((card) => `
             <div class="kpi-card payments-kpi-card-visual ${card.tone ? `is-${card.tone}` : ''}">
-                <div class="kpi-icon payments-kpi-icon">
-                    <i class="${escapeHtml(card.icon || 'fas fa-chart-line')}"></i>
-                </div>
-                <div class="kpi-content">
-                    <div class="kpi-value-row">
-                        <div class="kpi-value">${escapeHtml(card.value)}</div>
-                        ${card.badge ? `<div class="kpi-trend ${card.badgeTone ? `trend-${card.badgeTone}` : ''}">${escapeHtml(card.badge)}</div>` : ''}
+                <div class="payments-kpi-main">
+                    <div class="kpi-icon payments-kpi-icon">
+                        <i class="${escapeHtml(card.icon || 'fas fa-chart-line')}"></i>
                     </div>
-                    <div class="payments-kpi-label-row">
-                        <div class="kpi-label">${escapeHtml(card.label)}</div>
-                        ${renderInfoChip(card.help)}
+                    <div class="kpi-content">
+                        <div class="payments-kpi-value">${escapeHtml(card.value)}</div>
+                        <div class="payments-kpi-label-row">
+                            <div class="payments-kpi-label">${escapeHtml(card.label)}</div>
+                            ${renderInfoChip(card.help)}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -907,9 +933,9 @@
         renderTrend(data);
         renderAnomalies(data);
         renderOrders(data);
+        updateOverviewBanner(data);
 
-        const siteLabel = site ? `站点 ${(site || '').toUpperCase()}` : '全部站点';
-        setToolbarMeta(`${siteLabel} · ${getRangeLabel(state.days)} · 更新于 ${formatDateTime(new Date().toISOString())}`, 'ready');
+        setToolbarMeta('已同步', 'ready');
         return true;
     }
 
