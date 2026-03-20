@@ -12787,6 +12787,12 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     gap: 16px;
 }
 
+.payments-sitewide-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+}
+
 .payments-kpi-card,
 .payments-panel {
     background: linear-gradient(180deg, rgba(30, 41, 59, 0.94), rgba(15, 23, 42, 0.96));
@@ -12891,6 +12897,24 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     color: var(--text-dim);
     font-size: 0.82rem;
     line-height: 1.5;
+}
+
+.payments-provider-extra {
+    margin-top: 10px;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.payments-provider-extra span {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.1);
+    color: #cbd5e1;
+    font-size: 0.76rem;
+    font-weight: 600;
 }
 
 .payments-provider-badges {
@@ -13059,6 +13083,81 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     min-height: 120px;
 }
 
+.payments-business-breakdown,
+.payments-points-breakdown {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-height: 120px;
+}
+
+.payments-breakdown-card,
+.payments-points-row {
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    border-radius: 14px;
+    padding: 14px 16px;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.payments-breakdown-top,
+.payments-points-copy {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.payments-breakdown-title,
+.payments-points-label {
+    font-size: 0.94rem;
+    font-weight: 600;
+    color: var(--text-main);
+}
+
+.payments-breakdown-metric {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #f8fafc;
+    white-space: nowrap;
+}
+
+.payments-breakdown-description,
+.payments-breakdown-meta,
+.payments-points-values {
+    color: var(--text-dim);
+    font-size: 0.82rem;
+    line-height: 1.6;
+}
+
+.payments-breakdown-description,
+.payments-points-values {
+    margin-top: 8px;
+}
+
+.payments-breakdown-meta {
+    margin-top: 6px;
+}
+
+.payments-points-net {
+    font-size: 0.9rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.payments-points-net.is-positive {
+    color: #4ade80;
+}
+
+.payments-points-net.is-negative {
+    color: #f87171;
+}
+
+.payments-points-values {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+}
+
 .payments-table-wrap {
     overflow-x: auto;
 }
@@ -13212,7 +13311,8 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 }
 
 @media (max-width: 1200px) {
-    .payments-overview-grid {
+    .payments-overview-grid,
+    .payments-sitewide-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
@@ -13236,13 +13336,16 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     }
 
     .payments-overview-grid,
+    .payments-sitewide-grid,
     .payments-cleanup-grid,
     .payments-cleanup-samples {
         grid-template-columns: 1fr;
     }
 
     .payments-provider-row,
-    .payments-anomaly-top {
+    .payments-anomaly-top,
+    .payments-breakdown-top,
+    .payments-points-copy {
         flex-direction: column;
         align-items: flex-start;
     }

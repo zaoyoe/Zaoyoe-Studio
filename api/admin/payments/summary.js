@@ -198,13 +198,393 @@ function buildProviderStats(orders) {
         if (['rejected', 'amount_mismatch'].includes(order.status)) {
             row.failed_orders += 1;
         }
+        row.total_amount = Number((Number(row.total_amount || 0) + Number(order.paid_amount || order.expected_amount || 0)).toFixed(2));
+        row.total_points = Number((Number(row.total_points || 0) + Number(order.points_amount || 0)).toFixed(1));
     });
 
     return Array.from(statsMap.values()).map((item) => ({
         ...item,
         paid_rate: item.total_orders > 0 ? Number(((item.paid_orders / item.total_orders) * 100).toFixed(2)) : 0,
         claim_rate: item.paid_orders > 0 ? Number(((item.claimed_orders / item.paid_orders) * 100).toFixed(2)) : 0
-    }));
+    })).sort((left, right) => (
+        Number(right.total_orders || 0) - Number(left.total_orders || 0)
+        || Number(right.total_amount || 0) - Number(left.total_amount || 0)
+    ));
+}
+
+function normalizeNumber(value, fallback = 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function roundNumber(value, digits = 1) {
+    const multiplier = 10 ** digits;
+    return Math.round(normalizeNumber(value, 0) * multiplier) / multiplier;
+}
+
+function isMissingColumnError(error) {
+    const message = String(error?.message || '').toLowerCase();
+    return error?.code === '42703'
+        || error?.code === '42P01'
+        || (message.includes('column') && message.includes('does not exist'));
+}
+
+function isSuccessOrder(order) {
+    return ['paid', 'redeemed'].includes(String(order?.status || '').trim());
+}
+
+function classifyLedgerCategory(entry) {
+    const reason = String(entry?.reason || '').trim().toLowerCase();
+    const amount = normalizeNumber(entry?.amount, 0);
+
+    if (amount >= 0) {
+        if (
+            reason.includes('充值')
+            || reason.includes('recharge')
+            || reason.includes('package_purchase')
+            || reason.includes('模拟充值')
+            || reason.includes('afdian')
+        ) {
+            return { key: 'recharge', label: '充值入账' };
+        }
+        if (reason.includes('兑换码') || reason.includes('redeem')) {
+            return { key: 'redeem_code', label: '兑换码入账' };
+        }
+        if (
+            reason.includes('返佣')
+            || reason.includes('奖励')
+            || reason.includes('reward')
+            || reason.includes('signup')
+            || reason.includes('checkin')
+        ) {
+            return { key: 'rewards', label: '奖励 / 返佣' };
+        }
+        if (reason.includes('refund') || reason.includes('退款')) {
+            return { key: 'refund', label: '退款返还' };
+        }
+        if (reason.includes('admin') || reason.includes('manual') || reason.includes('系统')) {
+            return { key: 'admin_in', label: '管理入账' };
+        }
+        return { key: 'other_in', label: '其他入账' };
+    }
+
+    if (reason.includes('商城购买') || reason.includes('shop_purchase')) {
+        return { key: 'shop_purchase', label: '商城消费' };
+    }
+    if (reason.includes('unlock') || reason.includes('解锁')) {
+        return { key: 'content_unlock', label: '内容解锁' };
+    }
+    if (reason.includes('验证') || reason.includes('gemini') || reason.includes('verify')) {
+        return { key: 'verification', label: '验证消耗' };
+    }
+    if (reason.includes('refund') || reason.includes('退款')) {
+        return { key: 'refund_out', label: '退款扣回' };
+    }
+    if (reason.includes('deduct') || reason.includes('扣除') || reason.includes('admin')) {
+        return { key: 'admin_deduct', label: '管理扣减' };
+    }
+    return { key: 'other_out', label: '其他支出' };
+}
+
+async function fetchPagedRows(buildQuery, pageSize = 1000, maxPages = 50) {
+    const rows = [];
+
+    for (let page = 0; page < maxPages; page += 1) {
+        const from = page * pageSize;
+        const to = from + pageSize - 1;
+        const { data, error } = await buildQuery().range(from, to);
+
+        if (error) {
+            throw error;
+        }
+
+        const batch = Array.isArray(data) ? data : [];
+        rows.push(...batch);
+
+        if (batch.length < pageSize) {
+            break;
+        }
+    }
+
+    return rows;
+}
+
+async function fetchPaymentOrders(client, sinceIso, site) {
+    return fetchPagedRows(() => {
+        let query = client
+            .from('payment_orders')
+            .select('id, provider, provider_order_no, package_name, paid_amount, expected_amount, points_amount, status, user_id, created_at, paid_at, claimed_at, site, last_error, sign_verified, amount_verified')
+            .gte('created_at', sinceIso)
+            .order('created_at', { ascending: false });
+
+        if (site) {
+            query = query.eq('site', site);
+        }
+
+        return query;
+    });
+}
+
+async function fetchPaymentEvents(client, sinceIso) {
+    return fetchPagedRows(() => client
+        .from('payment_events')
+        .select('id, payment_order_id, provider, provider_order_no, event_type, signature_valid, amount_valid, processing_result, error_message, created_at')
+        .gte('created_at', sinceIso)
+        .order('created_at', { ascending: false }));
+}
+
+async function fetchShopOrders(client, sinceIso, site) {
+    const variants = [
+        {
+            select: 'id, user_id, price_paid, snapshot_product_name, refund_status, created_at, site',
+            hasSite: true
+        },
+        {
+            select: 'id, user_id, price_paid, snapshot_product_name, refund_status, created_at',
+            hasSite: false
+        }
+    ];
+
+    for (const variant of variants) {
+        try {
+            const rows = await fetchPagedRows(() => {
+                let query = client
+                    .from('shop_orders')
+                    .select(variant.select)
+                    .gte('created_at', sinceIso)
+                    .order('created_at', { ascending: false });
+
+                if (site && variant.hasSite) {
+                    query = query.eq('site', site);
+                }
+
+                return query;
+            });
+
+            if (site && !variant.hasSite && site !== 'cn') {
+                return [];
+            }
+
+            return rows.map((row) => ({
+                ...row,
+                site: variant.hasSite ? (row.site || 'cn') : 'cn'
+            }));
+        } catch (error) {
+            if (!isMissingColumnError(error) || variant === variants[variants.length - 1]) {
+                throw error;
+            }
+        }
+    }
+
+    return [];
+}
+
+async function fetchPointsLedger(client, sinceIso, site) {
+    const variants = [
+        {
+            select: 'id, user_id, amount, reason, reference_id, created_at, site',
+            hasSite: true
+        },
+        {
+            select: 'id, user_id, amount, reason, reference_id, created_at',
+            hasSite: false
+        }
+    ];
+
+    for (const variant of variants) {
+        try {
+            const rows = await fetchPagedRows(() => {
+                let query = client
+                    .from('points_ledger')
+                    .select(variant.select)
+                    .gte('created_at', sinceIso)
+                    .order('created_at', { ascending: false });
+
+                if (site && variant.hasSite) {
+                    query = query.eq('site', site);
+                }
+
+                return query;
+            });
+
+            if (site && !variant.hasSite && site !== 'cn') {
+                return [];
+            }
+
+            return rows.map((row) => ({
+                ...row,
+                site: variant.hasSite ? (row.site || 'cn') : 'cn'
+            }));
+        } catch (error) {
+            if (!isMissingColumnError(error) || variant === variants[variants.length - 1]) {
+                throw error;
+            }
+        }
+    }
+
+    return [];
+}
+
+async function fetchPointsBalances(client, site) {
+    const variants = [
+        {
+            select: 'user_id, paid_balance, bonus_balance, total_balance, site',
+            hasSite: true
+        },
+        {
+            select: 'user_id, paid_balance, bonus_balance, total_balance',
+            hasSite: false
+        }
+    ];
+
+    for (const variant of variants) {
+        try {
+            const rows = await fetchPagedRows(() => {
+                let query = client
+                    .from('points_balance')
+                    .select(variant.select)
+                    .order('updated_at', { ascending: false });
+
+                if (site && variant.hasSite) {
+                    query = query.eq('site', site);
+                }
+
+                return query;
+            });
+
+            if (site && !variant.hasSite && site !== 'cn') {
+                return [];
+            }
+
+            return rows.map((row) => ({
+                ...row,
+                site: variant.hasSite ? (row.site || 'cn') : 'cn'
+            }));
+        } catch (error) {
+            if (!isMissingColumnError(error) || variant === variants[variants.length - 1]) {
+                throw error;
+            }
+        }
+    }
+
+    return [];
+}
+
+function buildOverview(orders) {
+    const successfulOrders = (orders || []).filter(isSuccessOrder);
+    const paidOrders = successfulOrders.length;
+    const claimedOrders = (orders || []).filter((order) => Boolean(order.user_id)).length;
+    const totalOrders = (orders || []).length;
+
+    return {
+        total_orders: totalOrders,
+        paid_orders: paidOrders,
+        redeemed_orders: (orders || []).filter((order) => order.status === 'redeemed').length,
+        claimed_orders: claimedOrders,
+        review_orders: (orders || []).filter((order) => order.status === 'pending_review').length,
+        failed_orders: (orders || []).filter((order) => ['rejected', 'amount_mismatch'].includes(order.status)).length,
+        total_amount: roundNumber(successfulOrders.reduce((sum, order) => sum + normalizeNumber(order.paid_amount, normalizeNumber(order.expected_amount, 0)), 0), 2),
+        total_points: roundNumber(successfulOrders.reduce((sum, order) => sum + normalizeNumber(order.points_amount, 0), 0), 1),
+        paid_rate: totalOrders > 0 ? roundNumber((paidOrders / totalOrders) * 100, 2) : 0,
+        claim_rate: paidOrders > 0 ? roundNumber((claimedOrders / paidOrders) * 100, 2) : 0
+    };
+}
+
+function buildFinanceSummary(paymentOrders, shopOrders, ledgerRows, balanceRows) {
+    const successfulPayments = (paymentOrders || []).filter(isSuccessOrder);
+    const nonRefundedShopOrders = (shopOrders || []).filter((order) => String(order.refund_status || 'none') !== 'refunded');
+    const refundedShopOrders = (shopOrders || []).filter((order) => String(order.refund_status || 'none') === 'refunded');
+
+    const pointsInflow = roundNumber((ledgerRows || [])
+        .filter((entry) => normalizeNumber(entry.amount, 0) > 0)
+        .reduce((sum, entry) => sum + normalizeNumber(entry.amount, 0), 0), 1);
+    const pointsOutflow = roundNumber((ledgerRows || [])
+        .filter((entry) => normalizeNumber(entry.amount, 0) < 0)
+        .reduce((sum, entry) => sum + Math.abs(normalizeNumber(entry.amount, 0)), 0), 1);
+
+    return {
+        recharge_amount: roundNumber(successfulPayments.reduce((sum, order) => sum + normalizeNumber(order.paid_amount, normalizeNumber(order.expected_amount, 0)), 0), 2),
+        recharge_points: roundNumber(successfulPayments.reduce((sum, order) => sum + normalizeNumber(order.points_amount, 0), 0), 1),
+        recharge_order_count: successfulPayments.length,
+        shop_points_spent: roundNumber(nonRefundedShopOrders.reduce((sum, order) => sum + normalizeNumber(order.price_paid, 0), 0), 1),
+        shop_order_count: nonRefundedShopOrders.length,
+        refunded_shop_points: roundNumber(refundedShopOrders.reduce((sum, order) => sum + normalizeNumber(order.price_paid, 0), 0), 1),
+        refunded_shop_order_count: refundedShopOrders.length,
+        points_inflow: pointsInflow,
+        points_outflow: pointsOutflow,
+        net_points_flow: roundNumber(pointsInflow - pointsOutflow, 1),
+        circulating_points: roundNumber((balanceRows || []).reduce((sum, row) => sum + normalizeNumber(row.total_balance, 0), 0), 1),
+        paid_balance: roundNumber((balanceRows || []).reduce((sum, row) => sum + normalizeNumber(row.paid_balance, 0), 0), 1),
+        bonus_balance: roundNumber((balanceRows || []).reduce((sum, row) => sum + normalizeNumber(row.bonus_balance, 0), 0), 1)
+    };
+}
+
+function buildPointsBreakdown(ledgerRows) {
+    const categoryMap = new Map();
+
+    (ledgerRows || []).forEach((entry) => {
+        const category = classifyLedgerCategory(entry);
+        if (!categoryMap.has(category.key)) {
+            categoryMap.set(category.key, {
+                key: category.key,
+                label: category.label,
+                inflow: 0,
+                outflow: 0
+            });
+        }
+
+        const row = categoryMap.get(category.key);
+        const amount = normalizeNumber(entry.amount, 0);
+        if (amount >= 0) {
+            row.inflow += amount;
+        } else {
+            row.outflow += Math.abs(amount);
+        }
+    });
+
+    return Array.from(categoryMap.values())
+        .map((item) => ({
+            ...item,
+            inflow: roundNumber(item.inflow, 1),
+            outflow: roundNumber(item.outflow, 1),
+            net: roundNumber(item.inflow - item.outflow, 1)
+        }))
+        .sort((left, right) => Math.abs(right.net) - Math.abs(left.net));
+}
+
+function buildBusinessBreakdown({ paymentOrders, shopOrders, balanceRows, sitewideSummary }) {
+    const mockOrders = (paymentOrders || []).filter((order) => order.provider === 'mock');
+    const successfulMockOrders = mockOrders.filter(isSuccessOrder);
+    const orderCount = (paymentOrders || []).length;
+
+    return [
+        {
+            title: '充值收入',
+            description: `近期开出的支付订单 ${orderCount} 笔，成功 ${sitewideSummary.recharge_order_count} 笔。`,
+            metric: `¥${sitewideSummary.recharge_amount.toLocaleString('zh-CN', { minimumFractionDigits: sitewideSummary.recharge_amount % 1 ? 2 : 0, maximumFractionDigits: 2 })}`,
+            meta: `${sitewideSummary.recharge_points.toLocaleString('zh-CN')} 积分入账`
+        },
+        {
+            title: '商城消费',
+            description: `商城已消费 ${sitewideSummary.shop_order_count} 笔，退款 ${sitewideSummary.refunded_shop_order_count} 笔。`,
+            metric: `${sitewideSummary.shop_points_spent.toLocaleString('zh-CN')} 积分`,
+            meta: sitewideSummary.refunded_shop_points > 0
+                ? `已退款 ${sitewideSummary.refunded_shop_points.toLocaleString('zh-CN')} 积分`
+                : '当前无退款冲销'
+        },
+        {
+            title: '模拟支付',
+            description: '用于临时直到账的充值记录，也会进入标准支付订单。',
+            metric: `${successfulMockOrders.length.toLocaleString('zh-CN')} 笔`,
+            meta: `${roundNumber(successfulMockOrders.reduce((sum, order) => sum + normalizeNumber(order.points_amount, 0), 0), 1).toLocaleString('zh-CN')} 积分`
+        },
+        {
+            title: '当前积分存量',
+            description: `活跃余额分布在 ${(balanceRows || []).length.toLocaleString('zh-CN')} 个用户/站点账户中。`,
+            metric: `${sitewideSummary.circulating_points.toLocaleString('zh-CN')} 积分`,
+            meta: `付费 ${sitewideSummary.paid_balance.toLocaleString('zh-CN')} · 奖励 ${sitewideSummary.bonus_balance.toLocaleString('zh-CN')}`
+        }
+    ];
 }
 
 module.exports = async function handler(req, res) {
@@ -215,85 +595,39 @@ module.exports = async function handler(req, res) {
 
     try {
         const { supabase, requestSupabase, user } = await requireAdmin(req);
-        const scopedClient = requestSupabase || supabase;
+        const scopedClient = supabase || requestSupabase;
         const site = typeof req.query?.site === 'string' && req.query.site.trim() ? req.query.site.trim() : null;
         const days = Number.parseInt(req.query?.days, 10);
         const normalizedDays = Number.isFinite(days) && days > 0 ? Math.min(days, 365) : 30;
         const daysAgoIso = getIsoDaysAgo(normalizedDays);
         const trendSinceIso = getIsoHoursAgo(24);
 
-        let overviewPromise = scopedClient.rpc('get_payment_overview', {
-            p_days: normalizedDays,
-            p_site: site
-        });
-
-        let recentOrdersQuery = scopedClient
-            .from('payment_orders')
-            .select('id, provider, provider_order_no, package_name, paid_amount, points_amount, status, user_id, created_at, paid_at, claimed_at, site, last_error, sign_verified, amount_verified')
-            .gte('created_at', daysAgoIso)
-            .order('created_at', { ascending: false })
-            .limit(200);
-
-        let recentEventsQuery = scopedClient
-            .from('payment_events')
-            .select('id, payment_order_id, provider, provider_order_no, event_type, signature_valid, amount_valid, processing_result, error_message, created_at')
-            .gte('created_at', daysAgoIso)
-            .order('created_at', { ascending: false })
-            .limit(250);
-
-        let trendQuery = scopedClient
-            .from('payment_events')
-            .select('provider, provider_order_no, payment_order_id, created_at, signature_valid, amount_valid, processing_result, error_message')
-            .gte('created_at', trendSinceIso)
-            .order('created_at', { ascending: true })
-            .limit(500);
-
-        let unclaimedPaidQuery = scopedClient
-            .from('payment_orders')
-            .select('id', { head: true, count: 'exact' })
-            .eq('status', 'paid')
-            .is('user_id', null)
-            .gte('created_at', daysAgoIso);
-
-        if (site) {
-            recentOrdersQuery = recentOrdersQuery.eq('site', site);
-            unclaimedPaidQuery = unclaimedPaidQuery.eq('site', site);
-        }
-
         const [
-            { data: overview, error: overviewError },
-            { data: orderRows, error: recentError },
-            { data: eventRows, error: eventError },
-            { data: trendRows, error: trendError },
-            { count: unclaimedPaidCount, error: unclaimedError }
+            orderRows,
+            eventRows,
+            shopOrders,
+            pointsLedgerRows,
+            pointsBalanceRows
         ] = await Promise.all([
-            overviewPromise,
-            recentOrdersQuery,
-            recentEventsQuery,
-            trendQuery,
-            unclaimedPaidQuery
+            fetchPaymentOrders(scopedClient, daysAgoIso, site),
+            fetchPaymentEvents(scopedClient, daysAgoIso),
+            fetchShopOrders(scopedClient, daysAgoIso, site),
+            fetchPointsLedger(scopedClient, daysAgoIso, site),
+            fetchPointsBalances(scopedClient, site)
         ]);
 
-        if (overviewError) throw overviewError;
-        if (recentError) throw recentError;
-        if (eventError) throw eventError;
-        if (trendError) throw trendError;
-        if (unclaimedError) throw unclaimedError;
+        const overview = buildOverview(orderRows || []);
 
         const siteOrderIds = new Set((orderRows || []).map((order) => order.id).filter(Boolean));
         const siteOrderNumbers = new Set((orderRows || []).map((order) => order.provider_order_no).filter(Boolean));
-        const scopedEvents = site
-            ? (eventRows || []).filter((event) => (
+        const scopedEvents = (eventRows || []).filter((event) => {
+            if (!site) return true;
+            return (
                 (event.payment_order_id && siteOrderIds.has(event.payment_order_id))
                 || (event.provider_order_no && siteOrderNumbers.has(event.provider_order_no))
-            ))
-            : (eventRows || []);
-        const scopedTrendEvents = site
-            ? (trendRows || []).filter((event) => (
-                (event.payment_order_id && siteOrderIds.has(event.payment_order_id))
-                || (event.provider_order_no && siteOrderNumbers.has(event.provider_order_no))
-            ))
-            : (trendRows || []);
+            );
+        });
+        const scopedTrendEvents = scopedEvents.filter((event) => new Date(event.created_at).getTime() >= new Date(trendSinceIso).getTime());
 
         const recentOrders = (orderRows || []).slice(0, 20);
         const recentOrderAnomalies = (orderRows || [])
@@ -319,18 +653,26 @@ module.exports = async function handler(req, res) {
             .slice(0, 20);
 
         const anomalySummary = {
-            review_orders: Number(overview?.review_orders || 0),
-            failed_orders: Number(overview?.failed_orders || 0),
-            unclaimed_paid_orders: Number(unclaimedPaidCount || 0),
+            review_orders: Number(overview.review_orders || 0),
+            failed_orders: Number(overview.failed_orders || 0),
+            unclaimed_paid_orders: (orderRows || []).filter((order) => order.status === 'paid' && !order.user_id).length,
             recent_event_anomalies: recentEventAnomalies.length,
             duplicate_webhook_orders: duplicateWebhookOrders
         };
 
         const provider_stats = buildProviderStats(orderRows || []);
         const trend_24h = buildTrend24h(scopedTrendEvents);
+        const sitewide_summary = buildFinanceSummary(orderRows || [], shopOrders || [], pointsLedgerRows || [], pointsBalanceRows || []);
+        const points_breakdown = buildPointsBreakdown(pointsLedgerRows || []);
+        const business_breakdown = buildBusinessBreakdown({
+            paymentOrders: orderRows || [],
+            shopOrders: shopOrders || [],
+            balanceRows: pointsBalanceRows || [],
+            sitewideSummary: sitewide_summary
+        });
 
         await writeAdminAuditLog({
-            supabase: scopedClient,
+            supabase: requestSupabase || scopedClient,
             adminId: user.id,
             actionType: 'payments.summary.view',
             details: {
@@ -345,6 +687,9 @@ module.exports = async function handler(req, res) {
             anomaly_summary: anomalySummary,
             provider_stats,
             trend_24h,
+            sitewide_summary,
+            points_breakdown,
+            business_breakdown,
             recent_anomalies: recentAnomalies,
             recent_orders: recentOrders || []
         });

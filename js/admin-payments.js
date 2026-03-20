@@ -31,6 +31,20 @@
             : '¥0';
     }
 
+    function formatPoints(value) {
+        const num = Number(value || 0);
+        return Number.isFinite(num)
+            ? `${num.toLocaleString('zh-CN', { minimumFractionDigits: num % 1 ? 1 : 0, maximumFractionDigits: 1 })} 积分`
+            : '0 积分';
+    }
+
+    function formatSignedPoints(value) {
+        const num = Number(value || 0);
+        if (!Number.isFinite(num)) return '0 积分';
+        const sign = num > 0 ? '+' : '';
+        return `${sign}${num.toLocaleString('zh-CN', { minimumFractionDigits: num % 1 ? 1 : 0, maximumFractionDigits: 1 })} 积分`;
+    }
+
     function formatPercent(value) {
         const num = Number(value || 0);
         return Number.isFinite(num) ? `${num.toFixed(2).replace(/\.00$/, '')}%` : '0%';
@@ -60,6 +74,15 @@
             expired: '已过期'
         };
         return map[String(status || '')] || String(status || '未知');
+    }
+
+    function getProviderLabel(provider) {
+        const map = {
+            mock: '模拟支付',
+            afdian: '爱发电',
+            hupijiao: '虎皮椒'
+        };
+        return map[String(provider || '').trim().toLowerCase()] || String(provider || '未知通道');
     }
 
     function getSeverityLabel(severity) {
@@ -251,11 +274,15 @@
         target.innerHTML = providerStats.map((item) => `
             <div class="payments-provider-row">
                 <div class="payments-provider-copy">
-                    <div class="payments-provider-name">${escapeHtml(item.provider || 'unknown')}</div>
+                    <div class="payments-provider-name">${escapeHtml(getProviderLabel(item.provider))}</div>
                     <div class="payments-provider-meta">
                         ${escapeHtml(formatNumber(item.total_orders))} 单
                         · 支付成功 ${escapeHtml(formatPercent(item.paid_rate))}
                         · 认领 ${escapeHtml(formatPercent(item.claim_rate))}
+                    </div>
+                    <div class="payments-provider-extra">
+                        <span>${escapeHtml(formatCurrency(item.total_amount))}</span>
+                        <span>${escapeHtml(formatPoints(item.total_points))}</span>
                     </div>
                 </div>
                 <div class="payments-provider-badges">
@@ -264,6 +291,104 @@
                 </div>
             </div>
         `).join('');
+    }
+
+    function renderSitewideSummary(data) {
+        const target = document.getElementById('paymentsSitewideGrid');
+        if (!target) return;
+
+        const summary = data?.sitewide_summary || {};
+        const cards = [
+            {
+                label: '充值收入',
+                value: formatCurrency(summary.recharge_amount),
+                hint: `${formatNumber(summary.recharge_order_count)} 笔充值 · ${formatPoints(summary.recharge_points)}`
+            },
+            {
+                label: '商城消费',
+                value: formatPoints(summary.shop_points_spent),
+                hint: `${formatNumber(summary.shop_order_count)} 笔消费 · 退款 ${formatPoints(summary.refunded_shop_points)}`
+            },
+            {
+                label: '积分流入',
+                value: formatPoints(summary.points_inflow),
+                hint: '包含充值、兑换码、奖励和管理入账'
+            },
+            {
+                label: '积分流出',
+                value: formatPoints(summary.points_outflow),
+                hint: '包含商城消费、内容解锁、验证和管理扣减',
+                tone: 'warning'
+            },
+            {
+                label: '净积分流动',
+                value: formatSignedPoints(summary.net_points_flow),
+                hint: '流入减去流出后的净变化'
+            },
+            {
+                label: '当前流通余额',
+                value: formatPoints(summary.circulating_points),
+                hint: `付费 ${formatPoints(summary.paid_balance)} · 奖励 ${formatPoints(summary.bonus_balance)}`
+            }
+        ];
+
+        target.innerHTML = cards.map((card) => `
+            <div class="payments-kpi-card ${card.tone ? `is-${card.tone}` : ''}">
+                <div class="payments-kpi-label">${escapeHtml(card.label)}</div>
+                <div class="payments-kpi-value">${escapeHtml(card.value)}</div>
+                <div class="payments-kpi-hint">${escapeHtml(card.hint)}</div>
+            </div>
+        `).join('');
+    }
+
+    function renderBusinessBreakdown(data) {
+        const target = document.getElementById('paymentsBusinessBreakdown');
+        if (!target) return;
+        const items = Array.isArray(data?.business_breakdown) ? data.business_breakdown : [];
+
+        if (!items.length) {
+            target.innerHTML = '<div class="payments-empty-state">当前暂无全站业务收支数据。</div>';
+            return;
+        }
+
+        target.innerHTML = items.map((item) => `
+            <div class="payments-breakdown-card">
+                <div class="payments-breakdown-top">
+                    <div class="payments-breakdown-title">${escapeHtml(item.title || '业务项')}</div>
+                    <div class="payments-breakdown-metric">${escapeHtml(item.metric || '—')}</div>
+                </div>
+                <div class="payments-breakdown-description">${escapeHtml(item.description || '')}</div>
+                <div class="payments-breakdown-meta">${escapeHtml(item.meta || '')}</div>
+            </div>
+        `).join('');
+    }
+
+    function renderPointsBreakdown(data) {
+        const target = document.getElementById('paymentsPointsBreakdown');
+        if (!target) return;
+        const items = Array.isArray(data?.points_breakdown) ? data.points_breakdown : [];
+
+        if (!items.length) {
+            target.innerHTML = '<div class="payments-empty-state">当前时间范围内暂无积分流水可汇总。</div>';
+            return;
+        }
+
+        target.innerHTML = `
+            <div class="payments-points-table">
+                ${items.map((item) => `
+                    <div class="payments-points-row">
+                        <div class="payments-points-copy">
+                            <div class="payments-points-label">${escapeHtml(item.label || item.key || '未分类')}</div>
+                            <div class="payments-points-net ${Number(item.net || 0) < 0 ? 'is-negative' : 'is-positive'}">${escapeHtml(formatSignedPoints(item.net))}</div>
+                        </div>
+                        <div class="payments-points-values">
+                            <span>流入 ${escapeHtml(formatPoints(item.inflow))}</span>
+                            <span>流出 ${escapeHtml(formatPoints(item.outflow))}</span>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
     }
 
     function renderTrend(data) {
@@ -325,7 +450,7 @@
                 <div class="payments-anomaly-message">${escapeHtml(item.message || '')}</div>
                 <div class="payments-anomaly-meta">
                     <span>${escapeHtml(item.type === 'event' ? '回调事件' : '订单')}</span>
-                    <span>${escapeHtml(item.provider || 'unknown')}</span>
+                    <span>${escapeHtml(getProviderLabel(item.provider))}</span>
                     <span>${escapeHtml(item.provider_order_no || '无订单号')}</span>
                     <span>${escapeHtml(formatDateTime(item.created_at))}</span>
                 </div>
@@ -363,7 +488,7 @@
                             <tr>
                                 <td>
                                     <div class="payments-order-no">${escapeHtml(order.provider_order_no || '—')}</div>
-                                    <div class="payments-order-provider">${escapeHtml(order.provider || '—')}</div>
+                                    <div class="payments-order-provider">${escapeHtml(getProviderLabel(order.provider))}</div>
                                 </td>
                                 <td>${escapeHtml(order.package_name || '未匹配套餐')}</td>
                                 <td>${escapeHtml(formatCurrency(order.paid_amount))}</td>
@@ -463,6 +588,9 @@
         state.summary = payload;
         renderOverviewCards(payload);
         renderProviderStats(payload);
+        renderSitewideSummary(payload);
+        renderBusinessBreakdown(payload);
+        renderPointsBreakdown(payload);
         renderTrend(payload);
         renderAnomalies(payload);
         renderOrders(payload);

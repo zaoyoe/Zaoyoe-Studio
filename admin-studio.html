@@ -5428,8 +5428,8 @@
                         <div class="payments-section">
                             <div class="payments-section-header">
                                 <div>
-                                    <h2>支付概览</h2>
-                                    <p>统一查看支付结果、认领表现、异常队列和测试数据收尾。</p>
+                                    <h2>支付通道对账</h2>
+                                    <p>统一查看充值支付结果、认领表现、异常队列和测试数据收尾。</p>
                                 </div>
                             </div>
                             <div class="payments-overview-grid" id="paymentsOverviewGrid"></div>
@@ -5465,6 +5465,16 @@
 
                             <div class="payments-panel">
                                 <div class="payments-panel-header">
+                                    <h3>最近订单</h3>
+                                    <span>人工核对支付、认领与站点归属</span>
+                                </div>
+                                <div class="payments-orders-table" id="paymentsOrdersTable"></div>
+                            </div>
+                        </div>
+
+                        <div class="payments-section">
+                            <div class="payments-panel payments-panel-wide">
+                                <div class="payments-panel-header">
                                     <h3>测试数据清理</h3>
                                     <span>专门清理 AUTO_CDX_* 与 codex.*@example.com</span>
                                 </div>
@@ -5481,12 +5491,30 @@
                         </div>
 
                         <div class="payments-section">
-                            <div class="payments-panel payments-panel-wide">
-                                <div class="payments-panel-header">
-                                    <h3>最近订单</h3>
-                                    <span>人工核对支付、认领与站点归属</span>
+                            <div class="payments-section-header">
+                                <div>
+                                    <h2>全站资金 / 积分收支</h2>
+                                    <p>单独汇总充值入账、商城消耗、积分流通和业务净流向。</p>
                                 </div>
-                                <div class="payments-orders-table" id="paymentsOrdersTable"></div>
+                            </div>
+                            <div class="payments-sitewide-grid" id="paymentsSitewideGrid"></div>
+                        </div>
+
+                        <div class="payments-section payments-two-column">
+                            <div class="payments-panel">
+                                <div class="payments-panel-header">
+                                    <h3>业务收支拆分</h3>
+                                    <span>把充值、商城、模拟支付和积分存量拆开看</span>
+                                </div>
+                                <div class="payments-business-breakdown" id="paymentsBusinessBreakdown"></div>
+                            </div>
+
+                            <div class="payments-panel">
+                                <div class="payments-panel-header">
+                                    <h3>积分流水分类</h3>
+                                    <span>按充值、奖励、商城消费、验证消耗等分类聚合</span>
+                                </div>
+                                <div class="payments-points-breakdown" id="paymentsPointsBreakdown"></div>
                             </div>
                         </div>
                     </div>

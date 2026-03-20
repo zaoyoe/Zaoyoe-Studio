@@ -146,6 +146,27 @@ async function getAuthenticatedUser(req) {
     return { token, user: adminData.user };
 }
 
+async function requireAuthenticatedUser(req) {
+    const { user, token, error } = await getAuthenticatedUser(req);
+    if (!user) {
+        const authError = new Error(error?.message || 'Unauthorized');
+        authError.statusCode = 401;
+        throw authError;
+    }
+
+    const requestSupabase = createSupabaseRequestClient(req);
+    const supabase = getSupabaseServiceRoleKey()
+        ? getSupabaseAdmin()
+        : requestSupabase;
+
+    return {
+        user,
+        token,
+        supabase,
+        requestSupabase
+    };
+}
+
 async function requireAdmin(req) {
     const { user, error } = await getAuthenticatedUser(req);
     if (!user) {
@@ -227,13 +248,16 @@ async function writeAdminAuditLog({ supabase, adminId, targetUserId = null, acti
 }
 
 module.exports = {
+    createSupabaseRequestClient,
     getEnv,
     getSupabaseAdmin,
+    getAuthenticatedUser,
     getBearerToken,
     getSupabasePublishableKey,
     getSupabasePublicClient,
     getSupabaseUrl,
     parseJsonBody,
+    requireAuthenticatedUser,
     requireAdmin,
     sendJson,
     writeAdminAuditLog

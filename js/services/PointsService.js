@@ -33,6 +33,11 @@
         _cachedUserId: null,
         isUnsafeDirectRechargeAllowed,
 
+        async _getAccessToken() {
+            const { data: { session } } = await supabase.auth.getSession();
+            return session?.access_token || '';
+        },
+
         async _getUserId() {
             if (this._cachedUserId) return this._cachedUserId;
             const { data: { session } } = await supabase.auth.getSession();
@@ -138,33 +143,29 @@
                 throw new Error('当前未开启模拟支付，请使用真实支付流程');
             }
 
-            const userId = await this._getUserId();
-            if (!userId) throw new Error('请先登录');
+            const token = await this._getAccessToken();
+            if (!token) throw new Error('请先登录');
 
-            // Use passed package data or fetch from DB
-            let pkg = packageData;
-            if (!pkg) {
-                const { data, error } = await supabase
-                    .from('points_packages')
-                    .select('*')
-                    .eq('id', packageId)
-                    .single();
-                if (error || !data) throw new Error('套餐不存在');
-                pkg = data;
-            }
-
-            // Single RPC call — the only real network request
-            const { error: rpcError } = await supabase.rpc('fn_recharge_points', {
-                target_user_id: userId,
-                p_paid: pkg.points_amount,
-                p_bonus: pkg.bonus_points || 0,
-                p_reason: `模拟充值: ${pkg.name}`,
-                p_reference_id: `mock_${pkg.id}_${Date.now()}`,
-                p_site: window.SiteConfig?.site || 'cn'
+            const response = await fetch('/api/payments/mock/complete', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    package_id: packageId,
+                    order_no: `MOCK_PKG_${Date.now()}_${Math.random().toString(16).slice(2, 8).toUpperCase()}`,
+                    site: window.SiteConfig?.site || 'cn',
+                    package_name: packageData?.name || ''
+                })
             });
 
-            if (rpcError) throw rpcError;
-            return { success: true };
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload?.success === false) {
+                throw new Error(payload?.message || '模拟支付失败');
+            }
+
+            return payload;
         },
 
         /**
@@ -175,25 +176,36 @@
                 throw new Error('当前未开启模拟支付，请使用真实支付流程');
             }
 
-            const userId = await this._getUserId();
-            if (!userId) throw new Error('请先登录');
-
             const normalizedAmount = normalizePointValue(pointsAmount);
             if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
                 throw new Error('请输入大于 0 的充值积分');
             }
 
-            const { error: rpcError } = await supabase.rpc('fn_recharge_points', {
-                target_user_id: userId,
-                p_paid: normalizedAmount,
-                p_bonus: 0,
-                p_reason: 'custom_recharge',
-                p_reference_id: `custom_recharge_${Date.now()}`,
-                p_site: window.SiteConfig?.site || 'cn'
+            const token = await this._getAccessToken();
+            if (!token) throw new Error('请先登录');
+
+            const response = await fetch('/api/payments/mock/complete', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    points_amount: normalizedAmount,
+                    order_no: `MOCK_CUSTOM_${Date.now()}_${Math.random().toString(16).slice(2, 8).toUpperCase()}`,
+                    site: window.SiteConfig?.site || 'cn'
+                })
             });
 
-            if (rpcError) throw rpcError;
-            return { success: true, amount: normalizedAmount };
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload?.success === false) {
+                throw new Error(payload?.message || '自定义模拟支付失败');
+            }
+
+            return {
+                ...payload,
+                amount: normalizedAmount
+            };
         }
     };
 
