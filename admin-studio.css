@@ -12941,50 +12941,60 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     box-shadow: 0 0 8px rgba(96, 165, 250, 0.18);
 }
 
-.payments-info-bubble {
-    position: absolute;
-    right: -6px;
-    top: calc(100% + 12px);
-    transform: translateY(8px);
-    min-width: 200px;
-    max-width: 280px;
+.payments-floating-tooltip {
+    position: fixed;
+    left: 0;
+    top: 0;
+    max-width: min(320px, calc(100vw - 24px));
     padding: 12px 14px;
-    border-radius: 14px;
-    border: 1px solid rgba(191, 219, 254, 0.18);
-    background: linear-gradient(180deg, rgba(30, 41, 59, 0.58), rgba(15, 23, 42, 0.5));
-    backdrop-filter: blur(18px) saturate(145%);
-    -webkit-backdrop-filter: blur(18px) saturate(145%);
-    color: #dbeafe;
-    font-size: 0.78rem;
-    line-height: 1.55;
-    text-align: left;
-    box-shadow: 0 20px 50px rgba(15, 23, 42, 0.42);
-    opacity: 0;
+    border-radius: 16px;
+    border: 1px solid rgba(191, 219, 254, 0.22);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02)),
+        linear-gradient(180deg, rgba(15, 23, 42, 0.42), rgba(15, 23, 42, 0.3));
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.12),
+        0 18px 50px rgba(15, 23, 42, 0.38);
+    color: #e5f0ff;
+    font-size: 0.79rem;
+    line-height: 1.65;
     pointer-events: none;
-    visibility: hidden;
-    transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s ease;
-    z-index: 40;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity 0.16s ease, transform 0.16s ease;
+    z-index: 9999;
     white-space: normal;
 }
 
-.payments-info-bubble::before {
+.payments-floating-tooltip.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.payments-floating-tooltip::before {
     content: '';
     position: absolute;
-    right: 16px;
-    bottom: calc(100% - 6px);
-    width: 12px;
-    height: 12px;
-    background: rgba(24, 34, 48, 0.72);
-    border-top: 1px solid rgba(191, 219, 254, 0.18);
-    border-left: 1px solid rgba(191, 219, 254, 0.18);
+    top: -7px;
+    right: 20px;
+    width: 14px;
+    height: 14px;
+    border-top: 1px solid rgba(191, 219, 254, 0.22);
+    border-left: 1px solid rgba(191, 219, 254, 0.22);
+    background: rgba(26, 37, 53, 0.52);
+    backdrop-filter: blur(18px) saturate(160%);
+    -webkit-backdrop-filter: blur(18px) saturate(160%);
     transform: rotate(45deg);
 }
 
-.payments-info-chip:hover .payments-info-bubble,
-.payments-info-chip:focus-visible .payments-info-bubble {
-    opacity: 1;
-    visibility: visible;
-    transform: translateY(0);
+.payments-floating-tooltip.is-above::before {
+    top: auto;
+    bottom: -7px;
+    border-top: none;
+    border-left: none;
+    border-right: 1px solid rgba(191, 219, 254, 0.22);
+    border-bottom: 1px solid rgba(191, 219, 254, 0.22);
 }
 
 .payments-kpi-card,
@@ -13395,29 +13405,37 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
 .payments-breakdown-footer,
 .payments-points-footer {
-    display: flex;
-    align-items: flex-end;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
     gap: 16px;
     min-width: 0;
-    flex-wrap: wrap;
 }
 
 .payments-breakdown-footer .payments-breakdown-meta,
 .payments-points-footer .payments-points-values {
-    flex: 1 1 180px;
     min-width: 0;
+}
+
+.payments-breakdown-stat,
+.payments-points-stat {
+    justify-self: end;
+    max-width: min(180px, 100%);
+    padding: 8px 12px;
+    border-radius: 14px;
+    background: linear-gradient(180deg, rgba(15, 23, 42, 0.26), rgba(15, 23, 42, 0.12));
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .payments-points-net {
     font-size: 1rem;
     font-weight: 700;
-    text-align: right;
+    text-align: left;
     max-width: none;
     line-height: 1.35;
     word-break: break-word;
     overflow-wrap: anywhere;
-    flex: 0 0 auto;
 }
 
 .payments-points-values {
@@ -13641,13 +13659,13 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
     .payments-breakdown-footer,
     .payments-points-footer {
-        flex-direction: column;
-        align-items: flex-start;
+        grid-template-columns: 1fr;
+        align-items: start;
     }
 
-    .payments-breakdown-metric,
-    .payments-points-net {
-        text-align: left;
+    .payments-breakdown-stat,
+    .payments-points-stat {
+        justify-self: start;
     }
 
     .payments-toolbar-highlights {

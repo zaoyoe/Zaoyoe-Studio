@@ -11,7 +11,9 @@
         summary: null,
         cleanupPreview: null,
         requestToken: 0,
-        viewCache: {}
+        viewCache: {},
+        tooltipElement: null,
+        tooltipTarget: null
     };
 
     function escapeHtml(value) {
@@ -64,11 +66,68 @@
 
     function renderInfoChip(help) {
         if (!help) return '';
-        return `
-            <span class="payments-info-chip" tabindex="0" aria-label="${escapeHtml(help)}">
-                <span class="payments-info-bubble" role="tooltip">${escapeHtml(help)}</span>
-            </span>
-        `;
+        return `<span class="payments-info-chip" tabindex="0" role="note" data-tooltip="${escapeHtml(help)}" aria-label="${escapeHtml(help)}"></span>`;
+    }
+
+    function ensureTooltipElement() {
+        if (state.tooltipElement && document.body.contains(state.tooltipElement)) {
+            return state.tooltipElement;
+        }
+
+        const element = document.createElement('div');
+        element.className = 'payments-floating-tooltip';
+        element.hidden = true;
+        document.body.appendChild(element);
+        state.tooltipElement = element;
+        return element;
+    }
+
+    function positionTooltip(target, tooltip) {
+        if (!target || !tooltip) return;
+
+        const rect = target.getBoundingClientRect();
+        const width = tooltip.offsetWidth || 260;
+        const height = tooltip.offsetHeight || 64;
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+        const gutter = 14;
+
+        let left = rect.left + rect.width / 2 - width / 2;
+        left = Math.max(gutter, Math.min(left, viewportWidth - width - gutter));
+
+        let top = rect.bottom + 14;
+        let placeAbove = false;
+        if (top + height + gutter > viewportHeight) {
+            placeAbove = true;
+            top = rect.top - height - 14;
+        }
+        top = Math.max(gutter, top);
+
+        tooltip.style.left = `${left}px`;
+        tooltip.style.top = `${top}px`;
+        tooltip.classList.toggle('is-above', placeAbove);
+    }
+
+    function showInfoTooltip(target) {
+        const help = String(target?.dataset?.tooltip || '').trim();
+        if (!help) return;
+
+        const tooltip = ensureTooltipElement();
+        tooltip.textContent = help;
+        tooltip.hidden = false;
+        tooltip.classList.add('is-visible');
+        positionTooltip(target, tooltip);
+        state.tooltipTarget = target;
+    }
+
+    function hideInfoTooltip() {
+        const tooltip = state.tooltipElement;
+        if (!tooltip) return;
+        tooltip.hidden = true;
+        tooltip.classList.remove('is-visible', 'is-above');
+        tooltip.style.left = '';
+        tooltip.style.top = '';
+        state.tooltipTarget = null;
     }
 
     function formatDateTime(value) {
@@ -555,7 +614,9 @@
                 <div class="payments-breakdown-description">${escapeHtml(item.description || '')}</div>
                 <div class="payments-breakdown-footer">
                     <div class="payments-breakdown-meta">${escapeHtml(item.meta || '')}</div>
-                    <div class="payments-breakdown-metric">${escapeHtml(item.metric || '—')}</div>
+                    <div class="payments-breakdown-stat">
+                        <div class="payments-breakdown-metric">${escapeHtml(item.metric || '—')}</div>
+                    </div>
                 </div>
             </div>
         `).join('');
@@ -584,7 +645,9 @@
                                 <span>流入 ${escapeHtml(formatPoints(item.inflow))}</span>
                                 <span>流出 ${escapeHtml(formatPoints(item.outflow))}</span>
                             </div>
-                            <div class="payments-points-net ${Number(item.net || 0) < 0 ? 'is-negative' : 'is-positive'}">${escapeHtml(formatSignedPoints(item.net))}</div>
+                            <div class="payments-points-stat">
+                                <div class="payments-points-net ${Number(item.net || 0) < 0 ? 'is-negative' : 'is-positive'}">${escapeHtml(formatSignedPoints(item.net))}</div>
+                            </div>
                         </div>
                     </div>
                 `).join('')}
@@ -863,7 +926,29 @@
                     closeRangeMenu();
                 }
             });
+            document.addEventListener('mouseover', (event) => {
+                const chip = event.target.closest('.payments-info-chip[data-tooltip]');
+                if (!chip) return;
+                showInfoTooltip(chip);
+            });
+            document.addEventListener('mouseout', (event) => {
+                const chip = event.target.closest('.payments-info-chip[data-tooltip]');
+                if (!chip) return;
+                hideInfoTooltip();
+            });
+            document.addEventListener('focusin', (event) => {
+                const chip = event.target.closest('.payments-info-chip[data-tooltip]');
+                if (!chip) return;
+                showInfoTooltip(chip);
+            });
+            document.addEventListener('focusout', (event) => {
+                const chip = event.target.closest('.payments-info-chip[data-tooltip]');
+                if (!chip) return;
+                hideInfoTooltip();
+            });
+            window.addEventListener('scroll', hideInfoTooltip, true);
             window.addEventListener('resize', syncTabIndicator);
+            window.addEventListener('resize', hideInfoTooltip);
             state.listenersBound = true;
         }
 
