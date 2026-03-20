@@ -66,7 +66,11 @@
 
     function renderInfoChip(help) {
         if (!help) return '';
-        return `<span class="payments-info-chip" tabindex="0" role="note" data-tooltip="${escapeHtml(help)}" aria-label="${escapeHtml(help)}"></span>`;
+        return `
+            <span class="payments-info-chip" tabindex="0" role="note" data-tooltip="${escapeHtml(help)}" aria-label="${escapeHtml(help)}">
+                <span class="payments-info-glyph" aria-hidden="true"></span>
+            </span>
+        `;
     }
 
     function ensureTooltipElement() {
@@ -607,15 +611,19 @@
 
         target.innerHTML = items.map((item) => `
             <div class="payments-breakdown-card">
-                <div class="payments-content-title-row">
-                    <div class="payments-breakdown-title">${escapeHtml(item.title || '业务项')}</div>
-                    ${renderInfoChip(item.help || '')}
-                </div>
-                <div class="payments-breakdown-description">${escapeHtml(item.description || '')}</div>
-                <div class="payments-breakdown-footer">
-                    <div class="payments-breakdown-meta">${escapeHtml(item.meta || '')}</div>
-                    <div class="payments-breakdown-stat">
-                        <div class="payments-breakdown-metric">${escapeHtml(item.metric || '—')}</div>
+                <div class="payments-content-split">
+                    <div class="payments-content-main">
+                        <div class="payments-content-title-row">
+                            <div class="payments-breakdown-title">${escapeHtml(item.title || '业务项')}</div>
+                            ${renderInfoChip(item.help || '')}
+                        </div>
+                        <div class="payments-breakdown-description">${escapeHtml(item.description || '')}</div>
+                        <div class="payments-breakdown-meta">${escapeHtml(item.meta || '')}</div>
+                    </div>
+                    <div class="payments-content-side">
+                        <div class="payments-breakdown-stat">
+                            <div class="payments-breakdown-metric">${escapeHtml(item.metric || '—')}</div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -636,17 +644,21 @@
             <div class="payments-points-table">
                 ${items.map((item) => `
                     <div class="payments-points-row">
-                        <div class="payments-content-title-row">
-                            <div class="payments-points-label">${escapeHtml(item.label || item.key || '未分类')}</div>
-                            ${renderInfoChip(item.help || '')}
-                        </div>
-                        <div class="payments-points-footer">
-                            <div class="payments-points-values">
-                                <span>流入 ${escapeHtml(formatPoints(item.inflow))}</span>
-                                <span>流出 ${escapeHtml(formatPoints(item.outflow))}</span>
+                        <div class="payments-content-split">
+                            <div class="payments-content-main">
+                                <div class="payments-content-title-row">
+                                    <div class="payments-points-label">${escapeHtml(item.label || item.key || '未分类')}</div>
+                                    ${renderInfoChip(item.help || '')}
+                                </div>
+                                <div class="payments-points-values">
+                                    <span>流入 ${escapeHtml(formatPoints(item.inflow))}</span>
+                                    <span>流出 ${escapeHtml(formatPoints(item.outflow))}</span>
+                                </div>
                             </div>
-                            <div class="payments-points-stat">
-                                <div class="payments-points-net ${Number(item.net || 0) < 0 ? 'is-negative' : 'is-positive'}">${escapeHtml(formatSignedPoints(item.net))}</div>
+                            <div class="payments-content-side">
+                                <div class="payments-points-stat">
+                                    <div class="payments-points-net ${Number(item.net || 0) < 0 ? 'is-negative' : 'is-positive'}">${escapeHtml(formatSignedPoints(item.net))}</div>
+                                </div>
                             </div>
                         </div>
                     </div>
