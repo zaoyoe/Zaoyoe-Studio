@@ -953,7 +953,7 @@
 
         const items = Array.isArray(data?.trend_24h) ? data.trend_24h : [];
         const maxValue = items.reduce((max, item) => Math.max(max, Number(item.total_events || 0), Number(item.anomaly_events || 0)), 1);
-        const labelStep = isUltraNarrowViewport() ? 6 : (isMobileViewport() ? 4 : 1);
+        const labelStep = isUltraNarrowViewport() ? 8 : (isMobileViewport() ? 6 : 1);
 
         if (!items.length) {
             target.innerHTML = '<div class="payments-empty-state">最近 24 小时暂无回调数据。</div>';
@@ -967,7 +967,10 @@
                     const totalHeight = Math.max(6, Math.round((Number(item.total_events || 0) / maxValue) * 100));
                     const anomalyHeight = Math.max(0, Math.round((Number(item.anomaly_events || 0) / maxValue) * 100));
                     const rawLabel = String(item.label || '');
-                    const shortLabel = rawLabel.includes(' ') ? rawLabel.split(' ')[1] : rawLabel.slice(6);
+                    const timePart = rawLabel.includes(' ') ? rawLabel.split(' ')[1] : rawLabel.slice(6);
+                    const shortLabel = isMobileViewport()
+                        ? `${String(timePart || '').slice(0, 2)}时`
+                        : timePart;
                     const showLabel = labelStep === 1 || index % labelStep === 0 || index === items.length - 1;
                     return `
                         <div class="payments-trend-bar ${showLabel ? 'show-label' : ''}" title="${escapeHtml(item.label)} · 总回调 ${escapeHtml(formatNumber(item.total_events))} · 异常 ${escapeHtml(formatNumber(item.anomaly_events))}">

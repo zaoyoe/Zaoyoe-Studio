@@ -13660,9 +13660,9 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     display: flex;
     gap: 12px;
     flex-wrap: wrap;
-    margin-top: 10px;
+    margin-top: 0;
     margin-bottom: 14px;
-    padding-top: 4px;
+    padding: 16px 22px 0;
 }
 
 .payments-cleanup-preview {
@@ -13958,20 +13958,37 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
     .payments-toolbar-shell .toolbar-left {
         order: 1;
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-start;
     }
 
     .payments-toolbar-shell .toolbar-center {
         order: 2;
         justify-self: stretch;
+        display: block;
     }
 
     .payments-toolbar-shell .toolbar-right {
         order: 3;
-        display: grid;
-        grid-template-columns: repeat(4, auto);
+        display: flex;
+        flex-wrap: nowrap;
         justify-content: flex-start;
         align-items: center;
         gap: 10px;
+        overflow-x: auto;
+        scrollbar-width: none;
+        white-space: nowrap;
+    }
+
+    .payments-toolbar-shell .toolbar-right::-webkit-scrollbar {
+        display: none;
+    }
+
+    .payments-toolbar-shell .toolbar-right > .toolbar-icon-btn,
+    .payments-toolbar-shell .toolbar-right > .auto-refresh-toggle,
+    .payments-toolbar-shell .toolbar-right > .payments-last-update {
+        flex: 0 0 auto;
     }
 
     .payments-toolbar-highlights {
@@ -13984,13 +14001,23 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     .payments-highlight-pill {
         width: 100%;
         justify-content: center;
+        max-width: 100%;
+        overflow: hidden;
+    }
+
+    .payments-highlight-pill span {
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     .payments-toolbar-shell .payments-last-update {
-        grid-column: 1 / -1;
-        width: 100%;
+        grid-column: auto;
+        width: auto;
         justify-content: flex-start;
-        margin-top: 2px;
+        margin-top: 0;
+        margin-left: 8px;
     }
 
     .kpi-cards-row.payments-kpi-grid {
@@ -14268,26 +14295,33 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     }
 
     .payments-toolbar-shell .toolbar-right {
-        grid-template-columns: repeat(2, auto);
-        gap: 10px;
+        gap: 8px;
+        align-items: center;
+        justify-content: flex-start;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        white-space: nowrap;
     }
 
     .payments-toolbar-shell .payments-last-update {
         margin-top: 0;
+        margin-left: 8px;
+        white-space: nowrap;
     }
 
     .payments-points-table {
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 14px;
+        gap: 12px;
     }
 
     .payments-points-row {
-        padding: 16px 16px 14px;
+        padding: 14px 14px 12px;
+        gap: 10px;
     }
 
     .payments-points-row .payments-row-head {
         grid-template-columns: 1fr;
-        gap: 10px;
+        gap: 8px;
     }
 
     .payments-points-row .payments-row-metric-wrap {
@@ -14298,6 +14332,18 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
     .payments-points-row .payments-points-net {
         text-align: left;
+        font-size: 0.98rem;
+        line-height: 1.1;
+    }
+
+    .payments-points-row .payments-points-values {
+        gap: 6px 10px;
+        font-size: 0.78rem;
+    }
+
+    .payments-cleanup-actions {
+        padding: 18px 16px 0;
+        margin-bottom: 12px;
     }
 
     .payments-provider-row,
@@ -14312,9 +14358,14 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     .payments-order-card-grid {
         grid-template-columns: 1fr;
     }
+
+    .payments-points-table {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+    }
 }
 
-@media (max-width: 360px) {
+@media (max-width: 340px) {
     .payments-overview-grid,
     .payments-sitewide-grid,
     .kpi-cards-row.payments-kpi-grid,
@@ -16019,14 +16070,19 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     .analytics-toolbar.payments-toolbar-shell .toolbar-center {
         order: 2;
         justify-self: stretch;
+        display: block;
     }
 
     .analytics-toolbar.payments-toolbar-shell .toolbar-right {
         order: 3;
-        display: grid;
-        grid-template-columns: repeat(4, auto);
+        display: flex;
+        flex-wrap: nowrap;
+        align-items: center;
         justify-content: flex-start;
         gap: 10px;
+        overflow-x: auto;
+        scrollbar-width: none;
+        white-space: nowrap;
     }
 
     .analytics-toolbar.payments-toolbar-shell .payments-toolbar-highlights {
@@ -16041,12 +16097,23 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
         justify-content: center;
         box-sizing: border-box;
         min-width: 0;
+        max-width: 100%;
+        overflow: hidden;
+    }
+
+    .analytics-toolbar.payments-toolbar-shell .payments-highlight-pill span {
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     .analytics-toolbar.payments-toolbar-shell .payments-last-update {
-        grid-column: 1 / -1;
-        width: 100%;
+        grid-column: auto;
+        width: auto;
         justify-content: flex-start;
+        margin-left: 8px;
+        white-space: nowrap;
     }
 }
 
@@ -16074,6 +16141,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
         gap: 8px;
         overflow-x: auto;
         scrollbar-width: none;
+        white-space: nowrap;
     }
 
     .analytics-toolbar.payments-toolbar-shell .toolbar-right > .toolbar-icon-btn,
@@ -16085,6 +16153,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
         flex: 0 0 auto;
         width: auto;
         margin-top: 0;
+        margin-left: 8px;
         white-space: nowrap;
     }
 
