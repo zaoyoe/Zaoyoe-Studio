@@ -5,6 +5,7 @@
 
 // Config cache
 let systemConfigCache = {};
+let paymentChannelSecretStatus = getDefaultPaymentChannelSecretStatus();
 
 function getDefaultCheckinConfig() {
     return {
@@ -19,6 +20,48 @@ function getDefaultRechargeOptionsConfig() {
     return {
         custom_amount_enabled: false,
         mock_payment_enabled: false
+    };
+}
+
+function getDefaultPaymentChannelSecretStatus() {
+    return {
+        afdian_token: { configured: false, source: 'missing', updatedAt: null },
+        hupijiao_api_key: { configured: false, source: 'missing', updatedAt: null },
+        hupijiao_secret_key: { configured: false, source: 'missing', updatedAt: null }
+    };
+}
+
+function getDefaultPaymentChannelsConfig() {
+    const rechargeOptions = normalizeRechargeOptionsConfig(systemConfigCache['recharge_options']);
+    const activeProvider = rechargeOptions.mock_payment_enabled ? 'mock' : 'afdian';
+
+    return {
+        active_provider: activeProvider,
+        providers: {
+            mock: {
+                enabled: true,
+                display_name: '模拟支付',
+                description: '仅建议在正式支付接入前短期使用，开启后将直接到账积分。'
+            },
+            afdian: {
+                enabled: true,
+                display_name: '爱发电',
+                checkout_url: 'https://afdian.com/a/zaoyoe',
+                package_hint: '请在爱发电完成支付后，返回钱包输入订单号领取兑换码。',
+                custom_amount_hint: '建议在支付备注里填写要充值的积分数量，支付后返回钱包输入订单号领取兑换码。'
+            },
+            hupijiao: {
+                enabled: false,
+                display_name: '虎皮椒',
+                checkout_url: '',
+                gateway_url: '',
+                merchant_id: '',
+                return_url: 'https://www.zaoyoe.com',
+                notify_url: '',
+                package_hint: '虎皮椒通道已启用，正式回调与自动发货接入后即可完整使用。',
+                custom_amount_hint: '虎皮椒通道已启用。自定义金额订单能力接入后，这里会直接拉起真实支付。'
+            }
+        }
     };
 }
 
@@ -124,6 +167,55 @@ function normalizeRechargeOptionsConfig(raw) {
     };
 }
 
+function normalizePaymentChannelsConfig(raw) {
+    const defaults = getDefaultPaymentChannelsConfig();
+    const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    const sourceProviders = source.providers && typeof source.providers === 'object' && !Array.isArray(source.providers)
+        ? source.providers
+        : {};
+
+    const normalized = {
+        active_provider: ['mock', 'afdian', 'hupijiao'].includes(source.active_provider)
+            ? source.active_provider
+            : defaults.active_provider,
+        providers: {
+            mock: {
+                enabled: sourceProviders.mock?.enabled !== undefined
+                    ? (sourceProviders.mock.enabled === true || String(sourceProviders.mock.enabled) === 'true')
+                    : defaults.providers.mock.enabled,
+                display_name: String(sourceProviders.mock?.display_name || defaults.providers.mock.display_name).trim() || defaults.providers.mock.display_name,
+                description: String(sourceProviders.mock?.description || defaults.providers.mock.description).trim() || defaults.providers.mock.description
+            },
+            afdian: {
+                enabled: sourceProviders.afdian?.enabled !== undefined
+                    ? (sourceProviders.afdian.enabled === true || String(sourceProviders.afdian.enabled) === 'true')
+                    : defaults.providers.afdian.enabled,
+                display_name: String(sourceProviders.afdian?.display_name || defaults.providers.afdian.display_name).trim() || defaults.providers.afdian.display_name,
+                checkout_url: String(sourceProviders.afdian?.checkout_url || defaults.providers.afdian.checkout_url).trim() || defaults.providers.afdian.checkout_url,
+                package_hint: String(sourceProviders.afdian?.package_hint || defaults.providers.afdian.package_hint).trim() || defaults.providers.afdian.package_hint,
+                custom_amount_hint: String(sourceProviders.afdian?.custom_amount_hint || defaults.providers.afdian.custom_amount_hint).trim() || defaults.providers.afdian.custom_amount_hint
+            },
+            hupijiao: {
+                enabled: sourceProviders.hupijiao?.enabled === true || String(sourceProviders.hupijiao?.enabled) === 'true',
+                display_name: String(sourceProviders.hupijiao?.display_name || defaults.providers.hupijiao.display_name).trim() || defaults.providers.hupijiao.display_name,
+                checkout_url: String(sourceProviders.hupijiao?.checkout_url || defaults.providers.hupijiao.checkout_url).trim(),
+                gateway_url: String(sourceProviders.hupijiao?.gateway_url || defaults.providers.hupijiao.gateway_url).trim(),
+                merchant_id: String(sourceProviders.hupijiao?.merchant_id || defaults.providers.hupijiao.merchant_id).trim(),
+                return_url: String(sourceProviders.hupijiao?.return_url || defaults.providers.hupijiao.return_url).trim() || defaults.providers.hupijiao.return_url,
+                notify_url: String(sourceProviders.hupijiao?.notify_url || defaults.providers.hupijiao.notify_url).trim(),
+                package_hint: String(sourceProviders.hupijiao?.package_hint || defaults.providers.hupijiao.package_hint).trim() || defaults.providers.hupijiao.package_hint,
+                custom_amount_hint: String(sourceProviders.hupijiao?.custom_amount_hint || defaults.providers.hupijiao.custom_amount_hint).trim() || defaults.providers.hupijiao.custom_amount_hint
+            }
+        }
+    };
+
+    if (!normalized.providers[normalized.active_provider]?.enabled) {
+        normalized.providers[normalized.active_provider].enabled = true;
+    }
+
+    return normalized;
+}
+
 function normalizeAffiliateProgramConfig(raw) {
     const defaults = getDefaultAffiliateProgramConfig();
     const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
@@ -203,6 +295,7 @@ async function loadAllSystemConfig() {
         // Render UI
         renderUnlockPricingConfig();
         renderPackagesConfig();
+        renderPaymentChannelsConfig();
         renderChannelsConfig();
         renderRewardsConfig();
         renderSecurityConfig();
@@ -212,6 +305,7 @@ async function loadAllSystemConfig() {
         renderCommentRulesConfig();
         renderVerifyConfig();
         loadAffiliateSettings();
+        loadPaymentChannelSettings();
 
     } catch (err) {
         console.warn('[Config] Load error:', err.message);
@@ -261,6 +355,72 @@ function renderPackagesConfig() {
     if (mockPaymentToggle) {
         mockPaymentToggle.classList.toggle('active', rechargeOptions.mock_payment_enabled);
     }
+}
+
+function getPaymentSecretStatusMessage(secretName) {
+    const status = paymentChannelSecretStatus?.[secretName];
+    if (status?.configured) {
+        return `已配置后台安全密钥${status.updatedAt ? ` · 更新于 ${new Date(status.updatedAt).toLocaleString('zh-CN')}` : ''}`;
+    }
+    return '未配置后台安全密钥';
+}
+
+function renderPaymentChannelsConfig() {
+    const config = normalizePaymentChannelsConfig(systemConfigCache['payment_channels']);
+
+    const activeSelect = document.getElementById('paymentChannelActiveSelect');
+    if (activeSelect) activeSelect.value = config.active_provider;
+
+    const summary = document.getElementById('paymentChannelSummary');
+    if (summary) {
+        const activeProvider = config.providers[config.active_provider];
+        summary.innerHTML = `
+            <i class="fas fa-plug"></i>
+            <span>当前主通道：${escapeConfigHtml(activeProvider.display_name)}。公开配置保存在系统设置中；敏感密钥会通过服务端加密保存，不再存浏览器。</span>
+        `;
+    }
+
+    const toggleMap = {
+        mock: 'paymentProviderMockToggle',
+        afdian: 'paymentProviderAfdianToggle',
+        hupijiao: 'paymentProviderHupijiaoToggle'
+    };
+
+    Object.entries(toggleMap).forEach(([providerKey, elementId]) => {
+        const toggleEl = document.getElementById(elementId);
+        if (toggleEl) {
+            toggleEl.classList.toggle('active', config.providers[providerKey]?.enabled === true);
+        }
+    });
+
+    const setValue = (id, value) => {
+        const input = document.getElementById(id);
+        if (input) input.value = value || '';
+    };
+
+    setValue('paymentProviderMockDisplayName', config.providers.mock.display_name);
+    setValue('paymentProviderMockDescription', config.providers.mock.description);
+    setValue('paymentProviderAfdianDisplayName', config.providers.afdian.display_name);
+    setValue('paymentProviderAfdianCheckoutUrl', config.providers.afdian.checkout_url);
+    setValue('paymentProviderAfdianPackageHint', config.providers.afdian.package_hint);
+    setValue('paymentProviderAfdianCustomHint', config.providers.afdian.custom_amount_hint);
+    setValue('paymentProviderHupijiaoDisplayName', config.providers.hupijiao.display_name);
+    setValue('paymentProviderHupijiaoCheckoutUrl', config.providers.hupijiao.checkout_url);
+    setValue('paymentProviderHupijiaoGatewayUrl', config.providers.hupijiao.gateway_url);
+    setValue('paymentProviderHupijiaoMerchantId', config.providers.hupijiao.merchant_id);
+    setValue('paymentProviderHupijiaoReturnUrl', config.providers.hupijiao.return_url);
+    setValue('paymentProviderHupijiaoNotifyUrl', config.providers.hupijiao.notify_url);
+    setValue('paymentProviderHupijiaoPackageHint', config.providers.hupijiao.package_hint);
+    setValue('paymentProviderHupijiaoCustomHint', config.providers.hupijiao.custom_amount_hint);
+
+    const afdianStatus = document.getElementById('paymentProviderAfdianTokenStatus');
+    if (afdianStatus) afdianStatus.textContent = getPaymentSecretStatusMessage('afdian_token');
+
+    const hupijiaoApiKeyStatus = document.getElementById('paymentProviderHupijiaoApiKeyStatus');
+    if (hupijiaoApiKeyStatus) hupijiaoApiKeyStatus.textContent = getPaymentSecretStatusMessage('hupijiao_api_key');
+
+    const hupijiaoSecretStatus = document.getElementById('paymentProviderHupijiaoSecretKeyStatus');
+    if (hupijiaoSecretStatus) hupijiaoSecretStatus.textContent = getPaymentSecretStatusMessage('hupijiao_secret_key');
 }
 
 function renderChannelsConfig() {
@@ -412,6 +572,60 @@ async function saveConfig(key, value) {
             showToast('保存失败: ' + err.message, 'error');
         }
         return false;
+    }
+}
+
+async function getAdminConfigApiHeaders() {
+    const headers = {
+        'Content-Type': 'application/json'
+    };
+
+    const { data: { session } = {} } = await window.supabaseClient.auth.getSession();
+    if (session?.access_token) {
+        headers.Authorization = `Bearer ${session.access_token}`;
+    }
+
+    return headers;
+}
+
+async function loadPaymentChannelSettings(force = false) {
+    if (loadPaymentChannelSettings._loadingPromise && !force) {
+        return loadPaymentChannelSettings._loadingPromise;
+    }
+
+    loadPaymentChannelSettings._loadingPromise = (async () => {
+        try {
+            const headers = await getAdminConfigApiHeaders();
+            const response = await fetch('/api/admin/settings/payment-channels', {
+                method: 'GET',
+                headers
+            });
+
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.message || '加载支付通道配置失败');
+            }
+
+            systemConfigCache['payment_channels'] = normalizePaymentChannelsConfig(payload.config);
+            paymentChannelSecretStatus = payload.secrets || getDefaultPaymentChannelSecretStatus();
+            const rechargeOptions = normalizeRechargeOptionsConfig(systemConfigCache['recharge_options']);
+            rechargeOptions.mock_payment_enabled = systemConfigCache['payment_channels'].active_provider === 'mock';
+            systemConfigCache['recharge_options'] = rechargeOptions;
+            renderPaymentChannelsConfig();
+            renderPackagesConfig();
+            return payload;
+        } catch (error) {
+            console.warn('[Config] Payment channel settings load failed:', error.message);
+            paymentChannelSecretStatus = getDefaultPaymentChannelSecretStatus();
+            renderPaymentChannelsConfig();
+            return null;
+        }
+    })();
+
+    try {
+        return await loadPaymentChannelSettings._loadingPromise;
+    } finally {
+        loadPaymentChannelSettings._loadingPromise = null;
     }
 }
 
@@ -892,32 +1106,154 @@ async function toggleCustomRechargeEntryStatus() {
     return true;
 }
 
-async function toggleMockPaymentStatus() {
-    const config = normalizeRechargeOptionsConfig(systemConfigCache['recharge_options']);
-    const toggleEl = document.getElementById('mockPaymentStatusToggle');
-    const nextValue = !config.mock_payment_enabled;
+function collectPaymentChannelsConfigFromForm() {
+    const currentConfig = normalizePaymentChannelsConfig(systemConfigCache['payment_channels']);
+    const activeSelect = document.getElementById('paymentChannelActiveSelect');
+    const activeProvider = ['mock', 'afdian', 'hupijiao'].includes(activeSelect?.value)
+        ? activeSelect.value
+        : currentConfig.active_provider;
 
-    config.mock_payment_enabled = nextValue;
+    const config = {
+        active_provider: activeProvider,
+        providers: {
+            mock: {
+                enabled: document.getElementById('paymentProviderMockToggle')?.classList.contains('active') ?? currentConfig.providers.mock.enabled,
+                display_name: document.getElementById('paymentProviderMockDisplayName')?.value?.trim() || currentConfig.providers.mock.display_name,
+                description: document.getElementById('paymentProviderMockDescription')?.value?.trim() || currentConfig.providers.mock.description
+            },
+            afdian: {
+                enabled: document.getElementById('paymentProviderAfdianToggle')?.classList.contains('active') ?? currentConfig.providers.afdian.enabled,
+                display_name: document.getElementById('paymentProviderAfdianDisplayName')?.value?.trim() || currentConfig.providers.afdian.display_name,
+                checkout_url: document.getElementById('paymentProviderAfdianCheckoutUrl')?.value?.trim() || currentConfig.providers.afdian.checkout_url,
+                package_hint: document.getElementById('paymentProviderAfdianPackageHint')?.value?.trim() || currentConfig.providers.afdian.package_hint,
+                custom_amount_hint: document.getElementById('paymentProviderAfdianCustomHint')?.value?.trim() || currentConfig.providers.afdian.custom_amount_hint
+            },
+            hupijiao: {
+                enabled: document.getElementById('paymentProviderHupijiaoToggle')?.classList.contains('active') ?? currentConfig.providers.hupijiao.enabled,
+                display_name: document.getElementById('paymentProviderHupijiaoDisplayName')?.value?.trim() || currentConfig.providers.hupijiao.display_name,
+                checkout_url: document.getElementById('paymentProviderHupijiaoCheckoutUrl')?.value?.trim() || currentConfig.providers.hupijiao.checkout_url,
+                gateway_url: document.getElementById('paymentProviderHupijiaoGatewayUrl')?.value?.trim() || currentConfig.providers.hupijiao.gateway_url,
+                merchant_id: document.getElementById('paymentProviderHupijiaoMerchantId')?.value?.trim() || currentConfig.providers.hupijiao.merchant_id,
+                return_url: document.getElementById('paymentProviderHupijiaoReturnUrl')?.value?.trim() || currentConfig.providers.hupijiao.return_url,
+                notify_url: document.getElementById('paymentProviderHupijiaoNotifyUrl')?.value?.trim() || currentConfig.providers.hupijiao.notify_url,
+                package_hint: document.getElementById('paymentProviderHupijiaoPackageHint')?.value?.trim() || currentConfig.providers.hupijiao.package_hint,
+                custom_amount_hint: document.getElementById('paymentProviderHupijiaoCustomHint')?.value?.trim() || currentConfig.providers.hupijiao.custom_amount_hint
+            }
+        }
+    };
 
-    if (toggleEl) {
-        toggleEl.classList.toggle('active', nextValue);
-        toggleEl.style.transform = 'scale(1.1)';
-        setTimeout(() => {
-            toggleEl.style.transform = '';
-        }, 150);
+    if (!config.providers[config.active_provider]?.enabled) {
+        config.providers[config.active_provider].enabled = true;
     }
 
-    const success = await saveConfig('recharge_options', config);
-    if (!success) {
-        config.mock_payment_enabled = !nextValue;
-        if (toggleEl) {
-            toggleEl.classList.toggle('active', config.mock_payment_enabled);
+    return normalizePaymentChannelsConfig(config);
+}
+
+function clearPaymentChannelSecretInputs() {
+    [
+        'paymentProviderAfdianToken',
+        'paymentProviderHupijiaoApiKey',
+        'paymentProviderHupijiaoSecretKey'
+    ].forEach((id) => {
+        const input = document.getElementById(id);
+        if (input) input.value = '';
+    });
+}
+
+async function savePaymentChannelSettings(options = {}) {
+    try {
+        const config = options.configOverride
+            ? normalizePaymentChannelsConfig(options.configOverride)
+            : collectPaymentChannelsConfigFromForm();
+        const headers = await getAdminConfigApiHeaders();
+        const body = {
+            config,
+            secrets: {
+                afdian_token: document.getElementById('paymentProviderAfdianToken')?.value?.trim() || '',
+                hupijiao_api_key: document.getElementById('paymentProviderHupijiaoApiKey')?.value?.trim() || '',
+                hupijiao_secret_key: document.getElementById('paymentProviderHupijiaoSecretKey')?.value?.trim() || ''
+            }
+        };
+
+        const response = await fetch('/api/admin/settings/payment-channels', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(body)
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.success) {
+            throw new Error(payload.message || '保存支付通道配置失败');
         }
+
+        systemConfigCache['payment_channels'] = normalizePaymentChannelsConfig(payload.config);
+        paymentChannelSecretStatus = payload.secrets || getDefaultPaymentChannelSecretStatus();
+
+        const rechargeOptions = normalizeRechargeOptionsConfig(systemConfigCache['recharge_options']);
+        rechargeOptions.mock_payment_enabled = systemConfigCache['payment_channels'].active_provider === 'mock';
+        systemConfigCache['recharge_options'] = rechargeOptions;
+
+        renderPaymentChannelsConfig();
+        renderPackagesConfig();
+        clearPaymentChannelSecretInputs();
+        showConfigSavedToast(options.successMessage || payload.message || '支付通道配置已保存');
+        return true;
+    } catch (err) {
+        console.error('[Config] Save payment channels failed:', err);
+        showToast('保存失败: ' + (err.message || '未知错误'), 'error');
+        renderPaymentChannelsConfig();
+        renderPackagesConfig();
         return false;
     }
+}
 
-    showConfigSavedToast(nextValue ? '已开启临时模拟支付' : '已关闭临时模拟支付');
-    return true;
+async function togglePaymentProviderEnabled(providerKey) {
+    const toggleMap = {
+        mock: 'paymentProviderMockToggle',
+        afdian: 'paymentProviderAfdianToggle',
+        hupijiao: 'paymentProviderHupijiaoToggle'
+    };
+    const toggleEl = document.getElementById(toggleMap[providerKey]);
+    if (!toggleEl) return;
+
+    const nextValue = !toggleEl.classList.contains('active');
+    toggleEl.classList.toggle('active', nextValue);
+    toggleEl.style.transform = 'scale(1.1)';
+    setTimeout(() => {
+        toggleEl.style.transform = '';
+    }, 150);
+
+    const activeSelect = document.getElementById('paymentChannelActiveSelect');
+    if (!nextValue && activeSelect?.value === providerKey) {
+        const fallback = ['mock', 'afdian', 'hupijiao'].find((key) => key !== providerKey && document.getElementById(toggleMap[key])?.classList.contains('active'));
+        if (fallback) {
+            activeSelect.value = fallback;
+        } else {
+            toggleEl.classList.add('active');
+            showToast('至少需要保留一个可用的支付通道', 'warning');
+        }
+    }
+}
+
+async function toggleMockPaymentStatus() {
+    const currentConfig = normalizePaymentChannelsConfig(systemConfigCache['payment_channels']);
+    const nextValue = !(normalizeRechargeOptionsConfig(systemConfigCache['recharge_options']).mock_payment_enabled);
+
+    if (nextValue) {
+        currentConfig.active_provider = 'mock';
+        currentConfig.providers.mock.enabled = true;
+    } else if (currentConfig.active_provider === 'mock') {
+        currentConfig.active_provider = currentConfig.providers.afdian.enabled ? 'afdian' : 'hupijiao';
+        if (!currentConfig.providers[currentConfig.active_provider]?.enabled) {
+            currentConfig.providers.afdian.enabled = true;
+            currentConfig.active_provider = 'afdian';
+        }
+    }
+
+    return savePaymentChannelSettings({
+        configOverride: currentConfig,
+        successMessage: nextValue ? '已开启临时模拟支付' : '已关闭临时模拟支付'
+    });
 }
 
 // ============================================
@@ -2422,6 +2758,8 @@ window.deletePackage = deletePackage;
 window.addPackageRow = addPackageRow;
 window.toggleCustomRechargeEntryStatus = toggleCustomRechargeEntryStatus;
 window.toggleMockPaymentStatus = toggleMockPaymentStatus;
+window.togglePaymentProviderEnabled = togglePaymentProviderEnabled;
+window.savePaymentChannelSettings = savePaymentChannelSettings;
 window.deleteChannel = deleteChannel;
 window.addChannel = addChannel;
 window.saveIpBlacklist = saveIpBlacklist;

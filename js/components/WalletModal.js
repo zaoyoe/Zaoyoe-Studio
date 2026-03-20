@@ -1534,7 +1534,7 @@
                                 </div>
                                 
                                 <!-- Afdian Code Query Section -->
-                                <div class="afdian-section">
+                                <div class="afdian-section" id="wallet-order-query-section">
                                     <div class="afdian-header">
                                         <span class="afdian-icon" aria-hidden="true">
                                             <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -1548,9 +1548,9 @@
                                                 <path d="M9.08 7.34c-.86 0-1.62.4-2.13 1.03-.18.23-.52.27-.75.08-.23-.19-.27-.53-.08-.76.72-.9 1.81-1.43 2.96-1.43.3 0 .54.24.54.54s-.24.54-.54.54Z" fill="rgba(255,255,255,0.72)"/>
                                             </svg>
                                         </span>
-                                        <span>${window.i18n?.t('wallet.afdianQuery') || '爱发电订单查询'}</span>
+                                        <span id="wallet-order-query-title">${window.i18n?.t('wallet.afdianQuery') || '爱发电订单查询'}</span>
                                     </div>
-                                    <p class="afdian-hint">${window.i18n?.t('wallet.afdianHint') || '在爱发电支付后，输入订单号获取兑换码'}</p>
+                                    <p class="afdian-hint" id="wallet-order-query-hint">${window.i18n?.t('wallet.afdianHint') || '在爱发电支付后，输入订单号获取兑换码'}</p>
                                     <div class="afdian-input-row">
                                         <input type="text" 
                                                id="afdian-order-input" 
@@ -1921,7 +1921,155 @@
             return this.rechargeOptionsConfig;
         },
 
-        renderCustomRechargeSection(config = this.rechargeOptionsConfig) {
+        getDefaultPaymentChannelsConfig() {
+            const rechargeOptions = this.normalizeRechargeOptionsConfig(this.rechargeOptionsConfig);
+            const activeProvider = rechargeOptions.mock_payment_enabled ? 'mock' : 'afdian';
+
+            return {
+                active_provider: activeProvider,
+                providers: {
+                    mock: {
+                        enabled: true,
+                        display_name: '模拟支付',
+                        description: '仅建议在正式支付接入前短期使用，开启后将直接到账积分。'
+                    },
+                    afdian: {
+                        enabled: true,
+                        display_name: '爱发电',
+                        checkout_url: window.PAYMENT_AFDIAN_URL || 'https://afdian.com/a/zaoyoe',
+                        package_hint: '请在爱发电完成支付后，返回这里输入订单号领取兑换码。',
+                        custom_amount_hint: '建议在支付备注里填写要充值的积分数量，支付后返回这里输入订单号领取兑换码。'
+                    },
+                    hupijiao: {
+                        enabled: false,
+                        display_name: '虎皮椒',
+                        checkout_url: '',
+                        gateway_url: '',
+                        merchant_id: '',
+                        return_url: window.location.origin,
+                        notify_url: '',
+                        package_hint: '虎皮椒通道已启用，完成支付后请按页面提示处理。',
+                        custom_amount_hint: '虎皮椒通道已启用。自定义金额真实支付能力接入后，这里会直接拉起支付。'
+                    }
+                }
+            };
+        },
+
+        normalizePaymentChannelsConfig(raw) {
+            const defaults = this.getDefaultPaymentChannelsConfig();
+            const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+            const sourceProviders = source.providers && typeof source.providers === 'object' && !Array.isArray(source.providers)
+                ? source.providers
+                : {};
+
+            const normalized = {
+                active_provider: ['mock', 'afdian', 'hupijiao'].includes(source.active_provider)
+                    ? source.active_provider
+                    : defaults.active_provider,
+                providers: {
+                    mock: {
+                        enabled: sourceProviders.mock?.enabled !== undefined
+                            ? (sourceProviders.mock.enabled === true || String(sourceProviders.mock.enabled) === 'true')
+                            : defaults.providers.mock.enabled,
+                        display_name: String(sourceProviders.mock?.display_name || defaults.providers.mock.display_name).trim() || defaults.providers.mock.display_name,
+                        description: String(sourceProviders.mock?.description || defaults.providers.mock.description).trim() || defaults.providers.mock.description
+                    },
+                    afdian: {
+                        enabled: sourceProviders.afdian?.enabled !== undefined
+                            ? (sourceProviders.afdian.enabled === true || String(sourceProviders.afdian.enabled) === 'true')
+                            : defaults.providers.afdian.enabled,
+                        display_name: String(sourceProviders.afdian?.display_name || defaults.providers.afdian.display_name).trim() || defaults.providers.afdian.display_name,
+                        checkout_url: String(sourceProviders.afdian?.checkout_url || defaults.providers.afdian.checkout_url).trim() || defaults.providers.afdian.checkout_url,
+                        package_hint: String(sourceProviders.afdian?.package_hint || defaults.providers.afdian.package_hint).trim() || defaults.providers.afdian.package_hint,
+                        custom_amount_hint: String(sourceProviders.afdian?.custom_amount_hint || defaults.providers.afdian.custom_amount_hint).trim() || defaults.providers.afdian.custom_amount_hint
+                    },
+                    hupijiao: {
+                        enabled: sourceProviders.hupijiao?.enabled === true || String(sourceProviders.hupijiao?.enabled) === 'true',
+                        display_name: String(sourceProviders.hupijiao?.display_name || defaults.providers.hupijiao.display_name).trim() || defaults.providers.hupijiao.display_name,
+                        checkout_url: String(sourceProviders.hupijiao?.checkout_url || defaults.providers.hupijiao.checkout_url).trim(),
+                        gateway_url: String(sourceProviders.hupijiao?.gateway_url || defaults.providers.hupijiao.gateway_url).trim(),
+                        merchant_id: String(sourceProviders.hupijiao?.merchant_id || defaults.providers.hupijiao.merchant_id).trim(),
+                        return_url: String(sourceProviders.hupijiao?.return_url || defaults.providers.hupijiao.return_url).trim() || defaults.providers.hupijiao.return_url,
+                        notify_url: String(sourceProviders.hupijiao?.notify_url || defaults.providers.hupijiao.notify_url).trim(),
+                        package_hint: String(sourceProviders.hupijiao?.package_hint || defaults.providers.hupijiao.package_hint).trim() || defaults.providers.hupijiao.package_hint,
+                        custom_amount_hint: String(sourceProviders.hupijiao?.custom_amount_hint || defaults.providers.hupijiao.custom_amount_hint).trim() || defaults.providers.hupijiao.custom_amount_hint
+                    }
+                }
+            };
+
+            if (!normalized.providers[normalized.active_provider]?.enabled) {
+                normalized.providers[normalized.active_provider].enabled = true;
+            }
+
+            return normalized;
+        },
+
+        async loadPaymentChannelsConfig(forceRefresh = false) {
+            if (!forceRefresh && this.paymentChannelsConfig) {
+                return this.paymentChannelsConfig;
+            }
+
+            try {
+                const { data, error } = await window.supabaseClient.rpc('get_system_config', {
+                    p_key: 'payment_channels'
+                });
+
+                if (error) throw error;
+
+                this.paymentChannelsConfig = this.normalizePaymentChannelsConfig(data);
+            } catch (configError) {
+                console.warn('[WalletModal] Failed to load payment channels config:', configError);
+                this.paymentChannelsConfig = this.normalizePaymentChannelsConfig(null);
+            }
+
+            return this.paymentChannelsConfig;
+        },
+
+        getActivePaymentProviderConfig(config = this.paymentChannelsConfig) {
+            const normalizedConfig = this.normalizePaymentChannelsConfig(config);
+            const activeKey = normalizedConfig.active_provider || 'afdian';
+            return {
+                key: activeKey,
+                ...normalizedConfig.providers[activeKey]
+            };
+        },
+
+        getPaymentCheckoutUrl(providerKey, config = this.paymentChannelsConfig) {
+            const normalizedConfig = this.normalizePaymentChannelsConfig(config);
+            const provider = normalizedConfig.providers[providerKey] || {};
+            if (providerKey === 'afdian') {
+                return provider.checkout_url || window.PAYMENT_AFDIAN_URL || 'https://afdian.com/a/zaoyoe';
+            }
+            return provider.checkout_url || '';
+        },
+
+        renderPaymentOrderQuerySection(config = this.paymentChannelsConfig) {
+            const normalizedConfig = this.normalizePaymentChannelsConfig(config);
+            const activeProvider = normalizedConfig.active_provider;
+            const section = document.getElementById('wallet-order-query-section');
+            const title = document.getElementById('wallet-order-query-title');
+            const hint = document.getElementById('wallet-order-query-hint');
+            const input = document.getElementById('afdian-order-input');
+
+            if (!section) return;
+
+            const shouldShowAfdianQuery = activeProvider === 'afdian';
+            section.style.display = shouldShowAfdianQuery ? '' : 'none';
+
+            if (!shouldShowAfdianQuery) {
+                requestWalletRechargeScrollCueUpdate();
+                return;
+            }
+
+            const provider = normalizedConfig.providers.afdian;
+            if (title) title.textContent = `${provider.display_name || '爱发电'}订单查询`;
+            if (hint) hint.textContent = provider.package_hint || '在爱发电支付后，输入订单号获取兑换码';
+            if (input) input.placeholder = `${provider.display_name || '爱发电'}订单号`;
+
+            requestWalletRechargeScrollCueUpdate();
+        },
+
+        renderCustomRechargeSection(config = this.rechargeOptionsConfig, paymentChannels = this.paymentChannelsConfig) {
             const section = document.getElementById('wallet-custom-recharge-section');
             const input = document.getElementById('wallet-custom-recharge-input');
             const button = document.getElementById('wallet-custom-recharge-btn');
@@ -1931,9 +2079,12 @@
             if (!section) return;
 
             const normalizedConfig = this.normalizeRechargeOptionsConfig(config);
+            const normalizedPaymentChannels = this.normalizePaymentChannelsConfig(paymentChannels);
+            const activeProvider = this.getActivePaymentProviderConfig(normalizedPaymentChannels);
             const isFeatureEnabled = normalizedConfig.custom_amount_enabled === true;
-            const isSimulationEnabled = normalizedConfig.mock_payment_enabled === true;
+            const isSimulationEnabled = activeProvider.key === 'mock' || normalizedConfig.mock_payment_enabled === true;
             const isDirectRechargeAllowed = isSimulationEnabled || window.PointsService?.isUnsafeDirectRechargeAllowed?.() === true;
+            const providerLabel = activeProvider.display_name || '当前通道';
 
             section.style.display = isFeatureEnabled ? '' : 'none';
 
@@ -1945,7 +2096,7 @@
 
             if (button) {
                 button.disabled = !isFeatureEnabled;
-                button.textContent = isDirectRechargeAllowed ? '立即充值' : '前往充值';
+                button.textContent = isDirectRechargeAllowed ? '立即充值' : `前往${providerLabel}`;
             }
 
             if (subtitle) {
@@ -1953,13 +2104,13 @@
                     ? (isSimulationEnabled
                         ? '已开启临时模拟支付，提交后会直接到账积分。'
                         : '输入要充值的积分数量，支持 0.1 精度。')
-                    : '输入想购买的积分数量，我们会引导你完成真实支付。';
+                    : (activeProvider.custom_amount_hint || `输入想购买的积分数量，我们会引导你前往${providerLabel}完成真实支付。`);
             }
 
             if (badge) {
                 badge.textContent = isDirectRechargeAllowed
                     ? (isSimulationEnabled ? '模拟支付' : '按需充值')
-                    : '真实支付';
+                    : providerLabel;
             }
 
             if (meta) {
@@ -1967,7 +2118,9 @@
                     ? (isSimulationEnabled
                         ? '当前为临时模拟支付模式，仅用于正式支付接入前过渡。用户提交后会直接到账，请谨慎使用。'
                         : '该入口由管理员在后台控制显示，用于用户自行决定本次充值的积分数量。')
-                    : '该入口由管理员在后台控制显示。正式站点已关闭浏览器直充；填写数量后会打开支付页，完成支付后请返回这里输入订单号领取兑换码。';
+                    : (activeProvider.key === 'afdian'
+                        ? '该入口由管理员在后台控制显示。正式站点已关闭浏览器直充；填写数量后会打开支付页，完成支付后请返回这里输入订单号领取兑换码。'
+                        : `该入口由管理员在后台控制显示。当前会跳转到${providerLabel}，具体支付回执与入账方式以你配置的通道说明为准。`);
             }
 
             requestWalletRechargeScrollCueUpdate();
@@ -2950,12 +3103,14 @@
                 }
 
                 // 🚀 Run ALL API calls in PARALLEL
+                const rechargeOptionsPromise = this.loadRechargeOptionsConfig();
                 const [balance, packages, history, rechargeOptions] = await Promise.all([
                     PointsService.getBalance(),
                     PointsService.getPackages(),
                     PointsService.getHistory(),
-                    this.loadRechargeOptionsConfig()
+                    rechargeOptionsPromise
                 ]);
+                const paymentChannels = await this.loadPaymentChannelsConfig();
 
                 console.log('[WalletModal] ✅ Data loaded:', { balance, packagesLength: packages.length });
 
@@ -3000,7 +3155,8 @@
                     requestWalletRechargeScrollCueUpdate();
                 }
 
-                this.renderCustomRechargeSection(rechargeOptions);
+                this.renderCustomRechargeSection(rechargeOptions, paymentChannels);
+                this.renderPaymentOrderQuerySection(paymentChannels);
 
                 // Store packages & history data for reuse
                 this._packagesCache = packages;
@@ -3059,10 +3215,13 @@
          */
         async buyPackage(packageId, packageName) {
             const overlay = document.getElementById('wallet-modal-overlay');
-            const afdianUrl = window.PAYMENT_AFDIAN_URL || 'https://afdian.com/a/zaoyoe';
             const rechargeOptions = this.normalizeRechargeOptionsConfig(this.rechargeOptionsConfig);
-            const allowSimulatedPayment = rechargeOptions.mock_payment_enabled === true
+            const paymentChannels = this.normalizePaymentChannelsConfig(this.paymentChannelsConfig);
+            const activeProvider = this.getActivePaymentProviderConfig(paymentChannels);
+            const allowSimulatedPayment = activeProvider.key === 'mock'
+                || rechargeOptions.mock_payment_enabled === true
                 || window.PointsService?.isUnsafeDirectRechargeAllowed?.() === true;
+            const checkoutUrl = this.getPaymentCheckoutUrl(activeProvider.key, paymentChannels);
             const packageData = Array.isArray(this._packagesCache)
                 ? this._packagesCache.find(pkg => String(pkg.id) === String(packageId))
                 : null;
@@ -3087,8 +3246,16 @@
                 }
 
                 if (overlay) overlay.classList.remove('loading');
-                window.open(afdianUrl, '_blank', 'noopener,noreferrer');
-                this.showToast(`请在爱发电完成「${packageName}」支付后，返回这里输入订单号领取兑换码`, 'success');
+                if (!checkoutUrl) {
+                    throw new Error(`${activeProvider.display_name || '当前支付通道'}尚未配置支付链接`);
+                }
+
+                window.open(checkoutUrl, '_blank', 'noopener,noreferrer');
+                if (activeProvider.key === 'afdian') {
+                    this.showToast(activeProvider.package_hint || `请在爱发电完成「${packageName}」支付后，返回这里输入订单号领取兑换码`, 'success');
+                } else {
+                    this.showToast(activeProvider.package_hint || `已为你打开${activeProvider.display_name || '当前支付通道'}，完成支付后请按页面提示继续操作。`, 'success');
+                }
 
             } catch (err) {
                 console.error('[WalletModal] Purchase failed:', err);
@@ -3104,9 +3271,12 @@
             const rawValue = input?.value ?? '';
             const normalizedAmount = this.normalizePointValue(rawValue);
             const rechargeOptions = this.normalizeRechargeOptionsConfig(this.rechargeOptionsConfig);
-            const allowSimulatedPayment = rechargeOptions.mock_payment_enabled === true
+            const paymentChannels = this.normalizePaymentChannelsConfig(this.paymentChannelsConfig);
+            const activeProvider = this.getActivePaymentProviderConfig(paymentChannels);
+            const allowSimulatedPayment = activeProvider.key === 'mock'
+                || rechargeOptions.mock_payment_enabled === true
                 || window.PointsService?.isUnsafeDirectRechargeAllowed?.() === true;
-            const afdianUrl = window.PAYMENT_AFDIAN_URL || 'https://afdian.com/a/zaoyoe';
+            const checkoutUrl = this.getPaymentCheckoutUrl(activeProvider.key, paymentChannels);
 
             if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
                 this.showToast('请输入大于 0 的充值积分', 'error');
@@ -3121,12 +3291,20 @@
                 if (!allowSimulatedPayment) {
                     if (overlay) overlay.classList.remove('loading');
 
-                    const popup = window.open(afdianUrl, '_blank', 'noopener,noreferrer');
+                    if (!checkoutUrl) {
+                        throw new Error(`${activeProvider.display_name || '当前支付通道'}尚未配置支付链接`);
+                    }
+
+                    const popup = window.open(checkoutUrl, '_blank', 'noopener,noreferrer');
                     if (!popup) {
                         throw new Error('支付页面被浏览器拦截，请允许弹窗后重试');
                     }
 
-                    this.showToast(`已打开支付页。建议备注需要充值 ${this.formatPoints(normalizedAmount)} 积分，支付后返回这里输入订单号领取兑换码。`, 'success');
+                    if (activeProvider.key === 'afdian') {
+                        this.showToast(activeProvider.custom_amount_hint || `已打开支付页。建议备注需要充值 ${this.formatPoints(normalizedAmount)} 积分，支付后返回这里输入订单号领取兑换码。`, 'success');
+                    } else {
+                        this.showToast(activeProvider.custom_amount_hint || `已为你打开${activeProvider.display_name || '当前支付通道'}，完成支付后请按页面提示继续操作。`, 'success');
+                    }
                     return;
                 }
 

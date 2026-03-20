@@ -2,6 +2,11 @@ const crypto = require('crypto');
 
 const SECRET_ALGORITHM = 'aes-256-gcm';
 const GEMINI_SECRET_KEY = 'gemini_api_key';
+const PAYMENT_CHANNEL_SECRET_KEYS = {
+    afdian_token: 'payment_provider_afdian_token',
+    hupijiao_api_key: 'payment_provider_hupijiao_api_key',
+    hupijiao_secret_key: 'payment_provider_hupijiao_secret_key'
+};
 
 function wrapSecretStoreError(error, fallbackMessage) {
     const message = error?.message || fallbackMessage || 'Admin secret store failed';
@@ -162,7 +167,9 @@ async function resolveGeminiRuntimeConfig(supabase) {
 
 module.exports = {
     GEMINI_SECRET_KEY,
+    PAYMENT_CHANNEL_SECRET_KEYS,
     deleteStoredAdminSecret,
+    getStoredAdminSecret,
     resolveGeminiRuntimeConfig,
     upsertStoredAdminSecret
 };

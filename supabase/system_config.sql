@@ -67,6 +67,38 @@ INSERT INTO public.system_config (config_key, config_value, description) VALUES
 }'::jsonb, '充值入口配置')
 ON CONFLICT (config_key) DO NOTHING;
 
+-- 支付通道配置
+INSERT INTO public.system_config (config_key, config_value, description) VALUES
+('payment_channels', '{
+    "active_provider": "afdian",
+    "providers": {
+        "mock": {
+            "enabled": true,
+            "display_name": "模拟支付",
+            "description": "仅建议在正式支付接入前短期使用，开启后将直接到账积分。"
+        },
+        "afdian": {
+            "enabled": true,
+            "display_name": "爱发电",
+            "checkout_url": "https://afdian.com/a/zaoyoe",
+            "package_hint": "请在爱发电完成支付后，返回钱包输入订单号领取兑换码。",
+            "custom_amount_hint": "建议在支付备注里填写要充值的积分数量，支付后返回钱包输入订单号领取兑换码。"
+        },
+        "hupijiao": {
+            "enabled": false,
+            "display_name": "虎皮椒",
+            "checkout_url": "",
+            "gateway_url": "",
+            "merchant_id": "",
+            "return_url": "https://www.zaoyoe.com",
+            "notify_url": "",
+            "package_hint": "虎皮椒通道已启用，正式回调与自动发货接入后即可完整使用。",
+            "custom_amount_hint": "虎皮椒通道已启用。自定义金额订单能力接入后，这里会直接拉起真实支付。"
+        }
+    }
+}'::jsonb, '支付通道配置')
+ON CONFLICT (config_key) DO NOTHING;
+
 -- 销售渠道
 INSERT INTO public.system_config (config_key, config_value, description) VALUES
 ('channels', '[
