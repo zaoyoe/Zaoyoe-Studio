@@ -597,10 +597,15 @@ module.exports = async function handler(req, res) {
         const { supabase, requestSupabase, user } = await requireAdmin(req);
         const scopedClient = supabase || requestSupabase;
         const site = typeof req.query?.site === 'string' && req.query.site.trim() ? req.query.site.trim() : null;
+        const view = ['overview', 'finance', 'ops'].includes(String(req.query?.view || '').trim())
+            ? String(req.query.view).trim()
+            : 'overview';
         const days = Number.parseInt(req.query?.days, 10);
         const normalizedDays = Number.isFinite(days) && days > 0 ? Math.min(days, 365) : 30;
         const daysAgoIso = getIsoDaysAgo(normalizedDays);
         const trendSinceIso = getIsoHoursAgo(24);
+        const needsEvents = view === 'overview' || view === 'ops';
+        const needsFinance = view === 'finance';
 
         const [
             orderRows,
@@ -610,10 +615,10 @@ module.exports = async function handler(req, res) {
             pointsBalanceRows
         ] = await Promise.all([
             fetchPaymentOrders(scopedClient, daysAgoIso, site),
-            fetchPaymentEvents(scopedClient, daysAgoIso),
-            fetchShopOrders(scopedClient, daysAgoIso, site),
-            fetchPointsLedger(scopedClient, daysAgoIso, site),
-            fetchPointsBalances(scopedClient, site)
+            needsEvents ? fetchPaymentEvents(scopedClient, daysAgoIso) : Promise.resolve([]),
+            needsFinance ? fetchShopOrders(scopedClient, daysAgoIso, site) : Promise.resolve([]),
+            needsFinance ? fetchPointsLedger(scopedClient, daysAgoIso, site) : Promise.resolve([]),
+            needsFinance ? fetchPointsBalances(scopedClient, site) : Promise.resolve([])
         ]);
 
         const overview = buildOverview(orderRows || []);
@@ -629,11 +634,13 @@ module.exports = async function handler(req, res) {
         });
         const scopedTrendEvents = scopedEvents.filter((event) => new Date(event.created_at).getTime() >= new Date(trendSinceIso).getTime());
 
-        const recentOrders = (orderRows || []).slice(0, 20);
-        const recentOrderAnomalies = (orderRows || [])
-            .filter(isOrderAnomaly)
-            .slice(0, 24)
-            .map(buildOrderAnomaly);
+        const recentOrders = view === 'ops' ? (orderRows || []).slice(0, 20) : [];
+        const recentOrderAnomalies = view === 'ops'
+            ? (orderRows || [])
+                .filter(isOrderAnomaly)
+                .slice(0, 24)
+                .map(buildOrderAnomaly)
+            : [];
 
         const duplicateMap = new Map();
         scopedEvents.forEach((event) => {
@@ -643,14 +650,18 @@ module.exports = async function handler(req, res) {
         });
         const duplicateWebhookOrders = Array.from(duplicateMap.values()).filter((count) => count > 1).length;
 
-        const recentEventAnomalies = scopedEvents
-            .filter(isEventAnomaly)
-            .slice(0, 24)
-            .map(buildEventAnomaly);
+        const recentEventAnomalies = needsEvents
+            ? scopedEvents
+                .filter(isEventAnomaly)
+                .slice(0, 24)
+                .map(buildEventAnomaly)
+            : [];
 
-        const recentAnomalies = [...recentOrderAnomalies, ...recentEventAnomalies]
-            .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime())
-            .slice(0, 20);
+        const recentAnomalies = view === 'ops'
+            ? [...recentOrderAnomalies, ...recentEventAnomalies]
+                .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime())
+                .slice(0, 20)
+            : [];
 
         const anomalySummary = {
             review_orders: Number(overview.review_orders || 0),
@@ -661,15 +672,19 @@ module.exports = async function handler(req, res) {
         };
 
         const provider_stats = buildProviderStats(orderRows || []);
-        const trend_24h = buildTrend24h(scopedTrendEvents);
-        const sitewide_summary = buildFinanceSummary(orderRows || [], shopOrders || [], pointsLedgerRows || [], pointsBalanceRows || []);
-        const points_breakdown = buildPointsBreakdown(pointsLedgerRows || []);
-        const business_breakdown = buildBusinessBreakdown({
-            paymentOrders: orderRows || [],
-            shopOrders: shopOrders || [],
-            balanceRows: pointsBalanceRows || [],
-            sitewideSummary: sitewide_summary
-        });
+        const trend_24h = view === 'overview' ? buildTrend24h(scopedTrendEvents) : undefined;
+        const sitewide_summary = needsFinance
+            ? buildFinanceSummary(orderRows || [], shopOrders || [], pointsLedgerRows || [], pointsBalanceRows || [])
+            : undefined;
+        const points_breakdown = needsFinance ? buildPointsBreakdown(pointsLedgerRows || []) : undefined;
+        const business_breakdown = needsFinance
+            ? buildBusinessBreakdown({
+                paymentOrders: orderRows || [],
+                shopOrders: shopOrders || [],
+                balanceRows: pointsBalanceRows || [],
+                sitewideSummary: sitewide_summary
+            })
+            : undefined;
 
         await writeAdminAuditLog({
             supabase: requestSupabase || scopedClient,
@@ -677,7 +692,8 @@ module.exports = async function handler(req, res) {
             actionType: 'payments.summary.view',
             details: {
                 site,
-                days: normalizedDays
+                days: normalizedDays,
+                view
             }
         });
 

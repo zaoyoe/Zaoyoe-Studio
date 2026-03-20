@@ -209,6 +209,9 @@
         const anomalyCount = Number(anomaly.review_orders || 0)
             + Number(anomaly.failed_orders || 0)
             + Number(anomaly.recent_event_anomalies || 0);
+        const incomeValue = sitewide.recharge_amount != null
+            ? sitewide.recharge_amount
+            : overview.total_amount;
 
         target.innerHTML = `
             <div class="payments-highlight-pill">
@@ -225,7 +228,7 @@
             </div>
             <div class="payments-highlight-pill">
                 <i class="fas fa-wallet"></i>
-                <span>收入 ${escapeHtml(formatCurrency(sitewide.recharge_amount))}</span>
+                <span>收入 ${escapeHtml(formatCurrency(incomeValue))}</span>
             </div>
         `;
     }
@@ -249,7 +252,8 @@
         }
     }
 
-    function switchTab(tabId) {
+    function switchTab(tabId, options = {}) {
+        const shouldReload = options.reload !== false;
         state.activeTab = String(tabId || 'overview');
         const nav = document.getElementById('paymentsTabsNav');
         if (nav) {
@@ -264,6 +268,10 @@
 
         syncTabIndicator();
         window.dispatchEvent(new Event('resize'));
+
+        if (shouldReload && state.initialized && !state.loading) {
+            reload();
+        }
     }
 
     function renderAccessState(message, tone = 'warning') {
@@ -716,7 +724,8 @@
     async function loadSummary() {
         const site = getSiteParam();
         const query = new URLSearchParams({
-            days: String(state.days)
+            days: String(state.days),
+            view: String(state.activeTab || 'overview')
         });
 
         if (site) {
@@ -724,16 +733,21 @@
         }
 
         const payload = await fetchAdminJson(`/api/admin/payments/summary?${query.toString()}`);
-        state.summary = payload;
-        updateToolbarHighlights(payload);
-        renderOverviewCards(payload);
-        renderProviderStats(payload);
-        renderSitewideSummary(payload);
-        renderBusinessBreakdown(payload);
-        renderPointsBreakdown(payload);
-        renderTrend(payload);
-        renderAnomalies(payload);
-        renderOrders(payload);
+        state.summary = {
+            ...(state.summary || {}),
+            ...payload
+        };
+
+        const data = state.summary;
+        updateToolbarHighlights(data);
+        renderOverviewCards(data);
+        renderProviderStats(data);
+        renderSitewideSummary(data);
+        renderBusinessBreakdown(data);
+        renderPointsBreakdown(data);
+        renderTrend(data);
+        renderAnomalies(data);
+        renderOrders(data);
 
         const siteLabel = site ? `站点 ${(site || '').toUpperCase()}` : '全部站点';
         setToolbarMeta(`${siteLabel} · ${getRangeLabel(state.days)} · 更新于 ${formatDateTime(new Date().toISOString())}`, 'ready');
@@ -757,7 +771,7 @@
 
         if (state.initialized) {
             updateRangeLabel();
-            switchTab(state.activeTab);
+            switchTab(state.activeTab, { reload: false });
             return reload();
         }
 
@@ -774,7 +788,7 @@
         }
 
         updateRangeLabel();
-        switchTab(state.activeTab);
+        switchTab(state.activeTab, { reload: false });
         await reload();
     }
 
@@ -790,11 +804,13 @@
             setLoading(true);
             await loadSummary();
 
-            try {
-                await loadCleanupPreview({ silent: true });
-            } catch (cleanupError) {
-                console.error('[AdminPayments] Failed to load cleanup preview:', cleanupError);
-                renderCleanupPreviewFallback(cleanupError.message || '测试数据扫描失败，但不影响支付对账查看。');
+            if (state.activeTab === 'ops') {
+                try {
+                    await loadCleanupPreview({ silent: true });
+                } catch (cleanupError) {
+                    console.error('[AdminPayments] Failed to load cleanup preview:', cleanupError);
+                    renderCleanupPreviewFallback(cleanupError.message || '测试数据扫描失败，但不影响支付对账查看。');
+                }
             }
         } catch (error) {
             console.error('[AdminPayments] Failed to load dashboard:', error);
