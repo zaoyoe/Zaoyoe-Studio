@@ -11,8 +11,7 @@
         summary: null,
         cleanupPreview: null,
         requestToken: 0,
-        viewCache: {},
-        pendingTarget: null
+        viewCache: {}
     };
 
     function escapeHtml(value) {
@@ -39,15 +38,15 @@
     function formatPoints(value) {
         const num = Number(value || 0);
         return Number.isFinite(num)
-            ? `${num.toLocaleString('zh-CN', { minimumFractionDigits: num % 1 ? 1 : 0, maximumFractionDigits: 1 })} 积分`
-            : '0 积分';
+            ? num.toLocaleString('zh-CN', { minimumFractionDigits: num % 1 ? 1 : 0, maximumFractionDigits: 1 })
+            : '0';
     }
 
     function formatSignedPoints(value) {
         const num = Number(value || 0);
-        if (!Number.isFinite(num)) return '0 积分';
+        if (!Number.isFinite(num)) return '0';
         const sign = num > 0 ? '+' : '';
-        return `${sign}${num.toLocaleString('zh-CN', { minimumFractionDigits: num % 1 ? 1 : 0, maximumFractionDigits: 1 })} 积分`;
+        return `${sign}${num.toLocaleString('zh-CN', { minimumFractionDigits: num % 1 ? 1 : 0, maximumFractionDigits: 1 })}`;
     }
 
     function formatPercent(value) {
@@ -61,6 +60,15 @@
             return fallback;
         }
         return message;
+    }
+
+    function renderInfoChip(help) {
+        if (!help) return '';
+        return `
+            <span class="payments-info-chip" tabindex="0" aria-label="${escapeHtml(help)}">
+                <span class="payments-info-bubble" role="tooltip">${escapeHtml(help)}</span>
+            </span>
+        `;
     }
 
     function formatDateTime(value) {
@@ -311,42 +319,6 @@
         }
     }
 
-    function pulseTarget(element) {
-        if (!element) return;
-        element.classList.remove('payments-target-pulse');
-        void element.offsetWidth;
-        element.classList.add('payments-target-pulse');
-        window.setTimeout(() => {
-            element.classList.remove('payments-target-pulse');
-        }, 1800);
-    }
-
-    function applyPendingTarget() {
-        const target = state.pendingTarget;
-        if (!target || target.tab !== state.activeTab) return;
-
-        const element = document.getElementById(target.id);
-        if (!element) return;
-
-        element.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        pulseTarget(element);
-        state.pendingTarget = null;
-    }
-
-    function goToSection(tabId, targetId) {
-        state.pendingTarget = {
-            tab: String(tabId || state.activeTab),
-            id: String(targetId || '')
-        };
-
-        if (state.activeTab !== state.pendingTarget.tab) {
-            switchTab(state.pendingTarget.tab, { reload: !hasCachedDataForTab(state.pendingTarget.tab) });
-            return;
-        }
-
-        applyPendingTarget();
-    }
-
     function renderAccessState(message, tone = 'warning', options = {}) {
         const stateEl = document.getElementById('paymentsAccessState');
         const bodyEl = document.getElementById('paymentsDashboardBody');
@@ -402,10 +374,7 @@
         if (!target) return;
 
         target.innerHTML = cards.map((card) => `
-            <div
-                class="kpi-card payments-kpi-card-visual ${card.tone ? `is-${card.tone}` : ''} ${card.targetId ? 'is-clickable' : ''}"
-                ${card.targetId ? `data-target-tab="${escapeHtml(card.targetTab || state.activeTab)}" data-target-id="${escapeHtml(card.targetId)}"` : ''}
-            >
+            <div class="kpi-card payments-kpi-card-visual ${card.tone ? `is-${card.tone}` : ''}">
                 <div class="kpi-icon payments-kpi-icon">
                     <i class="${escapeHtml(card.icon || 'fas fa-chart-line')}"></i>
                 </div>
@@ -416,18 +385,11 @@
                     </div>
                     <div class="payments-kpi-label-row">
                         <div class="kpi-label">${escapeHtml(card.label)}</div>
-                        ${card.help ? `<span class="payments-info-chip" tabindex="0" role="note" title="${escapeHtml(card.help)}" aria-label="${escapeHtml(card.help)}" onclick="event.stopPropagation()">i</span>` : ''}
+                        ${renderInfoChip(card.help)}
                     </div>
-                    ${card.targetId ? `<div class="payments-kpi-action"><i class="fas fa-arrow-right"></i><span>${escapeHtml(card.actionLabel || '查看详情')}</span></div>` : ''}
                 </div>
             </div>
         `).join('');
-
-        target.querySelectorAll('.payments-kpi-card-visual.is-clickable').forEach((card) => {
-            card.addEventListener('click', () => {
-                goToSection(card.dataset.targetTab, card.dataset.targetId);
-            });
-        });
     }
 
     function renderOverviewCards(data) {
@@ -441,77 +403,53 @@
                 icon: 'fas fa-file-invoice-dollar',
                 label: '总订单',
                 value: formatNumber(overview.total_orders),
-                help: `近 ${state.days} 天支付订单总数`,
-                targetTab: 'ops',
-                targetId: 'paymentsOrdersTable',
-                actionLabel: '查看最近订单'
+                help: `近 ${state.days} 天支付订单总数`
             },
             {
                 icon: 'fas fa-circle-check',
                 label: '支付成功率',
                 value: formatPercent(overview.paid_rate),
-                help: `${formatNumber(overview.paid_orders)} 笔已支付/已兑换`,
-                targetTab: 'overview',
-                targetId: 'paymentsProviderStats',
-                actionLabel: '查看通道表现'
+                help: `${formatNumber(overview.paid_orders)} 笔已支付/已兑换`
             },
             {
                 icon: 'fas fa-user-check',
                 label: '认领率',
                 value: formatPercent(overview.claim_rate),
-                help: `${formatNumber(overview.claimed_orders)} 笔已认领`,
-                targetTab: 'ops',
-                targetId: 'paymentsOrdersTable',
-                actionLabel: '查看认领状态'
+                help: `${formatNumber(overview.claimed_orders)} 笔已认领`
             },
             {
                 icon: 'fas fa-sack-dollar',
                 label: '支付金额',
                 value: formatCurrency(overview.total_amount),
-                help: `${formatNumber(overview.total_points)} 积分已入账`,
-                targetTab: 'finance',
-                targetId: 'paymentsBusinessBreakdown',
-                actionLabel: '查看收支拆分'
+                help: `${formatNumber(overview.total_points)} 已入账`
             },
             {
                 icon: 'fas fa-hourglass-half',
                 label: '待审核',
                 value: formatNumber(anomaly.review_orders),
                 help: '套餐匹配、金额或签名需人工确认',
-                tone: 'warning',
-                targetTab: 'ops',
-                targetId: 'paymentsAnomalyList',
-                actionLabel: '处理异常队列'
+                tone: 'warning'
             },
             {
                 icon: 'fas fa-triangle-exclamation',
                 label: '失败订单',
                 value: formatNumber(anomaly.failed_orders),
                 help: '签名失败或金额校验失败',
-                tone: 'critical',
-                targetTab: 'ops',
-                targetId: 'paymentsAnomalyList',
-                actionLabel: '查看失败订单'
+                tone: 'critical'
             },
             {
                 icon: 'fas fa-unlink',
                 label: '未认领订单',
                 value: formatNumber(anomaly.unclaimed_paid_orders),
                 help: '已支付但尚未输入订单号',
-                tone: 'info',
-                targetTab: 'ops',
-                targetId: 'paymentsOrdersTable',
-                actionLabel: '查看未认领订单'
+                tone: 'info'
             },
             {
                 icon: 'fas fa-wave-square',
                 label: '异常回调',
                 value: formatNumber(anomaly.recent_event_anomalies),
                 help: `${formatNumber(anomaly.duplicate_webhook_orders)} 个订单出现重复回调`,
-                tone: 'warning',
-                targetTab: 'ops',
-                targetId: 'paymentsAnomalyList',
-                actionLabel: '排查回调异常'
+                tone: 'warning'
             }
         ];
 
@@ -560,56 +498,38 @@
                 icon: 'fas fa-wallet',
                 label: '充值收入',
                 value: formatCurrency(summary.recharge_amount),
-                help: `${formatNumber(summary.recharge_order_count)} 笔充值 · ${formatPoints(summary.recharge_points)}`,
-                targetTab: 'finance',
-                targetId: 'paymentsBusinessBreakdown',
-                actionLabel: '查看充值拆分'
+                help: `${formatNumber(summary.recharge_order_count)} 笔充值 · ${formatPoints(summary.recharge_points)} 已入账`
             },
             {
                 icon: 'fas fa-store',
-                label: '商城消费',
+                label: '商城消耗',
                 value: formatPoints(summary.shop_points_spent),
-                help: `${formatNumber(summary.shop_order_count)} 笔消费 · 退款 ${formatPoints(summary.refunded_shop_points)}`,
-                targetTab: 'finance',
-                targetId: 'paymentsBusinessBreakdown',
-                actionLabel: '查看商城消费'
+                help: `${formatNumber(summary.shop_order_count)} 笔消费 · 退款 ${formatPoints(summary.refunded_shop_points)}`
             },
             {
                 icon: 'fas fa-arrow-trend-up',
-                label: '积分流入',
+                label: '流入',
                 value: formatPoints(summary.points_inflow),
-                help: '包含充值、兑换码、奖励和管理入账',
-                targetTab: 'finance',
-                targetId: 'paymentsPointsBreakdown',
-                actionLabel: '查看流入分类'
+                help: '包含充值、兑换码、奖励和管理入账'
             },
             {
                 icon: 'fas fa-arrow-trend-down',
-                label: '积分流出',
+                label: '流出',
                 value: formatPoints(summary.points_outflow),
                 help: '包含商城消费、内容解锁、验证和管理扣减',
-                tone: 'warning',
-                targetTab: 'finance',
-                targetId: 'paymentsPointsBreakdown',
-                actionLabel: '查看流出分类'
+                tone: 'warning'
             },
             {
                 icon: 'fas fa-scale-balanced',
-                label: '净积分流动',
+                label: '净流动',
                 value: formatSignedPoints(summary.net_points_flow),
-                help: '流入减去流出后的净变化',
-                targetTab: 'finance',
-                targetId: 'paymentsPointsBreakdown',
-                actionLabel: '查看净变化'
+                help: '流入减去流出后的净变化'
             },
             {
                 icon: 'fas fa-coins',
                 label: '当前流通余额',
                 value: formatPoints(summary.circulating_points),
-                help: `付费 ${formatPoints(summary.paid_balance)} · 奖励 ${formatPoints(summary.bonus_balance)}`,
-                targetTab: 'finance',
-                targetId: 'paymentsBusinessBreakdown',
-                actionLabel: '查看积分存量'
+                help: `付费 ${formatPoints(summary.paid_balance)} · 奖励 ${formatPoints(summary.bonus_balance)}`
             }
         ];
 
@@ -628,12 +548,17 @@
 
         target.innerHTML = items.map((item) => `
             <div class="payments-breakdown-card">
-                <div class="payments-breakdown-top">
-                    <div class="payments-breakdown-title">${escapeHtml(item.title || '业务项')}</div>
+                <div class="payments-breakdown-main">
+                    <div class="payments-breakdown-title-row">
+                        <div class="payments-breakdown-title">${escapeHtml(item.title || '业务项')}</div>
+                        ${renderInfoChip(item.help || '')}
+                    </div>
+                    <div class="payments-breakdown-description">${escapeHtml(item.description || '')}</div>
+                    <div class="payments-breakdown-meta">${escapeHtml(item.meta || '')}</div>
+                </div>
+                <div class="payments-breakdown-side">
                     <div class="payments-breakdown-metric">${escapeHtml(item.metric || '—')}</div>
                 </div>
-                <div class="payments-breakdown-description">${escapeHtml(item.description || '')}</div>
-                <div class="payments-breakdown-meta">${escapeHtml(item.meta || '')}</div>
             </div>
         `).join('');
     }
@@ -652,13 +577,18 @@
             <div class="payments-points-table">
                 ${items.map((item) => `
                     <div class="payments-points-row">
-                        <div class="payments-points-copy">
-                            <div class="payments-points-label">${escapeHtml(item.label || item.key || '未分类')}</div>
-                            <div class="payments-points-net ${Number(item.net || 0) < 0 ? 'is-negative' : 'is-positive'}">${escapeHtml(formatSignedPoints(item.net))}</div>
+                        <div class="payments-points-main">
+                            <div class="payments-points-title-row">
+                                <div class="payments-points-label">${escapeHtml(item.label || item.key || '未分类')}</div>
+                                ${renderInfoChip(item.help || '')}
+                            </div>
+                            <div class="payments-points-values">
+                                <span>流入 ${escapeHtml(formatPoints(item.inflow))}</span>
+                                <span>流出 ${escapeHtml(formatPoints(item.outflow))}</span>
+                            </div>
                         </div>
-                        <div class="payments-points-values">
-                            <span>流入 ${escapeHtml(formatPoints(item.inflow))}</span>
-                            <span>流出 ${escapeHtml(formatPoints(item.outflow))}</span>
+                        <div class="payments-points-side">
+                            <div class="payments-points-net ${Number(item.net || 0) < 0 ? 'is-negative' : 'is-positive'}">${escapeHtml(formatSignedPoints(item.net))}</div>
                         </div>
                     </div>
                 `).join('')}
@@ -901,7 +831,6 @@
         renderTrend(data);
         renderAnomalies(data);
         renderOrders(data);
-        applyPendingTarget();
 
         const siteLabel = site ? `站点 ${(site || '').toUpperCase()}` : '全部站点';
         setToolbarMeta(`${siteLabel} · ${getRangeLabel(state.days)} · 更新于 ${formatDateTime(new Date().toISOString())}`, 'ready');
@@ -1074,7 +1003,6 @@
         init,
         reload,
         switchTab,
-        goToSection,
         setDays,
         toggleRangeMenu,
         previewCleanup,

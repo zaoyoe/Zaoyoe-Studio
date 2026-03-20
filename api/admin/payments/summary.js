@@ -574,27 +574,31 @@ function buildBusinessBreakdown({ paymentOrders, shopOrders, balanceRows, sitewi
             title: '充值收入',
             description: `近期开出的支付订单 ${orderCount} 笔，成功 ${sitewideSummary.recharge_order_count} 笔。`,
             metric: `¥${sitewideSummary.recharge_amount.toLocaleString('zh-CN', { minimumFractionDigits: sitewideSummary.recharge_amount % 1 ? 2 : 0, maximumFractionDigits: 2 })}`,
-            meta: `${sitewideSummary.recharge_points.toLocaleString('zh-CN')} 积分入账`
+            meta: `${sitewideSummary.recharge_points.toLocaleString('zh-CN')} 已入账`,
+            help: '统计标准支付订单的成功入账金额和对应到账点数。'
         },
         {
             title: '商城消费',
             description: `商城已消费 ${sitewideSummary.shop_order_count} 笔，退款 ${sitewideSummary.refunded_shop_order_count} 笔。`,
-            metric: `${sitewideSummary.shop_points_spent.toLocaleString('zh-CN')} 积分`,
+            metric: sitewideSummary.shop_points_spent.toLocaleString('zh-CN'),
             meta: sitewideSummary.refunded_shop_points > 0
-                ? `已退款 ${sitewideSummary.refunded_shop_points.toLocaleString('zh-CN')} 积分`
-                : '当前无退款冲销'
+                ? `已退款 ${sitewideSummary.refunded_shop_points.toLocaleString('zh-CN')}`
+                : '当前无退款冲销',
+            help: '统计商城订单消耗的点数，不含已退款冲销部分。'
         },
         {
             title: '模拟支付',
             description: '用于临时直到账的充值记录，也会进入标准支付订单。',
             metric: `${successfulMockOrders.length.toLocaleString('zh-CN')} 笔`,
-            meta: `${roundNumber(successfulMockOrders.reduce((sum, order) => sum + normalizeNumber(order.points_amount, 0), 0), 1).toLocaleString('zh-CN')} 积分`
+            meta: `${roundNumber(successfulMockOrders.reduce((sum, order) => sum + normalizeNumber(order.points_amount, 0), 0), 1).toLocaleString('zh-CN')} 已入账`,
+            help: '用于统计当前启用的模拟充值通道，方便和真实支付分开核对。'
         },
         {
             title: '当前积分存量',
             description: `活跃余额分布在 ${(balanceRows || []).length.toLocaleString('zh-CN')} 个用户/站点账户中。`,
-            metric: `${sitewideSummary.circulating_points.toLocaleString('zh-CN')} 积分`,
-            meta: `付费 ${sitewideSummary.paid_balance.toLocaleString('zh-CN')} · 奖励 ${sitewideSummary.bonus_balance.toLocaleString('zh-CN')}`
+            metric: sitewideSummary.circulating_points.toLocaleString('zh-CN'),
+            meta: `付费 ${sitewideSummary.paid_balance.toLocaleString('zh-CN')} · 奖励 ${sitewideSummary.bonus_balance.toLocaleString('zh-CN')}`,
+            help: '展示当前仍在用户账户中流通的总余额，以及付费与奖励余额的拆分。'
         }
     ];
 }
