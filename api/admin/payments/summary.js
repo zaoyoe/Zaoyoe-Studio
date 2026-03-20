@@ -370,6 +370,10 @@ async function fetchShopOrders(client, sinceIso, site) {
                 site: variant.hasSite ? (row.site || 'cn') : 'cn'
             }));
         } catch (error) {
+            if (isMissingColumnError(error) && variant === variants[variants.length - 1]) {
+                return [];
+            }
+
             if (!isMissingColumnError(error) || variant === variants[variants.length - 1]) {
                 throw error;
             }
@@ -416,6 +420,10 @@ async function fetchPointsLedger(client, sinceIso, site) {
                 site: variant.hasSite ? (row.site || 'cn') : 'cn'
             }));
         } catch (error) {
+            if (isMissingColumnError(error) && variant === variants[variants.length - 1]) {
+                return [];
+            }
+
             if (!isMissingColumnError(error) || variant === variants[variants.length - 1]) {
                 throw error;
             }
@@ -461,6 +469,10 @@ async function fetchPointsBalances(client, site) {
                 site: variant.hasSite ? (row.site || 'cn') : 'cn'
             }));
         } catch (error) {
+            if (isMissingColumnError(error) && variant === variants[variants.length - 1]) {
+                return [];
+            }
+
             if (!isMissingColumnError(error) || variant === variants[variants.length - 1]) {
                 throw error;
             }

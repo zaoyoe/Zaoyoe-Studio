@@ -9,7 +9,8 @@
         activeTab: 'overview',
         listenersBound: false,
         summary: null,
-        cleanupPreview: null
+        cleanupPreview: null,
+        requestToken: 0
     };
 
     function escapeHtml(value) {
@@ -50,6 +51,14 @@
     function formatPercent(value) {
         const num = Number(value || 0);
         return Number.isFinite(num) ? `${num.toFixed(2).replace(/\.00$/, '')}%` : '0%';
+    }
+
+    function getFriendlyErrorMessage(error, fallback = '支付数据刷新失败，请稍后重试。') {
+        const message = String(error?.message || '').trim();
+        if (!message || message === 'Failed to fetch' || message === 'NetworkError when attempting to fetch resource.') {
+            return fallback;
+        }
+        return message;
     }
 
     function formatDateTime(value) {
@@ -274,10 +283,11 @@
         }
     }
 
-    function renderAccessState(message, tone = 'warning') {
+    function renderAccessState(message, tone = 'warning', options = {}) {
         const stateEl = document.getElementById('paymentsAccessState');
         const bodyEl = document.getElementById('paymentsDashboardBody');
         if (!stateEl || !bodyEl) return;
+        const preserveBody = options.preserveBody === true;
 
         stateEl.className = `payments-access-state ${tone}`;
         stateEl.innerHTML = `
@@ -285,7 +295,7 @@
             <span>${escapeHtml(message)}</span>
         `;
         stateEl.hidden = false;
-        bodyEl.hidden = true;
+        bodyEl.hidden = preserveBody ? false : true;
     }
 
     function clearAccessState() {
@@ -721,7 +731,7 @@
         `;
     }
 
-    async function loadSummary() {
+    async function loadSummary(requestToken) {
         const site = getSiteParam();
         const query = new URLSearchParams({
             days: String(state.days),
@@ -733,6 +743,10 @@
         }
 
         const payload = await fetchAdminJson(`/api/admin/payments/summary?${query.toString()}`);
+        if (requestToken !== state.requestToken) {
+            return false;
+        }
+
         state.summary = {
             ...(state.summary || {}),
             ...payload
@@ -751,6 +765,7 @@
 
         const siteLabel = site ? `站点 ${(site || '').toUpperCase()}` : '全部站点';
         setToolbarMeta(`${siteLabel} · ${getRangeLabel(state.days)} · 更新于 ${formatDateTime(new Date().toISOString())}`, 'ready');
+        return true;
     }
 
     async function loadCleanupPreview({ silent = false } = {}) {
@@ -798,25 +813,48 @@
             return;
         }
 
+        const requestToken = Date.now() + Math.random();
+        state.requestToken = requestToken;
+
         try {
             clearAccessState();
             syncTabIndicator();
             setLoading(true);
-            await loadSummary();
+            const applied = await loadSummary(requestToken);
+            if (!applied || requestToken !== state.requestToken) {
+                return;
+            }
 
             if (state.activeTab === 'ops') {
                 try {
                     await loadCleanupPreview({ silent: true });
                 } catch (cleanupError) {
                     console.error('[AdminPayments] Failed to load cleanup preview:', cleanupError);
-                    renderCleanupPreviewFallback(cleanupError.message || '测试数据扫描失败，但不影响支付对账查看。');
+                    renderCleanupPreviewFallback(getFriendlyErrorMessage(cleanupError, '测试数据扫描失败，但不影响支付对账查看。'));
                 }
             }
         } catch (error) {
+            if (requestToken !== state.requestToken) {
+                return;
+            }
+
             console.error('[AdminPayments] Failed to load dashboard:', error);
-            renderAccessState(error.message || '支付对账加载失败，请稍后重试。', error.statusCode === 403 ? 'error' : 'warning');
+            if (error.statusCode === 403) {
+                renderAccessState(getFriendlyErrorMessage(error, '当前账号没有支付对账权限，请使用管理员账号登录后再试。'), 'error');
+                return;
+            }
+
+            if (state.summary) {
+                renderAccessState(getFriendlyErrorMessage(error, '支付数据刷新失败，当前展示的是上一次成功结果。'), 'warning', { preserveBody: true });
+                setToolbarMeta('部分数据刷新失败，当前展示的是上一次成功结果', 'warning');
+                return;
+            }
+
+            renderAccessState(getFriendlyErrorMessage(error, '支付对账加载失败，请稍后重试。'), 'warning');
         } finally {
-            setLoading(false);
+            if (requestToken === state.requestToken) {
+                setLoading(false);
+            }
         }
     }
 
@@ -826,9 +864,9 @@
             await loadCleanupPreview();
         } catch (error) {
             console.error('[AdminPayments] Failed to preview cleanup:', error);
-            renderCleanupPreviewFallback(error.message || '测试数据扫描失败，请稍后再试。');
+            renderCleanupPreviewFallback(getFriendlyErrorMessage(error, '测试数据扫描失败，请稍后再试。'));
             if (typeof window.showToast === 'function') {
-                window.showToast(error.message || '测试数据扫描失败', 'error');
+                window.showToast(getFriendlyErrorMessage(error, '测试数据扫描失败'), 'error');
             }
         } finally {
             setCleanupLoading(false);
@@ -866,12 +904,12 @@
                 await loadCleanupPreview({ silent: true });
             } catch (previewError) {
                 console.error('[AdminPayments] Failed to reload cleanup preview after cleanup:', previewError);
-                renderCleanupPreviewFallback(previewError.message || '测试数据已清理，但扫描预览暂时不可用。');
+                renderCleanupPreviewFallback(getFriendlyErrorMessage(previewError, '测试数据已清理，但扫描预览暂时不可用。'));
             }
         } catch (error) {
             console.error('[AdminPayments] Failed to cleanup test data:', error);
             if (typeof window.showToast === 'function') {
-                window.showToast(error.message || '测试数据清理失败', 'error');
+                window.showToast(getFriendlyErrorMessage(error, '测试数据清理失败'), 'error');
             }
         } finally {
             setCleanupLoading(false);

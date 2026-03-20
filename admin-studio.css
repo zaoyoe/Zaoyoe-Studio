@@ -12749,6 +12749,10 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     color: var(--accent-starry);
 }
 
+.payments-last-update span[data-tone="warning"] {
+    color: #facc15;
+}
+
 .payments-access-state {
     display: flex;
     align-items: center;
@@ -12998,6 +13002,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     border-radius: 14px;
     padding: 14px 16px;
     background: rgba(255, 255, 255, 0.03);
+    overflow: hidden;
 }
 
 .payments-provider-row {
@@ -13225,6 +13230,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     border-radius: 14px;
     padding: 14px 16px;
     background: rgba(255, 255, 255, 0.03);
+    overflow: hidden;
 }
 
 .payments-breakdown-top,
@@ -13243,10 +13249,14 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 }
 
 .payments-breakdown-metric {
-    font-size: 1rem;
+    font-size: clamp(0.95rem, 1vw, 1.1rem);
     font-weight: 700;
     color: #f8fafc;
-    white-space: nowrap;
+    text-align: right;
+    line-height: 1.35;
+    max-width: 42%;
+    word-break: break-word;
+    overflow-wrap: anywhere;
 }
 
 .payments-breakdown-description,
@@ -13255,6 +13265,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     color: var(--text-dim);
     font-size: 0.82rem;
     line-height: 1.6;
+    overflow-wrap: anywhere;
 }
 
 .payments-breakdown-description,
@@ -13269,7 +13280,11 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 .payments-points-net {
     font-size: 0.9rem;
     font-weight: 700;
-    white-space: nowrap;
+    text-align: right;
+    max-width: 42%;
+    line-height: 1.35;
+    word-break: break-word;
+    overflow-wrap: anywhere;
 }
 
 .payments-points-net.is-positive {
@@ -13541,6 +13556,10 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     font-weight: 700;
     color: var(--text-main);
     line-height: 1.2;
+    white-space: normal;
+    word-break: keep-all;
+    overflow-wrap: anywhere;
+    text-wrap: balance;
 }
 
 .kpi-label {
