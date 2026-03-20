@@ -19,7 +19,7 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
-    <link rel="stylesheet" href="admin-studio.css?v=39">
+    <link rel="stylesheet" href="admin-studio.css?v=40">
     <link rel="stylesheet" href="admin-sidebar.css?v=10">
     <link rel="stylesheet" href="css/admin-chat.css">
 
@@ -5426,6 +5426,10 @@
                                         <button class="preset-btn payments-range-btn" data-days="90" type="button" onclick="AdminPayments.setDays(90, true)">最近 90 天</button>
                                         <button class="preset-btn payments-range-btn" data-days="365" type="button" onclick="AdminPayments.setDays(365, true)">最近 1 年</button>
                                     </div>
+                                    <div class="payments-range-meta" id="paymentsRangeMeta">
+                                        <i class="fas fa-calendar-day"></i>
+                                        <span>当前范围：最近 30 天</span>
+                                    </div>
                                     <div class="date-range-divider"></div>
                                     <div class="custom-range-section">
                                         <div class="custom-range-label">自定义范围</div>
@@ -7260,8 +7264,8 @@
     <script src="js/admin-ai.js"></script>
     <script src="admin-comments.js"></script>
     <script src="admin-analytics.js"></script>
-    <script src="js/admin-payments.js?v=20260320_ADMIN_PAYMENTS_V9"></script>
-    <script src="admin-config.js?v=20260320_ADMIN_PAYMENTS_V9"></script>
+    <script src="js/admin-payments.js?v=20260320_ADMIN_PAYMENTS_V10"></script>
+    <script src="admin-config.js?v=20260320_ADMIN_PAYMENTS_V10"></script>
     <script src="admin-homepage.js"></script>
     <script src="js/admin-studio-translate.js"></script>
     <script src="js/admin-site-filter.js"></script>

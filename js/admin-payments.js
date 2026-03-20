@@ -238,6 +238,14 @@
         return getRangeLabel(state.days);
     }
 
+    function isMobileViewport() {
+        return window.innerWidth <= 768;
+    }
+
+    function isUltraNarrowViewport() {
+        return window.innerWidth <= 430;
+    }
+
     function formatToolbarTime(value) {
         if (!value) return '--';
         const date = new Date(value);
@@ -516,9 +524,18 @@
     }
 
     function updateRangeLabel() {
+        const currentLabel = getCurrentRangeLabel();
         const label = document.getElementById('paymentsRangeLabel');
         if (label) {
-            label.textContent = getCurrentRangeLabel();
+            label.textContent = currentLabel;
+        }
+
+        const rangeMeta = document.getElementById('paymentsRangeMeta');
+        if (rangeMeta) {
+            rangeMeta.innerHTML = `
+                <i class="fas fa-calendar-day"></i>
+                <span>当前范围：${escapeHtml(currentLabel)}</span>
+            `;
         }
 
         document.querySelectorAll('.payments-range-btn').forEach((button) => {
@@ -936,6 +953,7 @@
 
         const items = Array.isArray(data?.trend_24h) ? data.trend_24h : [];
         const maxValue = items.reduce((max, item) => Math.max(max, Number(item.total_events || 0), Number(item.anomaly_events || 0)), 1);
+        const labelStep = isUltraNarrowViewport() ? 6 : (isMobileViewport() ? 4 : 1);
 
         if (!items.length) {
             target.innerHTML = '<div class="payments-empty-state">最近 24 小时暂无回调数据。</div>';
@@ -945,14 +963,17 @@
 
         target.innerHTML = `
             <div class="payments-trend-bars">
-                ${items.map((item) => {
+                ${items.map((item, index) => {
                     const totalHeight = Math.max(6, Math.round((Number(item.total_events || 0) / maxValue) * 100));
                     const anomalyHeight = Math.max(0, Math.round((Number(item.anomaly_events || 0) / maxValue) * 100));
+                    const rawLabel = String(item.label || '');
+                    const shortLabel = rawLabel.includes(' ') ? rawLabel.split(' ')[1] : rawLabel.slice(6);
+                    const showLabel = labelStep === 1 || index % labelStep === 0 || index === items.length - 1;
                     return `
-                        <div class="payments-trend-bar" title="${escapeHtml(item.label)} · 总回调 ${escapeHtml(formatNumber(item.total_events))} · 异常 ${escapeHtml(formatNumber(item.anomaly_events))}">
+                        <div class="payments-trend-bar ${showLabel ? 'show-label' : ''}" title="${escapeHtml(item.label)} · 总回调 ${escapeHtml(formatNumber(item.total_events))} · 异常 ${escapeHtml(formatNumber(item.anomaly_events))}">
                             <div class="payments-trend-bar-total" style="height:${totalHeight}%"></div>
                             <div class="payments-trend-bar-anomaly" style="height:${anomalyHeight}%"></div>
-                            <span>${escapeHtml(item.label.slice(6))}</span>
+                            <span>${showLabel ? escapeHtml(shortLabel) : ''}</span>
                         </div>
                     `;
                 }).join('')}
@@ -1016,10 +1037,10 @@
                     <span>${escapeHtml(getHandlingSuggestion(item))}</span>
                 </div>
                 <div class="payments-anomaly-meta">
-                    <span>${escapeHtml(item.type === 'event' ? '回调事件' : '订单')}</span>
-                    <span>${escapeHtml(getProviderLabel(item.provider))}</span>
-                    <span>${escapeHtml(item.provider_order_no || '无订单号')}</span>
-                    <span>${escapeHtml(formatDateTime(item.created_at))}</span>
+                    <span><small>类型</small><strong>${escapeHtml(item.type === 'event' ? '回调事件' : '订单')}</strong></span>
+                    <span><small>通道</small><strong>${escapeHtml(getProviderLabel(item.provider))}</strong></span>
+                    <span><small>订单号</small><strong>${escapeHtml(item.provider_order_no || '无订单号')}</strong></span>
+                    <span><small>时间</small><strong>${escapeHtml(formatDateTime(item.created_at))}</strong></span>
                 </div>
             </div>
                 `).join('')}
@@ -1039,6 +1060,48 @@
         }
 
         const pager = paginateItems(orders, 'orders');
+
+        if (isMobileViewport()) {
+            target.innerHTML = `
+                <div class="payments-order-cards">
+                    ${pager.pageItems.map((order) => `
+                        <div class="payments-order-card">
+                            <div class="payments-order-card-top">
+                                <div>
+                                    <div class="payments-order-no">${escapeHtml(order.provider_order_no || '—')}</div>
+                                    <div class="payments-order-provider">${escapeHtml(getProviderLabel(order.provider))} · ${(order.site || 'cn').toUpperCase()}</div>
+                                </div>
+                                <span class="payments-status-badge status-${escapeHtml(order.status || 'pending')}">${escapeHtml(getStatusLabel(order.status))}</span>
+                            </div>
+                            <div class="payments-order-card-grid">
+                                <div>
+                                    <label>套餐</label>
+                                    <strong>${escapeHtml(order.package_name || '未匹配套餐')}</strong>
+                                </div>
+                                <div>
+                                    <label>金额</label>
+                                    <strong>${escapeHtml(formatCurrency(order.paid_amount))}</strong>
+                                </div>
+                                <div>
+                                    <label>积分</label>
+                                    <span>${escapeHtml(formatNumber(order.points_amount))}</span>
+                                </div>
+                                <div>
+                                    <label>创建时间</label>
+                                    <span>${escapeHtml(formatDateTime(order.created_at))}</span>
+                                </div>
+                                <div>
+                                    <label>认领时间</label>
+                                    <span>${escapeHtml(formatDateTime(order.claimed_at))}</span>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+                ${renderPager('orders', pager.currentPage, pager.totalPages, pager.totalItems)}
+            `;
+            return;
+        }
 
         target.innerHTML = `
             <div class="payments-table-wrap">
@@ -1134,6 +1197,20 @@
                 </div>
             </div>
         `;
+    }
+
+    function rerenderCurrentView() {
+        if (!state.summary) return;
+        renderOverviewCards(state.summary);
+        renderSitewideSummary(state.summary);
+        renderBusinessBreakdown(state.summary);
+        renderPointsBreakdown(state.summary);
+        renderTrend(state.summary);
+        renderAnomalies(state.summary);
+        renderOrders(state.summary);
+        if (state.cleanupPreview) {
+            renderCleanupPreview({ preview: state.cleanupPreview });
+        }
     }
 
     function renderCleanupPreviewFallback(message) {
@@ -1243,9 +1320,16 @@
                     if (!chip) return;
                     hideInfoTooltip();
                 });
+                let resizeTimer = null;
                 window.addEventListener('scroll', hideInfoTooltip, true);
-                window.addEventListener('resize', syncTabIndicator);
-                window.addEventListener('resize', hideInfoTooltip);
+                window.addEventListener('resize', () => {
+                    syncTabIndicator();
+                    hideInfoTooltip();
+                    window.clearTimeout(resizeTimer);
+                    resizeTimer = window.setTimeout(() => {
+                        rerenderCurrentView();
+                    }, 120);
+                });
                 state.listenersBound = true;
             }
 
