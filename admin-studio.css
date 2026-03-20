@@ -14983,7 +14983,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
 #settings-view-pricing .module-content.pricing-settings-layout {
     display: grid;
-    grid-template-columns: minmax(260px, 0.9fr) minmax(320px, 0.95fr) minmax(320px, 1fr);
+    grid-template-columns: minmax(0, 1.18fr) minmax(320px, 0.82fr);
     align-items: start;
     gap: 20px;
 }
@@ -15006,10 +15006,6 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
     #settings-view-pricing .module-content.pricing-settings-layout {
         grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    #settings-view-pricing .pricing-settings-column--right {
-        grid-column: 1 / -1;
     }
 }
 
@@ -15520,116 +15516,79 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     overflow: visible;
 }
 
-.payment-channel-summary-card .config-card-header {
-    gap: 12px;
-}
-
-.payment-channel-open-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 9px 14px;
-    border: 1px solid rgba(107, 158, 206, 0.28);
-    border-radius: 10px;
-    background: rgba(107, 158, 206, 0.12);
-    color: var(--accent-starry);
-    font-size: 0.86rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s ease;
-}
-
-.payment-channel-open-btn:hover {
-    background: rgba(107, 158, 206, 0.18);
-    border-color: rgba(107, 158, 206, 0.45);
-    transform: translateY(-1px);
-}
-
-.payment-channel-summary-card .config-card-body {
+.payment-channel-config-card .config-card-body {
     display: flex;
     flex-direction: column;
     gap: 16px;
 }
 
-.payment-channel-hero-copy {
+.payment-channel-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 16px;
+}
+
+.payment-channel-toolbar .config-input[type="text"],
+.payment-channel-toolbar .config-input[type="url"],
+.payment-channel-toolbar .config-input[type="password"],
+.payment-channel-toolbar select.config-input {
+    width: 180px;
+    min-width: 180px;
+    text-align: left;
+}
+
+.payment-channel-accordions {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 12px;
 }
 
-.payment-channel-eyebrow {
-    font-size: 0.75rem;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    color: var(--accent-starry);
+.payment-provider-accordion {
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    border-radius: 16px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.02));
+    overflow: hidden;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
 }
 
-.payment-channel-active-line {
+.payment-provider-accordion.active-provider {
+    border-color: rgba(107, 158, 206, 0.45);
+    box-shadow: 0 10px 24px rgba(59, 130, 246, 0.14);
+}
+
+.payment-provider-accordion.is-disabled {
+    opacity: 0.88;
+}
+
+.payment-provider-accordion-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px 18px;
+    cursor: pointer;
+}
+
+.payment-provider-accordion-copy {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.payment-provider-accordion-title-line {
     display: flex;
     align-items: center;
     gap: 10px;
     flex-wrap: wrap;
 }
 
-.payment-channel-active-name {
-    font-size: 1.35rem;
-    font-weight: 700;
+.payment-provider-accordion-title {
     color: var(--text-main);
-}
-
-.payment-channel-active-pill {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 5px 10px;
-    border-radius: 999px;
-    background: rgba(34, 197, 94, 0.14);
-    color: #4ade80;
-    font-size: 0.76rem;
+    font-size: 0.98rem;
     font-weight: 600;
 }
 
-.payment-channel-hero-desc {
-    margin: 0;
-    color: var(--text-dim);
-    font-size: 0.86rem;
-    line-height: 1.6;
-}
-
-.payment-channel-provider-grid {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 12px;
-}
-
-.payment-provider-summary-card {
-    padding: 14px 16px;
-    border-radius: 14px;
-    border: 1px solid rgba(148, 163, 184, 0.14);
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.015));
-    transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
-}
-
-.payment-provider-summary-card.active-provider {
-    border-color: rgba(107, 158, 206, 0.45);
-    box-shadow: 0 10px 24px rgba(59, 130, 246, 0.14);
-    transform: translateY(-1px);
-}
-
-.payment-provider-summary-top {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-}
-
-.payment-provider-summary-name {
-    color: var(--text-main);
-    font-size: 0.95rem;
-    font-weight: 600;
-}
-
-.payment-provider-summary-status {
+.payment-provider-accordion-status {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -15640,137 +15599,123 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     white-space: nowrap;
 }
 
-.payment-provider-summary-status.is-current {
+.payment-provider-accordion-status.is-current {
     background: rgba(107, 158, 206, 0.16);
     color: var(--accent-starry);
 }
 
-.payment-provider-summary-status.is-enabled {
+.payment-provider-accordion-status.is-enabled {
     background: rgba(34, 197, 94, 0.14);
     color: #4ade80;
 }
 
-.payment-provider-summary-status.is-disabled {
+.payment-provider-accordion-status.is-disabled {
     background: rgba(148, 163, 184, 0.12);
     color: var(--text-dim);
 }
 
-.payment-provider-summary-meta {
+.payment-provider-accordion-desc {
     margin-top: 8px;
     color: var(--text-dim);
-    font-size: 0.82rem;
+    font-size: 0.83rem;
     line-height: 1.55;
 }
 
-.payment-channels-modal {
-    width: min(920px, calc(100vw - 32px));
-}
-
-.payment-channels-modal .modal-header h3 {
-    display: flex;
+.payment-provider-accordion-actions {
+    display: inline-flex;
     align-items: center;
     gap: 10px;
+    flex-shrink: 0;
 }
 
-.payment-channels-modal .modal-header h3 i {
-    color: var(--accent-starry);
-}
-
-.payment-channels-modal-body {
-    display: flex;
-    flex-direction: column;
-    gap: 18px;
-    padding: 20px 24px 0;
-    max-height: calc(90vh - 150px);
-    overflow-y: auto;
-}
-
-.payment-channels-modal-intro {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    padding: 14px 16px;
-    border-radius: 14px;
-    border: 1px solid rgba(107, 158, 206, 0.16);
+.payment-provider-expand-btn {
+    width: 36px;
+    height: 36px;
+    border: 1px solid rgba(107, 158, 206, 0.24);
+    border-radius: 10px;
     background: rgba(107, 158, 206, 0.08);
-    color: var(--text-main);
-    font-size: 0.88rem;
-    line-height: 1.6;
-}
-
-.payment-channels-modal-intro i {
     color: var(--accent-starry);
-    margin-top: 2px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
 }
 
-.payment-provider-block {
-    padding: 0 18px 6px;
-    border-radius: 16px;
-    border: 1px solid rgba(148, 163, 184, 0.14);
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.02));
+.payment-provider-expand-btn:hover {
+    background: rgba(107, 158, 206, 0.16);
 }
 
-.payment-provider-block-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 18px;
-    padding-top: 18px;
+.payment-provider-expand-btn i {
+    transition: transform 0.2s ease;
 }
 
-.payment-channels-modal .config-row {
+.payment-provider-expand-btn i.expanded {
+    transform: rotate(180deg);
+}
+
+.payment-provider-accordion-body {
+    max-height: 0;
+    overflow: hidden;
+    opacity: 0;
+    padding: 0 18px;
+    transition: max-height 0.28s ease, opacity 0.2s ease, padding 0.2s ease;
+}
+
+.payment-provider-accordion-body.expanded {
+    max-height: 1400px;
+    opacity: 1;
+    padding: 0 18px 12px;
+}
+
+.payment-provider-accordion-body .config-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(220px, 340px);
+    grid-template-columns: minmax(0, 1fr) minmax(200px, 280px);
     align-items: start;
     gap: 18px;
 }
 
-.payment-channels-modal .config-row > label {
+.payment-provider-accordion-body .config-row > label {
     color: var(--text-main);
     font-size: 0.94rem;
     font-weight: 500;
     padding-top: 10px;
 }
 
-.payment-channels-modal .config-info,
-.payment-channels-modal .config-input-wrapper {
+.payment-provider-accordion-body .config-info,
+.payment-provider-accordion-body .config-input-wrapper {
     min-width: 0;
 }
 
-.payment-channels-modal .config-desc {
+.payment-provider-accordion-body .config-desc {
     max-width: none;
 }
 
-.payment-channels-modal .config-input-wrapper {
+.payment-provider-accordion-body .config-input-wrapper {
     width: 100%;
     justify-content: flex-end;
     margin-top: 0;
 }
 
-.payment-channels-modal .config-input[type="text"],
-.payment-channels-modal .config-input[type="url"],
-.payment-channels-modal .config-input[type="password"],
-.payment-channels-modal .config-input[type="number"],
-.payment-channels-modal .config-input[type="email"],
-.payment-channels-modal .config-input[type="search"],
-.payment-channels-modal select.config-input {
-    width: min(100%, 340px);
-    min-width: 220px;
+.payment-provider-accordion-body .config-input[type="text"],
+.payment-provider-accordion-body .config-input[type="url"],
+.payment-provider-accordion-body .config-input[type="password"],
+.payment-provider-accordion-body .config-input[type="number"],
+.payment-provider-accordion-body .config-input[type="email"],
+.payment-provider-accordion-body .config-input[type="search"],
+.payment-provider-accordion-body select.config-input {
+    width: min(100%, 280px);
+    min-width: 200px;
     text-align: left;
 }
 
-.payment-channels-modal .status-toggle {
-    margin-left: auto;
+.payment-channel-save-row {
+    justify-content: flex-end;
+    padding-top: 8px;
 }
 
-.payment-channels-modal-footer {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 12px;
-    padding: 18px 24px 24px;
-    border-top: 1px solid var(--card-border);
-    background: rgba(15, 23, 42, 0.26);
+.payment-channel-save-row .btn-add-config {
+    margin-left: auto;
 }
 
 /* Config Row */
@@ -15902,65 +15847,58 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 }
 
 @media (max-width: 1024px) {
-    .payment-channels-modal .config-row {
+    .payment-channel-toolbar {
+        grid-template-columns: 1fr;
+    }
+
+    .payment-channel-toolbar .config-input[type="text"],
+    .payment-channel-toolbar .config-input[type="url"],
+    .payment-channel-toolbar .config-input[type="password"],
+    .payment-channel-toolbar select.config-input {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .payment-provider-accordion-body .config-row {
         grid-template-columns: 1fr;
         gap: 12px;
     }
 
-    .payment-channels-modal .config-row > label {
+    .payment-provider-accordion-body .config-row > label {
         padding-top: 0;
     }
 
-    .payment-provider-block-header {
-        flex-direction: column;
-    }
-
-    .payment-channels-modal .config-input-wrapper {
+    .payment-provider-accordion-body .config-input-wrapper {
         justify-content: flex-start;
     }
 
-    .payment-channels-modal .config-input[type="text"],
-    .payment-channels-modal .config-input[type="url"],
-    .payment-channels-modal .config-input[type="password"],
-    .payment-channels-modal .config-input[type="number"],
-    .payment-channels-modal .config-input[type="email"],
-    .payment-channels-modal .config-input[type="search"],
-    .payment-channels-modal select.config-input {
+    .payment-provider-accordion-body .config-input[type="text"],
+    .payment-provider-accordion-body .config-input[type="url"],
+    .payment-provider-accordion-body .config-input[type="password"],
+    .payment-provider-accordion-body .config-input[type="number"],
+    .payment-provider-accordion-body .config-input[type="email"],
+    .payment-provider-accordion-body .config-input[type="search"],
+    .payment-provider-accordion-body select.config-input {
         width: 100%;
         min-width: 0;
     }
 }
 
 @media (max-width: 768px) {
-    .payment-channel-summary-card .config-card-header {
+    #settings-view-pricing .module-content.pricing-settings-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .payment-provider-accordion-header {
         flex-direction: column;
-        align-items: flex-start;
     }
 
-    .payment-channel-open-btn {
+    .payment-provider-accordion-actions {
         width: 100%;
-        justify-content: center;
+        justify-content: space-between;
     }
 
-    .payment-channel-active-name {
-        font-size: 1.15rem;
-    }
-
-    .payment-channels-modal {
-        width: calc(100vw - 20px);
-    }
-
-    .payment-channels-modal-body {
-        padding: 18px 16px 0;
-    }
-
-    .payment-channels-modal-footer {
-        padding: 16px;
-        flex-wrap: wrap;
-    }
-
-    .payment-channels-modal-footer .btn-secondary,
-    .payment-channels-modal-footer .btn-add-config {
+    .payment-channel-save-row .btn-add-config {
         width: 100%;
         justify-content: center;
     }
