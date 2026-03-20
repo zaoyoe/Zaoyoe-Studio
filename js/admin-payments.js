@@ -10,7 +10,9 @@
         listenersBound: false,
         summary: null,
         cleanupPreview: null,
-        requestToken: 0
+        requestToken: 0,
+        viewCache: {},
+        pendingTarget: null
     };
 
     function escapeHtml(value) {
@@ -125,6 +127,11 @@
         return labels[num] || `最近 ${num} 天`;
     }
 
+    function getCurrentCacheKey() {
+        const site = getSiteParam() || 'all';
+        return `${state.days}:${site}`;
+    }
+
     async function getAccessToken() {
         const client = window.supabaseClient;
         if (!client) return '';
@@ -160,6 +167,27 @@
         }
 
         return payload;
+    }
+
+    function hasCachedDataForTab(tabId) {
+        const normalizedTab = String(tabId || 'overview');
+        if (state.viewCache[normalizedTab] !== getCurrentCacheKey()) {
+            return false;
+        }
+
+        const data = state.summary || {};
+        if (normalizedTab === 'overview') {
+            return Boolean(data.overview) && Array.isArray(data.provider_stats);
+        }
+        if (normalizedTab === 'finance') {
+            return Boolean(data.sitewide_summary)
+                && Array.isArray(data.business_breakdown)
+                && Array.isArray(data.points_breakdown);
+        }
+        if (normalizedTab === 'ops') {
+            return Array.isArray(data.recent_anomalies) && Array.isArray(data.recent_orders);
+        }
+        return false;
     }
 
     async function ensureAdminAccess() {
@@ -278,9 +306,45 @@
         syncTabIndicator();
         window.dispatchEvent(new Event('resize'));
 
-        if (shouldReload && state.initialized && !state.loading) {
+        if (shouldReload && state.initialized && !state.loading && !hasCachedDataForTab(state.activeTab)) {
             reload();
         }
+    }
+
+    function pulseTarget(element) {
+        if (!element) return;
+        element.classList.remove('payments-target-pulse');
+        void element.offsetWidth;
+        element.classList.add('payments-target-pulse');
+        window.setTimeout(() => {
+            element.classList.remove('payments-target-pulse');
+        }, 1800);
+    }
+
+    function applyPendingTarget() {
+        const target = state.pendingTarget;
+        if (!target || target.tab !== state.activeTab) return;
+
+        const element = document.getElementById(target.id);
+        if (!element) return;
+
+        element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        pulseTarget(element);
+        state.pendingTarget = null;
+    }
+
+    function goToSection(tabId, targetId) {
+        state.pendingTarget = {
+            tab: String(tabId || state.activeTab),
+            id: String(targetId || '')
+        };
+
+        if (state.activeTab !== state.pendingTarget.tab) {
+            switchTab(state.pendingTarget.tab, { reload: !hasCachedDataForTab(state.pendingTarget.tab) });
+            return;
+        }
+
+        applyPendingTarget();
     }
 
     function renderAccessState(message, tone = 'warning', options = {}) {
@@ -338,7 +402,10 @@
         if (!target) return;
 
         target.innerHTML = cards.map((card) => `
-            <div class="kpi-card payments-kpi-card-visual ${card.tone ? `is-${card.tone}` : ''}">
+            <div
+                class="kpi-card payments-kpi-card-visual ${card.tone ? `is-${card.tone}` : ''} ${card.targetId ? 'is-clickable' : ''}"
+                ${card.targetId ? `data-target-tab="${escapeHtml(card.targetTab || state.activeTab)}" data-target-id="${escapeHtml(card.targetId)}"` : ''}
+            >
                 <div class="kpi-icon payments-kpi-icon">
                     <i class="${escapeHtml(card.icon || 'fas fa-chart-line')}"></i>
                 </div>
@@ -347,11 +414,20 @@
                         <div class="kpi-value">${escapeHtml(card.value)}</div>
                         ${card.badge ? `<div class="kpi-trend ${card.badgeTone ? `trend-${card.badgeTone}` : ''}">${escapeHtml(card.badge)}</div>` : ''}
                     </div>
-                    <div class="kpi-label">${escapeHtml(card.label)}</div>
-                    <div class="payments-kpi-footnote">${escapeHtml(card.hint)}</div>
+                    <div class="payments-kpi-label-row">
+                        <div class="kpi-label">${escapeHtml(card.label)}</div>
+                        ${card.help ? `<span class="payments-info-chip" tabindex="0" role="note" title="${escapeHtml(card.help)}" aria-label="${escapeHtml(card.help)}" onclick="event.stopPropagation()">i</span>` : ''}
+                    </div>
+                    ${card.targetId ? `<div class="payments-kpi-action"><i class="fas fa-arrow-right"></i><span>${escapeHtml(card.actionLabel || '查看详情')}</span></div>` : ''}
                 </div>
             </div>
         `).join('');
+
+        target.querySelectorAll('.payments-kpi-card-visual.is-clickable').forEach((card) => {
+            card.addEventListener('click', () => {
+                goToSection(card.dataset.targetTab, card.dataset.targetId);
+            });
+        });
     }
 
     function renderOverviewCards(data) {
@@ -365,53 +441,77 @@
                 icon: 'fas fa-file-invoice-dollar',
                 label: '总订单',
                 value: formatNumber(overview.total_orders),
-                hint: `近 ${state.days} 天支付订单总数`
+                help: `近 ${state.days} 天支付订单总数`,
+                targetTab: 'ops',
+                targetId: 'paymentsOrdersTable',
+                actionLabel: '查看最近订单'
             },
             {
                 icon: 'fas fa-circle-check',
                 label: '支付成功率',
                 value: formatPercent(overview.paid_rate),
-                hint: `${formatNumber(overview.paid_orders)} 笔已支付/已兑换`
+                help: `${formatNumber(overview.paid_orders)} 笔已支付/已兑换`,
+                targetTab: 'overview',
+                targetId: 'paymentsProviderStats',
+                actionLabel: '查看通道表现'
             },
             {
                 icon: 'fas fa-user-check',
                 label: '认领率',
                 value: formatPercent(overview.claim_rate),
-                hint: `${formatNumber(overview.claimed_orders)} 笔已认领`
+                help: `${formatNumber(overview.claimed_orders)} 笔已认领`,
+                targetTab: 'ops',
+                targetId: 'paymentsOrdersTable',
+                actionLabel: '查看认领状态'
             },
             {
                 icon: 'fas fa-sack-dollar',
                 label: '支付金额',
                 value: formatCurrency(overview.total_amount),
-                hint: `${formatNumber(overview.total_points)} 积分已入账`
+                help: `${formatNumber(overview.total_points)} 积分已入账`,
+                targetTab: 'finance',
+                targetId: 'paymentsBusinessBreakdown',
+                actionLabel: '查看收支拆分'
             },
             {
                 icon: 'fas fa-hourglass-half',
                 label: '待审核',
                 value: formatNumber(anomaly.review_orders),
-                hint: '套餐匹配、金额或签名需人工确认',
-                tone: 'warning'
+                help: '套餐匹配、金额或签名需人工确认',
+                tone: 'warning',
+                targetTab: 'ops',
+                targetId: 'paymentsAnomalyList',
+                actionLabel: '处理异常队列'
             },
             {
                 icon: 'fas fa-triangle-exclamation',
                 label: '失败订单',
                 value: formatNumber(anomaly.failed_orders),
-                hint: '签名失败或金额校验失败',
-                tone: 'critical'
+                help: '签名失败或金额校验失败',
+                tone: 'critical',
+                targetTab: 'ops',
+                targetId: 'paymentsAnomalyList',
+                actionLabel: '查看失败订单'
             },
             {
                 icon: 'fas fa-unlink',
                 label: '未认领订单',
                 value: formatNumber(anomaly.unclaimed_paid_orders),
-                hint: '已支付但尚未输入订单号',
-                tone: 'info'
+                help: '已支付但尚未输入订单号',
+                tone: 'info',
+                targetTab: 'ops',
+                targetId: 'paymentsOrdersTable',
+                actionLabel: '查看未认领订单'
             },
             {
                 icon: 'fas fa-wave-square',
                 label: '异常回调',
                 value: formatNumber(anomaly.recent_event_anomalies),
-                hint: `${formatNumber(anomaly.duplicate_webhook_orders)} 个订单出现重复回调`,
-                tone: 'warning'
+                help: `${formatNumber(anomaly.duplicate_webhook_orders)} 个订单出现重复回调`,
+                tone: 'warning',
+                targetTab: 'ops',
+                targetId: 'paymentsAnomalyList',
+                actionLabel: '排查回调异常'
             }
         ];
 
@@ -460,38 +560,56 @@
                 icon: 'fas fa-wallet',
                 label: '充值收入',
                 value: formatCurrency(summary.recharge_amount),
-                hint: `${formatNumber(summary.recharge_order_count)} 笔充值 · ${formatPoints(summary.recharge_points)}`
+                help: `${formatNumber(summary.recharge_order_count)} 笔充值 · ${formatPoints(summary.recharge_points)}`,
+                targetTab: 'finance',
+                targetId: 'paymentsBusinessBreakdown',
+                actionLabel: '查看充值拆分'
             },
             {
                 icon: 'fas fa-store',
                 label: '商城消费',
                 value: formatPoints(summary.shop_points_spent),
-                hint: `${formatNumber(summary.shop_order_count)} 笔消费 · 退款 ${formatPoints(summary.refunded_shop_points)}`
+                help: `${formatNumber(summary.shop_order_count)} 笔消费 · 退款 ${formatPoints(summary.refunded_shop_points)}`,
+                targetTab: 'finance',
+                targetId: 'paymentsBusinessBreakdown',
+                actionLabel: '查看商城消费'
             },
             {
                 icon: 'fas fa-arrow-trend-up',
                 label: '积分流入',
                 value: formatPoints(summary.points_inflow),
-                hint: '包含充值、兑换码、奖励和管理入账'
+                help: '包含充值、兑换码、奖励和管理入账',
+                targetTab: 'finance',
+                targetId: 'paymentsPointsBreakdown',
+                actionLabel: '查看流入分类'
             },
             {
                 icon: 'fas fa-arrow-trend-down',
                 label: '积分流出',
                 value: formatPoints(summary.points_outflow),
-                hint: '包含商城消费、内容解锁、验证和管理扣减',
-                tone: 'warning'
+                help: '包含商城消费、内容解锁、验证和管理扣减',
+                tone: 'warning',
+                targetTab: 'finance',
+                targetId: 'paymentsPointsBreakdown',
+                actionLabel: '查看流出分类'
             },
             {
                 icon: 'fas fa-scale-balanced',
                 label: '净积分流动',
                 value: formatSignedPoints(summary.net_points_flow),
-                hint: '流入减去流出后的净变化'
+                help: '流入减去流出后的净变化',
+                targetTab: 'finance',
+                targetId: 'paymentsPointsBreakdown',
+                actionLabel: '查看净变化'
             },
             {
                 icon: 'fas fa-coins',
                 label: '当前流通余额',
                 value: formatPoints(summary.circulating_points),
-                hint: `付费 ${formatPoints(summary.paid_balance)} · 奖励 ${formatPoints(summary.bonus_balance)}`
+                help: `付费 ${formatPoints(summary.paid_balance)} · 奖励 ${formatPoints(summary.bonus_balance)}`,
+                targetTab: 'finance',
+                targetId: 'paymentsBusinessBreakdown',
+                actionLabel: '查看积分存量'
             }
         ];
 
@@ -598,6 +716,25 @@
             return;
         }
 
+        function getHandlingSuggestion(item) {
+            const title = String(item?.title || '');
+            const message = String(item?.message || '');
+
+            if (title.includes('签名') || message.toLowerCase().includes('signature')) {
+                return '处理建议：检查支付通道密钥、回调签名算法和回调来源地址。';
+            }
+            if (title.includes('金额') || message.includes('金额')) {
+                return '处理建议：核对套餐价格、支付金额和通道回传金额是否一致。';
+            }
+            if (title.includes('未认领') || message.includes('未输入订单号')) {
+                return '处理建议：提醒用户在钱包输入订单号，或后台人工补认领。';
+            }
+            if (title.includes('待审核')) {
+                return '处理建议：检查套餐映射、金额校验和订单来源后再决定是否放行。';
+            }
+            return '处理建议：先核对订单号、支付通道配置和回调时间，再决定是否人工补单。';
+        }
+
         target.innerHTML = anomalies.map((item) => `
             <div class="payments-anomaly-item severity-${escapeHtml(item.severity || 'info')}">
                 <div class="payments-anomaly-top">
@@ -605,6 +742,7 @@
                     <span class="payments-anomaly-severity">${escapeHtml(getSeverityLabel(item.severity))}</span>
                 </div>
                 <div class="payments-anomaly-message">${escapeHtml(item.message || '')}</div>
+                <div class="payments-anomaly-suggestion">${escapeHtml(getHandlingSuggestion(item))}</div>
                 <div class="payments-anomaly-meta">
                     <span>${escapeHtml(item.type === 'event' ? '回调事件' : '订单')}</span>
                     <span>${escapeHtml(getProviderLabel(item.provider))}</span>
@@ -753,6 +891,7 @@
         };
 
         const data = state.summary;
+        state.viewCache[state.activeTab] = getCurrentCacheKey();
         updateToolbarHighlights(data);
         renderOverviewCards(data);
         renderProviderStats(data);
@@ -762,6 +901,7 @@
         renderTrend(data);
         renderAnomalies(data);
         renderOrders(data);
+        applyPendingTarget();
 
         const siteLabel = site ? `站点 ${(site || '').toUpperCase()}` : '全部站点';
         setToolbarMeta(`${siteLabel} · ${getRangeLabel(state.days)} · 更新于 ${formatDateTime(new Date().toISOString())}`, 'ready');
@@ -899,7 +1039,8 @@
             if (typeof window.showToast === 'function') {
                 window.showToast(payload.message || '测试数据已清理', payload.warnings?.length ? 'warning' : 'success');
             }
-            await loadSummary();
+            state.viewCache = {};
+            await reload();
             try {
                 await loadCleanupPreview({ silent: true });
             } catch (previewError) {
@@ -919,6 +1060,7 @@
     function setDays(value, shouldCloseMenu = false) {
         const next = Number.parseInt(value, 10);
         state.days = Number.isFinite(next) && next > 0 ? next : 30;
+        state.viewCache = {};
         updateRangeLabel();
         if (shouldCloseMenu) {
             closeRangeMenu();
@@ -932,6 +1074,7 @@
         init,
         reload,
         switchTab,
+        goToSection,
         setDays,
         toggleRangeMenu,
         previewCleanup,

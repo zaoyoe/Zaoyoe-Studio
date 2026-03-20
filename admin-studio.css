@@ -12859,6 +12859,17 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     overflow: hidden;
 }
 
+.payments-kpi-card-visual.is-clickable {
+    cursor: pointer;
+    transition: transform 0.24s ease, box-shadow 0.24s ease, border-color 0.24s ease;
+}
+
+.payments-kpi-card-visual.is-clickable:hover {
+    transform: translateY(-2px);
+    border-color: rgba(96, 165, 250, 0.32);
+    box-shadow: 0 16px 40px rgba(15, 23, 42, 0.32);
+}
+
 .payments-kpi-card-visual .kpi-icon {
     background: linear-gradient(135deg, #6b9ece 0%, #5a8cba 100%);
     box-shadow: 0 10px 30px rgba(107, 158, 206, 0.25);
@@ -12884,6 +12895,38 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     font-size: 0.82rem;
     color: var(--text-dim);
     line-height: 1.6;
+}
+
+.payments-kpi-label-row {
+    margin-top: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.payments-info-chip {
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    background: rgba(255, 255, 255, 0.06);
+    color: #93c5fd;
+    font-size: 0.72rem;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.payments-kpi-action {
+    margin-top: 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: #93c5fd;
+    font-size: 0.8rem;
+    font-weight: 600;
 }
 
 .payments-kpi-card,
@@ -13003,6 +13046,11 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     padding: 14px 16px;
     background: rgba(255, 255, 255, 0.03);
     overflow: hidden;
+}
+
+.payments-target-pulse {
+    border-color: rgba(96, 165, 250, 0.4) !important;
+    box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.24), 0 0 0 10px rgba(96, 165, 250, 0.08);
 }
 
 .payments-provider-row {
@@ -13203,6 +13251,17 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     line-height: 1.6;
 }
 
+.payments-anomaly-suggestion {
+    margin-top: 10px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(96, 165, 250, 0.08);
+    border: 1px solid rgba(96, 165, 250, 0.14);
+    color: #cfe3ff;
+    font-size: 0.8rem;
+    line-height: 1.6;
+}
+
 .payments-anomaly-meta {
     margin-top: 12px;
     display: flex;
@@ -13235,9 +13294,9 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
 .payments-breakdown-top,
 .payments-points-copy {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(92px, auto);
     align-items: flex-start;
-    justify-content: space-between;
     gap: 12px;
 }
 
@@ -13285,6 +13344,12 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     line-height: 1.35;
     word-break: break-word;
     overflow-wrap: anywhere;
+}
+
+.payments-points-values {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
 }
 
 .payments-points-net.is-positive {
