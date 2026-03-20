@@ -12692,6 +12692,12 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
 .payments-toolbar-shell {
     margin-bottom: 6px;
+    min-height: 76px;
+}
+
+.payments-date-menu {
+    min-width: 340px;
+    max-width: 360px;
 }
 
 .payments-toolbar-highlights {
@@ -13147,15 +13153,21 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 .payments-anomaly-list {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 18px;
+}
+
+.payments-anomaly-items {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
 }
 
 .payments-provider-row,
 .payments-anomaly-item {
     border: 1px solid rgba(148, 163, 184, 0.14);
-    border-radius: 14px;
-    padding: 14px 16px;
-    background: rgba(255, 255, 255, 0.03);
+    border-radius: 16px;
+    padding: 20px 22px;
+    background: rgba(255, 255, 255, 0.035);
     overflow: visible;
 }
 
@@ -13320,11 +13332,18 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 12px;
+    gap: 18px;
+}
+
+.payments-anomaly-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
 }
 
 .payments-anomaly-title {
-    font-size: 0.96rem;
+    font-size: 1.04rem;
     font-weight: 600;
     color: var(--text-main);
 }
@@ -13351,30 +13370,46 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 }
 
 .payments-anomaly-message {
-    margin-top: 8px;
     color: var(--text-dim);
-    font-size: 0.84rem;
-    line-height: 1.6;
+    font-size: 0.87rem;
+    line-height: 1.78;
 }
 
 .payments-anomaly-suggestion {
-    margin-top: 10px;
-    padding: 10px 12px;
+    margin-top: 16px;
+    padding: 12px 14px;
     border-radius: 12px;
-    background: rgba(96, 165, 250, 0.08);
-    border: 1px solid rgba(96, 165, 250, 0.14);
+    background: rgba(96, 165, 250, 0.07);
+    border: 1px solid rgba(96, 165, 250, 0.12);
     color: #cfe3ff;
     font-size: 0.8rem;
-    line-height: 1.6;
+    line-height: 1.7;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.payments-anomaly-suggestion i {
+    margin-top: 2px;
+    color: #93c5fd;
 }
 
 .payments-anomaly-meta {
-    margin-top: 12px;
+    margin-top: 16px;
     display: flex;
     flex-wrap: wrap;
-    gap: 10px;
+    gap: 10px 12px;
     font-size: 0.76rem;
     color: var(--text-dim);
+}
+
+.payments-anomaly-meta span {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.08);
+    border: 1px solid rgba(148, 163, 184, 0.12);
 }
 
 .payments-orders-table {
@@ -13652,21 +13687,21 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     align-items: center;
     justify-content: center;
     gap: 12px;
-    padding-top: 10px;
+    padding: 16px 0 0;
+    margin-top: 2px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .payments-pagination-btn {
-    width: 32px;
-    height: 32px;
-    border-radius: 6px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    background: rgba(255, 255, 255, 0.05);
-    color: var(--text-main);
+    box-shadow: none;
+}
+
+.payments-range-meta {
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.2s ease;
+    gap: 6px;
+    color: var(--text-dim);
+    font-size: 0.8rem;
 }
 
 .payments-pagination-btn:hover:not(:disabled) {
@@ -13682,9 +13717,8 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 }
 
 .payments-pagination-info {
-    font-size: 0.85rem;
-    color: var(--text-dim);
-    font-variant-numeric: tabular-nums;
+    min-width: 136px;
+    text-align: center;
 }
 
 .payments-cleanup-samples h4 {
@@ -13760,6 +13794,11 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
         align-items: flex-start;
     }
 
+    .payments-date-menu {
+        min-width: min(340px, calc(100vw - 32px));
+        max-width: calc(100vw - 32px);
+    }
+
     .payments-row-head {
         grid-template-columns: 1fr;
         gap: 12px;
@@ -13790,6 +13829,10 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     .payments-last-update {
         min-width: 0;
         width: 100%;
+    }
+
+    .payments-anomaly-item {
+        padding: 18px;
     }
 
     .payments-trend-bars {

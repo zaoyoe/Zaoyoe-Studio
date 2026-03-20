@@ -24,6 +24,14 @@ function getIsoHoursAgo(hours) {
     return date.toISOString();
 }
 
+function parseIsoQueryDate(value) {
+    const text = typeof value === 'string' ? value.trim() : '';
+    if (!text) return null;
+    const date = new Date(text);
+    if (Number.isNaN(date.getTime())) return null;
+    return date.toISOString();
+}
+
 function formatHourBucket(dateLike) {
     const date = new Date(dateLike);
     if (Number.isNaN(date.getTime())) return '';
@@ -309,7 +317,7 @@ async function fetchPagedRows(buildQuery, pageSize = 1000, maxPages = 50) {
     return rows;
 }
 
-async function fetchPaymentOrders(client, sinceIso, site) {
+async function fetchPaymentOrders(client, sinceIso, untilIso, site) {
     return fetchPagedRows(() => {
         let query = client
             .from('payment_orders')
@@ -317,6 +325,9 @@ async function fetchPaymentOrders(client, sinceIso, site) {
             .gte('created_at', sinceIso)
             .order('created_at', { ascending: false });
 
+        if (untilIso) {
+            query = query.lte('created_at', untilIso);
+        }
         if (site) {
             query = query.eq('site', site);
         }
@@ -325,15 +336,23 @@ async function fetchPaymentOrders(client, sinceIso, site) {
     });
 }
 
-async function fetchPaymentEvents(client, sinceIso) {
-    return fetchPagedRows(() => client
-        .from('payment_events')
-        .select('id, payment_order_id, provider, provider_order_no, event_type, signature_valid, amount_valid, processing_result, error_message, created_at')
-        .gte('created_at', sinceIso)
-        .order('created_at', { ascending: false }));
+async function fetchPaymentEvents(client, sinceIso, untilIso) {
+    return fetchPagedRows(() => {
+        let query = client
+            .from('payment_events')
+            .select('id, payment_order_id, provider, provider_order_no, event_type, signature_valid, amount_valid, processing_result, error_message, created_at')
+            .gte('created_at', sinceIso)
+            .order('created_at', { ascending: false });
+
+        if (untilIso) {
+            query = query.lte('created_at', untilIso);
+        }
+
+        return query;
+    });
 }
 
-async function fetchShopOrders(client, sinceIso, site) {
+async function fetchShopOrders(client, sinceIso, untilIso, site) {
     const variants = [
         {
             select: 'id, user_id, price_paid, snapshot_product_name, refund_status, created_at, site',
@@ -354,6 +373,9 @@ async function fetchShopOrders(client, sinceIso, site) {
                     .gte('created_at', sinceIso)
                     .order('created_at', { ascending: false });
 
+                if (untilIso) {
+                    query = query.lte('created_at', untilIso);
+                }
                 if (site && variant.hasSite) {
                     query = query.eq('site', site);
                 }
@@ -383,7 +405,7 @@ async function fetchShopOrders(client, sinceIso, site) {
     return [];
 }
 
-async function fetchPointsLedger(client, sinceIso, site) {
+async function fetchPointsLedger(client, sinceIso, untilIso, site) {
     const variants = [
         {
             select: 'id, user_id, amount, reason, reference_id, created_at, site',
@@ -404,6 +426,9 @@ async function fetchPointsLedger(client, sinceIso, site) {
                     .gte('created_at', sinceIso)
                     .order('created_at', { ascending: false });
 
+                if (untilIso) {
+                    query = query.lte('created_at', untilIso);
+                }
                 if (site && variant.hasSite) {
                     query = query.eq('site', site);
                 }
@@ -618,8 +643,12 @@ module.exports = async function handler(req, res) {
             : 'overview';
         const days = Number.parseInt(req.query?.days, 10);
         const normalizedDays = Number.isFinite(days) && days > 0 ? Math.min(days, 365) : 30;
-        const daysAgoIso = getIsoDaysAgo(normalizedDays);
-        const trendSinceIso = getIsoHoursAgo(24);
+        const customStartIso = parseIsoQueryDate(req.query?.startDate);
+        const customEndIso = parseIsoQueryDate(req.query?.endDate);
+        const hasCustomRange = Boolean(customStartIso && customEndIso && new Date(customStartIso).getTime() <= new Date(customEndIso).getTime());
+        const sinceIso = hasCustomRange ? customStartIso : getIsoDaysAgo(normalizedDays);
+        const untilIso = hasCustomRange ? customEndIso : null;
+        const trendSinceIso = hasCustomRange ? customStartIso : getIsoHoursAgo(24);
         const needsEvents = view === 'overview' || view === 'ops';
         const needsFinance = view === 'finance';
 
@@ -630,10 +659,10 @@ module.exports = async function handler(req, res) {
             pointsLedgerRows,
             pointsBalanceRows
         ] = await Promise.all([
-            fetchPaymentOrders(scopedClient, daysAgoIso, site),
-            needsEvents ? fetchPaymentEvents(scopedClient, daysAgoIso) : Promise.resolve([]),
-            needsFinance ? fetchShopOrders(scopedClient, daysAgoIso, site) : Promise.resolve([]),
-            needsFinance ? fetchPointsLedger(scopedClient, daysAgoIso, site) : Promise.resolve([]),
+            fetchPaymentOrders(scopedClient, sinceIso, untilIso, site),
+            needsEvents ? fetchPaymentEvents(scopedClient, sinceIso, untilIso) : Promise.resolve([]),
+            needsFinance ? fetchShopOrders(scopedClient, sinceIso, untilIso, site) : Promise.resolve([]),
+            needsFinance ? fetchPointsLedger(scopedClient, sinceIso, untilIso, site) : Promise.resolve([]),
             needsFinance ? fetchPointsBalances(scopedClient, site) : Promise.resolve([])
         ]);
 
@@ -709,6 +738,8 @@ module.exports = async function handler(req, res) {
             details: {
                 site,
                 days: normalizedDays,
+                startDate: hasCustomRange ? customStartIso : null,
+                endDate: hasCustomRange ? customEndIso : null,
                 view
             }
         });

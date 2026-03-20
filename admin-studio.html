@@ -19,7 +19,7 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
-    <link rel="stylesheet" href="admin-studio.css?v=36">
+    <link rel="stylesheet" href="admin-studio.css?v=38">
     <link rel="stylesheet" href="admin-sidebar.css?v=10">
     <link rel="stylesheet" href="css/admin-chat.css">
 
@@ -5426,6 +5426,16 @@
                                         <button class="preset-btn payments-range-btn" data-days="90" type="button" onclick="AdminPayments.setDays(90, true)">最近 90 天</button>
                                         <button class="preset-btn payments-range-btn" data-days="365" type="button" onclick="AdminPayments.setDays(365, true)">最近 1 年</button>
                                     </div>
+                                    <div class="date-range-divider"></div>
+                                    <div class="custom-range-section">
+                                        <div class="custom-range-label">自定义范围</div>
+                                        <div class="custom-range-inputs">
+                                            <input type="date" class="custom-date-input" id="paymentsCustomStartDate">
+                                            <span class="date-separator">至</span>
+                                            <input type="date" class="custom-date-input" id="paymentsCustomEndDate">
+                                        </div>
+                                        <button class="custom-range-apply" type="button" onclick="AdminPayments.applyCustomRange()">确定</button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -5446,9 +5456,21 @@
                             </div>
                         </div>
                         <div class="toolbar-right">
+                            <button type="button" class="toolbar-icon-btn" onclick="AdminPayments.exportData('excel')" title="导出 Excel">
+                                <i class="fas fa-file-excel"></i>
+                            </button>
+                            <button type="button" class="toolbar-icon-btn" onclick="AdminPayments.exportData('csv')" title="导出 CSV">
+                                <i class="fas fa-file-csv"></i>
+                            </button>
                             <button type="button" class="toolbar-icon-btn" id="paymentsRefreshBtn" onclick="AdminPayments.reload()" title="刷新支付数据">
                                 <i class="fas fa-sync-alt"></i>
                             </button>
+                            <div class="auto-refresh-toggle" title="自动刷新（5 分钟）">
+                                <label class="toggle-switch-sm">
+                                    <input type="checkbox" id="paymentsAutoRefreshToggle" checked>
+                                    <span class="toggle-slider"></span>
+                                </label>
+                            </div>
                             <div class="last-update-compact payments-last-update">
                                 <span id="paymentsToolbarMeta">等待载入支付数据</span>
                             </div>
@@ -7238,8 +7260,8 @@
     <script src="js/admin-ai.js"></script>
     <script src="admin-comments.js"></script>
     <script src="admin-analytics.js"></script>
-    <script src="js/admin-payments.js?v=20260320_ADMIN_PAYMENTS_V6"></script>
-    <script src="admin-config.js?v=20260320_ADMIN_PAYMENTS_V6"></script>
+    <script src="js/admin-payments.js?v=20260320_ADMIN_PAYMENTS_V9"></script>
+    <script src="admin-config.js?v=20260320_ADMIN_PAYMENTS_V9"></script>
     <script src="admin-homepage.js"></script>
     <script src="js/admin-studio-translate.js"></script>
     <script src="js/admin-site-filter.js"></script>
