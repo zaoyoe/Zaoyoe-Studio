@@ -1,9 +1,13 @@
-const crypto = require('crypto');
 const {
     parseJsonBody,
     requireAuthenticatedUser,
     sendJson
 } = require('../../_lib/admin');
+const {
+    getPaymentProviderAdapter
+} = require('../../_lib/payments/provider-adapters');
+
+const mockProvider = getPaymentProviderAdapter('mock');
 
 function sanitizeSite(value) {
     const site = String(value || '').trim().toLowerCase();
@@ -22,9 +26,7 @@ function normalizeCurrency(value, fallback = null) {
 }
 
 function buildMockOrderNo(explicitOrderNo = '') {
-    const normalized = String(explicitOrderNo || '').trim();
-    if (normalized) return normalized.slice(0, 120);
-    return `MOCK_${Date.now()}_${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+    return mockProvider.buildOrderNo({ explicitOrderNo });
 }
 
 module.exports = async function handler(req, res) {
@@ -75,18 +77,17 @@ module.exports = async function handler(req, res) {
         const grantedPoints = normalizePointValue(paidPoints + bonusPoints, 0);
         const reason = isCustomRecharge ? 'custom_recharge' : `模拟充值: ${packageName}`;
         const referenceId = `mock_${orderNo}`;
-        const eventKey = `mock:${orderNo}:completed`;
+        const eventKey = mockProvider.buildEventKey({ orderNo, stage: 'completed' });
         const nowIso = new Date().toISOString();
-        const providerMetadata = {
-            mode: 'mock',
-            charge_type: isCustomRecharge ? 'custom' : 'package',
-            paid_points: paidPoints,
-            bonus_points: bonusPoints,
-            credited_points: grantedPoints,
-            display_name: packageName,
-            currency_amount: paidAmount,
-            site
-        };
+        const providerMetadata = mockProvider.buildProviderMetadata({
+            site,
+            isCustomRecharge,
+            packageName,
+            paidPoints,
+            bonusPoints,
+            grantedPoints,
+            paidAmount
+        });
 
         const { data: existingOrder, error: existingOrderError } = await supabase
             .from('payment_orders')

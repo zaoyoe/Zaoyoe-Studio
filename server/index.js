@@ -9,6 +9,11 @@ const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
+const {
+    getPaymentProviderAdapter,
+    roundCurrencyAmount: roundPaymentCurrencyAmount,
+    amountsMatch: paymentAmountsMatch
+} = require('../api/_lib/payments/provider-adapters');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -22,6 +27,7 @@ const PENDING_JOB_SWEEP_BATCH_SIZE = Math.max(1, Number(process.env.VERIFY_PENDI
 const jobSyncLocks = new Map();
 let pendingJobSweepTimer = null;
 let pendingJobSweepRunning = false;
+const afdianProvider = getPaymentProviderAdapter('afdian');
 
 // Initialize Supabase
 const supabase = createClient(
@@ -105,23 +111,15 @@ const LEGACY_AFDIAN_PRICE_TO_POINTS = {
 };
 
 function roundCurrencyAmount(value) {
-    const numericValue = Number(value);
-    return Number.isFinite(numericValue) ? Math.round(numericValue * 100) / 100 : 0;
+    return roundPaymentCurrencyAmount(value);
 }
 
 function amountsMatch(expected, actual, epsilon = 0.01) {
-    const left = roundCurrencyAmount(expected);
-    const right = roundCurrencyAmount(actual);
-    return Math.abs(left - right) <= epsilon;
+    return paymentAmountsMatch(expected, actual, epsilon);
 }
 
 function buildAfdianEventKey(orderNo, status, payload) {
-    const hash = crypto
-        .createHash('sha256')
-        .update(JSON.stringify(payload || {}))
-        .digest('hex')
-        .slice(0, 24);
-    return `afdian:${orderNo || 'unknown'}:${status || 'na'}:${hash}`;
+    return afdianProvider.buildEventKey({ orderNo, status, payload });
 }
 
 function getBearerToken(req) {
@@ -179,50 +177,16 @@ async function finalizePaymentEvent(eventKey, patch = {}) {
 }
 
 async function resolveAfdianPackage({ planId, amount }) {
+    const resolvedPackage = await afdianProvider.resolvePackage({
+        supabase,
+        planId,
+        amount
+    });
+    if (resolvedPackage) {
+        return resolvedPackage;
+    }
+
     const normalizedAmount = roundCurrencyAmount(amount);
-
-    if (planId) {
-        const { data, error } = await supabase
-            .from('points_packages')
-            .select('id, name, points_amount, bonus_points, price_cny, sku_id, is_active')
-            .eq('is_active', true)
-            .eq('sku_id', planId)
-            .maybeSingle();
-
-        if (!error && data) {
-            const paidPoints = Number(data.points_amount) || 0;
-            const bonusPoints = Number(data.bonus_points) || 0;
-            return {
-                packageId: data.id,
-                packageName: data.name,
-                expectedAmount: roundCurrencyAmount(data.price_cny),
-                pointsTotal: paidPoints + bonusPoints,
-                matchType: 'sku'
-            };
-        }
-    }
-
-    const { data: packages, error: packagesError } = await supabase
-        .from('points_packages')
-        .select('id, name, points_amount, bonus_points, price_cny, sku_id, is_active')
-        .eq('is_active', true)
-        .order('sort_order', { ascending: true });
-
-    if (!packagesError) {
-        const matchedPackage = (packages || []).find((pkg) => amountsMatch(pkg.price_cny, normalizedAmount));
-        if (matchedPackage) {
-            const paidPoints = Number(matchedPackage.points_amount) || 0;
-            const bonusPoints = Number(matchedPackage.bonus_points) || 0;
-            return {
-                packageId: matchedPackage.id,
-                packageName: matchedPackage.name,
-                expectedAmount: roundCurrencyAmount(matchedPackage.price_cny),
-                pointsTotal: paidPoints + bonusPoints,
-                matchType: 'amount'
-            };
-        }
-    }
-
     const legacyPoints = LEGACY_AFDIAN_PRICE_TO_POINTS[Math.round(normalizedAmount)];
     if (legacyPoints) {
         return {
@@ -1160,7 +1124,11 @@ app.post('/api/afdian/webhook', async (req, res) => {
             return res.json({ ec: 200, em: '' });
         }
 
-        const afdianToken = process.env.AFDIAN_TOKEN;
+        const afdianRuntime = await afdianProvider.resolveRuntimeContext({
+            supabase,
+            env: process.env
+        });
+        const afdianToken = afdianRuntime.secretValues?.afdian_token || process.env.AFDIAN_TOKEN;
         if (!afdianToken) {
             await finalizePaymentEvent(eventKey, {
                 processing_result: 'missing_afdian_token',
@@ -1177,25 +1145,23 @@ app.post('/api/afdian/webhook', async (req, res) => {
             return res.status(401).json({ ec: 401, em: 'missing signature' });
         }
 
-        const paramsJson = JSON.stringify(payload.data || {});
-        const expectedSign = crypto
-            .createHash('md5')
-            .update(afdianToken + paramsJson)
-            .digest('hex');
-        const signatureValid = payload.sign === expectedSign;
+        const signatureCheck = afdianProvider.verifyWebhook({
+            payload,
+            token: afdianToken
+        });
+        const signatureValid = signatureCheck.valid;
         const amount = roundCurrencyAmount(order.total_amount || 0);
         const resolvedPackage = await resolveAfdianPackage({
             planId: order.plan_id,
             amount
         });
         const amountValid = !!resolvedPackage && amountsMatch(resolvedPackage.expectedAmount, amount);
-        const processError = !signatureValid
-            ? 'signature_mismatch'
-            : !resolvedPackage
-                ? 'package_not_found'
-                : !amountValid
-                    ? `amount_mismatch_expected_${resolvedPackage.expectedAmount}`
-                    : null;
+        const processError = afdianProvider.deriveProcessError({
+            signatureValid,
+            resolvedPackage,
+            amount,
+            amountValid
+        });
 
         const { data: processResult, error: processRpcError } = await supabase.rpc('fn_process_afdian_payment', {
             p_order_no: orderNo,
