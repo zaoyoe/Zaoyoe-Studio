@@ -115,8 +115,12 @@
         }
         top = Math.max(gutter, top);
 
+        const targetCenter = rect.left + rect.width / 2;
+        const arrowLeft = Math.max(20, Math.min(width - 20, targetCenter - left));
+
         tooltip.style.left = `${left}px`;
         tooltip.style.top = `${top}px`;
+        tooltip.style.setProperty('--payments-tooltip-arrow-left', `${arrowLeft}px`);
         tooltip.classList.toggle('is-above', placeAbove);
     }
 
@@ -139,6 +143,7 @@
         tooltip.classList.remove('is-visible', 'is-above');
         tooltip.style.left = '';
         tooltip.style.top = '';
+        tooltip.style.removeProperty('--payments-tooltip-arrow-left');
         state.tooltipTarget = null;
     }
 

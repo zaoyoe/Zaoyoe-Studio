@@ -12969,7 +12969,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     content: '';
     position: absolute;
     top: -7px;
-    right: 20px;
+    left: var(--payments-tooltip-arrow-left, 50%);
     width: 14px;
     height: 14px;
     border-top: 1px solid rgba(191, 219, 254, 0.22);
@@ -12977,7 +12977,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     background: rgba(26, 37, 53, 0.48);
     backdrop-filter: blur(26px) saturate(190%);
     -webkit-backdrop-filter: blur(26px) saturate(190%);
-    transform: rotate(45deg);
+    transform: translateX(-50%) rotate(45deg);
 }
 
 .payments-floating-tooltip.is-above::before {
@@ -13046,6 +13046,10 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
 .payments-card {
     padding: 0;
+    overflow: visible;
+}
+
+.chart-card.payments-card {
     overflow: visible;
 }
 
@@ -13351,6 +13355,8 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     gap: 12px;
     overflow: visible;
     box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
 }
 
 .payments-content-title-row {
@@ -13376,6 +13382,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     gap: 18px;
     align-items: start;
     min-width: 0;
+    width: 100%;
 }
 
 .payments-row-title-wrap {
@@ -13403,6 +13410,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     align-items: flex-start;
     flex-shrink: 0;
     padding-left: 16px;
+    overflow: visible;
 }
 
 .payments-breakdown-description,
@@ -13412,6 +13420,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     font-size: 0.82rem;
     line-height: 1.6;
     overflow-wrap: anywhere;
+    max-width: 100%;
 }
 
 .payments-breakdown-description,
