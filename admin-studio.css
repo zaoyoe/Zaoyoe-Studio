@@ -12725,6 +12725,8 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     align-items: center;
     gap: 8px;
     padding: 8px 12px;
+    box-sizing: border-box;
+    min-width: 0;
     border-radius: 999px;
     border: 1px solid rgba(148, 163, 184, 0.16);
     background: rgba(255, 255, 255, 0.04);
@@ -16035,6 +16037,8 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     .analytics-toolbar.payments-toolbar-shell .payments-highlight-pill {
         width: 100%;
         justify-content: center;
+        box-sizing: border-box;
+        min-width: 0;
     }
 
     .analytics-toolbar.payments-toolbar-shell .payments-last-update {
@@ -16061,7 +16065,22 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     }
 
     .analytics-toolbar.payments-toolbar-shell .toolbar-right {
-        grid-template-columns: repeat(2, auto);
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 10px;
+    }
+
+    .analytics-toolbar.payments-toolbar-shell .toolbar-right > .toolbar-icon-btn,
+    .analytics-toolbar.payments-toolbar-shell .toolbar-right > .auto-refresh-toggle {
+        flex: 0 0 auto;
+    }
+
+    .analytics-toolbar.payments-toolbar-shell .toolbar-right > .payments-last-update {
+        flex: 0 0 100%;
+        width: 100%;
+        margin-top: 2px;
     }
 }
 
