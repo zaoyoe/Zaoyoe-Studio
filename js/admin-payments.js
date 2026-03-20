@@ -433,6 +433,22 @@
         `;
     }
 
+    function renderCleanupPreviewFallback(message) {
+        const target = document.getElementById('paymentsCleanupPreview');
+        if (!target) return;
+        state.cleanupPreview = null;
+
+        target.innerHTML = `
+            <div class="payments-access-state warning">
+                <i class="fas fa-triangle-exclamation"></i>
+                <span>${escapeHtml(message || '测试数据扫描暂时不可用，请稍后再试。')}</span>
+            </div>
+            <div class="payments-cleanup-note">
+                不影响上方支付概览和异常队列。这个区域仅用于清理 <code>AUTO_CDX_</code> 测试订单与 <code>codex.*@example.com</code> 测试账号。
+            </div>
+        `;
+    }
+
     async function loadSummary() {
         const site = getSiteParam();
         const query = new URLSearchParams({
@@ -494,10 +510,14 @@
         try {
             clearAccessState();
             setLoading(true);
-            await Promise.all([
-                loadSummary(),
-                loadCleanupPreview({ silent: true })
-            ]);
+            await loadSummary();
+
+            try {
+                await loadCleanupPreview({ silent: true });
+            } catch (cleanupError) {
+                console.error('[AdminPayments] Failed to load cleanup preview:', cleanupError);
+                renderCleanupPreviewFallback(cleanupError.message || '测试数据扫描失败，但不影响支付对账查看。');
+            }
         } catch (error) {
             console.error('[AdminPayments] Failed to load dashboard:', error);
             renderAccessState(error.message || '支付对账加载失败，请稍后重试。', error.statusCode === 403 ? 'error' : 'warning');
@@ -512,6 +532,7 @@
             await loadCleanupPreview();
         } catch (error) {
             console.error('[AdminPayments] Failed to preview cleanup:', error);
+            renderCleanupPreviewFallback(error.message || '测试数据扫描失败，请稍后再试。');
             if (typeof window.showToast === 'function') {
                 window.showToast(error.message || '测试数据扫描失败', 'error');
             }
@@ -546,10 +567,13 @@
             if (typeof window.showToast === 'function') {
                 window.showToast(payload.message || '测试数据已清理', payload.warnings?.length ? 'warning' : 'success');
             }
-            await Promise.all([
-                loadCleanupPreview({ silent: true }),
-                loadSummary()
-            ]);
+            await loadSummary();
+            try {
+                await loadCleanupPreview({ silent: true });
+            } catch (previewError) {
+                console.error('[AdminPayments] Failed to reload cleanup preview after cleanup:', previewError);
+                renderCleanupPreviewFallback(previewError.message || '测试数据已清理，但扫描预览暂时不可用。');
+            }
         } catch (error) {
             console.error('[AdminPayments] Failed to cleanup test data:', error);
             if (typeof window.showToast === 'function') {

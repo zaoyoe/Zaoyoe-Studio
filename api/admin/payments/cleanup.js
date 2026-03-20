@@ -8,6 +8,14 @@ const {
 const TEST_ORDER_PREFIX = 'AUTO_CDX_';
 const TEST_EMAIL_PATTERN = /^codex\..+@example\.com$/i;
 
+function isMissingRelationError(error) {
+    const message = String(error?.message || '').toLowerCase();
+    return error?.code === '42P01'
+        || message.includes('does not exist')
+        || message.includes('failed to count')
+        || message.includes('could not find the table');
+}
+
 async function listTestUsers(supabaseAdmin) {
     const matchedUsers = [];
     let page = 1;
@@ -42,10 +50,24 @@ async function countLike(supabase, table, column, pattern) {
         .like(column, pattern);
 
     if (error) {
-        throw new Error(error.message || `Failed to count ${table}`);
+        const wrapped = new Error(error.message || `Failed to count ${table}`);
+        wrapped.code = error.code;
+        wrapped.details = error.details;
+        throw wrapped;
     }
 
     return Number(count || 0);
+}
+
+async function countLikeOptional(supabase, table, column, pattern) {
+    try {
+        return await countLike(supabase, table, column, pattern);
+    } catch (error) {
+        if (isMissingRelationError(error)) {
+            return 0;
+        }
+        throw error;
+    }
 }
 
 async function countIn(supabase, table, column, ids) {
@@ -57,10 +79,24 @@ async function countIn(supabase, table, column, ids) {
         .in(column, ids);
 
     if (error) {
-        throw new Error(error.message || `Failed to count ${table}`);
+        const wrapped = new Error(error.message || `Failed to count ${table}`);
+        wrapped.code = error.code;
+        wrapped.details = error.details;
+        throw wrapped;
     }
 
     return Number(count || 0);
+}
+
+async function countInOptional(supabase, table, column, ids) {
+    try {
+        return await countIn(supabase, table, column, ids);
+    } catch (error) {
+        if (isMissingRelationError(error)) {
+            return 0;
+        }
+        throw error;
+    }
 }
 
 async function safeDeleteIn(supabase, table, column, values) {
@@ -73,10 +109,24 @@ async function safeDeleteIn(supabase, table, column, values) {
         .select('id');
 
     if (error) {
-        throw new Error(error.message || `Failed to delete ${table}`);
+        const wrapped = new Error(error.message || `Failed to delete ${table}`);
+        wrapped.code = error.code;
+        wrapped.details = error.details;
+        throw wrapped;
     }
 
     return Array.isArray(data) ? data.length : 0;
+}
+
+async function safeDeleteInOptional(supabase, table, column, values) {
+    try {
+        return await safeDeleteIn(supabase, table, column, values);
+    } catch (error) {
+        if (isMissingRelationError(error)) {
+            return 0;
+        }
+        throw error;
+    }
 }
 
 async function safeDeleteLike(supabase, table, column, pattern) {
@@ -87,10 +137,24 @@ async function safeDeleteLike(supabase, table, column, pattern) {
         .select('id');
 
     if (error) {
-        throw new Error(error.message || `Failed to delete ${table}`);
+        const wrapped = new Error(error.message || `Failed to delete ${table}`);
+        wrapped.code = error.code;
+        wrapped.details = error.details;
+        throw wrapped;
     }
 
     return Array.isArray(data) ? data.length : 0;
+}
+
+async function safeDeleteLikeOptional(supabase, table, column, pattern) {
+    try {
+        return await safeDeleteLike(supabase, table, column, pattern);
+    } catch (error) {
+        if (isMissingRelationError(error)) {
+            return 0;
+        }
+        throw error;
+    }
 }
 
 async function buildCleanupPreview(supabaseAdmin) {
@@ -110,11 +174,11 @@ async function buildCleanupPreview(supabaseAdmin) {
         countLike(supabaseAdmin, 'payment_orders', 'provider_order_no', `${TEST_ORDER_PREFIX}%`),
         countLike(supabaseAdmin, 'payment_events', 'provider_order_no', `${TEST_ORDER_PREFIX}%`),
         countLike(supabaseAdmin, 'afdian_orders', 'out_trade_no', `${TEST_ORDER_PREFIX}%`),
-        countIn(supabaseAdmin, 'profiles', 'id', testUserIds),
-        countIn(supabaseAdmin, 'points_balance', 'user_id', testUserIds),
-        countIn(supabaseAdmin, 'points_ledger', 'user_id', testUserIds),
-        countIn(supabaseAdmin, 'user_checkins', 'user_id', testUserIds),
-        countIn(supabaseAdmin, 'user_events', 'user_id', testUserIds)
+        countInOptional(supabaseAdmin, 'profiles', 'id', testUserIds),
+        countInOptional(supabaseAdmin, 'points_balance', 'user_id', testUserIds),
+        countInOptional(supabaseAdmin, 'points_ledger', 'user_id', testUserIds),
+        countInOptional(supabaseAdmin, 'user_checkins', 'user_id', testUserIds),
+        countInOptional(supabaseAdmin, 'user_events', 'user_id', testUserIds)
     ]);
 
     return {
@@ -191,21 +255,21 @@ module.exports = async function handler(req, res) {
         };
         const warnings = [];
 
-        deleted.payment_events = await safeDeleteLike(supabaseAdmin, 'payment_events', 'provider_order_no', `${TEST_ORDER_PREFIX}%`);
-        deleted.afdian_orders = await safeDeleteLike(supabaseAdmin, 'afdian_orders', 'out_trade_no', `${TEST_ORDER_PREFIX}%`);
-        deleted.payment_orders = await safeDeleteLike(supabaseAdmin, 'payment_orders', 'provider_order_no', `${TEST_ORDER_PREFIX}%`);
+        deleted.payment_events = await safeDeleteLikeOptional(supabaseAdmin, 'payment_events', 'provider_order_no', `${TEST_ORDER_PREFIX}%`);
+        deleted.afdian_orders = await safeDeleteLikeOptional(supabaseAdmin, 'afdian_orders', 'out_trade_no', `${TEST_ORDER_PREFIX}%`);
+        deleted.payment_orders = await safeDeleteLikeOptional(supabaseAdmin, 'payment_orders', 'provider_order_no', `${TEST_ORDER_PREFIX}%`);
 
         if (preview.test_user_ids.length) {
-            deleted.points_ledger_user = await safeDeleteIn(supabaseAdmin, 'points_ledger', 'user_id', preview.test_user_ids);
-            deleted.points_ledger_created_by = await safeDeleteIn(supabaseAdmin, 'points_ledger', 'created_by', preview.test_user_ids);
-            deleted.points_balance = await safeDeleteIn(supabaseAdmin, 'points_balance', 'user_id', preview.test_user_ids);
-            deleted.user_checkins = await safeDeleteIn(supabaseAdmin, 'user_checkins', 'user_id', preview.test_user_ids);
-            deleted.user_events = await safeDeleteIn(supabaseAdmin, 'user_events', 'user_id', preview.test_user_ids);
-            deleted.system_notifications = await safeDeleteIn(supabaseAdmin, 'system_notifications', 'user_id', preview.test_user_ids);
-            deleted.admin_notes_target = await safeDeleteIn(supabaseAdmin, 'admin_notes', 'target_user_id', preview.test_user_ids);
-            deleted.admin_notes_admin = await safeDeleteIn(supabaseAdmin, 'admin_notes', 'admin_id', preview.test_user_ids);
-            deleted.admin_audit_logs_target = await safeDeleteIn(supabaseAdmin, 'admin_audit_logs', 'target_user_id', preview.test_user_ids);
-            deleted.admin_audit_logs_admin = await safeDeleteIn(supabaseAdmin, 'admin_audit_logs', 'admin_id', preview.test_user_ids);
+            deleted.points_ledger_user = await safeDeleteInOptional(supabaseAdmin, 'points_ledger', 'user_id', preview.test_user_ids);
+            deleted.points_ledger_created_by = await safeDeleteInOptional(supabaseAdmin, 'points_ledger', 'created_by', preview.test_user_ids);
+            deleted.points_balance = await safeDeleteInOptional(supabaseAdmin, 'points_balance', 'user_id', preview.test_user_ids);
+            deleted.user_checkins = await safeDeleteInOptional(supabaseAdmin, 'user_checkins', 'user_id', preview.test_user_ids);
+            deleted.user_events = await safeDeleteInOptional(supabaseAdmin, 'user_events', 'user_id', preview.test_user_ids);
+            deleted.system_notifications = await safeDeleteInOptional(supabaseAdmin, 'system_notifications', 'user_id', preview.test_user_ids);
+            deleted.admin_notes_target = await safeDeleteInOptional(supabaseAdmin, 'admin_notes', 'target_user_id', preview.test_user_ids);
+            deleted.admin_notes_admin = await safeDeleteInOptional(supabaseAdmin, 'admin_notes', 'admin_id', preview.test_user_ids);
+            deleted.admin_audit_logs_target = await safeDeleteInOptional(supabaseAdmin, 'admin_audit_logs', 'target_user_id', preview.test_user_ids);
+            deleted.admin_audit_logs_admin = await safeDeleteInOptional(supabaseAdmin, 'admin_audit_logs', 'admin_id', preview.test_user_ids);
 
             for (const testUserId of preview.test_user_ids) {
                 const { error: deleteUserError } = await supabaseAdmin.auth.admin.deleteUser(testUserId);
