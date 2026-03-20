@@ -12861,23 +12861,23 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
 .kpi-cards-row.payments-kpi-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 18px;
+    gap: 16px;
 }
 
 .payments-kpi-card-visual {
     position: relative;
     overflow: visible;
-    min-height: 168px;
-    padding: 20px 22px;
+    min-height: 136px;
+    padding: 16px 18px;
     justify-content: center;
     gap: 0;
 }
 
 .payments-kpi-main {
     display: grid;
-    grid-template-columns: 64px minmax(0, 1fr);
+    grid-template-columns: 54px minmax(0, 1fr);
     align-items: center;
-    gap: 16px;
+    gap: 14px;
     width: 100%;
 }
 
@@ -12885,13 +12885,17 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
     align-items: flex-start;
 }
 
 .payments-kpi-card-visual .kpi-icon {
     background: linear-gradient(135deg, #6b9ece 0%, #5a8cba 100%);
     box-shadow: 0 10px 30px rgba(107, 158, 206, 0.25);
+    width: 54px;
+    height: 54px;
+    border-radius: 16px;
+    font-size: 1.28rem;
 }
 
 .payments-kpi-card-visual.is-warning .kpi-icon {
@@ -12909,6 +12913,11 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     box-shadow: 0 10px 30px rgba(96, 165, 250, 0.2);
 }
 
+.payments-kpi-card-visual.is-money .kpi-icon {
+    background: linear-gradient(135deg, #7bb0df, #588bc2);
+    box-shadow: 0 10px 30px rgba(123, 176, 223, 0.22);
+}
+
 .payments-kpi-footnote {
     margin-top: 8px;
     font-size: 0.82rem;
@@ -12917,8 +12926,8 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 }
 
 .payments-kpi-value {
-    font-size: clamp(2rem, 2.2vw, 2.5rem);
-    line-height: 0.96;
+    font-size: clamp(1.75rem, 1.85vw, 2.2rem);
+    line-height: 1;
     font-weight: 700;
     color: var(--text-main);
     white-space: nowrap;
@@ -12928,12 +12937,12 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 .payments-kpi-label-row {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     min-width: 0;
 }
 
 .payments-kpi-label {
-    font-size: 0.96rem;
+    font-size: 0.9rem;
     color: #f3f6fc;
     line-height: 1.2;
 }
@@ -12976,9 +12985,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     padding: 12px 14px;
     border-radius: 16px;
     border: 1px solid rgba(191, 219, 254, 0.22);
-    background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.06)),
-        linear-gradient(180deg, rgba(15, 23, 42, 0.48), rgba(15, 23, 42, 0.28));
+    background: rgba(26, 37, 53, 0.42);
     backdrop-filter: blur(34px) saturate(200%);
     -webkit-backdrop-filter: blur(34px) saturate(200%);
     box-shadow:
@@ -13010,7 +13017,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     height: 14px;
     border-top: 1px solid rgba(191, 219, 254, 0.22);
     border-left: 1px solid rgba(191, 219, 254, 0.22);
-    background: rgba(26, 37, 53, 0.48);
+    background: rgba(26, 37, 53, 0.42);
     backdrop-filter: blur(26px) saturate(190%);
     -webkit-backdrop-filter: blur(26px) saturate(190%);
     transform: translateX(-50%) rotate(45deg);
@@ -13638,6 +13645,46 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 14px;
+}
+
+.payments-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding-top: 10px;
+}
+
+.payments-pagination-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-main);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.payments-pagination-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: var(--accent-starry);
+}
+
+.payments-pagination-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background: transparent;
+    border-color: rgba(255, 255, 255, 0.05);
+}
+
+.payments-pagination-info {
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
 }
 
 .payments-cleanup-samples h4 {

@@ -14,8 +14,16 @@
         requestToken: 0,
         viewCache: {},
         tooltipElement: null,
-        tooltipTarget: null
+        tooltipTarget: null,
+        pagination: {
+            anomalies: 1,
+            orders: 1,
+            cleanupOrders: 1,
+            cleanupUsers: 1
+        }
     };
+
+    const PAYMENTS_PAGE_SIZE = 5;
 
     function escapeHtml(value) {
         return String(value ?? '')
@@ -214,6 +222,39 @@
     function getCurrentCacheKey() {
         const site = getSiteParam() || 'all';
         return `${state.days}:${site}`;
+    }
+
+    function paginateItems(items, pageKey, pageSize = PAYMENTS_PAGE_SIZE) {
+        const list = Array.isArray(items) ? items : [];
+        const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
+        const requestedPage = Number(state.pagination?.[pageKey] || 1);
+        const currentPage = Math.min(Math.max(1, requestedPage), totalPages);
+
+        state.pagination[pageKey] = currentPage;
+
+        const start = (currentPage - 1) * pageSize;
+        return {
+            pageItems: list.slice(start, start + pageSize),
+            currentPage,
+            totalPages,
+            totalItems: list.length
+        };
+    }
+
+    function renderPager(pageKey, currentPage, totalPages, totalItems) {
+        if (totalItems <= PAYMENTS_PAGE_SIZE) return '';
+
+        return `
+            <div class="payments-pagination admin-pagination">
+                <button class="payments-pagination-btn" type="button" onclick="AdminPayments.goToPage('${escapeHtml(pageKey)}', ${currentPage - 1})" ${currentPage <= 1 ? 'disabled' : ''} aria-label="上一页">
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+                <div class="payments-pagination-info">第 ${escapeHtml(formatNumber(currentPage))} / ${escapeHtml(formatNumber(totalPages))} 页 · 共 ${escapeHtml(formatNumber(totalItems))} 条</div>
+                <button class="payments-pagination-btn" type="button" onclick="AdminPayments.goToPage('${escapeHtml(pageKey)}', ${currentPage + 1})" ${currentPage >= totalPages ? 'disabled' : ''} aria-label="下一页">
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+            </div>
+        `;
     }
 
     async function getAccessToken() {
@@ -520,10 +561,11 @@
                 help: `${formatNumber(overview.claimed_orders)} 笔已认领`
             },
             {
-                icon: 'fas fa-sack-dollar',
+                icon: 'fas fa-wallet',
                 label: '支付金额',
                 value: formatCurrency(overview.total_amount),
-                help: `${formatNumber(overview.total_points)} 已入账`
+                help: `${formatNumber(overview.total_points)} 已入账`,
+                tone: 'money'
             },
             {
                 icon: 'fas fa-hourglass-half',
@@ -748,6 +790,8 @@
             return;
         }
 
+        const pager = paginateItems(anomalies, 'anomalies');
+
         function getHandlingSuggestion(item) {
             const title = String(item?.title || '');
             const message = String(item?.message || '');
@@ -767,7 +811,9 @@
             return '处理建议：先核对订单号、支付通道配置和回调时间，再决定是否人工补单。';
         }
 
-        target.innerHTML = anomalies.map((item) => `
+        target.innerHTML = `
+            <div class="payments-anomaly-items">
+                ${pager.pageItems.map((item) => `
             <div class="payments-anomaly-item severity-${escapeHtml(item.severity || 'info')}">
                 <div class="payments-anomaly-top">
                     <div class="payments-anomaly-title">${escapeHtml(item.title || '异常项')}</div>
@@ -782,7 +828,10 @@
                     <span>${escapeHtml(formatDateTime(item.created_at))}</span>
                 </div>
             </div>
-        `).join('');
+                `).join('')}
+            </div>
+            ${renderPager('anomalies', pager.currentPage, pager.totalPages, pager.totalItems)}
+        `;
     }
 
     function renderOrders(data) {
@@ -794,6 +843,8 @@
             target.innerHTML = '<div class="payments-empty-state">当前时间范围内暂无支付订单。</div>';
             return;
         }
+
+        const pager = paginateItems(orders, 'orders');
 
         target.innerHTML = `
             <div class="payments-table-wrap">
@@ -811,7 +862,7 @@
                         </tr>
                     </thead>
                     <tbody>
-                        ${orders.map((order) => `
+                        ${pager.pageItems.map((order) => `
                             <tr>
                                 <td>
                                     <div class="payments-order-no">${escapeHtml(order.provider_order_no || '—')}</div>
@@ -829,6 +880,7 @@
                     </tbody>
                 </table>
             </div>
+            ${renderPager('orders', pager.currentPage, pager.totalPages, pager.totalItems)}
         `;
     }
 
@@ -841,6 +893,9 @@
         const sampleOrders = preview.samples?.orders || [];
         const sampleUsers = preview.samples?.users || [];
         state.cleanupPreview = preview;
+
+        const orderPager = paginateItems(sampleOrders, 'cleanupOrders');
+        const userPager = paginateItems(sampleUsers, 'cleanupUsers');
 
         target.innerHTML = `
             <div class="payments-cleanup-grid">
@@ -869,16 +924,18 @@
                     <h4>样例订单</h4>
                     ${sampleOrders.length ? `
                         <ul>
-                            ${sampleOrders.map((item) => `<li>${escapeHtml(item.provider_order_no)} · ${escapeHtml(getStatusLabel(item.status))} · ${escapeHtml(formatDateTime(item.created_at))}</li>`).join('')}
+                            ${orderPager.pageItems.map((item) => `<li>${escapeHtml(item.provider_order_no)} · ${escapeHtml(getStatusLabel(item.status))} · ${escapeHtml(formatDateTime(item.created_at))}</li>`).join('')}
                         </ul>
+                        ${renderPager('cleanupOrders', orderPager.currentPage, orderPager.totalPages, orderPager.totalItems)}
                     ` : '<div class="payments-empty-state compact">未扫描到测试订单。</div>'}
                 </div>
                 <div>
                     <h4>样例账号</h4>
                     ${sampleUsers.length ? `
                         <ul>
-                            ${sampleUsers.map((item) => `<li>${escapeHtml(item.email || item.id)}</li>`).join('')}
+                            ${userPager.pageItems.map((item) => `<li>${escapeHtml(item.email || item.id)}</li>`).join('')}
                         </ul>
+                        ${renderPager('cleanupUsers', userPager.currentPage, userPager.totalPages, userPager.totalItems)}
                     ` : '<div class="payments-empty-state compact">未扫描到测试账号。</div>'}
                 </div>
             </div>
@@ -1120,12 +1177,38 @@
         const next = Number.parseInt(value, 10);
         state.days = Number.isFinite(next) && next > 0 ? next : 30;
         state.viewCache = {};
+        state.pagination = {
+            anomalies: 1,
+            orders: 1,
+            cleanupOrders: 1,
+            cleanupUsers: 1
+        };
         updateRangeLabel();
         if (shouldCloseMenu) {
             closeRangeMenu();
         }
         if (state.initialized) {
             reload();
+        }
+    }
+
+    function goToPage(pageKey, page) {
+        const next = Number.parseInt(page, 10);
+        if (!Number.isFinite(next) || next < 1) return;
+        state.pagination[pageKey] = next;
+
+        if (pageKey === 'cleanupOrders' || pageKey === 'cleanupUsers') {
+            renderCleanupPreview({ preview: state.cleanupPreview });
+            return;
+        }
+
+        if (!state.summary) return;
+        if (pageKey === 'anomalies') {
+            renderAnomalies(state.summary);
+            return;
+        }
+        if (pageKey === 'orders') {
+            renderOrders(state.summary);
         }
     }
 
@@ -1136,6 +1219,7 @@
         setDays,
         toggleRangeMenu,
         previewCleanup,
-        cleanupTestData
+        cleanupTestData,
+        goToPage
     };
 })();
