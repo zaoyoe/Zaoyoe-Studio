@@ -19,7 +19,7 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="prompts-poetry.css">
-    <link rel="stylesheet" href="admin-studio.css?v=27">
+    <link rel="stylesheet" href="admin-studio.css?v=28">
     <link rel="stylesheet" href="admin-sidebar.css?v=10">
     <link rel="stylesheet" href="css/admin-chat.css">
 
@@ -109,6 +109,10 @@
                 <div class="sidebar-item" data-module="analytics" onclick="switchModule('analytics')">
                     <i class="fas fa-chart-line"></i>
                     <span>数据分析</span>
+                </div>
+                <div class="sidebar-item" data-module="payments" onclick="switchModule('payments')">
+                    <i class="fas fa-credit-card"></i>
+                    <span>支付对账</span>
                 </div>
             </nav>
 
@@ -5397,6 +5401,98 @@
             </div>
             <!-- END module-homepage -->
 
+            <!-- ========== PAYMENTS MODULE ========== -->
+            <div id="module-payments" class="module-container">
+                <div class="payments-dashboard">
+                    <div class="payments-toolbar">
+                        <div class="payments-toolbar-left">
+                            <div class="payments-toolbar-field">
+                                <label for="paymentsRangeSelect">统计范围</label>
+                                <select id="paymentsRangeSelect" class="config-input" onchange="AdminPayments.setDays(this.value)">
+                                    <option value="7">最近 7 天</option>
+                                    <option value="30" selected>最近 30 天</option>
+                                    <option value="90">最近 90 天</option>
+                                    <option value="365">最近 1 年</option>
+                                </select>
+                            </div>
+                            <button type="button" class="btn-sm btn-secondary" id="paymentsRefreshBtn" onclick="AdminPayments.reload()">
+                                <i class="fas fa-rotate-right"></i> 刷新
+                            </button>
+                        </div>
+                        <div class="payments-toolbar-right" id="paymentsToolbarMeta">等待载入支付数据</div>
+                    </div>
+
+                    <div class="payments-access-state" id="paymentsAccessState" hidden></div>
+
+                    <div id="paymentsDashboardBody">
+                        <div class="payments-section">
+                            <div class="payments-section-header">
+                                <div>
+                                    <h2>支付概览</h2>
+                                    <p>统一查看支付结果、认领表现、异常队列和测试数据收尾。</p>
+                                </div>
+                            </div>
+                            <div class="payments-overview-grid" id="paymentsOverviewGrid"></div>
+                        </div>
+
+                        <div class="payments-section payments-two-column">
+                            <div class="payments-panel">
+                                <div class="payments-panel-header">
+                                    <h3>通道表现</h3>
+                                    <span>按当前站点筛选同步</span>
+                                </div>
+                                <div class="payments-provider-stats" id="paymentsProviderStats"></div>
+                            </div>
+
+                            <div class="payments-panel">
+                                <div class="payments-panel-header">
+                                    <h3>最近 24 小时异常趋势</h3>
+                                    <span>快速判断回调是否稳定</span>
+                                </div>
+                                <div class="payments-trend-chart" id="paymentsTrendChart"></div>
+                                <div class="payments-trend-legend" id="paymentsTrendLegend"></div>
+                            </div>
+                        </div>
+
+                        <div class="payments-section payments-two-column">
+                            <div class="payments-panel">
+                                <div class="payments-panel-header">
+                                    <h3>异常队列</h3>
+                                    <span>待审核、失败、重复回调与未认领订单</span>
+                                </div>
+                                <div class="payments-anomaly-list" id="paymentsAnomalyList"></div>
+                            </div>
+
+                            <div class="payments-panel">
+                                <div class="payments-panel-header">
+                                    <h3>测试数据清理</h3>
+                                    <span>专门清理 AUTO_CDX_* 与 codex.*@example.com</span>
+                                </div>
+                                <div class="payments-cleanup-actions">
+                                    <button type="button" class="btn-sm btn-secondary" id="paymentsCleanupPreviewBtn" onclick="AdminPayments.previewCleanup()">
+                                        <i class="fas fa-magnifying-glass"></i> 重新扫描
+                                    </button>
+                                    <button type="button" class="btn-sm btn-warning" id="paymentsCleanupBtn" onclick="AdminPayments.cleanupTestData()">
+                                        <i class="fas fa-broom"></i> 清理测试数据
+                                    </button>
+                                </div>
+                                <div class="payments-cleanup-preview" id="paymentsCleanupPreview"></div>
+                            </div>
+                        </div>
+
+                        <div class="payments-section">
+                            <div class="payments-panel payments-panel-wide">
+                                <div class="payments-panel-header">
+                                    <h3>最近订单</h3>
+                                    <span>人工核对支付、认领与站点归属</span>
+                                </div>
+                                <div class="payments-orders-table" id="paymentsOrdersTable"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- ========== ANALYTICS MODULE ========== -->
             <div id="module-analytics" class="module-container">
                 <div class="analytics-dashboard">
@@ -7033,6 +7129,7 @@
                 // Module Specific Init
                 if (moduleId === 'users') initUserModule();
                 if (moduleId === 'analytics' && typeof initAnalyticsModule === 'function') initAnalyticsModule();
+                if (moduleId === 'payments' && window.AdminPayments && typeof window.AdminPayments.init === 'function') window.AdminPayments.init();
                 if (moduleId === 'shop') ShopAdmin.init();
                 if (moduleId === 'discounts' && typeof AdminDiscounts !== 'undefined') AdminDiscounts.init();
                 if (moduleId === 'comments' && typeof initCommentsModule === 'function') {
@@ -7062,7 +7159,8 @@
     <script src="js/admin-ai.js"></script>
     <script src="admin-comments.js"></script>
     <script src="admin-analytics.js"></script>
-    <script src="admin-config.js?v=20260318_REWARDS_AFFILIATE_V7"></script>
+    <script src="js/admin-payments.js?v=20260320_ADMIN_PAYMENTS_V1"></script>
+    <script src="admin-config.js?v=20260320_ADMIN_PAYMENTS_V1"></script>
     <script src="admin-homepage.js"></script>
     <script src="js/admin-studio-translate.js"></script>
     <script src="js/admin-site-filter.js"></script>

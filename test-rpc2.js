@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 
-const url = 'https://auth.zaoyoe.com';
+const url = 'https://mmkugdibsaeoevliebzk.supabase.co';
 // Need to find the key
 import fs from 'fs';
 const fileContent = fs.readFileSync('guestbook.html', 'utf-8');

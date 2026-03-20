@@ -121,6 +121,11 @@
             case 'analytics':
                 if (typeof window.initAnalyticsModule === 'function') window.initAnalyticsModule();
                 break;
+            case 'payments':
+                if (window.AdminPayments && typeof window.AdminPayments.reload === 'function') {
+                    window.AdminPayments.reload();
+                }
+                break;
             case 'comments':
                 if (typeof window.loadComments === 'function') {
                     const view = window.currentCommentView || 'guestbook';
