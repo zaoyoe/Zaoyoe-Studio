@@ -68,7 +68,7 @@
     function renderInfoChip(help) {
         if (!help) return '';
         return `
-            <button type="button" class="payments-info-chip" data-tooltip="${escapeHtml(help)}" aria-label="查看说明">
+            <button type="button" class="payments-info-chip" data-payments-tooltip="${escapeHtml(help)}" aria-label="查看说明">
                 <span class="payments-info-glyph" aria-hidden="true"></span>
             </button>
         `;
@@ -121,7 +121,7 @@
     }
 
     function showInfoTooltip(target) {
-        const help = String(target?.dataset?.tooltip || '').trim();
+        const help = String(target?.dataset?.paymentsTooltip || '').trim();
         if (!help) return;
 
         const tooltip = ensureTooltipElement();
@@ -624,7 +624,7 @@
                         <div class="payments-breakdown-title">${escapeHtml(item.title || '业务项')}</div>
                         ${renderInfoChip(item.help || '')}
                     </div>
-                    <div class="payments-breakdown-stat">
+                    <div class="payments-row-metric-wrap">
                         <div class="payments-breakdown-metric">${escapeHtml(item.metric || '—')}</div>
                     </div>
                 </div>
@@ -653,7 +653,7 @@
                                 <div class="payments-points-label">${escapeHtml(item.label || item.key || '未分类')}</div>
                                 ${renderInfoChip(item.help || '')}
                             </div>
-                            <div class="payments-points-stat">
+                            <div class="payments-row-metric-wrap">
                                 <div class="payments-points-net ${Number(item.net || 0) < 0 ? 'is-negative' : 'is-positive'}">${escapeHtml(formatSignedPoints(item.net))}</div>
                             </div>
                         </div>
@@ -942,22 +942,22 @@
                     }
                 });
                 document.addEventListener('mouseover', (event) => {
-                    const chip = event.target.closest('.payments-info-chip[data-tooltip]');
+                    const chip = event.target.closest('.payments-info-chip[data-payments-tooltip]');
                     if (!chip) return;
                     showInfoTooltip(chip);
                 });
                 document.addEventListener('mouseout', (event) => {
-                    const chip = event.target.closest('.payments-info-chip[data-tooltip]');
+                    const chip = event.target.closest('.payments-info-chip[data-payments-tooltip]');
                     if (!chip) return;
                     hideInfoTooltip();
                 });
                 document.addEventListener('focusin', (event) => {
-                    const chip = event.target.closest('.payments-info-chip[data-tooltip]');
+                    const chip = event.target.closest('.payments-info-chip[data-payments-tooltip]');
                     if (!chip) return;
                     showInfoTooltip(chip);
                 });
                 document.addEventListener('focusout', (event) => {
-                    const chip = event.target.closest('.payments-info-chip[data-tooltip]');
+                    const chip = event.target.closest('.payments-info-chip[data-payments-tooltip]');
                     if (!chip) return;
                     hideInfoTooltip();
                 });
