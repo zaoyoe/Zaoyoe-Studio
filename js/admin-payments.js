@@ -3,6 +3,7 @@
 
     const state = {
         initialized: false,
+        initializing: false,
         loading: false,
         cleanupLoading: false,
         days: 30,
@@ -67,15 +68,22 @@
     function renderInfoChip(help) {
         if (!help) return '';
         return `
-            <span class="payments-info-chip" tabindex="0" role="note" data-tooltip="${escapeHtml(help)}" aria-label="${escapeHtml(help)}">
+            <button type="button" class="payments-info-chip" data-tooltip="${escapeHtml(help)}" aria-label="查看说明">
                 <span class="payments-info-glyph" aria-hidden="true"></span>
-            </span>
+            </button>
         `;
     }
 
     function ensureTooltipElement() {
-        if (state.tooltipElement && document.body.contains(state.tooltipElement)) {
-            return state.tooltipElement;
+        const existingElements = Array.from(document.querySelectorAll('.payments-floating-tooltip'));
+        if (existingElements.length > 1) {
+            existingElements.slice(1).forEach((el) => el.remove());
+        }
+
+        const existing = existingElements[0];
+        if (existing && document.body.contains(existing)) {
+            state.tooltipElement = existing;
+            return existing;
         }
 
         const element = document.createElement('div');
@@ -611,21 +619,17 @@
 
         target.innerHTML = items.map((item) => `
             <div class="payments-breakdown-card">
-                <div class="payments-content-split">
-                    <div class="payments-content-main">
-                        <div class="payments-content-title-row">
-                            <div class="payments-breakdown-title">${escapeHtml(item.title || '业务项')}</div>
-                            ${renderInfoChip(item.help || '')}
-                        </div>
-                        <div class="payments-breakdown-description">${escapeHtml(item.description || '')}</div>
-                        <div class="payments-breakdown-meta">${escapeHtml(item.meta || '')}</div>
+                <div class="payments-row-head">
+                    <div class="payments-row-title-wrap">
+                        <div class="payments-breakdown-title">${escapeHtml(item.title || '业务项')}</div>
+                        ${renderInfoChip(item.help || '')}
                     </div>
-                    <div class="payments-content-side">
-                        <div class="payments-breakdown-stat">
-                            <div class="payments-breakdown-metric">${escapeHtml(item.metric || '—')}</div>
-                        </div>
+                    <div class="payments-breakdown-stat">
+                        <div class="payments-breakdown-metric">${escapeHtml(item.metric || '—')}</div>
                     </div>
                 </div>
+                <div class="payments-breakdown-description">${escapeHtml(item.description || '')}</div>
+                <div class="payments-breakdown-meta">${escapeHtml(item.meta || '')}</div>
             </div>
         `).join('');
     }
@@ -644,22 +648,18 @@
             <div class="payments-points-table">
                 ${items.map((item) => `
                     <div class="payments-points-row">
-                        <div class="payments-content-split">
-                            <div class="payments-content-main">
-                                <div class="payments-content-title-row">
-                                    <div class="payments-points-label">${escapeHtml(item.label || item.key || '未分类')}</div>
-                                    ${renderInfoChip(item.help || '')}
-                                </div>
-                                <div class="payments-points-values">
-                                    <span>流入 ${escapeHtml(formatPoints(item.inflow))}</span>
-                                    <span>流出 ${escapeHtml(formatPoints(item.outflow))}</span>
-                                </div>
+                        <div class="payments-row-head">
+                            <div class="payments-row-title-wrap">
+                                <div class="payments-points-label">${escapeHtml(item.label || item.key || '未分类')}</div>
+                                ${renderInfoChip(item.help || '')}
                             </div>
-                            <div class="payments-content-side">
-                                <div class="payments-points-stat">
-                                    <div class="payments-points-net ${Number(item.net || 0) < 0 ? 'is-negative' : 'is-positive'}">${escapeHtml(formatSignedPoints(item.net))}</div>
-                                </div>
+                            <div class="payments-points-stat">
+                                <div class="payments-points-net ${Number(item.net || 0) < 0 ? 'is-negative' : 'is-positive'}">${escapeHtml(formatSignedPoints(item.net))}</div>
                             </div>
+                        </div>
+                        <div class="payments-points-values">
+                            <span>流入 ${escapeHtml(formatPoints(item.inflow))}</span>
+                            <span>流出 ${escapeHtml(formatPoints(item.outflow))}</span>
                         </div>
                     </div>
                 `).join('')}
@@ -917,56 +917,62 @@
     }
 
     async function init() {
-        if (!(await ensureAdminAccess())) {
-            renderAccessState('当前账号没有支付对账权限，请使用管理员账号登录后再试。', 'error');
-            return;
-        }
+        if (state.initializing) return;
+        state.initializing = true;
+        try {
+            if (!(await ensureAdminAccess())) {
+                renderAccessState('当前账号没有支付对账权限，请使用管理员账号登录后再试。', 'error');
+                return;
+            }
 
-        clearAccessState();
+            clearAccessState();
 
-        if (state.initialized) {
+            if (state.initialized) {
+                updateRangeLabel();
+                switchTab(state.activeTab, { reload: false });
+                return reload();
+            }
+
+            state.initialized = true;
+
+            if (!state.listenersBound) {
+                document.addEventListener('click', (event) => {
+                    if (!event.target.closest('#paymentsRangeDropdown')) {
+                        closeRangeMenu();
+                    }
+                });
+                document.addEventListener('mouseover', (event) => {
+                    const chip = event.target.closest('.payments-info-chip[data-tooltip]');
+                    if (!chip) return;
+                    showInfoTooltip(chip);
+                });
+                document.addEventListener('mouseout', (event) => {
+                    const chip = event.target.closest('.payments-info-chip[data-tooltip]');
+                    if (!chip) return;
+                    hideInfoTooltip();
+                });
+                document.addEventListener('focusin', (event) => {
+                    const chip = event.target.closest('.payments-info-chip[data-tooltip]');
+                    if (!chip) return;
+                    showInfoTooltip(chip);
+                });
+                document.addEventListener('focusout', (event) => {
+                    const chip = event.target.closest('.payments-info-chip[data-tooltip]');
+                    if (!chip) return;
+                    hideInfoTooltip();
+                });
+                window.addEventListener('scroll', hideInfoTooltip, true);
+                window.addEventListener('resize', syncTabIndicator);
+                window.addEventListener('resize', hideInfoTooltip);
+                state.listenersBound = true;
+            }
+
             updateRangeLabel();
             switchTab(state.activeTab, { reload: false });
-            return reload();
+            await reload();
+        } finally {
+            state.initializing = false;
         }
-
-        state.initialized = true;
-
-        if (!state.listenersBound) {
-            document.addEventListener('click', (event) => {
-                if (!event.target.closest('#paymentsRangeDropdown')) {
-                    closeRangeMenu();
-                }
-            });
-            document.addEventListener('mouseover', (event) => {
-                const chip = event.target.closest('.payments-info-chip[data-tooltip]');
-                if (!chip) return;
-                showInfoTooltip(chip);
-            });
-            document.addEventListener('mouseout', (event) => {
-                const chip = event.target.closest('.payments-info-chip[data-tooltip]');
-                if (!chip) return;
-                hideInfoTooltip();
-            });
-            document.addEventListener('focusin', (event) => {
-                const chip = event.target.closest('.payments-info-chip[data-tooltip]');
-                if (!chip) return;
-                showInfoTooltip(chip);
-            });
-            document.addEventListener('focusout', (event) => {
-                const chip = event.target.closest('.payments-info-chip[data-tooltip]');
-                if (!chip) return;
-                hideInfoTooltip();
-            });
-            window.addEventListener('scroll', hideInfoTooltip, true);
-            window.addEventListener('resize', syncTabIndicator);
-            window.addEventListener('resize', hideInfoTooltip);
-            state.listenersBound = true;
-        }
-
-        updateRangeLabel();
-        switchTab(state.activeTab, { reload: false });
-        await reload();
     }
 
     async function reload() {
