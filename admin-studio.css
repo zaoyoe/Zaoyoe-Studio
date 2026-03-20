@@ -13063,9 +13063,13 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 }
 
 .payments-card .chart-body {
+    box-sizing: border-box;
     height: auto;
     min-height: 220px;
+    width: auto;
+    max-width: 100%;
     padding: 20px 22px 22px;
+    overflow: visible;
 }
 
 .payments-card-body-trend {
