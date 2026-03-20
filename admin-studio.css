@@ -13660,7 +13660,9 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     display: flex;
     gap: 12px;
     flex-wrap: wrap;
-    margin-bottom: 8px;
+    margin-top: 10px;
+    margin-bottom: 14px;
+    padding-top: 4px;
 }
 
 .payments-cleanup-preview {
@@ -16066,10 +16068,12 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
     .analytics-toolbar.payments-toolbar-shell .toolbar-right {
         display: flex;
-        flex-wrap: wrap;
+        flex-wrap: nowrap;
         align-items: center;
         justify-content: flex-start;
-        gap: 10px;
+        gap: 8px;
+        overflow-x: auto;
+        scrollbar-width: none;
     }
 
     .analytics-toolbar.payments-toolbar-shell .toolbar-right > .toolbar-icon-btn,
@@ -16078,9 +16082,18 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     }
 
     .analytics-toolbar.payments-toolbar-shell .toolbar-right > .payments-last-update {
-        flex: 0 0 100%;
-        width: 100%;
-        margin-top: 2px;
+        flex: 0 0 auto;
+        width: auto;
+        margin-top: 0;
+        white-space: nowrap;
+    }
+
+    .analytics-toolbar.payments-toolbar-shell .toolbar-right::-webkit-scrollbar {
+        display: none;
+    }
+
+    .analytics-toolbar.payments-toolbar-shell .payments-last-update span {
+        font-size: 0.78rem;
     }
 }
 
