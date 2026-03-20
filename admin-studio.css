@@ -14981,6 +14981,10 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     padding: 20px 24px;
 }
 
+#settings-view-pricing .module-content {
+    align-items: start;
+}
+
 @media (max-width: 1024px) {
     #module-settings .module-content {
         grid-template-columns: repeat(2, 1fr);
