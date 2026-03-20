@@ -365,15 +365,33 @@ function getPaymentSecretStatusMessage(secretName) {
     return '未配置后台安全密钥';
 }
 
+function openPaymentChannelsModal() {
+    renderPaymentChannelsConfig();
+    const modal = document.getElementById('paymentChannelsModal');
+    if (!modal) return;
+    modal.classList.add('active');
+    document.body.style.overflow = 'hidden';
+}
+
+function closePaymentChannelsModal() {
+    const modal = document.getElementById('paymentChannelsModal');
+    if (!modal) return;
+    modal.classList.remove('active');
+    document.body.style.overflow = '';
+}
+
 function renderPaymentChannelsConfig() {
     const config = normalizePaymentChannelsConfig(systemConfigCache['payment_channels']);
+    const activeProvider = config.providers[config.active_provider];
 
     const activeSelect = document.getElementById('paymentChannelActiveSelect');
     if (activeSelect) activeSelect.value = config.active_provider;
 
+    const activeLabel = document.getElementById('paymentChannelActiveLabel');
+    if (activeLabel) activeLabel.textContent = activeProvider.display_name || '未命名通道';
+
     const summary = document.getElementById('paymentChannelSummary');
     if (summary) {
-        const activeProvider = config.providers[config.active_provider];
         summary.innerHTML = `
             <i class="fas fa-plug"></i>
             <span>当前主通道：${escapeConfigHtml(activeProvider.display_name)}。公开配置保存在系统设置中；敏感密钥会通过服务端加密保存，不再存浏览器。</span>
@@ -421,6 +439,51 @@ function renderPaymentChannelsConfig() {
 
     const hupijiaoSecretStatus = document.getElementById('paymentProviderHupijiaoSecretKeyStatus');
     if (hupijiaoSecretStatus) hupijiaoSecretStatus.textContent = getPaymentSecretStatusMessage('hupijiao_secret_key');
+
+    const summaryMap = {
+        mock: {
+            card: 'paymentProviderSummaryMock',
+            name: 'paymentProviderSummaryNameMock',
+            status: 'paymentProviderSummaryStatusMock',
+            meta: 'paymentProviderSummaryMetaMock',
+            metaText: config.providers.mock.description || '直接到账，适合短期过渡验证。'
+        },
+        afdian: {
+            card: 'paymentProviderSummaryAfdian',
+            name: 'paymentProviderSummaryNameAfdian',
+            status: 'paymentProviderSummaryStatusAfdian',
+            meta: 'paymentProviderSummaryMetaAfdian',
+            metaText: `${config.providers.afdian.package_hint || '支付后输入订单号领取兑换码'} · ${paymentChannelSecretStatus?.afdian_token?.configured ? 'Token 已配置' : 'Token 待配置'}`
+        },
+        hupijiao: {
+            card: 'paymentProviderSummaryHupijiao',
+            name: 'paymentProviderSummaryNameHupijiao',
+            status: 'paymentProviderSummaryStatusHupijiao',
+            meta: 'paymentProviderSummaryMetaHupijiao',
+            metaText: `${config.providers.hupijiao.merchant_id ? `商户号 ${config.providers.hupijiao.merchant_id}` : '商户号待填写'} · ${(paymentChannelSecretStatus?.hupijiao_api_key?.configured && paymentChannelSecretStatus?.hupijiao_secret_key?.configured) ? '密钥已配置' : '密钥待配置'}`
+        }
+    };
+
+    Object.entries(summaryMap).forEach(([providerKey, refs]) => {
+        const provider = config.providers[providerKey];
+        const nameEl = document.getElementById(refs.name);
+        const statusEl = document.getElementById(refs.status);
+        const metaEl = document.getElementById(refs.meta);
+        const cardEl = document.getElementById(refs.card);
+        const isActiveProvider = providerKey === config.active_provider;
+
+        if (nameEl) nameEl.textContent = provider.display_name || '未命名通道';
+        if (metaEl) metaEl.textContent = refs.metaText;
+        if (statusEl) {
+            statusEl.textContent = isActiveProvider ? '主通道' : (provider.enabled ? '已启用' : '已停用');
+            statusEl.className = `payment-provider-summary-status ${isActiveProvider ? 'is-current' : (provider.enabled ? 'is-enabled' : 'is-disabled')}`;
+        }
+        if (cardEl) {
+            cardEl.classList.toggle('active-provider', isActiveProvider);
+            cardEl.classList.toggle('is-enabled', provider.enabled);
+            cardEl.classList.toggle('is-disabled', !provider.enabled);
+        }
+    });
 }
 
 function renderChannelsConfig() {
@@ -1196,6 +1259,7 @@ async function savePaymentChannelSettings(options = {}) {
         renderPaymentChannelsConfig();
         renderPackagesConfig();
         clearPaymentChannelSecretInputs();
+        closePaymentChannelsModal();
         showConfigSavedToast(options.successMessage || payload.message || '支付通道配置已保存');
         return true;
     } catch (err) {
@@ -2759,6 +2823,8 @@ window.addPackageRow = addPackageRow;
 window.toggleCustomRechargeEntryStatus = toggleCustomRechargeEntryStatus;
 window.toggleMockPaymentStatus = toggleMockPaymentStatus;
 window.togglePaymentProviderEnabled = togglePaymentProviderEnabled;
+window.openPaymentChannelsModal = openPaymentChannelsModal;
+window.closePaymentChannelsModal = closePaymentChannelsModal;
 window.savePaymentChannelSettings = savePaymentChannelSettings;
 window.deleteChannel = deleteChannel;
 window.addChannel = addChannel;

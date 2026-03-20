@@ -767,171 +767,54 @@
                             </div>
                         </div>
 
-                        <div class="config-card" data-config="payment-channels">
+                        <div class="config-card payment-channel-summary-card" data-config="payment-channels">
                             <div class="config-card-header">
                                 <div class="config-card-title">
                                     <i class="fas fa-credit-card"></i>
                                     <span>支付通道</span>
                                 </div>
+                                <button type="button" class="payment-channel-open-btn" onclick="openPaymentChannelsModal()">
+                                    <i class="fas fa-sliders-h"></i>
+                                    <span>配置通道</span>
+                                </button>
                             </div>
                             <div class="config-card-body">
-                                <div class="config-row">
-                                    <div class="config-info">
-                                        <div class="config-label">当前主通道</div>
-                                        <div class="config-desc">钱包充值会根据这里的选择自动切换到模拟支付、爱发电或虎皮椒。</div>
-                                    </div>
-                                    <div class="config-input-wrapper">
-                                        <select class="config-input" id="paymentChannelActiveSelect">
-                                            <option value="mock">模拟支付</option>
-                                            <option value="afdian">爱发电</option>
-                                            <option value="hupijiao">虎皮椒</option>
-                                        </select>
+                                <div class="payment-channel-hero">
+                                    <div class="payment-channel-hero-copy">
+                                        <div class="payment-channel-eyebrow">当前主通道</div>
+                                        <div class="payment-channel-active-line">
+                                            <span class="payment-channel-active-name" id="paymentChannelActiveLabel">模拟支付</span>
+                                            <span class="payment-channel-active-pill">钱包充值默认</span>
+                                        </div>
+                                        <p class="payment-channel-hero-desc">把主通道切到模拟支付、爱发电或虎皮椒，钱包页会自动同步对应充值链路。</p>
                                     </div>
                                 </div>
                                 <div class="config-inline-note" id="paymentChannelSummary">
                                     <i class="fas fa-shield-alt"></i>
                                     <span>公开配置保存在系统设置中；敏感密钥会通过服务端加密保存，不再存浏览器。</span>
                                 </div>
-
-                                <div class="config-row" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(148, 163, 184, 0.12);">
-                                    <div class="config-info">
-                                        <div class="config-label">模拟支付</div>
-                                        <div class="config-desc">仅建议在虎皮椒等正式支付接入前临时启用，开启后会直接到账积分。</div>
+                                <div class="payment-channel-provider-grid">
+                                    <div class="payment-provider-summary-card" id="paymentProviderSummaryMock">
+                                        <div class="payment-provider-summary-top">
+                                            <span class="payment-provider-summary-name" id="paymentProviderSummaryNameMock">模拟支付</span>
+                                            <span class="payment-provider-summary-status" id="paymentProviderSummaryStatusMock">已启用</span>
+                                        </div>
+                                        <div class="payment-provider-summary-meta" id="paymentProviderSummaryMetaMock">直接到账，适合短期过渡验证。</div>
                                     </div>
-                                    <div class="status-toggle" id="paymentProviderMockToggle" onclick="togglePaymentProviderEnabled('mock')"></div>
-                                </div>
-                                <div class="config-row">
-                                    <label>显示名称</label>
-                                    <div class="config-input-wrapper">
-                                        <input type="text" class="config-input" id="paymentProviderMockDisplayName" placeholder="模拟支付">
+                                    <div class="payment-provider-summary-card" id="paymentProviderSummaryAfdian">
+                                        <div class="payment-provider-summary-top">
+                                            <span class="payment-provider-summary-name" id="paymentProviderSummaryNameAfdian">爱发电</span>
+                                            <span class="payment-provider-summary-status" id="paymentProviderSummaryStatusAfdian">已停用</span>
+                                        </div>
+                                        <div class="payment-provider-summary-meta" id="paymentProviderSummaryMetaAfdian">支付后输入订单号领取兑换码。</div>
                                     </div>
-                                </div>
-                                <div class="config-row">
-                                    <label>说明文案</label>
-                                    <div class="config-input-wrapper">
-                                        <input type="text" class="config-input" id="paymentProviderMockDescription" placeholder="仅建议短期启用">
+                                    <div class="payment-provider-summary-card" id="paymentProviderSummaryHupijiao">
+                                        <div class="payment-provider-summary-top">
+                                            <span class="payment-provider-summary-name" id="paymentProviderSummaryNameHupijiao">虎皮椒</span>
+                                            <span class="payment-provider-summary-status" id="paymentProviderSummaryStatusHupijiao">已停用</span>
+                                        </div>
+                                        <div class="payment-provider-summary-meta" id="paymentProviderSummaryMetaHupijiao">网关参数和密钥配置完成后即可切换上线。</div>
                                     </div>
-                                </div>
-
-                                <div class="config-row" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(148, 163, 184, 0.12);">
-                                    <div class="config-info">
-                                        <div class="config-label">爱发电</div>
-                                        <div class="config-desc">适合当前“支付后输入订单号领取兑换码”的链路，回调与查码仍走现有爱发电底座。</div>
-                                    </div>
-                                    <div class="status-toggle" id="paymentProviderAfdianToggle" onclick="togglePaymentProviderEnabled('afdian')"></div>
-                                </div>
-                                <div class="config-row">
-                                    <label>显示名称</label>
-                                    <div class="config-input-wrapper">
-                                        <input type="text" class="config-input" id="paymentProviderAfdianDisplayName" placeholder="爱发电">
-                                    </div>
-                                </div>
-                                <div class="config-row">
-                                    <label>支付链接</label>
-                                    <div class="config-input-wrapper">
-                                        <input type="url" class="config-input" id="paymentProviderAfdianCheckoutUrl" placeholder="https://afdian.com/a/zaoyoe">
-                                    </div>
-                                </div>
-                                <div class="config-row">
-                                    <label>套餐购买提示</label>
-                                    <div class="config-input-wrapper">
-                                        <input type="text" class="config-input" id="paymentProviderAfdianPackageHint" placeholder="支付后输入订单号领取兑换码">
-                                    </div>
-                                </div>
-                                <div class="config-row">
-                                    <label>自定义充值提示</label>
-                                    <div class="config-input-wrapper">
-                                        <input type="text" class="config-input" id="paymentProviderAfdianCustomHint" placeholder="建议在备注中填写要充值的积分数量">
-                                    </div>
-                                </div>
-                                <div class="config-row">
-                                    <div class="config-info">
-                                        <div class="config-label">爱发电 Token</div>
-                                        <div class="config-desc" id="paymentProviderAfdianTokenStatus">未配置后台安全密钥</div>
-                                    </div>
-                                    <div class="config-input-wrapper">
-                                        <input type="password" class="config-input" id="paymentProviderAfdianToken" placeholder="留空表示保持现有密钥不变">
-                                    </div>
-                                </div>
-
-                                <div class="config-row" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(148, 163, 184, 0.12);">
-                                    <div class="config-info">
-                                        <div class="config-label">虎皮椒</div>
-                                        <div class="config-desc">先把公开参数和后台密钥录入好；正式创建订单与回调验签接入后即可切换上线。</div>
-                                    </div>
-                                    <div class="status-toggle" id="paymentProviderHupijiaoToggle" onclick="togglePaymentProviderEnabled('hupijiao')"></div>
-                                </div>
-                                <div class="config-row">
-                                    <label>显示名称</label>
-                                    <div class="config-input-wrapper">
-                                        <input type="text" class="config-input" id="paymentProviderHupijiaoDisplayName" placeholder="虎皮椒">
-                                    </div>
-                                </div>
-                                <div class="config-row">
-                                    <label>支付链接</label>
-                                    <div class="config-input-wrapper">
-                                        <input type="url" class="config-input" id="paymentProviderHupijiaoCheckoutUrl" placeholder="https://...">
-                                    </div>
-                                </div>
-                                <div class="config-row">
-                                    <label>网关地址</label>
-                                    <div class="config-input-wrapper">
-                                        <input type="url" class="config-input" id="paymentProviderHupijiaoGatewayUrl" placeholder="https://api.xunhupay.com/payment/do.html">
-                                    </div>
-                                </div>
-                                <div class="config-row">
-                                    <label>商户号</label>
-                                    <div class="config-input-wrapper">
-                                        <input type="text" class="config-input" id="paymentProviderHupijiaoMerchantId" placeholder="请输入商户号">
-                                    </div>
-                                </div>
-                                <div class="config-row">
-                                    <label>回跳地址</label>
-                                    <div class="config-input-wrapper">
-                                        <input type="url" class="config-input" id="paymentProviderHupijiaoReturnUrl" placeholder="https://www.zaoyoe.com">
-                                    </div>
-                                </div>
-                                <div class="config-row">
-                                    <label>通知地址</label>
-                                    <div class="config-input-wrapper">
-                                        <input type="url" class="config-input" id="paymentProviderHupijiaoNotifyUrl" placeholder="https://your-server.example.com/api/payments/hupijiao/webhook">
-                                    </div>
-                                </div>
-                                <div class="config-row">
-                                    <label>套餐购买提示</label>
-                                    <div class="config-input-wrapper">
-                                        <input type="text" class="config-input" id="paymentProviderHupijiaoPackageHint" placeholder="完成支付后请按页面提示处理">
-                                    </div>
-                                </div>
-                                <div class="config-row">
-                                    <label>自定义充值提示</label>
-                                    <div class="config-input-wrapper">
-                                        <input type="text" class="config-input" id="paymentProviderHupijiaoCustomHint" placeholder="自定义金额订单能力接入后会直接拉起真实支付">
-                                    </div>
-                                </div>
-                                <div class="config-row">
-                                    <div class="config-info">
-                                        <div class="config-label">虎皮椒 API Key</div>
-                                        <div class="config-desc" id="paymentProviderHupijiaoApiKeyStatus">未配置后台安全密钥</div>
-                                    </div>
-                                    <div class="config-input-wrapper">
-                                        <input type="password" class="config-input" id="paymentProviderHupijiaoApiKey" placeholder="留空表示保持现有密钥不变">
-                                    </div>
-                                </div>
-                                <div class="config-row">
-                                    <div class="config-info">
-                                        <div class="config-label">虎皮椒 Secret Key</div>
-                                        <div class="config-desc" id="paymentProviderHupijiaoSecretKeyStatus">未配置后台安全密钥</div>
-                                    </div>
-                                    <div class="config-input-wrapper">
-                                        <input type="password" class="config-input" id="paymentProviderHupijiaoSecretKey" placeholder="留空表示保持现有密钥不变">
-                                    </div>
-                                </div>
-
-                                <div class="config-row" style="justify-content: flex-end; margin-top: 20px;">
-                                    <button class="btn-add-config" onclick="savePaymentChannelSettings()">
-                                        <i class="fas fa-save"></i> 保存支付通道配置
-                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -1037,6 +920,183 @@
                                     <span>“邀请奖励”已并入“推广返现 &gt; 拉新注册奖励”，避免两套配置重复或互相打架。</span>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="paymentChannelsModal" class="modal-overlay payment-channels-modal-overlay"
+                    onclick="if(event.target===this) closePaymentChannelsModal()">
+                    <div class="modal-content payment-channels-modal">
+                        <div class="modal-header">
+                            <h3><i class="fas fa-credit-card"></i> 支付通道配置</h3>
+                            <button class="modal-close" type="button" onclick="closePaymentChannelsModal()">&times;</button>
+                        </div>
+                        <div class="modal-body payment-channels-modal-body">
+                            <div class="payment-channels-modal-intro">
+                                <i class="fas fa-shield-alt"></i>
+                                <span>这里集中管理支付通道。公开参数会写入系统配置，敏感密钥只通过服务端加密保存。</span>
+                            </div>
+
+                            <div class="config-row">
+                                <div class="config-info">
+                                    <div class="config-label">当前主通道</div>
+                                    <div class="config-desc">钱包充值会根据这里的选择自动切换到模拟支付、爱发电或虎皮椒。</div>
+                                </div>
+                                <div class="config-input-wrapper">
+                                    <select class="config-input" id="paymentChannelActiveSelect">
+                                        <option value="mock">模拟支付</option>
+                                        <option value="afdian">爱发电</option>
+                                        <option value="hupijiao">虎皮椒</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="payment-provider-block">
+                                <div class="payment-provider-block-header">
+                                    <div class="config-info">
+                                        <div class="config-label">模拟支付</div>
+                                        <div class="config-desc">仅建议在虎皮椒等正式支付接入前临时启用，开启后会直接到账积分。</div>
+                                    </div>
+                                    <div class="status-toggle" id="paymentProviderMockToggle" onclick="togglePaymentProviderEnabled('mock')"></div>
+                                </div>
+                                <div class="config-row">
+                                    <label>显示名称</label>
+                                    <div class="config-input-wrapper">
+                                        <input type="text" class="config-input" id="paymentProviderMockDisplayName" placeholder="模拟支付">
+                                    </div>
+                                </div>
+                                <div class="config-row">
+                                    <label>说明文案</label>
+                                    <div class="config-input-wrapper">
+                                        <input type="text" class="config-input" id="paymentProviderMockDescription" placeholder="仅建议短期启用">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="payment-provider-block">
+                                <div class="payment-provider-block-header">
+                                    <div class="config-info">
+                                        <div class="config-label">爱发电</div>
+                                        <div class="config-desc">适合当前“支付后输入订单号领取兑换码”的链路，回调与查码仍走现有爱发电底座。</div>
+                                    </div>
+                                    <div class="status-toggle" id="paymentProviderAfdianToggle" onclick="togglePaymentProviderEnabled('afdian')"></div>
+                                </div>
+                                <div class="config-row">
+                                    <label>显示名称</label>
+                                    <div class="config-input-wrapper">
+                                        <input type="text" class="config-input" id="paymentProviderAfdianDisplayName" placeholder="爱发电">
+                                    </div>
+                                </div>
+                                <div class="config-row">
+                                    <label>支付链接</label>
+                                    <div class="config-input-wrapper">
+                                        <input type="url" class="config-input" id="paymentProviderAfdianCheckoutUrl" placeholder="https://afdian.com/a/zaoyoe">
+                                    </div>
+                                </div>
+                                <div class="config-row">
+                                    <label>套餐购买提示</label>
+                                    <div class="config-input-wrapper">
+                                        <input type="text" class="config-input" id="paymentProviderAfdianPackageHint" placeholder="支付后输入订单号领取兑换码">
+                                    </div>
+                                </div>
+                                <div class="config-row">
+                                    <label>自定义充值提示</label>
+                                    <div class="config-input-wrapper">
+                                        <input type="text" class="config-input" id="paymentProviderAfdianCustomHint" placeholder="建议在备注中填写要充值的积分数量">
+                                    </div>
+                                </div>
+                                <div class="config-row">
+                                    <div class="config-info">
+                                        <div class="config-label">爱发电 Token</div>
+                                        <div class="config-desc" id="paymentProviderAfdianTokenStatus">未配置后台安全密钥</div>
+                                    </div>
+                                    <div class="config-input-wrapper">
+                                        <input type="password" class="config-input" id="paymentProviderAfdianToken" placeholder="留空表示保持现有密钥不变">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="payment-provider-block">
+                                <div class="payment-provider-block-header">
+                                    <div class="config-info">
+                                        <div class="config-label">虎皮椒</div>
+                                        <div class="config-desc">先把公开参数和后台密钥录入好；正式创建订单与回调验签接入后即可切换上线。</div>
+                                    </div>
+                                    <div class="status-toggle" id="paymentProviderHupijiaoToggle" onclick="togglePaymentProviderEnabled('hupijiao')"></div>
+                                </div>
+                                <div class="config-row">
+                                    <label>显示名称</label>
+                                    <div class="config-input-wrapper">
+                                        <input type="text" class="config-input" id="paymentProviderHupijiaoDisplayName" placeholder="虎皮椒">
+                                    </div>
+                                </div>
+                                <div class="config-row">
+                                    <label>支付链接</label>
+                                    <div class="config-input-wrapper">
+                                        <input type="url" class="config-input" id="paymentProviderHupijiaoCheckoutUrl" placeholder="https://...">
+                                    </div>
+                                </div>
+                                <div class="config-row">
+                                    <label>网关地址</label>
+                                    <div class="config-input-wrapper">
+                                        <input type="url" class="config-input" id="paymentProviderHupijiaoGatewayUrl" placeholder="https://api.xunhupay.com/payment/do.html">
+                                    </div>
+                                </div>
+                                <div class="config-row">
+                                    <label>商户号</label>
+                                    <div class="config-input-wrapper">
+                                        <input type="text" class="config-input" id="paymentProviderHupijiaoMerchantId" placeholder="请输入商户号">
+                                    </div>
+                                </div>
+                                <div class="config-row">
+                                    <label>回跳地址</label>
+                                    <div class="config-input-wrapper">
+                                        <input type="url" class="config-input" id="paymentProviderHupijiaoReturnUrl" placeholder="https://www.zaoyoe.com">
+                                    </div>
+                                </div>
+                                <div class="config-row">
+                                    <label>通知地址</label>
+                                    <div class="config-input-wrapper">
+                                        <input type="url" class="config-input" id="paymentProviderHupijiaoNotifyUrl" placeholder="https://your-server.example.com/api/payments/hupijiao/webhook">
+                                    </div>
+                                </div>
+                                <div class="config-row">
+                                    <label>套餐购买提示</label>
+                                    <div class="config-input-wrapper">
+                                        <input type="text" class="config-input" id="paymentProviderHupijiaoPackageHint" placeholder="完成支付后请按页面提示处理">
+                                    </div>
+                                </div>
+                                <div class="config-row">
+                                    <label>自定义充值提示</label>
+                                    <div class="config-input-wrapper">
+                                        <input type="text" class="config-input" id="paymentProviderHupijiaoCustomHint" placeholder="自定义金额订单能力接入后会直接拉起真实支付">
+                                    </div>
+                                </div>
+                                <div class="config-row">
+                                    <div class="config-info">
+                                        <div class="config-label">虎皮椒 API Key</div>
+                                        <div class="config-desc" id="paymentProviderHupijiaoApiKeyStatus">未配置后台安全密钥</div>
+                                    </div>
+                                    <div class="config-input-wrapper">
+                                        <input type="password" class="config-input" id="paymentProviderHupijiaoApiKey" placeholder="留空表示保持现有密钥不变">
+                                    </div>
+                                </div>
+                                <div class="config-row">
+                                    <div class="config-info">
+                                        <div class="config-label">虎皮椒 Secret Key</div>
+                                        <div class="config-desc" id="paymentProviderHupijiaoSecretKeyStatus">未配置后台安全密钥</div>
+                                    </div>
+                                    <div class="config-input-wrapper">
+                                        <input type="password" class="config-input" id="paymentProviderHupijiaoSecretKey" placeholder="留空表示保持现有密钥不变">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="payment-channels-modal-footer">
+                            <button type="button" class="btn-secondary" onclick="closePaymentChannelsModal()">取消</button>
+                            <button type="button" class="btn-add-config" onclick="savePaymentChannelSettings()">
+                                <i class="fas fa-save"></i> 保存支付通道配置
+                            </button>
                         </div>
                     </div>
                 </div>
