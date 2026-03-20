@@ -12856,7 +12856,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
 .payments-kpi-card-visual {
     position: relative;
-    overflow: hidden;
+    overflow: visible;
 }
 
 .payments-kpi-card-visual .kpi-content {
@@ -12943,46 +12943,48 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
 .payments-info-bubble {
     position: absolute;
-    left: 50%;
-    bottom: calc(100% + 10px);
-    transform: translate(-50%, 8px);
-    min-width: 180px;
-    max-width: 240px;
-    padding: 10px 12px;
-    border-radius: 12px;
-    border: 1px solid rgba(96, 165, 250, 0.18);
-    background: linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(15, 23, 42, 0.94));
+    right: -6px;
+    top: calc(100% + 12px);
+    transform: translateY(8px);
+    min-width: 200px;
+    max-width: 280px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(191, 219, 254, 0.18);
+    background: linear-gradient(180deg, rgba(30, 41, 59, 0.58), rgba(15, 23, 42, 0.5));
+    backdrop-filter: blur(18px) saturate(145%);
+    -webkit-backdrop-filter: blur(18px) saturate(145%);
     color: #dbeafe;
     font-size: 0.78rem;
     line-height: 1.55;
     text-align: left;
-    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.42);
+    box-shadow: 0 20px 50px rgba(15, 23, 42, 0.42);
     opacity: 0;
     pointer-events: none;
     visibility: hidden;
     transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s ease;
-    z-index: 18;
+    z-index: 40;
     white-space: normal;
 }
 
 .payments-info-bubble::before {
     content: '';
     position: absolute;
-    left: 50%;
-    top: calc(100% - 1px);
-    width: 10px;
-    height: 10px;
-    background: rgba(15, 23, 42, 0.96);
-    border-right: 1px solid rgba(96, 165, 250, 0.18);
-    border-bottom: 1px solid rgba(96, 165, 250, 0.18);
-    transform: translateX(-50%) rotate(45deg);
+    right: 16px;
+    bottom: calc(100% - 6px);
+    width: 12px;
+    height: 12px;
+    background: rgba(24, 34, 48, 0.72);
+    border-top: 1px solid rgba(191, 219, 254, 0.18);
+    border-left: 1px solid rgba(191, 219, 254, 0.18);
+    transform: rotate(45deg);
 }
 
 .payments-info-chip:hover .payments-info-bubble,
 .payments-info-chip:focus-visible .payments-info-bubble {
     opacity: 1;
     visibility: visible;
-    transform: translate(-50%, 0);
+    transform: translateY(0);
 }
 
 .payments-kpi-card,
@@ -13042,7 +13044,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
 .payments-card {
     padding: 0;
-    overflow: hidden;
+    overflow: visible;
 }
 
 .payments-card .chart-header {
@@ -13101,7 +13103,7 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     border-radius: 14px;
     padding: 14px 16px;
     background: rgba(255, 255, 255, 0.03);
-    overflow: hidden;
+    overflow: visible;
 }
 
 .payments-provider-row {
@@ -13338,35 +13340,20 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 .payments-points-row {
     border: 1px solid rgba(148, 163, 184, 0.14);
     border-radius: 14px;
-    padding: 14px 16px;
-    background: rgba(255, 255, 255, 0.03);
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(110px, auto);
-    gap: 18px;
-    align-items: flex-start;
-}
-
-.payments-breakdown-main,
-.payments-points-main {
-    min-width: 0;
+    padding: 16px 18px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(148, 163, 184, 0.025));
     display: flex;
     flex-direction: column;
+    gap: 12px;
+    overflow: visible;
 }
 
-.payments-breakdown-side,
-.payments-points-side {
-    min-width: 110px;
-    display: flex;
-    justify-content: flex-end;
-    align-items: flex-start;
-}
-
-.payments-breakdown-title-row,
-.payments-points-title-row {
+.payments-content-title-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
+    min-width: 0;
 }
 
 .payments-breakdown-title,
@@ -13374,15 +13361,16 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     font-size: 0.94rem;
     font-weight: 600;
     color: var(--text-main);
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 .payments-breakdown-metric {
-    font-size: clamp(1rem, 1vw, 1.14rem);
+    font-size: clamp(1rem, 1vw, 1.16rem);
     font-weight: 700;
     color: #f8fafc;
-    text-align: right;
+    text-align: left;
     line-height: 1.35;
-    max-width: 150px;
     word-break: break-word;
     overflow-wrap: anywhere;
 }
@@ -13405,14 +13393,31 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     margin-top: 6px;
 }
 
+.payments-breakdown-footer,
+.payments-points-footer {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    min-width: 0;
+    flex-wrap: wrap;
+}
+
+.payments-breakdown-footer .payments-breakdown-meta,
+.payments-points-footer .payments-points-values {
+    flex: 1 1 180px;
+    min-width: 0;
+}
+
 .payments-points-net {
     font-size: 1rem;
     font-weight: 700;
     text-align: right;
-    max-width: 150px;
+    max-width: none;
     line-height: 1.35;
     word-break: break-word;
     overflow-wrap: anywhere;
+    flex: 0 0 auto;
 }
 
 .payments-points-values {
@@ -13433,6 +13438,18 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     display: inline-flex;
     align-items: center;
     white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.payments-breakdown-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+}
+
+.payments-breakdown-meta,
+.payments-points-values {
+    min-width: 0;
 }
 
 .payments-table-wrap {
@@ -13617,17 +13634,20 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 
     .payments-provider-row,
     .payments-anomaly-top,
-    .payments-breakdown-card,
-    .payments-points-row {
-        grid-template-columns: 1fr;
-        gap: 12px;
-    }
-
-    .payments-breakdown-side,
-    .payments-points-side,
     .payments-provider-badges {
         justify-content: flex-start;
         align-items: flex-start;
+    }
+
+    .payments-breakdown-footer,
+    .payments-points-footer {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .payments-breakdown-metric,
+    .payments-points-net {
+        text-align: left;
     }
 
     .payments-toolbar-highlights {

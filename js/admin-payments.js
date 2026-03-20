@@ -548,15 +548,13 @@
 
         target.innerHTML = items.map((item) => `
             <div class="payments-breakdown-card">
-                <div class="payments-breakdown-main">
-                    <div class="payments-breakdown-title-row">
-                        <div class="payments-breakdown-title">${escapeHtml(item.title || '业务项')}</div>
-                        ${renderInfoChip(item.help || '')}
-                    </div>
-                    <div class="payments-breakdown-description">${escapeHtml(item.description || '')}</div>
-                    <div class="payments-breakdown-meta">${escapeHtml(item.meta || '')}</div>
+                <div class="payments-content-title-row">
+                    <div class="payments-breakdown-title">${escapeHtml(item.title || '业务项')}</div>
+                    ${renderInfoChip(item.help || '')}
                 </div>
-                <div class="payments-breakdown-side">
+                <div class="payments-breakdown-description">${escapeHtml(item.description || '')}</div>
+                <div class="payments-breakdown-footer">
+                    <div class="payments-breakdown-meta">${escapeHtml(item.meta || '')}</div>
                     <div class="payments-breakdown-metric">${escapeHtml(item.metric || '—')}</div>
                 </div>
             </div>
@@ -577,17 +575,15 @@
             <div class="payments-points-table">
                 ${items.map((item) => `
                     <div class="payments-points-row">
-                        <div class="payments-points-main">
-                            <div class="payments-points-title-row">
-                                <div class="payments-points-label">${escapeHtml(item.label || item.key || '未分类')}</div>
-                                ${renderInfoChip(item.help || '')}
-                            </div>
+                        <div class="payments-content-title-row">
+                            <div class="payments-points-label">${escapeHtml(item.label || item.key || '未分类')}</div>
+                            ${renderInfoChip(item.help || '')}
+                        </div>
+                        <div class="payments-points-footer">
                             <div class="payments-points-values">
                                 <span>流入 ${escapeHtml(formatPoints(item.inflow))}</span>
                                 <span>流出 ${escapeHtml(formatPoints(item.outflow))}</span>
                             </div>
-                        </div>
-                        <div class="payments-points-side">
                             <div class="payments-points-net ${Number(item.net || 0) < 0 ? 'is-negative' : 'is-positive'}">${escapeHtml(formatSignedPoints(item.net))}</div>
                         </div>
                     </div>
