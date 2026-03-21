@@ -44,6 +44,9 @@ const TASK_SELECT = `
     locked_at,
     lock_expires_at,
     lock_token,
+    reservation_acquired_at,
+    reservation_lock_token,
+    reservation_worker_name,
     executed_at,
     updated_at,
     created_at
@@ -169,6 +172,51 @@ function getLockState(task = {}) {
     return expiresAt > Date.now() ? 'locked_active' : 'locked_stale';
 }
 
+function hasReservationSnapshot(task = {}) {
+    return Boolean(
+        task?.reservation_acquired_at
+        || task?.reservation_lock_token
+        || task?.reservation_worker_name
+    );
+}
+
+function classifyReservationState(task = {}) {
+    if (!hasReservationSnapshot(task)) {
+        return { key: 'none', label: '无占位', tone: 'muted' };
+    }
+
+    const status = String(task?.status || '').trim().toLowerCase();
+    const lockToken = String(task?.lock_token || '').trim();
+    const reservationLockToken = String(task?.reservation_lock_token || '').trim();
+    const workerName = String(task?.worker_name || '').trim();
+    const reservationWorkerName = String(task?.reservation_worker_name || '').trim();
+    const expiresAt = task?.lock_expires_at ? new Date(task.lock_expires_at).getTime() : 0;
+    const hasActiveLease = Boolean(lockToken)
+        && Number.isFinite(expiresAt)
+        && expiresAt > Date.now();
+
+    if (reservationLockToken && lockToken && reservationLockToken !== lockToken) {
+        return { key: 'token_drift', label: 'Token 漂移', tone: 'danger' };
+    }
+    if (reservationWorkerName && workerName && reservationWorkerName !== workerName) {
+        return { key: 'worker_drift', label: 'Worker 漂移', tone: 'danger' };
+    }
+    if (status !== 'processing') {
+        return { key: 'released_pending_cleanup', label: '占位残留', tone: 'warn' };
+    }
+    if (!lockToken) {
+        return { key: 'missing_lock', label: '占位缺锁', tone: 'danger' };
+    }
+    if (!hasActiveLease) {
+        return { key: 'stale_lock', label: '占位过期', tone: 'danger' };
+    }
+    if (!reservationLockToken || !task?.reservation_acquired_at) {
+        return { key: 'incomplete', label: '占位不完整', tone: 'warn' };
+    }
+
+    return { key: 'active', label: '全局占位生效', tone: 'processing' };
+}
+
 function classifyDeadLetterReason(task = {}) {
     const message = String(task?.last_error || '').trim();
     const normalized = message.toLowerCase();
@@ -241,6 +289,57 @@ function summarizeLockConflictTasks(tasks = []) {
         }
     });
 
+    return counts;
+}
+
+function summarizeReservationTasks(tasks = []) {
+    const counts = {
+        total: Number(tasks.length || 0),
+        active: 0,
+        token_drift: 0,
+        worker_drift: 0,
+        missing_lock: 0,
+        stale_lock: 0,
+        released_pending_cleanup: 0,
+        incomplete: 0,
+        drift_total: 0,
+        distinct_targets: 0,
+        distinct_channels: 0,
+        oldest_active_at: null,
+        latest_active_at: null
+    };
+    const activeTargets = new Set();
+    const activeChannels = new Set();
+    let oldestActiveAt = 0;
+    let latestActiveAt = 0;
+
+    tasks.forEach((task) => {
+        const reservationState = task?.reservation_state || classifyReservationState(task);
+        const key = String(reservationState?.key || 'none').trim().toLowerCase();
+        if (Object.prototype.hasOwnProperty.call(counts, key)) {
+            counts[key] += 1;
+        }
+        if (key !== 'active') {
+            counts.drift_total += 1;
+            return;
+        }
+
+        if (task?.target_key) activeTargets.add(task.target_key);
+        if (task?.channel_key) activeChannels.add(task.channel_key);
+
+        const acquiredAt = Number(new Date(task?.reservation_acquired_at || 0).getTime());
+        if (acquiredAt > 0 && (!oldestActiveAt || acquiredAt < oldestActiveAt)) {
+            oldestActiveAt = acquiredAt;
+        }
+        if (acquiredAt > latestActiveAt) {
+            latestActiveAt = acquiredAt;
+        }
+    });
+
+    counts.distinct_targets = activeTargets.size;
+    counts.distinct_channels = activeChannels.size;
+    counts.oldest_active_at = oldestActiveAt ? new Date(oldestActiveAt).toISOString() : null;
+    counts.latest_active_at = latestActiveAt ? new Date(latestActiveAt).toISOString() : null;
     return counts;
 }
 
@@ -542,6 +641,55 @@ async function fetchLockConflictPage({ supabase, page, pageSize, lockState }) {
     };
 }
 
+function compareReservationTasks(left = {}, right = {}) {
+    const weights = {
+        token_drift: 0,
+        worker_drift: 1,
+        missing_lock: 2,
+        stale_lock: 3,
+        released_pending_cleanup: 4,
+        incomplete: 5,
+        active: 6,
+        none: 7
+    };
+    const leftState = classifyReservationState(left);
+    const rightState = classifyReservationState(right);
+    const leftWeight = weights[leftState.key] ?? 99;
+    const rightWeight = weights[rightState.key] ?? 99;
+
+    if (leftWeight !== rightWeight) {
+        return leftWeight - rightWeight;
+    }
+
+    const leftAcquiredAt = Number(new Date(left?.reservation_acquired_at || 0).getTime());
+    const rightAcquiredAt = Number(new Date(right?.reservation_acquired_at || 0).getTime());
+    if (leftAcquiredAt !== rightAcquiredAt) {
+        if (leftState.key === 'active' && rightState.key === 'active') {
+            return leftAcquiredAt - rightAcquiredAt;
+        }
+        return rightAcquiredAt - leftAcquiredAt;
+    }
+
+    return Number(new Date(right?.updated_at || right?.created_at || 0).getTime())
+        - Number(new Date(left?.updated_at || left?.created_at || 0).getTime());
+}
+
+async function fetchReservationOverview({ supabase, limit = 8 }) {
+    const allTasks = await fetchAllRows(() => supabase
+        .from('shop_webhook_tasks')
+        .select(TASK_SELECT)
+        .not('reservation_acquired_at', 'is', null)
+        .order('reservation_acquired_at', { ascending: false })
+        .order('created_at', { ascending: false }));
+
+    const sorted = [...(allTasks || [])].sort(compareReservationTasks);
+    return {
+        total: sorted.length,
+        tasks: sorted.slice(0, Math.max(1, Math.min(limit, 20))),
+        allTasks: sorted
+    };
+}
+
 async function fetchReplayLogs({ supabase, page, pageSize }) {
     const from = (page - 1) * pageSize;
     const to = from + pageSize - 1;
@@ -645,6 +793,7 @@ function enrichTasks(tasks = [], ordersById = {}, attemptsByTask = {}) {
     return tasks.map((task) => ({
         ...task,
         lock_state: getLockState(task),
+        reservation_state: classifyReservationState(task),
         dead_letter_reason: String(task?.status || '').toLowerCase() === 'dead_letter'
             ? classifyDeadLetterReason(task)
             : null,
@@ -746,7 +895,7 @@ module.exports = async (req, res) => {
         const replayPage = parsePositiveInt(url.searchParams.get('replayPage'), 1, 100000);
         const replayPageSize = parsePositiveInt(url.searchParams.get('replayPageSize'), 5, 20);
 
-        const [mainPage, deadLetterPageData, lockPageData, replayPageData, conflictAuditData] = await Promise.all([
+        const [mainPage, deadLetterPageData, lockPageData, replayPageData, conflictAuditData, reservationOverviewData] = await Promise.all([
             fetchTaskPage({
                 supabase,
                 page,
@@ -775,6 +924,10 @@ module.exports = async (req, res) => {
             fetchRecentConflictAudits({
                 supabase,
                 limit: 12
+            }),
+            fetchReservationOverview({
+                supabase,
+                limit: 8
             })
         ]);
 
@@ -786,13 +939,16 @@ module.exports = async (req, res) => {
         const replayOrderIds = replayDetails.map((row) => row.details?.order_id);
         const conflictTaskIds = (conflictAuditData.records || []).map((row) => row.task_id);
         const conflictOrderIds = (conflictAuditData.records || []).map((row) => row.order_id);
+        const reservationTaskIds = (reservationOverviewData.tasks || []).map((task) => task.id);
+        const reservationOrderIds = (reservationOverviewData.tasks || []).map((task) => task.order_id);
 
         const orderIds = unique([
             ...mainPage.tasks.map((task) => task.order_id),
             ...deadLetterPageData.tasks.map((task) => task.order_id),
             ...lockPageData.tasks.map((task) => task.order_id),
             ...replayOrderIds,
-            ...conflictOrderIds
+            ...conflictOrderIds,
+            ...reservationOrderIds
         ]);
 
         const missingReplayTaskIds = replayTaskIds.filter((taskId) => (
@@ -805,12 +961,18 @@ module.exports = async (req, res) => {
             && !deadLetterPageData.tasks.some((task) => task.id === taskId)
             && !lockPageData.tasks.some((task) => task.id === taskId)
         ));
+        const missingReservationTaskIds = reservationTaskIds.filter((taskId) => (
+            !mainPage.tasks.some((task) => task.id === taskId)
+            && !deadLetterPageData.tasks.some((task) => task.id === taskId)
+            && !lockPageData.tasks.some((task) => task.id === taskId)
+        ));
 
         const [ordersById, extraTasksById] = await Promise.all([
             fetchOrdersByIds(supabase, orderIds),
             fetchTasksByIds(supabase, unique([
                 ...missingReplayTaskIds,
-                ...missingConflictTaskIds
+                ...missingConflictTaskIds,
+                ...missingReservationTaskIds
             ]))
         ]);
 
@@ -819,6 +981,7 @@ module.exports = async (req, res) => {
             ...deadLetterPageData.tasks.map((task) => task.id),
             ...lockPageData.tasks.map((task) => task.id),
             ...conflictTaskIds,
+            ...reservationTaskIds,
             ...Object.keys(extraTasksById)
         ]);
 
@@ -827,15 +990,16 @@ module.exports = async (req, res) => {
         const deadLetterTasks = enrichTasks(deadLetterPageData.tasks, ordersById, attemptsByTask);
         const lockTasks = enrichTasks(lockPageData.tasks, ordersById, attemptsByTask);
         const replayTasksById = Object.fromEntries(
-            Object.entries(extraTasksById).map(([id, task]) => [
-                id,
-                {
-                    ...task,
-                    order: task.order_id ? (ordersById[task.order_id] || null) : null,
-                    attempts: attemptsByTask[task.id] || []
-                }
-            ])
+            enrichTasks(Object.values(extraTasksById), ordersById, attemptsByTask)
+                .map((task) => [task.id, task])
         );
+        const reservationTasks = (reservationOverviewData.tasks || []).map((task) => (
+            mainTasks.find((item) => item.id === task.id)
+            || deadLetterTasks.find((item) => item.id === task.id)
+            || lockTasks.find((item) => item.id === task.id)
+            || replayTasksById[task.id]
+            || enrichTasks([task], ordersById, attemptsByTask)[0]
+        ));
 
         const replayRecords = replayDetails.map((log) => {
             const taskId = log.details?.task_id || null;
@@ -918,6 +1082,11 @@ module.exports = async (req, res) => {
         const lockSummary = summarizeLockConflictTasks(lockPageData.allTasks || []);
         const replaySummary = summarizeReplayRecords(replayRecords);
         const conflictSummary = summarizeConflictAudits(conflictRecords);
+        const reservationSummary = summarizeReservationTasks(reservationOverviewData.allTasks || reservationTasks);
+        summary.reservation_active = reservationSummary.active;
+        summary.reservation_drift = reservationSummary.drift_total;
+        summary.reservation_targets = reservationSummary.distinct_targets;
+        summary.reservation_channels = reservationSummary.distinct_channels;
 
         return sendJson(res, 200, {
             success: true,
@@ -941,6 +1110,11 @@ module.exports = async (req, res) => {
                 summary: lockSummary,
                 lockState,
                 tasks: lockTasks
+            },
+            reservations: {
+                total: reservationOverviewData.total,
+                summary: reservationSummary,
+                tasks: reservationTasks
             },
             replay: {
                 page: replayPageData.page,

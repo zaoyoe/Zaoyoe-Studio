@@ -5646,6 +5646,37 @@
                             <section class="shop-delivery-subcard">
                                 <div class="shop-delivery-subcard-header">
                                     <div class="shop-delivery-subcard-title">
+                                        <h4><i class="fas fa-network-wired"></i> 全局占位观测</h4>
+                                        <p>查看 DB 级 target / channel reservation、生效中的占位，以及锁 token / worker 漂移。</p>
+                                    </div>
+                                    <div id="deliveryReservationSummary" class="shop-delivery-subcard-meta">载入中…</div>
+                                </div>
+                                <div class="shop-delivery-subcard-body">
+                                    <div class="shop-table-container">
+                                        <table class="shop-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>状态</th>
+                                                    <th>任务 / 订单</th>
+                                                    <th>商品 / 用户</th>
+                                                    <th>目标 / 通道</th>
+                                                    <th>占位 / 当前锁</th>
+                                                    <th>操作</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="deliveryReservationTableBody">
+                                                <tr>
+                                                    <td colspan="6" class="text-center">正在加载全局占位观测...</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section class="shop-delivery-subcard">
+                                <div class="shop-delivery-subcard-header">
+                                    <div class="shop-delivery-subcard-title">
                                         <h4><i class="fas fa-history"></i> 人工重放记录</h4>
                                         <p>跟踪后台发起的人工重放操作，确认执行人、重放时间和当前任务状态。</p>
                                     </div>

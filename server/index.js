@@ -1015,7 +1015,10 @@ async function recordShopDeliveryConflict(task, conflict = {}, strategy = null) 
                 locked_at: null,
                 lock_expires_at: null,
                 lock_token: null,
-                worker_name: null
+                worker_name: null,
+                reservation_acquired_at: null,
+                reservation_lock_token: null,
+                reservation_worker_name: null
             })
             .eq('id', task.id)
             .eq('lock_token', task.lock_token);
@@ -1061,7 +1064,10 @@ async function markShopDeliveryTaskSuccess(task, responseStatus, responseBody) {
         updated_at: now,
         locked_at: null,
         lock_expires_at: null,
-        lock_token: null
+        lock_token: null,
+        reservation_acquired_at: null,
+        reservation_lock_token: null,
+        reservation_worker_name: null
     };
 
     const { error: taskError } = await supabase
@@ -1116,7 +1122,10 @@ async function markShopDeliveryTaskFailure(task, failure = {}, strategy = null) 
             dead_lettered_at: shouldDeadLetter ? now.toISOString() : null,
             locked_at: null,
             lock_expires_at: null,
-            lock_token: null
+            lock_token: null,
+            reservation_acquired_at: null,
+            reservation_lock_token: null,
+            reservation_worker_name: null
         })
         .eq('id', task.id)
         .eq('lock_token', task.lock_token);

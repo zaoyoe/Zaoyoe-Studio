@@ -2016,6 +2016,37 @@ Example output format:
         });
     },
 
+    formatDeliveryDuration: function (valueMs) {
+        const durationMs = Number(valueMs || 0);
+        if (!Number.isFinite(durationMs) || durationMs <= 0) return '—';
+
+        const totalSeconds = Math.max(1, Math.round(durationMs / 1000));
+        if (totalSeconds < 60) return `${totalSeconds}s`;
+
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        if (minutes < 60) {
+            return seconds ? `${minutes}m ${seconds}s` : `${minutes}m`;
+        }
+
+        const hours = Math.floor(minutes / 60);
+        const remainingMinutes = minutes % 60;
+        if (hours < 24) {
+            return remainingMinutes ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
+        }
+
+        const days = Math.floor(hours / 24);
+        const remainingHours = hours % 24;
+        return remainingHours ? `${days}d ${remainingHours}h` : `${days}d`;
+    },
+
+    formatDeliveryAge: function (value) {
+        if (!value) return '—';
+        const timestamp = new Date(value).getTime();
+        if (!Number.isFinite(timestamp) || !timestamp) return '—';
+        return this.formatDeliveryDuration(Date.now() - timestamp);
+    },
+
     truncateText: function (value, maxLength = 88) {
         const text = String(value || '');
         if (text.length <= maxLength) return text;
@@ -2045,6 +2076,10 @@ Example output format:
             { label: '已履约', value: summary.delivered || 0, tone: 'success' },
             { label: '冲突任务', value: summary.conflict_tasks || 0, tone: 'warn' },
             { label: '最近冲突', value: summary.recent_conflicts || 0, tone: 'warn' },
+            { label: '全局占位', value: summary.reservation_active || 0, tone: 'processing' },
+            { label: '占位漂移', value: summary.reservation_drift || 0, tone: 'danger' },
+            { label: '占位目标', value: summary.reservation_targets || 0, tone: 'neutral' },
+            { label: '占位通道', value: summary.reservation_channels || 0, tone: 'neutral' },
             { label: '活跃锁', value: summary.locked_active || 0, tone: 'processing' },
             { label: '过期锁', value: summary.locked_stale || 0, tone: 'danger' },
             { label: '缺锁', value: summary.lock_missing || 0, tone: 'danger' },
@@ -2091,6 +2126,34 @@ Example output format:
         return this.renderDeliveryBadge(isActive ? '活跃锁' : '过期锁', isActive ? 'processing' : 'danger');
     },
 
+    getDeliveryReservationBadge: function (task = {}) {
+        const state = String(task?.reservation_state?.key || '').toLowerCase();
+
+        if (state === 'active') {
+            return this.renderDeliveryBadge('全局占位生效', 'processing');
+        }
+        if (state === 'token_drift') {
+            return this.renderDeliveryBadge('Token 漂移', 'danger');
+        }
+        if (state === 'worker_drift') {
+            return this.renderDeliveryBadge('Worker 漂移', 'danger');
+        }
+        if (state === 'missing_lock') {
+            return this.renderDeliveryBadge('占位缺锁', 'danger');
+        }
+        if (state === 'stale_lock') {
+            return this.renderDeliveryBadge('占位过期', 'danger');
+        }
+        if (state === 'released_pending_cleanup') {
+            return this.renderDeliveryBadge('占位残留', 'warn');
+        }
+        if (state === 'incomplete') {
+            return this.renderDeliveryBadge('占位不完整', 'warn');
+        }
+
+        return '';
+    },
+
     getDeliveryConflictBadge: function (record = {}) {
         const reason = record?.conflict_reason || {};
         const key = String(reason.key || record?.last_conflict_reason || '').toLowerCase();
@@ -2120,10 +2183,22 @@ Example output format:
     renderDeliveryObserveChips: function (task = {}) {
         const chips = [];
         const lockBadge = this.getDeliveryLockBadge(task);
+        const reservationBadge = this.getDeliveryReservationBadge(task);
         const conflictBadge = this.getDeliveryConflictBadge(task);
 
+        if (reservationBadge) chips.push(reservationBadge);
         if (lockBadge) chips.push(lockBadge);
         if (conflictBadge) chips.push(conflictBadge);
+        if (task.reservation_acquired_at) {
+            chips.push(`<span class="shop-delivery-meta-chip">占位于 ${this.formatDeliveryTime(task.reservation_acquired_at)}</span>`);
+        }
+        if (task.reservation_lock_token && task.reservation_lock_token !== task.lock_token) {
+            const reservationToken = this.escapeHtml(this.shortenDeliveryToken(task.reservation_lock_token, 8, 6));
+            chips.push(`<span class="shop-delivery-meta-chip" title="${this.escapeHtml(task.reservation_lock_token)}">占位锁 ${reservationToken}</span>`);
+        }
+        if (task.reservation_worker_name && task.reservation_worker_name !== task.worker_name) {
+            chips.push(`<span class="shop-delivery-meta-chip">占位 Worker ${this.escapeHtml(task.reservation_worker_name)}</span>`);
+        }
         if (task.dedupe_key) {
             const dedupe = this.escapeHtml(this.shortenDeliveryToken(task.dedupe_key, 10, 6));
             chips.push(`<span class="shop-delivery-meta-chip" title="${this.escapeHtml(task.dedupe_key)}">幂等 ${dedupe}</span>`);
@@ -2163,6 +2238,10 @@ Example output format:
 
     renderDeliveryCompactObserveChips: function (record = {}) {
         const chips = [];
+        const reservationBadge = this.getDeliveryReservationBadge(record);
+        if (reservationBadge) {
+            chips.push(reservationBadge);
+        }
         if (record.lock_state === 'locked_active') {
             chips.push(this.renderDeliveryMetaBadge('活跃锁', 'processing'));
         } else if (record.lock_state === 'locked_stale') {
@@ -2183,6 +2262,9 @@ Example output format:
         }
         if (record.dedupe_key) {
             chips.push(this.renderDeliveryMetaBadge(`幂等 ${this.shortenDeliveryToken(record.dedupe_key, 8, 5)}`, 'muted'));
+        }
+        if (record.reservation_acquired_at) {
+            chips.push(this.renderDeliveryMetaBadge(`占位 ${this.formatDeliveryAge(record.reservation_acquired_at)}`, 'muted'));
         }
         if (Number(record.conflict_count || 0) > 0) {
             chips.push(this.renderDeliveryMetaBadge(`冲突 ${Number(record.conflict_count)}`, 'warn'));
@@ -2553,6 +2635,93 @@ Example output format:
         this.renderPagination('deliveryLockConflictsPagination', page, total, pageSize, 'loadDeliveryLockConflictPage');
     },
 
+    renderReservationSummary: function (data = {}) {
+        const meta = document.getElementById('deliveryReservationSummary');
+        if (!meta) return;
+
+        const summary = data.summary || {};
+        const total = Number(data.total || summary.total || 0);
+        const oldestActive = summary.oldest_active_at ? this.formatDeliveryTime(summary.oldest_active_at) : '—';
+        const pills = [
+            this.renderDeliveryMetaBadge(`快照 ${total} 条`, total ? 'processing' : 'muted'),
+            this.renderDeliveryMetaBadge(`生效 ${Number(summary.active || 0)}`, Number(summary.active || 0) ? 'processing' : 'muted'),
+            this.renderDeliveryMetaBadge(`漂移 ${Number(summary.drift_total || 0)}`, Number(summary.drift_total || 0) ? 'danger' : 'muted'),
+            this.renderDeliveryMetaBadge(`Token 漂移 ${Number(summary.token_drift || 0)}`, Number(summary.token_drift || 0) ? 'danger' : 'muted'),
+            this.renderDeliveryMetaBadge(`Worker 漂移 ${Number(summary.worker_drift || 0)}`, Number(summary.worker_drift || 0) ? 'danger' : 'muted'),
+            this.renderDeliveryMetaBadge(`过期 ${Number(summary.stale_lock || 0)}`, Number(summary.stale_lock || 0) ? 'danger' : 'muted'),
+            this.renderDeliveryMetaBadge(`缺锁 ${Number(summary.missing_lock || 0)}`, Number(summary.missing_lock || 0) ? 'danger' : 'muted'),
+            this.renderDeliveryMetaBadge(`残留 ${Number(summary.released_pending_cleanup || 0)}`, Number(summary.released_pending_cleanup || 0) ? 'warn' : 'muted'),
+            this.renderDeliveryMetaBadge(`热目标 ${Number(summary.distinct_targets || 0)}`, Number(summary.distinct_targets || 0) ? 'neutral' : 'muted'),
+            this.renderDeliveryMetaBadge(`热通道 ${Number(summary.distinct_channels || 0)}`, Number(summary.distinct_channels || 0) ? 'neutral' : 'muted'),
+            this.renderDeliveryMetaBadge(`最老活跃 ${oldestActive}`, summary.oldest_active_at ? 'neutral' : 'muted')
+        ];
+
+        meta.classList.add('shop-delivery-subcard-meta--rich');
+        meta.innerHTML = total ? pills.join('') : '<span class="shop-delivery-table-note">当前没有全局占位快照</span>';
+    },
+
+    renderReservationTasks: function (tasks = []) {
+        const tbody = document.getElementById('deliveryReservationTableBody');
+        if (!tbody) return;
+
+        if (!tasks.length) {
+            tbody.innerHTML = '<tr><td colspan="6"><div class="shop-delivery-empty">当前没有全局占位或锁漂移任务。</div></td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = tasks.map((task) => {
+            const order = task.order || {};
+            const orderId = this.escapeHtml(task.order_id || '—');
+            const productName = this.escapeHtml(order.snapshot_product_name || '—');
+            const userId = this.escapeHtml(order.user_id || '未知用户');
+            const reservationBadge = this.getDeliveryReservationBadge(task) || this.renderDeliveryBadge('无占位', 'muted');
+            const stateBadges = [
+                reservationBadge,
+                this.getDeliveryTaskStatusBadge(task.status),
+                this.getDeliveryLockBadge(task)
+            ].filter(Boolean).join('');
+            const reservationMeta = [
+                task.reservation_acquired_at ? `占位于 ${this.formatDeliveryTime(task.reservation_acquired_at)}` : '',
+                task.reservation_acquired_at ? `持续 ${this.formatDeliveryAge(task.reservation_acquired_at)}` : '',
+                task.reservation_worker_name ? `占位 Worker ${task.reservation_worker_name}` : '',
+                task.reservation_lock_token ? `占位锁 ${this.shortenDeliveryToken(task.reservation_lock_token, 8, 6)}` : ''
+            ].filter(Boolean).join(' · ');
+            const currentLockMeta = [
+                task.worker_name ? `当前 Worker ${task.worker_name}` : '',
+                task.locked_at ? `锁定 ${this.formatDeliveryTime(task.locked_at)}` : '',
+                task.lock_expires_at ? `过期 ${this.formatDeliveryTime(task.lock_expires_at)}` : '',
+                task.lock_token ? `当前锁 ${this.shortenDeliveryToken(task.lock_token, 8, 6)}` : ''
+            ].filter(Boolean).join(' · ');
+
+            return `
+                <tr>
+                    <td data-label="状态">
+                        <div class="shop-delivery-meta" style="margin-bottom:8px;">${stateBadges}</div>
+                        <div class="shop-delivery-table-note">${task.last_conflict_reason ? this.escapeHtml(task.last_conflict_reason) : '无最近冲突原因'}</div>
+                    </td>
+                    <td data-label="任务 / 订单">
+                        <div style="font-weight:600;color:#fff;">任务 ${this.escapeHtml(this.truncateText(task.id || '—', 18))}</div>
+                        <div class="shop-delivery-table-note">订单 ${orderId}</div>
+                    </td>
+                    <td data-label="商品 / 用户">
+                        <div style="font-weight:600;color:#fff;">${productName}</div>
+                        <div class="shop-delivery-table-note">${userId}</div>
+                    </td>
+                    <td data-label="目标 / 通道">
+                        <div style="font-weight:600;color:#fff;">${this.escapeHtml(this.truncateText(task.target_key || task.target_url || '—', 34))}</div>
+                        <div class="shop-delivery-table-note">${this.escapeHtml(this.truncateText(task.channel_key || '—', 26))}</div>
+                    </td>
+                    <td data-label="占位 / 当前锁" style="white-space:normal;line-height:1.55;">
+                        <div style="font-weight:600;color:#fff;">${this.escapeHtml(reservationMeta || '无占位快照')}</div>
+                        <div class="shop-delivery-table-note" style="margin-top:8px;">${this.escapeHtml(currentLockMeta || '当前无活跃锁信息')}</div>
+                        <div style="margin-top:8px;">${this.renderDeliveryObserveChips(task)}</div>
+                    </td>
+                    <td data-label="操作">${this.renderDeliveryActionButtons(task, { allowDeadLetter: task.status !== 'dead_letter', allowForceUnlock: true })}</td>
+                </tr>
+            `;
+        }).join('');
+    },
+
     renderReplayRecords: function (records = [], total = 0, page = 1, pageSize = this.deliveryReplayPageSize) {
         const tbody = document.getElementById('deliveryReplayTableBody');
         if (!tbody) return;
@@ -2677,10 +2846,12 @@ Example output format:
         const summary = document.getElementById('deliveryTaskSummary');
         const deadLetterBody = document.getElementById('deliveryDeadLetterTableBody');
         const lockBody = document.getElementById('deliveryLockConflictsTableBody');
+        const reservationBody = document.getElementById('deliveryReservationTableBody');
         const replayBody = document.getElementById('deliveryReplayTableBody');
         const conflictAuditBody = document.getElementById('deliveryConflictAuditTableBody');
         const deadLetterSummary = document.getElementById('deliveryDeadLetterSummary');
         const lockSummary = document.getElementById('deliveryLockConflictSummary');
+        const reservationSummary = document.getElementById('deliveryReservationSummary');
         const replaySummary = document.getElementById('deliveryReplaySummary');
         const conflictAuditSummary = document.getElementById('deliveryConflictAuditSummary');
         const strategySummary = document.getElementById('deliveryStrategySummary');
@@ -2711,6 +2882,9 @@ Example output format:
         if (lockBody) {
             lockBody.innerHTML = '<tr><td colspan="6" class="text-center">正在加载锁冲突任务...</td></tr>';
         }
+        if (reservationBody) {
+            reservationBody.innerHTML = '<tr><td colspan="6" class="text-center">正在加载全局占位观测...</td></tr>';
+        }
         if (replayBody) {
             replayBody.innerHTML = '<tr><td colspan="6" class="text-center">正在加载人工重放记录...</td></tr>';
         }
@@ -2724,6 +2898,10 @@ Example output format:
         if (lockSummary) {
             lockSummary.classList.add('shop-delivery-subcard-meta--rich');
             lockSummary.innerHTML = '<span class="shop-delivery-table-note">正在汇总…</span>';
+        }
+        if (reservationSummary) {
+            reservationSummary.classList.add('shop-delivery-subcard-meta--rich');
+            reservationSummary.innerHTML = '<span class="shop-delivery-table-note">正在汇总…</span>';
         }
         if (replaySummary) {
             replaySummary.classList.add('shop-delivery-subcard-meta--rich');
@@ -2790,6 +2968,10 @@ Example output format:
                 lockConflicts.pageSize || this.deliveryLockConflictPageSize
             );
 
+            const reservations = result.reservations || {};
+            this.renderReservationSummary(reservations);
+            this.renderReservationTasks(reservations.tasks || []);
+
             const replay = result.replay || {};
             this.renderReplaySummary(replay);
             this.renderReplayRecords(
@@ -2818,6 +3000,9 @@ Example output format:
             if (lockBody) {
                 lockBody.innerHTML = `<tr><td colspan="6"><div class="shop-delivery-empty">锁冲突列表加载失败：${this.escapeHtml(err.message || '未知错误')}</div></td></tr>`;
             }
+            if (reservationBody) {
+                reservationBody.innerHTML = `<tr><td colspan="6"><div class="shop-delivery-empty">全局占位观测加载失败：${this.escapeHtml(err.message || '未知错误')}</div></td></tr>`;
+            }
             if (replayBody) {
                 replayBody.innerHTML = `<tr><td colspan="6"><div class="shop-delivery-empty">人工重放记录加载失败：${this.escapeHtml(err.message || '未知错误')}</div></td></tr>`;
             }
@@ -2831,6 +3016,10 @@ Example output format:
             if (lockSummary) {
                 lockSummary.classList.add('shop-delivery-subcard-meta--rich');
                 lockSummary.innerHTML = this.renderDeliveryMetaBadge('加载失败', 'danger');
+            }
+            if (reservationSummary) {
+                reservationSummary.classList.add('shop-delivery-subcard-meta--rich');
+                reservationSummary.innerHTML = this.renderDeliveryMetaBadge('加载失败', 'danger');
             }
             if (replaySummary) {
                 replaySummary.classList.add('shop-delivery-subcard-meta--rich');

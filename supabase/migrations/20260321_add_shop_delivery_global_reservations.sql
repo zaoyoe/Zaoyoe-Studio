@@ -357,3 +357,241 @@ GRANT EXECUTE ON FUNCTION public.fn_acquire_shop_delivery_execution_reservation(
     INTEGER,
     INTEGER
 ) TO authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION public.fn_claim_shop_webhook_tasks(
+    p_limit INTEGER DEFAULT 10,
+    p_lock_seconds INTEGER DEFAULT 120,
+    p_worker_name TEXT DEFAULT 'shop-delivery-worker'
+)
+RETURNS TABLE (
+    id UUID,
+    order_id UUID,
+    target_url TEXT,
+    payload JSONB,
+    status TEXT,
+    attempt_count INTEGER,
+    max_attempts INTEGER,
+    dedupe_key TEXT,
+    lock_token TEXT,
+    worker_name TEXT,
+    next_attempt_at TIMESTAMPTZ
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_now TIMESTAMPTZ := NOW();
+    v_limit INTEGER := GREATEST(COALESCE(p_limit, 10), 1);
+    v_lock_seconds INTEGER := GREATEST(COALESCE(p_lock_seconds, 120), 30);
+    v_worker_name TEXT := COALESCE(NULLIF(BTRIM(p_worker_name), ''), 'shop-delivery-worker');
+BEGIN
+    RETURN QUERY
+    WITH candidates AS (
+        SELECT t.id
+        FROM public.shop_webhook_tasks t
+        WHERE (
+            (
+                t.status IN ('pending', 'retry_waiting', 'requeued')
+                AND COALESCE(t.next_attempt_at, v_now) <= v_now
+            )
+            OR (
+                t.status = 'processing'
+                AND COALESCE(t.lock_expires_at, TO_TIMESTAMP(0)) <= v_now
+            )
+        )
+          AND COALESCE(t.attempt_count, 0) < COALESCE(t.max_attempts, 5)
+        ORDER BY COALESCE(t.next_attempt_at, t.created_at) ASC, t.created_at ASC
+        FOR UPDATE SKIP LOCKED
+        LIMIT v_limit
+    ),
+    claimed AS (
+        UPDATE public.shop_webhook_tasks t
+        SET
+            status = 'processing',
+            attempt_count = COALESCE(t.attempt_count, 0) + 1,
+            last_attempt_at = v_now,
+            locked_at = v_now,
+            lock_expires_at = v_now + make_interval(secs => v_lock_seconds),
+            lock_token = gen_random_uuid()::TEXT,
+            worker_name = v_worker_name,
+            reservation_acquired_at = NULL,
+            reservation_lock_token = NULL,
+            reservation_worker_name = NULL,
+            updated_at = v_now
+        FROM candidates c
+        WHERE t.id = c.id
+        RETURNING
+            t.id,
+            t.order_id,
+            t.target_url::TEXT,
+            t.payload,
+            t.status,
+            t.attempt_count,
+            t.max_attempts,
+            t.dedupe_key,
+            t.lock_token,
+            t.worker_name,
+            t.next_attempt_at
+    )
+    SELECT
+        claimed.id,
+        claimed.order_id,
+        claimed.target_url,
+        claimed.payload,
+        claimed.status,
+        claimed.attempt_count,
+        claimed.max_attempts,
+        claimed.dedupe_key,
+        claimed.lock_token,
+        claimed.worker_name,
+        claimed.next_attempt_at
+    FROM claimed;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.fn_record_shop_delivery_conflict(
+    p_task_id UUID,
+    p_lock_token TEXT DEFAULT NULL,
+    p_scope TEXT DEFAULT 'worker',
+    p_reason_key TEXT DEFAULT 'unknown_conflict',
+    p_detail TEXT DEFAULT NULL,
+    p_worker_name TEXT DEFAULT NULL,
+    p_target_key TEXT DEFAULT NULL,
+    p_channel_key TEXT DEFAULT NULL,
+    p_strategy_snapshot JSONB DEFAULT '{}'::JSONB,
+    p_backoff_seconds INTEGER DEFAULT 45,
+    p_conflict_dead_letter_threshold INTEGER DEFAULT 0
+)
+RETURNS TABLE (
+    status TEXT,
+    next_attempt_at TIMESTAMPTZ,
+    conflict_count INTEGER,
+    dead_lettered BOOLEAN
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_task public.shop_webhook_tasks%ROWTYPE;
+    v_now TIMESTAMPTZ := NOW();
+    v_backoff_seconds INTEGER := GREATEST(COALESCE(p_backoff_seconds, 45), 5);
+    v_conflict_threshold INTEGER := GREATEST(COALESCE(p_conflict_dead_letter_threshold, 0), 0);
+    v_conflict_count INTEGER := 0;
+    v_dead_letter BOOLEAN := FALSE;
+    v_status TEXT := 'retry_waiting';
+    v_next_attempt_at TIMESTAMPTZ;
+    v_scope TEXT := COALESCE(NULLIF(BTRIM(LOWER(p_scope)), ''), 'worker');
+    v_reason_key TEXT := COALESCE(NULLIF(BTRIM(LOWER(p_reason_key)), ''), 'unknown_conflict');
+    v_detail TEXT := NULLIF(BTRIM(p_detail), '');
+    v_target_key TEXT;
+    v_channel_key TEXT;
+    v_error_message TEXT;
+BEGIN
+    SELECT *
+    INTO v_task
+    FROM public.shop_webhook_tasks
+    WHERE id = p_task_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RETURN;
+    END IF;
+
+    IF p_lock_token IS NOT NULL AND COALESCE(v_task.lock_token, '') <> COALESCE(p_lock_token, '') THEN
+        RETURN;
+    END IF;
+
+    v_conflict_count := GREATEST(COALESCE(v_task.conflict_count, 0) + 1, 1);
+    v_dead_letter := v_conflict_threshold > 0 AND v_conflict_count >= v_conflict_threshold;
+    v_status := CASE WHEN v_dead_letter THEN 'dead_letter' ELSE 'retry_waiting' END;
+    v_next_attempt_at := v_now + make_interval(secs => v_backoff_seconds);
+    v_target_key := COALESCE(
+        NULLIF(BTRIM(v_task.target_key), ''),
+        NULLIF(BTRIM(p_target_key), ''),
+        public.normalize_shop_delivery_target_key(v_task.target_url)
+    );
+    v_channel_key := COALESCE(
+        NULLIF(BTRIM(v_task.channel_key), ''),
+        NULLIF(BTRIM(p_channel_key), ''),
+        public.normalize_shop_delivery_channel_key(v_task.target_url)
+    );
+    v_error_message := CASE
+        WHEN v_dead_letter THEN
+            '冲突保护已转死信: ' || COALESCE(v_detail, v_scope || '/' || v_reason_key)
+        ELSE
+            '冲突保护已重排队: ' || COALESCE(v_detail, v_scope || '/' || v_reason_key)
+    END;
+
+    UPDATE public.shop_webhook_tasks
+    SET
+        status = v_status,
+        next_attempt_at = v_next_attempt_at,
+        attempt_count = GREATEST(COALESCE(v_task.attempt_count, 0) - CASE WHEN v_task.status = 'processing' THEN 1 ELSE 0 END, 0),
+        last_error = v_error_message,
+        updated_at = v_now,
+        dead_lettered_at = CASE WHEN v_dead_letter THEN COALESCE(v_task.dead_lettered_at, v_now) ELSE NULL END,
+        locked_at = NULL,
+        lock_expires_at = NULL,
+        lock_token = NULL,
+        worker_name = NULL,
+        reservation_acquired_at = NULL,
+        reservation_lock_token = NULL,
+        reservation_worker_name = NULL,
+        target_key = v_target_key,
+        channel_key = v_channel_key,
+        conflict_count = v_conflict_count,
+        last_conflict_at = v_now,
+        last_conflict_reason = v_reason_key,
+        last_conflict_scope = v_scope,
+        last_conflict_note = v_detail
+    WHERE id = v_task.id;
+
+    INSERT INTO public.shop_webhook_task_conflicts (
+        task_id,
+        order_id,
+        scope,
+        reason_key,
+        detail,
+        strategy_snapshot,
+        target_key,
+        channel_key,
+        worker_name,
+        lock_token,
+        task_status,
+        next_attempt_at
+    )
+    VALUES (
+        v_task.id,
+        v_task.order_id,
+        v_scope,
+        v_reason_key,
+        v_detail,
+        COALESCE(p_strategy_snapshot, '{}'::JSONB),
+        v_target_key,
+        v_channel_key,
+        NULLIF(BTRIM(p_worker_name), ''),
+        v_task.lock_token,
+        v_status,
+        v_next_attempt_at
+    );
+
+    IF v_task.order_id IS NOT NULL THEN
+        UPDATE public.shop_orders
+        SET
+            delivery_status = CASE
+                WHEN COALESCE(delivery_status, '') = 'delivered' THEN delivery_status
+                ELSE v_status
+            END,
+            delivery_last_error = v_error_message,
+            delivery_updated_at = v_now
+        WHERE id = v_task.order_id;
+    END IF;
+
+    RETURN QUERY
+    SELECT
+        v_status,
+        v_next_attempt_at,
+        v_conflict_count,
+        v_dead_letter;
+END;
+$$;

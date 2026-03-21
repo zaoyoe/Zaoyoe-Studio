@@ -19,7 +19,10 @@ function releaseTaskLocks(patch = {}) {
         locked_at: null,
         lock_expires_at: null,
         lock_token: null,
-        worker_name: null
+        worker_name: null,
+        reservation_acquired_at: null,
+        reservation_lock_token: null,
+        reservation_worker_name: null
     };
 }
 
@@ -72,6 +75,9 @@ module.exports = async (req, res) => {
                 lock_expires_at,
                 lock_token,
                 worker_name,
+                reservation_acquired_at,
+                reservation_lock_token,
+                reservation_worker_name,
                 target_key,
                 channel_key,
                 conflict_count,
@@ -246,6 +252,11 @@ module.exports = async (req, res) => {
                     lock_expires_at: task.lock_expires_at || null,
                     lock_token: task.lock_token || null,
                     worker_name: task.worker_name || null
+                },
+                previous_reservation: {
+                    reservation_acquired_at: task.reservation_acquired_at || null,
+                    reservation_lock_token: task.reservation_lock_token || null,
+                    reservation_worker_name: task.reservation_worker_name || null
                 },
                 previous_conflict: {
                     conflict_count: Number(task.conflict_count || 0),
