@@ -4640,6 +4640,181 @@
                         .shop-table tbody tr:hover {
                             background: rgba(255, 255, 255, 0.03);
                         }
+
+                        .shop-delivery-panel {
+                            margin-top: 28px;
+                            padding: 22px;
+                            background: rgba(26, 31, 44, 0.55);
+                            border: 1px solid rgba(255, 255, 255, 0.08);
+                            border-radius: 18px;
+                            backdrop-filter: blur(12px);
+                            box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+                        }
+
+                        .shop-delivery-header {
+                            display: flex;
+                            align-items: flex-end;
+                            justify-content: space-between;
+                            gap: 16px;
+                            flex-wrap: wrap;
+                            margin-bottom: 16px;
+                        }
+
+                        .shop-delivery-title {
+                            display: flex;
+                            flex-direction: column;
+                            gap: 6px;
+                        }
+
+                        .shop-delivery-title h3 {
+                            margin: 0;
+                            color: #f8fafc;
+                            font-size: 1.08rem;
+                            font-weight: 700;
+                            letter-spacing: 0.01em;
+                        }
+
+                        .shop-delivery-title p {
+                            margin: 0;
+                            color: rgba(226, 232, 240, 0.7);
+                            font-size: 0.9rem;
+                        }
+
+                        .shop-delivery-controls {
+                            display: flex;
+                            align-items: center;
+                            gap: 10px;
+                            flex-wrap: wrap;
+                            justify-content: flex-end;
+                        }
+
+                        .shop-delivery-filter {
+                            min-width: 160px;
+                            padding: 11px 14px;
+                            border-radius: 12px;
+                            border: 1px solid rgba(255, 255, 255, 0.1);
+                            background: rgba(255, 255, 255, 0.05);
+                            color: #f8fafc;
+                            outline: none;
+                        }
+
+                        .shop-delivery-summary {
+                            display: flex;
+                            flex-wrap: wrap;
+                            gap: 10px;
+                            margin-bottom: 18px;
+                        }
+
+                        .shop-delivery-pill {
+                            display: inline-flex;
+                            align-items: center;
+                            gap: 8px;
+                            padding: 8px 12px;
+                            border-radius: 999px;
+                            background: rgba(255, 255, 255, 0.04);
+                            border: 1px solid rgba(255, 255, 255, 0.08);
+                            color: #e2e8f0;
+                            font-size: 0.88rem;
+                            font-weight: 500;
+                        }
+
+                        .shop-delivery-pill strong {
+                            color: #fff;
+                        }
+
+                        .shop-delivery-pill--warn {
+                            border-color: rgba(251, 191, 36, 0.25);
+                            background: rgba(251, 191, 36, 0.08);
+                            color: #fde68a;
+                        }
+
+                        .shop-delivery-pill--danger {
+                            border-color: rgba(248, 113, 113, 0.28);
+                            background: rgba(248, 113, 113, 0.08);
+                            color: #fecaca;
+                        }
+
+                        .shop-delivery-target {
+                            max-width: 220px;
+                            white-space: nowrap;
+                            overflow: hidden;
+                            text-overflow: ellipsis;
+                            color: rgba(226, 232, 240, 0.86);
+                        }
+
+                        .shop-delivery-task-actions {
+                            display: flex;
+                            flex-wrap: wrap;
+                            gap: 8px;
+                        }
+
+                        .shop-delivery-action-btn {
+                            padding: 7px 10px;
+                            border-radius: 10px;
+                            border: 1px solid rgba(255, 255, 255, 0.1);
+                            background: rgba(255, 255, 255, 0.05);
+                            color: #e2e8f0;
+                            font-size: 12px;
+                            font-weight: 600;
+                            cursor: pointer;
+                            transition: all 0.18s ease;
+                        }
+
+                        .shop-delivery-action-btn:hover {
+                            transform: translateY(-1px);
+                            background: rgba(255, 255, 255, 0.08);
+                        }
+
+                        .shop-delivery-action-btn.danger {
+                            border-color: rgba(248, 113, 113, 0.28);
+                            background: rgba(248, 113, 113, 0.12);
+                            color: #fecaca;
+                        }
+
+                        .shop-delivery-empty {
+                            padding: 28px 20px;
+                            text-align: center;
+                            color: rgba(226, 232, 240, 0.7);
+                            border: 1px dashed rgba(255, 255, 255, 0.12);
+                            border-radius: 14px;
+                            background: rgba(255, 255, 255, 0.02);
+                        }
+
+                        .shop-delivery-meta {
+                            display: flex;
+                            gap: 6px;
+                            flex-wrap: wrap;
+                        }
+
+                        .shop-delivery-meta-chip {
+                            display: inline-flex;
+                            align-items: center;
+                            padding: 4px 10px;
+                            border-radius: 999px;
+                            font-size: 12px;
+                            color: rgba(226, 232, 240, 0.75);
+                            background: rgba(255, 255, 255, 0.06);
+                            border: 1px solid rgba(255, 255, 255, 0.08);
+                        }
+
+                        @media (max-width: 900px) {
+                            .shop-delivery-header {
+                                align-items: stretch;
+                            }
+
+                            .shop-delivery-controls {
+                                justify-content: stretch;
+                            }
+
+                            .shop-delivery-filter {
+                                min-width: 0;
+                                width: 100%;
+                            }
+
+                            .shop-delivery-target {
+                                max-width: 160px;
+                            }
+                        }
                     </style>
 
                     <!-- Hero Search Section (Copied from Points Lookup) -->
@@ -4684,6 +4859,60 @@
                     <!-- Pagination -->
                     <div id="ordersPagination"
                         style="display: flex; justify-content: center; gap: 10px; margin-top: 20px;">
+                    </div>
+
+                    <div class="shop-delivery-panel">
+                        <div class="shop-delivery-header">
+                            <div class="shop-delivery-title">
+                                <h3><i class="fas fa-rocket"></i> API 履约任务</h3>
+                                <p>查看 API 商品的发货队列、重试状态、死信任务与人工处理动作。</p>
+                            </div>
+                            <div class="shop-delivery-controls">
+                                <select id="deliveryTaskStatusFilter" class="shop-delivery-filter"
+                                    onchange="ShopAdmin.setDeliveryTaskStatusFilter(this.value)">
+                                    <option value="all">全部状态</option>
+                                    <option value="pending">待履约</option>
+                                    <option value="processing">处理中</option>
+                                    <option value="retry_waiting">待重试</option>
+                                    <option value="requeued">已重排队</option>
+                                    <option value="dead_letter">死信</option>
+                                    <option value="delivered">已履约</option>
+                                </select>
+                                <button class="btn btn-secondary" onclick="ShopAdmin.loadDeliveryTasks(1)">
+                                    <i class="fas fa-sync-alt"></i> 刷新任务
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="deliveryTaskSummary" class="shop-delivery-summary">
+                            <!-- Loaded by JS -->
+                        </div>
+
+                        <div class="shop-table-container">
+                            <table class="shop-table">
+                                <thead>
+                                    <tr>
+                                        <th>订单号</th>
+                                        <th>商品</th>
+                                        <th>任务状态</th>
+                                        <th>尝试次数</th>
+                                        <th>目标地址</th>
+                                        <th>最近执行 / 下次重试</th>
+                                        <th>最近错误</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="deliveryTasksTableBody">
+                                    <tr>
+                                        <td colspan="8" class="text-center">等待加载履约任务...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div id="deliveryTasksPagination"
+                            style="display: flex; justify-content: center; gap: 10px; margin-top: 20px;">
+                        </div>
                     </div>
                 </div>
             </div>

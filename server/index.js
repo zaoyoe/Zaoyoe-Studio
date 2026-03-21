@@ -27,9 +27,16 @@ const ACTIVE_TRACKED_JOB_STATUSES = ['queued', 'running', 'processing', 'pending
 const TERMINAL_TRACKED_JOB_STATUSES = ['success', 'failed'];
 const PENDING_JOB_SWEEP_INTERVAL_MS = Math.max(2000, Number(process.env.VERIFY_PENDING_SWEEP_INTERVAL_MS || 5000));
 const PENDING_JOB_SWEEP_BATCH_SIZE = Math.max(1, Number(process.env.VERIFY_PENDING_SWEEP_BATCH_SIZE || 20));
+const SHOP_DELIVERY_SWEEP_INTERVAL_MS = Math.max(4000, Number(process.env.SHOP_DELIVERY_SWEEP_INTERVAL_MS || 10000));
+const SHOP_DELIVERY_SWEEP_BATCH_SIZE = Math.max(1, Number(process.env.SHOP_DELIVERY_SWEEP_BATCH_SIZE || 10));
+const SHOP_DELIVERY_LEASE_SECONDS = Math.max(30, Number(process.env.SHOP_DELIVERY_LEASE_SECONDS || 120));
+const SHOP_DELIVERY_HTTP_TIMEOUT_MS = Math.max(3000, Number(process.env.SHOP_DELIVERY_HTTP_TIMEOUT_MS || 15000));
+const SHOP_DELIVERY_MAX_BACKOFF_SECONDS = Math.max(60, Number(process.env.SHOP_DELIVERY_MAX_BACKOFF_SECONDS || 1800));
 const jobSyncLocks = new Map();
 let pendingJobSweepTimer = null;
 let pendingJobSweepRunning = false;
+let shopDeliverySweepTimer = null;
+let shopDeliverySweepRunning = false;
 const afdianProvider = getPaymentProviderAdapter('afdian');
 
 // Initialize Supabase
@@ -699,6 +706,372 @@ function startPendingJobSweep() {
     }, 1200);
 }
 
+function getShopDeliveryWorkerName() {
+    return String(
+        process.env.SHOP_DELIVERY_WORKER_NAME
+        || process.env.RAILWAY_SERVICE_NAME
+        || `shop-delivery-worker:${process.pid}`
+    ).trim();
+}
+
+function clampDeliveryText(value, limit = 4000) {
+    if (value == null) return null;
+    const text = String(value);
+    return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
+}
+
+function buildShopDeliveryBackoffSeconds(attemptCount) {
+    const safeAttempt = Math.max(1, Number(attemptCount || 1));
+    return Math.min(
+        SHOP_DELIVERY_MAX_BACKOFF_SECONDS,
+        Math.max(15, Math.pow(2, safeAttempt - 1) * 30)
+    );
+}
+
+function isRetryableDeliveryStatus(status) {
+    const code = Number(status || 0);
+    return !code || code === 408 || code === 409 || code === 425 || code === 429 || code >= 500;
+}
+
+async function claimShopDeliveryTasks(limit = SHOP_DELIVERY_SWEEP_BATCH_SIZE) {
+    const { data, error } = await supabase.rpc('fn_claim_shop_webhook_tasks', {
+        p_limit: Math.max(1, Number(limit || SHOP_DELIVERY_SWEEP_BATCH_SIZE)),
+        p_lock_seconds: SHOP_DELIVERY_LEASE_SECONDS,
+        p_worker_name: getShopDeliveryWorkerName()
+    });
+
+    if (error) {
+        throw error;
+    }
+
+    return Array.isArray(data) ? data : [];
+}
+
+async function loadShopDeliveryContext(orderId) {
+    if (!orderId) return null;
+
+    const { data: order, error: orderError } = await supabase
+        .from('shop_orders')
+        .select('id, user_id, product_id, total_price, item_count, snapshot_product_name, delivery_status, delivery_attempt_count, delivery_last_error, created_at')
+        .eq('id', orderId)
+        .single();
+
+    if (orderError || !order) {
+        return null;
+    }
+
+    const { data: items } = await supabase
+        .from('shop_order_items')
+        .select('id, snapshot_product_name, price_paid, inventory_id')
+        .eq('order_id', orderId)
+        .order('created_at', { ascending: true });
+
+    return {
+        ...order,
+        items: Array.isArray(items) ? items : []
+    };
+}
+
+function buildShopDeliveryPayload(task, orderContext) {
+    const basePayload = task && typeof task.payload === 'object' && task.payload !== null
+        ? task.payload
+        : {};
+
+    return {
+        ...basePayload,
+        _meta: {
+            source: 'zaoyoe_shop_delivery_worker',
+            task_id: task.id,
+            order_id: task.order_id,
+            dedupe_key: task.dedupe_key,
+            attempt_no: task.attempt_count,
+            worker_name: task.worker_name || getShopDeliveryWorkerName(),
+            requested_at: new Date().toISOString()
+        },
+        order: orderContext ? {
+            id: orderContext.id,
+            user_id: orderContext.user_id,
+            product_id: orderContext.product_id,
+            product_name: orderContext.snapshot_product_name,
+            total_price: orderContext.total_price,
+            item_count: orderContext.item_count,
+            created_at: orderContext.created_at
+        } : undefined,
+        items: orderContext?.items || []
+    };
+}
+
+async function recordShopDeliveryAttempt({
+    task,
+    success,
+    responseStatus = null,
+    responseBody = null,
+    errorMessage = null,
+    startedAt,
+    finishedAt,
+    durationMs
+}) {
+    try {
+        await supabase
+            .from('shop_webhook_task_attempts')
+            .insert({
+                task_id: task.id,
+                attempt_no: Number(task.attempt_count || 0),
+                worker_name: task.worker_name || getShopDeliveryWorkerName(),
+                started_at: startedAt,
+                finished_at: finishedAt,
+                success,
+                response_status: responseStatus,
+                response_body: clampDeliveryText(responseBody, 4000),
+                error_message: clampDeliveryText(errorMessage, 1000),
+                duration_ms: durationMs
+            });
+    } catch (error) {
+        console.warn('[ShopDeliveryWorker] Failed to record task attempt:', error.message);
+    }
+}
+
+async function markShopDeliveryTaskSuccess(task, responseStatus, responseBody) {
+    const now = new Date().toISOString();
+    const updatePayload = {
+        status: 'delivered',
+        last_response_status: responseStatus,
+        last_response_body: clampDeliveryText(responseBody, 4000),
+        last_error: null,
+        delivered_at: now,
+        executed_at: now,
+        updated_at: now,
+        locked_at: null,
+        lock_expires_at: null,
+        lock_token: null
+    };
+
+    const { error: taskError } = await supabase
+        .from('shop_webhook_tasks')
+        .update(updatePayload)
+        .eq('id', task.id)
+        .eq('lock_token', task.lock_token);
+
+    if (taskError) {
+        throw taskError;
+    }
+
+    const { error: orderError } = await supabase
+        .from('shop_orders')
+        .update({
+            delivery_status: 'delivered',
+            delivery_task_id: task.id,
+            delivery_attempt_count: Number(task.attempt_count || 0),
+            delivery_last_error: null,
+            delivery_completed_at: now,
+            delivery_updated_at: now
+        })
+        .eq('id', task.order_id);
+
+    if (orderError) {
+        throw orderError;
+    }
+}
+
+async function markShopDeliveryTaskFailure(task, failure = {}) {
+    const now = new Date();
+    const retryable = failure.retryable !== false && isRetryableDeliveryStatus(failure.status);
+    const maxAttempts = Math.max(1, Number(task.max_attempts || 5));
+    const attemptCount = Math.max(1, Number(task.attempt_count || 1));
+    const exhausted = attemptCount >= maxAttempts;
+    const shouldDeadLetter = !retryable || exhausted;
+    const nextAttemptAt = new Date(now.getTime() + buildShopDeliveryBackoffSeconds(attemptCount) * 1000).toISOString();
+    const status = shouldDeadLetter ? 'dead_letter' : 'retry_waiting';
+    const errorMessage = clampDeliveryText(failure.message || '履约推送失败', 1000);
+    const responseBody = clampDeliveryText(failure.body, 4000);
+
+    const { error: taskError } = await supabase
+        .from('shop_webhook_tasks')
+        .update({
+            status,
+            next_attempt_at: shouldDeadLetter ? nextAttemptAt : nextAttemptAt,
+            last_error: errorMessage,
+            last_response_status: failure.status || null,
+            last_response_body: responseBody,
+            updated_at: now.toISOString(),
+            dead_lettered_at: shouldDeadLetter ? now.toISOString() : null,
+            locked_at: null,
+            lock_expires_at: null,
+            lock_token: null
+        })
+        .eq('id', task.id)
+        .eq('lock_token', task.lock_token);
+
+    if (taskError) {
+        throw taskError;
+    }
+
+    const { error: orderError } = await supabase
+        .from('shop_orders')
+        .update({
+            delivery_status: status,
+            delivery_task_id: task.id,
+            delivery_attempt_count: attemptCount,
+            delivery_last_error: errorMessage,
+            delivery_updated_at: now.toISOString()
+        })
+        .eq('id', task.order_id);
+
+    if (orderError) {
+        throw orderError;
+    }
+}
+
+async function executeShopDeliveryTask(task) {
+    const startedAt = new Date();
+    const orderContext = await loadShopDeliveryContext(task.order_id);
+
+    if (orderContext?.delivery_status === 'delivered') {
+        const finishedAt = new Date();
+        await markShopDeliveryTaskSuccess(task, 208, 'order already marked delivered');
+        await recordShopDeliveryAttempt({
+            task,
+            success: true,
+            responseStatus: 208,
+            responseBody: 'order already marked delivered',
+            startedAt: startedAt.toISOString(),
+            finishedAt: finishedAt.toISOString(),
+            durationMs: finishedAt.getTime() - startedAt.getTime()
+        });
+        return;
+    }
+
+    if (!task.target_url) {
+        const finishedAt = new Date();
+        await markShopDeliveryTaskFailure(task, {
+            status: 400,
+            retryable: false,
+            message: '未配置履约目标地址'
+        });
+        await recordShopDeliveryAttempt({
+            task,
+            success: false,
+            responseStatus: 400,
+            errorMessage: '未配置履约目标地址',
+            startedAt: startedAt.toISOString(),
+            finishedAt: finishedAt.toISOString(),
+            durationMs: finishedAt.getTime() - startedAt.getTime()
+        });
+        return;
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), SHOP_DELIVERY_HTTP_TIMEOUT_MS);
+    let responseStatus = null;
+    let responseBody = '';
+
+    try {
+        const response = await fetch(task.target_url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'User-Agent': 'Zaoyoe-Shop-Delivery-Worker/1.0',
+                'X-Zaoyoe-Delivery-Task': String(task.id),
+                'X-Zaoyoe-Order-Id': String(task.order_id),
+                'Idempotency-Key': task.dedupe_key || `shop_delivery:${task.order_id}`
+            },
+            body: JSON.stringify(buildShopDeliveryPayload(task, orderContext)),
+            signal: controller.signal
+        });
+
+        responseStatus = response.status;
+        responseBody = await response.text();
+        clearTimeout(timeout);
+
+        if (response.ok) {
+            const finishedAt = new Date();
+            await markShopDeliveryTaskSuccess(task, responseStatus, responseBody);
+            await recordShopDeliveryAttempt({
+                task,
+                success: true,
+                responseStatus,
+                responseBody,
+                startedAt: startedAt.toISOString(),
+                finishedAt: finishedAt.toISOString(),
+                durationMs: finishedAt.getTime() - startedAt.getTime()
+            });
+            return;
+        }
+
+        const finishedAt = new Date();
+        await markShopDeliveryTaskFailure(task, {
+            status: responseStatus,
+            body: responseBody,
+            retryable: isRetryableDeliveryStatus(responseStatus),
+            message: `履约接口返回 ${responseStatus}`
+        });
+        await recordShopDeliveryAttempt({
+            task,
+            success: false,
+            responseStatus,
+            responseBody,
+            errorMessage: `履约接口返回 ${responseStatus}`,
+            startedAt: startedAt.toISOString(),
+            finishedAt: finishedAt.toISOString(),
+            durationMs: finishedAt.getTime() - startedAt.getTime()
+        });
+    } catch (error) {
+        clearTimeout(timeout);
+        const finishedAt = new Date();
+        const isAbort = error?.name === 'AbortError';
+        await markShopDeliveryTaskFailure(task, {
+            status: isAbort ? 408 : null,
+            retryable: true,
+            message: isAbort ? '履约请求超时' : (error?.message || '履约请求失败')
+        });
+        await recordShopDeliveryAttempt({
+            task,
+            success: false,
+            responseStatus: isAbort ? 408 : null,
+            errorMessage: isAbort ? '履约请求超时' : (error?.message || '履约请求失败'),
+            startedAt: startedAt.toISOString(),
+            finishedAt: finishedAt.toISOString(),
+            durationMs: finishedAt.getTime() - startedAt.getTime()
+        });
+    }
+}
+
+async function sweepShopDeliveryTasks() {
+    if (shopDeliverySweepRunning) return;
+    shopDeliverySweepRunning = true;
+
+    try {
+        const tasks = await claimShopDeliveryTasks();
+        for (const task of tasks) {
+            try {
+                await executeShopDeliveryTask(task);
+            } catch (error) {
+                console.error(`[ShopDeliveryWorker] Task ${task.id} failed unexpectedly:`, error);
+            }
+        }
+    } catch (error) {
+        console.error('[ShopDeliveryWorker] Sweep failed:', error);
+    } finally {
+        shopDeliverySweepRunning = false;
+    }
+}
+
+function startShopDeliverySweep() {
+    if (shopDeliverySweepTimer) return;
+
+    shopDeliverySweepTimer = setInterval(() => {
+        sweepShopDeliveryTasks().catch((error) => {
+            console.error('[ShopDeliveryWorker] Sweep tick failed:', error);
+        });
+    }, SHOP_DELIVERY_SWEEP_INTERVAL_MS);
+
+    setTimeout(() => {
+        sweepShopDeliveryTasks().catch((error) => {
+            console.error('[ShopDeliveryWorker] Initial sweep failed:', error);
+        });
+    }, 1800);
+}
+
 async function hasLoggedJobResult(userId, jobId, site = 'cn') {
     if (!userId || !jobId) return false;
 
@@ -1336,4 +1709,5 @@ app.get('/api/afdian/query', async (req, res) => {
 app.listen(PORT, () => {
     console.log(`🚀 Verify proxy server running on port ${PORT}`);
     startPendingJobSweep();
+    startShopDeliverySweep();
 });

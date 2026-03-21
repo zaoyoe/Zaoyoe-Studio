@@ -44,6 +44,9 @@ const ShopAdmin = {
     selectedProductId: null,
     inventoryPage: 1,
     ordersPage: 1,
+    deliveryTaskPage: 1,
+    deliveryTaskStatusFilter: 'all',
+    deliveryTaskPageSize: 8,
     pageSize: 10,
     currentCategory: 'all', // State for category filter
     currentStatusFilter: 'active', // State for status filter: 'active' or 'deleted'
@@ -1804,6 +1807,294 @@ Example output format:
     },
 
     // ==================== Orders (Fix FK Issue) ====================
+    getDeliveryToneStyles: function (tone = 'neutral') {
+        const tones = {
+            success: {
+                text: '#4ade80',
+                bg: 'rgba(74, 222, 128, 0.12)',
+                border: 'rgba(74, 222, 128, 0.26)'
+            },
+            processing: {
+                text: '#60a5fa',
+                bg: 'rgba(96, 165, 250, 0.12)',
+                border: 'rgba(96, 165, 250, 0.24)'
+            },
+            waiting: {
+                text: '#fbbf24',
+                bg: 'rgba(251, 191, 36, 0.12)',
+                border: 'rgba(251, 191, 36, 0.24)'
+            },
+            danger: {
+                text: '#fda4af',
+                bg: 'rgba(248, 113, 113, 0.12)',
+                border: 'rgba(248, 113, 113, 0.24)'
+            },
+            muted: {
+                text: '#cbd5f5',
+                bg: 'rgba(148, 163, 184, 0.14)',
+                border: 'rgba(148, 163, 184, 0.2)'
+            },
+            neutral: {
+                text: '#e2e8f0',
+                bg: 'rgba(255, 255, 255, 0.06)',
+                border: 'rgba(255, 255, 255, 0.1)'
+            }
+        };
+        return tones[tone] || tones.neutral;
+    },
+
+    renderDeliveryBadge: function (label, tone = 'neutral') {
+        const colors = this.getDeliveryToneStyles(tone);
+        return `<span class="status-badge" style="display:inline-flex;align-items:center;padding:5px 12px;border-radius:999px;font-size:12px;font-weight:600;color:${colors.text};background:${colors.bg};border:1px solid ${colors.border};white-space:nowrap;">${this.escapeHtml(label)}</span>`;
+    },
+
+    getOrderDeliveryStatusBadge: function (order) {
+        const refundStatus = String(order?.refund_status || '').toLowerCase();
+        if (refundStatus === 'refunded' || refundStatus === 'full_refund') {
+            return this.renderDeliveryBadge('已退款', 'muted');
+        }
+
+        const status = String(order?.delivery_status || '').toLowerCase();
+        switch (status) {
+            case 'delivered':
+                return this.renderDeliveryBadge('已履约', 'success');
+            case 'processing':
+                return this.renderDeliveryBadge('履约中', 'processing');
+            case 'retry_waiting':
+                return this.renderDeliveryBadge('待重试', 'waiting');
+            case 'requeued':
+                return this.renderDeliveryBadge('已重排队', 'processing');
+            case 'dead_letter':
+                return this.renderDeliveryBadge('死信', 'danger');
+            case 'pending':
+                return this.renderDeliveryBadge('待履约', 'waiting');
+            default:
+                return this.renderDeliveryBadge('已完成', 'neutral');
+        }
+    },
+
+    getDeliveryTaskStatusBadge: function (status) {
+        switch (String(status || '').toLowerCase()) {
+            case 'pending':
+                return this.renderDeliveryBadge('待履约', 'waiting');
+            case 'processing':
+                return this.renderDeliveryBadge('处理中', 'processing');
+            case 'retry_waiting':
+                return this.renderDeliveryBadge('待重试', 'waiting');
+            case 'requeued':
+                return this.renderDeliveryBadge('已重排队', 'processing');
+            case 'dead_letter':
+                return this.renderDeliveryBadge('死信', 'danger');
+            case 'delivered':
+                return this.renderDeliveryBadge('已履约', 'success');
+            default:
+                return this.renderDeliveryBadge(status || '未知', 'neutral');
+        }
+    },
+
+    formatDeliveryTime: function (value) {
+        if (!value) return '—';
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return '—';
+        return date.toLocaleString('zh-CN', {
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    },
+
+    truncateText: function (value, maxLength = 88) {
+        const text = String(value || '');
+        if (text.length <= maxLength) return text;
+        return `${text.slice(0, maxLength - 1)}…`;
+    },
+
+    formatDeliveryTaskTarget: function (value) {
+        if (!value) return '—';
+        try {
+            const parsed = new URL(value);
+            const display = `${parsed.hostname}${parsed.pathname === '/' ? '' : parsed.pathname}`;
+            return this.escapeHtml(this.truncateText(display, 40));
+        } catch (_) {
+            return this.escapeHtml(this.truncateText(value, 40));
+        }
+    },
+
+    renderDeliveryTaskSummary: function (summary = {}) {
+        const container = document.getElementById('deliveryTaskSummary');
+        if (!container) return;
+
+        const items = [
+            { label: '全部任务', value: summary.total || 0, tone: 'neutral' },
+            { label: '待执行', value: summary.retryable || 0, tone: 'waiting' },
+            { label: '处理中', value: summary.processing || 0, tone: 'processing' },
+            { label: '死信', value: summary.dead_letter || 0, tone: 'danger' },
+            { label: '已履约', value: summary.delivered || 0, tone: 'success' }
+        ];
+
+        container.innerHTML = items.map((item) => {
+            const toneClass = item.tone === 'danger'
+                ? 'shop-delivery-pill shop-delivery-pill--danger'
+                : item.tone === 'waiting'
+                    ? 'shop-delivery-pill shop-delivery-pill--warn'
+                    : 'shop-delivery-pill';
+            return `<span class="${toneClass}"><strong>${item.value}</strong><span>${item.label}</span></span>`;
+        }).join('');
+    },
+
+    renderDeliveryTasks: function (tasks = [], total = 0, page = 1, pageSize = this.deliveryTaskPageSize) {
+        const tbody = document.getElementById('deliveryTasksTableBody');
+        if (!tbody) return;
+
+        if (!tasks.length) {
+            tbody.innerHTML = `<tr><td colspan="8"><div class="shop-delivery-empty">当前筛选条件下暂无 API 履约任务。</div></td></tr>`;
+            this.renderPagination('deliveryTasksPagination', page, total, pageSize, 'loadDeliveryTasks');
+            return;
+        }
+
+        tbody.innerHTML = tasks.map((task) => {
+            const order = task.order || {};
+            const productName = this.escapeHtml(order.snapshot_product_name || '—');
+            const targetUrl = this.escapeHtml(task.target_url || '');
+            const latestError = task.last_error
+                ? `<span title="${this.escapeHtml(task.last_error)}">${this.escapeHtml(this.truncateText(task.last_error, 56))}</span>`
+                : '<span style="color:rgba(226,232,240,0.45);">—</span>';
+
+            const timeBlock = [
+                `上次: ${this.formatDeliveryTime(task.last_attempt_at || task.updated_at || task.created_at)}`,
+                `下次: ${this.formatDeliveryTime(task.next_attempt_at)}`
+            ].join('<br>');
+
+            const metaChips = [
+                order.delivery_status ? `<span class="shop-delivery-meta-chip">订单状态 ${this.escapeHtml(order.delivery_status)}</span>` : '',
+                task.worker_name ? `<span class="shop-delivery-meta-chip">Worker ${this.escapeHtml(task.worker_name)}</span>` : '',
+                task.manual_replay_count ? `<span class="shop-delivery-meta-chip">人工重放 ${Number(task.manual_replay_count)}</span>` : ''
+            ].filter(Boolean).join('');
+
+            const actions = [];
+            if (task.status !== 'delivered') {
+                actions.push(`<button class="shop-delivery-action-btn" onclick="ShopAdmin.performDeliveryTaskAction('${task.id}', 'requeue')">重排队</button>`);
+                actions.push(`<button class="shop-delivery-action-btn" onclick="ShopAdmin.performDeliveryTaskAction('${task.id}', 'replay')">人工重放</button>`);
+                actions.push(`<button class="shop-delivery-action-btn" onclick="ShopAdmin.performDeliveryTaskAction('${task.id}', 'mark_delivered')">标已履约</button>`);
+            }
+            if (task.status !== 'dead_letter') {
+                actions.push(`<button class="shop-delivery-action-btn danger" onclick="ShopAdmin.performDeliveryTaskAction('${task.id}', 'mark_dead_letter')">标死信</button>`);
+            }
+
+            return `
+                <tr>
+                    <td>
+                        <div style="font-weight:600;color:#fff;">${this.escapeHtml(task.order_id || '—')}</div>
+                        <div style="font-size:12px;color:rgba(226,232,240,0.58);">${task.dedupe_key ? this.escapeHtml(this.truncateText(task.dedupe_key, 32)) : '无去重键'}</div>
+                    </td>
+                    <td>
+                        <div style="font-weight:600;color:#fff;">${productName}</div>
+                        <div style="font-size:12px;color:rgba(226,232,240,0.58);">${this.escapeHtml(order.user_id || '未知用户')}</div>
+                    </td>
+                    <td>
+                        ${this.getDeliveryTaskStatusBadge(task.status)}
+                        ${metaChips ? `<div class="shop-delivery-meta" style="margin-top:8px;">${metaChips}</div>` : ''}
+                    </td>
+                    <td>${Number(task.attempt_count || 0)} / ${Number(task.max_attempts || 0)}</td>
+                    <td><div class="shop-delivery-target" title="${targetUrl}">${this.formatDeliveryTaskTarget(task.target_url)}</div></td>
+                    <td style="white-space:normal;line-height:1.5;">${timeBlock}</td>
+                    <td style="white-space:normal;line-height:1.5;">${latestError}</td>
+                    <td><div class="shop-delivery-task-actions">${actions.join('')}</div></td>
+                </tr>
+            `;
+        }).join('');
+
+        this.renderPagination('deliveryTasksPagination', page, total, pageSize, 'loadDeliveryTasks');
+    },
+
+    loadDeliveryTasks: async function (page = 1) {
+        this.deliveryTaskPage = page;
+        const tbody = document.getElementById('deliveryTasksTableBody');
+        const summary = document.getElementById('deliveryTaskSummary');
+        const filter = document.getElementById('deliveryTaskStatusFilter');
+        const status = filter?.value || this.deliveryTaskStatusFilter || 'all';
+        this.deliveryTaskStatusFilter = status;
+        if (filter && filter.value !== status) {
+            filter.value = status;
+        }
+
+        if (tbody) {
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center">正在加载履约任务...</td></tr>';
+        }
+        if (summary) {
+            summary.innerHTML = '<span class="shop-delivery-pill">正在统计履约任务...</span>';
+        }
+
+        try {
+            const headers = await this.getAdminAuthHeaders();
+            const params = new URLSearchParams({
+                page: String(page || 1),
+                pageSize: String(this.deliveryTaskPageSize || 8),
+                status
+            });
+            const response = await fetch(`/api/admin/shop/delivery-tasks?${params.toString()}`, {
+                method: 'GET',
+                headers
+            });
+
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok || !result.success) {
+                throw new Error(result.message || '履约任务加载失败');
+            }
+
+            this.renderDeliveryTaskSummary(result.summary || {});
+            this.renderDeliveryTasks(result.tasks || [], result.total || 0, result.page || page, result.pageSize || this.deliveryTaskPageSize);
+        } catch (err) {
+            console.error('[ShopAdmin] loadDeliveryTasks failed:', err);
+            if (summary) {
+                summary.innerHTML = '<span class="shop-delivery-pill shop-delivery-pill--danger">履约任务加载失败</span>';
+            }
+            if (tbody) {
+                tbody.innerHTML = `<tr><td colspan="8"><div class="shop-delivery-empty">履约任务加载失败：${this.escapeHtml(err.message || '未知错误')}</div></td></tr>`;
+            }
+            const pagination = document.getElementById('deliveryTasksPagination');
+            if (pagination) pagination.innerHTML = '';
+        }
+    },
+
+    setDeliveryTaskStatusFilter: function (status) {
+        this.deliveryTaskStatusFilter = status || 'all';
+        this.loadDeliveryTasks(1);
+    },
+
+    performDeliveryTaskAction: async function (taskId, action) {
+        const actionMap = {
+            requeue: '将任务重排队',
+            replay: '立即人工重放',
+            mark_dead_letter: '将任务标记为死信',
+            mark_delivered: '将任务标记为已履约'
+        };
+
+        if (!taskId || !action) return;
+        const message = actionMap[action] || '执行该动作';
+        if (!confirm(`确认要${message}吗？`)) return;
+
+        try {
+            const headers = await this.getAdminAuthHeaders();
+            const response = await fetch('/api/admin/shop/delivery-actions', {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ taskId, action })
+            });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok || !result.success) {
+                throw new Error(result.message || '履约任务操作失败');
+            }
+
+            alert(`已完成：${message}`);
+            await this.searchOrders(this.ordersPage || 1);
+        } catch (err) {
+            console.error('[ShopAdmin] performDeliveryTaskAction failed:', err);
+            alert(`履约任务操作失败：${err.message || '未知错误'}`);
+        }
+    },
+
     searchOrders: async function (page = 1) {
         this.ordersPage = page;
         const query = document.getElementById('orderSearchInput')?.value?.trim() || '';
@@ -1905,6 +2196,8 @@ Example output format:
             tbody.innerHTML = '';
             if (!data || data.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="6" class="text-center">无数据 - 请检查订单号是否正确</td></tr>';
+                this.renderPagination('ordersPagination', page, count || 0, this.pageSize, 'searchOrders');
+                await this.loadDeliveryTasks(this.deliveryTaskPage || 1);
                 return;
             }
 
@@ -2057,9 +2350,7 @@ Example output format:
                     productName += ` 等 ${order.item_count} 件`;
                 }
 
-                const status = (order.refund_status === 'refunded' || order.refund_status === 'full_refund')
-                    ? '<span class="status-badge status-inactive">已退款</span>'
-                    : '<span class="status-badge status-active">已完成</span>';
+                const status = this.getOrderDeliveryStatusBadge(order);
 
                 tbody.innerHTML += `
                 <tr onclick="ShopAdmin.showOrderContent('${order.id}', '${contentData}')" style="cursor: pointer;" title="点击查看订单详情">
@@ -2081,6 +2372,7 @@ Example output format:
 
             // Render Pagination
             this.renderPagination('ordersPagination', page, count || 0, this.pageSize, 'searchOrders');
+            await this.loadDeliveryTasks(this.deliveryTaskPage || 1);
 
             // Enable horizontal scroll with mouse wheel for mobile
             const ordersTableContainer = document.querySelector('#shop-view-orders .shop-table-container');
@@ -2090,7 +2382,12 @@ Example output format:
 
         } catch (err) {
             console.error(err);
-            tbody.innerHTML = `< tr > <td colspan="6" class="text-danger">Error: ${err.message}</td></tr > `;
+            tbody.innerHTML = `<tr><td colspan="6" class="text-danger">Error: ${this.escapeHtml(err.message)}</td></tr>`;
+            try {
+                await this.loadDeliveryTasks(this.deliveryTaskPage || 1);
+            } catch (taskErr) {
+                console.error('[ShopAdmin] failed to refresh delivery tasks after order error:', taskErr);
+            }
         }
     },
 
