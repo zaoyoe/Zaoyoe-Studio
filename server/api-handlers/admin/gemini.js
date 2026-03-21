@@ -2,8 +2,8 @@ const {
     parseJsonBody,
     requireAdmin,
     sendJson
-} = require('../_lib/admin');
-const { resolveGeminiRuntimeConfig } = require('../_lib/secrets');
+} = require('../../../api/_lib/admin');
+const { resolveGeminiRuntimeConfig } = require('../../../api/_lib/secrets');
 
 module.exports = async (req, res) => {
     try {

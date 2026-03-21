@@ -3,7 +3,7 @@ const {
     requireAdmin,
     sendJson,
     writeAdminAuditLog
-} = require('../../_lib/admin');
+} = require('../../../../api/_lib/admin');
 
 const TEST_ORDER_PREFIX = 'AUTO_CDX_';
 const TEST_EMAIL_PATTERN = /^codex\..+@example\.com$/i;

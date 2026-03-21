@@ -3,7 +3,7 @@ const {
     requireAdmin,
     sendJson,
     writeAdminAuditLog
-} = require('../../_lib/admin');
+} = require('../../../../api/_lib/admin');
 
 module.exports = async (req, res) => {
     if (req.method !== 'POST') {

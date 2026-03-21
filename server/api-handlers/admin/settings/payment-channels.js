@@ -3,17 +3,18 @@ const {
     requireAdmin,
     sendJson,
     writeAdminAuditLog
-} = require('../../_lib/admin');
+} = require('../../../../api/_lib/admin');
 const {
     PAYMENT_CHANNEL_SECRET_KEYS,
     deleteStoredAdminSecret,
     upsertStoredAdminSecret
-} = require('../../_lib/secrets');
+} = require('../../../../api/_lib/secrets');
 const {
     buildPaymentSecretStatus,
     loadStoredPaymentConfigs,
-    normalizePaymentChannelsConfig
-} = require('../../_lib/payments/providers');
+    normalizePaymentChannelsConfig,
+    sanitizeText
+} = require('../../../../api/_lib/payments/providers');
 
 async function upsertSystemConfig(supabase, configKey, configValue, userId, description) {
     const { error } = await supabase

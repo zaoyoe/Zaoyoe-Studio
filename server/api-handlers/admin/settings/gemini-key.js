@@ -3,13 +3,13 @@ const {
     requireAdmin,
     sendJson,
     writeAdminAuditLog
-} = require('../../_lib/admin');
+} = require('../../../../api/_lib/admin');
 const {
     GEMINI_SECRET_KEY,
     deleteStoredAdminSecret,
     resolveGeminiRuntimeConfig,
     upsertStoredAdminSecret
-} = require('../../_lib/secrets');
+} = require('../../../../api/_lib/secrets');
 
 module.exports = async (req, res) => {
     try {

@@ -18,6 +18,14 @@
     ],
     "rewrites": [
         {
+            "source": "/api/admin/:group/:route",
+            "destination": "/api/admin?route=:group/:route"
+        },
+        {
+            "source": "/api/admin/:route",
+            "destination": "/api/admin?route=:route"
+        },
+        {
             "source": "/api/:path*",
             "destination": "/api/:path*"
         },

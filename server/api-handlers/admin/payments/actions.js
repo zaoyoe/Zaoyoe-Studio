@@ -3,7 +3,7 @@ const {
     parseJsonBody,
     sendJson,
     writeAdminAuditLog
-} = require('../../_lib/admin');
+} = require('../../../../api/_lib/admin');
 
 const VALID_TARGET_TYPES = new Set(['order', 'event', 'session']);
 const VALID_ACTIONS = new Set([

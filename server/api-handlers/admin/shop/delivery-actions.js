@@ -3,7 +3,7 @@ const {
     requireAdmin,
     sendJson,
     writeAdminAuditLog
-} = require('../../_lib/admin');
+} = require('../../../../api/_lib/admin');
 
 function normalizeAction(value) {
     return String(value || '').trim().toLowerCase();

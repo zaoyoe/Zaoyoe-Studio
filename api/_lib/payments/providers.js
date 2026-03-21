@@ -228,5 +228,6 @@ module.exports = {
     normalizePaymentChannelsConfig,
     normalizeRechargeOptionsConfig,
     resolvePaymentProviderSecrets,
+    sanitizeText,
     sanitizeOrigin
 };

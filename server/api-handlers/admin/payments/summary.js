@@ -2,7 +2,7 @@ const {
     requireAdmin,
     sendJson,
     writeAdminAuditLog
-} = require('../../_lib/admin');
+} = require('../../../../api/_lib/admin');
 
 const EVENT_OK_RESULTS = new Set([
     'processed_paid',

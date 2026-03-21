@@ -3,7 +3,7 @@ const {
     requireAdmin,
     sendJson,
     writeAdminAuditLog
-} = require('../../_lib/admin');
+} = require('../../../../api/_lib/admin');
 
 async function countAvailableInventory(supabase, productId) {
     const { count } = await supabase
