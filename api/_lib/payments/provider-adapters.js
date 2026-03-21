@@ -91,7 +91,7 @@ const providerRegistry = {
         key: 'mock',
         label: '模拟支付',
         supports: {
-            createCheckout: false,
+            createCheckout: true,
             webhook: false,
             queryOrder: false,
             autoCredit: true
@@ -134,6 +134,18 @@ const providerRegistry = {
                 display_name: String(packageName || '自定义充值'),
                 currency_amount: roundCurrencyAmount(paidAmount),
                 site: String(site || 'cn').trim().toLowerCase() || 'cn'
+            };
+        },
+        createCheckoutContext({ runtimeContext, packageName, grantedPoints, isCustomRecharge } = {}) {
+            const channelConfig = runtimeContext?.channelConfig || {};
+            return {
+                supported: true,
+                action: 'inline_complete',
+                displayName: channelConfig.display_name || '模拟支付',
+                message: channelConfig.description
+                    || (isCustomRecharge
+                        ? `将使用模拟支付为账号直接充值 ${normalizePointValue(grantedPoints, 0)}。`
+                        : `将使用模拟支付为账号直接充值「${String(packageName || '模拟支付套餐').trim()}」。`)
             };
         }
     },
@@ -210,6 +222,35 @@ const providerRegistry = {
                 return `amount_mismatch_expected_${resolvedPackage.expectedAmount ?? roundCurrencyAmount(amount)}`;
             }
             return null;
+        },
+        createCheckoutContext({ runtimeContext, packageName, grantedPoints, isCustomRecharge } = {}) {
+            const channelConfig = runtimeContext?.channelConfig || {};
+            const checkoutUrl = String(channelConfig.checkout_url || '').trim();
+
+            if (!checkoutUrl) {
+                return {
+                    supported: false,
+                    action: 'redirect',
+                    message: '爱发电支付链接尚未配置。'
+                };
+            }
+
+            return {
+                supported: true,
+                action: 'redirect',
+                displayName: channelConfig.display_name || '爱发电',
+                checkoutUrl,
+                queryMode: 'order_no',
+                message: (isCustomRecharge
+                    ? channelConfig.custom_amount_hint
+                    : channelConfig.package_hint)
+                    || (isCustomRecharge
+                        ? `建议在支付备注里填写要充值的积分数量。支付后返回钱包输入订单号领取兑换码。`
+                        : `请在爱发电完成「${String(packageName || '').trim() || '当前套餐'}」支付后，返回钱包输入订单号领取兑换码。`),
+                summary: {
+                    grantedPoints: normalizePointValue(grantedPoints, 0)
+                }
+            };
         }
     },
     hupijiao: {
@@ -242,10 +283,22 @@ const providerRegistry = {
                 secretMeta: secrets
             };
         },
-        createCheckoutContext() {
+        createCheckoutContext({ runtimeContext } = {}) {
+            const channelConfig = runtimeContext?.channelConfig || {};
+            const checkoutUrl = String(channelConfig.checkout_url || '').trim();
+            if (!checkoutUrl) {
+                return {
+                    supported: false,
+                    action: 'redirect',
+                    message: '虎皮椒支付链接尚未配置。'
+                };
+            }
             return {
-                supported: false,
-                message: '虎皮椒 provider adapter 骨架已就绪，待接入真实下单、签名校验与回调。'
+                supported: true,
+                action: 'redirect',
+                displayName: channelConfig.display_name || '虎皮椒',
+                checkoutUrl,
+                message: channelConfig.package_hint || '虎皮椒通道已启用，正式下单与回调接入完成后可完整使用。'
             };
         },
         verifyWebhook() {

@@ -3221,7 +3221,6 @@
             const allowSimulatedPayment = activeProvider.key === 'mock'
                 || rechargeOptions.mock_payment_enabled === true
                 || window.PointsService?.isUnsafeDirectRechargeAllowed?.() === true;
-            const checkoutUrl = this.getPaymentCheckoutUrl(activeProvider.key, paymentChannels);
             const packageData = Array.isArray(this._packagesCache)
                 ? this._packagesCache.find(pkg => String(pkg.id) === String(packageId))
                 : null;
@@ -3229,11 +3228,15 @@
             try {
                 if (overlay) overlay.classList.add('loading');
 
-                if (allowSimulatedPayment) {
-                    await PointsService.mockPay(packageId, packageData, { allowSimulatedPayment: true });
+                const paymentResult = await PointsService.createPaymentRequest({
+                    provider_key: allowSimulatedPayment ? 'mock' : activeProvider.key,
+                    package_id: packageId,
+                    package_name: packageData?.name || packageName || ''
+                });
 
+                if (paymentResult.mode === 'completed') {
                     if (overlay) overlay.classList.remove('loading');
-                    this.showToast(`✅ 已使用模拟支付为你充值「${packageName}」`, 'success');
+                    this.showToast(paymentResult.message || `✅ 已为你完成「${packageName}」`, 'success');
 
                     this.invalidateOrderRecordsCache();
                     this.loadOrders({
@@ -3246,16 +3249,21 @@
                 }
 
                 if (overlay) overlay.classList.remove('loading');
-                if (!checkoutUrl) {
-                    throw new Error(`${activeProvider.display_name || '当前支付通道'}尚未配置支付链接`);
+                if (paymentResult.mode === 'redirect') {
+                    if (!paymentResult.checkout_url) {
+                        throw new Error(`${paymentResult.display_name || activeProvider.display_name || '当前支付通道'}尚未配置支付链接`);
+                    }
+
+                    window.open(paymentResult.checkout_url, '_blank', 'noopener,noreferrer');
+                    this.showToast(
+                        paymentResult.message
+                            || `${paymentResult.display_name || activeProvider.display_name || '当前支付通道'}已准备就绪，请完成支付后按页面提示继续操作。`,
+                        'success'
+                    );
+                    return;
                 }
 
-                window.open(checkoutUrl, '_blank', 'noopener,noreferrer');
-                if (activeProvider.key === 'afdian') {
-                    this.showToast(activeProvider.package_hint || `请在爱发电完成「${packageName}」支付后，返回这里输入订单号领取兑换码`, 'success');
-                } else {
-                    this.showToast(activeProvider.package_hint || `已为你打开${activeProvider.display_name || '当前支付通道'}，完成支付后请按页面提示继续操作。`, 'success');
-                }
+                throw new Error(paymentResult.message || '当前支付通道暂未完成接入');
 
             } catch (err) {
                 console.error('[WalletModal] Purchase failed:', err);
@@ -3276,7 +3284,6 @@
             const allowSimulatedPayment = activeProvider.key === 'mock'
                 || rechargeOptions.mock_payment_enabled === true
                 || window.PointsService?.isUnsafeDirectRechargeAllowed?.() === true;
-            const checkoutUrl = this.getPaymentCheckoutUrl(activeProvider.key, paymentChannels);
 
             if (!Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
                 this.showToast('请输入大于 0 的充值积分', 'error');
@@ -3288,34 +3295,41 @@
                 if (button) button.disabled = true;
                 if (overlay) overlay.classList.add('loading');
 
-                if (!allowSimulatedPayment) {
+                const paymentResult = await PointsService.createPaymentRequest({
+                    provider_key: allowSimulatedPayment ? 'mock' : activeProvider.key,
+                    points_amount: normalizedAmount
+                });
+
+                if (paymentResult.mode === 'redirect') {
                     if (overlay) overlay.classList.remove('loading');
 
-                    if (!checkoutUrl) {
-                        throw new Error(`${activeProvider.display_name || '当前支付通道'}尚未配置支付链接`);
+                    if (!paymentResult.checkout_url) {
+                        throw new Error(`${paymentResult.display_name || activeProvider.display_name || '当前支付通道'}尚未配置支付链接`);
                     }
 
-                    const popup = window.open(checkoutUrl, '_blank', 'noopener,noreferrer');
+                    const popup = window.open(paymentResult.checkout_url, '_blank', 'noopener,noreferrer');
                     if (!popup) {
                         throw new Error('支付页面被浏览器拦截，请允许弹窗后重试');
                     }
 
-                    if (activeProvider.key === 'afdian') {
-                        this.showToast(activeProvider.custom_amount_hint || `已打开支付页。建议备注需要充值 ${this.formatPoints(normalizedAmount)} 积分，支付后返回这里输入订单号领取兑换码。`, 'success');
-                    } else {
-                        this.showToast(activeProvider.custom_amount_hint || `已为你打开${activeProvider.display_name || '当前支付通道'}，完成支付后请按页面提示继续操作。`, 'success');
-                    }
+                    this.showToast(
+                        paymentResult.message
+                            || `${paymentResult.display_name || activeProvider.display_name || '当前支付通道'}已准备就绪，请完成支付后按页面提示继续操作。`,
+                        'success'
+                    );
                     return;
                 }
 
-                await PointsService.customRecharge(normalizedAmount, { allowSimulatedPayment: true });
+                if (paymentResult.mode !== 'completed') {
+                    throw new Error(paymentResult.message || '当前支付通道暂未完成接入');
+                }
 
                 if (input) {
                     input.value = '';
                 }
 
                 if (overlay) overlay.classList.remove('loading');
-                this.showToast(`✅ 自定义充值成功！ +${this.formatPoints(normalizedAmount)} 积分`, 'success');
+                this.showToast(paymentResult.message || `✅ 自定义充值成功！ +${this.formatPoints(normalizedAmount)} 积分`, 'success');
 
                 this.invalidateOrderRecordsCache();
                 this.loadOrders({

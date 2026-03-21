@@ -42,20 +42,38 @@
 
 ## 当前已接入情况
 
+### 统一创建入口
+
+已新增：
+- `/Volumes/chao/AI/xianyu_profit_calculator/api/payments/create.js`
+
+作用：
+- 钱包购买套餐与自定义充值统一从这里进入
+- 后端统一判断当前生效通道
+- `mock` 会直接走共享完成逻辑
+- `afdian` / `hupijiao` 返回统一的 checkout context，由前端拉起支付页
+
 ### mock
 
 已接入：
 - `/api/payments/mock/complete`
+- `/api/payments/create`
 
 已统一到 adapter：
 - 订单号生成
 - 事件 key 生成
 - provider metadata
 
+已统一到共享 helper：
+- 订单创建 / 更新
+- 事件写入
+- 模拟支付积分入账
+
 ### afdian
 
 已接入：
 - `/server/index.js` 的 `/api/afdian/webhook`
+- `/api/payments/create`
 
 已统一到 adapter：
 - webhook event key
@@ -63,11 +81,12 @@
 - 套餐解析
 - process error 推导
 - 运行时 token 读取
+- checkout context 生成
 
 ### hupijiao
 
 当前状态：
-- 只有骨架
+- 已能通过 `/api/payments/create` 走统一入口并返回 checkout context 骨架
 - 尚未实现真实下单、验签、回调、自动入账
 
 ## 后续接虎皮椒时要补的点

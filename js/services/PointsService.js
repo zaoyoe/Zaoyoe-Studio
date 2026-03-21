@@ -45,6 +45,30 @@
             return this._cachedUserId;
         },
 
+        async createPaymentRequest(payload = {}) {
+            const token = await this._getAccessToken();
+            if (!token) throw new Error('请先登录');
+
+            const response = await fetch('/api/payments/create', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    ...payload,
+                    site: payload.site || window.SiteConfig?.site || 'cn'
+                })
+            });
+
+            const responsePayload = await response.json().catch(() => ({}));
+            if (!response.ok || responsePayload?.success === false) {
+                throw new Error(responsePayload?.message || '创建支付请求失败');
+            }
+
+            return responsePayload;
+        },
+
         /**
          * Get user's current balance
          */
@@ -142,30 +166,12 @@
             if (!isSimulatedPaymentAllowed(options)) {
                 throw new Error('当前未开启模拟支付，请使用真实支付流程');
             }
-
-            const token = await this._getAccessToken();
-            if (!token) throw new Error('请先登录');
-
-            const response = await fetch('/api/payments/mock/complete', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${token}`
-                },
-                body: JSON.stringify({
-                    package_id: packageId,
-                    order_no: `MOCK_PKG_${Date.now()}_${Math.random().toString(16).slice(2, 8).toUpperCase()}`,
-                    site: window.SiteConfig?.site || 'cn',
-                    package_name: packageData?.name || ''
-                })
+            return this.createPaymentRequest({
+                provider_key: 'mock',
+                package_id: packageId,
+                order_no: `MOCK_PKG_${Date.now()}_${Math.random().toString(16).slice(2, 8).toUpperCase()}`,
+                package_name: packageData?.name || ''
             });
-
-            const payload = await response.json().catch(() => ({}));
-            if (!response.ok || payload?.success === false) {
-                throw new Error(payload?.message || '模拟支付失败');
-            }
-
-            return payload;
         },
 
         /**
@@ -181,26 +187,12 @@
                 throw new Error('请输入大于 0 的充值积分');
             }
 
-            const token = await this._getAccessToken();
-            if (!token) throw new Error('请先登录');
-
-            const response = await fetch('/api/payments/mock/complete', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${token}`
-                },
-                body: JSON.stringify({
-                    points_amount: normalizedAmount,
-                    order_no: `MOCK_CUSTOM_${Date.now()}_${Math.random().toString(16).slice(2, 8).toUpperCase()}`,
-                    site: window.SiteConfig?.site || 'cn'
-                })
+            const payload = await this.createPaymentRequest({
+                provider_key: 'mock',
+                points_amount: normalizedAmount,
+                order_no: `MOCK_CUSTOM_${Date.now()}_${Math.random().toString(16).slice(2, 8).toUpperCase()}`,
+                site: window.SiteConfig?.site || 'cn'
             });
-
-            const payload = await response.json().catch(() => ({}));
-            if (!response.ok || payload?.success === false) {
-                throw new Error(payload?.message || '自定义模拟支付失败');
-            }
 
             return {
                 ...payload,
