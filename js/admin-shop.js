@@ -49,6 +49,8 @@ const ShopAdmin = {
     deliveryTaskQuery: '',
     deliveryTaskQueryContext: null,
     deliveryConflictBucketFilter: null,
+    deliveryTaskIdentityFilter: null,
+    deliveryConflictAuditSelection: null,
     deliveryTaskPageSize: 8,
     deliveryDeadLetterPage: 1,
     deliveryDeadLetterReasonFilter: 'all',
@@ -1886,17 +1888,23 @@ Example output format:
             '24h': {
                 key: '24h',
                 label: '24h',
-                description: '近 24 小时'
+                description: '近 24 小时',
+                hours: 24,
+                bucketHours: 1
             },
             '72h': {
                 key: '72h',
                 label: '72h',
-                description: '近 72 小时'
+                description: '近 72 小时',
+                hours: 72,
+                bucketHours: 3
             },
             '7d': {
                 key: '7d',
                 label: '7d',
-                description: '近 7 天'
+                description: '近 7 天',
+                hours: 24 * 7,
+                bucketHours: 12
             }
         };
         const normalized = String(windowKey || '').trim().toLowerCase();
@@ -1914,16 +1922,68 @@ Example output format:
         return `${startText} - ${endText}`;
     },
 
+    resolveDeliveryAnalyticsWindowForTimestamp: function (value) {
+        const timestamp = new Date(value || 0).getTime();
+        if (!Number.isFinite(timestamp) || !timestamp) {
+            return this.getDeliveryAnalyticsWindowConfig().key;
+        }
+
+        const ageHours = Math.max(0, (Date.now() - timestamp) / (60 * 60 * 1000));
+        const candidates = ['24h', '72h', '7d'].map((key) => this.getDeliveryAnalyticsWindowConfig(key));
+        return candidates.find((config) => ageHours <= Number(config.hours || 24))?.key || '7d';
+    },
+
+    buildDeliveryConflictBucketForTimestamp: function (value, windowKey = this.deliveryAnalyticsWindow) {
+        const config = this.getDeliveryAnalyticsWindowConfig(windowKey);
+        const bucketHours = Math.max(1, Number(config.bucketHours || 1));
+        const bucketAt = new Date(value || 0);
+        if (Number.isNaN(bucketAt.getTime())) return null;
+
+        bucketAt.setMinutes(0, 0, 0);
+        bucketAt.setHours(bucketAt.getHours() - (bucketAt.getHours() % bucketHours), 0, 0, 0);
+
+        return {
+            startAt: bucketAt.toISOString(),
+            endAt: new Date(bucketAt.getTime() + bucketHours * 60 * 60 * 1000).toISOString(),
+            label: bucketHours >= 24
+                ? `${String(bucketAt.getMonth() + 1).padStart(2, '0')}-${String(bucketAt.getDate()).padStart(2, '0')}`
+                : `${String(bucketAt.getMonth() + 1).padStart(2, '0')}-${String(bucketAt.getDate()).padStart(2, '0')} ${String(bucketAt.getHours()).padStart(2, '0')}:00`
+        };
+    },
+
+    getDeliveryConflictAuditQueryContext: function (record = {}) {
+        const scope = String(record.scope || '').trim().toLowerCase();
+        const reasonKey = String(record.reason_key || '').trim().toLowerCase();
+        const targetKey = String(record.target_key || record.task?.target_key || '').trim();
+        const channelKey = String(record.channel_key || record.task?.channel_key || '').trim();
+
+        if ((scope === 'channel' || reasonKey.includes('channel_')) && channelKey) {
+            return { type: 'channel', query: channelKey };
+        }
+        if ((scope === 'target' || reasonKey.includes('target_')) && targetKey) {
+            return { type: 'target', query: targetKey };
+        }
+        if (targetKey) {
+            return { type: 'target', query: targetKey };
+        }
+        if (channelKey) {
+            return { type: 'channel', query: channelKey };
+        }
+
+        return { type: 'manual', query: '' };
+    },
+
     renderDeliveryTaskFilterHint: function () {
         const container = document.getElementById('deliveryTaskFilterHint');
         if (!container) return;
 
         const query = String(this.deliveryTaskQuery || '').trim();
         const bucket = this.deliveryConflictBucketFilter || null;
-        if (!query && !bucket) {
+        const auditSelection = this.deliveryConflictAuditSelection || null;
+        if (!query && !bucket && !auditSelection) {
             container.innerHTML = `
                 <div class="shop-delivery-filter-banner shop-delivery-filter-banner--idle">
-                    <span class="shop-delivery-table-note">当前未联动筛选履约页。你可以输入关键字，或直接点击下方热点、趋势柱，把目标 / 通道 / 冲突时段回填到任务、死信、锁冲突和占位面板里。</span>
+                    <span class="shop-delivery-table-note">当前未联动筛选履约页。你可以输入关键字，或直接点击下方热点、趋势柱、冲突审计记录，把目标 / 通道 / 冲突时段 / 任务锁定回填到任务、死信、锁冲突和占位面板里。</span>
                 </div>
             `;
             return;
@@ -1950,6 +2010,10 @@ Example output format:
             badges.push(this.renderDeliveryMetaBadge('冲突时段联动', 'warn'));
             badges.push(this.renderDeliveryMetaBadge(this.getDeliveryConflictBucketLabel(bucket), 'neutral'));
         }
+        if (auditSelection?.auditId) {
+            badges.push(this.renderDeliveryMetaBadge('审计记录锁定', 'processing'));
+            badges.push(this.renderDeliveryMetaBadge(this.truncateText(auditSelection.taskId || auditSelection.orderId || auditSelection.auditId, 26), 'neutral'));
+        }
         badges.push(this.renderDeliveryMetaBadge('已联动任务 / 死信 / 锁冲突 / 占位', 'muted'));
         const actions = [
             query
@@ -1963,6 +2027,13 @@ Example output format:
                 ? `
                     <button type="button" class="shop-delivery-inline-btn" onclick="ShopAdmin.clearDeliveryConflictBucketFilter()">
                         <i class="fas fa-clock"></i> 清除时段
+                    </button>
+                `
+                : '',
+            auditSelection?.auditId
+                ? `
+                    <button type="button" class="shop-delivery-inline-btn" onclick="ShopAdmin.clearDeliveryConflictAuditSelection()">
+                        <i class="fas fa-thumbtack"></i> 清除任务锁定
                     </button>
                 `
                 : ''
@@ -2568,6 +2639,7 @@ Example output format:
         const summary = data.summary || {};
         const total = Number(data.total || summary.total || 0);
         const latestConflict = summary.latest_conflict_at ? this.formatDeliveryTime(summary.latest_conflict_at) : '—';
+        const auditSelection = this.deliveryConflictAuditSelection || null;
         const pills = [
             this.renderDeliveryMetaBadge(`最近 ${total} 条`, total ? 'warn' : 'muted'),
             this.renderDeliveryMetaBadge(`目标并发 ${Number(summary.target_max_inflight || 0)}`, Number(summary.target_max_inflight || 0) ? 'warn' : 'muted'),
@@ -2576,7 +2648,8 @@ Example output format:
             this.renderDeliveryMetaBadge(`通道限流 ${Number(summary.channel_min_interval || 0)}`, Number(summary.channel_min_interval || 0) ? 'warn' : 'muted'),
             this.renderDeliveryMetaBadge(`人工解锁 ${Number(summary.manual_force_unlock || 0)}`, Number(summary.manual_force_unlock || 0) ? 'processing' : 'muted'),
             this.renderDeliveryMetaBadge(`冲突死信 ${Number(summary.dead_letter || 0)}`, Number(summary.dead_letter || 0) ? 'danger' : 'muted'),
-            this.renderDeliveryMetaBadge(`最新 ${latestConflict}`, summary.latest_conflict_at ? 'neutral' : 'muted')
+            this.renderDeliveryMetaBadge(`最新 ${latestConflict}`, summary.latest_conflict_at ? 'neutral' : 'muted'),
+            auditSelection?.auditId ? this.renderDeliveryMetaBadge('已锁定上下文', 'processing') : ''
         ];
         meta.classList.add('shop-delivery-subcard-meta--rich');
         meta.innerHTML = total ? pills.join('') : '<span class="shop-delivery-table-note">暂无冲突审计</span>';
@@ -2585,6 +2658,7 @@ Example output format:
     renderConflictAudits: function (records = []) {
         const tbody = document.getElementById('deliveryConflictAuditTableBody');
         if (!tbody) return;
+        const activeAuditId = String(this.deliveryConflictAuditSelection?.auditId || '').trim();
 
         if (!records.length) {
             tbody.innerHTML = '<tr><td colspan="5"><div class="shop-delivery-empty">当前没有最近冲突记录。</div></td></tr>';
@@ -2601,9 +2675,22 @@ Example output format:
             const detail = this.escapeHtml(this.truncateText(record.detail || task.last_conflict_note || '无备注', 72));
             const targetText = this.escapeHtml(this.truncateText(record.target_key || task.target_key || '—', 32));
             const channelText = this.escapeHtml(this.truncateText(record.channel_key || task.channel_key || '—', 24));
+            const isActive = activeAuditId && activeAuditId === String(record.id || '').trim();
+            const encodedRecordId = encodeURIComponent(String(record.id || ''));
+            const encodedCreatedAt = encodeURIComponent(String(record.created_at || ''));
+            const encodedTaskId = encodeURIComponent(String(record.task_id || task.id || ''));
+            const encodedOrderId = encodeURIComponent(String(record.order_id || task.order_id || ''));
+            const encodedTargetKey = encodeURIComponent(String(record.target_key || task.target_key || ''));
+            const encodedChannelKey = encodeURIComponent(String(record.channel_key || task.channel_key || ''));
+            const encodedReasonKey = encodeURIComponent(String(record.reason_key || record.last_conflict_reason || ''));
+            const encodedScope = encodeURIComponent(String(record.scope || record.last_conflict_scope || ''));
 
             return `
-                <tr>
+                <tr
+                    class="shop-delivery-audit-row shop-delivery-audit-row--action${isActive ? ' shop-delivery-audit-row--active' : ''}"
+                    onclick="ShopAdmin.toggleDeliveryConflictAuditSelection('${encodedRecordId}', '${encodedCreatedAt}', '${encodedTaskId}', '${encodedOrderId}', '${encodedTargetKey}', '${encodedChannelKey}', '${encodedReasonKey}', '${encodedScope}')"
+                    title="${isActive ? '再次点击可取消任务锁定' : '点击锁定该任务、对应时间桶和热点上下文'}"
+                >
                     <td data-label="时间">
                         <div style="font-weight:600;color:#fff;">${this.formatDeliveryTime(record.created_at)}</div>
                         <div class="shop-delivery-table-note">${record.worker_name ? `Worker ${this.escapeHtml(record.worker_name)}` : '无 worker'}</div>
@@ -2622,7 +2709,7 @@ Example output format:
                     </td>
                     <td data-label="结果">
                         <div class="shop-delivery-meta" style="margin-bottom:8px;">${resultBadge}</div>
-                        <div class="shop-delivery-table-note">${record.next_attempt_at ? `下次 ${this.formatDeliveryTime(record.next_attempt_at)}` : '无重试时间'}</div>
+                        <div class="shop-delivery-table-note">${record.next_attempt_at ? `下次 ${this.formatDeliveryTime(record.next_attempt_at)}` : '无重试时间'}${isActive ? ' · 已锁定上下文' : ' · 点击联动'}</div>
                     </td>
                 </tr>
             `;
@@ -3128,6 +3215,7 @@ Example output format:
         const lockState = lockStateFilter?.value || this.deliveryLockStateFilter || 'all';
         const query = String(this.deliveryTaskQuery || '').trim();
         const conflictBucket = this.deliveryConflictBucketFilter || null;
+        const taskIdentity = this.deliveryTaskIdentityFilter || null;
 
         this.deliveryTaskStatusFilter = status;
         this.deliveryDeadLetterReasonFilter = deadLetterReason;
@@ -3147,10 +3235,10 @@ Example output format:
         if (summary) {
             summary.innerHTML = '<span class="shop-delivery-pill">正在统计履约任务...</span>';
         }
-        if (filterHint && !query && !conflictBucket?.startAt) {
+        if (filterHint && !query && !conflictBucket?.startAt && !taskIdentity?.taskId && !taskIdentity?.orderId) {
             filterHint.innerHTML = `
                 <div class="shop-delivery-filter-banner shop-delivery-filter-banner--idle">
-                    <span class="shop-delivery-table-note">当前未联动筛选履约页。你可以输入关键字，或直接点击下方热点、趋势柱，把目标 / 通道 / 冲突时段回填到任务、死信、锁冲突和占位面板里。</span>
+                    <span class="shop-delivery-table-note">当前未联动筛选履约页。你可以输入关键字，或直接点击下方热点、趋势柱、冲突审计记录，把目标 / 通道 / 冲突时段 / 任务锁定回填到任务、死信、锁冲突和占位面板里。</span>
                 </div>
             `;
         }
@@ -3226,6 +3314,8 @@ Example output format:
                 analyticsWindow: analyticsWindowConfig.key,
                 conflictBucketStartAt: conflictBucket?.startAt || '',
                 conflictBucketEndAt: conflictBucket?.endAt || '',
+                focusTaskId: taskIdentity?.taskId || '',
+                focusOrderId: taskIdentity?.orderId || '',
                 deadLetterPage: String(this.deliveryDeadLetterPage || 1),
                 deadLetterPageSize: String(this.deliveryDeadLetterPageSize || 5),
                 deadLetterReason,
@@ -3375,6 +3465,8 @@ Example output format:
     setDeliveryAnalyticsWindow: function (windowKey) {
         this.deliveryAnalyticsWindow = this.getDeliveryAnalyticsWindowConfig(windowKey).key;
         this.deliveryConflictBucketFilter = null;
+        this.deliveryTaskIdentityFilter = null;
+        this.deliveryConflictAuditSelection = null;
         this.deliveryTaskPage = 1;
         this.deliveryDeadLetterPage = 1;
         this.deliveryLockConflictPage = 1;
@@ -3396,6 +3488,8 @@ Example output format:
                 endAt,
                 label
             };
+        this.deliveryTaskIdentityFilter = null;
+        this.deliveryConflictAuditSelection = null;
         this.deliveryTaskPage = 1;
         this.deliveryDeadLetterPage = 1;
         this.deliveryLockConflictPage = 1;
@@ -3404,6 +3498,71 @@ Example output format:
 
     clearDeliveryConflictBucketFilter: function () {
         this.deliveryConflictBucketFilter = null;
+        this.deliveryTaskIdentityFilter = null;
+        this.deliveryConflictAuditSelection = null;
+        this.deliveryTaskPage = 1;
+        this.deliveryDeadLetterPage = 1;
+        this.deliveryLockConflictPage = 1;
+        this.loadDeliveryTasks(1);
+    },
+
+    toggleDeliveryConflictAuditSelection: function (encodedAuditId, encodedCreatedAt, encodedTaskId, encodedOrderId, encodedTargetKey, encodedChannelKey, encodedReasonKey, encodedScope) {
+        const auditId = decodeURIComponent(String(encodedAuditId || ''));
+        const createdAt = decodeURIComponent(String(encodedCreatedAt || ''));
+        const taskId = decodeURIComponent(String(encodedTaskId || ''));
+        const orderId = decodeURIComponent(String(encodedOrderId || ''));
+        const targetKey = decodeURIComponent(String(encodedTargetKey || ''));
+        const channelKey = decodeURIComponent(String(encodedChannelKey || ''));
+        const reasonKey = decodeURIComponent(String(encodedReasonKey || ''));
+        const scope = decodeURIComponent(String(encodedScope || ''));
+        if (!auditId) return;
+
+        const current = this.deliveryConflictAuditSelection || {};
+        if (current.auditId === auditId) {
+            this.clearDeliveryConflictAuditSelection();
+            return;
+        }
+
+        const nextWindowKey = this.resolveDeliveryAnalyticsWindowForTimestamp(createdAt);
+        const nextBucket = this.buildDeliveryConflictBucketForTimestamp(createdAt, nextWindowKey);
+        const queryContext = this.getDeliveryConflictAuditQueryContext({
+            scope,
+            reason_key: reasonKey,
+            target_key: targetKey,
+            channel_key: channelKey
+        });
+
+        this.deliveryAnalyticsWindow = nextWindowKey;
+        this.deliveryConflictBucketFilter = nextBucket;
+        this.deliveryTaskIdentityFilter = {
+            taskId: taskId || '',
+            orderId: orderId || ''
+        };
+        this.deliveryConflictAuditSelection = {
+            auditId,
+            taskId: taskId || '',
+            orderId: orderId || '',
+            createdAt
+        };
+        this.deliveryTaskQuery = String(queryContext.query || '').trim();
+        this.deliveryTaskQueryContext = this.deliveryTaskQuery
+            ? {
+                type: queryContext.type || 'manual',
+                label: this.deliveryTaskQuery
+            }
+            : null;
+        this.deliveryTaskStatusFilter = 'all';
+        this.deliveryDeadLetterReasonFilter = 'all';
+        this.deliveryLockStateFilter = 'all';
+        this.deliveryTaskPage = 1;
+        this.deliveryDeadLetterPage = 1;
+        this.deliveryLockConflictPage = 1;
+        this.loadDeliveryTasks(1);
+    },
+
+    clearDeliveryConflictAuditSelection: function () {
+        this.deliveryTaskIdentityFilter = null;
+        this.deliveryConflictAuditSelection = null;
         this.deliveryTaskPage = 1;
         this.deliveryDeadLetterPage = 1;
         this.deliveryLockConflictPage = 1;
@@ -3426,6 +3585,8 @@ Example output format:
                 label: nextQuery
             }
             : null;
+        this.deliveryTaskIdentityFilter = null;
+        this.deliveryConflictAuditSelection = null;
         this.deliveryTaskPage = 1;
         this.deliveryDeadLetterPage = 1;
         this.deliveryLockConflictPage = 1;
@@ -3442,6 +3603,8 @@ Example output format:
             type: type === 'channel' ? 'channel' : 'target',
             label: nextQuery
         };
+        this.deliveryTaskIdentityFilter = null;
+        this.deliveryConflictAuditSelection = null;
         this.deliveryTaskPage = 1;
         this.deliveryDeadLetterPage = 1;
         this.deliveryLockConflictPage = 1;
@@ -3451,6 +3614,8 @@ Example output format:
     clearDeliveryTaskQuery: function () {
         this.deliveryTaskQuery = '';
         this.deliveryTaskQueryContext = null;
+        this.deliveryTaskIdentityFilter = null;
+        this.deliveryConflictAuditSelection = null;
         const input = document.getElementById('deliveryTaskQueryInput');
         if (input) {
             input.value = '';

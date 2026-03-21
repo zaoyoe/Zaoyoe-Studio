@@ -130,6 +130,11 @@ function normalizeFilterValue(value, allowedValues = null, fallback = 'all') {
     return normalized;
 }
 
+function normalizeExactFilterValue(value) {
+    const normalized = String(value || '').trim();
+    return normalized || null;
+}
+
 function isUuidLike(value) {
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim());
 }
@@ -538,6 +543,28 @@ function matchesConflictBucketTask(task = {}, bucketSelection = null) {
     return false;
 }
 
+function applyTaskIdentityFilter(taskQuery, taskIdentity = null) {
+    if (!taskIdentity) return taskQuery;
+    if (taskIdentity.task_id) {
+        taskQuery = taskQuery.eq('id', taskIdentity.task_id);
+    }
+    if (taskIdentity.order_id) {
+        taskQuery = taskQuery.eq('order_id', taskIdentity.order_id);
+    }
+    return taskQuery;
+}
+
+function matchesTaskIdentity(task = {}, taskIdentity = null) {
+    if (!taskIdentity) return true;
+    if (taskIdentity.task_id && String(task?.id || '').trim() !== String(taskIdentity.task_id || '').trim()) {
+        return false;
+    }
+    if (taskIdentity.order_id && String(task?.order_id || '').trim() !== String(taskIdentity.order_id || '').trim()) {
+        return false;
+    }
+    return true;
+}
+
 function buildConflictTrend(records = [], windowPreset = ANALYTICS_WINDOW_PRESETS['24h']) {
     const analyticsWindow = getConflictAnalyticsWindowRange(windowPreset);
     const bucketHours = Math.max(1, Number(analyticsWindow.bucket_hours || 1));
@@ -886,7 +913,7 @@ async function countTasksWithConflicts(supabase) {
     return Number(count || 0);
 }
 
-async function fetchTaskPage({ supabase, page, pageSize, status, query, lockState = 'all', sortColumn = 'created_at', ascending = false, conflictBucket = null }) {
+async function fetchTaskPage({ supabase, page, pageSize, status, query, lockState = 'all', sortColumn = 'created_at', ascending = false, conflictBucket = null, taskIdentity = null }) {
     if (conflictBucket?.active && !(conflictBucket.task_ids || []).length && !(conflictBucket.order_ids || []).length) {
         return {
             page,
@@ -909,11 +936,15 @@ async function fetchTaskPage({ supabase, page, pageSize, status, query, lockStat
             }
 
             taskQuery = applyTaskSearch(taskQuery, query);
+            taskQuery = applyTaskIdentityFilter(taskQuery, taskIdentity);
             taskQuery = applyTaskLockStateFilter(taskQuery, lockState);
             return taskQuery;
         });
 
-        const filtered = (allTasks || []).filter((task) => matchesConflictBucketTask(task, conflictBucket));
+        const filtered = (allTasks || []).filter((task) => (
+            matchesConflictBucketTask(task, conflictBucket)
+            && matchesTaskIdentity(task, taskIdentity)
+        ));
         return paginateRows(filtered, page, pageSize);
     }
 
@@ -931,6 +962,7 @@ async function fetchTaskPage({ supabase, page, pageSize, status, query, lockStat
     }
 
     taskQuery = applyTaskSearch(taskQuery, query);
+    taskQuery = applyTaskIdentityFilter(taskQuery, taskIdentity);
     taskQuery = applyTaskLockStateFilter(taskQuery, lockState);
 
     const { data, count, error } = await taskQuery.range(from, to);
@@ -944,7 +976,7 @@ async function fetchTaskPage({ supabase, page, pageSize, status, query, lockStat
     };
 }
 
-async function fetchDeadLetterPage({ supabase, page, pageSize, reason, query, conflictBucket = null }) {
+async function fetchDeadLetterPage({ supabase, page, pageSize, reason, query, conflictBucket = null, taskIdentity = null }) {
     if (conflictBucket?.active && !(conflictBucket.task_ids || []).length && !(conflictBucket.order_ids || []).length) {
         return {
             ...paginateRows([], page, pageSize),
@@ -961,12 +993,14 @@ async function fetchDeadLetterPage({ supabase, page, pageSize, reason, query, co
             .order('created_at', { ascending: false });
 
         taskQuery = applyTaskSearch(taskQuery, query);
+        taskQuery = applyTaskIdentityFilter(taskQuery, taskIdentity);
         return taskQuery;
     });
 
     const filtered = (allDeadLetters || []).filter((task) => (
         matchesDeadLetterReason(task, reason)
         && matchesConflictBucketTask(task, conflictBucket)
+        && matchesTaskIdentity(task, taskIdentity)
     ));
     return {
         ...paginateRows(filtered, page, pageSize),
@@ -974,7 +1008,7 @@ async function fetchDeadLetterPage({ supabase, page, pageSize, reason, query, co
     };
 }
 
-async function fetchLockConflictPage({ supabase, page, pageSize, lockState, query, conflictBucket = null }) {
+async function fetchLockConflictPage({ supabase, page, pageSize, lockState, query, conflictBucket = null, taskIdentity = null }) {
     if (conflictBucket?.active && !(conflictBucket.task_ids || []).length && !(conflictBucket.order_ids || []).length) {
         return {
             ...paginateRows([], page, pageSize),
@@ -991,6 +1025,7 @@ async function fetchLockConflictPage({ supabase, page, pageSize, lockState, quer
             .order('created_at', { ascending: false });
 
         taskQuery = applyTaskSearch(taskQuery, query);
+        taskQuery = applyTaskIdentityFilter(taskQuery, taskIdentity);
         taskQuery = applyTaskLockStateFilter(taskQuery, lockState);
         return taskQuery;
     });
@@ -999,6 +1034,7 @@ async function fetchLockConflictPage({ supabase, page, pageSize, lockState, quer
         const state = getLockState(task);
         const normalized = normalizeFilterValue(lockState, LOCK_STATE_KEYS, 'all');
         if (!matchesConflictBucketTask(task, conflictBucket)) return false;
+        if (!matchesTaskIdentity(task, taskIdentity)) return false;
         if (normalized === 'all') {
             return ['locked_active', 'locked_stale', 'locked_unknown', 'lock_missing'].includes(state);
         }
@@ -1046,7 +1082,7 @@ function compareReservationTasks(left = {}, right = {}) {
         - Number(new Date(left?.updated_at || left?.created_at || 0).getTime());
 }
 
-async function fetchReservationOverview({ supabase, limit = 8, query, conflictBucket = null }) {
+async function fetchReservationOverview({ supabase, limit = 8, query, conflictBucket = null, taskIdentity = null }) {
     if (conflictBucket?.active && !(conflictBucket.task_ids || []).length && !(conflictBucket.order_ids || []).length) {
         return {
             total: 0,
@@ -1064,11 +1100,13 @@ async function fetchReservationOverview({ supabase, limit = 8, query, conflictBu
             .order('created_at', { ascending: false });
 
         taskQuery = applyTaskSearch(taskQuery, query);
+        taskQuery = applyTaskIdentityFilter(taskQuery, taskIdentity);
         return taskQuery;
     });
 
     const sorted = [...(allTasks || [])]
         .filter((task) => matchesConflictBucketTask(task, conflictBucket))
+        .filter((task) => matchesTaskIdentity(task, taskIdentity))
         .sort(compareReservationTasks);
     return {
         total: sorted.length,
@@ -1290,6 +1328,13 @@ module.exports = async (req, res) => {
         const analyticsWindow = resolveAnalyticsWindow(url.searchParams.get('analyticsWindow'));
         const conflictBucketStartAt = normalizeIsoTimestamp(url.searchParams.get('conflictBucketStartAt'));
         const conflictBucketEndAt = normalizeIsoTimestamp(url.searchParams.get('conflictBucketEndAt'));
+        const taskIdentity = {
+            task_id: normalizeExactFilterValue(url.searchParams.get('focusTaskId')),
+            order_id: normalizeExactFilterValue(url.searchParams.get('focusOrderId'))
+        };
+        if (!taskIdentity.task_id && !taskIdentity.order_id) {
+            Object.keys(taskIdentity).forEach((key) => delete taskIdentity[key]);
+        }
 
         const deadLetterPage = parsePositiveInt(url.searchParams.get('deadLetterPage'), 1, 100000);
         const deadLetterPageSize = parsePositiveInt(url.searchParams.get('deadLetterPageSize'), 5, 20);
@@ -1338,7 +1383,8 @@ module.exports = async (req, res) => {
                 status: statusFilter,
                 query,
                 lockState,
-                conflictBucket
+                conflictBucket,
+                taskIdentity
             }),
             fetchDeadLetterPage({
                 supabase,
@@ -1346,7 +1392,8 @@ module.exports = async (req, res) => {
                 pageSize: deadLetterPageSize,
                 reason: deadLetterReason,
                 query,
-                conflictBucket
+                conflictBucket,
+                taskIdentity
             }),
             fetchLockConflictPage({
                 supabase,
@@ -1354,13 +1401,15 @@ module.exports = async (req, res) => {
                 pageSize: lockPageSize,
                 lockState,
                 query,
-                conflictBucket
+                conflictBucket,
+                taskIdentity
             }),
             fetchReservationOverview({
                 supabase,
                 limit: 8,
                 query,
-                conflictBucket
+                conflictBucket,
+                taskIdentity
             })
         ]);
 
@@ -1545,7 +1594,8 @@ module.exports = async (req, res) => {
                         task_count: Number((conflictBucket.task_ids || []).length || 0),
                         order_count: Number((conflictBucket.order_ids || []).length || 0)
                     }
-                    : null
+                    : null,
+                taskIdentity: Object.keys(taskIdentity).length ? taskIdentity : null
             },
             tasks: mainTasks,
             deadLetter: {
