@@ -235,6 +235,49 @@ function buildCheckoutSessionAnomaly(session) {
     return null;
 }
 
+function buildAnomalyCaseKey(targetType, targetId) {
+    return `${String(targetType || '').trim().toLowerCase()}:${String(targetId || '').trim()}`;
+}
+
+function isResolvedOpsStatus(status) {
+    return ['handled', 'ignored', 'approved', 'rejected'].includes(String(status || '').trim().toLowerCase());
+}
+
+function getAnomalyAvailableActions(item, caseStatus) {
+    const normalizedStatus = String(caseStatus || '').trim().toLowerCase();
+
+    if (isResolvedOpsStatus(normalizedStatus)) {
+        return ['reopen'];
+    }
+
+    if (item?.type === 'order' && String(item?.status || '').trim().toLowerCase() === 'pending_review') {
+        return ['approve_review', 'reject_review', 'ignore'];
+    }
+
+    return ['mark_handled', 'ignore', 'request_retry'];
+}
+
+function enrichAnomaliesWithCases(anomalies, cases) {
+    const caseMap = new Map(
+        (cases || []).map((item) => [buildAnomalyCaseKey(item.target_type, item.target_id), item])
+    );
+
+    return (anomalies || []).map((item) => {
+        const linkedCase = caseMap.get(buildAnomalyCaseKey(item.type, item.id));
+        const opsStatus = String(linkedCase?.status || 'open').trim().toLowerCase() || 'open';
+
+        return {
+            ...item,
+            ops_status: opsStatus,
+            ops_note: linkedCase?.note || null,
+            ops_resolution: linkedCase?.resolution || null,
+            ops_last_action: linkedCase?.last_action || null,
+            ops_last_action_at: linkedCase?.last_action_at || null,
+            ops_available_actions: getAnomalyAvailableActions(item, opsStatus)
+        };
+    });
+}
+
 function buildTrend24h(events) {
     const now = new Date();
     const buckets = [];
@@ -509,6 +552,45 @@ async function fetchCheckoutSessions(client, sinceIso, untilIso, site) {
         }
         throw error;
     }
+}
+
+async function fetchAnomalyCasesByTargets(client, anomalies) {
+    const groupedIds = {
+        order: [],
+        event: [],
+        session: []
+    };
+
+    (anomalies || []).forEach((item) => {
+        const type = String(item?.type || '').trim().toLowerCase();
+        const id = String(item?.id || '').trim();
+        if (!id || !Object.prototype.hasOwnProperty.call(groupedIds, type)) return;
+        groupedIds[type].push(id);
+    });
+
+    const results = [];
+
+    for (const [targetType, targetIds] of Object.entries(groupedIds)) {
+        if (!targetIds.length) continue;
+
+        try {
+            const rows = await fetchPagedRows(() => client
+                .from('payment_anomaly_cases')
+                .select('id, target_type, target_id, status, note, resolution, last_action, last_action_at')
+                .eq('target_type', targetType)
+                .in('target_id', targetIds)
+                .order('updated_at', { ascending: false }));
+
+            results.push(...rows);
+        } catch (error) {
+            if (isMissingColumnError(error)) {
+                return [];
+            }
+            throw error;
+        }
+    }
+
+    return results;
 }
 
 async function fetchPaymentEvents(client, sinceIso, untilIso) {
@@ -1068,11 +1150,27 @@ module.exports = async function handler(req, res) {
                 .slice(0, 24)
             : [];
 
-        const recentAnomalies = view === 'ops'
+        const combinedRecentAnomalies = view === 'ops'
             ? [...recentOrderAnomalies, ...recentEventAnomalies, ...recentSessionAnomalies]
                 .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime())
+            : [];
+        const anomalyCases = view === 'ops'
+            ? await fetchAnomalyCasesByTargets(scopedClient, combinedRecentAnomalies)
+            : [];
+        const enrichedRecentAnomalies = view === 'ops'
+            ? enrichAnomaliesWithCases(combinedRecentAnomalies, anomalyCases)
+            : [];
+        const recentAnomalies = view === 'ops'
+            ? enrichedRecentAnomalies
+                .filter((item) => !isResolvedOpsStatus(item.ops_status))
                 .slice(0, 20)
             : [];
+        const handledCaseCount = (anomalyCases || []).filter((item) => String(item.status || '').trim().toLowerCase() === 'handled').length;
+        const ignoredCaseCount = (anomalyCases || []).filter((item) => String(item.status || '').trim().toLowerCase() === 'ignored').length;
+        const retryRequestedCaseCount = (anomalyCases || []).filter((item) => String(item.status || '').trim().toLowerCase() === 'retry_requested').length;
+        const openAnomalyCount = view === 'ops'
+            ? recentAnomalies.length
+            : recentOrderAnomalies.length + recentEventAnomalies.length + recentSessionAnomalies.length;
 
         const anomalySummary = {
             review_orders: Number(overview.review_orders || 0),
@@ -1086,7 +1184,11 @@ module.exports = async function handler(req, res) {
             unmatched_session_orders: Number(sessionSummary?.unmatched_orders || 0),
             webhook_linked_sessions: Number(sessionSummary?.webhook_linked_sessions || 0),
             fallback_linked_sessions: Number(sessionSummary?.fallback_linked_sessions || 0),
-            session_anomalies: Number(sessionSummary?.anomaly_count || 0)
+            session_anomalies: Number(sessionSummary?.anomaly_count || 0),
+            open_cases: openAnomalyCount,
+            handled_cases: handledCaseCount,
+            ignored_cases: ignoredCaseCount,
+            retry_requested_cases: retryRequestedCaseCount
         };
 
         const provider_stats = buildProviderStats(enrichedOrders || [], checkoutSessions || []);

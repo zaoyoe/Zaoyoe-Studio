@@ -13468,6 +13468,147 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     overflow-wrap: anywhere;
 }
 
+.payments-anomaly-ops {
+    margin-top: 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.payments-anomaly-state {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    background: rgba(148, 163, 184, 0.1);
+    color: #d9e4f5;
+    font-size: 0.76rem;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: 0.01em;
+}
+
+.payments-anomaly-state.info,
+.payments-anomaly-state.status-open,
+.payments-anomaly-state.status-reopened {
+    background: rgba(96, 165, 250, 0.12);
+    border-color: rgba(96, 165, 250, 0.22);
+    color: #bfdbfe;
+}
+
+.payments-anomaly-state.success,
+.payments-anomaly-state.status-handled,
+.payments-anomaly-state.status-approved {
+    background: rgba(34, 197, 94, 0.12);
+    border-color: rgba(34, 197, 94, 0.24);
+    color: #86efac;
+}
+
+.payments-anomaly-state.warning,
+.payments-anomaly-state.status-retry_requested {
+    background: rgba(250, 204, 21, 0.14);
+    border-color: rgba(250, 204, 21, 0.26);
+    color: #fde68a;
+}
+
+.payments-anomaly-state.danger,
+.payments-anomaly-state.status-rejected {
+    background: rgba(248, 113, 113, 0.14);
+    border-color: rgba(248, 113, 113, 0.28);
+    color: #fca5a5;
+}
+
+.payments-anomaly-state.status-ignored {
+    background: rgba(148, 163, 184, 0.14);
+    border-color: rgba(148, 163, 184, 0.22);
+    color: #cbd5e1;
+}
+
+.payments-anomaly-resolution,
+.payments-anomaly-resolution-meta {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.08);
+    border: 1px solid rgba(148, 163, 184, 0.1);
+    color: var(--text-dim);
+    font-size: 0.74rem;
+    line-height: 1.2;
+}
+
+.payments-anomaly-resolution {
+    color: #dbe9ff;
+}
+
+.payments-anomaly-actions {
+    margin-top: 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.payments-anomaly-action-btn {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    background: rgba(148, 163, 184, 0.08);
+    color: var(--text-main);
+    padding: 8px 14px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    line-height: 1.2;
+    cursor: pointer;
+    transition: transform 0.16s ease, border-color 0.16s ease, background 0.16s ease, color 0.16s ease, opacity 0.16s ease;
+}
+
+.payments-anomaly-action-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+}
+
+.payments-anomaly-action-btn:disabled {
+    opacity: 0.5;
+    cursor: wait;
+}
+
+.payments-anomaly-action-btn.mark_handled,
+.payments-anomaly-action-btn.approve_review {
+    background: rgba(34, 197, 94, 0.12);
+    border-color: rgba(34, 197, 94, 0.24);
+    color: #86efac;
+}
+
+.payments-anomaly-action-btn.ignore {
+    background: rgba(148, 163, 184, 0.1);
+    border-color: rgba(148, 163, 184, 0.18);
+    color: #cbd5e1;
+}
+
+.payments-anomaly-action-btn.request_retry {
+    background: rgba(250, 204, 21, 0.14);
+    border-color: rgba(250, 204, 21, 0.24);
+    color: #fde68a;
+}
+
+.payments-anomaly-action-btn.reopen {
+    background: rgba(96, 165, 250, 0.14);
+    border-color: rgba(96, 165, 250, 0.24);
+    color: #bfdbfe;
+}
+
+.payments-anomaly-action-btn.reject_review {
+    background: rgba(248, 113, 113, 0.14);
+    border-color: rgba(248, 113, 113, 0.24);
+    color: #fca5a5;
+}
+
 .payments-orders-table {
     min-height: 120px;
 }
@@ -14320,6 +14461,23 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
         grid-template-columns: 1fr;
     }
 
+    .payments-anomaly-ops,
+    .payments-anomaly-actions {
+        gap: 8px;
+    }
+
+    .payments-anomaly-resolution,
+    .payments-anomaly-resolution-meta {
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    .payments-anomaly-action-btn {
+        flex: 1 1 calc(50% - 8px);
+        justify-content: center;
+        text-align: center;
+    }
+
     .payments-points-table {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -14544,6 +14702,10 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     .payments-provider-row,
     .payments-anomaly-item {
         padding: 16px;
+    }
+
+    .payments-anomaly-action-btn {
+        flex-basis: 100%;
     }
 }
 

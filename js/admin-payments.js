@@ -22,6 +22,7 @@
         autoRefreshEnabled: true,
         autoRefreshIntervalMs: 5 * 60 * 1000,
         autoRefreshTimer: null,
+        anomalyActionLoading: {},
         pagination: {
             anomalies: 1,
             orders: 1,
@@ -304,6 +305,44 @@
             info: '提示'
         };
         return map[String(severity || '')] || '提示';
+    }
+
+    function getAnomalyOpsStatusLabel(status) {
+        const map = {
+            open: '待处理',
+            handled: '已处理',
+            ignored: '已忽略',
+            retry_requested: '已登记重试',
+            approved: '已审核通过',
+            rejected: '已驳回'
+        };
+        return map[String(status || '').trim().toLowerCase()] || '待处理';
+    }
+
+    function getAnomalyActionLabel(action) {
+        const map = {
+            mark_handled: '标记已处理',
+            ignore: '忽略',
+            request_retry: '登记重试',
+            reopen: '重新打开',
+            approve_review: '审核通过',
+            reject_review: '驳回'
+        };
+        return map[String(action || '').trim().toLowerCase()] || '执行操作';
+    }
+
+    function getAnomalyOpsTone(status) {
+        const normalized = String(status || '').trim().toLowerCase();
+        if (normalized === 'handled' || normalized === 'approved') return 'success';
+        if (normalized === 'ignored') return 'muted';
+        if (normalized === 'retry_requested') return 'warning';
+        if (normalized === 'rejected') return 'danger';
+        return 'info';
+    }
+
+    function isAnomalyActionLoading(targetType, targetId) {
+        const key = `${String(targetType || '').trim().toLowerCase()}:${String(targetId || '').trim()}`;
+        return Boolean(state.anomalyActionLoading[key]);
     }
 
     function getSessionStatusLabel(status) {
@@ -1126,6 +1165,43 @@
                 : (item.provider_order_no || '无订单号');
         }
 
+        function renderOpsState(item) {
+            const status = String(item?.ops_status || 'open').trim().toLowerCase();
+            const tone = getAnomalyOpsTone(status);
+            const label = getAnomalyOpsStatusLabel(status);
+            const resolution = String(item?.ops_resolution || '').trim();
+            const actionTime = item?.ops_last_action_at ? formatDateTime(item.ops_last_action_at) : '';
+
+            return `
+                <div class="payments-anomaly-ops">
+                    <span class="payments-anomaly-state ${escapeHtml(`status-${status}`)} ${escapeHtml(tone)}">${escapeHtml(label)}</span>
+                    ${resolution ? `<span class="payments-anomaly-resolution">${escapeHtml(resolution)}</span>` : ''}
+                    ${actionTime ? `<span class="payments-anomaly-resolution-meta">最近处理：${escapeHtml(actionTime)}</span>` : ''}
+                </div>
+            `;
+        }
+
+        function renderActions(item) {
+            const actions = Array.isArray(item?.ops_available_actions) ? item.ops_available_actions : [];
+            if (!actions.length) return '';
+
+            const loading = isAnomalyActionLoading(item.type, item.id);
+            return `
+                <div class="payments-anomaly-actions">
+                    ${actions.map((action) => `
+                        <button
+                            type="button"
+                            class="payments-anomaly-action-btn ${escapeHtml(action)}"
+                            onclick="AdminPayments.handleAnomalyAction('${escapeHtml(item.type)}','${escapeHtml(item.id)}','${escapeHtml(action)}')"
+                            ${loading ? 'disabled' : ''}
+                        >
+                            ${escapeHtml(getAnomalyActionLabel(action))}
+                        </button>
+                    `).join('')}
+                </div>
+            `;
+        }
+
         target.innerHTML = `
             <div class="payments-anomaly-items">
                 ${pager.pageItems.map((item) => `
@@ -1137,6 +1213,7 @@
                     </div>
                     <span class="payments-anomaly-severity">${escapeHtml(getSeverityLabel(item.severity))}</span>
                 </div>
+                ${renderOpsState(item)}
                 <div class="payments-anomaly-suggestion">
                     <i class="fas fa-lightbulb"></i>
                     <span>${escapeHtml(getHandlingSuggestion(item))}</span>
@@ -1147,6 +1224,7 @@
                     <span><small>${escapeHtml(getAnomalyReferenceLabel(item))}</small><strong>${escapeHtml(getAnomalyReferenceValue(item))}</strong></span>
                     <span><small>时间</small><strong>${escapeHtml(formatDateTime(item.created_at))}</strong></span>
                 </div>
+                ${renderActions(item)}
             </div>
                 `).join('')}
             </div>
@@ -1379,6 +1457,44 @@
         renderCleanupPreview(payload);
         if (!silent && typeof window.showToast === 'function') {
             window.showToast('已刷新测试数据扫描结果', 'success');
+        }
+    }
+
+    async function handleAnomalyAction(targetType, targetId, action) {
+        const normalizedTargetType = String(targetType || '').trim().toLowerCase();
+        const normalizedTargetId = String(targetId || '').trim();
+        const normalizedAction = String(action || '').trim().toLowerCase();
+        if (!normalizedTargetType || !normalizedTargetId || !normalizedAction) return;
+
+        const actionKey = `${normalizedTargetType}:${normalizedTargetId}`;
+        if (state.anomalyActionLoading[actionKey]) return;
+
+        state.anomalyActionLoading[actionKey] = true;
+        renderAnomalies(state.summary || {});
+
+        try {
+            const payload = await fetchAdminJson('/api/admin/payments/actions', {
+                method: 'POST',
+                body: JSON.stringify({
+                    targetType: normalizedTargetType,
+                    targetId: normalizedTargetId,
+                    action: normalizedAction
+                })
+            });
+
+            window.showToast?.(`${getAnomalyActionLabel(normalizedAction)}成功`, 'success');
+            state.viewCache = {};
+            await reload();
+            return payload;
+        } catch (error) {
+            console.error('[AdminPayments] Failed to handle anomaly action:', error);
+            window.showToast?.(getFriendlyErrorMessage(error, '异常操作执行失败，请稍后重试。'), 'error');
+            throw error;
+        } finally {
+            delete state.anomalyActionLoading[actionKey];
+            if (state.summary) {
+                renderAnomalies(state.summary);
+            }
         }
     }
 
@@ -1818,6 +1934,7 @@
         exportData,
         previewCleanup,
         cleanupTestData,
-        goToPage
+        goToPage,
+        handleAnomalyAction
     };
 })();
