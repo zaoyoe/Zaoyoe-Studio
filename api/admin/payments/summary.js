@@ -687,6 +687,89 @@ function getSessionSortValue(session) {
     return Number.isFinite(value) ? value : 0;
 }
 
+function mergeCheckoutSessionsWithOrderFallback(orders, sessions) {
+    const mergedSessions = [];
+    const indexById = new Map();
+    const indexByKey = new Map();
+
+    (sessions || []).forEach((session) => {
+        const normalizedSession = {
+            ...session,
+            provider_metadata: normalizeJsonObject(session?.provider_metadata)
+        };
+        const position = mergedSessions.push(normalizedSession) - 1;
+        const sessionId = String(normalizedSession.id || '').trim();
+        const sessionKey = String(normalizedSession.session_key || '').trim();
+        if (sessionId) indexById.set(sessionId, position);
+        if (sessionKey) indexByKey.set(sessionKey, position);
+    });
+
+    (orders || []).forEach((order) => {
+        const metadata = normalizeJsonObject(order?.provider_metadata);
+        const sessionId = String(metadata.checkout_session_id || '').trim();
+        const sessionKey = String(metadata.checkout_session_key || '').trim();
+
+        if (!sessionId && !sessionKey) {
+            return;
+        }
+
+        const existingIndex = sessionId && indexById.has(sessionId)
+            ? indexById.get(sessionId)
+            : (sessionKey && indexByKey.has(sessionKey) ? indexByKey.get(sessionKey) : -1);
+
+        const providerMetadata = {
+            ...normalizeJsonObject(mergedSessions[existingIndex]?.provider_metadata),
+            provider_order_no: String(metadata.provider_order_no || order.provider_order_no || '').trim() || null,
+            payment_status: String(metadata.checkout_session_status || order.status || '').trim().toLowerCase() || null,
+            linked_by: String(metadata.checkout_session_linked_by || '').trim() || null,
+            linked_at: metadata.checkout_session_linked_at || null
+        };
+
+        if (existingIndex >= 0) {
+            const current = mergedSessions[existingIndex];
+            mergedSessions[existingIndex] = {
+                ...current,
+                payment_order_id: current.payment_order_id || order.id,
+                status: current.status || metadata.checkout_session_status || (isSuccessOrder(order) ? 'completed' : 'created'),
+                provider_metadata,
+                completed_at: current.completed_at || (isSuccessOrder(order) ? (order.paid_at || order.claimed_at || order.created_at) : null),
+                updated_at: current.updated_at || order.created_at
+            };
+            return;
+        }
+
+        const syntheticSession = {
+            id: sessionId || `synthetic_${order.id}`,
+            session_key: sessionKey || null,
+            provider: order.provider,
+            user_id: order.user_id || null,
+            site: order.site || null,
+            package_id: null,
+            package_name: order.package_name || null,
+            requested_points: normalizeNumber(order.points_amount, 0),
+            bonus_points: 0,
+            granted_points: normalizeNumber(order.points_amount, 0),
+            expected_amount: normalizeNumber(order.expected_amount, normalizeNumber(order.paid_amount, 0)),
+            status: String(metadata.checkout_session_status || (isSuccessOrder(order) ? 'completed' : 'created')).trim().toLowerCase() || 'created',
+            checkout_url: null,
+            query_mode: null,
+            payment_order_id: order.id,
+            provider_metadata,
+            error_message: String(order.last_error || '').trim() || null,
+            expires_at: null,
+            completed_at: isSuccessOrder(order) ? (order.paid_at || order.claimed_at || order.created_at) : null,
+            created_at: order.created_at,
+            updated_at: order.created_at
+        };
+
+        const position = mergedSessions.push(syntheticSession) - 1;
+        if (sessionId) indexById.set(sessionId, position);
+        if (sessionKey) indexByKey.set(sessionKey, position);
+    });
+
+    return mergedSessions;
+}
+
 function enrichPaymentOrdersWithCheckoutSessions(orders, sessions) {
     const sessionMap = new Map();
 
@@ -923,7 +1006,7 @@ module.exports = async function handler(req, res) {
         const [
             orderRows,
             eventRows,
-            checkoutSessions,
+            rawCheckoutSessions,
             shopOrders,
             pointsLedgerRows,
             pointsBalanceRows
@@ -936,6 +1019,9 @@ module.exports = async function handler(req, res) {
             needsFinance ? fetchPointsBalances(scopedClient, site) : Promise.resolve([])
         ]);
 
+        const checkoutSessions = needsSessions
+            ? mergeCheckoutSessionsWithOrderFallback(orderRows || [], rawCheckoutSessions || [])
+            : [];
         const enrichedOrders = enrichPaymentOrdersWithCheckoutSessions(orderRows || [], checkoutSessions || []);
         const overview = buildOverview(enrichedOrders || []);
         const sessionSummary = needsSessions

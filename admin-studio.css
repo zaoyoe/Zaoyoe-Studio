@@ -12796,6 +12796,10 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     color: #facc15;
 }
 
+.payments-access-state[hidden] {
+    display: none !important;
+}
+
 .payments-section {
     display: flex;
     flex-direction: column;
