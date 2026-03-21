@@ -27,6 +27,7 @@ const PORT = process.env.PORT || 3001;
 
 // Upstream API base URL
 const VERIFY_API_BASE = process.env.VERIFY_API_BASE_URL || 'https://iqless.icu';
+const HEALTHCHECK_UPSTREAM_TIMEOUT_MS = Math.max(1000, Number(process.env.HEALTHCHECK_UPSTREAM_TIMEOUT_MS || 5000));
 const ACTIVE_TRACKED_JOB_STATUSES = ['queued', 'running', 'processing', 'pending'];
 const TERMINAL_TRACKED_JOB_STATUSES = ['success', 'failed'];
 const PENDING_JOB_SWEEP_INTERVAL_MS = Math.max(2000, Number(process.env.VERIFY_PENDING_SWEEP_INTERVAL_MS || 5000));
@@ -64,19 +65,89 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// Health check
-app.get('/health', async (req, res) => {
+function getLocalHealthPayload() {
+    return {
+        status: 'ok',
+        service: 'verify-proxy-server',
+        port: Number(PORT),
+        uptime_seconds: Math.round(process.uptime()),
+        timestamp: new Date().toISOString()
+    };
+}
+
+async function probeUpstreamHealth() {
+    const upstreamUrl = `${String(VERIFY_API_BASE).replace(/\/+$/, '')}/api/health`;
+
     try {
-        const upstream = await fetch(`${String(VERIFY_API_BASE).replace(/\/+$/, '')}/api/health`);
-        const payload = await upstream.json();
-        return res.status(upstream.status).json(payload);
-    } catch (error) {
-        return res.json({
-            status: 'degraded',
-            message: error.message,
-            timestamp: new Date().toISOString()
+        const upstream = await fetch(upstreamUrl, {
+            signal: AbortSignal.timeout(HEALTHCHECK_UPSTREAM_TIMEOUT_MS)
         });
+        const rawBody = await upstream.text();
+
+        let payload = null;
+        if (rawBody) {
+            try {
+                payload = JSON.parse(rawBody);
+            } catch (parseError) {
+                payload = { raw: rawBody };
+            }
+        }
+
+        return {
+            ok: upstream.ok,
+            status: upstream.status,
+            url: upstreamUrl,
+            payload
+        };
+    } catch (error) {
+        return {
+            ok: false,
+            status: 503,
+            url: upstreamUrl,
+            payload: null,
+            error: error.message
+        };
     }
+}
+
+function buildUpstreamHealthResponse(result = {}) {
+    const base = getLocalHealthPayload();
+    const statusCode = Number(result.status || 503);
+    const payload = {
+        ...base,
+        status: result.ok ? 'ok' : 'degraded',
+        upstream: {
+            status: result.ok ? 'ok' : 'unavailable',
+            http_status: statusCode,
+            url: result.url || null,
+            error: result.error || null,
+            response: result.payload
+        }
+    };
+
+    return {
+        statusCode,
+        payload
+    };
+}
+
+// Liveness check for Railway/container healthchecks.
+app.get('/healthz', (req, res) => {
+    return res.json(getLocalHealthPayload());
+});
+
+// Readiness check for upstream dependency visibility.
+app.get('/ready', async (req, res) => {
+    const result = await probeUpstreamHealth();
+    const response = buildUpstreamHealthResponse(result);
+    return res.status(response.statusCode).json(response.payload);
+});
+
+// Backward-compatible upstream-aware health check.
+app.get('/health', async (req, res) => {
+    const result = await probeUpstreamHealth();
+    const response = buildUpstreamHealthResponse(result);
+    return res.status(response.statusCode).json(response.payload);
 });
 
 // =============================================

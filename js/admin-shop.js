@@ -55,6 +55,8 @@ const ShopAdmin = {
     deliveryConflictAuditReasonFilter: 'all',
     deliveryConflictAuditTargetFilter: '',
     deliveryConflictAuditChannelFilter: '',
+    deliveryMockModeEnabled: false,
+    deliveryMockStore: null,
     deliveryRestoreLinkFeedback: null,
     deliveryRestoreLinkFeedbackTimer: null,
     deliveryPendingTaskReveal: null,
@@ -467,6 +469,7 @@ Example output format:
         if (!url) return { tabName: this.currentTab || 'products' };
 
         const search = url.searchParams;
+        const deliveryMockModeEnabled = ['1', 'true', 'yes', 'on'].includes(String(search.get('deliveryMock') || '').trim().toLowerCase());
         const deliveryQuery = String(search.get('deliveryQuery') || '').trim();
         const deliveryQueryType = String(search.get('deliveryQueryType') || 'manual').trim().toLowerCase();
         const deliveryBucketStartAt = String(search.get('deliveryBucketStartAt') || '').trim();
@@ -477,6 +480,10 @@ Example output format:
         const deliveryFocusAuditId = String(search.get('deliveryFocusAuditId') || '').trim();
 
         this.deliveryTaskQuery = deliveryQuery;
+        this.deliveryMockModeEnabled = deliveryMockModeEnabled;
+        if (!deliveryMockModeEnabled) {
+            this.deliveryMockStore = null;
+        }
         this.deliveryTaskQueryContext = deliveryQuery
             ? {
                 type: ['target', 'channel', 'manual'].includes(deliveryQueryType) ? deliveryQueryType : 'manual',
@@ -527,6 +534,7 @@ Example output format:
             || this.deliveryConflictAuditTargetFilter
             || this.deliveryConflictAuditChannelFilter
             || this.deliveryAnalyticsWindow !== '24h'
+            || deliveryMockModeEnabled
         );
         const nextTab = validTabs.has(explicitTab)
             ? explicitTab
@@ -577,6 +585,7 @@ Example output format:
         setOrDelete('deliveryConflictReason', this.deliveryConflictAuditReasonFilter, 'all');
         setOrDelete('deliveryConflictTarget', this.deliveryConflictAuditTargetFilter, '');
         setOrDelete('deliveryConflictChannel', this.deliveryConflictAuditChannelFilter, '');
+        setOrDelete('deliveryMock', this.deliveryMockModeEnabled ? '1' : '', '');
     },
 
     buildDeliveryRestoreUrl: function () {
@@ -588,6 +597,1368 @@ Example output format:
         restoreUrl.searchParams.set('module', 'shop');
         this.applyShopUrlStateToSearchParams(restoreUrl.searchParams);
         return restoreUrl.toString();
+    },
+
+    isDeliveryMockModeEnabled: function () {
+        return this.deliveryMockModeEnabled === true;
+    },
+
+    getDeliveryMockModeNote: function () {
+        if (!this.isDeliveryMockModeEnabled()) return '';
+        return '当前为模拟验收模式，履约任务、冲突趋势、人工动作和策略保存都只在当前浏览器会话内演练，不会写入后台。';
+    },
+
+    cloneDeliveryMockValue: function (value) {
+        return JSON.parse(JSON.stringify(value));
+    },
+
+    getDeliveryMockConflictReasonMeta: function (reasonKey = 'unknown_conflict') {
+        const normalized = String(reasonKey || '').trim().toLowerCase();
+        const map = {
+            target_max_inflight: { key: 'target_max_inflight', label: '目标并发打满', tone: 'warn' },
+            target_min_interval: { key: 'target_min_interval', label: '目标触发间隔限流', tone: 'warn' },
+            channel_max_inflight: { key: 'channel_max_inflight', label: '通道并发打满', tone: 'danger' },
+            channel_min_interval: { key: 'channel_min_interval', label: '通道触发间隔限流', tone: 'warn' },
+            manual_force_unlock: { key: 'manual_force_unlock', label: '人工强制解锁', tone: 'processing' },
+            unknown_conflict: { key: 'unknown_conflict', label: '其他冲突', tone: 'muted' }
+        };
+        return map[normalized] || map.unknown_conflict;
+    },
+
+    buildDeliveryMockStore: function () {
+        const now = Date.now();
+        const isoMinutes = (offsetMinutes) => new Date(now + offsetMinutes * 60 * 1000).toISOString();
+        const isoHours = (offsetHours) => new Date(now + offsetHours * 60 * 60 * 1000).toISOString();
+        const reasonMeta = (reasonKey) => this.getDeliveryMockConflictReasonMeta(reasonKey);
+        const createOrder = ({ id, userId, productName, deliveryStatus, createdAt, refunded = false }) => ({
+            id,
+            user_id: userId,
+            snapshot_product_name: productName,
+            price_paid: 49,
+            total_price: 49,
+            delivery_status: deliveryStatus,
+            delivery_attempt_count: 1,
+            delivery_last_error: null,
+            delivery_completed_at: deliveryStatus === 'delivered' ? isoHours(-2) : null,
+            created_at: createdAt,
+            item_count: 1,
+            refund_status: refunded ? 'full_refund' : 'none'
+        });
+
+        const tasks = [
+            {
+                id: 'mock-task-001',
+                order_id: 'MOCK-ORD-001',
+                order: createOrder({
+                    id: 'MOCK-ORD-001',
+                    userId: 'user_alice',
+                    productName: 'GPT Plus API 发货',
+                    deliveryStatus: 'pending',
+                    createdAt: isoHours(-6)
+                }),
+                target_url: 'https://api.vendor-a.com/fulfill/gpt-plus',
+                payload: { sku: 'gpt-plus', account: 'alice@example.com' },
+                status: 'pending',
+                attempt_count: 0,
+                max_attempts: 5,
+                next_attempt_at: isoMinutes(5),
+                last_attempt_at: null,
+                last_error: null,
+                last_response_status: null,
+                last_response_body: null,
+                dedupe_key: 'mock:delivery:001',
+                target_key: 'user:alice@example.com',
+                channel_key: 'api.vendor-a.com',
+                worker_name: null,
+                conflict_count: 0,
+                last_conflict_at: null,
+                last_conflict_reason: null,
+                last_conflict_scope: null,
+                last_conflict_note: null,
+                delivered_at: null,
+                dead_lettered_at: null,
+                dead_letter_reason: null,
+                manual_replay_requested_at: null,
+                manual_replay_requested_by: null,
+                manual_replay_count: 0,
+                locked_at: null,
+                lock_expires_at: null,
+                lock_token: null,
+                reservation_acquired_at: null,
+                reservation_lock_token: null,
+                reservation_worker_name: null,
+                executed_at: null,
+                updated_at: isoMinutes(-18),
+                created_at: isoHours(-6),
+                attempts: [],
+                lock_state: 'unlocked',
+                reservation_state: { key: 'none', label: '无占位', tone: 'muted' }
+            },
+            {
+                id: 'mock-task-002',
+                order_id: 'MOCK-ORD-002',
+                order: createOrder({
+                    id: 'MOCK-ORD-002',
+                    userId: 'user_bob',
+                    productName: 'Claude Pro API 发货',
+                    deliveryStatus: 'processing',
+                    createdAt: isoHours(-4)
+                }),
+                target_url: 'https://api.vendor-a.com/fulfill/claude-pro',
+                payload: { sku: 'claude-pro', account: 'bob@example.com' },
+                status: 'processing',
+                attempt_count: 1,
+                max_attempts: 5,
+                next_attempt_at: isoMinutes(2),
+                last_attempt_at: isoMinutes(-6),
+                last_error: '正在等待目标并发槽位释放',
+                last_response_status: 202,
+                last_response_body: 'processing',
+                dedupe_key: 'mock:delivery:002',
+                target_key: 'user:bob@example.com',
+                channel_key: 'api.vendor-a.com',
+                worker_name: 'worker-a',
+                conflict_count: 2,
+                last_conflict_at: isoMinutes(-82),
+                last_conflict_reason: 'target_max_inflight',
+                last_conflict_scope: 'target',
+                last_conflict_note: '目标并发已满，等待释放后继续执行',
+                delivered_at: null,
+                dead_lettered_at: null,
+                dead_letter_reason: null,
+                manual_replay_requested_at: null,
+                manual_replay_requested_by: null,
+                manual_replay_count: 0,
+                locked_at: isoMinutes(-3),
+                lock_expires_at: isoMinutes(9),
+                lock_token: 'lock-mock-002',
+                reservation_acquired_at: isoMinutes(-3),
+                reservation_lock_token: 'lock-mock-002',
+                reservation_worker_name: 'worker-a',
+                executed_at: isoMinutes(-6),
+                updated_at: isoMinutes(-2),
+                created_at: isoHours(-4),
+                attempts: [
+                    {
+                        id: 'mock-attempt-002-1',
+                        task_id: 'mock-task-002',
+                        attempt_no: 1,
+                        worker_name: 'worker-a',
+                        started_at: isoMinutes(-6),
+                        finished_at: isoMinutes(-6),
+                        success: false,
+                        response_status: 202,
+                        error_message: '目标并发已满',
+                        duration_ms: 980
+                    }
+                ],
+                lock_state: 'locked_active',
+                reservation_state: { key: 'active', label: '全局占位生效', tone: 'processing' }
+            },
+            {
+                id: 'mock-task-003',
+                order_id: 'MOCK-ORD-003',
+                order: createOrder({
+                    id: 'MOCK-ORD-003',
+                    userId: 'user_charlie',
+                    productName: 'Midjourney API 发货',
+                    deliveryStatus: 'retry_waiting',
+                    createdAt: isoHours(-8)
+                }),
+                target_url: 'https://api.vendor-a.com/fulfill/midjourney',
+                payload: { sku: 'midjourney', account: 'charlie@example.com' },
+                status: 'retry_waiting',
+                attempt_count: 2,
+                max_attempts: 5,
+                next_attempt_at: isoMinutes(8),
+                last_attempt_at: isoMinutes(-16),
+                last_error: '上游请求超时，已进入退避重试',
+                last_response_status: 504,
+                last_response_body: 'gateway timeout',
+                dedupe_key: 'mock:delivery:003',
+                target_key: 'user:charlie@example.com',
+                channel_key: 'api.vendor-a.com',
+                worker_name: 'worker-a',
+                conflict_count: 1,
+                last_conflict_at: isoMinutes(-38),
+                last_conflict_reason: 'target_min_interval',
+                last_conflict_scope: 'target',
+                last_conflict_note: '目标触发间隔限流',
+                delivered_at: null,
+                dead_lettered_at: null,
+                dead_letter_reason: null,
+                manual_replay_requested_at: null,
+                manual_replay_requested_by: null,
+                manual_replay_count: 0,
+                locked_at: null,
+                lock_expires_at: null,
+                lock_token: null,
+                reservation_acquired_at: null,
+                reservation_lock_token: null,
+                reservation_worker_name: null,
+                executed_at: isoMinutes(-16),
+                updated_at: isoMinutes(-10),
+                created_at: isoHours(-8),
+                attempts: [
+                    {
+                        id: 'mock-attempt-003-1',
+                        task_id: 'mock-task-003',
+                        attempt_no: 1,
+                        worker_name: 'worker-a',
+                        started_at: isoMinutes(-45),
+                        finished_at: isoMinutes(-45),
+                        success: false,
+                        response_status: 429,
+                        error_message: '目标触发间隔限流',
+                        duration_ms: 740
+                    },
+                    {
+                        id: 'mock-attempt-003-2',
+                        task_id: 'mock-task-003',
+                        attempt_no: 2,
+                        worker_name: 'worker-a',
+                        started_at: isoMinutes(-16),
+                        finished_at: isoMinutes(-15),
+                        success: false,
+                        response_status: 504,
+                        error_message: '请求超时',
+                        duration_ms: 15024
+                    }
+                ],
+                lock_state: 'unlocked',
+                reservation_state: { key: 'none', label: '无占位', tone: 'muted' }
+            },
+            {
+                id: 'mock-task-004',
+                order_id: 'MOCK-ORD-004',
+                order: createOrder({
+                    id: 'MOCK-ORD-004',
+                    userId: 'user_dana',
+                    productName: 'Discord Nitro API 发货',
+                    deliveryStatus: 'dead_letter',
+                    createdAt: isoHours(-20)
+                }),
+                target_url: 'https://api.vendor-b.com/fulfill/nitro',
+                payload: { sku: 'nitro', account: 'region-hk' },
+                status: 'dead_letter',
+                attempt_count: 5,
+                max_attempts: 5,
+                next_attempt_at: null,
+                last_attempt_at: isoMinutes(-28),
+                last_error: '通道并发长期冲突，已按冲突策略转死信',
+                last_response_status: 429,
+                last_response_body: 'channel saturated',
+                dedupe_key: 'mock:delivery:004',
+                target_key: 'shop:region-hk',
+                channel_key: 'api.vendor-b.com',
+                worker_name: 'worker-b',
+                conflict_count: 6,
+                last_conflict_at: isoMinutes(-28),
+                last_conflict_reason: 'channel_max_inflight',
+                last_conflict_scope: 'channel',
+                last_conflict_note: '通道并发打满后转死信',
+                delivered_at: null,
+                dead_lettered_at: isoMinutes(-26),
+                dead_letter_reason: 'conflict_strategy',
+                manual_replay_requested_at: isoMinutes(-56),
+                manual_replay_requested_by: 'ops.mock@example.com',
+                manual_replay_count: 1,
+                locked_at: null,
+                lock_expires_at: null,
+                lock_token: null,
+                reservation_acquired_at: null,
+                reservation_lock_token: null,
+                reservation_worker_name: null,
+                executed_at: isoMinutes(-28),
+                updated_at: isoMinutes(-26),
+                created_at: isoHours(-20),
+                attempts: [
+                    {
+                        id: 'mock-attempt-004-5',
+                        task_id: 'mock-task-004',
+                        attempt_no: 5,
+                        worker_name: 'worker-b',
+                        started_at: isoMinutes(-28),
+                        finished_at: isoMinutes(-28),
+                        success: false,
+                        response_status: 429,
+                        error_message: '通道并发打满',
+                        duration_ms: 860
+                    }
+                ],
+                lock_state: 'unlocked',
+                reservation_state: { key: 'none', label: '无占位', tone: 'muted' }
+            },
+            {
+                id: 'mock-task-005',
+                order_id: 'MOCK-ORD-005',
+                order: createOrder({
+                    id: 'MOCK-ORD-005',
+                    userId: 'user_erin',
+                    productName: 'Perplexity API 发货',
+                    deliveryStatus: 'delivered',
+                    createdAt: isoHours(-32)
+                }),
+                target_url: 'https://api.vendor-c.com/fulfill/perplexity',
+                payload: { sku: 'perplexity', account: 'erin@example.com' },
+                status: 'delivered',
+                attempt_count: 1,
+                max_attempts: 5,
+                next_attempt_at: null,
+                last_attempt_at: isoHours(-2),
+                last_error: null,
+                last_response_status: 200,
+                last_response_body: 'ok',
+                dedupe_key: 'mock:delivery:005',
+                target_key: 'user:erin@example.com',
+                channel_key: 'api.vendor-c.com',
+                worker_name: 'worker-c',
+                conflict_count: 0,
+                last_conflict_at: null,
+                last_conflict_reason: null,
+                last_conflict_scope: null,
+                last_conflict_note: null,
+                delivered_at: isoHours(-2),
+                dead_lettered_at: null,
+                dead_letter_reason: null,
+                manual_replay_requested_at: null,
+                manual_replay_requested_by: null,
+                manual_replay_count: 0,
+                locked_at: null,
+                lock_expires_at: null,
+                lock_token: null,
+                reservation_acquired_at: null,
+                reservation_lock_token: null,
+                reservation_worker_name: null,
+                executed_at: isoHours(-2),
+                updated_at: isoHours(-2),
+                created_at: isoHours(-32),
+                attempts: [
+                    {
+                        id: 'mock-attempt-005-1',
+                        task_id: 'mock-task-005',
+                        attempt_no: 1,
+                        worker_name: 'worker-c',
+                        started_at: isoHours(-2),
+                        finished_at: isoHours(-2),
+                        success: true,
+                        response_status: 200,
+                        error_message: null,
+                        duration_ms: 642
+                    }
+                ],
+                lock_state: 'unlocked',
+                reservation_state: { key: 'none', label: '无占位', tone: 'muted' }
+            },
+            {
+                id: 'mock-task-006',
+                order_id: 'MOCK-ORD-006',
+                order: createOrder({
+                    id: 'MOCK-ORD-006',
+                    userId: 'user_frank',
+                    productName: 'Notion AI API 发货',
+                    deliveryStatus: 'processing',
+                    createdAt: isoHours(-14)
+                }),
+                target_url: 'https://api.vendor-b.com/fulfill/notion-ai',
+                payload: { sku: 'notion-ai', account: 'frank@example.com' },
+                status: 'processing',
+                attempt_count: 3,
+                max_attempts: 5,
+                next_attempt_at: isoMinutes(4),
+                last_attempt_at: isoMinutes(-22),
+                last_error: 'reservation 锁 token 与当前处理锁不一致',
+                last_response_status: 409,
+                last_response_body: 'lock token mismatch',
+                dedupe_key: 'mock:delivery:006',
+                target_key: 'user:frank@example.com',
+                channel_key: 'api.vendor-b.com',
+                worker_name: 'worker-b',
+                conflict_count: 3,
+                last_conflict_at: isoMinutes(-18),
+                last_conflict_reason: 'manual_force_unlock',
+                last_conflict_scope: 'manual',
+                last_conflict_note: '人工清理过期占位后等待重新执行',
+                delivered_at: null,
+                dead_lettered_at: null,
+                dead_letter_reason: null,
+                manual_replay_requested_at: null,
+                manual_replay_requested_by: null,
+                manual_replay_count: 0,
+                locked_at: isoMinutes(-25),
+                lock_expires_at: isoMinutes(-12),
+                lock_token: 'lock-current-006',
+                reservation_acquired_at: isoMinutes(-25),
+                reservation_lock_token: 'lock-stale-006',
+                reservation_worker_name: 'worker-zombie',
+                executed_at: isoMinutes(-22),
+                updated_at: isoMinutes(-18),
+                created_at: isoHours(-14),
+                attempts: [
+                    {
+                        id: 'mock-attempt-006-3',
+                        task_id: 'mock-task-006',
+                        attempt_no: 3,
+                        worker_name: 'worker-b',
+                        started_at: isoMinutes(-22),
+                        finished_at: isoMinutes(-22),
+                        success: false,
+                        response_status: 409,
+                        error_message: 'lock token mismatch',
+                        duration_ms: 512
+                    }
+                ],
+                lock_state: 'locked_stale',
+                reservation_state: { key: 'token_drift', label: 'Token 漂移', tone: 'danger' }
+            },
+            {
+                id: 'mock-task-007',
+                order_id: 'MOCK-ORD-007',
+                order: createOrder({
+                    id: 'MOCK-ORD-007',
+                    userId: 'user_grace',
+                    productName: 'Canva API 发货',
+                    deliveryStatus: 'requeued',
+                    createdAt: isoHours(-18)
+                }),
+                target_url: 'https://api.vendor-a.com/fulfill/canva',
+                payload: { sku: 'canva', account: 'grace@example.com' },
+                status: 'requeued',
+                attempt_count: 2,
+                max_attempts: 5,
+                next_attempt_at: isoMinutes(3),
+                last_attempt_at: isoMinutes(-14),
+                last_error: '人工重放后重新入队，等待通道窗口',
+                last_response_status: 202,
+                last_response_body: 'requeued',
+                dedupe_key: 'mock:delivery:007',
+                target_key: 'user:grace@example.com',
+                channel_key: 'api.vendor-a.com',
+                worker_name: null,
+                conflict_count: 1,
+                last_conflict_at: isoHours(-10),
+                last_conflict_reason: 'channel_min_interval',
+                last_conflict_scope: 'channel',
+                last_conflict_note: '人工重放后继续等待通道窗口',
+                delivered_at: null,
+                dead_lettered_at: null,
+                dead_letter_reason: null,
+                manual_replay_requested_at: isoMinutes(-14),
+                manual_replay_requested_by: 'ops.mock@example.com',
+                manual_replay_count: 2,
+                locked_at: null,
+                lock_expires_at: null,
+                lock_token: null,
+                reservation_acquired_at: isoMinutes(-14),
+                reservation_lock_token: null,
+                reservation_worker_name: null,
+                executed_at: isoMinutes(-14),
+                updated_at: isoMinutes(-11),
+                created_at: isoHours(-18),
+                attempts: [
+                    {
+                        id: 'mock-attempt-007-2',
+                        task_id: 'mock-task-007',
+                        attempt_no: 2,
+                        worker_name: 'worker-a',
+                        started_at: isoMinutes(-14),
+                        finished_at: isoMinutes(-14),
+                        success: false,
+                        response_status: 202,
+                        error_message: '人工重放后重新入队',
+                        duration_ms: 420
+                    }
+                ],
+                lock_state: 'unlocked',
+                reservation_state: { key: 'released_pending_cleanup', label: '占位残留', tone: 'warn' }
+            },
+            {
+                id: 'mock-task-008',
+                order_id: 'MOCK-ORD-008',
+                order: createOrder({
+                    id: 'MOCK-ORD-008',
+                    userId: 'user_henry',
+                    productName: 'Cursor API 发货',
+                    deliveryStatus: 'dead_letter',
+                    createdAt: isoHours(-12)
+                }),
+                target_url: '',
+                payload: { sku: 'cursor', account: 'henry@example.com' },
+                status: 'dead_letter',
+                attempt_count: 1,
+                max_attempts: 5,
+                next_attempt_at: null,
+                last_attempt_at: isoHours(-11),
+                last_error: '目标地址为空，无法发货',
+                last_response_status: null,
+                last_response_body: null,
+                dedupe_key: 'mock:delivery:008',
+                target_key: '',
+                channel_key: 'api.vendor-c.com',
+                worker_name: null,
+                conflict_count: 0,
+                last_conflict_at: null,
+                last_conflict_reason: null,
+                last_conflict_scope: null,
+                last_conflict_note: null,
+                delivered_at: null,
+                dead_lettered_at: isoHours(-11),
+                dead_letter_reason: 'missing_target',
+                manual_replay_requested_at: null,
+                manual_replay_requested_by: null,
+                manual_replay_count: 0,
+                locked_at: null,
+                lock_expires_at: null,
+                lock_token: null,
+                reservation_acquired_at: null,
+                reservation_lock_token: null,
+                reservation_worker_name: null,
+                executed_at: isoHours(-11),
+                updated_at: isoHours(-11),
+                created_at: isoHours(-12),
+                attempts: [
+                    {
+                        id: 'mock-attempt-008-1',
+                        task_id: 'mock-task-008',
+                        attempt_no: 1,
+                        worker_name: 'worker-c',
+                        started_at: isoHours(-11),
+                        finished_at: isoHours(-11),
+                        success: false,
+                        response_status: null,
+                        error_message: '目标地址为空',
+                        duration_ms: 112
+                    }
+                ],
+                lock_state: 'unlocked',
+                reservation_state: { key: 'none', label: '无占位', tone: 'muted' }
+            }
+        ];
+
+        const conflictRecords = [
+            { id: 'mock-conflict-001', task_id: 'mock-task-002', order_id: 'MOCK-ORD-002', scope: 'target', reason_key: 'target_max_inflight', detail: '目标并发已满，延后执行', target_key: 'user:bob@example.com', channel_key: 'api.vendor-a.com', worker_name: 'worker-a', lock_token: 'lock-mock-002', task_status: 'processing', next_attempt_at: isoMinutes(2), created_at: isoMinutes(-90) },
+            { id: 'mock-conflict-002', task_id: 'mock-task-002', order_id: 'MOCK-ORD-002', scope: 'channel', reason_key: 'channel_min_interval', detail: '通道冷却窗口未结束', target_key: 'user:bob@example.com', channel_key: 'api.vendor-a.com', worker_name: 'worker-a', lock_token: 'lock-mock-002', task_status: 'processing', next_attempt_at: isoMinutes(2), created_at: isoMinutes(-82) },
+            { id: 'mock-conflict-003', task_id: 'mock-task-003', order_id: 'MOCK-ORD-003', scope: 'target', reason_key: 'target_min_interval', detail: '同目标两次调用间隔过短', target_key: 'user:charlie@example.com', channel_key: 'api.vendor-a.com', worker_name: 'worker-a', lock_token: null, task_status: 'retry_waiting', next_attempt_at: isoMinutes(8), created_at: isoMinutes(-38) },
+            { id: 'mock-conflict-004', task_id: 'mock-task-004', order_id: 'MOCK-ORD-004', scope: 'channel', reason_key: 'channel_max_inflight', detail: '通道并发连续打满，触发死信策略', target_key: 'shop:region-hk', channel_key: 'api.vendor-b.com', worker_name: 'worker-b', lock_token: null, task_status: 'dead_letter', next_attempt_at: null, created_at: isoMinutes(-28) },
+            { id: 'mock-conflict-005', task_id: 'mock-task-004', order_id: 'MOCK-ORD-004', scope: 'channel', reason_key: 'channel_max_inflight', detail: '同通道短时间内再次冲突', target_key: 'shop:region-hk', channel_key: 'api.vendor-b.com', worker_name: 'worker-b', lock_token: null, task_status: 'dead_letter', next_attempt_at: null, created_at: isoHours(-3) },
+            { id: 'mock-conflict-006', task_id: 'mock-task-004', order_id: 'MOCK-ORD-004', scope: 'channel', reason_key: 'channel_max_inflight', detail: '通道热点持续升温', target_key: 'shop:region-hk', channel_key: 'api.vendor-b.com', worker_name: 'worker-b', lock_token: null, task_status: 'dead_letter', next_attempt_at: null, created_at: isoHours(-6) },
+            { id: 'mock-conflict-007', task_id: 'mock-task-006', order_id: 'MOCK-ORD-006', scope: 'manual', reason_key: 'manual_force_unlock', detail: '人工强制解锁 stale reservation', target_key: 'user:frank@example.com', channel_key: 'api.vendor-b.com', worker_name: 'ops.mock@example.com', lock_token: 'lock-stale-006', task_status: 'processing', next_attempt_at: isoMinutes(4), created_at: isoMinutes(-18) },
+            { id: 'mock-conflict-008', task_id: 'mock-task-006', order_id: 'MOCK-ORD-006', scope: 'target', reason_key: 'target_max_inflight', detail: '目标并发在多实例下被抢占', target_key: 'user:frank@example.com', channel_key: 'api.vendor-b.com', worker_name: 'worker-zombie', lock_token: 'lock-stale-006', task_status: 'processing', next_attempt_at: isoMinutes(4), created_at: isoHours(-26) },
+            { id: 'mock-conflict-009', task_id: 'mock-task-007', order_id: 'MOCK-ORD-007', scope: 'channel', reason_key: 'channel_min_interval', detail: '人工重放后仍需等待通道窗口', target_key: 'user:grace@example.com', channel_key: 'api.vendor-a.com', worker_name: 'worker-a', lock_token: null, task_status: 'requeued', next_attempt_at: isoMinutes(3), created_at: isoMinutes(-14) },
+            { id: 'mock-conflict-010', task_id: 'mock-task-007', order_id: 'MOCK-ORD-007', scope: 'manual', reason_key: 'manual_force_unlock', detail: '人工干预后重新排队', target_key: 'user:grace@example.com', channel_key: 'api.vendor-a.com', worker_name: 'ops.mock@example.com', lock_token: null, task_status: 'requeued', next_attempt_at: isoMinutes(3), created_at: isoHours(-10) },
+            { id: 'mock-conflict-011', task_id: 'mock-task-004', order_id: 'MOCK-ORD-004', scope: 'channel', reason_key: 'channel_max_inflight', detail: '近 72h 热通道仍有冲突残留', target_key: 'shop:region-hk', channel_key: 'api.vendor-b.com', worker_name: 'worker-b', lock_token: null, task_status: 'dead_letter', next_attempt_at: null, created_at: isoHours(-60) },
+            { id: 'mock-conflict-012', task_id: 'mock-task-008', order_id: 'MOCK-ORD-008', scope: 'target', reason_key: 'unknown_conflict', detail: '历史异常样例，用于 7d 趋势验证', target_key: 'user:henry@example.com', channel_key: 'api.vendor-c.com', worker_name: 'worker-c', lock_token: null, task_status: 'dead_letter', next_attempt_at: null, created_at: isoHours(-140) }
+        ].map((record) => ({
+            ...record,
+            strategy_snapshot: {
+                worker_parallelism: 2,
+                target_max_inflight: 1,
+                channel_max_inflight: 2,
+                conflict_backoff_seconds: 45
+            }
+        }));
+
+        const replayRecords = [
+            {
+                id: 'mock-replay-001',
+                created_at: isoMinutes(-14),
+                admin_id: 'admin-mock-1',
+                admin_email: 'ops.mock@example.com',
+                task_id: 'mock-task-007',
+                order_id: 'MOCK-ORD-007',
+                previous_status: 'retry_waiting',
+                next_status: 'requeued',
+                note: '人工确认通道恢复后重新排队'
+            },
+            {
+                id: 'mock-replay-002',
+                created_at: isoHours(-8),
+                admin_id: 'admin-mock-2',
+                admin_email: 'qa.mock@example.com',
+                task_id: 'mock-task-004',
+                order_id: 'MOCK-ORD-004',
+                previous_status: 'dead_letter',
+                next_status: 'requeued',
+                note: '模拟验收：死信回放'
+            },
+            {
+                id: 'mock-replay-003',
+                created_at: isoHours(-3),
+                admin_id: 'admin-mock-1',
+                admin_email: 'ops.mock@example.com',
+                task_id: 'mock-task-002',
+                order_id: 'MOCK-ORD-002',
+                previous_status: 'retry_waiting',
+                next_status: 'processing',
+                note: '人工触发二次尝试'
+            }
+        ];
+
+        return {
+            strategy: {
+                max_attempts: 5,
+                sweep_interval_ms: 10000,
+                sweep_batch_size: 10,
+                worker_parallelism: 2,
+                lease_seconds: 120,
+                http_timeout_ms: 15000,
+                base_backoff_seconds: 30,
+                max_backoff_seconds: 1800,
+                target_min_interval_ms: 6000,
+                target_max_inflight: 1,
+                channel_min_interval_ms: 4000,
+                channel_max_inflight: 2,
+                conflict_backoff_seconds: 45,
+                conflict_dead_letter_threshold: 5
+            },
+            tasks,
+            conflictRecords: conflictRecords.map((record) => ({
+                ...record,
+                conflict_reason: reasonMeta(record.reason_key)
+            })),
+            replayRecords,
+            nextReplayId: 4,
+            nextConflictId: 13
+        };
+    },
+
+    ensureDeliveryMockStore: function () {
+        if (!this.deliveryMockStore) {
+            this.deliveryMockStore = this.buildDeliveryMockStore();
+        }
+        return this.deliveryMockStore;
+    },
+
+    paginateDeliveryMockRows: function (rows = [], page = 1, pageSize = 20) {
+        const normalizedPageSize = Math.max(1, Number(pageSize || 20));
+        const normalizedPage = Math.max(1, Number(page || 1));
+        const total = rows.length;
+        const start = (normalizedPage - 1) * normalizedPageSize;
+        return {
+            page: normalizedPage,
+            pageSize: normalizedPageSize,
+            total,
+            rows: rows.slice(start, start + normalizedPageSize)
+        };
+    },
+
+    matchesDeliveryMockTaskIdentity: function (task = {}, identity = null) {
+        if (!identity) return true;
+        const taskId = String(task.id || '').trim();
+        const orderId = String(task.order_id || '').trim();
+        if (identity.taskId && taskId !== String(identity.taskId || '').trim()) return false;
+        if (identity.orderId && orderId !== String(identity.orderId || '').trim()) return false;
+        return true;
+    },
+
+    matchesDeliveryMockTaskQuery: function (task = {}, query = '') {
+        const normalized = String(query || '').trim().toLowerCase();
+        if (!normalized) return true;
+        const haystack = [
+            task.id,
+            task.order_id,
+            task.target_url,
+            task.target_key,
+            task.channel_key,
+            task.dedupe_key,
+            task.worker_name,
+            task.last_error,
+            task.last_conflict_reason,
+            task.last_conflict_note,
+            task.order?.snapshot_product_name,
+            task.order?.user_id,
+            task.dead_letter_reason
+        ]
+            .map((value) => String(value || '').toLowerCase())
+            .filter(Boolean)
+            .join('\n');
+        return haystack.includes(normalized);
+    },
+
+    matchesDeliveryMockConflictReason: function (record = {}, reasonFilter = 'all') {
+        const normalized = this.normalizeDeliveryConflictAuditReasonFilter(reasonFilter);
+        const reasonKey = String(record.reason_key || '').trim().toLowerCase();
+        if (normalized === 'all') return true;
+        if (normalized === 'target_conflicts') return ['target_max_inflight', 'target_min_interval'].includes(reasonKey);
+        if (normalized === 'channel_conflicts') return ['channel_max_inflight', 'channel_min_interval'].includes(reasonKey);
+        return reasonKey === normalized;
+    },
+
+    matchesDeliveryMockConflictBucket: function (record = {}, bucket = null) {
+        if (!bucket?.startAt || !bucket?.endAt) return true;
+        const createdAt = new Date(record.created_at || 0).getTime();
+        const startAt = new Date(bucket.startAt || 0).getTime();
+        const endAt = new Date(bucket.endAt || 0).getTime();
+        if (!Number.isFinite(createdAt) || !Number.isFinite(startAt) || !Number.isFinite(endAt)) return false;
+        return createdAt >= startAt && createdAt < endAt;
+    },
+
+    matchesDeliveryMockConflictQuery: function (record = {}, query = '') {
+        const normalized = String(query || '').trim().toLowerCase();
+        if (!normalized) return true;
+        const haystack = [
+            record.id,
+            record.task_id,
+            record.order_id,
+            record.detail,
+            record.target_key,
+            record.channel_key,
+            record.reason_key,
+            record.worker_name,
+            record.task?.order?.snapshot_product_name,
+            record.task?.order?.user_id
+        ]
+            .map((value) => String(value || '').toLowerCase())
+            .filter(Boolean)
+            .join('\n');
+        return haystack.includes(normalized);
+    },
+
+    matchesDeliveryMockDeadLetterReason: function (task = {}, reason = 'all') {
+        const normalized = String(reason || 'all').trim().toLowerCase();
+        if (normalized === 'all') return true;
+        return String(task.dead_letter_reason || '').trim().toLowerCase() === normalized;
+    },
+
+    matchesDeliveryMockLockState: function (task = {}, lockState = 'all') {
+        const normalized = String(lockState || 'all').trim().toLowerCase();
+        const taskLockState = String(task.lock_state || '').trim().toLowerCase();
+        if (normalized === 'all') {
+            return ['locked_active', 'locked_stale', 'lock_missing', 'locked_unknown'].includes(taskLockState);
+        }
+        if (normalized === 'active') return taskLockState === 'locked_active';
+        if (normalized === 'stale') return ['locked_stale', 'lock_missing', 'locked_unknown'].includes(taskLockState);
+        return true;
+    },
+
+    hasDeliveryMockReservationSnapshot: function (task = {}) {
+        const reservationStateKey = String(task.reservation_state?.key || '').trim().toLowerCase();
+        return reservationStateKey && reservationStateKey !== 'none';
+    },
+
+    buildDeliveryMockAnalyticsWindowRange: function (windowKey = '24h') {
+        const config = this.getDeliveryAnalyticsWindowConfig(windowKey);
+        const bucketHours = Math.max(1, Number(config.bucketHours || 1));
+        const bucketCount = Math.max(1, Math.ceil(Number(config.hours || 24) / bucketHours));
+        const end = new Date();
+        end.setMinutes(0, 0, 0);
+        end.setHours(end.getHours() - (end.getHours() % bucketHours), 0, 0, 0);
+        const start = new Date(end.getTime() - (bucketCount - 1) * bucketHours * 60 * 60 * 1000);
+
+        return {
+            key: config.key,
+            label: config.label,
+            description: config.description,
+            hours: Number(config.hours || 24),
+            bucket_hours: bucketHours,
+            bucket_count: bucketCount,
+            start_at: start.toISOString(),
+            end_at: end.toISOString()
+        };
+    },
+
+    buildDeliveryMockConflictAnalytics: function (records = [], reservationTasks = [], windowKey = '24h') {
+        const range = this.buildDeliveryMockAnalyticsWindowRange(windowKey);
+        const bucketHours = Math.max(1, Number(range.bucket_hours || 1));
+        const bucketCount = Math.max(1, Number(range.bucket_count || 1));
+        const bucketMs = bucketHours * 60 * 60 * 1000;
+        const startAtMs = new Date(range.start_at).getTime();
+        const buckets = Array.from({ length: bucketCount }, (_, index) => {
+            const bucketAt = new Date(startAtMs + index * bucketMs);
+            return {
+                bucket_at: bucketAt.toISOString(),
+                bucket_end_at: new Date(bucketAt.getTime() + bucketMs).toISOString(),
+                label: bucketHours >= 24
+                    ? `${String(bucketAt.getMonth() + 1).padStart(2, '0')}-${String(bucketAt.getDate()).padStart(2, '0')}`
+                    : `${String(bucketAt.getMonth() + 1).padStart(2, '0')}-${String(bucketAt.getDate()).padStart(2, '0')} ${String(bucketAt.getHours()).padStart(2, '0')}:00`,
+                total: 0,
+                target: 0,
+                channel: 0,
+                manual: 0,
+                dead_letter: 0
+            };
+        });
+
+        const inWindowRecords = records.filter((record) => {
+            const createdAt = new Date(record.created_at || 0).getTime();
+            return Number.isFinite(createdAt) && createdAt >= startAtMs && createdAt < (new Date(range.end_at).getTime() + bucketMs);
+        });
+
+        inWindowRecords.forEach((record) => {
+            const createdAt = new Date(record.created_at || 0).getTime();
+            const bucketIndex = Math.floor((createdAt - startAtMs) / bucketMs);
+            const bucket = buckets[bucketIndex];
+            if (!bucket) return;
+            bucket.total += 1;
+            const scope = String(record.scope || '').trim().toLowerCase();
+            if (scope === 'target') bucket.target += 1;
+            if (scope === 'channel') bucket.channel += 1;
+            if (scope === 'manual') bucket.manual += 1;
+            if (String(record.task_status || '').trim().toLowerCase() === 'dead_letter') bucket.dead_letter += 1;
+        });
+
+        const totals = buckets.reduce((acc, bucket) => {
+            acc.total_conflicts += Number(bucket.total || 0);
+            acc.target_conflicts += Number(bucket.target || 0);
+            acc.channel_conflicts += Number(bucket.channel || 0);
+            acc.manual_conflicts += Number(bucket.manual || 0);
+            acc.dead_letter_conflicts += Number(bucket.dead_letter || 0);
+            return acc;
+        }, {
+            total_conflicts: 0,
+            target_conflicts: 0,
+            channel_conflicts: 0,
+            manual_conflicts: 0,
+            dead_letter_conflicts: 0
+        });
+
+        const hottestBucket = buckets.reduce((current, bucket) => (
+            Number(bucket.total || 0) > Number(current?.total || 0) ? bucket : current
+        ), null);
+        const buildHotspots = (keyField) => {
+            const map = new Map();
+            inWindowRecords.forEach((record) => {
+                const key = String(record[keyField] || '').trim().toLowerCase();
+                if (!key) return;
+                if (!map.has(key)) {
+                    map.set(key, {
+                        key,
+                        total_conflicts: 0,
+                        dead_letter_count: 0,
+                        manual_count: 0,
+                        active_reservations: 0,
+                        latest_at: null,
+                        latest_reason_key: null,
+                        latest_reason_label: null
+                    });
+                }
+                const item = map.get(key);
+                item.total_conflicts += 1;
+                if (String(record.task_status || '').trim().toLowerCase() === 'dead_letter') item.dead_letter_count += 1;
+                if (String(record.scope || '').trim().toLowerCase() === 'manual') item.manual_count += 1;
+                if (!item.latest_at || new Date(record.created_at || 0).getTime() > new Date(item.latest_at || 0).getTime()) {
+                    item.latest_at = record.created_at;
+                    item.latest_reason_key = record.reason_key;
+                    item.latest_reason_label = this.getDeliveryMockConflictReasonMeta(record.reason_key).label;
+                }
+            });
+
+            reservationTasks.forEach((task) => {
+                if (String(task.reservation_state?.key || '').trim().toLowerCase() !== 'active') return;
+                const key = String(task[keyField] || '').trim().toLowerCase();
+                if (!key) return;
+                if (!map.has(key)) {
+                    map.set(key, {
+                        key,
+                        total_conflicts: 0,
+                        dead_letter_count: 0,
+                        manual_count: 0,
+                        active_reservations: 0,
+                        latest_at: null,
+                        latest_reason_key: null,
+                        latest_reason_label: null
+                    });
+                }
+                map.get(key).active_reservations += 1;
+            });
+
+            return [...map.values()]
+                .sort((left, right) => (
+                    Number(right.total_conflicts || 0) - Number(left.total_conflicts || 0)
+                    || Number(right.active_reservations || 0) - Number(left.active_reservations || 0)
+                ))
+                .slice(0, 6);
+        };
+
+        return {
+            window: {
+                key: range.key,
+                label: range.label,
+                description: range.description,
+                hours: range.hours,
+                bucket_hours: range.bucket_hours,
+                bucket_count: range.bucket_count,
+                start_at: range.start_at,
+                end_at: range.end_at
+            },
+            summary: {
+                window_key: range.key,
+                window_label: range.label,
+                window_description: range.description,
+                hours: range.hours,
+                bucket_hours: range.bucket_hours,
+                bucket_count: range.bucket_count,
+                total_conflicts: totals.total_conflicts,
+                target_conflicts: totals.target_conflicts,
+                channel_conflicts: totals.channel_conflicts,
+                manual_conflicts: totals.manual_conflicts,
+                dead_letter_conflicts: totals.dead_letter_conflicts,
+                hottest_hour_label: hottestBucket?.label || null,
+                hottest_hour_total: Number(hottestBucket?.total || 0),
+                target_hotspots: buildHotspots('target_key').length,
+                channel_hotspots: buildHotspots('channel_key').length
+            },
+            trend: {
+                window_key: range.key,
+                window_label: range.label,
+                window_description: range.description,
+                hours: range.hours,
+                bucket_hours: range.bucket_hours,
+                bucket_count: range.bucket_count,
+                range_start_at: range.start_at,
+                range_end_at: range.end_at,
+                max_total: buckets.reduce((max, bucket) => Math.max(max, Number(bucket.total || 0)), 1),
+                hottest_hour_label: hottestBucket?.label || null,
+                hottest_hour_total: Number(hottestBucket?.total || 0),
+                ...totals,
+                buckets
+            },
+            hotspots: {
+                targets: buildHotspots('target_key'),
+                channels: buildHotspots('channel_key')
+            }
+        };
+    },
+
+    summarizeDeliveryMockDeadLetterTasks: function (tasks = []) {
+        return tasks.reduce((summary, task) => {
+            const key = String(task.dead_letter_reason || 'unknown').trim().toLowerCase() || 'unknown';
+            summary.total += 1;
+            summary[key] = Number(summary[key] || 0) + 1;
+            return summary;
+        }, {
+            total: 0,
+            manual: 0,
+            missing_target: 0,
+            timeout: 0,
+            upstream_4xx: 0,
+            upstream_5xx: 0,
+            max_attempts: 0,
+            conflict_strategy: 0,
+            network_failure: 0,
+            unknown: 0
+        });
+    },
+
+    summarizeDeliveryMockLockTasks: function (tasks = []) {
+        return tasks.reduce((summary, task) => {
+            const lockState = String(task.lock_state || '').trim().toLowerCase();
+            summary.total += 1;
+            if (lockState === 'locked_active') summary.active += 1;
+            if (lockState === 'locked_stale' || lockState === 'locked_unknown') summary.stale += 1;
+            if (lockState === 'lock_missing') summary.missing += 1;
+            if (task.manual_replay_requested_at) summary.manual_replay_requested += 1;
+            return summary;
+        }, {
+            total: 0,
+            active: 0,
+            stale: 0,
+            missing: 0,
+            manual_replay_requested: 0,
+            force_unlock_candidates: tasks.filter((task) => ['locked_stale', 'lock_missing', 'locked_unknown'].includes(String(task.lock_state || '').trim().toLowerCase())).length
+        });
+    },
+
+    summarizeDeliveryMockReservationTasks: function (tasks = []) {
+        const uniqueTargets = new Set();
+        const uniqueChannels = new Set();
+        let oldestActiveAt = null;
+        const summary = {
+            total: tasks.length,
+            active: 0,
+            token_drift: 0,
+            worker_drift: 0,
+            stale_lock: 0,
+            missing_lock: 0,
+            released_pending_cleanup: 0,
+            incomplete: 0,
+            drift_total: 0,
+            distinct_targets: 0,
+            distinct_channels: 0,
+            oldest_active_at: null
+        };
+
+        tasks.forEach((task) => {
+            const key = String(task.reservation_state?.key || '').trim().toLowerCase();
+            if (task.target_key) uniqueTargets.add(task.target_key);
+            if (task.channel_key) uniqueChannels.add(task.channel_key);
+            if (Object.prototype.hasOwnProperty.call(summary, key)) {
+                summary[key] += 1;
+            }
+            if (['token_drift', 'worker_drift', 'stale_lock', 'missing_lock', 'released_pending_cleanup', 'incomplete'].includes(key)) {
+                summary.drift_total += 1;
+            }
+            if (key === 'active' && task.reservation_acquired_at) {
+                const timestamp = new Date(task.reservation_acquired_at).getTime();
+                if (!oldestActiveAt || timestamp < oldestActiveAt) oldestActiveAt = timestamp;
+            }
+        });
+
+        summary.distinct_targets = uniqueTargets.size;
+        summary.distinct_channels = uniqueChannels.size;
+        summary.oldest_active_at = oldestActiveAt ? new Date(oldestActiveAt).toISOString() : null;
+        return summary;
+    },
+
+    summarizeDeliveryMockReplayRecords: function (records = []) {
+        const admins = new Set();
+        let latestReplayAt = null;
+        const summary = {
+            total: records.length,
+            delivered: 0,
+            dead_letter: 0,
+            pending: 0,
+            retry_waiting: 0,
+            missing_task: 0,
+            admin_count: 0,
+            latest_replay_at: null
+        };
+
+        records.forEach((record) => {
+            if (record.admin_email || record.admin_id) admins.add(record.admin_email || record.admin_id);
+            const timestamp = new Date(record.created_at || 0).getTime();
+            if (Number.isFinite(timestamp) && (!latestReplayAt || timestamp > latestReplayAt)) latestReplayAt = timestamp;
+            const status = String(record.task?.status || '').trim().toLowerCase();
+            if (!status) {
+                summary.missing_task += 1;
+            } else if (Object.prototype.hasOwnProperty.call(summary, status)) {
+                summary[status] += 1;
+            }
+        });
+
+        summary.admin_count = admins.size;
+        summary.latest_replay_at = latestReplayAt ? new Date(latestReplayAt).toISOString() : null;
+        return summary;
+    },
+
+    summarizeDeliveryMockConflictAudits: function (records = []) {
+        let latestConflictAt = null;
+        const summary = {
+            total: records.length,
+            target_max_inflight: 0,
+            target_min_interval: 0,
+            channel_max_inflight: 0,
+            channel_min_interval: 0,
+            manual_force_unlock: 0,
+            dead_letter: 0,
+            latest_conflict_at: null
+        };
+
+        records.forEach((record) => {
+            const reasonKey = String(record.reason_key || '').trim().toLowerCase();
+            if (Object.prototype.hasOwnProperty.call(summary, reasonKey)) {
+                summary[reasonKey] += 1;
+            }
+            if (String(record.task_status || '').trim().toLowerCase() === 'dead_letter') {
+                summary.dead_letter += 1;
+            }
+            const timestamp = new Date(record.created_at || 0).getTime();
+            if (Number.isFinite(timestamp) && (!latestConflictAt || timestamp > latestConflictAt)) {
+                latestConflictAt = timestamp;
+            }
+        });
+
+        summary.latest_conflict_at = latestConflictAt ? new Date(latestConflictAt).toISOString() : null;
+        return summary;
+    },
+
+    buildDeliveryMockSummary: function (tasks = [], analytics = null, reservationSummary = null) {
+        const summary = tasks.reduce((acc, task) => {
+            const status = String(task.status || '').trim().toLowerCase();
+            acc.total += 1;
+            if (Object.prototype.hasOwnProperty.call(acc, status)) {
+                acc[status] += 1;
+            }
+            if (Number(task.conflict_count || 0) > 0) acc.conflict_tasks += 1;
+            if (Number(task.manual_replay_count || 0) > 0) acc.manual_replays += 1;
+            if (String(task.lock_state || '').trim().toLowerCase() === 'locked_active') acc.locked_active += 1;
+            if (['locked_stale', 'locked_unknown'].includes(String(task.lock_state || '').trim().toLowerCase())) acc.locked_stale += 1;
+            if (String(task.lock_state || '').trim().toLowerCase() === 'lock_missing') acc.lock_missing += 1;
+            return acc;
+        }, {
+            total: 0,
+            pending: 0,
+            processing: 0,
+            retry_waiting: 0,
+            requeued: 0,
+            dead_letter: 0,
+            delivered: 0,
+            conflict_tasks: 0,
+            manual_replays: 0,
+            locked_active: 0,
+            locked_stale: 0,
+            lock_missing: 0,
+            retryable: 0,
+            force_unlock_candidates: 0,
+            reservation_active: 0,
+            reservation_drift: 0,
+            reservation_targets: 0,
+            reservation_channels: 0,
+            recent_conflicts: 0,
+            recent_conflicts_label: `${this.getDeliveryAnalyticsWindowConfig().label} 冲突`
+        });
+
+        summary.retryable = summary.pending + summary.processing + summary.retry_waiting + summary.requeued;
+        summary.force_unlock_candidates = summary.locked_stale + summary.lock_missing;
+        if (reservationSummary) {
+            summary.reservation_active = Number(reservationSummary.active || 0);
+            summary.reservation_drift = Number(reservationSummary.drift_total || 0);
+            summary.reservation_targets = Number(reservationSummary.distinct_targets || 0);
+            summary.reservation_channels = Number(reservationSummary.distinct_channels || 0);
+        }
+        if (analytics?.summary) {
+            summary.recent_conflicts = Number(analytics.summary.total_conflicts || 0);
+            summary.recent_conflicts_label = `${analytics.summary.window_label || this.getDeliveryAnalyticsWindowConfig().label} 冲突`;
+        }
+        return summary;
+    },
+
+    buildDeliveryMockResponse: function (params = {}) {
+        const store = this.ensureDeliveryMockStore();
+        const tasks = this.cloneDeliveryMockValue(store.tasks || []);
+        const taskMap = new Map(tasks.map((task) => [task.id, task]));
+        const query = String(params.query || '').trim();
+        const status = String(params.status || 'all').trim().toLowerCase() || 'all';
+        const deadLetterReason = String(params.deadLetterReason || 'all').trim().toLowerCase() || 'all';
+        const lockState = String(params.lockState || 'all').trim().toLowerCase() || 'all';
+        const analyticsWindow = this.getDeliveryAnalyticsWindowConfig(params.analyticsWindow).key;
+        const taskIdentity = params.taskIdentity || null;
+        const conflictBucket = params.conflictBucket?.startAt && params.conflictBucket?.endAt ? params.conflictBucket : null;
+        const sourceConflictRecords = this.cloneDeliveryMockValue(store.conflictRecords || []).map((record) => ({
+            ...record,
+            task: taskMap.get(record.task_id) || null,
+            order: taskMap.get(record.task_id)?.order || null,
+            conflict_reason: this.getDeliveryMockConflictReasonMeta(record.reason_key)
+        }));
+
+        const bucketScopedRecords = sourceConflictRecords.filter((record) => this.matchesDeliveryMockConflictBucket(record, conflictBucket));
+        const bucketTaskIds = new Set(bucketScopedRecords.map((record) => String(record.task_id || '').trim()).filter(Boolean));
+        const bucketOrderIds = new Set(bucketScopedRecords.map((record) => String(record.order_id || '').trim()).filter(Boolean));
+
+        const matchesSharedTaskFilter = (task) => {
+            if (!this.matchesDeliveryMockTaskQuery(task, query)) return false;
+            if (!this.matchesDeliveryMockTaskIdentity(task, taskIdentity)) return false;
+            if (!conflictBucket) return true;
+            return bucketTaskIds.has(String(task.id || '').trim()) || bucketOrderIds.has(String(task.order_id || '').trim());
+        };
+        const sharedTasks = tasks.filter(matchesSharedTaskFilter)
+            .sort((left, right) => new Date(right.updated_at || right.created_at || 0).getTime() - new Date(left.updated_at || left.created_at || 0).getTime());
+
+        const mainTasks = sharedTasks.filter((task) => status === 'all' || String(task.status || '').trim().toLowerCase() === status);
+        const mainPage = this.paginateDeliveryMockRows(mainTasks, params.page || 1, params.pageSize || this.deliveryTaskPageSize);
+
+        const deadLetterTasksAll = sharedTasks.filter((task) => String(task.status || '').trim().toLowerCase() === 'dead_letter')
+            .filter((task) => this.matchesDeliveryMockDeadLetterReason(task, deadLetterReason));
+        const deadLetterPage = this.paginateDeliveryMockRows(deadLetterTasksAll, params.deadLetterPage || 1, params.deadLetterPageSize || this.deliveryDeadLetterPageSize);
+
+        const lockTasksAll = sharedTasks.filter((task) => this.matchesDeliveryMockLockState(task, lockState));
+        const lockPage = this.paginateDeliveryMockRows(lockTasksAll, params.lockPage || 1, params.lockPageSize || this.deliveryLockConflictPageSize);
+
+        const reservationTasksAll = sharedTasks.filter((task) => this.hasDeliveryMockReservationSnapshot(task));
+        const reservationTasks = reservationTasksAll.slice(0, 8);
+
+        const replayRecordsAll = this.cloneDeliveryMockValue(store.replayRecords || [])
+            .map((record) => ({
+                ...record,
+                task: taskMap.get(record.task_id) || null,
+                order: taskMap.get(record.task_id)?.order || null
+            }))
+            .filter((record) => {
+                if (!record.task) return false;
+                return matchesSharedTaskFilter(record.task);
+            })
+            .sort((left, right) => new Date(right.created_at || 0).getTime() - new Date(left.created_at || 0).getTime());
+        const replayPage = this.paginateDeliveryMockRows(replayRecordsAll, params.replayPage || 1, params.replayPageSize || this.deliveryReplayPageSize);
+
+        const conflictRecordsSource = sourceConflictRecords
+            .filter((record) => this.matchesDeliveryMockConflictQuery(record, query))
+            .filter((record) => this.matchesDeliveryMockTaskIdentity(record.task || {}, taskIdentity))
+            .filter((record) => this.matchesDeliveryMockConflictBucket(record, conflictBucket))
+            .sort((left, right) => new Date(right.created_at || 0).getTime() - new Date(left.created_at || 0).getTime());
+        const conflictRecords = conflictRecordsSource
+            .filter((record) => this.matchesDeliveryMockConflictReason(record, params.conflictReason))
+            .filter((record) => {
+                const targetQuery = String(params.conflictTarget || '').trim().toLowerCase();
+                return !targetQuery || String(record.target_key || '').trim().toLowerCase().includes(targetQuery);
+            })
+            .filter((record) => {
+                const channelQuery = String(params.conflictChannel || '').trim().toLowerCase();
+                return !channelQuery || String(record.channel_key || '').trim().toLowerCase().includes(channelQuery);
+            });
+
+        const analyticsRecords = sourceConflictRecords
+            .filter((record) => this.matchesDeliveryMockConflictQuery(record, query))
+            .filter((record) => this.matchesDeliveryMockTaskIdentity(record.task || {}, taskIdentity));
+        const analytics = this.buildDeliveryMockConflictAnalytics(analyticsRecords, reservationTasksAll, analyticsWindow);
+        const reservationSummary = this.summarizeDeliveryMockReservationTasks(reservationTasksAll);
+
+        return {
+            success: true,
+            page: mainPage.page,
+            pageSize: mainPage.pageSize,
+            total: mainPage.total,
+            summary: this.buildDeliveryMockSummary(tasks, analytics, reservationSummary),
+            filters: {
+                query,
+                analyticsWindow,
+                conflictBucket: conflictBucket
+                    ? {
+                        start_at: conflictBucket.startAt,
+                        end_at: conflictBucket.endAt,
+                        record_count: bucketScopedRecords.length,
+                        task_count: bucketTaskIds.size,
+                        order_count: bucketOrderIds.size
+                    }
+                    : null,
+                taskIdentity: taskIdentity && (taskIdentity.taskId || taskIdentity.orderId) ? taskIdentity : null,
+                conflictAudit: {
+                    reason: this.normalizeDeliveryConflictAuditReasonFilter(params.conflictReason),
+                    target_query: String(params.conflictTarget || '').trim(),
+                    channel_query: String(params.conflictChannel || '').trim()
+                }
+            },
+            tasks: mainPage.rows,
+            deadLetter: {
+                page: deadLetterPage.page,
+                pageSize: deadLetterPage.pageSize,
+                total: deadLetterPage.total,
+                summary: this.summarizeDeliveryMockDeadLetterTasks(deadLetterTasksAll),
+                reason: deadLetterReason,
+                tasks: deadLetterPage.rows
+            },
+            lockConflicts: {
+                page: lockPage.page,
+                pageSize: lockPage.pageSize,
+                total: lockPage.total,
+                summary: this.summarizeDeliveryMockLockTasks(lockTasksAll),
+                lockState,
+                tasks: lockPage.rows
+            },
+            reservations: {
+                total: reservationTasksAll.length,
+                summary: reservationSummary,
+                tasks: reservationTasks
+            },
+            analytics,
+            replay: {
+                page: replayPage.page,
+                pageSize: replayPage.pageSize,
+                total: replayPage.total,
+                summary: this.summarizeDeliveryMockReplayRecords(replayRecordsAll),
+                records: replayPage.rows
+            },
+            conflicts: {
+                total: conflictRecords.length,
+                sourceTotal: conflictRecordsSource.length,
+                filters: {
+                    reason: this.normalizeDeliveryConflictAuditReasonFilter(params.conflictReason),
+                    target_query: String(params.conflictTarget || '').trim(),
+                    channel_query: String(params.conflictChannel || '').trim()
+                },
+                summary: this.summarizeDeliveryMockConflictAudits(conflictRecords),
+                records: conflictRecords
+            }
+        };
+    },
+
+    performDeliveryMockTaskAction: async function (taskId, action, note = '') {
+        const store = this.ensureDeliveryMockStore();
+        const task = (store.tasks || []).find((item) => String(item.id || '').trim() === String(taskId || '').trim());
+        if (!task) {
+            throw new Error('模拟任务不存在');
+        }
+
+        const nowIso = new Date().toISOString();
+        const nextReplayId = `mock-replay-${String(store.nextReplayId || 1).padStart(3, '0')}`;
+        const nextConflictId = `mock-conflict-${String(store.nextConflictId || 1).padStart(3, '0')}`;
+        const applyTaskStatus = (nextStatus, orderStatus = nextStatus) => {
+            task.status = nextStatus;
+            if (task.order) task.order.delivery_status = orderStatus;
+            task.updated_at = nowIso;
+        };
+
+        if (action === 'requeue') {
+            applyTaskStatus('requeued');
+            task.next_attempt_at = new Date(Date.now() + 3 * 60 * 1000).toISOString();
+            task.last_error = note || '模拟验收：重新入队';
+            task.lock_state = 'unlocked';
+        } else if (action === 'replay') {
+            const previousStatus = task.status;
+            applyTaskStatus('requeued');
+            task.manual_replay_count = Number(task.manual_replay_count || 0) + 1;
+            task.manual_replay_requested_at = nowIso;
+            task.manual_replay_requested_by = 'ops.mock@example.com';
+            task.next_attempt_at = new Date(Date.now() + 2 * 60 * 1000).toISOString();
+            task.last_error = note || '模拟验收：人工重放';
+            store.replayRecords.unshift({
+                id: nextReplayId,
+                created_at: nowIso,
+                admin_id: 'admin-mock-1',
+                admin_email: 'ops.mock@example.com',
+                task_id: task.id,
+                order_id: task.order_id,
+                previous_status: previousStatus,
+                next_status: task.status,
+                note: note || '模拟验收：人工重放'
+            });
+            store.nextReplayId = Number(store.nextReplayId || 1) + 1;
+        } else if (action === 'mark_delivered') {
+            applyTaskStatus('delivered');
+            task.delivered_at = nowIso;
+            task.next_attempt_at = null;
+            task.last_error = null;
+            task.lock_token = null;
+            task.lock_expires_at = null;
+            task.locked_at = null;
+            task.lock_state = 'unlocked';
+            task.reservation_acquired_at = null;
+            task.reservation_lock_token = null;
+            task.reservation_worker_name = null;
+            task.reservation_state = { key: 'none', label: '无占位', tone: 'muted' };
+        } else if (action === 'force_unlock') {
+            task.lock_token = null;
+            task.lock_expires_at = null;
+            task.locked_at = null;
+            task.lock_state = 'lock_missing';
+            task.last_error = note || '模拟验收：人工强制解锁';
+            task.last_conflict_at = nowIso;
+            task.last_conflict_reason = 'manual_force_unlock';
+            task.last_conflict_scope = 'manual';
+            task.last_conflict_note = note || '模拟验收：人工强制解锁';
+            task.conflict_count = Number(task.conflict_count || 0) + 1;
+            task.reservation_state = { key: 'released_pending_cleanup', label: '占位残留', tone: 'warn' };
+            store.conflictRecords.unshift({
+                id: nextConflictId,
+                task_id: task.id,
+                order_id: task.order_id,
+                scope: 'manual',
+                reason_key: 'manual_force_unlock',
+                detail: note || '模拟验收：人工强制解锁',
+                strategy_snapshot: this.cloneDeliveryMockValue(store.strategy),
+                target_key: task.target_key,
+                channel_key: task.channel_key,
+                worker_name: 'ops.mock@example.com',
+                lock_token: task.reservation_lock_token || null,
+                task_status: task.status,
+                next_attempt_at: task.next_attempt_at,
+                created_at: nowIso,
+                conflict_reason: this.getDeliveryMockConflictReasonMeta('manual_force_unlock')
+            });
+            store.nextConflictId = Number(store.nextConflictId || 1) + 1;
+        } else if (action === 'mark_dead_letter') {
+            applyTaskStatus('dead_letter');
+            task.dead_lettered_at = nowIso;
+            task.dead_letter_reason = 'manual';
+            task.next_attempt_at = null;
+            task.last_error = note || '模拟验收：人工标记死信';
+        } else {
+            throw new Error('模拟模式暂不支持该动作');
+        }
+
+        return {
+            success: true,
+            message: `模拟验收：已执行 ${action}`
+        };
     },
 
     copyTextToClipboard: async function (content) {
@@ -2716,6 +4087,7 @@ Example output format:
 
         const breadcrumbs = this.buildDeliveryActiveFilterBreadcrumbs();
         const restoreLinkMeta = this.getDeliveryRestoreLinkFeedbackMeta();
+        const mockModeNote = this.getDeliveryMockModeNote();
         const restoreLinkButtonClass = restoreLinkMeta.tone === 'success'
             ? 'shop-delivery-inline-btn shop-delivery-inline-btn--success'
             : (restoreLinkMeta.tone === 'danger'
@@ -2726,6 +4098,7 @@ Example output format:
                 <div class="shop-delivery-filter-banner shop-delivery-filter-banner--idle">
                     <div class="shop-delivery-filter-stack">
                         <span class="shop-delivery-table-note">当前未联动筛选履约页。你可以输入关键字，或直接点击下方热点、趋势柱、冲突审计记录，把目标 / 通道 / 冲突时段 / 任务锁定回填到任务、死信、锁冲突和占位面板里。</span>
+                        ${mockModeNote ? `<span class="shop-delivery-table-note shop-delivery-table-note--soft">${this.escapeHtml(mockModeNote)}</span>` : ''}
                         <span class="shop-delivery-table-note shop-delivery-table-note--soft">${this.escapeHtml(restoreLinkMeta.note)}</span>
                     </div>
                     <div class="shop-delivery-controls shop-delivery-controls--banner">
@@ -2745,6 +4118,7 @@ Example output format:
                     <div class="shop-delivery-filter-crumbs">
                         ${breadcrumbs.map((crumb) => this.renderDeliveryFilterBreadcrumb(crumb)).join('')}
                     </div>
+                    ${mockModeNote ? `<span class="shop-delivery-table-note shop-delivery-table-note--soft">${this.escapeHtml(mockModeNote)}</span>` : ''}
                     <span class="shop-delivery-table-note shop-delivery-table-note--soft">${this.escapeHtml(restoreLinkMeta.note)}</span>
                 </div>
                 <div class="shop-delivery-controls shop-delivery-controls--banner">
@@ -4052,6 +5426,12 @@ Example output format:
     },
 
     loadDeliveryStrategy: async function (headers = null) {
+        if (this.isDeliveryMockModeEnabled()) {
+            const config = this.cloneDeliveryMockValue(this.ensureDeliveryMockStore().strategy || {});
+            this.renderDeliveryStrategy(config);
+            return config;
+        }
+
         const requestHeaders = headers || await this.getAdminAuthHeaders();
         const response = await fetch('/api/admin/shop/delivery-strategy', {
             method: 'GET',
@@ -4076,6 +5456,18 @@ Example output format:
             if (saveButton) {
                 saveButton.disabled = true;
                 saveButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 保存中...';
+            }
+
+            if (this.isDeliveryMockModeEnabled()) {
+                const store = this.ensureDeliveryMockStore();
+                store.strategy = {
+                    ...store.strategy,
+                    ...this.getDeliveryStrategyPayload()
+                };
+                this.renderDeliveryStrategy(store.strategy);
+                alert('模拟验收：履约策略已保存到本地 mock 数据');
+                await this.loadDeliveryTasks(this.deliveryTaskPage || 1);
+                return;
             }
 
             const headers = await this.getAdminAuthHeaders();
@@ -4238,43 +5630,76 @@ Example output format:
         }
 
         try {
-            const headers = await this.getAdminAuthHeaders();
-            const strategyPromise = this.loadDeliveryStrategy(headers).catch((error) => {
-                console.error('[ShopAdmin] loadDeliveryStrategy failed:', error);
-                this.renderDeliveryStrategyError('策略加载失败');
-                return null;
-            });
-
-            const params = new URLSearchParams({
-                page: String(page || 1),
-                pageSize: String(this.deliveryTaskPageSize || 8),
+            const requestPayload = {
+                page: Number(page || 1),
+                pageSize: Number(this.deliveryTaskPageSize || 8),
                 status,
                 query,
                 analyticsWindow: analyticsWindowConfig.key,
-                conflictBucketStartAt: conflictBucket?.startAt || '',
-                conflictBucketEndAt: conflictBucket?.endAt || '',
+                conflictBucket,
                 conflictReason,
                 conflictTarget,
                 conflictChannel,
-                focusTaskId: taskIdentity?.taskId || '',
-                focusOrderId: taskIdentity?.orderId || '',
-                deadLetterPage: String(this.deliveryDeadLetterPage || 1),
-                deadLetterPageSize: String(this.deliveryDeadLetterPageSize || 5),
+                taskIdentity,
+                deadLetterPage: Number(this.deliveryDeadLetterPage || 1),
+                deadLetterPageSize: Number(this.deliveryDeadLetterPageSize || 5),
                 deadLetterReason,
-                lockPage: String(this.deliveryLockConflictPage || 1),
-                lockPageSize: String(this.deliveryLockConflictPageSize || 5),
+                lockPage: Number(this.deliveryLockConflictPage || 1),
+                lockPageSize: Number(this.deliveryLockConflictPageSize || 5),
                 lockState,
-                replayPage: String(this.deliveryReplayPage || 1),
-                replayPageSize: String(this.deliveryReplayPageSize || 5)
-            });
-            const response = await fetch(`/api/admin/shop/delivery-tasks?${params.toString()}`, {
-                method: 'GET',
-                headers
-            });
+                replayPage: Number(this.deliveryReplayPage || 1),
+                replayPageSize: Number(this.deliveryReplayPageSize || 5)
+            };
 
-            const result = await response.json().catch(() => ({}));
-            if (!response.ok || !result.success) {
-                throw new Error(result.message || '履约任务加载失败');
+            let strategyPromise;
+            let result;
+
+            if (this.isDeliveryMockModeEnabled()) {
+                strategyPromise = this.loadDeliveryStrategy().catch((error) => {
+                    console.error('[ShopAdmin] loadDeliveryStrategy failed:', error);
+                    this.renderDeliveryStrategyError('策略加载失败');
+                    return null;
+                });
+                result = this.buildDeliveryMockResponse(requestPayload);
+            } else {
+                const headers = await this.getAdminAuthHeaders();
+                strategyPromise = this.loadDeliveryStrategy(headers).catch((error) => {
+                    console.error('[ShopAdmin] loadDeliveryStrategy failed:', error);
+                    this.renderDeliveryStrategyError('策略加载失败');
+                    return null;
+                });
+
+                const params = new URLSearchParams({
+                    page: String(requestPayload.page),
+                    pageSize: String(requestPayload.pageSize),
+                    status,
+                    query,
+                    analyticsWindow: analyticsWindowConfig.key,
+                    conflictBucketStartAt: conflictBucket?.startAt || '',
+                    conflictBucketEndAt: conflictBucket?.endAt || '',
+                    conflictReason,
+                    conflictTarget,
+                    conflictChannel,
+                    focusTaskId: taskIdentity?.taskId || '',
+                    focusOrderId: taskIdentity?.orderId || '',
+                    deadLetterPage: String(requestPayload.deadLetterPage),
+                    deadLetterPageSize: String(requestPayload.deadLetterPageSize),
+                    deadLetterReason,
+                    lockPage: String(requestPayload.lockPage),
+                    lockPageSize: String(requestPayload.lockPageSize),
+                    lockState,
+                    replayPage: String(requestPayload.replayPage),
+                    replayPageSize: String(requestPayload.replayPageSize)
+                });
+                const response = await fetch(`/api/admin/shop/delivery-tasks?${params.toString()}`, {
+                    method: 'GET',
+                    headers
+                });
+
+                result = await response.json().catch(() => ({}));
+                if (!response.ok || !result.success) {
+                    throw new Error(result.message || '履约任务加载失败');
+                }
             }
 
             this.renderDeliveryTaskSummary(result.summary || {});
@@ -4945,6 +6370,13 @@ Example output format:
         if (!confirm(`确认要${message}吗？`)) return;
 
         try {
+            if (this.isDeliveryMockModeEnabled()) {
+                const result = await this.performDeliveryMockTaskAction(taskId, action, note);
+                alert(result.message || `模拟验收：已完成 ${message}`);
+                await this.loadDeliveryTasks(this.deliveryTaskPage || 1);
+                return;
+            }
+
             const headers = await this.getAdminAuthHeaders();
             const response = await fetch('/api/admin/shop/delivery-actions', {
                 method: 'POST',
