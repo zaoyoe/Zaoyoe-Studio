@@ -855,13 +855,18 @@ async function fetchTaskPage({ supabase, page, pageSize, status, query, lockStat
     };
 }
 
-async function fetchDeadLetterPage({ supabase, page, pageSize, reason }) {
-    const allDeadLetters = await fetchAllRows(() => supabase
-        .from('shop_webhook_tasks')
-        .select(TASK_SELECT)
-        .eq('status', 'dead_letter')
-        .order('dead_lettered_at', { ascending: false })
-        .order('created_at', { ascending: false }));
+async function fetchDeadLetterPage({ supabase, page, pageSize, reason, query }) {
+    const allDeadLetters = await fetchAllRows(() => {
+        let taskQuery = supabase
+            .from('shop_webhook_tasks')
+            .select(TASK_SELECT)
+            .eq('status', 'dead_letter')
+            .order('dead_lettered_at', { ascending: false })
+            .order('created_at', { ascending: false });
+
+        taskQuery = applyTaskSearch(taskQuery, query);
+        return taskQuery;
+    });
 
     const filtered = (allDeadLetters || []).filter((task) => matchesDeadLetterReason(task, reason));
     return {
@@ -870,17 +875,18 @@ async function fetchDeadLetterPage({ supabase, page, pageSize, reason }) {
     };
 }
 
-async function fetchLockConflictPage({ supabase, page, pageSize, lockState }) {
+async function fetchLockConflictPage({ supabase, page, pageSize, lockState, query }) {
     const allLockTasks = await fetchAllRows(() => {
-        let query = supabase
+        let taskQuery = supabase
             .from('shop_webhook_tasks')
             .select(TASK_SELECT)
             .eq('status', 'processing')
             .order('lock_expires_at', { ascending: true })
             .order('created_at', { ascending: false });
 
-        query = applyTaskLockStateFilter(query, lockState);
-        return query;
+        taskQuery = applyTaskSearch(taskQuery, query);
+        taskQuery = applyTaskLockStateFilter(taskQuery, lockState);
+        return taskQuery;
     });
 
     const filtered = (allLockTasks || []).filter((task) => {
@@ -933,13 +939,18 @@ function compareReservationTasks(left = {}, right = {}) {
         - Number(new Date(left?.updated_at || left?.created_at || 0).getTime());
 }
 
-async function fetchReservationOverview({ supabase, limit = 8 }) {
-    const allTasks = await fetchAllRows(() => supabase
-        .from('shop_webhook_tasks')
-        .select(TASK_SELECT)
-        .not('reservation_acquired_at', 'is', null)
-        .order('reservation_acquired_at', { ascending: false })
-        .order('created_at', { ascending: false }));
+async function fetchReservationOverview({ supabase, limit = 8, query }) {
+    const allTasks = await fetchAllRows(() => {
+        let taskQuery = supabase
+            .from('shop_webhook_tasks')
+            .select(TASK_SELECT)
+            .not('reservation_acquired_at', 'is', null)
+            .order('reservation_acquired_at', { ascending: false })
+            .order('created_at', { ascending: false });
+
+        taskQuery = applyTaskSearch(taskQuery, query);
+        return taskQuery;
+    });
 
     const sorted = [...(allTasks || [])].sort(compareReservationTasks);
     return {
@@ -1182,13 +1193,15 @@ module.exports = async (req, res) => {
                 supabase,
                 page: deadLetterPage,
                 pageSize: deadLetterPageSize,
-                reason: deadLetterReason
+                reason: deadLetterReason,
+                query
             }),
             fetchLockConflictPage({
                 supabase,
                 page: lockPage,
                 pageSize: lockPageSize,
-                lockState
+                lockState,
+                query
             }),
             fetchReplayLogs({
                 supabase,
@@ -1201,7 +1214,8 @@ module.exports = async (req, res) => {
             }),
             fetchReservationOverview({
                 supabase,
-                limit: 8
+                limit: 8,
+                query
             }),
             fetchConflictAnalyticsWindow({
                 supabase,

@@ -1910,7 +1910,7 @@ Example output format:
         if (!query) {
             container.innerHTML = `
                 <div class="shop-delivery-filter-banner shop-delivery-filter-banner--idle">
-                    <span class="shop-delivery-table-note">当前未反筛任务表。你可以输入关键字，或直接点击下方热点把目标 / 通道回填到任务筛选里。</span>
+                    <span class="shop-delivery-table-note">当前未联动筛选履约页。你可以输入关键字，或直接点击下方热点把目标 / 通道回填到任务、死信、锁冲突和占位面板里。</span>
                 </div>
             `;
             return;
@@ -1934,6 +1934,7 @@ Example output format:
                 <div class="shop-delivery-meta">
                     ${this.renderDeliveryMetaBadge(sourceLabel, tone)}
                     ${this.renderDeliveryMetaBadge(this.truncateText(query, 56), 'neutral')}
+                    ${this.renderDeliveryMetaBadge('已联动任务 / 死信 / 锁冲突 / 占位', 'muted')}
                 </div>
                 <button type="button" class="shop-delivery-inline-btn" onclick="ShopAdmin.clearDeliveryTaskQuery()">
                     <i class="fas fa-times"></i> 清除反筛
@@ -2816,7 +2817,7 @@ Example output format:
                 this.renderDeliveryMetaBadge(`人工 ${Number(item.manual_count || 0)}`, Number(item.manual_count || 0) ? 'neutral' : 'muted'),
                 item.latest_reason_label ? this.renderDeliveryMetaBadge(item.latest_reason_label, 'neutral') : '',
                 item.latest_at ? this.renderDeliveryMetaBadge(`最近 ${this.formatDeliveryTime(item.latest_at)}`, 'muted') : '',
-                this.renderDeliveryMetaBadge(isActive ? '已反筛任务表' : '点击反筛任务表', isActive ? 'processing' : 'muted')
+                this.renderDeliveryMetaBadge(isActive ? '已联动履约页' : '点击联动履约页', isActive ? 'processing' : 'muted')
             ].filter(Boolean);
 
             return `
@@ -2824,7 +2825,7 @@ Example output format:
                     type="button"
                     class="shop-delivery-hotspot-item shop-delivery-hotspot-item--action${isActive ? ' shop-delivery-hotspot-item--active' : ''}"
                     onclick="ShopAdmin.applyDeliveryHotspotFilter('${type}', '${encodedKey}')"
-                    title="点击按${type === 'channel' ? '通道' : '目标'}反筛任务表"
+                    title="点击按${type === 'channel' ? '通道' : '目标'}联动履约页"
                 >
                     <div class="shop-delivery-hotspot-topline">
                         <div class="shop-delivery-hotspot-key" title="${this.escapeHtml(item.key || '')}">${keyText}</div>
@@ -3092,7 +3093,7 @@ Example output format:
         if (filterHint && !query) {
             filterHint.innerHTML = `
                 <div class="shop-delivery-filter-banner shop-delivery-filter-banner--idle">
-                    <span class="shop-delivery-table-note">当前未反筛任务表。你可以输入关键字，或直接点击下方热点把目标 / 通道回填到任务筛选里。</span>
+                    <span class="shop-delivery-table-note">当前未联动筛选履约页。你可以输入关键字，或直接点击下方热点把目标 / 通道回填到任务、死信、锁冲突和占位面板里。</span>
                 </div>
             `;
         }
@@ -3334,6 +3335,8 @@ Example output format:
             }
             : null;
         this.deliveryTaskPage = 1;
+        this.deliveryDeadLetterPage = 1;
+        this.deliveryLockConflictPage = 1;
         this.loadDeliveryTasks(1);
     },
 
@@ -3348,6 +3351,8 @@ Example output format:
             label: nextQuery
         };
         this.deliveryTaskPage = 1;
+        this.deliveryDeadLetterPage = 1;
+        this.deliveryLockConflictPage = 1;
         this.loadDeliveryTasks(1);
     },
 
@@ -3359,6 +3364,8 @@ Example output format:
             input.value = '';
         }
         this.deliveryTaskPage = 1;
+        this.deliveryDeadLetterPage = 1;
+        this.deliveryLockConflictPage = 1;
         this.loadDeliveryTasks(1);
     },
 

@@ -5725,7 +5725,7 @@
                                     <option value="delivered">已履约</option>
                                 </select>
                                 <input id="deliveryTaskQueryInput" type="text" class="shop-delivery-filter shop-delivery-filter--search"
-                                    placeholder="按目标 / 通道 / 幂等 / 错误反筛任务"
+                                    placeholder="按目标 / 通道 / 幂等 / 错误联动筛选履约页"
                                     onkeydown="ShopAdmin.handleDeliveryTaskQueryKeydown(event)">
                                 <button type="button" class="shop-delivery-inline-btn" onclick="ShopAdmin.applyDeliveryTaskQuery()">
                                     <i class="fas fa-filter"></i> 应用筛选
@@ -5742,7 +5742,7 @@
 
                         <div id="deliveryTaskFilterHint">
                             <div class="shop-delivery-filter-banner shop-delivery-filter-banner--idle">
-                                <span class="shop-delivery-table-note">当前未反筛任务表。你可以输入关键字，或直接点击下方热点把目标 / 通道回填到任务筛选里。</span>
+                                <span class="shop-delivery-table-note">当前未联动筛选履约页。你可以输入关键字，或直接点击下方热点把目标 / 通道回填到任务、死信、锁冲突和占位面板里。</span>
                             </div>
                         </div>
 
@@ -5874,7 +5874,7 @@
                                             <option value="72h">近 72 小时</option>
                                             <option value="7d">近 7 天</option>
                                         </select>
-                                        <span class="shop-delivery-table-note">点击热点会把目标 / 通道直接回填到上方任务筛选。</span>
+                                        <span class="shop-delivery-table-note">点击热点会把目标 / 通道直接回填到上方筛选，并联动任务、死信、锁冲突和占位面板。</span>
                                     </div>
                                     <div class="shop-delivery-trend-panel">
                                         <div id="deliveryConflictTrendChart" class="shop-delivery-trend-chart">
