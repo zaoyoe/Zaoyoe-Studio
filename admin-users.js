@@ -15,7 +15,8 @@ const userState = {
         status: 'all', // all, active, banned
         level: 'all',  // all, vip
         role: 'all',   // all, admin, user
-        search: ''
+        search: '',
+        showTestAccounts: false
     }
 };
 
@@ -54,12 +55,62 @@ const TAG_CONFIG = {
     '用户': { label: '用户', class: 'tag-user' }
 };
 
+const TEST_ACCOUNT_EMAIL_RE = /@example\.(?:com|org|net)$/i;
+const TEST_ACCOUNT_KEYWORD_RE = /\b(?:autodeploy|summaryfix|final\d*|diag|wwwdiag|test|mock|demo|seed|fixture|smoke|sandbox|staging)\b/i;
+const SYNTHETIC_ROLE_SEGMENT_RE = /(?:^|[._-])(admin|regular)(?:[._-]|$)/i;
+const SYNTHETIC_TIMESTAMP_RE = /(?:^|[._-])\d{8,}$/;
+const SYSTEM_USERNAME_RE = /^(?:system|bot|service|worker|cron|automation)(?:[._-]|$)/i;
+const PHONE_ONLY_USERNAME_RE = /^\+?\d{8,}$/;
+
 function getTagClass(tag) {
     return TAG_CONFIG[tag]?.class || 'tag-custom';
 }
 
 function getTagLabel(tag) {
     return TAG_CONFIG[tag]?.label || tag;
+}
+
+function normalizeUserIdentity(value) {
+    return String(value || '').trim().toLowerCase();
+}
+
+function classifyUserAccount({ email, username }) {
+    const normalizedEmail = normalizeUserIdentity(email);
+    const normalizedUsername = normalizeUserIdentity(username);
+    const emailLocalPart = normalizedEmail.split('@')[0] || '';
+
+    const hasExampleEmail = TEST_ACCOUNT_EMAIL_RE.test(normalizedEmail);
+    const hasSyntheticKeyword = TEST_ACCOUNT_KEYWORD_RE.test(`${normalizedUsername} ${emailLocalPart}`);
+    const hasSyntheticRoleSegment =
+        SYNTHETIC_ROLE_SEGMENT_RE.test(normalizedUsername) ||
+        SYNTHETIC_ROLE_SEGMENT_RE.test(emailLocalPart);
+    const hasTimestampSuffix =
+        SYNTHETIC_TIMESTAMP_RE.test(normalizedUsername) ||
+        SYNTHETIC_TIMESTAMP_RE.test(emailLocalPart);
+    const missingEmailWithSystemName = !normalizedEmail && SYSTEM_USERNAME_RE.test(normalizedUsername);
+    const phoneOnlyUsername = !normalizedEmail && PHONE_ONLY_USERNAME_RE.test(normalizedUsername);
+    const isStructuredSyntheticIdentity =
+        hasSyntheticKeyword && (hasSyntheticRoleSegment || hasTimestampSuffix);
+
+    return {
+        isTestOrSystem: hasExampleEmail || missingEmailWithSystemName || phoneOnlyUsername || (!normalizedEmail && isStructuredSyntheticIdentity)
+    };
+}
+
+function updateUserAccountVisibilityMeta() {
+    const metaEl = document.getElementById('userTestAccountCount');
+    if (!metaEl) return;
+
+    const testAccountCount = userState.users.filter(user => user.is_test_or_system).length;
+
+    if (testAccountCount === 0) {
+        metaEl.textContent = '未发现测试/系统账号';
+        return;
+    }
+
+    metaEl.textContent = userState.filters.showTestAccounts
+        ? `测试/系统账号 ${testAccountCount}`
+        : `已隐藏 ${testAccountCount} 个测试/系统账号`;
 }
 
 // Initialize Module
@@ -70,6 +121,11 @@ function initUserModule() {
     const searchInput = document.getElementById('userSearchInput');
     if (searchInput) {
         searchInput.value = '';
+    }
+
+    const showTestAccountsToggle = document.getElementById('userShowTestAccountsToggle');
+    if (showTestAccountsToggle) {
+        showTestAccountsToggle.checked = Boolean(userState.filters.showTestAccounts);
     }
 
     // Bind Search
@@ -386,6 +442,7 @@ async function loadUsers() {
             const created = p.out_created_at || p.created_at;
 
             const userPoints = pointsMap.get(id);
+            const accountFlags = classifyUserAccount({ email, username });
             return {
                 id: id,
                 username: username || 'Unknown',
@@ -404,7 +461,8 @@ async function loadUsers() {
                 block_info: blockedMap.get(id),
                 // Admin Role
                 is_admin: rolesMap.has(id) || ['fjivvid@163.com', 'zaoyoe@gmail.com'].includes(email),
-                admin_role: rolesMap.get(id)
+                admin_role: rolesMap.get(id),
+                is_test_or_system: accountFlags.isTestOrSystem
             };
         });
 
@@ -434,10 +492,32 @@ function handleUserFilterChange(e) {
     renderUsersTable();
 }
 
+function toggleUserTestAccountVisibility(checked) {
+    userState.filters.showTestAccounts = Boolean(checked);
+
+    if (!userState.filters.showTestAccounts) {
+        const hiddenIds = new Set(
+            userState.users
+                .filter(user => user.is_test_or_system)
+                .map(user => user.id)
+        );
+
+        Array.from(userState.selectedUsers).forEach(userId => {
+            if (hiddenIds.has(userId)) {
+                userState.selectedUsers.delete(userId);
+            }
+        });
+    }
+
+    userState.currentPage = 1;
+    renderUsersTable();
+    renderBatchActionBar();
+}
+
 // Render Users Table
 function renderUsersTable() {
     // 1. Filter Users
-    const { status, level, role, search } = userState.filters;
+    const { status, level, role, search, showTestAccounts } = userState.filters;
     const term = search ? search.toLowerCase() : '';
 
     userState.filteredUsers = userState.users.filter(u => {
@@ -463,13 +543,21 @@ function renderUsersTable() {
             (role === 'admin' && u.is_admin) ||
             (role === 'user' && !u.is_admin);
 
-        return matchSearch && matchStatus && matchLevel && matchRole;
+        const matchAccountScope = showTestAccounts || !u.is_test_or_system;
+
+        return matchSearch && matchStatus && matchLevel && matchRole && matchAccountScope;
     });
+
+    updateUserAccountVisibilityMeta();
 
     const tableBody = document.getElementById('usersTableBody');
     if (!tableBody) return;
 
     // 3. Pagination - Calculate BEFORE header rendering
+    const totalPages = Math.max(1, Math.ceil(userState.filteredUsers.length / userState.itemsPerPage));
+    if (userState.currentPage > totalPages) {
+        userState.currentPage = totalPages;
+    }
     const start = (userState.currentPage - 1) * userState.itemsPerPage;
     const paginatedUsers = userState.filteredUsers.slice(start, start + userState.itemsPerPage);
 
@@ -512,7 +600,9 @@ function renderUsersTable() {
             const table = document.getElementById('usersTable');
             if (table) table.parentNode.insertBefore(emptyDiv, table.nextSibling);
         }
-        emptyDiv.textContent = 'No users found';
+        emptyDiv.textContent = showTestAccounts
+            ? '未找到符合条件的用户'
+            : '当前仅显示真实用户，打开“显示测试/系统账号”可查看被隐藏账号';
         emptyDiv.style.display = 'flex';
         return;
     }
@@ -565,6 +655,7 @@ function renderUsersTable() {
                             ${escapeHtml(u.username)}
                             ${u.vip_level === 'VIP' ? '<i class="fas fa-crown vip-icon"></i>' : ''}
                             ${u.is_admin ? '<i class="fas fa-shield-alt admin-icon" title="管理员"></i>' : ''}
+                            ${u.is_test_or_system ? '<span class="user-account-pill">测试/系统</span>' : ''}
                         </div>
                         <div class="user-email">${escapeHtml(u.email || 'No Email')}</div>
                     </div>

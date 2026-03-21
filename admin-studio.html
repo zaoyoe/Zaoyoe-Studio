@@ -2673,6 +2673,17 @@
                                 </div>
                             </div>
                         </div>
+                        <div class="user-account-visibility" title="默认隐藏明显的测试与系统账号，可按需切换查看">
+                            <div class="user-account-visibility-copy">
+                                <span class="user-account-visibility-title">显示测试/系统账号</span>
+                                <span class="user-account-visibility-meta" id="userTestAccountCount">默认仅显示真实用户</span>
+                            </div>
+                            <label class="toggle-switch-sm">
+                                <input type="checkbox" id="userShowTestAccountsToggle"
+                                    onchange="toggleUserTestAccountVisibility(this.checked)">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
                         <!-- Batch Actions (like Gallery Manage) -->
                         <div class="batch-actions-wrapper">
                             <button class="batch-btn" id="userSelectModeBtn" onclick="toggleUserSelectMode()"
