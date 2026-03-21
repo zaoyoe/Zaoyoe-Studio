@@ -1843,6 +1843,11 @@ Example output format:
                 bg: 'rgba(251, 191, 36, 0.12)',
                 border: 'rgba(251, 191, 36, 0.24)'
             },
+            warn: {
+                text: '#fbbf24',
+                bg: 'rgba(251, 191, 36, 0.12)',
+                border: 'rgba(251, 191, 36, 0.24)'
+            },
             danger: {
                 text: '#fda4af',
                 bg: 'rgba(248, 113, 113, 0.12)',
@@ -1885,10 +1890,17 @@ Example output format:
             deliveryStrategyMaxAttempts: Number(config.max_attempts || 5),
             deliveryStrategySweepInterval: Number(config.sweep_interval_ms || 10000),
             deliveryStrategySweepBatch: Number(config.sweep_batch_size || 10),
+            deliveryStrategyWorkerParallelism: Number(config.worker_parallelism || 1),
             deliveryStrategyLeaseSeconds: Number(config.lease_seconds || 120),
             deliveryStrategyHttpTimeout: Number(config.http_timeout_ms || 15000),
             deliveryStrategyBaseBackoff: Number(config.base_backoff_seconds || 30),
-            deliveryStrategyMaxBackoff: Number(config.max_backoff_seconds || 1800)
+            deliveryStrategyMaxBackoff: Number(config.max_backoff_seconds || 1800),
+            deliveryStrategyTargetMinInterval: Number(config.target_min_interval_ms || 0),
+            deliveryStrategyTargetMaxInflight: Number(config.target_max_inflight || 1),
+            deliveryStrategyChannelMinInterval: Number(config.channel_min_interval_ms || 0),
+            deliveryStrategyChannelMaxInflight: Number(config.channel_max_inflight || 2),
+            deliveryStrategyConflictBackoff: Number(config.conflict_backoff_seconds || 45),
+            deliveryStrategyConflictThreshold: Number(config.conflict_dead_letter_threshold || 0)
         };
 
         Object.entries(fields).forEach(([elementId, value]) => {
@@ -1910,9 +1922,14 @@ Example output format:
             this.renderDeliveryMetaBadge(`最大重试 ${fields.deliveryStrategyMaxAttempts}`, 'warn'),
             this.renderDeliveryMetaBadge(`扫描 ${fields.deliveryStrategySweepInterval}ms`, 'processing'),
             this.renderDeliveryMetaBadge(`批次 ${fields.deliveryStrategySweepBatch}`, 'processing'),
+            this.renderDeliveryMetaBadge(`并发 ${fields.deliveryStrategyWorkerParallelism}`, 'processing'),
             this.renderDeliveryMetaBadge(`租约 ${fields.deliveryStrategyLeaseSeconds}s`, 'neutral'),
             this.renderDeliveryMetaBadge(`超时 ${fields.deliveryStrategyHttpTimeout}ms`, 'neutral'),
-            this.renderDeliveryMetaBadge(`退避 ${fields.deliveryStrategyBaseBackoff}-${fields.deliveryStrategyMaxBackoff}s`, 'muted')
+            this.renderDeliveryMetaBadge(`退避 ${fields.deliveryStrategyBaseBackoff}-${fields.deliveryStrategyMaxBackoff}s`, 'muted'),
+            this.renderDeliveryMetaBadge(`目标 ${fields.deliveryStrategyTargetMinInterval}ms / ${fields.deliveryStrategyTargetMaxInflight} 并发`, 'warn'),
+            this.renderDeliveryMetaBadge(`通道 ${fields.deliveryStrategyChannelMinInterval}ms / ${fields.deliveryStrategyChannelMaxInflight} 并发`, 'warn'),
+            this.renderDeliveryMetaBadge(`冲突回退 ${fields.deliveryStrategyConflictBackoff}s`, 'danger'),
+            this.renderDeliveryMetaBadge(`冲突死信阈值 ${fields.deliveryStrategyConflictThreshold || '关闭'}`, fields.deliveryStrategyConflictThreshold ? 'danger' : 'muted')
         ].join('');
     },
 
@@ -1929,10 +1946,17 @@ Example output format:
             max_attempts: this.parseDeliveryStrategyInteger(document.getElementById('deliveryStrategyMaxAttempts')?.value, Number(current.max_attempts || 5)),
             sweep_interval_ms: this.parseDeliveryStrategyInteger(document.getElementById('deliveryStrategySweepInterval')?.value, Number(current.sweep_interval_ms || 10000)),
             sweep_batch_size: this.parseDeliveryStrategyInteger(document.getElementById('deliveryStrategySweepBatch')?.value, Number(current.sweep_batch_size || 10)),
+            worker_parallelism: this.parseDeliveryStrategyInteger(document.getElementById('deliveryStrategyWorkerParallelism')?.value, Number(current.worker_parallelism || 1)),
             lease_seconds: this.parseDeliveryStrategyInteger(document.getElementById('deliveryStrategyLeaseSeconds')?.value, Number(current.lease_seconds || 120)),
             http_timeout_ms: this.parseDeliveryStrategyInteger(document.getElementById('deliveryStrategyHttpTimeout')?.value, Number(current.http_timeout_ms || 15000)),
             base_backoff_seconds: this.parseDeliveryStrategyInteger(document.getElementById('deliveryStrategyBaseBackoff')?.value, Number(current.base_backoff_seconds || 30)),
-            max_backoff_seconds: this.parseDeliveryStrategyInteger(document.getElementById('deliveryStrategyMaxBackoff')?.value, Number(current.max_backoff_seconds || 1800))
+            max_backoff_seconds: this.parseDeliveryStrategyInteger(document.getElementById('deliveryStrategyMaxBackoff')?.value, Number(current.max_backoff_seconds || 1800)),
+            target_min_interval_ms: this.parseDeliveryStrategyInteger(document.getElementById('deliveryStrategyTargetMinInterval')?.value, Number(current.target_min_interval_ms || 0)),
+            target_max_inflight: this.parseDeliveryStrategyInteger(document.getElementById('deliveryStrategyTargetMaxInflight')?.value, Number(current.target_max_inflight || 1)),
+            channel_min_interval_ms: this.parseDeliveryStrategyInteger(document.getElementById('deliveryStrategyChannelMinInterval')?.value, Number(current.channel_min_interval_ms || 0)),
+            channel_max_inflight: this.parseDeliveryStrategyInteger(document.getElementById('deliveryStrategyChannelMaxInflight')?.value, Number(current.channel_max_inflight || 2)),
+            conflict_backoff_seconds: this.parseDeliveryStrategyInteger(document.getElementById('deliveryStrategyConflictBackoff')?.value, Number(current.conflict_backoff_seconds || 45)),
+            conflict_dead_letter_threshold: this.parseDeliveryStrategyInteger(document.getElementById('deliveryStrategyConflictThreshold')?.value, Number(current.conflict_dead_letter_threshold || 0))
         };
     },
 
@@ -2019,6 +2043,8 @@ Example output format:
             { label: '处理中', value: summary.processing || 0, tone: 'processing' },
             { label: '死信', value: summary.dead_letter || 0, tone: 'danger' },
             { label: '已履约', value: summary.delivered || 0, tone: 'success' },
+            { label: '冲突任务', value: summary.conflict_tasks || 0, tone: 'warn' },
+            { label: '最近冲突', value: summary.recent_conflicts || 0, tone: 'warn' },
             { label: '活跃锁', value: summary.locked_active || 0, tone: 'processing' },
             { label: '过期锁', value: summary.locked_stale || 0, tone: 'danger' },
             { label: '缺锁', value: summary.lock_missing || 0, tone: 'danger' },
@@ -2029,7 +2055,7 @@ Example output format:
         container.innerHTML = items.map((item) => {
             const toneClass = item.tone === 'danger'
                 ? 'shop-delivery-pill shop-delivery-pill--danger'
-                : item.tone === 'waiting'
+                : item.tone === 'waiting' || item.tone === 'warn'
                     ? 'shop-delivery-pill shop-delivery-pill--warn'
                     : 'shop-delivery-pill';
             return `<span class="${toneClass}"><strong>${item.value}</strong><span>${item.label}</span></span>`;
@@ -2065,14 +2091,48 @@ Example output format:
         return this.renderDeliveryBadge(isActive ? '活跃锁' : '过期锁', isActive ? 'processing' : 'danger');
     },
 
+    getDeliveryConflictBadge: function (record = {}) {
+        const reason = record?.conflict_reason || {};
+        const key = String(reason.key || record?.last_conflict_reason || '').toLowerCase();
+        const label = reason.label || (
+            key.includes('target_max_inflight')
+                ? '目标并发打满'
+                : key.includes('target_min_interval')
+                    ? '目标限流'
+                    : key.includes('channel_max_inflight')
+                        ? '通道并发打满'
+                        : key.includes('channel_min_interval')
+                            ? '通道限流'
+                            : key.includes('manual_force_unlock')
+                                ? '人工强制解锁'
+                                : ''
+        );
+        if (!label) return '';
+
+        const tone = reason.tone || (
+            key.includes('channel_max_inflight') ? 'danger'
+                : key.includes('manual_force_unlock') ? 'processing'
+                    : 'waiting'
+        );
+        return this.renderDeliveryBadge(label, tone);
+    },
+
     renderDeliveryObserveChips: function (task = {}) {
         const chips = [];
         const lockBadge = this.getDeliveryLockBadge(task);
+        const conflictBadge = this.getDeliveryConflictBadge(task);
 
         if (lockBadge) chips.push(lockBadge);
+        if (conflictBadge) chips.push(conflictBadge);
         if (task.dedupe_key) {
             const dedupe = this.escapeHtml(this.shortenDeliveryToken(task.dedupe_key, 10, 6));
             chips.push(`<span class="shop-delivery-meta-chip" title="${this.escapeHtml(task.dedupe_key)}">幂等 ${dedupe}</span>`);
+        }
+        if (task.target_key) {
+            chips.push(`<span class="shop-delivery-meta-chip" title="${this.escapeHtml(task.target_key)}">目标 ${this.escapeHtml(this.truncateText(task.target_key, 28))}</span>`);
+        }
+        if (task.channel_key) {
+            chips.push(`<span class="shop-delivery-meta-chip">通道 ${this.escapeHtml(this.truncateText(task.channel_key, 24))}</span>`);
         }
         if (task.lock_token) {
             const lockToken = this.escapeHtml(this.shortenDeliveryToken(task.lock_token, 8, 6));
@@ -2086,6 +2146,12 @@ Example output format:
         }
         if (task.manual_replay_requested_at) {
             chips.push(`<span class="shop-delivery-meta-chip">重放申请 ${this.formatDeliveryTime(task.manual_replay_requested_at)}</span>`);
+        }
+        if (Number(task.conflict_count || 0) > 0) {
+            chips.push(`<span class="shop-delivery-meta-chip">冲突 ${Number(task.conflict_count)}</span>`);
+        }
+        if (task.last_conflict_at) {
+            chips.push(`<span class="shop-delivery-meta-chip">最近冲突 ${this.formatDeliveryTime(task.last_conflict_at)}</span>`);
         }
 
         if (!chips.length) {
@@ -2109,8 +2175,17 @@ Example output format:
         if (record.worker_name) {
             chips.push(this.renderDeliveryMetaBadge(`Worker ${record.worker_name}`, 'muted'));
         }
+        if (record.target_key) {
+            chips.push(this.renderDeliveryMetaBadge(`目标 ${this.shortenDeliveryToken(record.target_key, 10, 6)}`, 'muted'));
+        }
+        if (record.channel_key) {
+            chips.push(this.renderDeliveryMetaBadge(`通道 ${this.shortenDeliveryToken(record.channel_key, 8, 5)}`, 'muted'));
+        }
         if (record.dedupe_key) {
             chips.push(this.renderDeliveryMetaBadge(`幂等 ${this.shortenDeliveryToken(record.dedupe_key, 8, 5)}`, 'muted'));
+        }
+        if (Number(record.conflict_count || 0) > 0) {
+            chips.push(this.renderDeliveryMetaBadge(`冲突 ${Number(record.conflict_count)}`, 'warn'));
         }
         return chips.length
             ? `<div class="shop-delivery-meta">${chips.join('')}</div>`
@@ -2253,6 +2328,7 @@ Example output format:
             this.renderDeliveryMetaBadge(`4xx ${Number(summary.upstream_4xx || 0)}`, Number(summary.upstream_4xx || 0) ? 'danger' : 'muted'),
             this.renderDeliveryMetaBadge(`5xx ${Number(summary.upstream_5xx || 0)}`, Number(summary.upstream_5xx || 0) ? 'danger' : 'muted'),
             this.renderDeliveryMetaBadge(`最大重试 ${Number(summary.max_attempts || 0)}`, Number(summary.max_attempts || 0) ? 'warn' : 'muted'),
+            this.renderDeliveryMetaBadge(`冲突策略 ${Number(summary.conflict_strategy || 0)}`, Number(summary.conflict_strategy || 0) ? 'warn' : 'muted'),
             this.renderDeliveryMetaBadge(`人工标记 ${Number(summary.manual || 0)}`, Number(summary.manual || 0) ? 'processing' : 'muted')
         ];
         meta.classList.add('shop-delivery-subcard-meta--rich');
@@ -2300,6 +2376,73 @@ Example output format:
         ];
         meta.classList.add('shop-delivery-subcard-meta--rich');
         meta.innerHTML = total ? pills.join('') : '<span class="shop-delivery-table-note">暂无人工重放</span>';
+    },
+
+    renderConflictAuditSummary: function (data = {}) {
+        const meta = document.getElementById('deliveryConflictAuditSummary');
+        if (!meta) return;
+        const summary = data.summary || {};
+        const total = Number(data.total || summary.total || 0);
+        const latestConflict = summary.latest_conflict_at ? this.formatDeliveryTime(summary.latest_conflict_at) : '—';
+        const pills = [
+            this.renderDeliveryMetaBadge(`最近 ${total} 条`, total ? 'warn' : 'muted'),
+            this.renderDeliveryMetaBadge(`目标并发 ${Number(summary.target_max_inflight || 0)}`, Number(summary.target_max_inflight || 0) ? 'warn' : 'muted'),
+            this.renderDeliveryMetaBadge(`目标限流 ${Number(summary.target_min_interval || 0)}`, Number(summary.target_min_interval || 0) ? 'warn' : 'muted'),
+            this.renderDeliveryMetaBadge(`通道并发 ${Number(summary.channel_max_inflight || 0)}`, Number(summary.channel_max_inflight || 0) ? 'danger' : 'muted'),
+            this.renderDeliveryMetaBadge(`通道限流 ${Number(summary.channel_min_interval || 0)}`, Number(summary.channel_min_interval || 0) ? 'warn' : 'muted'),
+            this.renderDeliveryMetaBadge(`人工解锁 ${Number(summary.manual_force_unlock || 0)}`, Number(summary.manual_force_unlock || 0) ? 'processing' : 'muted'),
+            this.renderDeliveryMetaBadge(`冲突死信 ${Number(summary.dead_letter || 0)}`, Number(summary.dead_letter || 0) ? 'danger' : 'muted'),
+            this.renderDeliveryMetaBadge(`最新 ${latestConflict}`, summary.latest_conflict_at ? 'neutral' : 'muted')
+        ];
+        meta.classList.add('shop-delivery-subcard-meta--rich');
+        meta.innerHTML = total ? pills.join('') : '<span class="shop-delivery-table-note">暂无冲突审计</span>';
+    },
+
+    renderConflictAudits: function (records = []) {
+        const tbody = document.getElementById('deliveryConflictAuditTableBody');
+        if (!tbody) return;
+
+        if (!records.length) {
+            tbody.innerHTML = '<tr><td colspan="5"><div class="shop-delivery-empty">当前没有最近冲突记录。</div></td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = records.map((record) => {
+            const task = record.task || {};
+            const order = record.order || task.order || {};
+            const taskId = this.escapeHtml(this.truncateText(record.task_id || task.id || '—', 18));
+            const orderId = this.escapeHtml(record.order_id || task.order_id || '—');
+            const resultBadge = this.getDeliveryTaskStatusBadge(record.task_status || task.status || 'retry_waiting');
+            const conflictBadge = this.getDeliveryConflictBadge(record) || this.renderDeliveryBadge('其他冲突', 'muted');
+            const detail = this.escapeHtml(this.truncateText(record.detail || task.last_conflict_note || '无备注', 72));
+            const targetText = this.escapeHtml(this.truncateText(record.target_key || task.target_key || '—', 32));
+            const channelText = this.escapeHtml(this.truncateText(record.channel_key || task.channel_key || '—', 24));
+
+            return `
+                <tr>
+                    <td data-label="时间">
+                        <div style="font-weight:600;color:#fff;">${this.formatDeliveryTime(record.created_at)}</div>
+                        <div class="shop-delivery-table-note">${record.worker_name ? `Worker ${this.escapeHtml(record.worker_name)}` : '无 worker'}</div>
+                    </td>
+                    <td data-label="冲突类型">
+                        <div class="shop-delivery-meta" style="margin-bottom:8px;">${conflictBadge}</div>
+                        <div class="shop-delivery-table-note">${detail}</div>
+                    </td>
+                    <td data-label="任务 / 订单">
+                        <div style="font-weight:600;color:#fff;">任务 ${taskId}</div>
+                        <div class="shop-delivery-table-note">${order.snapshot_product_name ? this.escapeHtml(order.snapshot_product_name) : '无商品'} · 订单 ${orderId}</div>
+                    </td>
+                    <td data-label="目标 / 通道">
+                        <div style="font-weight:600;color:#fff;">${targetText}</div>
+                        <div class="shop-delivery-table-note">${channelText}</div>
+                    </td>
+                    <td data-label="结果">
+                        <div class="shop-delivery-meta" style="margin-bottom:8px;">${resultBadge}</div>
+                        <div class="shop-delivery-table-note">${record.next_attempt_at ? `下次 ${this.formatDeliveryTime(record.next_attempt_at)}` : '无重试时间'}</div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
     },
 
     renderDeadLetterTasks: function (tasks = [], total = 0, page = 1, pageSize = this.deliveryDeadLetterPageSize) {
@@ -2535,9 +2678,11 @@ Example output format:
         const deadLetterBody = document.getElementById('deliveryDeadLetterTableBody');
         const lockBody = document.getElementById('deliveryLockConflictsTableBody');
         const replayBody = document.getElementById('deliveryReplayTableBody');
+        const conflictAuditBody = document.getElementById('deliveryConflictAuditTableBody');
         const deadLetterSummary = document.getElementById('deliveryDeadLetterSummary');
         const lockSummary = document.getElementById('deliveryLockConflictSummary');
         const replaySummary = document.getElementById('deliveryReplaySummary');
+        const conflictAuditSummary = document.getElementById('deliveryConflictAuditSummary');
         const strategySummary = document.getElementById('deliveryStrategySummary');
         const taskFilter = document.getElementById('deliveryTaskStatusFilter');
         const deadLetterReasonFilter = document.getElementById('deliveryDeadLetterReasonFilter');
@@ -2569,6 +2714,9 @@ Example output format:
         if (replayBody) {
             replayBody.innerHTML = '<tr><td colspan="6" class="text-center">正在加载人工重放记录...</td></tr>';
         }
+        if (conflictAuditBody) {
+            conflictAuditBody.innerHTML = '<tr><td colspan="5" class="text-center">正在加载冲突审计...</td></tr>';
+        }
         if (deadLetterSummary) {
             deadLetterSummary.classList.add('shop-delivery-subcard-meta--rich');
             deadLetterSummary.innerHTML = '<span class="shop-delivery-table-note">正在汇总…</span>';
@@ -2580,6 +2728,10 @@ Example output format:
         if (replaySummary) {
             replaySummary.classList.add('shop-delivery-subcard-meta--rich');
             replaySummary.innerHTML = '<span class="shop-delivery-table-note">正在汇总…</span>';
+        }
+        if (conflictAuditSummary) {
+            conflictAuditSummary.classList.add('shop-delivery-subcard-meta--rich');
+            conflictAuditSummary.innerHTML = '<span class="shop-delivery-table-note">正在汇总…</span>';
         }
         if (strategySummary && !this.deliveryStrategyConfig) {
             strategySummary.classList.add('shop-delivery-subcard-meta--rich');
@@ -2647,6 +2799,10 @@ Example output format:
                 replay.pageSize || this.deliveryReplayPageSize
             );
 
+            const conflicts = result.conflicts || {};
+            this.renderConflictAuditSummary(conflicts);
+            this.renderConflictAudits(conflicts.records || []);
+
             await strategyPromise;
         } catch (err) {
             console.error('[ShopAdmin] loadDeliveryTasks failed:', err);
@@ -2665,6 +2821,9 @@ Example output format:
             if (replayBody) {
                 replayBody.innerHTML = `<tr><td colspan="6"><div class="shop-delivery-empty">人工重放记录加载失败：${this.escapeHtml(err.message || '未知错误')}</div></td></tr>`;
             }
+            if (conflictAuditBody) {
+                conflictAuditBody.innerHTML = `<tr><td colspan="5"><div class="shop-delivery-empty">冲突审计加载失败：${this.escapeHtml(err.message || '未知错误')}</div></td></tr>`;
+            }
             if (deadLetterSummary) {
                 deadLetterSummary.classList.add('shop-delivery-subcard-meta--rich');
                 deadLetterSummary.innerHTML = this.renderDeliveryMetaBadge('加载失败', 'danger');
@@ -2676,6 +2835,10 @@ Example output format:
             if (replaySummary) {
                 replaySummary.classList.add('shop-delivery-subcard-meta--rich');
                 replaySummary.innerHTML = this.renderDeliveryMetaBadge('加载失败', 'danger');
+            }
+            if (conflictAuditSummary) {
+                conflictAuditSummary.classList.add('shop-delivery-subcard-meta--rich');
+                conflictAuditSummary.innerHTML = this.renderDeliveryMetaBadge('加载失败', 'danger');
             }
             const taskPagination = document.getElementById('deliveryTasksPagination');
             const deadPagination = document.getElementById('deliveryDeadLetterPagination');

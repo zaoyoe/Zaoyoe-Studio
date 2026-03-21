@@ -5439,13 +5439,13 @@
                         </div>
 
                         <section class="shop-delivery-subcard shop-delivery-subcard--wide">
-                            <div class="shop-delivery-subcard-header">
-                                <div class="shop-delivery-subcard-title">
-                                    <h4><i class="fas fa-sliders-h"></i> 履约策略</h4>
-                                    <p>统一管理扫描频率、批次大小、锁租约、请求超时与退避策略，并可同步到未完成任务。</p>
+                                <div class="shop-delivery-subcard-header">
+                                    <div class="shop-delivery-subcard-title">
+                                        <h4><i class="fas fa-sliders-h"></i> 履约策略</h4>
+                                    <p>统一管理扫描频率、批次大小、并发 / 限流、冲突处理、锁租约、请求超时与退避策略，并可同步到未完成任务。</p>
+                                    </div>
+                                    <div id="deliveryStrategySummary" class="shop-delivery-subcard-meta">载入中…</div>
                                 </div>
-                                <div id="deliveryStrategySummary" class="shop-delivery-subcard-meta">载入中…</div>
-                            </div>
                             <div class="shop-delivery-subcard-body">
                                 <div class="shop-delivery-strategy-grid">
                                     <div class="shop-delivery-field">
@@ -5459,6 +5459,10 @@
                                     <div class="shop-delivery-field">
                                         <label for="deliveryStrategySweepBatch">单次批量领取</label>
                                         <input id="deliveryStrategySweepBatch" type="number" min="1" max="50" value="10">
+                                    </div>
+                                    <div class="shop-delivery-field">
+                                        <label for="deliveryStrategyWorkerParallelism">Worker 并发数</label>
+                                        <input id="deliveryStrategyWorkerParallelism" type="number" min="1" max="8" value="1">
                                     </div>
                                     <div class="shop-delivery-field">
                                         <label for="deliveryStrategyLeaseSeconds">锁租约 (秒)</label>
@@ -5475,6 +5479,30 @@
                                     <div class="shop-delivery-field">
                                         <label for="deliveryStrategyMaxBackoff">最大退避 (秒)</label>
                                         <input id="deliveryStrategyMaxBackoff" type="number" min="60" max="86400" value="1800">
+                                    </div>
+                                    <div class="shop-delivery-field">
+                                        <label for="deliveryStrategyTargetMinInterval">目标最小间隔 (ms)</label>
+                                        <input id="deliveryStrategyTargetMinInterval" type="number" min="0" max="300000" value="0">
+                                    </div>
+                                    <div class="shop-delivery-field">
+                                        <label for="deliveryStrategyTargetMaxInflight">目标最大并发</label>
+                                        <input id="deliveryStrategyTargetMaxInflight" type="number" min="1" max="10" value="1">
+                                    </div>
+                                    <div class="shop-delivery-field">
+                                        <label for="deliveryStrategyChannelMinInterval">通道最小间隔 (ms)</label>
+                                        <input id="deliveryStrategyChannelMinInterval" type="number" min="0" max="300000" value="0">
+                                    </div>
+                                    <div class="shop-delivery-field">
+                                        <label for="deliveryStrategyChannelMaxInflight">通道最大并发</label>
+                                        <input id="deliveryStrategyChannelMaxInflight" type="number" min="1" max="20" value="2">
+                                    </div>
+                                    <div class="shop-delivery-field">
+                                        <label for="deliveryStrategyConflictBackoff">冲突回退 (秒)</label>
+                                        <input id="deliveryStrategyConflictBackoff" type="number" min="5" max="3600" value="45">
+                                    </div>
+                                    <div class="shop-delivery-field">
+                                        <label for="deliveryStrategyConflictThreshold">冲突死信阈值</label>
+                                        <input id="deliveryStrategyConflictThreshold" type="number" min="0" max="50" value="0">
                                     </div>
                                 </div>
 
@@ -5538,6 +5566,7 @@
                                             <option value="upstream_4xx">上游 4xx</option>
                                             <option value="upstream_5xx">上游 5xx</option>
                                             <option value="max_attempts">达到最大重试</option>
+                                            <option value="conflict_strategy">冲突策略</option>
                                             <option value="network_failure">网络失败</option>
                                             <option value="unknown">未知原因</option>
                                         </select>
@@ -5645,6 +5674,36 @@
 
                                     <div id="deliveryReplayPagination"
                                         style="display: flex; justify-content: center; gap: 10px; margin-top: 18px;">
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section class="shop-delivery-subcard">
+                                <div class="shop-delivery-subcard-header">
+                                    <div class="shop-delivery-subcard-title">
+                                        <h4><i class="fas fa-wave-square"></i> 冲突审计</h4>
+                                        <p>查看最近的限流命中、并发占位冲突和人工强制解锁记录。</p>
+                                    </div>
+                                    <div id="deliveryConflictAuditSummary" class="shop-delivery-subcard-meta">载入中…</div>
+                                </div>
+                                <div class="shop-delivery-subcard-body">
+                                    <div class="shop-table-container">
+                                        <table class="shop-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>时间</th>
+                                                    <th>冲突类型</th>
+                                                    <th>任务 / 订单</th>
+                                                    <th>目标 / 通道</th>
+                                                    <th>结果</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="deliveryConflictAuditTableBody">
+                                                <tr>
+                                                    <td colspan="5" class="text-center">正在加载冲突审计...</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
                                     </div>
                                 </div>
                             </section>

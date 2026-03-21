@@ -23,6 +23,20 @@ function releaseTaskLocks(patch = {}) {
     };
 }
 
+function getForceUnlockReason(task = {}) {
+    const expiresAtMs = task?.lock_expires_at ? new Date(task.lock_expires_at).getTime() : 0;
+    if (!task?.lock_token && String(task?.status || '').toLowerCase() === 'processing') {
+        return 'manual_force_unlock_missing_lock';
+    }
+    if (Number.isFinite(expiresAtMs) && expiresAtMs > Date.now()) {
+        return 'manual_force_unlock_active_lock';
+    }
+    if (task?.lock_token) {
+        return 'manual_force_unlock_stale_lock';
+    }
+    return 'manual_force_unlock';
+}
+
 module.exports = async (req, res) => {
     if (req.method !== 'POST') {
         res.setHeader('Allow', 'POST');
@@ -58,6 +72,13 @@ module.exports = async (req, res) => {
                 lock_expires_at,
                 lock_token,
                 worker_name,
+                target_key,
+                channel_key,
+                conflict_count,
+                last_conflict_at,
+                last_conflict_reason,
+                last_conflict_scope,
+                last_conflict_note,
                 updated_at
             `)
             .eq('id', taskId)
@@ -139,17 +160,26 @@ module.exports = async (req, res) => {
                 successMessage = '履约任务已标记为已履约。';
                 break;
             case 'force_unlock':
-                taskPatch = releaseTaskLocks({
-                    status: task.status === 'processing' ? 'retry_waiting' : task.status,
-                    next_attempt_at: now,
-                    updated_at: now
-                });
-                orderPatch = {
-                    delivery_status: task.status === 'processing' ? 'retry_waiting' : task.status,
-                    delivery_updated_at: now
-                };
-                actionType = 'shop.delivery.force_unlock';
-                successMessage = '履约任务已强制解锁。';
+                {
+                    const conflictReason = getForceUnlockReason(task);
+                    taskPatch = releaseTaskLocks({
+                        status: task.status === 'processing' ? 'retry_waiting' : task.status,
+                        next_attempt_at: now,
+                        updated_at: now,
+                        conflict_count: Number(task.conflict_count || 0) + 1,
+                        last_conflict_at: now,
+                        last_conflict_reason: conflictReason,
+                        last_conflict_scope: 'manual',
+                        last_conflict_note: note || '管理员强制解锁'
+                    });
+                    orderPatch = {
+                        delivery_status: task.status === 'processing' ? 'retry_waiting' : task.status,
+                        delivery_last_error: `管理员强制解锁：${note || '等待 worker 重新领取'}`,
+                        delivery_updated_at: now
+                    };
+                    actionType = 'shop.delivery.force_unlock';
+                    successMessage = '履约任务已强制解锁。';
+                }
                 break;
             default:
                 return sendJson(res, 400, { success: false, message: 'Unsupported action' });
@@ -175,6 +205,31 @@ module.exports = async (req, res) => {
             }
         }
 
+        if (action === 'force_unlock') {
+            try {
+                await supabase
+                    .from('shop_webhook_task_conflicts')
+                    .insert({
+                        task_id: taskId,
+                        order_id: task.order_id || null,
+                        scope: 'manual',
+                        reason_key: String(taskPatch.last_conflict_reason || 'manual_force_unlock').trim().toLowerCase(),
+                        detail: taskPatch.last_conflict_note || '管理员强制解锁',
+                        strategy_snapshot: {
+                            source: 'admin_force_unlock'
+                        },
+                        target_key: task.target_key || null,
+                        channel_key: task.channel_key || null,
+                        worker_name: task.worker_name || null,
+                        lock_token: task.lock_token || null,
+                        task_status: taskPatch.status || task.status || null,
+                        next_attempt_at: taskPatch.next_attempt_at || now
+                    });
+            } catch (conflictAuditError) {
+                console.warn('[shop/delivery-actions] failed to write conflict audit:', conflictAuditError.message);
+            }
+        }
+
         await writeAdminAuditLog({
             supabase,
             adminId: user.id,
@@ -192,8 +247,17 @@ module.exports = async (req, res) => {
                     lock_token: task.lock_token || null,
                     worker_name: task.worker_name || null
                 },
+                previous_conflict: {
+                    conflict_count: Number(task.conflict_count || 0),
+                    last_conflict_at: task.last_conflict_at || null,
+                    last_conflict_reason: task.last_conflict_reason || null,
+                    last_conflict_scope: task.last_conflict_scope || null,
+                    last_conflict_note: task.last_conflict_note || null
+                },
                 task_snapshot: {
                     target_url: task.target_url || null,
+                    target_key: task.target_key || null,
+                    channel_key: task.channel_key || null,
                     last_error: task.last_error || null,
                     last_response_status: task.last_response_status || null,
                     last_response_body: task.last_response_body || null,

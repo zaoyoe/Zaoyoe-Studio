@@ -39,6 +39,8 @@ let shopDeliverySweepTimer = null;
 let shopDeliverySweepRunning = false;
 let cachedShopDeliveryStrategy = null;
 let cachedShopDeliveryStrategyAt = 0;
+const shopDeliveryTargetReservations = new Map();
+const shopDeliveryChannelReservations = new Map();
 const afdianProvider = getPaymentProviderAdapter('afdian');
 
 // Initialize Supabase
@@ -722,6 +724,194 @@ function clampDeliveryText(value, limit = 4000) {
     return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
 }
 
+function normalizeShopDeliveryUrl(targetUrl) {
+    const raw = String(targetUrl || '').trim();
+    if (!raw) return null;
+
+    try {
+        const parsed = new URL(raw);
+        const host = String(parsed.host || '').trim().toLowerCase();
+        const path = parsed.pathname || '/';
+        if (!host) return null;
+        return {
+            host,
+            path: path || '/',
+            targetKey: `${host}${path || '/'}`,
+            channelKey: host
+        };
+    } catch (_) {
+        return null;
+    }
+}
+
+function getShopDeliveryTargetKey(task = {}) {
+    const explicit = String(task.target_key || '').trim().toLowerCase();
+    if (explicit) return explicit;
+    return normalizeShopDeliveryUrl(task.target_url)?.targetKey || null;
+}
+
+function getShopDeliveryChannelKey(task = {}) {
+    const explicit = String(task.channel_key || '').trim().toLowerCase();
+    if (explicit) return explicit;
+    return normalizeShopDeliveryUrl(task.target_url)?.channelKey || null;
+}
+
+function getShopDeliveryReservationBucket(map, key) {
+    const normalizedKey = String(key || '').trim().toLowerCase();
+    if (!normalizedKey) return null;
+
+    const existing = map.get(normalizedKey);
+    if (existing) {
+        return existing;
+    }
+
+    const next = {
+        inflight: 0,
+        lastStartedAt: 0,
+        lastReleasedAt: 0
+    };
+    map.set(normalizedKey, next);
+    return next;
+}
+
+function cleanupShopDeliveryReservationMap(map) {
+    const now = Date.now();
+    for (const [key, bucket] of map.entries()) {
+        if (!bucket) {
+            map.delete(key);
+            continue;
+        }
+
+        const lastTouchedAt = Math.max(
+            Number(bucket.lastStartedAt || 0),
+            Number(bucket.lastReleasedAt || 0)
+        );
+        if (Number(bucket.inflight || 0) <= 0 && (!lastTouchedAt || (now - lastTouchedAt) > 10 * 60 * 1000)) {
+            map.delete(key);
+        }
+    }
+}
+
+function createShopDeliveryConflict(scope, reasonKey, waitMs = 0, detail = '') {
+    const normalizedScope = String(scope || 'worker').trim().toLowerCase() || 'worker';
+    const normalizedReason = String(reasonKey || 'unknown_conflict').trim().toLowerCase() || 'unknown_conflict';
+    const normalizedWaitMs = Math.max(0, Number(waitMs || 0));
+    return {
+        scope: normalizedScope,
+        reasonKey: normalizedReason,
+        waitMs: normalizedWaitMs,
+        waitSeconds: Math.max(0, Math.ceil(normalizedWaitMs / 1000)),
+        detail: detail || `${normalizedScope}:${normalizedReason}`
+    };
+}
+
+function evaluateShopDeliveryReservationConflict(task, strategy = null) {
+    const config = strategy || cachedShopDeliveryStrategy || normalizeShopDeliveryStrategyConfig({}, process.env);
+    const now = Date.now();
+    const targetKey = getShopDeliveryTargetKey(task);
+    const channelKey = getShopDeliveryChannelKey(task);
+
+    cleanupShopDeliveryReservationMap(shopDeliveryTargetReservations);
+    cleanupShopDeliveryReservationMap(shopDeliveryChannelReservations);
+
+    if (targetKey) {
+        const targetBucket = getShopDeliveryReservationBucket(shopDeliveryTargetReservations, targetKey);
+        const targetMaxInflight = Math.max(1, Number(config?.target_max_inflight || 1));
+        const targetMinIntervalMs = Math.max(0, Number(config?.target_min_interval_ms || 0));
+
+        if (Number(targetBucket?.inflight || 0) >= targetMaxInflight) {
+            return createShopDeliveryConflict(
+                'target',
+                'target_max_inflight',
+                Math.max(targetMinIntervalMs, 0),
+                `目标 ${targetKey} 的并发占位已达到 ${targetMaxInflight}`
+            );
+        }
+
+        if (targetMinIntervalMs > 0 && Number(targetBucket?.lastStartedAt || 0) > 0) {
+            const waitMs = targetMinIntervalMs - (now - Number(targetBucket.lastStartedAt || 0));
+            if (waitMs > 0) {
+                return createShopDeliveryConflict(
+                    'target',
+                    'target_min_interval',
+                    waitMs,
+                    `目标 ${targetKey} 需至少间隔 ${targetMinIntervalMs}ms`
+                );
+            }
+        }
+    }
+
+    if (channelKey) {
+        const channelBucket = getShopDeliveryReservationBucket(shopDeliveryChannelReservations, channelKey);
+        const channelMaxInflight = Math.max(1, Number(config?.channel_max_inflight || 2));
+        const channelMinIntervalMs = Math.max(0, Number(config?.channel_min_interval_ms || 0));
+
+        if (Number(channelBucket?.inflight || 0) >= channelMaxInflight) {
+            return createShopDeliveryConflict(
+                'channel',
+                'channel_max_inflight',
+                Math.max(channelMinIntervalMs, 0),
+                `通道 ${channelKey} 的并发占位已达到 ${channelMaxInflight}`
+            );
+        }
+
+        if (channelMinIntervalMs > 0 && Number(channelBucket?.lastStartedAt || 0) > 0) {
+            const waitMs = channelMinIntervalMs - (now - Number(channelBucket.lastStartedAt || 0));
+            if (waitMs > 0) {
+                return createShopDeliveryConflict(
+                    'channel',
+                    'channel_min_interval',
+                    waitMs,
+                    `通道 ${channelKey} 需至少间隔 ${channelMinIntervalMs}ms`
+                );
+            }
+        }
+    }
+
+    return null;
+}
+
+function reserveShopDeliveryExecution(task) {
+    const now = Date.now();
+    const targetKey = getShopDeliveryTargetKey(task);
+    const channelKey = getShopDeliveryChannelKey(task);
+
+    if (targetKey) {
+        const targetBucket = getShopDeliveryReservationBucket(shopDeliveryTargetReservations, targetKey);
+        targetBucket.inflight = Math.max(0, Number(targetBucket.inflight || 0)) + 1;
+        targetBucket.lastStartedAt = now;
+    }
+
+    if (channelKey) {
+        const channelBucket = getShopDeliveryReservationBucket(shopDeliveryChannelReservations, channelKey);
+        channelBucket.inflight = Math.max(0, Number(channelBucket.inflight || 0)) + 1;
+        channelBucket.lastStartedAt = now;
+    }
+
+    return { targetKey, channelKey };
+}
+
+function releaseShopDeliveryExecution(reservation = {}) {
+    const now = Date.now();
+    const targetKey = String(reservation.targetKey || '').trim().toLowerCase();
+    const channelKey = String(reservation.channelKey || '').trim().toLowerCase();
+
+    if (targetKey && shopDeliveryTargetReservations.has(targetKey)) {
+        const targetBucket = shopDeliveryTargetReservations.get(targetKey);
+        targetBucket.inflight = Math.max(0, Number(targetBucket.inflight || 0) - 1);
+        targetBucket.lastReleasedAt = now;
+    }
+
+    if (channelKey && shopDeliveryChannelReservations.has(channelKey)) {
+        const channelBucket = shopDeliveryChannelReservations.get(channelKey);
+        channelBucket.inflight = Math.max(0, Number(channelBucket.inflight || 0) - 1);
+        channelBucket.lastReleasedAt = now;
+    }
+
+    cleanupShopDeliveryReservationMap(shopDeliveryTargetReservations);
+    cleanupShopDeliveryReservationMap(shopDeliveryChannelReservations);
+}
+
 async function getShopDeliveryStrategy(options = {}) {
     const forceRefresh = options?.forceRefresh === true;
     const now = Date.now();
@@ -821,6 +1011,8 @@ function buildShopDeliveryPayload(task, orderContext) {
             task_id: task.id,
             order_id: task.order_id,
             dedupe_key: task.dedupe_key,
+            target_key: getShopDeliveryTargetKey(task),
+            channel_key: getShopDeliveryChannelKey(task),
             attempt_no: task.attempt_count,
             worker_name: task.worker_name || getShopDeliveryWorkerName(),
             requested_at: new Date().toISOString()
@@ -866,6 +1058,87 @@ async function recordShopDeliveryAttempt({
     } catch (error) {
         console.warn('[ShopDeliveryWorker] Failed to record task attempt:', error.message);
     }
+}
+
+async function recordShopDeliveryConflict(task, conflict = {}, strategy = null) {
+    if (!task?.id) return null;
+
+    const config = strategy || await getShopDeliveryStrategy();
+    const waitSeconds = Math.max(
+        5,
+        Number(config?.conflict_backoff_seconds || 45),
+        Number(conflict.waitSeconds || 0)
+    );
+    const strategySnapshot = {
+        worker_parallelism: Number(config?.worker_parallelism || 1),
+        target_min_interval_ms: Number(config?.target_min_interval_ms || 0),
+        target_max_inflight: Number(config?.target_max_inflight || 1),
+        channel_min_interval_ms: Number(config?.channel_min_interval_ms || 0),
+        channel_max_inflight: Number(config?.channel_max_inflight || 2),
+        conflict_backoff_seconds: Number(config?.conflict_backoff_seconds || 45),
+        conflict_dead_letter_threshold: Number(config?.conflict_dead_letter_threshold || 0)
+    };
+
+    const { data, error } = await supabase.rpc('fn_record_shop_delivery_conflict', {
+        p_task_id: task.id,
+        p_lock_token: task.lock_token || null,
+        p_scope: String(conflict.scope || 'worker').trim().toLowerCase() || 'worker',
+        p_reason_key: String(conflict.reasonKey || 'unknown_conflict').trim().toLowerCase() || 'unknown_conflict',
+        p_detail: clampDeliveryText(conflict.detail, 1000),
+        p_worker_name: task.worker_name || getShopDeliveryWorkerName(),
+        p_target_key: getShopDeliveryTargetKey(task),
+        p_channel_key: getShopDeliveryChannelKey(task),
+        p_strategy_snapshot: strategySnapshot,
+        p_backoff_seconds: waitSeconds,
+        p_conflict_dead_letter_threshold: Math.max(0, Number(config?.conflict_dead_letter_threshold || 0))
+    });
+
+    if (error) {
+        console.warn('[ShopDeliveryWorker] Conflict RPC failed, falling back to direct requeue:', error.message);
+        const fallbackNextAttemptAt = new Date(Date.now() + waitSeconds * 1000).toISOString();
+        const fallbackError = `冲突保护已重排队: ${conflict.detail || `${conflict.scope || 'worker'}/${conflict.reasonKey || 'unknown_conflict'}`}`;
+        const { error: fallbackUpdateError } = await supabase
+            .from('shop_webhook_tasks')
+            .update({
+                status: 'retry_waiting',
+                next_attempt_at: fallbackNextAttemptAt,
+                last_error: clampDeliveryText(fallbackError, 1000),
+                updated_at: new Date().toISOString(),
+                locked_at: null,
+                lock_expires_at: null,
+                lock_token: null,
+                worker_name: null
+            })
+            .eq('id', task.id)
+            .eq('lock_token', task.lock_token);
+
+        if (fallbackUpdateError) {
+            throw fallbackUpdateError;
+        }
+
+        if (task.order_id) {
+            await supabase
+                .from('shop_orders')
+                .update({
+                    delivery_status: 'retry_waiting',
+                    delivery_last_error: clampDeliveryText(fallbackError, 1000),
+                    delivery_updated_at: new Date().toISOString()
+                })
+                .eq('id', task.order_id);
+        }
+
+        return {
+            status: 'retry_waiting',
+            next_attempt_at: fallbackNextAttemptAt,
+            conflict_count: Number(task.conflict_count || 0),
+            dead_lettered: false,
+            fallback: true
+        };
+    }
+
+    if (!data) return null;
+    if (Array.isArray(data)) return data[0] || null;
+    return data;
 }
 
 async function markShopDeliveryTaskSuccess(task, responseStatus, responseBody) {
@@ -1075,6 +1348,64 @@ async function executeShopDeliveryTask(task, strategy = null) {
     }
 }
 
+async function handleShopDeliveryExecutionConflict(task, conflict = {}, strategy = null) {
+    const config = strategy || await getShopDeliveryStrategy();
+    const result = await recordShopDeliveryConflict(task, conflict, config);
+
+    if (result?.dead_lettered) {
+        console.warn(
+            `[ShopDeliveryWorker] Task ${task.id} moved to dead letter by conflict strategy:`,
+            `${conflict.scope || 'worker'}/${conflict.reasonKey || 'unknown_conflict'}`
+        );
+        return;
+    }
+
+    console.info(
+        `[ShopDeliveryWorker] Task ${task.id} requeued by conflict strategy:`,
+        `${conflict.scope || 'worker'}/${conflict.reasonKey || 'unknown_conflict'}`,
+        conflict.detail || ''
+    );
+}
+
+async function processShopDeliveryTaskBatch(tasks = [], strategy = null) {
+    const config = strategy || await getShopDeliveryStrategy();
+    const queue = Array.isArray(tasks) ? [...tasks] : [];
+    if (!queue.length) return;
+
+    const parallelism = Math.min(
+        queue.length,
+        Math.max(1, Number(config?.worker_parallelism || 1))
+    );
+
+    const workers = Array.from({ length: parallelism }, async () => {
+        while (queue.length) {
+            const task = queue.shift();
+            if (!task) return;
+
+            const conflict = evaluateShopDeliveryReservationConflict(task, config);
+            if (conflict) {
+                try {
+                    await handleShopDeliveryExecutionConflict(task, conflict, config);
+                } catch (error) {
+                    console.error(`[ShopDeliveryWorker] Failed to apply conflict strategy for task ${task.id}:`, error);
+                }
+                continue;
+            }
+
+            const reservation = reserveShopDeliveryExecution(task);
+            try {
+                await executeShopDeliveryTask(task, config);
+            } catch (error) {
+                console.error(`[ShopDeliveryWorker] Task ${task.id} failed unexpectedly:`, error);
+            } finally {
+                releaseShopDeliveryExecution(reservation);
+            }
+        }
+    });
+
+    await Promise.all(workers);
+}
+
 async function sweepShopDeliveryTasks() {
     if (shopDeliverySweepRunning) return;
     shopDeliverySweepRunning = true;
@@ -1082,13 +1413,7 @@ async function sweepShopDeliveryTasks() {
     try {
         const strategy = await getShopDeliveryStrategy();
         const tasks = await claimShopDeliveryTasks(strategy?.sweep_batch_size, strategy);
-        for (const task of tasks) {
-            try {
-                await executeShopDeliveryTask(task, strategy);
-            } catch (error) {
-                console.error(`[ShopDeliveryWorker] Task ${task.id} failed unexpectedly:`, error);
-            }
-        }
+        await processShopDeliveryTaskBatch(tasks, strategy);
     } catch (error) {
         console.error('[ShopDeliveryWorker] Sweep failed:', error);
     } finally {

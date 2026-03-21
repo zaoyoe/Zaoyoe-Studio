@@ -11,7 +11,7 @@ const {
 } = require('../../../../api/_lib/payments/shop-delivery-strategy');
 
 const SUMMARY_STATUSES = ['pending', 'processing', 'retry_waiting', 'requeued', 'dead_letter', 'delivered'];
-const DEAD_LETTER_REASON_KEYS = new Set(['all', 'manual', 'missing_target', 'timeout', 'upstream_4xx', 'upstream_5xx', 'max_attempts', 'network_failure', 'unknown']);
+const DEAD_LETTER_REASON_KEYS = new Set(['all', 'manual', 'missing_target', 'timeout', 'upstream_4xx', 'upstream_5xx', 'max_attempts', 'network_failure', 'conflict_strategy', 'unknown']);
 const LOCK_STATE_KEYS = new Set(['all', 'active', 'stale']);
 const OPEN_TASK_STATUSES = ['pending', 'processing', 'retry_waiting', 'requeued'];
 const TASK_SELECT = `
@@ -28,7 +28,14 @@ const TASK_SELECT = `
     last_response_status,
     last_response_body,
     dedupe_key,
+    target_key,
+    channel_key,
     worker_name,
+    conflict_count,
+    last_conflict_at,
+    last_conflict_reason,
+    last_conflict_scope,
+    last_conflict_note,
     delivered_at,
     dead_lettered_at,
     manual_replay_requested_at,
@@ -66,6 +73,22 @@ const ATTEMPT_SELECT = `
     response_status,
     error_message,
     duration_ms
+`;
+const CONFLICT_AUDIT_SELECT = `
+    id,
+    task_id,
+    order_id,
+    scope,
+    reason_key,
+    detail,
+    strategy_snapshot,
+    target_key,
+    channel_key,
+    worker_name,
+    lock_token,
+    task_status,
+    next_attempt_at,
+    created_at
 `;
 
 function parsePositiveInt(value, fallback, max = 100) {
@@ -152,9 +175,13 @@ function classifyDeadLetterReason(task = {}) {
     const responseStatus = Number(task?.last_response_status || 0);
     const attemptCount = Number(task?.attempt_count || 0);
     const maxAttempts = Number(task?.max_attempts || 0);
+    const lastConflictReason = String(task?.last_conflict_reason || '').trim().toLowerCase();
 
     if (normalized.includes('人工死信') || normalized.includes('人工标记') || normalized.includes('manually marked')) {
         return { key: 'manual', label: '人工标记', tone: 'muted' };
+    }
+    if (normalized.includes('冲突保护') || lastConflictReason.includes('manual_force_unlock') || lastConflictReason.includes('target_') || lastConflictReason.includes('channel_')) {
+        return { key: 'conflict_strategy', label: '冲突策略', tone: 'warn' };
     }
     if (normalized.includes('未配置履约目标地址')) {
         return { key: 'missing_target', label: '目标地址缺失', tone: 'danger' };
@@ -225,6 +252,7 @@ function summarizeDeadLetterTasks(tasks = []) {
         upstream_4xx: 0,
         upstream_5xx: 0,
         max_attempts: 0,
+        conflict_strategy: 0,
         manual: 0,
         unknown: 0
     };
@@ -238,6 +266,60 @@ function summarizeDeadLetterTasks(tasks = []) {
         }
     });
 
+    return counts;
+}
+
+function classifyConflictReason(record = {}) {
+    const reasonKey = String(record?.reason_key || record?.last_conflict_reason || '').trim().toLowerCase();
+
+    if (reasonKey.includes('target_max_inflight')) {
+        return { key: 'target_max_inflight', label: '目标并发打满', tone: 'warn' };
+    }
+    if (reasonKey.includes('target_min_interval')) {
+        return { key: 'target_min_interval', label: '目标触发间隔限流', tone: 'warn' };
+    }
+    if (reasonKey.includes('channel_max_inflight')) {
+        return { key: 'channel_max_inflight', label: '通道并发打满', tone: 'danger' };
+    }
+    if (reasonKey.includes('channel_min_interval')) {
+        return { key: 'channel_min_interval', label: '通道触发间隔限流', tone: 'warn' };
+    }
+    if (reasonKey.includes('manual_force_unlock')) {
+        return { key: 'manual_force_unlock', label: '人工强制解锁', tone: 'processing' };
+    }
+
+    return { key: 'unknown_conflict', label: '其他冲突', tone: 'muted' };
+}
+
+function summarizeConflictAudits(records = []) {
+    const counts = {
+        total: Number(records.length || 0),
+        target_max_inflight: 0,
+        target_min_interval: 0,
+        channel_max_inflight: 0,
+        channel_min_interval: 0,
+        manual_force_unlock: 0,
+        dead_letter: 0,
+        latest_conflict_at: null
+    };
+    let latestAt = 0;
+
+    records.forEach((record) => {
+        const classified = record?.conflict_reason || classifyConflictReason(record);
+        if (Object.prototype.hasOwnProperty.call(counts, classified.key)) {
+            counts[classified.key] += 1;
+        }
+        if (String(record?.task_status || '').toLowerCase() === 'dead_letter') {
+            counts.dead_letter += 1;
+        }
+
+        const createdAt = Number(new Date(record?.created_at || 0).getTime());
+        if (createdAt > latestAt) {
+            latestAt = createdAt;
+        }
+    });
+
+    counts.latest_conflict_at = latestAt ? new Date(latestAt).toISOString() : null;
     return counts;
 }
 
@@ -321,9 +403,13 @@ function applyTaskSearch(taskQuery, query) {
     const escapedQuery = trimmed.replace(/,/g, ' ');
     return taskQuery.or([
         `target_url.ilike.%${escapedQuery}%`,
+        `target_key.ilike.%${escapedQuery}%`,
+        `channel_key.ilike.%${escapedQuery}%`,
         `dedupe_key.ilike.%${escapedQuery}%`,
         `worker_name.ilike.%${escapedQuery}%`,
-        `last_error.ilike.%${escapedQuery}%`
+        `last_error.ilike.%${escapedQuery}%`,
+        `last_conflict_reason.ilike.%${escapedQuery}%`,
+        `last_conflict_note.ilike.%${escapedQuery}%`
     ].join(','));
 }
 
@@ -368,6 +454,16 @@ async function countManualReplayTasks(supabase) {
         .from('shop_webhook_tasks')
         .select('*', { count: 'exact', head: true })
         .gt('manual_replay_count', 0);
+
+    if (error) throw error;
+    return Number(count || 0);
+}
+
+async function countTasksWithConflicts(supabase) {
+    const { count, error } = await supabase
+        .from('shop_webhook_tasks')
+        .select('*', { count: 'exact', head: true })
+        .gt('conflict_count', 0);
 
     if (error) throw error;
     return Number(count || 0);
@@ -485,6 +581,26 @@ async function fetchReplayLogs({ supabase, page, pageSize }) {
     };
 }
 
+async function fetchRecentConflictAudits({ supabase, limit = 12 }) {
+    const { data, error } = await supabase
+        .from('shop_webhook_task_conflicts')
+        .select(CONFLICT_AUDIT_SELECT)
+        .order('created_at', { ascending: false })
+        .limit(Math.max(1, Math.min(limit, 30)));
+
+    if (error) throw error;
+
+    const records = (data || []).map((record) => ({
+        ...record,
+        conflict_reason: classifyConflictReason(record)
+    }));
+
+    return {
+        total: records.length,
+        records
+    };
+}
+
 async function fetchOrdersByIds(supabase, orderIds = []) {
     const ids = unique(orderIds);
     if (!ids.length) return {};
@@ -531,6 +647,9 @@ function enrichTasks(tasks = [], ordersById = {}, attemptsByTask = {}) {
         lock_state: getLockState(task),
         dead_letter_reason: String(task?.status || '').toLowerCase() === 'dead_letter'
             ? classifyDeadLetterReason(task)
+            : null,
+        conflict_reason: task?.last_conflict_reason
+            ? classifyConflictReason(task)
             : null,
         order: task.order_id ? (ordersById[task.order_id] || null) : null,
         attempts: attemptsByTask[task.id] || []
@@ -627,7 +746,7 @@ module.exports = async (req, res) => {
         const replayPage = parsePositiveInt(url.searchParams.get('replayPage'), 1, 100000);
         const replayPageSize = parsePositiveInt(url.searchParams.get('replayPageSize'), 5, 20);
 
-        const [mainPage, deadLetterPageData, lockPageData, replayPageData] = await Promise.all([
+        const [mainPage, deadLetterPageData, lockPageData, replayPageData, conflictAuditData] = await Promise.all([
             fetchTaskPage({
                 supabase,
                 page,
@@ -652,6 +771,10 @@ module.exports = async (req, res) => {
                 supabase,
                 page: replayPage,
                 pageSize: replayPageSize
+            }),
+            fetchRecentConflictAudits({
+                supabase,
+                limit: 12
             })
         ]);
 
@@ -661,12 +784,15 @@ module.exports = async (req, res) => {
         }));
         const replayTaskIds = replayDetails.map((row) => row.details?.task_id);
         const replayOrderIds = replayDetails.map((row) => row.details?.order_id);
+        const conflictTaskIds = (conflictAuditData.records || []).map((row) => row.task_id);
+        const conflictOrderIds = (conflictAuditData.records || []).map((row) => row.order_id);
 
         const orderIds = unique([
             ...mainPage.tasks.map((task) => task.order_id),
             ...deadLetterPageData.tasks.map((task) => task.order_id),
             ...lockPageData.tasks.map((task) => task.order_id),
-            ...replayOrderIds
+            ...replayOrderIds,
+            ...conflictOrderIds
         ]);
 
         const missingReplayTaskIds = replayTaskIds.filter((taskId) => (
@@ -674,16 +800,25 @@ module.exports = async (req, res) => {
             && !deadLetterPageData.tasks.some((task) => task.id === taskId)
             && !lockPageData.tasks.some((task) => task.id === taskId)
         ));
+        const missingConflictTaskIds = conflictTaskIds.filter((taskId) => (
+            !mainPage.tasks.some((task) => task.id === taskId)
+            && !deadLetterPageData.tasks.some((task) => task.id === taskId)
+            && !lockPageData.tasks.some((task) => task.id === taskId)
+        ));
 
         const [ordersById, extraTasksById] = await Promise.all([
             fetchOrdersByIds(supabase, orderIds),
-            fetchTasksByIds(supabase, missingReplayTaskIds)
+            fetchTasksByIds(supabase, unique([
+                ...missingReplayTaskIds,
+                ...missingConflictTaskIds
+            ]))
         ]);
 
         const taskIdsForAttempts = unique([
             ...mainPage.tasks.map((task) => task.id),
             ...deadLetterPageData.tasks.map((task) => task.id),
             ...lockPageData.tasks.map((task) => task.id),
+            ...conflictTaskIds,
             ...Object.keys(extraTasksById)
         ]);
 
@@ -734,16 +869,34 @@ module.exports = async (req, res) => {
                 order: orderId ? (ordersById[orderId] || task?.order || null) : (task?.order || null)
             };
         });
+        const conflictRecords = (conflictAuditData.records || []).map((record) => {
+            const task = record.task_id
+                ? (mainTasks.find((item) => item.id === record.task_id)
+                    || deadLetterTasks.find((item) => item.id === record.task_id)
+                    || lockTasks.find((item) => item.id === record.task_id)
+                    || replayTasksById[record.task_id]
+                    || null)
+                : null;
+
+            return {
+                ...record,
+                task,
+                order: record.order_id
+                    ? (ordersById[record.order_id] || task?.order || null)
+                    : (task?.order || null)
+            };
+        });
 
         const summaryCounts = await Promise.all(SUMMARY_STATUSES.map(async (status) => {
             const taskCount = await countTasksByStatus(supabase, status);
             return [status, taskCount];
         }));
 
-        const [activeLocks, staleLocks, manualReplays] = await Promise.all([
+        const [activeLocks, staleLocks, manualReplays, conflictTasks] = await Promise.all([
             countTasksByLockState(supabase, 'active'),
             countTasksByLockState(supabase, 'stale'),
-            countManualReplayTasks(supabase)
+            countManualReplayTasks(supabase),
+            countTasksWithConflicts(supabase)
         ]);
         const missingLocks = await countTasksByLockState(supabase, 'missing');
 
@@ -758,10 +911,13 @@ module.exports = async (req, res) => {
         summary.lock_missing = missingLocks;
         summary.force_unlock_candidates = staleLocks + missingLocks;
         summary.manual_replays = manualReplays;
+        summary.recent_conflicts = Number(conflictAuditData.total || 0);
+        summary.conflict_tasks = conflictTasks;
 
         const deadLetterSummary = summarizeDeadLetterTasks(deadLetterPageData.allTasks || []);
         const lockSummary = summarizeLockConflictTasks(lockPageData.allTasks || []);
         const replaySummary = summarizeReplayRecords(replayRecords);
+        const conflictSummary = summarizeConflictAudits(conflictRecords);
 
         return sendJson(res, 200, {
             success: true,
@@ -792,6 +948,11 @@ module.exports = async (req, res) => {
                 total: replayPageData.total,
                 summary: replaySummary,
                 records: replayRecords
+            },
+            conflicts: {
+                total: conflictAuditData.total,
+                summary: conflictSummary,
+                records: conflictRecords
             }
         });
     } catch (error) {
