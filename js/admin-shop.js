@@ -46,6 +46,8 @@ const ShopAdmin = {
     ordersPage: 1,
     deliveryTaskPage: 1,
     deliveryTaskStatusFilter: 'all',
+    deliveryTaskQuery: '',
+    deliveryTaskQueryContext: null,
     deliveryTaskPageSize: 8,
     deliveryDeadLetterPage: 1,
     deliveryDeadLetterReasonFilter: 'all',
@@ -55,6 +57,7 @@ const ShopAdmin = {
     deliveryLockConflictPageSize: 5,
     deliveryReplayPage: 1,
     deliveryReplayPageSize: 5,
+    deliveryAnalyticsWindow: '24h',
     deliveryStrategyConfig: null,
     pageSize: 10,
     currentCategory: 'all', // State for category filter
@@ -1877,6 +1880,68 @@ Example output format:
         return `<span class="shop-delivery-meta-badge" style="color:${colors.text};background:${colors.bg};border-color:${colors.border};">${this.escapeHtml(label)}</span>`;
     },
 
+    getDeliveryAnalyticsWindowConfig: function (windowKey = this.deliveryAnalyticsWindow) {
+        const configs = {
+            '24h': {
+                key: '24h',
+                label: '24h',
+                description: '近 24 小时'
+            },
+            '72h': {
+                key: '72h',
+                label: '72h',
+                description: '近 72 小时'
+            },
+            '7d': {
+                key: '7d',
+                label: '7d',
+                description: '近 7 天'
+            }
+        };
+        const normalized = String(windowKey || '').trim().toLowerCase();
+        return configs[normalized] || configs['24h'];
+    },
+
+    renderDeliveryTaskFilterHint: function () {
+        const container = document.getElementById('deliveryTaskFilterHint');
+        if (!container) return;
+
+        const query = String(this.deliveryTaskQuery || '').trim();
+        if (!query) {
+            container.innerHTML = `
+                <div class="shop-delivery-filter-banner shop-delivery-filter-banner--idle">
+                    <span class="shop-delivery-table-note">当前未反筛任务表。你可以输入关键字，或直接点击下方热点把目标 / 通道回填到任务筛选里。</span>
+                </div>
+            `;
+            return;
+        }
+
+        const context = this.deliveryTaskQueryContext || {};
+        const sourceType = String(context.type || 'manual').trim().toLowerCase();
+        const sourceLabel = sourceType === 'target'
+            ? '目标热点反筛'
+            : sourceType === 'channel'
+                ? '通道热点反筛'
+                : '手动任务筛选';
+        const tone = sourceType === 'channel'
+            ? 'danger'
+            : sourceType === 'target'
+                ? 'processing'
+                : 'neutral';
+
+        container.innerHTML = `
+            <div class="shop-delivery-filter-banner">
+                <div class="shop-delivery-meta">
+                    ${this.renderDeliveryMetaBadge(sourceLabel, tone)}
+                    ${this.renderDeliveryMetaBadge(this.truncateText(query, 56), 'neutral')}
+                </div>
+                <button type="button" class="shop-delivery-inline-btn" onclick="ShopAdmin.clearDeliveryTaskQuery()">
+                    <i class="fas fa-times"></i> 清除反筛
+                </button>
+            </div>
+        `;
+    },
+
     parseDeliveryStrategyInteger: function (value, fallback) {
         const parsed = Number.parseInt(value, 10);
         return Number.isFinite(parsed) ? parsed : fallback;
@@ -2067,6 +2132,7 @@ Example output format:
     renderDeliveryTaskSummary: function (summary = {}) {
         const container = document.getElementById('deliveryTaskSummary');
         if (!container) return;
+        const recentConflictsLabel = summary.recent_conflicts_label || `${this.getDeliveryAnalyticsWindowConfig().label} 冲突`;
 
         const items = [
             { label: '全部任务', value: summary.total || 0, tone: 'neutral' },
@@ -2075,7 +2141,7 @@ Example output format:
             { label: '死信', value: summary.dead_letter || 0, tone: 'danger' },
             { label: '已履约', value: summary.delivered || 0, tone: 'success' },
             { label: '冲突任务', value: summary.conflict_tasks || 0, tone: 'warn' },
-            { label: '24h 冲突', value: summary.recent_conflicts || 0, tone: 'warn' },
+            { label: recentConflictsLabel, value: summary.recent_conflicts || 0, tone: 'warn' },
             { label: '全局占位', value: summary.reservation_active || 0, tone: 'processing' },
             { label: '占位漂移', value: summary.reservation_drift || 0, tone: 'danger' },
             { label: '占位目标', value: summary.reservation_targets || 0, tone: 'neutral' },
@@ -2725,35 +2791,48 @@ Example output format:
     renderDeliveryHotspotList: function (elementId, items = [], type = 'target') {
         const target = document.getElementById(elementId);
         if (!target) return;
+        const windowConfig = this.getDeliveryAnalyticsWindowConfig();
+        const queryContext = this.deliveryTaskQueryContext || {};
+        const activeQuery = String(this.deliveryTaskQuery || '').trim().toLowerCase();
 
         if (!items.length) {
-            target.innerHTML = '<div class="shop-delivery-empty">近 24 小时没有明显热点。</div>';
+            target.innerHTML = `<div class="shop-delivery-empty">${windowConfig.description}没有明显热点。</div>`;
             return;
         }
 
         const maxConflicts = items.reduce((max, item) => Math.max(max, Number(item?.total_conflicts || 0)), 1);
         target.innerHTML = items.map((item, index) => {
+            const encodedKey = encodeURIComponent(String(item.key || '').trim());
             const keyText = this.escapeHtml(this.truncateText(item.key || '—', type === 'target' ? 42 : 28));
             const totalConflicts = Number(item.total_conflicts || 0);
             const width = Math.max(12, Math.round((totalConflicts / maxConflicts) * 100));
+            const isActive = String(queryContext.type || '').trim().toLowerCase() === type
+                && activeQuery
+                && activeQuery === String(item.key || '').trim().toLowerCase();
             const meta = [
                 this.renderDeliveryMetaBadge(`冲突 ${totalConflicts}`, totalConflicts ? 'warn' : 'muted'),
                 this.renderDeliveryMetaBadge(`活跃占位 ${Number(item.active_reservations || 0)}`, Number(item.active_reservations || 0) ? 'processing' : 'muted'),
                 this.renderDeliveryMetaBadge(`冲突死信 ${Number(item.dead_letter_count || 0)}`, Number(item.dead_letter_count || 0) ? 'danger' : 'muted'),
                 this.renderDeliveryMetaBadge(`人工 ${Number(item.manual_count || 0)}`, Number(item.manual_count || 0) ? 'neutral' : 'muted'),
                 item.latest_reason_label ? this.renderDeliveryMetaBadge(item.latest_reason_label, 'neutral') : '',
-                item.latest_at ? this.renderDeliveryMetaBadge(`最近 ${this.formatDeliveryTime(item.latest_at)}`, 'muted') : ''
+                item.latest_at ? this.renderDeliveryMetaBadge(`最近 ${this.formatDeliveryTime(item.latest_at)}`, 'muted') : '',
+                this.renderDeliveryMetaBadge(isActive ? '已反筛任务表' : '点击反筛任务表', isActive ? 'processing' : 'muted')
             ].filter(Boolean);
 
             return `
-                <div class="shop-delivery-hotspot-item">
+                <button
+                    type="button"
+                    class="shop-delivery-hotspot-item shop-delivery-hotspot-item--action${isActive ? ' shop-delivery-hotspot-item--active' : ''}"
+                    onclick="ShopAdmin.applyDeliveryHotspotFilter('${type}', '${encodedKey}')"
+                    title="点击按${type === 'channel' ? '通道' : '目标'}反筛任务表"
+                >
                     <div class="shop-delivery-hotspot-topline">
                         <div class="shop-delivery-hotspot-key" title="${this.escapeHtml(item.key || '')}">${keyText}</div>
                         <div class="shop-delivery-hotspot-rank">#${index + 1}</div>
                     </div>
                     <div class="shop-delivery-hotspot-bar"><span style="width:${width}%"></span></div>
                     <div class="shop-delivery-hotspot-meta">${meta.join('')}</div>
-                </div>
+                </button>
             `;
         }).join('');
     },
@@ -2762,9 +2841,17 @@ Example output format:
         const summary = document.getElementById('deliveryConflictAnalyticsSummary');
         const chart = document.getElementById('deliveryConflictTrendChart');
         const legend = document.getElementById('deliveryConflictTrendLegend');
+        const windowFilter = document.getElementById('deliveryAnalyticsWindowFilter');
         const trend = analytics.trend || {};
         const hotspots = analytics.hotspots || {};
         const buckets = Array.isArray(trend.buckets) ? trend.buckets : [];
+        const windowConfig = analytics.window || this.getDeliveryAnalyticsWindowConfig();
+        const windowLabel = windowConfig.label || this.getDeliveryAnalyticsWindowConfig().label;
+        const windowDescription = windowConfig.description || this.getDeliveryAnalyticsWindowConfig().description;
+
+        if (windowFilter && windowFilter.value !== String(windowConfig.key || this.deliveryAnalyticsWindow)) {
+            windowFilter.value = String(windowConfig.key || this.deliveryAnalyticsWindow);
+        }
 
         if (summary) {
             const summaryData = analytics.summary || {};
@@ -2772,11 +2859,12 @@ Example output format:
                 ? `${summaryData.hottest_hour_label} · ${Number(summaryData.hottest_hour_total || 0)}`
                 : '—';
             const pills = [
-                this.renderDeliveryMetaBadge(`24h 冲突 ${Number(summaryData.total_conflicts || 0)}`, Number(summaryData.total_conflicts || 0) ? 'warn' : 'muted'),
+                this.renderDeliveryMetaBadge(`${windowLabel} 冲突 ${Number(summaryData.total_conflicts || 0)}`, Number(summaryData.total_conflicts || 0) ? 'warn' : 'muted'),
                 this.renderDeliveryMetaBadge(`目标 ${Number(summaryData.target_conflicts || 0)}`, Number(summaryData.target_conflicts || 0) ? 'processing' : 'muted'),
                 this.renderDeliveryMetaBadge(`通道 ${Number(summaryData.channel_conflicts || 0)}`, Number(summaryData.channel_conflicts || 0) ? 'danger' : 'muted'),
                 this.renderDeliveryMetaBadge(`人工 ${Number(summaryData.manual_conflicts || 0)}`, Number(summaryData.manual_conflicts || 0) ? 'neutral' : 'muted'),
                 this.renderDeliveryMetaBadge(`冲突死信 ${Number(summaryData.dead_letter_conflicts || 0)}`, Number(summaryData.dead_letter_conflicts || 0) ? 'danger' : 'muted'),
+                this.renderDeliveryMetaBadge(`分桶 ${Number(summaryData.bucket_hours || trend.bucket_hours || 1)}h`, 'muted'),
                 this.renderDeliveryMetaBadge(`高峰 ${hottest}`, summaryData.hottest_hour_total ? 'warn' : 'muted')
             ];
             summary.classList.add('shop-delivery-subcard-meta--rich');
@@ -2790,25 +2878,28 @@ Example output format:
             const hasData = buckets.some((bucket) => Number(bucket?.total || 0) > 0);
 
             if (!buckets.length || !hasData) {
-                chart.innerHTML = '<div class="shop-delivery-empty">最近 24 小时暂无冲突记录。</div>';
+                chart.innerHTML = `<div class="shop-delivery-empty">${windowDescription}暂无冲突记录。</div>`;
                 legend.innerHTML = '';
             } else {
                 chart.innerHTML = `
-                    <div class="shop-delivery-trend-bars">
+                    <div class="shop-delivery-trend-bars" style="grid-template-columns:repeat(${Math.max(buckets.length, 1)}, minmax(0, 1fr));">
                         ${buckets.map((bucket, index) => {
                             const totalHeight = Math.max(8, Math.round((Number(bucket.total || 0) / maxValue) * 100));
                             const deadHeight = Number(bucket.dead_letter || 0)
                                 ? Math.max(4, Math.round((Number(bucket.dead_letter || 0) / maxValue) * 100))
                                 : 0;
                             const showLabel = index % labelStep === 0 || index === buckets.length - 1;
-                            const label = String(bucket.label || '').split(' ')[1] || String(bucket.label || '');
+                            const bucketLabel = String(bucket.label || '');
+                            const bucketLabelHtml = Number(trend.bucket_hours || 1) > 1
+                                ? this.escapeHtml(bucketLabel).replace(' ', '<br>')
+                                : this.escapeHtml(bucketLabel.split(' ')[1] || bucketLabel);
                             return `
                                 <div class="shop-delivery-trend-bar" title="${this.escapeHtml(bucket.label || '')} · 总冲突 ${Number(bucket.total || 0)} · 目标 ${Number(bucket.target || 0)} · 通道 ${Number(bucket.channel || 0)} · 人工 ${Number(bucket.manual || 0)} · 冲突死信 ${Number(bucket.dead_letter || 0)}">
                                     <div class="shop-delivery-trend-bar-column">
                                         <div class="shop-delivery-trend-bar-fill" style="height:${totalHeight}%"></div>
                                         ${deadHeight ? `<div class="shop-delivery-trend-bar-fill shop-delivery-trend-bar-fill--dead" style="height:${deadHeight}%"></div>` : ''}
                                     </div>
-                                    <span>${showLabel ? this.escapeHtml(label) : ''}</span>
+                                    <span>${showLabel ? bucketLabelHtml : ''}</span>
                                 </div>
                             `;
                         }).join('')}
@@ -2816,7 +2907,7 @@ Example output format:
                 `;
 
                 legend.innerHTML = `
-                    <span><i class="fas fa-circle"></i> 总冲突 ${Number(trend.total_conflicts || 0)}</span>
+                    <span><i class="fas fa-circle"></i> ${windowLabel} 总冲突 ${Number(trend.total_conflicts || 0)}</span>
                     <span><i class="fas fa-circle"></i> 目标 ${Number(trend.target_conflicts || 0)}</span>
                     <span class="warn"><i class="fas fa-circle"></i> 通道 ${Number(trend.channel_conflicts || 0)}</span>
                     <span><i class="fas fa-circle"></i> 人工 ${Number(trend.manual_conflicts || 0)}</span>
@@ -2951,6 +3042,7 @@ Example output format:
         this.deliveryTaskPage = page;
         const tbody = document.getElementById('deliveryTasksTableBody');
         const summary = document.getElementById('deliveryTaskSummary');
+        const filterHint = document.getElementById('deliveryTaskFilterHint');
         const deadLetterBody = document.getElementById('deliveryDeadLetterTableBody');
         const lockBody = document.getElementById('deliveryLockConflictsTableBody');
         const reservationBody = document.getElementById('deliveryReservationTableBody');
@@ -2968,25 +3060,41 @@ Example output format:
         const conflictAuditSummary = document.getElementById('deliveryConflictAuditSummary');
         const strategySummary = document.getElementById('deliveryStrategySummary');
         const taskFilter = document.getElementById('deliveryTaskStatusFilter');
+        const taskQueryInput = document.getElementById('deliveryTaskQueryInput');
+        const analyticsWindowFilter = document.getElementById('deliveryAnalyticsWindowFilter');
         const deadLetterReasonFilter = document.getElementById('deliveryDeadLetterReasonFilter');
         const lockStateFilter = document.getElementById('deliveryLockStateFilter');
         const status = taskFilter?.value || this.deliveryTaskStatusFilter || 'all';
+        const analyticsWindow = analyticsWindowFilter?.value || this.deliveryAnalyticsWindow || '24h';
+        const analyticsWindowConfig = this.getDeliveryAnalyticsWindowConfig(analyticsWindow);
         const deadLetterReason = deadLetterReasonFilter?.value || this.deliveryDeadLetterReasonFilter || 'all';
         const lockState = lockStateFilter?.value || this.deliveryLockStateFilter || 'all';
+        const query = String(this.deliveryTaskQuery || '').trim();
 
         this.deliveryTaskStatusFilter = status;
         this.deliveryDeadLetterReasonFilter = deadLetterReason;
         this.deliveryLockStateFilter = lockState;
+        this.deliveryAnalyticsWindow = analyticsWindowConfig.key;
 
         if (taskFilter && taskFilter.value !== status) taskFilter.value = status;
+        if (taskQueryInput && taskQueryInput.value !== query) taskQueryInput.value = query;
+        if (analyticsWindowFilter && analyticsWindowFilter.value !== analyticsWindowConfig.key) analyticsWindowFilter.value = analyticsWindowConfig.key;
         if (deadLetterReasonFilter && deadLetterReasonFilter.value !== deadLetterReason) deadLetterReasonFilter.value = deadLetterReason;
         if (lockStateFilter && lockStateFilter.value !== lockState) lockStateFilter.value = lockState;
+        this.renderDeliveryTaskFilterHint();
 
         if (tbody) {
             tbody.innerHTML = '<tr><td colspan="8" class="text-center">正在加载履约任务...</td></tr>';
         }
         if (summary) {
             summary.innerHTML = '<span class="shop-delivery-pill">正在统计履约任务...</span>';
+        }
+        if (filterHint && !query) {
+            filterHint.innerHTML = `
+                <div class="shop-delivery-filter-banner shop-delivery-filter-banner--idle">
+                    <span class="shop-delivery-table-note">当前未反筛任务表。你可以输入关键字，或直接点击下方热点把目标 / 通道回填到任务筛选里。</span>
+                </div>
+            `;
         }
         if (deadLetterBody) {
             deadLetterBody.innerHTML = '<tr><td colspan="6" class="text-center">正在加载死信任务...</td></tr>';
@@ -3004,16 +3112,16 @@ Example output format:
             conflictAuditBody.innerHTML = '<tr><td colspan="5" class="text-center">正在加载冲突审计...</td></tr>';
         }
         if (conflictTrendChart) {
-            conflictTrendChart.innerHTML = '<div class="shop-delivery-empty">正在加载近 24 小时冲突趋势...</div>';
+            conflictTrendChart.innerHTML = `<div class="shop-delivery-empty">正在加载${analyticsWindowConfig.description}冲突趋势...</div>`;
         }
         if (conflictTrendLegend) {
             conflictTrendLegend.innerHTML = '';
         }
         if (targetHotspots) {
-            targetHotspots.innerHTML = '<div class="shop-delivery-table-note">正在加载热点目标...</div>';
+            targetHotspots.innerHTML = `<div class="shop-delivery-table-note">正在加载${analyticsWindowConfig.description}热点目标...</div>`;
         }
         if (channelHotspots) {
-            channelHotspots.innerHTML = '<div class="shop-delivery-table-note">正在加载热点通道...</div>';
+            channelHotspots.innerHTML = `<div class="shop-delivery-table-note">正在加载${analyticsWindowConfig.description}热点通道...</div>`;
         }
         if (conflictAnalyticsSummary) {
             conflictAnalyticsSummary.classList.add('shop-delivery-subcard-meta--rich');
@@ -3056,6 +3164,8 @@ Example output format:
                 page: String(page || 1),
                 pageSize: String(this.deliveryTaskPageSize || 8),
                 status,
+                query,
+                analyticsWindow: analyticsWindowConfig.key,
                 deadLetterPage: String(this.deliveryDeadLetterPage || 1),
                 deadLetterPageSize: String(this.deliveryDeadLetterPageSize || 5),
                 deadLetterReason,
@@ -3076,6 +3186,7 @@ Example output format:
             }
 
             this.renderDeliveryTaskSummary(result.summary || {});
+            this.renderDeliveryTaskFilterHint();
             this.renderDeliveryTasks(result.tasks || [], result.total || 0, result.page || page, result.pageSize || this.deliveryTaskPageSize);
 
             const deadLetter = result.deadLetter || {};
@@ -3199,6 +3310,56 @@ Example output format:
     loadDeliveryReplayPage: function (page = 1) {
         this.deliveryReplayPage = page;
         return this.loadDeliveryTasks(this.deliveryTaskPage || 1);
+    },
+
+    setDeliveryAnalyticsWindow: function (windowKey) {
+        this.deliveryAnalyticsWindow = this.getDeliveryAnalyticsWindowConfig(windowKey).key;
+        this.loadDeliveryTasks(this.deliveryTaskPage || 1);
+    },
+
+    handleDeliveryTaskQueryKeydown: function (event) {
+        if (event?.key !== 'Enter') return;
+        event.preventDefault();
+        this.applyDeliveryTaskQuery();
+    },
+
+    applyDeliveryTaskQuery: function () {
+        const input = document.getElementById('deliveryTaskQueryInput');
+        const nextQuery = String(input?.value || '').trim();
+        this.deliveryTaskQuery = nextQuery;
+        this.deliveryTaskQueryContext = nextQuery
+            ? {
+                type: 'manual',
+                label: nextQuery
+            }
+            : null;
+        this.deliveryTaskPage = 1;
+        this.loadDeliveryTasks(1);
+    },
+
+    applyDeliveryHotspotFilter: function (type, encodedKey) {
+        const decodedKey = decodeURIComponent(String(encodedKey || ''));
+        const nextQuery = decodedKey.trim();
+        if (!nextQuery) return;
+
+        this.deliveryTaskQuery = nextQuery;
+        this.deliveryTaskQueryContext = {
+            type: type === 'channel' ? 'channel' : 'target',
+            label: nextQuery
+        };
+        this.deliveryTaskPage = 1;
+        this.loadDeliveryTasks(1);
+    },
+
+    clearDeliveryTaskQuery: function () {
+        this.deliveryTaskQuery = '';
+        this.deliveryTaskQueryContext = null;
+        const input = document.getElementById('deliveryTaskQueryInput');
+        if (input) {
+            input.value = '';
+        }
+        this.deliveryTaskPage = 1;
+        this.loadDeliveryTasks(1);
     },
 
     setDeliveryTaskStatusFilter: function (status) {

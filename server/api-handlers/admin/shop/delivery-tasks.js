@@ -14,6 +14,29 @@ const SUMMARY_STATUSES = ['pending', 'processing', 'retry_waiting', 'requeued', 
 const DEAD_LETTER_REASON_KEYS = new Set(['all', 'manual', 'missing_target', 'timeout', 'upstream_4xx', 'upstream_5xx', 'max_attempts', 'network_failure', 'conflict_strategy', 'unknown']);
 const LOCK_STATE_KEYS = new Set(['all', 'active', 'stale']);
 const OPEN_TASK_STATUSES = ['pending', 'processing', 'retry_waiting', 'requeued'];
+const ANALYTICS_WINDOW_PRESETS = Object.freeze({
+    '24h': {
+        key: '24h',
+        label: '24h',
+        description: '近 24 小时',
+        hours: 24,
+        bucket_hours: 1
+    },
+    '72h': {
+        key: '72h',
+        label: '72h',
+        description: '近 72 小时',
+        hours: 72,
+        bucket_hours: 3
+    },
+    '7d': {
+        key: '7d',
+        label: '7d',
+        description: '近 7 天',
+        hours: 24 * 7,
+        bucket_hours: 12
+    }
+});
 const TASK_SELECT = `
     id,
     order_id,
@@ -113,6 +136,30 @@ function isUuidLike(value) {
 
 function unique(values = []) {
     return [...new Set(values.filter(Boolean))];
+}
+
+function resolveAnalyticsWindow(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    return ANALYTICS_WINDOW_PRESETS[normalized] || ANALYTICS_WINDOW_PRESETS['24h'];
+}
+
+function getConflictAnalyticsWindowRange(windowPreset) {
+    const analyticsWindow = resolveAnalyticsWindow(windowPreset?.key || windowPreset);
+    const bucketHours = Math.max(1, Number(analyticsWindow.bucket_hours || 1));
+    const bucketCount = Math.max(1, Math.ceil(Number(analyticsWindow.hours || 24) / bucketHours));
+    const end = new Date();
+    end.setMinutes(0, 0, 0);
+    end.setHours(end.getHours() - (end.getHours() % bucketHours), 0, 0, 0);
+
+    const start = new Date(end.getTime() - (bucketCount - 1) * bucketHours * 60 * 60 * 1000);
+
+    return {
+        ...analyticsWindow,
+        bucket_hours: bucketHours,
+        bucket_count: bucketCount,
+        start_at: start.toISOString(),
+        end_at: end.toISOString()
+    };
 }
 
 async function fetchAllRows(buildQuery, pageSize = 200, maxPages = 20) {
@@ -422,24 +469,28 @@ function summarizeConflictAudits(records = []) {
     return counts;
 }
 
-function formatConflictTrendLabel(date) {
+function formatConflictTrendLabel(date, bucketHours = 1) {
     if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '—';
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
     const hour = String(date.getHours()).padStart(2, '0');
+    if (Number(bucketHours || 1) >= 24) {
+        return `${month}-${day}`;
+    }
     return `${month}-${day} ${hour}:00`;
 }
 
-function buildConflictTrend(records = [], hours = 24) {
-    const bucketCount = Math.max(1, Number(hours || 24));
-    const end = new Date();
-    end.setMinutes(0, 0, 0);
-    const start = new Date(end.getTime() - (bucketCount - 1) * 60 * 60 * 1000);
+function buildConflictTrend(records = [], windowPreset = ANALYTICS_WINDOW_PRESETS['24h']) {
+    const analyticsWindow = getConflictAnalyticsWindowRange(windowPreset);
+    const bucketHours = Math.max(1, Number(analyticsWindow.bucket_hours || 1));
+    const bucketCount = Math.max(1, Number(analyticsWindow.bucket_count || 1));
+    const start = new Date(analyticsWindow.start_at);
+    const hourMs = 60 * 60 * 1000;
     const buckets = Array.from({ length: bucketCount }, (_, index) => {
-        const bucketAt = new Date(start.getTime() + index * 60 * 60 * 1000);
+        const bucketAt = new Date(start.getTime() + index * bucketHours * hourMs);
         return {
             bucket_at: bucketAt.toISOString(),
-            label: formatConflictTrendLabel(bucketAt),
+            label: formatConflictTrendLabel(bucketAt, bucketHours),
             total: 0,
             target: 0,
             channel: 0,
@@ -447,13 +498,15 @@ function buildConflictTrend(records = [], hours = 24) {
             dead_letter: 0
         };
     });
-    const bucketMap = new Map(buckets.map((bucket) => [bucket.bucket_at, bucket]));
 
     records.forEach((record) => {
         const createdAt = new Date(record?.created_at || 0);
         if (Number.isNaN(createdAt.getTime())) return;
         createdAt.setMinutes(0, 0, 0);
-        const bucket = bucketMap.get(createdAt.toISOString());
+        const deltaHours = Math.floor((createdAt.getTime() - start.getTime()) / hourMs);
+        if (deltaHours < 0) return;
+        const bucketIndex = Math.floor(deltaHours / bucketHours);
+        const bucket = buckets[bucketIndex];
         if (!bucket) return;
 
         bucket.total += 1;
@@ -491,7 +544,14 @@ function buildConflictTrend(records = [], hours = 24) {
     });
 
     return {
-        hours: bucketCount,
+        window_key: analyticsWindow.key,
+        window_label: analyticsWindow.label,
+        window_description: analyticsWindow.description,
+        hours: Number(analyticsWindow.hours || 24),
+        bucket_hours: bucketHours,
+        bucket_count: bucketCount,
+        range_start_at: analyticsWindow.start_at,
+        range_end_at: analyticsWindow.end_at,
         max_total: maxTotal,
         hottest_hour_label: hottest?.label || null,
         hottest_hour_total: Number(hottest?.total || 0),
@@ -579,14 +639,30 @@ function buildConflictHotspots(records = [], reservationTasks = [], keyField = '
         .slice(0, Math.max(1, Math.min(Number(limit || 6), 12)));
 }
 
-function buildConflictAnalytics(records = [], reservationTasks = [], hours = 24, hotspotLimit = 6) {
-    const trend = buildConflictTrend(records, hours);
+function buildConflictAnalytics(records = [], reservationTasks = [], windowPreset = ANALYTICS_WINDOW_PRESETS['24h'], hotspotLimit = 6) {
+    const analyticsWindow = getConflictAnalyticsWindowRange(windowPreset);
+    const trend = buildConflictTrend(records, analyticsWindow);
     const targets = buildConflictHotspots(records, reservationTasks, 'target_key', hotspotLimit);
     const channels = buildConflictHotspots(records, reservationTasks, 'channel_key', hotspotLimit);
 
     return {
+        window: {
+            key: analyticsWindow.key,
+            label: analyticsWindow.label,
+            description: analyticsWindow.description,
+            hours: analyticsWindow.hours,
+            bucket_hours: analyticsWindow.bucket_hours,
+            bucket_count: analyticsWindow.bucket_count,
+            start_at: analyticsWindow.start_at,
+            end_at: analyticsWindow.end_at
+        },
         summary: {
+            window_key: analyticsWindow.key,
+            window_label: analyticsWindow.label,
+            window_description: analyticsWindow.description,
             hours: trend.hours,
+            bucket_hours: trend.bucket_hours,
+            bucket_count: trend.bucket_count,
             total_conflicts: trend.total_conflicts,
             target_conflicts: trend.target_conflicts,
             channel_conflicts: trend.channel_conflicts,
@@ -932,13 +1008,12 @@ async function fetchRecentConflictAudits({ supabase, limit = 12 }) {
     };
 }
 
-async function fetchConflictAnalyticsWindow({ supabase, hours = 24, pageSize = 200, maxPages = 10 }) {
-    const safeHours = Math.max(1, Number(hours || 24));
-    const cutoffIso = new Date(Date.now() - safeHours * 60 * 60 * 1000).toISOString();
+async function fetchConflictAnalyticsWindow({ supabase, analyticsWindow = ANALYTICS_WINDOW_PRESETS['24h'], pageSize = 300, maxPages = 20 }) {
+    const windowRange = getConflictAnalyticsWindowRange(analyticsWindow);
     const records = await fetchAllRows(() => supabase
         .from('shop_webhook_task_conflicts')
         .select(CONFLICT_AUDIT_SELECT)
-        .gte('created_at', cutoffIso)
+        .gte('created_at', windowRange.start_at)
         .order('created_at', { ascending: false }), pageSize, maxPages);
 
     return (records || []).map((record) => ({
@@ -1084,6 +1159,7 @@ module.exports = async (req, res) => {
         const statusFilter = String(url.searchParams.get('status') || 'all').trim().toLowerCase();
         const query = String(url.searchParams.get('query') || '').trim();
         const lockState = normalizeFilterValue(url.searchParams.get('lockState'), LOCK_STATE_KEYS, 'all');
+        const analyticsWindow = resolveAnalyticsWindow(url.searchParams.get('analyticsWindow'));
 
         const deadLetterPage = parsePositiveInt(url.searchParams.get('deadLetterPage'), 1, 100000);
         const deadLetterPageSize = parsePositiveInt(url.searchParams.get('deadLetterPageSize'), 5, 20);
@@ -1129,7 +1205,7 @@ module.exports = async (req, res) => {
             }),
             fetchConflictAnalyticsWindow({
                 supabase,
-                hours: 24
+                analyticsWindow
             })
         ]);
 
@@ -1287,7 +1363,7 @@ module.exports = async (req, res) => {
         const conflictAnalytics = buildConflictAnalytics(
             conflictAnalyticsRecords,
             reservationOverviewData.allTasks || reservationTasks,
-            24,
+            analyticsWindow,
             6
         );
         summary.reservation_active = reservationSummary.active;
@@ -1295,6 +1371,7 @@ module.exports = async (req, res) => {
         summary.reservation_targets = reservationSummary.distinct_targets;
         summary.reservation_channels = reservationSummary.distinct_channels;
         summary.recent_conflicts = conflictAnalytics.summary.total_conflicts;
+        summary.recent_conflicts_label = `${conflictAnalytics.summary.window_label} 冲突`;
 
         return sendJson(res, 200, {
             success: true,
