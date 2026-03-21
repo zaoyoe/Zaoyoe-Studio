@@ -731,7 +731,7 @@ function mergeCheckoutSessionsWithOrderFallback(orders, sessions) {
                 ...current,
                 payment_order_id: current.payment_order_id || order.id,
                 status: current.status || metadata.checkout_session_status || (isSuccessOrder(order) ? 'completed' : 'created'),
-                provider_metadata,
+                provider_metadata: providerMetadata,
                 completed_at: current.completed_at || (isSuccessOrder(order) ? (order.paid_at || order.claimed_at || order.created_at) : null),
                 updated_at: current.updated_at || order.created_at
             };
@@ -754,7 +754,7 @@ function mergeCheckoutSessionsWithOrderFallback(orders, sessions) {
             checkout_url: null,
             query_mode: null,
             payment_order_id: order.id,
-            provider_metadata,
+            provider_metadata: providerMetadata,
             error_message: String(order.last_error || '').trim() || null,
             expires_at: null,
             completed_at: isSuccessOrder(order) ? (order.paid_at || order.claimed_at || order.created_at) : null,
