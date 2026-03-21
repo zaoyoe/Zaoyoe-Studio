@@ -5593,6 +5593,142 @@
                                     <div class="payments-cleanup-preview" id="paymentsCleanupPreview"></div>
                                 </div>
                             </div>
+
+                            <div class="chart-card glass-panel payments-card payments-card-wide">
+                                <details class="payments-manual" id="paymentsOpsManual">
+                                    <summary class="payments-manual-summary">
+                                        <div class="payments-manual-summary-copy">
+                                            <div class="payments-manual-summary-title">
+                                                <i class="fas fa-book-open"></i>
+                                                <span>支付对账使用说明</span>
+                                            </div>
+                                            <div class="payments-manual-summary-desc">看懂指标、状态、异常与处理建议，默认折叠，不占页面空间。</div>
+                                        </div>
+                                        <div class="payments-manual-summary-action">
+                                            <span>展开查看</span>
+                                            <i class="fas fa-chevron-down"></i>
+                                        </div>
+                                    </summary>
+                                    <div class="payments-manual-content">
+                                        <div class="payments-manual-grid">
+                                            <section class="payments-manual-section">
+                                                <h4>支付总览</h4>
+                                                <div class="payments-manual-list">
+                                                    <div class="payments-manual-item">
+                                                        <strong>总订单</strong>
+                                                        <span>当前时间范围内纳入统计的支付订单总数。</span>
+                                                    </div>
+                                                    <div class="payments-manual-item">
+                                                        <strong>支付成功率</strong>
+                                                        <span><code>paid + redeemed</code> 占总订单的比例，用来看支付链路是否稳定。</span>
+                                                    </div>
+                                                    <div class="payments-manual-item">
+                                                        <strong>意图匹配率</strong>
+                                                        <span>支付意图 <code>payment_checkout_sessions</code> 成功关联到最终订单的比例，越高越健康。</span>
+                                                    </div>
+                                                    <div class="payments-manual-item">
+                                                        <strong>支付金额</strong>
+                                                        <span>当前范围内已支付订单的累计金额。</span>
+                                                    </div>
+                                                </div>
+                                            </section>
+
+                                            <section class="payments-manual-section">
+                                                <h4>全站收支</h4>
+                                                <div class="payments-manual-list">
+                                                    <div class="payments-manual-item">
+                                                        <strong>充值收入</strong>
+                                                        <span>所有充值订单实际入账金额。</span>
+                                                    </div>
+                                                    <div class="payments-manual-item">
+                                                        <strong>商城消耗</strong>
+                                                        <span>商城订单累计消耗的积分，不等同于支付收入。</span>
+                                                    </div>
+                                                    <div class="payments-manual-item">
+                                                        <strong>流入 / 流出 / 净流动</strong>
+                                                        <span>按积分维度看全站流动情况，用来判断库存、赠送和消费是否失衡。</span>
+                                                    </div>
+                                                    <div class="payments-manual-item">
+                                                        <strong>当前流通余额</strong>
+                                                        <span>当前仍在用户账户中流通的积分总量。</span>
+                                                    </div>
+                                                </div>
+                                            </section>
+
+                                            <section class="payments-manual-section">
+                                                <h4>意图匹配状态</h4>
+                                                <div class="payments-manual-list">
+                                                    <div class="payments-manual-item">
+                                                        <strong>自动回填</strong>
+                                                        <span>支付回调阶段已自动把支付意图关联到最终订单，这是最理想状态。</span>
+                                                    </div>
+                                                    <div class="payments-manual-item">
+                                                        <strong>认领兜底</strong>
+                                                        <span>回调阶段没完成关联，后续由钱包查码 / 认领阶段补上。</span>
+                                                    </div>
+                                                    <div class="payments-manual-item">
+                                                        <strong>待回填</strong>
+                                                        <span>支付意图已创建，但还没有挂到最终订单。若长时间存在，需要检查 webhook 或认领链路。</span>
+                                                    </div>
+                                                    <div class="payments-manual-item">
+                                                        <strong>意图失败</strong>
+                                                        <span>支付意图本身失败、取消或过期，通常需要检查通道配置或用户支付是否中断。</span>
+                                                    </div>
+                                                    <div class="payments-manual-item">
+                                                        <strong>历史订单</strong>
+                                                        <span>这笔单创建时还没启用支付意图层，所以不参与意图匹配率。</span>
+                                                    </div>
+                                                </div>
+                                            </section>
+
+                                            <section class="payments-manual-section">
+                                                <h4>异常运维</h4>
+                                                <div class="payments-manual-list">
+                                                    <div class="payments-manual-item">
+                                                        <strong>订单待审核</strong>
+                                                        <span>套餐匹配、金额或签名需要人工确认，优先检查金额与套餐映射。</span>
+                                                    </div>
+                                                    <div class="payments-manual-item">
+                                                        <strong>签名 / 金额异常</strong>
+                                                        <span>优先检查支付通道密钥、回调签名算法和回调来源地址。</span>
+                                                    </div>
+                                                    <div class="payments-manual-item">
+                                                        <strong>已支付但未认领</strong>
+                                                        <span>提醒用户到钱包输入订单号；必要时后台人工补认领。</span>
+                                                    </div>
+                                                    <div class="payments-manual-item">
+                                                        <strong>重复回调</strong>
+                                                        <span>重点看是否重复写单、重复发货，后续应结合幂等和重试机制处理。</span>
+                                                    </div>
+                                                </div>
+                                            </section>
+
+                                            <section class="payments-manual-section">
+                                                <h4>通道表现与清理</h4>
+                                                <div class="payments-manual-list">
+                                                    <div class="payments-manual-item">
+                                                        <strong>通道表现</strong>
+                                                        <span>对比各支付通道的订单量、成功率、认领率和意图匹配率。</span>
+                                                    </div>
+                                                    <div class="payments-manual-item">
+                                                        <strong>最近订单</strong>
+                                                        <span>适合人工核对支付结果、认领时间、站点和意图匹配状态。</span>
+                                                    </div>
+                                                    <div class="payments-manual-item">
+                                                        <strong>测试数据清理</strong>
+                                                        <span>只针对 <code>AUTO_CDX_</code> 和 <code>codex.*@example.com</code>，不会影响正式订单。</span>
+                                                    </div>
+                                                </div>
+                                            </section>
+                                        </div>
+
+                                        <div class="payments-manual-footnote">
+                                            <i class="fas fa-circle-info"></i>
+                                            <span>建议优先处理顺序：<code>意图失败</code> / <code>已完成但未回填</code> / <code>金额或签名异常</code> / <code>已支付但未认领</code>。</span>
+                                        </div>
+                                    </div>
+                                </details>
+                            </div>
                         </div>
                     </div>
                 </div>

@@ -13696,6 +13696,157 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     margin-top: 8px;
 }
 
+.payments-manual {
+    width: 100%;
+}
+
+.payments-manual summary {
+    list-style: none;
+}
+
+.payments-manual summary::-webkit-details-marker {
+    display: none;
+}
+
+.payments-manual-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 18px 22px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.payments-manual-summary-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.payments-manual-summary-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-main);
+}
+
+.payments-manual-summary-title i {
+    color: var(--accent-starry);
+}
+
+.payments-manual-summary-desc {
+    color: var(--text-dim);
+    font-size: 0.84rem;
+    line-height: 1.55;
+}
+
+.payments-manual-summary-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    background: rgba(255, 255, 255, 0.035);
+    color: #dbeafe;
+    font-size: 0.78rem;
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+.payments-manual-summary-action i {
+    transition: transform 0.2s ease;
+}
+
+.payments-manual[open] .payments-manual-summary-action i {
+    transform: rotate(180deg);
+}
+
+.payments-manual-content {
+    padding: 0 22px 22px;
+    border-top: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.payments-manual-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    padding-top: 18px;
+}
+
+.payments-manual-section {
+    padding: 16px 18px;
+    border-radius: 18px;
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    background: rgba(255, 255, 255, 0.035);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.payments-manual-section h4 {
+    margin: 0;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #f8fbff;
+}
+
+.payments-manual-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.payments-manual-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.payments-manual-item strong {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #e5f0ff;
+}
+
+.payments-manual-item span {
+    font-size: 0.78rem;
+    line-height: 1.62;
+    color: var(--text-dim);
+}
+
+.payments-manual-item code,
+.payments-manual-footnote code {
+    padding: 2px 6px;
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.42);
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    color: #dbeafe;
+}
+
+.payments-manual-footnote {
+    margin-top: 16px;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 14px 16px;
+    border-radius: 16px;
+    border: 1px solid rgba(96, 165, 250, 0.14);
+    background: rgba(96, 165, 250, 0.06);
+    color: #dbeafe;
+    font-size: 0.8rem;
+    line-height: 1.7;
+}
+
+.payments-manual-footnote i {
+    margin-top: 3px;
+    color: #93c5fd;
+}
+
 .payments-cleanup-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -14128,6 +14279,20 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
         padding: 18px;
     }
 
+    .payments-manual-summary {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+    }
+
+    .payments-manual-summary-action {
+        align-self: flex-start;
+    }
+
+    .payments-manual-grid {
+        grid-template-columns: 1fr;
+    }
+
     .payments-trend-bars {
         gap: 6px;
     }
@@ -14331,6 +14496,12 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
         margin-top: 0;
         margin-left: 8px;
         white-space: nowrap;
+    }
+
+    .payments-manual-summary,
+    .payments-manual-content {
+        padding-left: 16px;
+        padding-right: 16px;
     }
 
     .payments-points-table {
