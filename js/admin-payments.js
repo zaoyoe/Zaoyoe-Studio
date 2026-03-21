@@ -306,6 +306,71 @@
         return map[String(severity || '')] || '提示';
     }
 
+    function getSessionStatusLabel(status) {
+        const map = {
+            created: '已创建',
+            redirect_ready: '待支付',
+            completed: '已完成',
+            failed: '失败',
+            expired: '已过期',
+            cancelled: '已取消'
+        };
+        return map[String(status || '').trim().toLowerCase()] || String(status || '未知');
+    }
+
+    function getSessionLinkSourceLabel(linkedBy) {
+        const value = String(linkedBy || '').trim().toLowerCase();
+        if (!value) return '已匹配';
+        if (value.includes('webhook')) return '自动回填';
+        if (value.includes('query') || value.includes('claim') || value.includes('fallback')) return '认领兜底';
+        return '已匹配';
+    }
+
+    function getCheckoutSessionMatchInfo(order) {
+        const linkedBy = String(order?.checkout_session_linked_by || '').trim().toLowerCase();
+        const status = String(order?.checkout_session_status || '').trim().toLowerCase();
+        const required = Boolean(order?.checkout_session_required);
+        const matched = Boolean(order?.checkout_session_matched || order?.checkout_session_id);
+
+        if (matched) {
+            return {
+                label: getSessionLinkSourceLabel(linkedBy),
+                tone: linkedBy.includes('query') || linkedBy.includes('claim') || linkedBy.includes('fallback') ? 'warning' : 'success',
+                detail: status ? `会话 ${getSessionStatusLabel(status)}` : '已成功关联支付意图'
+            };
+        }
+
+        if (required) {
+            if (status === 'completed') {
+                return {
+                    label: '待回填',
+                    tone: 'warning',
+                    detail: '支付意图已完成，但尚未回填最终订单'
+                };
+            }
+
+            if (['failed', 'expired', 'cancelled'].includes(status)) {
+                return {
+                    label: '意图失败',
+                    tone: 'danger',
+                    detail: `支付意图状态：${getSessionStatusLabel(status)}`
+                };
+            }
+
+            return {
+                label: '待回填',
+                tone: 'muted',
+                detail: '等待 webhook 或钱包认领阶段完成关联'
+            };
+        }
+
+        return {
+            label: '历史订单',
+            tone: 'muted',
+            detail: '该订单创建时还未启用支付意图链路'
+        };
+    }
+
     function getRangeLabel(days) {
         const num = Number(days || state.days || 30);
         const labels = {
@@ -568,18 +633,21 @@
         const overview = data?.overview || {};
         const anomaly = data?.anomaly_summary || {};
         const sitewide = data?.sitewide_summary || {};
+        const sessionSummary = data?.session_summary || {};
         const providerCount = Array.isArray(data?.provider_stats) ? data.provider_stats.length : 0;
         const anomalyCount = Number(anomaly.review_orders || 0)
             + Number(anomaly.failed_orders || 0)
-            + Number(anomaly.recent_event_anomalies || 0);
+            + Number(anomaly.recent_event_anomalies || 0)
+            + Number(anomaly.session_anomalies || 0);
         const incomeValue = sitewide.recharge_amount != null
             ? sitewide.recharge_amount
             : overview.total_amount;
+        const hasSessionSummary = Number(sessionSummary.total_sessions || 0) > 0;
 
         target.innerHTML = `
             <div class="payments-highlight-pill">
-                <i class="fas fa-credit-card"></i>
-                <span>通道 ${escapeHtml(formatNumber(providerCount))}</span>
+                <i class="fas ${hasSessionSummary ? 'fa-link' : 'fa-credit-card'}"></i>
+                <span>${hasSessionSummary ? `匹配 ${escapeHtml(formatPercent(sessionSummary.order_match_rate || sessionSummary.match_rate))}` : `通道 ${escapeHtml(formatNumber(providerCount))}`}</span>
             </div>
             <div class="payments-highlight-pill">
                 <i class="fas fa-circle-check"></i>
@@ -605,10 +673,11 @@
         const anomaly = data?.anomaly_summary || {};
         const anomalyCount = Number(anomaly.review_orders || 0)
             + Number(anomaly.failed_orders || 0)
-            + Number(anomaly.recent_event_anomalies || 0);
+            + Number(anomaly.recent_event_anomalies || 0)
+            + Number(anomaly.session_anomalies || 0);
 
         if (anomalyCount > 0) {
-            renderAccessState(`当前有 ${formatNumber(anomalyCount)} 项异常需要关注，请优先查看失败订单、待审核与异常回调。`, 'warning', { preserveBody: true });
+            renderAccessState(`当前有 ${formatNumber(anomalyCount)} 项异常需要关注，请优先查看失败订单、待审核、异常回调与支付意图回填。`, 'warning', { preserveBody: true });
             return;
         }
 
@@ -744,6 +813,7 @@
     function renderOverviewCards(data) {
         const overview = data?.overview || {};
         const anomaly = data?.anomaly_summary || {};
+        const sessionSummary = data?.session_summary || {};
         const target = document.getElementById('paymentsOverviewGrid');
         if (!target) return;
 
@@ -761,10 +831,12 @@
                 help: `${formatNumber(overview.paid_orders)} 笔已支付/已兑换`
             },
             {
-                icon: 'fas fa-user-check',
-                label: '认领率',
-                value: formatPercent(overview.claim_rate),
-                help: `${formatNumber(overview.claimed_orders)} 笔已认领`
+                icon: 'fas fa-link',
+                label: '意图匹配率',
+                value: formatPercent(sessionSummary.order_match_rate || sessionSummary.match_rate),
+                help: Number(sessionSummary.total_sessions || 0) > 0
+                    ? `${formatNumber(sessionSummary.matched_sessions)} / ${formatNumber(sessionSummary.total_sessions)} 会话已回填 · 自动 ${formatNumber(sessionSummary.webhook_linked_sessions)} · 兜底 ${formatNumber(sessionSummary.fallback_linked_sessions)}`
+                    : '当前时间范围内暂无可统计的支付意图'
             },
             {
                 icon: 'fas fa-wallet',
@@ -797,8 +869,8 @@
             {
                 icon: 'fas fa-wave-square',
                 label: '异常回调',
-                value: formatNumber(anomaly.recent_event_anomalies),
-                help: `${formatNumber(anomaly.duplicate_webhook_orders)} 个订单出现重复回调`,
+                value: formatNumber(Number(anomaly.recent_event_anomalies || 0) + Number(anomaly.session_anomalies || 0)),
+                help: `${formatNumber(anomaly.duplicate_webhook_orders)} 个订单出现重复回调 · 会话异常 ${formatNumber(anomaly.session_anomalies)}`,
                 tone: 'warning'
             }
         ];
@@ -824,15 +896,20 @@
                         ${escapeHtml(formatNumber(item.total_orders))} 单
                         · 支付成功 ${escapeHtml(formatPercent(item.paid_rate))}
                         · 认领 ${escapeHtml(formatPercent(item.claim_rate))}
+                        · 意图匹配 ${escapeHtml(formatPercent(item.order_match_rate || item.session_match_rate))}
                     </div>
                     <div class="payments-provider-extra">
                         <span>${escapeHtml(formatCurrency(item.total_amount))}</span>
                         <span>${escapeHtml(formatPoints(item.total_points))}</span>
+                        <span>会话 ${escapeHtml(formatNumber(item.session_total))} · 已匹配 ${escapeHtml(formatNumber(item.session_matched))}</span>
                     </div>
                 </div>
                 <div class="payments-provider-badges">
                     <span class="payments-mini-badge">${escapeHtml(formatNumber(item.review_orders))} 待审核</span>
                     <span class="payments-mini-badge danger">${escapeHtml(formatNumber(item.failed_orders))} 异常</span>
+                    ${Number(item.session_stale || 0) > 0 ? `<span class="payments-mini-badge warning">${escapeHtml(formatNumber(item.session_stale))} 待回填</span>` : ''}
+                    ${Number(item.session_failed || 0) > 0 ? `<span class="payments-mini-badge danger">${escapeHtml(formatNumber(item.session_failed))} 会话失败</span>` : ''}
+                    ${Number(item.fallback_links || 0) > 0 ? `<span class="payments-mini-badge info">${escapeHtml(formatNumber(item.fallback_links))} 兜底</span>` : ''}
                 </div>
             </div>
         `).join('');
@@ -1009,6 +1086,15 @@
             const title = String(item?.title || '');
             const message = String(item?.message || '');
 
+            if (title.includes('支付意图') || item?.type === 'session') {
+                if (title.includes('待回填')) {
+                    return '处理建议：先检查支付入口是否成功创建，再核对 webhook 是否到达；必要时引导用户查码认领兜底。';
+                }
+                if (title.includes('已完成但未回填')) {
+                    return '处理建议：优先检查 provider_order_no 与 checkout session 的关联是否丢失，再决定是否人工回填。';
+                }
+                return '处理建议：检查支付通道拉起参数、支付跳转结果以及 checkout session 状态。';
+            }
             if (title.includes('签名') || message.toLowerCase().includes('signature')) {
                 return '处理建议：检查支付通道密钥、回调签名算法和回调来源地址。';
             }
@@ -1022,6 +1108,22 @@
                 return '处理建议：检查套餐映射、金额校验和订单来源后再决定是否放行。';
             }
             return '处理建议：先核对订单号、支付通道配置和回调时间，再决定是否人工补单。';
+        }
+
+        function getAnomalyTypeLabel(item) {
+            if (item?.type === 'session') return '支付意图';
+            if (item?.type === 'event') return '回调事件';
+            return '订单';
+        }
+
+        function getAnomalyReferenceLabel(item) {
+            return item?.type === 'session' ? '会话' : '订单号';
+        }
+
+        function getAnomalyReferenceValue(item) {
+            return item?.type === 'session'
+                ? (item.session_key || item.provider_order_no || '无会话号')
+                : (item.provider_order_no || '无订单号');
         }
 
         target.innerHTML = `
@@ -1040,9 +1142,9 @@
                     <span>${escapeHtml(getHandlingSuggestion(item))}</span>
                 </div>
                 <div class="payments-anomaly-meta">
-                    <span><small>类型</small><strong>${escapeHtml(item.type === 'event' ? '回调事件' : '订单')}</strong></span>
+                    <span><small>类型</small><strong>${escapeHtml(getAnomalyTypeLabel(item))}</strong></span>
                     <span><small>通道</small><strong>${escapeHtml(getProviderLabel(item.provider))}</strong></span>
-                    <span><small>订单号</small><strong>${escapeHtml(item.provider_order_no || '无订单号')}</strong></span>
+                    <span><small>${escapeHtml(getAnomalyReferenceLabel(item))}</small><strong>${escapeHtml(getAnomalyReferenceValue(item))}</strong></span>
                     <span><small>时间</small><strong>${escapeHtml(formatDateTime(item.created_at))}</strong></span>
                 </div>
             </div>
@@ -1063,6 +1165,11 @@
         }
 
         const pager = paginateItems(orders, 'orders');
+
+        function renderOrderMatchBadge(order) {
+            const info = getCheckoutSessionMatchInfo(order);
+            return `<span class="payments-mini-badge ${escapeHtml(info.tone || 'muted')}">${escapeHtml(info.label)}</span>`;
+        }
 
         if (isMobileViewport()) {
             target.innerHTML = `
@@ -1094,6 +1201,10 @@
                                     <span>${escapeHtml(formatDateTime(order.created_at))}</span>
                                 </div>
                                 <div>
+                                    <label>意图匹配</label>
+                                    <span>${renderOrderMatchBadge(order)}</span>
+                                </div>
+                                <div>
                                     <label>认领时间</label>
                                     <span>${escapeHtml(formatDateTime(order.claimed_at))}</span>
                                 </div>
@@ -1116,6 +1227,7 @@
                             <th>金额</th>
                             <th>积分</th>
                             <th>状态</th>
+                            <th>意图匹配</th>
                             <th>站点</th>
                             <th>创建时间</th>
                             <th>认领时间</th>
@@ -1132,6 +1244,7 @@
                                 <td>${escapeHtml(formatCurrency(order.paid_amount))}</td>
                                 <td>${escapeHtml(formatNumber(order.points_amount))}</td>
                                 <td><span class="payments-status-badge status-${escapeHtml(order.status || 'pending')}">${escapeHtml(getStatusLabel(order.status))}</span></td>
+                                <td>${renderOrderMatchBadge(order)}</td>
                                 <td>${escapeHtml((order.site || 'cn').toUpperCase())}</td>
                                 <td>${escapeHtml(formatDateTime(order.created_at))}</td>
                                 <td>${escapeHtml(formatDateTime(order.claimed_at))}</td>

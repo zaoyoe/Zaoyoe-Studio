@@ -11,6 +11,9 @@ const EVENT_OK_RESULTS = new Set([
     'ignored_non_order_event',
     'ignored_non_paid_status'
 ]);
+const SESSION_OPEN_STATUSES = new Set(['created', 'redirect_ready']);
+const SESSION_FAILURE_STATUSES = new Set(['failed', 'expired', 'cancelled']);
+const SESSION_LINK_FEATURE_START_ISO = '2026-03-21T00:00:00.000Z';
 
 function getIsoDaysAgo(days) {
     const date = new Date();
@@ -57,6 +60,7 @@ function isOrderAnomaly(order) {
     return (
         ['pending_review', 'rejected', 'amount_mismatch'].includes(order.status)
         || (order.status === 'paid' && !order.user_id)
+        || (order.checkout_session_required && !order.checkout_session_matched)
         || Boolean(String(order.last_error || '').trim())
     );
 }
@@ -77,6 +81,10 @@ function buildOrderAnomaly(order) {
     } else if (order.status === 'pending_review') {
         title = '订单待审核';
         message = order.last_error ? String(order.last_error) : '套餐匹配、金额校验或回调参数存在异常。';
+        severity = 'warning';
+    } else if (order.checkout_session_required && !order.checkout_session_matched) {
+        title = '支付意图未回填';
+        message = '该订单已进入标准支付流，但尚未回填对应的 checkout session，建议检查会话关联。';
         severity = 'warning';
     } else if (order.status === 'paid' && !order.user_id) {
         title = '已支付但未认领';
@@ -129,6 +137,104 @@ function buildEventAnomaly(event) {
     };
 }
 
+function normalizeJsonObject(value) {
+    return value && typeof value === 'object' && !Array.isArray(value)
+        ? value
+        : {};
+}
+
+function getSessionLinkedBy(session) {
+    const metadata = normalizeJsonObject(session?.provider_metadata);
+    return String(metadata.linked_by || '').trim() || null;
+}
+
+function getSessionProviderOrderNo(session) {
+    const metadata = normalizeJsonObject(session?.provider_metadata);
+    return String(metadata.provider_order_no || metadata.order_no || '').trim() || null;
+}
+
+function getSessionAgeMinutes(session) {
+    const createdAt = Number(new Date(session?.created_at || 0).getTime());
+    if (!Number.isFinite(createdAt) || createdAt <= 0) return 0;
+    return Math.max(0, Math.round((Date.now() - createdAt) / 60000));
+}
+
+function isCheckoutSessionEligibleOrder(order) {
+    if (!order) return false;
+    const provider = String(order.provider || '').trim().toLowerCase();
+    if (!['mock', 'afdian', 'hupijiao'].includes(provider)) return false;
+
+    const metadata = normalizeJsonObject(order.provider_metadata);
+    if (metadata.checkout_session_id || metadata.checkout_session_key) return true;
+
+    const createdAt = Number(new Date(order.created_at || 0).getTime());
+    const featureStart = Number(new Date(SESSION_LINK_FEATURE_START_ISO).getTime());
+    return Number.isFinite(createdAt) && createdAt >= featureStart;
+}
+
+function buildCheckoutSessionAnomaly(session) {
+    if (!session) return null;
+
+    const status = String(session.status || '').trim().toLowerCase();
+    const ageMinutes = getSessionAgeMinutes(session);
+    const providerOrderNo = getSessionProviderOrderNo(session);
+    const sessionRef = providerOrderNo || session.session_key || String(session.id || '');
+    const linkedBy = getSessionLinkedBy(session);
+
+    if (SESSION_FAILURE_STATUSES.has(status)) {
+        return {
+            type: 'session',
+            id: session.id,
+            provider: session.provider,
+            provider_order_no: sessionRef,
+            session_key: session.session_key || null,
+            status,
+            severity: 'warning',
+            title: '支付意图失败',
+            message: String(session.error_message || '').trim() || '支付意图创建后未能顺利完成，请检查通道配置与跳转链路。',
+            created_at: session.created_at,
+            site: session.site || null,
+            linked_by: linkedBy
+        };
+    }
+
+    if (!session.payment_order_id && status === 'completed') {
+        return {
+            type: 'session',
+            id: session.id,
+            provider: session.provider,
+            provider_order_no: sessionRef,
+            session_key: session.session_key || null,
+            status,
+            severity: 'critical',
+            title: '支付意图已完成但未回填',
+            message: '支付意图已进入完成态，但最终 payment_order 尚未建立关联，建议人工复核。',
+            created_at: session.created_at,
+            site: session.site || null,
+            linked_by: linkedBy
+        };
+    }
+
+    if (!session.payment_order_id && SESSION_OPEN_STATUSES.has(status) && ageMinutes >= 30) {
+        return {
+            type: 'session',
+            id: session.id,
+            provider: session.provider,
+            provider_order_no: sessionRef,
+            session_key: session.session_key || null,
+            status,
+            severity: ageMinutes >= 180 ? 'critical' : 'warning',
+            title: '支付意图待回填',
+            message: `支付入口已创建 ${ageMinutes} 分钟，但仍未匹配最终订单，建议检查 webhook 或认领链路。`,
+            created_at: session.created_at,
+            site: session.site || null,
+            linked_by: linkedBy
+        };
+    }
+
+    return null;
+}
+
 function buildTrend24h(events) {
     const now = new Date();
     const buckets = [];
@@ -175,7 +281,7 @@ function buildTrend24h(events) {
     return buckets;
 }
 
-function buildProviderStats(orders) {
+function buildProviderStats(orders, sessions) {
     const statsMap = new Map();
 
     (orders || []).forEach((order) => {
@@ -208,12 +314,54 @@ function buildProviderStats(orders) {
         }
         row.total_amount = Number((Number(row.total_amount || 0) + Number(order.paid_amount || order.expected_amount || 0)).toFixed(2));
         row.total_points = Number((Number(row.total_points || 0) + Number(order.points_amount || 0)).toFixed(1));
+        row.eligible_orders = Number(row.eligible_orders || 0) + (order.checkout_session_required ? 1 : 0);
+        row.matched_orders = Number(row.matched_orders || 0) + (order.checkout_session_matched ? 1 : 0);
+        row.unmatched_orders = Number(row.unmatched_orders || 0) + (order.checkout_session_required && !order.checkout_session_matched ? 1 : 0);
+    });
+
+    (sessions || []).forEach((session) => {
+        const provider = String(session.provider || 'unknown');
+        if (!statsMap.has(provider)) {
+            statsMap.set(provider, {
+                provider,
+                total_orders: 0,
+                paid_orders: 0,
+                claimed_orders: 0,
+                review_orders: 0,
+                failed_orders: 0
+            });
+        }
+
+        const row = statsMap.get(provider);
+        const status = String(session.status || '').trim().toLowerCase();
+        const linkedBy = getSessionLinkedBy(session) || '';
+
+        row.session_total = Number(row.session_total || 0) + 1;
+        row.session_matched = Number(row.session_matched || 0) + (session.payment_order_id ? 1 : 0);
+        row.session_stale = Number(row.session_stale || 0)
+            + (!session.payment_order_id && SESSION_OPEN_STATUSES.has(status) && getSessionAgeMinutes(session) >= 30 ? 1 : 0);
+        row.session_failed = Number(row.session_failed || 0)
+            + (SESSION_FAILURE_STATUSES.has(status) ? 1 : 0);
+        row.session_completed_unlinked = Number(row.session_completed_unlinked || 0)
+            + (!session.payment_order_id && status === 'completed' ? 1 : 0);
+        row.webhook_links = Number(row.webhook_links || 0)
+            + (linkedBy.includes('webhook') ? 1 : 0);
+        row.fallback_links = Number(row.fallback_links || 0)
+            + (linkedBy.includes('query') || linkedBy.includes('claim') || linkedBy.includes('fallback') ? 1 : 0);
+        row.direct_links = Number(row.direct_links || 0)
+            + (linkedBy && !linkedBy.includes('webhook') && !linkedBy.includes('query') && !linkedBy.includes('claim') && !linkedBy.includes('fallback') ? 1 : 0);
     });
 
     return Array.from(statsMap.values()).map((item) => ({
         ...item,
         paid_rate: item.total_orders > 0 ? Number(((item.paid_orders / item.total_orders) * 100).toFixed(2)) : 0,
-        claim_rate: item.paid_orders > 0 ? Number(((item.claimed_orders / item.paid_orders) * 100).toFixed(2)) : 0
+        claim_rate: item.paid_orders > 0 ? Number(((item.claimed_orders / item.paid_orders) * 100).toFixed(2)) : 0,
+        session_match_rate: Number(item.session_total || 0) > 0
+            ? Number((((Number(item.session_matched || 0) / Number(item.session_total || 0)) * 100)).toFixed(2))
+            : 0,
+        order_match_rate: Number(item.eligible_orders || 0) > 0
+            ? Number((((Number(item.matched_orders || 0) / Number(item.eligible_orders || 0)) * 100)).toFixed(2))
+            : 0
     })).sort((left, right) => (
         Number(right.total_orders || 0) - Number(left.total_orders || 0)
         || Number(right.total_amount || 0) - Number(left.total_amount || 0)
@@ -321,7 +469,7 @@ async function fetchPaymentOrders(client, sinceIso, untilIso, site) {
     return fetchPagedRows(() => {
         let query = client
             .from('payment_orders')
-            .select('id, provider, provider_order_no, package_name, paid_amount, expected_amount, points_amount, status, user_id, created_at, paid_at, claimed_at, site, last_error, sign_verified, amount_verified')
+            .select('id, provider, provider_order_no, package_name, paid_amount, expected_amount, points_amount, status, user_id, created_at, paid_at, claimed_at, site, last_error, sign_verified, amount_verified, provider_metadata')
             .gte('created_at', sinceIso)
             .order('created_at', { ascending: false });
 
@@ -334,6 +482,33 @@ async function fetchPaymentOrders(client, sinceIso, untilIso, site) {
 
         return query;
     });
+}
+
+async function fetchCheckoutSessions(client, sinceIso, untilIso, site) {
+    try {
+        return await fetchPagedRows(() => {
+            let query = client
+                .from('payment_checkout_sessions')
+                .select('id, session_key, provider, user_id, site, package_id, package_name, requested_points, bonus_points, granted_points, expected_amount, status, checkout_url, query_mode, payment_order_id, provider_metadata, error_message, expires_at, completed_at, created_at, updated_at')
+                .gte('created_at', sinceIso)
+                .order('created_at', { ascending: false });
+
+            if (untilIso) {
+                query = query.lte('created_at', untilIso);
+            }
+
+            if (site) {
+                query = query.eq('site', site);
+            }
+
+            return query;
+        });
+    } catch (error) {
+        if (isMissingColumnError(error)) {
+            return [];
+        }
+        throw error;
+    }
 }
 
 async function fetchPaymentEvents(client, sinceIso, untilIso) {
@@ -507,6 +682,98 @@ async function fetchPointsBalances(client, site) {
     return [];
 }
 
+function getSessionSortValue(session) {
+    const value = Number(new Date(session?.updated_at || session?.created_at || 0).getTime());
+    return Number.isFinite(value) ? value : 0;
+}
+
+function enrichPaymentOrdersWithCheckoutSessions(orders, sessions) {
+    const sessionMap = new Map();
+
+    (sessions || []).forEach((session) => {
+        const paymentOrderId = String(session?.payment_order_id || '').trim();
+        if (!paymentOrderId) return;
+
+        const existing = sessionMap.get(paymentOrderId);
+        if (!existing || getSessionSortValue(session) > getSessionSortValue(existing)) {
+            sessionMap.set(paymentOrderId, session);
+        }
+    });
+
+    return (orders || []).map((order) => {
+        const metadata = normalizeJsonObject(order.provider_metadata);
+        const linkedSession = sessionMap.get(order.id);
+        const sessionId = linkedSession?.id || metadata.checkout_session_id || null;
+        const sessionKey = linkedSession?.session_key || metadata.checkout_session_key || null;
+        const sessionStatus = linkedSession?.status || metadata.checkout_session_status || null;
+        const sessionLinkedBy = getSessionLinkedBy(linkedSession) || String(metadata.checkout_session_linked_by || '').trim() || null;
+        const sessionLinkedAt = linkedSession
+            ? normalizeJsonObject(linkedSession.provider_metadata).linked_at || null
+            : (metadata.checkout_session_linked_at || null);
+        const sessionProviderOrderNo = linkedSession
+            ? getSessionProviderOrderNo(linkedSession)
+            : String(metadata.provider_order_no || '').trim() || null;
+        const sessionRequired = isCheckoutSessionEligibleOrder(order);
+        const sessionMatched = Boolean(sessionId || linkedSession?.payment_order_id);
+
+        return {
+            ...order,
+            checkout_session_id: sessionId,
+            checkout_session_key: sessionKey,
+            checkout_session_status: sessionStatus,
+            checkout_session_linked_by: sessionLinkedBy,
+            checkout_session_linked_at: sessionLinkedAt,
+            checkout_session_provider_order_no: sessionProviderOrderNo,
+            checkout_session_required: sessionRequired,
+            checkout_session_matched: sessionMatched
+        };
+    });
+}
+
+function buildSessionSummary(sessions, orders) {
+    const rows = sessions || [];
+    const eligibleOrders = (orders || []).filter((order) => order.checkout_session_required);
+    const matchedOrders = eligibleOrders.filter((order) => order.checkout_session_matched);
+    const openSessions = rows.filter((session) => SESSION_OPEN_STATUSES.has(String(session.status || '').trim().toLowerCase()));
+    const staleSessions = rows.filter((session) => {
+        const status = String(session.status || '').trim().toLowerCase();
+        return !session.payment_order_id
+            && SESSION_OPEN_STATUSES.has(status)
+            && getSessionAgeMinutes(session) >= 30;
+    });
+    const failedSessions = rows.filter((session) => SESSION_FAILURE_STATUSES.has(String(session.status || '').trim().toLowerCase()));
+    const completedUnlinkedSessions = rows.filter((session) => !session.payment_order_id && String(session.status || '').trim().toLowerCase() === 'completed');
+    const matchedSessions = rows.filter((session) => Boolean(session.payment_order_id));
+    const webhookLinkedSessions = matchedSessions.filter((session) => (getSessionLinkedBy(session) || '').includes('webhook'));
+    const fallbackLinkedSessions = matchedSessions.filter((session) => {
+        const linkedBy = getSessionLinkedBy(session) || '';
+        return linkedBy.includes('query') || linkedBy.includes('claim') || linkedBy.includes('fallback');
+    });
+    const directLinkedSessions = matchedSessions.filter((session) => {
+        const linkedBy = getSessionLinkedBy(session) || '';
+        return linkedBy && !linkedBy.includes('webhook') && !linkedBy.includes('query') && !linkedBy.includes('claim') && !linkedBy.includes('fallback');
+    });
+    const unmatchedOrders = eligibleOrders.filter((order) => !order.checkout_session_matched);
+
+    return {
+        total_sessions: rows.length,
+        matched_sessions: matchedSessions.length,
+        open_sessions: openSessions.length,
+        stale_sessions: staleSessions.length,
+        failed_sessions: failedSessions.length,
+        completed_unlinked_sessions: completedUnlinkedSessions.length,
+        webhook_linked_sessions: webhookLinkedSessions.length,
+        fallback_linked_sessions: fallbackLinkedSessions.length,
+        direct_linked_sessions: directLinkedSessions.length,
+        unmatched_orders: unmatchedOrders.length,
+        eligible_orders: eligibleOrders.length,
+        matched_orders: matchedOrders.length,
+        match_rate: rows.length > 0 ? roundNumber((matchedSessions.length / rows.length) * 100, 2) : 0,
+        order_match_rate: eligibleOrders.length > 0 ? roundNumber((matchedOrders.length / eligibleOrders.length) * 100, 2) : 0,
+        anomaly_count: staleSessions.length + failedSessions.length + completedUnlinkedSessions.length + unmatchedOrders.length
+    };
+}
+
 function buildOverview(orders) {
     const successfulOrders = (orders || []).filter(isSuccessOrder);
     const paidOrders = successfulOrders.length;
@@ -650,26 +917,33 @@ module.exports = async function handler(req, res) {
         const untilIso = hasCustomRange ? customEndIso : null;
         const trendSinceIso = hasCustomRange ? customStartIso : getIsoHoursAgo(24);
         const needsEvents = view === 'overview' || view === 'ops';
+        const needsSessions = view === 'overview' || view === 'ops';
         const needsFinance = view === 'finance';
 
         const [
             orderRows,
             eventRows,
+            checkoutSessions,
             shopOrders,
             pointsLedgerRows,
             pointsBalanceRows
         ] = await Promise.all([
             fetchPaymentOrders(scopedClient, sinceIso, untilIso, site),
             needsEvents ? fetchPaymentEvents(scopedClient, sinceIso, untilIso) : Promise.resolve([]),
+            needsSessions ? fetchCheckoutSessions(scopedClient, sinceIso, untilIso, site) : Promise.resolve([]),
             needsFinance ? fetchShopOrders(scopedClient, sinceIso, untilIso, site) : Promise.resolve([]),
             needsFinance ? fetchPointsLedger(scopedClient, sinceIso, untilIso, site) : Promise.resolve([]),
             needsFinance ? fetchPointsBalances(scopedClient, site) : Promise.resolve([])
         ]);
 
-        const overview = buildOverview(orderRows || []);
+        const enrichedOrders = enrichPaymentOrdersWithCheckoutSessions(orderRows || [], checkoutSessions || []);
+        const overview = buildOverview(enrichedOrders || []);
+        const sessionSummary = needsSessions
+            ? buildSessionSummary(checkoutSessions || [], enrichedOrders || [])
+            : undefined;
 
-        const siteOrderIds = new Set((orderRows || []).map((order) => order.id).filter(Boolean));
-        const siteOrderNumbers = new Set((orderRows || []).map((order) => order.provider_order_no).filter(Boolean));
+        const siteOrderIds = new Set((enrichedOrders || []).map((order) => order.id).filter(Boolean));
+        const siteOrderNumbers = new Set((enrichedOrders || []).map((order) => order.provider_order_no).filter(Boolean));
         const scopedEvents = (eventRows || []).filter((event) => {
             if (!site) return true;
             return (
@@ -679,9 +953,9 @@ module.exports = async function handler(req, res) {
         });
         const scopedTrendEvents = scopedEvents.filter((event) => new Date(event.created_at).getTime() >= new Date(trendSinceIso).getTime());
 
-        const recentOrders = view === 'ops' ? (orderRows || []).slice(0, 20) : [];
+        const recentOrders = view === 'ops' ? (enrichedOrders || []).slice(0, 20) : [];
         const recentOrderAnomalies = view === 'ops'
-            ? (orderRows || [])
+            ? (enrichedOrders || [])
                 .filter(isOrderAnomaly)
                 .slice(0, 24)
                 .map(buildOrderAnomaly)
@@ -701,9 +975,15 @@ module.exports = async function handler(req, res) {
                 .slice(0, 24)
                 .map(buildEventAnomaly)
             : [];
+        const recentSessionAnomalies = view === 'ops'
+            ? (checkoutSessions || [])
+                .map(buildCheckoutSessionAnomaly)
+                .filter(Boolean)
+                .slice(0, 24)
+            : [];
 
         const recentAnomalies = view === 'ops'
-            ? [...recentOrderAnomalies, ...recentEventAnomalies]
+            ? [...recentOrderAnomalies, ...recentEventAnomalies, ...recentSessionAnomalies]
                 .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime())
                 .slice(0, 20)
             : [];
@@ -711,20 +991,27 @@ module.exports = async function handler(req, res) {
         const anomalySummary = {
             review_orders: Number(overview.review_orders || 0),
             failed_orders: Number(overview.failed_orders || 0),
-            unclaimed_paid_orders: (orderRows || []).filter((order) => order.status === 'paid' && !order.user_id).length,
+            unclaimed_paid_orders: (enrichedOrders || []).filter((order) => order.status === 'paid' && !order.user_id).length,
             recent_event_anomalies: recentEventAnomalies.length,
-            duplicate_webhook_orders: duplicateWebhookOrders
+            duplicate_webhook_orders: duplicateWebhookOrders,
+            stale_checkout_sessions: Number(sessionSummary?.stale_sessions || 0),
+            failed_checkout_sessions: Number(sessionSummary?.failed_sessions || 0),
+            completed_unlinked_sessions: Number(sessionSummary?.completed_unlinked_sessions || 0),
+            unmatched_session_orders: Number(sessionSummary?.unmatched_orders || 0),
+            webhook_linked_sessions: Number(sessionSummary?.webhook_linked_sessions || 0),
+            fallback_linked_sessions: Number(sessionSummary?.fallback_linked_sessions || 0),
+            session_anomalies: Number(sessionSummary?.anomaly_count || 0)
         };
 
-        const provider_stats = buildProviderStats(orderRows || []);
+        const provider_stats = buildProviderStats(enrichedOrders || [], checkoutSessions || []);
         const trend_24h = view === 'overview' ? buildTrend24h(scopedTrendEvents) : undefined;
         const sitewide_summary = needsFinance
-            ? buildFinanceSummary(orderRows || [], shopOrders || [], pointsLedgerRows || [], pointsBalanceRows || [])
+            ? buildFinanceSummary(enrichedOrders || [], shopOrders || [], pointsLedgerRows || [], pointsBalanceRows || [])
             : undefined;
         const points_breakdown = needsFinance ? buildPointsBreakdown(pointsLedgerRows || []) : undefined;
         const business_breakdown = needsFinance
             ? buildBusinessBreakdown({
-                paymentOrders: orderRows || [],
+                paymentOrders: enrichedOrders || [],
                 shopOrders: shopOrders || [],
                 balanceRows: pointsBalanceRows || [],
                 sitewideSummary: sitewide_summary
@@ -747,6 +1034,7 @@ module.exports = async function handler(req, res) {
         return sendJson(res, 200, {
             success: true,
             overview,
+            session_summary: sessionSummary,
             anomaly_summary: anomalySummary,
             provider_stats,
             trend_24h,
