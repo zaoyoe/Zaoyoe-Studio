@@ -39,8 +39,6 @@ let shopDeliverySweepTimer = null;
 let shopDeliverySweepRunning = false;
 let cachedShopDeliveryStrategy = null;
 let cachedShopDeliveryStrategyAt = 0;
-const shopDeliveryTargetReservations = new Map();
-const shopDeliveryChannelReservations = new Map();
 const afdianProvider = getPaymentProviderAdapter('afdian');
 
 // Initialize Supabase
@@ -756,42 +754,6 @@ function getShopDeliveryChannelKey(task = {}) {
     return normalizeShopDeliveryUrl(task.target_url)?.channelKey || null;
 }
 
-function getShopDeliveryReservationBucket(map, key) {
-    const normalizedKey = String(key || '').trim().toLowerCase();
-    if (!normalizedKey) return null;
-
-    const existing = map.get(normalizedKey);
-    if (existing) {
-        return existing;
-    }
-
-    const next = {
-        inflight: 0,
-        lastStartedAt: 0,
-        lastReleasedAt: 0
-    };
-    map.set(normalizedKey, next);
-    return next;
-}
-
-function cleanupShopDeliveryReservationMap(map) {
-    const now = Date.now();
-    for (const [key, bucket] of map.entries()) {
-        if (!bucket) {
-            map.delete(key);
-            continue;
-        }
-
-        const lastTouchedAt = Math.max(
-            Number(bucket.lastStartedAt || 0),
-            Number(bucket.lastReleasedAt || 0)
-        );
-        if (Number(bucket.inflight || 0) <= 0 && (!lastTouchedAt || (now - lastTouchedAt) > 10 * 60 * 1000)) {
-            map.delete(key);
-        }
-    }
-}
-
 function createShopDeliveryConflict(scope, reasonKey, waitMs = 0, detail = '') {
     const normalizedScope = String(scope || 'worker').trim().toLowerCase() || 'worker';
     const normalizedReason = String(reasonKey || 'unknown_conflict').trim().toLowerCase() || 'unknown_conflict';
@@ -805,111 +767,57 @@ function createShopDeliveryConflict(scope, reasonKey, waitMs = 0, detail = '') {
     };
 }
 
-function evaluateShopDeliveryReservationConflict(task, strategy = null) {
+function isShopDeliveryReservationStaleResult(result = {}) {
+    const reasonKey = String(result?.reasonKey || result?.reason_key || '').trim().toLowerCase();
+    return reasonKey === 'lock_token_mismatch' || reasonKey === 'task_missing';
+}
+
+async function acquireShopDeliveryExecutionReservation(task, strategy = null) {
     const config = strategy || cachedShopDeliveryStrategy || normalizeShopDeliveryStrategyConfig({}, process.env);
-    const now = Date.now();
     const targetKey = getShopDeliveryTargetKey(task);
     const channelKey = getShopDeliveryChannelKey(task);
+    const { data, error } = await supabase.rpc('fn_acquire_shop_delivery_execution_reservation', {
+        p_task_id: task.id,
+        p_lock_token: task.lock_token || null,
+        p_worker_name: task.worker_name || getShopDeliveryWorkerName(),
+        p_target_key: targetKey,
+        p_channel_key: channelKey,
+        p_target_max_inflight: Math.max(1, Number(config?.target_max_inflight || 1)),
+        p_target_min_interval_ms: Math.max(0, Number(config?.target_min_interval_ms || 0)),
+        p_channel_max_inflight: Math.max(1, Number(config?.channel_max_inflight || 2)),
+        p_channel_min_interval_ms: Math.max(0, Number(config?.channel_min_interval_ms || 0)),
+        p_lease_seconds: Math.max(30, Number(config?.lease_seconds || 120))
+    });
 
-    cleanupShopDeliveryReservationMap(shopDeliveryTargetReservations);
-    cleanupShopDeliveryReservationMap(shopDeliveryChannelReservations);
+    if (error) {
+        throw error;
+    }
 
-    if (targetKey) {
-        const targetBucket = getShopDeliveryReservationBucket(shopDeliveryTargetReservations, targetKey);
-        const targetMaxInflight = Math.max(1, Number(config?.target_max_inflight || 1));
-        const targetMinIntervalMs = Math.max(0, Number(config?.target_min_interval_ms || 0));
-
-        if (Number(targetBucket?.inflight || 0) >= targetMaxInflight) {
-            return createShopDeliveryConflict(
-                'target',
-                'target_max_inflight',
-                Math.max(targetMinIntervalMs, 0),
-                `目标 ${targetKey} 的并发占位已达到 ${targetMaxInflight}`
-            );
+    const result = Array.isArray(data) ? (data[0] || null) : data;
+    if (!result || result.acquired) {
+        if (result?.target_key) {
+            task.target_key = result.target_key;
         }
-
-        if (targetMinIntervalMs > 0 && Number(targetBucket?.lastStartedAt || 0) > 0) {
-            const waitMs = targetMinIntervalMs - (now - Number(targetBucket.lastStartedAt || 0));
-            if (waitMs > 0) {
-                return createShopDeliveryConflict(
-                    'target',
-                    'target_min_interval',
-                    waitMs,
-                    `目标 ${targetKey} 需至少间隔 ${targetMinIntervalMs}ms`
-                );
-            }
+        if (result?.channel_key) {
+            task.channel_key = result.channel_key;
         }
+        return {
+            acquired: true,
+            stale: false,
+            conflict: null
+        };
     }
 
-    if (channelKey) {
-        const channelBucket = getShopDeliveryReservationBucket(shopDeliveryChannelReservations, channelKey);
-        const channelMaxInflight = Math.max(1, Number(config?.channel_max_inflight || 2));
-        const channelMinIntervalMs = Math.max(0, Number(config?.channel_min_interval_ms || 0));
-
-        if (Number(channelBucket?.inflight || 0) >= channelMaxInflight) {
-            return createShopDeliveryConflict(
-                'channel',
-                'channel_max_inflight',
-                Math.max(channelMinIntervalMs, 0),
-                `通道 ${channelKey} 的并发占位已达到 ${channelMaxInflight}`
-            );
-        }
-
-        if (channelMinIntervalMs > 0 && Number(channelBucket?.lastStartedAt || 0) > 0) {
-            const waitMs = channelMinIntervalMs - (now - Number(channelBucket.lastStartedAt || 0));
-            if (waitMs > 0) {
-                return createShopDeliveryConflict(
-                    'channel',
-                    'channel_min_interval',
-                    waitMs,
-                    `通道 ${channelKey} 需至少间隔 ${channelMinIntervalMs}ms`
-                );
-            }
-        }
-    }
-
-    return null;
-}
-
-function reserveShopDeliveryExecution(task) {
-    const now = Date.now();
-    const targetKey = getShopDeliveryTargetKey(task);
-    const channelKey = getShopDeliveryChannelKey(task);
-
-    if (targetKey) {
-        const targetBucket = getShopDeliveryReservationBucket(shopDeliveryTargetReservations, targetKey);
-        targetBucket.inflight = Math.max(0, Number(targetBucket.inflight || 0)) + 1;
-        targetBucket.lastStartedAt = now;
-    }
-
-    if (channelKey) {
-        const channelBucket = getShopDeliveryReservationBucket(shopDeliveryChannelReservations, channelKey);
-        channelBucket.inflight = Math.max(0, Number(channelBucket.inflight || 0)) + 1;
-        channelBucket.lastStartedAt = now;
-    }
-
-    return { targetKey, channelKey };
-}
-
-function releaseShopDeliveryExecution(reservation = {}) {
-    const now = Date.now();
-    const targetKey = String(reservation.targetKey || '').trim().toLowerCase();
-    const channelKey = String(reservation.channelKey || '').trim().toLowerCase();
-
-    if (targetKey && shopDeliveryTargetReservations.has(targetKey)) {
-        const targetBucket = shopDeliveryTargetReservations.get(targetKey);
-        targetBucket.inflight = Math.max(0, Number(targetBucket.inflight || 0) - 1);
-        targetBucket.lastReleasedAt = now;
-    }
-
-    if (channelKey && shopDeliveryChannelReservations.has(channelKey)) {
-        const channelBucket = shopDeliveryChannelReservations.get(channelKey);
-        channelBucket.inflight = Math.max(0, Number(channelBucket.inflight || 0) - 1);
-        channelBucket.lastReleasedAt = now;
-    }
-
-    cleanupShopDeliveryReservationMap(shopDeliveryTargetReservations);
-    cleanupShopDeliveryReservationMap(shopDeliveryChannelReservations);
+    return {
+        acquired: false,
+        stale: isShopDeliveryReservationStaleResult(result),
+        conflict: createShopDeliveryConflict(
+            result.scope || 'worker',
+            result.reason_key || 'unknown_conflict',
+            Number(result.wait_ms || 0),
+            result.detail || `${result.scope || 'worker'}:${result.reason_key || 'unknown_conflict'}`
+        )
+    };
 }
 
 async function getShopDeliveryStrategy(options = {}) {
@@ -1382,23 +1290,32 @@ async function processShopDeliveryTaskBatch(tasks = [], strategy = null) {
             const task = queue.shift();
             if (!task) return;
 
-            const conflict = evaluateShopDeliveryReservationConflict(task, config);
-            if (conflict) {
+            let reservation;
+            try {
+                reservation = await acquireShopDeliveryExecutionReservation(task, config);
+            } catch (error) {
+                console.error(`[ShopDeliveryWorker] Failed to acquire reservation for task ${task.id}:`, error);
+                continue;
+            }
+
+            if (!reservation?.acquired) {
+                if (reservation?.stale) {
+                    console.info(`[ShopDeliveryWorker] Skip stale reservation for task ${task.id}`);
+                    continue;
+                }
+
                 try {
-                    await handleShopDeliveryExecutionConflict(task, conflict, config);
+                    await handleShopDeliveryExecutionConflict(task, reservation?.conflict, config);
                 } catch (error) {
                     console.error(`[ShopDeliveryWorker] Failed to apply conflict strategy for task ${task.id}:`, error);
                 }
                 continue;
             }
 
-            const reservation = reserveShopDeliveryExecution(task);
             try {
                 await executeShopDeliveryTask(task, config);
             } catch (error) {
                 console.error(`[ShopDeliveryWorker] Task ${task.id} failed unexpectedly:`, error);
-            } finally {
-                releaseShopDeliveryExecution(reservation);
             }
         }
     });
