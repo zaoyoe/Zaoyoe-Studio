@@ -4698,6 +4698,29 @@
                             outline: none;
                         }
 
+                        .shop-delivery-field {
+                            display: flex;
+                            flex-direction: column;
+                            gap: 8px;
+                        }
+
+                        .shop-delivery-field label {
+                            font-size: 12px;
+                            font-weight: 600;
+                            color: rgba(226, 232, 240, 0.68);
+                            letter-spacing: 0.01em;
+                        }
+
+                        .shop-delivery-field input {
+                            width: 100%;
+                            padding: 11px 14px;
+                            border-radius: 12px;
+                            border: 1px solid rgba(255, 255, 255, 0.1);
+                            background: rgba(255, 255, 255, 0.05);
+                            color: #f8fafc;
+                            outline: none;
+                        }
+
                         .shop-delivery-summary {
                             display: flex;
                             flex-wrap: wrap;
@@ -4804,6 +4827,10 @@
                             margin-top: 20px;
                         }
 
+                        .shop-delivery-subcard--wide {
+                            margin-top: 16px;
+                        }
+
                         .shop-delivery-subcard {
                             border-radius: 20px;
                             border: 1px solid rgba(255, 255, 255, 0.08);
@@ -4819,6 +4846,14 @@
                             gap: 16px;
                             padding: 18px 20px 14px;
                             border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+                        }
+
+                        .shop-delivery-subcard-tools {
+                            display: flex;
+                            align-items: center;
+                            justify-content: flex-end;
+                            gap: 10px;
+                            flex-wrap: wrap;
                         }
 
                         .shop-delivery-subcard-title {
@@ -4893,6 +4928,36 @@
                             padding: 18px 20px 20px;
                         }
 
+                        .shop-delivery-strategy-grid {
+                            display: grid;
+                            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+                            gap: 12px;
+                            margin-bottom: 16px;
+                        }
+
+                        .shop-delivery-strategy-actions {
+                            display: flex;
+                            align-items: center;
+                            justify-content: space-between;
+                            gap: 12px;
+                            flex-wrap: wrap;
+                        }
+
+                        .shop-delivery-checkbox {
+                            display: inline-flex;
+                            align-items: center;
+                            gap: 10px;
+                            color: rgba(226, 232, 240, 0.78);
+                            font-size: 13px;
+                            font-weight: 500;
+                        }
+
+                        .shop-delivery-checkbox input {
+                            width: 16px;
+                            height: 16px;
+                            accent-color: #60a5fa;
+                        }
+
                         .shop-delivery-attempt-stack {
                             display: flex;
                             flex-direction: column;
@@ -4940,8 +5005,16 @@
                                 grid-template-columns: 1fr;
                             }
 
+                            .shop-delivery-subcard-tools {
+                                justify-content: flex-start;
+                            }
+
                             .shop-delivery-subcard-meta--rich {
                                 justify-content: flex-start;
+                            }
+
+                            .shop-delivery-strategy-actions {
+                                align-items: stretch;
                             }
                         }
                     </style>
@@ -5017,6 +5090,63 @@
                             <!-- Loaded by JS -->
                         </div>
 
+                        <section class="shop-delivery-subcard shop-delivery-subcard--wide">
+                            <div class="shop-delivery-subcard-header">
+                                <div class="shop-delivery-subcard-title">
+                                    <h4><i class="fas fa-sliders-h"></i> 履约策略</h4>
+                                    <p>统一管理扫描频率、批次大小、锁租约、请求超时与退避策略，并可同步到未完成任务。</p>
+                                </div>
+                                <div id="deliveryStrategySummary" class="shop-delivery-subcard-meta">载入中…</div>
+                            </div>
+                            <div class="shop-delivery-subcard-body">
+                                <div class="shop-delivery-strategy-grid">
+                                    <div class="shop-delivery-field">
+                                        <label for="deliveryStrategyMaxAttempts">最大重试次数</label>
+                                        <input id="deliveryStrategyMaxAttempts" type="number" min="1" max="20" value="5">
+                                    </div>
+                                    <div class="shop-delivery-field">
+                                        <label for="deliveryStrategySweepInterval">扫描间隔 (ms)</label>
+                                        <input id="deliveryStrategySweepInterval" type="number" min="4000" max="60000" value="10000">
+                                    </div>
+                                    <div class="shop-delivery-field">
+                                        <label for="deliveryStrategySweepBatch">单次批量领取</label>
+                                        <input id="deliveryStrategySweepBatch" type="number" min="1" max="50" value="10">
+                                    </div>
+                                    <div class="shop-delivery-field">
+                                        <label for="deliveryStrategyLeaseSeconds">锁租约 (秒)</label>
+                                        <input id="deliveryStrategyLeaseSeconds" type="number" min="30" max="900" value="120">
+                                    </div>
+                                    <div class="shop-delivery-field">
+                                        <label for="deliveryStrategyHttpTimeout">请求超时 (ms)</label>
+                                        <input id="deliveryStrategyHttpTimeout" type="number" min="3000" max="60000" value="15000">
+                                    </div>
+                                    <div class="shop-delivery-field">
+                                        <label for="deliveryStrategyBaseBackoff">基础退避 (秒)</label>
+                                        <input id="deliveryStrategyBaseBackoff" type="number" min="15" max="600" value="30">
+                                    </div>
+                                    <div class="shop-delivery-field">
+                                        <label for="deliveryStrategyMaxBackoff">最大退避 (秒)</label>
+                                        <input id="deliveryStrategyMaxBackoff" type="number" min="60" max="86400" value="1800">
+                                    </div>
+                                </div>
+
+                                <div class="shop-delivery-strategy-actions">
+                                    <label class="shop-delivery-checkbox">
+                                        <input id="deliveryStrategyApplyOpenTasks" type="checkbox" checked>
+                                        <span>保存后同步未完成任务的 `max_attempts`</span>
+                                    </label>
+                                    <div class="shop-delivery-controls">
+                                        <button class="btn btn-secondary" onclick="ShopAdmin.loadDeliveryTasks(ShopAdmin.deliveryTaskPage || 1)">
+                                            <i class="fas fa-sync-alt"></i> 重新加载
+                                        </button>
+                                        <button id="deliveryStrategySaveBtn" class="btn btn-primary" onclick="ShopAdmin.saveDeliveryStrategy()">
+                                            <i class="fas fa-save"></i> 保存策略
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
                         <div class="shop-table-container">
                             <table class="shop-table">
                                 <thead>
@@ -5050,7 +5180,21 @@
                                         <h4><i class="fas fa-skull-crossbones"></i> 死信列表</h4>
                                         <p>集中查看达到最大重试次数或被人工标记为死信的履约任务。</p>
                                     </div>
-                                    <div id="deliveryDeadLetterSummary" class="shop-delivery-subcard-meta">载入中…</div>
+                                    <div class="shop-delivery-subcard-tools">
+                                        <select id="deliveryDeadLetterReasonFilter" class="shop-delivery-filter"
+                                            onchange="ShopAdmin.setDeliveryDeadLetterReasonFilter(this.value)">
+                                            <option value="all">全部原因</option>
+                                            <option value="manual">人工标记</option>
+                                            <option value="missing_target">目标缺失</option>
+                                            <option value="timeout">请求超时</option>
+                                            <option value="upstream_4xx">上游 4xx</option>
+                                            <option value="upstream_5xx">上游 5xx</option>
+                                            <option value="max_attempts">达到最大重试</option>
+                                            <option value="network_failure">网络失败</option>
+                                            <option value="unknown">未知原因</option>
+                                        </select>
+                                        <div id="deliveryDeadLetterSummary" class="shop-delivery-subcard-meta">载入中…</div>
+                                    </div>
                                 </div>
                                 <div class="shop-delivery-subcard-body">
                                     <div class="shop-table-container">
@@ -5074,6 +5218,49 @@
                                     </div>
 
                                     <div id="deliveryDeadLetterPagination"
+                                        style="display: flex; justify-content: center; gap: 10px; margin-top: 18px;">
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section class="shop-delivery-subcard">
+                                <div class="shop-delivery-subcard-header">
+                                    <div class="shop-delivery-subcard-title">
+                                        <h4><i class="fas fa-unlock-alt"></i> 锁冲突视图</h4>
+                                        <p>集中排查活跃锁、过期锁和缺锁任务，并支持强制解锁或人工重放。</p>
+                                    </div>
+                                    <div class="shop-delivery-subcard-tools">
+                                        <select id="deliveryLockStateFilter" class="shop-delivery-filter"
+                                            onchange="ShopAdmin.setDeliveryLockStateFilter(this.value)">
+                                            <option value="all">全部锁异常</option>
+                                            <option value="active">仅活跃锁</option>
+                                            <option value="stale">过期 / 缺锁</option>
+                                        </select>
+                                        <div id="deliveryLockConflictSummary" class="shop-delivery-subcard-meta">载入中…</div>
+                                    </div>
+                                </div>
+                                <div class="shop-delivery-subcard-body">
+                                    <div class="shop-table-container">
+                                        <table class="shop-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>订单号</th>
+                                                    <th>商品 / 用户</th>
+                                                    <th>锁状态</th>
+                                                    <th>锁与幂等</th>
+                                                    <th>最近错误 / 尝试</th>
+                                                    <th>操作</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="deliveryLockConflictsTableBody">
+                                                <tr>
+                                                    <td colspan="6" class="text-center">正在加载锁冲突任务...</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    <div id="deliveryLockConflictsPagination"
                                         style="display: flex; justify-content: center; gap: 10px; margin-top: 18px;">
                                     </div>
                                 </div>

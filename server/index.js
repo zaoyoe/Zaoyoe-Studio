@@ -17,6 +17,10 @@ const {
 const {
     reconcileCheckoutSessionForPaymentOrder
 } = require('../api/_lib/payments/orders');
+const {
+    loadShopDeliveryStrategyConfig,
+    normalizeShopDeliveryStrategyConfig
+} = require('../api/_lib/payments/shop-delivery-strategy');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -27,16 +31,14 @@ const ACTIVE_TRACKED_JOB_STATUSES = ['queued', 'running', 'processing', 'pending
 const TERMINAL_TRACKED_JOB_STATUSES = ['success', 'failed'];
 const PENDING_JOB_SWEEP_INTERVAL_MS = Math.max(2000, Number(process.env.VERIFY_PENDING_SWEEP_INTERVAL_MS || 5000));
 const PENDING_JOB_SWEEP_BATCH_SIZE = Math.max(1, Number(process.env.VERIFY_PENDING_SWEEP_BATCH_SIZE || 20));
-const SHOP_DELIVERY_SWEEP_INTERVAL_MS = Math.max(4000, Number(process.env.SHOP_DELIVERY_SWEEP_INTERVAL_MS || 10000));
-const SHOP_DELIVERY_SWEEP_BATCH_SIZE = Math.max(1, Number(process.env.SHOP_DELIVERY_SWEEP_BATCH_SIZE || 10));
-const SHOP_DELIVERY_LEASE_SECONDS = Math.max(30, Number(process.env.SHOP_DELIVERY_LEASE_SECONDS || 120));
-const SHOP_DELIVERY_HTTP_TIMEOUT_MS = Math.max(3000, Number(process.env.SHOP_DELIVERY_HTTP_TIMEOUT_MS || 15000));
-const SHOP_DELIVERY_MAX_BACKOFF_SECONDS = Math.max(60, Number(process.env.SHOP_DELIVERY_MAX_BACKOFF_SECONDS || 1800));
+const SHOP_DELIVERY_STRATEGY_CACHE_TTL_MS = Math.max(2000, Number(process.env.SHOP_DELIVERY_STRATEGY_CACHE_TTL_MS || 5000));
 const jobSyncLocks = new Map();
 let pendingJobSweepTimer = null;
 let pendingJobSweepRunning = false;
 let shopDeliverySweepTimer = null;
 let shopDeliverySweepRunning = false;
+let cachedShopDeliveryStrategy = null;
+let cachedShopDeliveryStrategyAt = 0;
 const afdianProvider = getPaymentProviderAdapter('afdian');
 
 // Initialize Supabase
@@ -720,11 +722,42 @@ function clampDeliveryText(value, limit = 4000) {
     return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
 }
 
-function buildShopDeliveryBackoffSeconds(attemptCount) {
+async function getShopDeliveryStrategy(options = {}) {
+    const forceRefresh = options?.forceRefresh === true;
+    const now = Date.now();
+
+    if (
+        !forceRefresh
+        && cachedShopDeliveryStrategy
+        && cachedShopDeliveryStrategyAt
+        && (now - cachedShopDeliveryStrategyAt) < SHOP_DELIVERY_STRATEGY_CACHE_TTL_MS
+    ) {
+        return cachedShopDeliveryStrategy;
+    }
+
+    try {
+        const strategy = await loadShopDeliveryStrategyConfig(supabase, process.env);
+        cachedShopDeliveryStrategy = strategy;
+        cachedShopDeliveryStrategyAt = now;
+        return strategy;
+    } catch (error) {
+        const fallback = cachedShopDeliveryStrategy || normalizeShopDeliveryStrategyConfig({}, process.env);
+        cachedShopDeliveryStrategy = fallback;
+        cachedShopDeliveryStrategyAt = now;
+        console.warn('[ShopDeliveryWorker] Failed to load strategy config:', error.message);
+        return fallback;
+    }
+}
+
+function buildShopDeliveryBackoffSeconds(attemptCount, strategy = null) {
     const safeAttempt = Math.max(1, Number(attemptCount || 1));
+    const config = strategy || cachedShopDeliveryStrategy || normalizeShopDeliveryStrategyConfig({}, process.env);
+    const baseBackoffSeconds = Math.max(15, Number(config?.base_backoff_seconds || 30));
+    const maxBackoffSeconds = Math.max(baseBackoffSeconds, Number(config?.max_backoff_seconds || 1800));
+
     return Math.min(
-        SHOP_DELIVERY_MAX_BACKOFF_SECONDS,
-        Math.max(15, Math.pow(2, safeAttempt - 1) * 30)
+        maxBackoffSeconds,
+        Math.max(15, Math.pow(2, safeAttempt - 1) * baseBackoffSeconds)
     );
 }
 
@@ -733,10 +766,14 @@ function isRetryableDeliveryStatus(status) {
     return !code || code === 408 || code === 409 || code === 425 || code === 429 || code >= 500;
 }
 
-async function claimShopDeliveryTasks(limit = SHOP_DELIVERY_SWEEP_BATCH_SIZE) {
+async function claimShopDeliveryTasks(limit = null, strategy = null) {
+    const config = strategy || await getShopDeliveryStrategy();
+    const taskLimit = Math.max(1, Number(limit || config?.sweep_batch_size || 10));
+    const leaseSeconds = Math.max(30, Number(config?.lease_seconds || 120));
+
     const { data, error } = await supabase.rpc('fn_claim_shop_webhook_tasks', {
-        p_limit: Math.max(1, Number(limit || SHOP_DELIVERY_SWEEP_BATCH_SIZE)),
-        p_lock_seconds: SHOP_DELIVERY_LEASE_SECONDS,
+        p_limit: taskLimit,
+        p_lock_seconds: leaseSeconds,
         p_worker_name: getShopDeliveryWorkerName()
     });
 
@@ -873,14 +910,15 @@ async function markShopDeliveryTaskSuccess(task, responseStatus, responseBody) {
     }
 }
 
-async function markShopDeliveryTaskFailure(task, failure = {}) {
+async function markShopDeliveryTaskFailure(task, failure = {}, strategy = null) {
     const now = new Date();
+    const config = strategy || await getShopDeliveryStrategy();
     const retryable = failure.retryable !== false && isRetryableDeliveryStatus(failure.status);
-    const maxAttempts = Math.max(1, Number(task.max_attempts || 5));
+    const maxAttempts = Math.max(1, Number(task.max_attempts || config?.max_attempts || 5));
     const attemptCount = Math.max(1, Number(task.attempt_count || 1));
     const exhausted = attemptCount >= maxAttempts;
     const shouldDeadLetter = !retryable || exhausted;
-    const nextAttemptAt = new Date(now.getTime() + buildShopDeliveryBackoffSeconds(attemptCount) * 1000).toISOString();
+    const nextAttemptAt = new Date(now.getTime() + buildShopDeliveryBackoffSeconds(attemptCount, config) * 1000).toISOString();
     const status = shouldDeadLetter ? 'dead_letter' : 'retry_waiting';
     const errorMessage = clampDeliveryText(failure.message || '履约推送失败', 1000);
     const responseBody = clampDeliveryText(failure.body, 4000);
@@ -922,7 +960,8 @@ async function markShopDeliveryTaskFailure(task, failure = {}) {
     }
 }
 
-async function executeShopDeliveryTask(task) {
+async function executeShopDeliveryTask(task, strategy = null) {
+    const config = strategy || await getShopDeliveryStrategy();
     const startedAt = new Date();
     const orderContext = await loadShopDeliveryContext(task.order_id);
 
@@ -947,7 +986,7 @@ async function executeShopDeliveryTask(task) {
             status: 400,
             retryable: false,
             message: '未配置履约目标地址'
-        });
+        }, config);
         await recordShopDeliveryAttempt({
             task,
             success: false,
@@ -961,7 +1000,7 @@ async function executeShopDeliveryTask(task) {
     }
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), SHOP_DELIVERY_HTTP_TIMEOUT_MS);
+    const timeout = setTimeout(() => controller.abort(), Math.max(3000, Number(config?.http_timeout_ms || 15000)));
     let responseStatus = null;
     let responseBody = '';
 
@@ -1004,7 +1043,7 @@ async function executeShopDeliveryTask(task) {
             body: responseBody,
             retryable: isRetryableDeliveryStatus(responseStatus),
             message: `履约接口返回 ${responseStatus}`
-        });
+        }, config);
         await recordShopDeliveryAttempt({
             task,
             success: false,
@@ -1023,7 +1062,7 @@ async function executeShopDeliveryTask(task) {
             status: isAbort ? 408 : null,
             retryable: true,
             message: isAbort ? '履约请求超时' : (error?.message || '履约请求失败')
-        });
+        }, config);
         await recordShopDeliveryAttempt({
             task,
             success: false,
@@ -1041,10 +1080,11 @@ async function sweepShopDeliveryTasks() {
     shopDeliverySweepRunning = true;
 
     try {
-        const tasks = await claimShopDeliveryTasks();
+        const strategy = await getShopDeliveryStrategy();
+        const tasks = await claimShopDeliveryTasks(strategy?.sweep_batch_size, strategy);
         for (const task of tasks) {
             try {
-                await executeShopDeliveryTask(task);
+                await executeShopDeliveryTask(task, strategy);
             } catch (error) {
                 console.error(`[ShopDeliveryWorker] Task ${task.id} failed unexpectedly:`, error);
             }
@@ -1056,20 +1096,32 @@ async function sweepShopDeliveryTasks() {
     }
 }
 
+async function queueNextShopDeliverySweep(delayMs = null) {
+    if (shopDeliverySweepTimer) return;
+
+    const strategy = await getShopDeliveryStrategy();
+    const nextDelay = Math.max(1000, Number(delayMs ?? strategy?.sweep_interval_ms ?? 10000));
+
+    shopDeliverySweepTimer = setTimeout(() => {
+        shopDeliverySweepTimer = null;
+        sweepShopDeliveryTasks()
+            .catch((error) => {
+                console.error('[ShopDeliveryWorker] Sweep tick failed:', error);
+            })
+            .finally(() => {
+                queueNextShopDeliverySweep().catch((error) => {
+                    console.error('[ShopDeliveryWorker] Failed to schedule next sweep:', error);
+                });
+            });
+    }, nextDelay);
+}
+
 function startShopDeliverySweep() {
     if (shopDeliverySweepTimer) return;
 
-    shopDeliverySweepTimer = setInterval(() => {
-        sweepShopDeliveryTasks().catch((error) => {
-            console.error('[ShopDeliveryWorker] Sweep tick failed:', error);
-        });
-    }, SHOP_DELIVERY_SWEEP_INTERVAL_MS);
-
-    setTimeout(() => {
-        sweepShopDeliveryTasks().catch((error) => {
-            console.error('[ShopDeliveryWorker] Initial sweep failed:', error);
-        });
-    }, 1800);
+    queueNextShopDeliverySweep(1800).catch((error) => {
+        console.error('[ShopDeliveryWorker] Failed to start sweep:', error);
+    });
 }
 
 async function hasLoggedJobResult(userId, jobId, site = 'cn') {

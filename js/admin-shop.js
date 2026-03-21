@@ -48,9 +48,14 @@ const ShopAdmin = {
     deliveryTaskStatusFilter: 'all',
     deliveryTaskPageSize: 8,
     deliveryDeadLetterPage: 1,
+    deliveryDeadLetterReasonFilter: 'all',
     deliveryDeadLetterPageSize: 5,
+    deliveryLockConflictPage: 1,
+    deliveryLockStateFilter: 'all',
+    deliveryLockConflictPageSize: 5,
     deliveryReplayPage: 1,
     deliveryReplayPageSize: 5,
+    deliveryStrategyConfig: null,
     pageSize: 10,
     currentCategory: 'all', // State for category filter
     currentStatusFilter: 'active', // State for status filter: 'active' or 'deleted'
@@ -1857,6 +1862,70 @@ Example output format:
         return `<span class="shop-delivery-meta-badge" style="color:${colors.text};background:${colors.bg};border-color:${colors.border};">${this.escapeHtml(label)}</span>`;
     },
 
+    parseDeliveryStrategyInteger: function (value, fallback) {
+        const parsed = Number.parseInt(value, 10);
+        return Number.isFinite(parsed) ? parsed : fallback;
+    },
+
+    renderDeliveryStrategy: function (config = {}) {
+        this.deliveryStrategyConfig = config || {};
+
+        const summary = document.getElementById('deliveryStrategySummary');
+        const fields = {
+            deliveryStrategyMaxAttempts: Number(config.max_attempts || 5),
+            deliveryStrategySweepInterval: Number(config.sweep_interval_ms || 10000),
+            deliveryStrategySweepBatch: Number(config.sweep_batch_size || 10),
+            deliveryStrategyLeaseSeconds: Number(config.lease_seconds || 120),
+            deliveryStrategyHttpTimeout: Number(config.http_timeout_ms || 15000),
+            deliveryStrategyBaseBackoff: Number(config.base_backoff_seconds || 30),
+            deliveryStrategyMaxBackoff: Number(config.max_backoff_seconds || 1800)
+        };
+
+        Object.entries(fields).forEach(([elementId, value]) => {
+            const input = document.getElementById(elementId);
+            if (input) {
+                input.value = String(value);
+            }
+        });
+
+        const applyToOpenTasks = document.getElementById('deliveryStrategyApplyOpenTasks');
+        if (applyToOpenTasks && typeof applyToOpenTasks.checked === 'boolean') {
+            applyToOpenTasks.checked = true;
+        }
+
+        if (!summary) return;
+
+        summary.classList.add('shop-delivery-subcard-meta--rich');
+        summary.innerHTML = [
+            this.renderDeliveryMetaBadge(`最大重试 ${fields.deliveryStrategyMaxAttempts}`, 'warn'),
+            this.renderDeliveryMetaBadge(`扫描 ${fields.deliveryStrategySweepInterval}ms`, 'processing'),
+            this.renderDeliveryMetaBadge(`批次 ${fields.deliveryStrategySweepBatch}`, 'processing'),
+            this.renderDeliveryMetaBadge(`租约 ${fields.deliveryStrategyLeaseSeconds}s`, 'neutral'),
+            this.renderDeliveryMetaBadge(`超时 ${fields.deliveryStrategyHttpTimeout}ms`, 'neutral'),
+            this.renderDeliveryMetaBadge(`退避 ${fields.deliveryStrategyBaseBackoff}-${fields.deliveryStrategyMaxBackoff}s`, 'muted')
+        ].join('');
+    },
+
+    renderDeliveryStrategyError: function (message) {
+        const summary = document.getElementById('deliveryStrategySummary');
+        if (!summary) return;
+        summary.classList.add('shop-delivery-subcard-meta--rich');
+        summary.innerHTML = this.renderDeliveryMetaBadge(message || '策略加载失败', 'danger');
+    },
+
+    getDeliveryStrategyPayload: function () {
+        const current = this.deliveryStrategyConfig || {};
+        return {
+            max_attempts: this.parseDeliveryStrategyInteger(document.getElementById('deliveryStrategyMaxAttempts')?.value, Number(current.max_attempts || 5)),
+            sweep_interval_ms: this.parseDeliveryStrategyInteger(document.getElementById('deliveryStrategySweepInterval')?.value, Number(current.sweep_interval_ms || 10000)),
+            sweep_batch_size: this.parseDeliveryStrategyInteger(document.getElementById('deliveryStrategySweepBatch')?.value, Number(current.sweep_batch_size || 10)),
+            lease_seconds: this.parseDeliveryStrategyInteger(document.getElementById('deliveryStrategyLeaseSeconds')?.value, Number(current.lease_seconds || 120)),
+            http_timeout_ms: this.parseDeliveryStrategyInteger(document.getElementById('deliveryStrategyHttpTimeout')?.value, Number(current.http_timeout_ms || 15000)),
+            base_backoff_seconds: this.parseDeliveryStrategyInteger(document.getElementById('deliveryStrategyBaseBackoff')?.value, Number(current.base_backoff_seconds || 30)),
+            max_backoff_seconds: this.parseDeliveryStrategyInteger(document.getElementById('deliveryStrategyMaxBackoff')?.value, Number(current.max_backoff_seconds || 1800))
+        };
+    },
+
     getOrderDeliveryStatusBadge: function (order) {
         const refundStatus = String(order?.refund_status || '').toLowerCase();
         if (refundStatus === 'refunded' || refundStatus === 'full_refund') {
@@ -1942,6 +2011,8 @@ Example output format:
             { label: '已履约', value: summary.delivered || 0, tone: 'success' },
             { label: '活跃锁', value: summary.locked_active || 0, tone: 'processing' },
             { label: '过期锁', value: summary.locked_stale || 0, tone: 'danger' },
+            { label: '缺锁', value: summary.lock_missing || 0, tone: 'danger' },
+            { label: '待解锁', value: summary.force_unlock_candidates || 0, tone: 'waiting' },
             { label: '人工重放', value: summary.manual_replays || 0, tone: 'muted' }
         ];
 
@@ -1963,6 +2034,21 @@ Example output format:
     },
 
     getDeliveryLockBadge: function (task = {}) {
+        const state = String(task?.lock_state || '').toLowerCase();
+
+        if (state === 'lock_missing') {
+            return this.renderDeliveryBadge('缺锁', 'danger');
+        }
+        if (state === 'locked_unknown') {
+            return this.renderDeliveryBadge('未知锁', 'muted');
+        }
+        if (state === 'locked_active') {
+            return this.renderDeliveryBadge('活跃锁', 'processing');
+        }
+        if (state === 'locked_stale') {
+            return this.renderDeliveryBadge('过期锁', 'danger');
+        }
+
         if (!task?.lock_token) return '';
         const expiresAt = task.lock_expires_at ? new Date(task.lock_expires_at).getTime() : 0;
         const isActive = Number.isFinite(expiresAt) && expiresAt > Date.now();
@@ -2005,6 +2091,10 @@ Example output format:
             chips.push(this.renderDeliveryMetaBadge('活跃锁', 'processing'));
         } else if (record.lock_state === 'locked_stale') {
             chips.push(this.renderDeliveryMetaBadge('过期锁', 'danger'));
+        } else if (record.lock_state === 'lock_missing') {
+            chips.push(this.renderDeliveryMetaBadge('缺锁', 'danger'));
+        } else if (record.lock_state === 'locked_unknown') {
+            chips.push(this.renderDeliveryMetaBadge('未知锁', 'muted'));
         }
         if (record.worker_name) {
             chips.push(this.renderDeliveryMetaBadge(`Worker ${record.worker_name}`, 'muted'));
@@ -2054,12 +2144,23 @@ Example output format:
 
     renderDeliveryActionButtons: function (task = {}, options = {}) {
         const allowDeadLetter = options.allowDeadLetter !== false;
+        const allowForceUnlock = options.allowForceUnlock !== false;
         const actions = [];
+        const lockState = String(task.lock_state || '').toLowerCase();
+        const canForceUnlock = allowForceUnlock && (
+            task.status === 'processing'
+            || lockState === 'locked_stale'
+            || lockState === 'lock_missing'
+            || lockState === 'locked_unknown'
+        );
 
         if (task.status !== 'delivered') {
             actions.push(`<button class="shop-delivery-action-btn" onclick="ShopAdmin.performDeliveryTaskAction('${task.id}', 'requeue')">重排队</button>`);
             actions.push(`<button class="shop-delivery-action-btn" onclick="ShopAdmin.performDeliveryTaskAction('${task.id}', 'replay')">人工重放</button>`);
             actions.push(`<button class="shop-delivery-action-btn" onclick="ShopAdmin.performDeliveryTaskAction('${task.id}', 'mark_delivered')">标已履约</button>`);
+        }
+        if (canForceUnlock) {
+            actions.push(`<button class="shop-delivery-action-btn" onclick="ShopAdmin.performDeliveryTaskAction('${task.id}', 'force_unlock')">强制解锁</button>`);
         }
         if (allowDeadLetter && task.status !== 'dead_letter') {
             actions.push(`<button class="shop-delivery-action-btn danger" onclick="ShopAdmin.performDeliveryTaskAction('${task.id}', 'mark_dead_letter')">标死信</button>`);
@@ -2141,10 +2242,37 @@ Example output format:
             this.renderDeliveryMetaBadge(`超时 ${Number(summary.timeout || 0)}`, Number(summary.timeout || 0) ? 'warn' : 'muted'),
             this.renderDeliveryMetaBadge(`4xx ${Number(summary.upstream_4xx || 0)}`, Number(summary.upstream_4xx || 0) ? 'danger' : 'muted'),
             this.renderDeliveryMetaBadge(`5xx ${Number(summary.upstream_5xx || 0)}`, Number(summary.upstream_5xx || 0) ? 'danger' : 'muted'),
-            this.renderDeliveryMetaBadge(`最大重试 ${Number(summary.max_attempts || 0)}`, Number(summary.max_attempts || 0) ? 'warn' : 'muted')
+            this.renderDeliveryMetaBadge(`最大重试 ${Number(summary.max_attempts || 0)}`, Number(summary.max_attempts || 0) ? 'warn' : 'muted'),
+            this.renderDeliveryMetaBadge(`人工标记 ${Number(summary.manual || 0)}`, Number(summary.manual || 0) ? 'processing' : 'muted')
         ];
         meta.classList.add('shop-delivery-subcard-meta--rich');
         meta.innerHTML = total ? pills.join('') : '<span class="shop-delivery-table-note">当前无死信</span>';
+    },
+
+    renderLockConflictSummary: function (data = {}) {
+        const meta = document.getElementById('deliveryLockConflictSummary');
+        if (!meta) return;
+
+        const summary = data.summary || {};
+        const total = Number(data.total || summary.total || 0);
+        const filterMap = {
+            all: '全部锁异常',
+            active: '仅活跃锁',
+            stale: '过期 / 缺锁'
+        };
+        const currentFilter = filterMap[data.lockState || this.deliveryLockStateFilter || 'all'] || '全部锁异常';
+        const pills = [
+            this.renderDeliveryMetaBadge(`共 ${total} 条`, total ? 'danger' : 'muted'),
+            this.renderDeliveryMetaBadge(`活跃 ${Number(summary.active || 0)}`, Number(summary.active || 0) ? 'processing' : 'muted'),
+            this.renderDeliveryMetaBadge(`过期 ${Number(summary.stale || 0)}`, Number(summary.stale || 0) ? 'danger' : 'muted'),
+            this.renderDeliveryMetaBadge(`缺锁 ${Number(summary.missing || 0)}`, Number(summary.missing || 0) ? 'danger' : 'muted'),
+            this.renderDeliveryMetaBadge(`人工重放待处理 ${Number(summary.manual_replay_requested || 0)}`, Number(summary.manual_replay_requested || 0) ? 'warn' : 'muted'),
+            this.renderDeliveryMetaBadge(`待解锁 ${Number(summary.force_unlock_candidates || 0)}`, Number(summary.force_unlock_candidates || 0) ? 'warn' : 'muted'),
+            this.renderDeliveryMetaBadge(currentFilter, 'neutral')
+        ];
+
+        meta.classList.add('shop-delivery-subcard-meta--rich');
+        meta.innerHTML = total ? pills.join('') : '<span class="shop-delivery-table-note">当前没有锁冲突</span>';
     },
 
     renderReplaySummary: function (data = {}) {
@@ -2215,6 +2343,63 @@ Example output format:
         this.renderPagination('deliveryDeadLetterPagination', page, total, pageSize, 'loadDeliveryDeadLetterPage');
     },
 
+    renderLockConflictTasks: function (tasks = [], total = 0, page = 1, pageSize = this.deliveryLockConflictPageSize) {
+        const tbody = document.getElementById('deliveryLockConflictsTableBody');
+        if (!tbody) return;
+
+        if (!tasks.length) {
+            tbody.innerHTML = '<tr><td colspan="6"><div class="shop-delivery-empty">当前筛选条件下没有锁冲突任务。</div></td></tr>';
+            this.renderPagination('deliveryLockConflictsPagination', page, total, pageSize, 'loadDeliveryLockConflictPage');
+            return;
+        }
+
+        tbody.innerHTML = tasks.map((task) => {
+            const order = task.order || {};
+            const orderId = this.escapeHtml(task.order_id || '—');
+            const productName = this.escapeHtml(order.snapshot_product_name || '—');
+            const userId = this.escapeHtml(order.user_id || '未知用户');
+            const lockMeta = [
+                task.locked_at ? `锁定 ${this.formatDeliveryTime(task.locked_at)}` : '',
+                task.lock_expires_at ? `过期 ${this.formatDeliveryTime(task.lock_expires_at)}` : '',
+                task.worker_name ? `Worker ${this.escapeHtml(task.worker_name)}` : ''
+            ].filter(Boolean).join(' · ');
+            const errorLabel = task.last_error
+                ? this.escapeHtml(this.truncateText(task.last_error, 56))
+                : '暂无最近错误';
+
+            return `
+                <tr>
+                    <td>
+                        <div style="font-weight:600;color:#fff;">${orderId}</div>
+                        <div class="shop-delivery-table-note">${task.target_url ? this.formatDeliveryTaskTarget(task.target_url) : '无目标地址'}</div>
+                    </td>
+                    <td>
+                        <div style="font-weight:600;color:#fff;">${productName}</div>
+                        <div class="shop-delivery-table-note">${userId}</div>
+                    </td>
+                    <td>
+                        <div class="shop-delivery-meta" style="margin-bottom:8px;">
+                            ${this.getDeliveryTaskStatusBadge(task.status)}
+                            ${this.getDeliveryLockBadge(task)}
+                        </div>
+                        <div class="shop-delivery-table-note">${this.escapeHtml(lockMeta || '无锁字段元信息')}</div>
+                    </td>
+                    <td>
+                        ${this.renderDeliveryObserveChips(task)}
+                    </td>
+                    <td style="white-space:normal;line-height:1.55;">
+                        <div style="font-weight:600;color:#fff;">${errorLabel}</div>
+                        <div class="shop-delivery-table-note" style="margin-top:8px;">尝试 ${Number(task.attempt_count || 0)} / ${Number(task.max_attempts || 0)}</div>
+                        <div style="margin-top:8px;">${this.renderDeliveryAttemptLines(task)}</div>
+                    </td>
+                    <td>${this.renderDeliveryActionButtons(task, { allowDeadLetter: task.status !== 'dead_letter', allowForceUnlock: true })}</td>
+                </tr>
+            `;
+        }).join('');
+
+        this.renderPagination('deliveryLockConflictsPagination', page, total, pageSize, 'loadDeliveryLockConflictPage');
+    },
+
     renderReplayRecords: function (records = [], total = 0, page = 1, pageSize = this.deliveryReplayPageSize) {
         const tbody = document.getElementById('deliveryReplayTableBody');
         if (!tbody) return;
@@ -2239,6 +2424,9 @@ Example output format:
                 task.status ? this.getDeliveryTaskStatusBadge(task.status) : this.renderDeliveryBadge('任务缺失', 'danger'),
                 order.delivery_status ? this.getOrderDeliveryStatusBadge(order) : ''
             ].filter(Boolean).join('');
+            const noteText = record.note
+                ? `<div class="shop-delivery-table-note" style="margin-top:8px;">备注：${this.escapeHtml(this.truncateText(record.note, 48))}</div>`
+                : '';
 
             return `
                 <tr>
@@ -2256,6 +2444,7 @@ Example output format:
                     <td>
                         <div class="shop-delivery-meta">${transition || this.renderDeliveryBadge('状态未知', 'muted')}</div>
                         <div class="shop-delivery-table-note" style="margin-top:8px;">${record.previous_status && record.next_status ? '人工重放触发了一次状态迁移' : '仅记录了重放动作，状态可能已被后续 worker 覆盖'}</div>
+                        ${noteText}
                     </td>
                     <td>
                         <div style="font-weight:700;color:#fff;">${Number(record.manual_replay_count || task.manual_replay_count || 0)}</div>
@@ -2272,21 +2461,88 @@ Example output format:
         this.renderPagination('deliveryReplayPagination', page, total, pageSize, 'loadDeliveryReplayPage');
     },
 
+    loadDeliveryStrategy: async function (headers = null) {
+        const requestHeaders = headers || await this.getAdminAuthHeaders();
+        const response = await fetch('/api/admin/shop/delivery-strategy', {
+            method: 'GET',
+            headers: requestHeaders
+        });
+
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result.success) {
+            throw new Error(result.message || '履约策略加载失败');
+        }
+
+        this.renderDeliveryStrategy(result.config || {});
+        return result.config || {};
+    },
+
+    saveDeliveryStrategy: async function () {
+        const saveButton = document.getElementById('deliveryStrategySaveBtn');
+        const originalText = saveButton?.innerHTML || '保存策略';
+        const applyToOpenTasks = document.getElementById('deliveryStrategyApplyOpenTasks')?.checked !== false;
+
+        try {
+            if (saveButton) {
+                saveButton.disabled = true;
+                saveButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 保存中...';
+            }
+
+            const headers = await this.getAdminAuthHeaders();
+            const response = await fetch('/api/admin/shop/delivery-strategy', {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                    config: this.getDeliveryStrategyPayload(),
+                    applyToOpenTasks
+                })
+            });
+
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok || !result.success) {
+                throw new Error(result.message || '履约策略保存失败');
+            }
+
+            this.renderDeliveryStrategy(result.config || {});
+            alert(result.message || '履约策略已保存');
+            await this.loadDeliveryTasks(this.deliveryTaskPage || 1);
+        } catch (err) {
+            console.error('[ShopAdmin] saveDeliveryStrategy failed:', err);
+            this.renderDeliveryStrategyError('策略保存失败');
+            alert(`履约策略保存失败：${err.message || '未知错误'}`);
+        } finally {
+            if (saveButton) {
+                saveButton.disabled = false;
+                saveButton.innerHTML = originalText;
+            }
+        }
+    },
+
     loadDeliveryTasks: async function (page = 1) {
         this.deliveryTaskPage = page;
         const tbody = document.getElementById('deliveryTasksTableBody');
         const summary = document.getElementById('deliveryTaskSummary');
         const deadLetterBody = document.getElementById('deliveryDeadLetterTableBody');
+        const lockBody = document.getElementById('deliveryLockConflictsTableBody');
         const replayBody = document.getElementById('deliveryReplayTableBody');
         const deadLetterSummary = document.getElementById('deliveryDeadLetterSummary');
+        const lockSummary = document.getElementById('deliveryLockConflictSummary');
         const replaySummary = document.getElementById('deliveryReplaySummary');
-        const filter = document.getElementById('deliveryTaskStatusFilter');
-        const status = filter?.value || this.deliveryTaskStatusFilter || 'all';
+        const strategySummary = document.getElementById('deliveryStrategySummary');
+        const taskFilter = document.getElementById('deliveryTaskStatusFilter');
+        const deadLetterReasonFilter = document.getElementById('deliveryDeadLetterReasonFilter');
+        const lockStateFilter = document.getElementById('deliveryLockStateFilter');
+        const status = taskFilter?.value || this.deliveryTaskStatusFilter || 'all';
+        const deadLetterReason = deadLetterReasonFilter?.value || this.deliveryDeadLetterReasonFilter || 'all';
+        const lockState = lockStateFilter?.value || this.deliveryLockStateFilter || 'all';
 
         this.deliveryTaskStatusFilter = status;
-        if (filter && filter.value !== status) {
-            filter.value = status;
-        }
+        this.deliveryDeadLetterReasonFilter = deadLetterReason;
+        this.deliveryLockStateFilter = lockState;
+
+        if (taskFilter && taskFilter.value !== status) taskFilter.value = status;
+        if (deadLetterReasonFilter && deadLetterReasonFilter.value !== deadLetterReason) deadLetterReasonFilter.value = deadLetterReason;
+        if (lockStateFilter && lockStateFilter.value !== lockState) lockStateFilter.value = lockState;
 
         if (tbody) {
             tbody.innerHTML = '<tr><td colspan="8" class="text-center">正在加载履约任务...</td></tr>';
@@ -2297,6 +2553,9 @@ Example output format:
         if (deadLetterBody) {
             deadLetterBody.innerHTML = '<tr><td colspan="6" class="text-center">正在加载死信任务...</td></tr>';
         }
+        if (lockBody) {
+            lockBody.innerHTML = '<tr><td colspan="6" class="text-center">正在加载锁冲突任务...</td></tr>';
+        }
         if (replayBody) {
             replayBody.innerHTML = '<tr><td colspan="6" class="text-center">正在加载人工重放记录...</td></tr>';
         }
@@ -2304,19 +2563,37 @@ Example output format:
             deadLetterSummary.classList.add('shop-delivery-subcard-meta--rich');
             deadLetterSummary.innerHTML = '<span class="shop-delivery-table-note">正在汇总…</span>';
         }
+        if (lockSummary) {
+            lockSummary.classList.add('shop-delivery-subcard-meta--rich');
+            lockSummary.innerHTML = '<span class="shop-delivery-table-note">正在汇总…</span>';
+        }
         if (replaySummary) {
             replaySummary.classList.add('shop-delivery-subcard-meta--rich');
             replaySummary.innerHTML = '<span class="shop-delivery-table-note">正在汇总…</span>';
         }
+        if (strategySummary && !this.deliveryStrategyConfig) {
+            strategySummary.classList.add('shop-delivery-subcard-meta--rich');
+            strategySummary.innerHTML = '<span class="shop-delivery-table-note">正在加载策略…</span>';
+        }
 
         try {
             const headers = await this.getAdminAuthHeaders();
+            const strategyPromise = this.loadDeliveryStrategy(headers).catch((error) => {
+                console.error('[ShopAdmin] loadDeliveryStrategy failed:', error);
+                this.renderDeliveryStrategyError('策略加载失败');
+                return null;
+            });
+
             const params = new URLSearchParams({
                 page: String(page || 1),
                 pageSize: String(this.deliveryTaskPageSize || 8),
                 status,
                 deadLetterPage: String(this.deliveryDeadLetterPage || 1),
                 deadLetterPageSize: String(this.deliveryDeadLetterPageSize || 5),
+                deadLetterReason,
+                lockPage: String(this.deliveryLockConflictPage || 1),
+                lockPageSize: String(this.deliveryLockConflictPageSize || 5),
+                lockState,
                 replayPage: String(this.deliveryReplayPage || 1),
                 replayPageSize: String(this.deliveryReplayPageSize || 5)
             });
@@ -2335,11 +2612,32 @@ Example output format:
 
             const deadLetter = result.deadLetter || {};
             this.renderDeliveryDeadLetterSummary(deadLetter);
-            this.renderDeadLetterTasks(deadLetter.tasks || [], deadLetter.total || 0, deadLetter.page || this.deliveryDeadLetterPage, deadLetter.pageSize || this.deliveryDeadLetterPageSize);
+            this.renderDeadLetterTasks(
+                deadLetter.tasks || [],
+                deadLetter.total || 0,
+                deadLetter.page || this.deliveryDeadLetterPage,
+                deadLetter.pageSize || this.deliveryDeadLetterPageSize
+            );
+
+            const lockConflicts = result.lockConflicts || {};
+            this.renderLockConflictSummary(lockConflicts);
+            this.renderLockConflictTasks(
+                lockConflicts.tasks || [],
+                lockConflicts.total || 0,
+                lockConflicts.page || this.deliveryLockConflictPage,
+                lockConflicts.pageSize || this.deliveryLockConflictPageSize
+            );
 
             const replay = result.replay || {};
             this.renderReplaySummary(replay);
-            this.renderReplayRecords(replay.records || [], replay.total || 0, replay.page || this.deliveryReplayPage, replay.pageSize || this.deliveryReplayPageSize);
+            this.renderReplayRecords(
+                replay.records || [],
+                replay.total || 0,
+                replay.page || this.deliveryReplayPage,
+                replay.pageSize || this.deliveryReplayPageSize
+            );
+
+            await strategyPromise;
         } catch (err) {
             console.error('[ShopAdmin] loadDeliveryTasks failed:', err);
             if (summary) {
@@ -2351,28 +2649,42 @@ Example output format:
             if (deadLetterBody) {
                 deadLetterBody.innerHTML = `<tr><td colspan="6"><div class="shop-delivery-empty">死信列表加载失败：${this.escapeHtml(err.message || '未知错误')}</div></td></tr>`;
             }
+            if (lockBody) {
+                lockBody.innerHTML = `<tr><td colspan="6"><div class="shop-delivery-empty">锁冲突列表加载失败：${this.escapeHtml(err.message || '未知错误')}</div></td></tr>`;
+            }
             if (replayBody) {
                 replayBody.innerHTML = `<tr><td colspan="6"><div class="shop-delivery-empty">人工重放记录加载失败：${this.escapeHtml(err.message || '未知错误')}</div></td></tr>`;
             }
             if (deadLetterSummary) {
                 deadLetterSummary.classList.add('shop-delivery-subcard-meta--rich');
-                deadLetterSummary.innerHTML = `<span class="shop-delivery-meta-badge" style="color:#fda4af;background:rgba(248,113,113,0.12);border-color:rgba(248,113,113,0.24);">加载失败</span>`;
+                deadLetterSummary.innerHTML = this.renderDeliveryMetaBadge('加载失败', 'danger');
+            }
+            if (lockSummary) {
+                lockSummary.classList.add('shop-delivery-subcard-meta--rich');
+                lockSummary.innerHTML = this.renderDeliveryMetaBadge('加载失败', 'danger');
             }
             if (replaySummary) {
                 replaySummary.classList.add('shop-delivery-subcard-meta--rich');
-                replaySummary.innerHTML = `<span class="shop-delivery-meta-badge" style="color:#fda4af;background:rgba(248,113,113,0.12);border-color:rgba(248,113,113,0.24);">加载失败</span>`;
+                replaySummary.innerHTML = this.renderDeliveryMetaBadge('加载失败', 'danger');
             }
             const taskPagination = document.getElementById('deliveryTasksPagination');
             const deadPagination = document.getElementById('deliveryDeadLetterPagination');
+            const lockPagination = document.getElementById('deliveryLockConflictsPagination');
             const replayPagination = document.getElementById('deliveryReplayPagination');
             if (taskPagination) taskPagination.innerHTML = '';
             if (deadPagination) deadPagination.innerHTML = '';
+            if (lockPagination) lockPagination.innerHTML = '';
             if (replayPagination) replayPagination.innerHTML = '';
         }
     },
 
     loadDeliveryDeadLetterPage: function (page = 1) {
         this.deliveryDeadLetterPage = page;
+        return this.loadDeliveryTasks(this.deliveryTaskPage || 1);
+    },
+
+    loadDeliveryLockConflictPage: function (page = 1) {
+        this.deliveryLockConflictPage = page;
         return this.loadDeliveryTasks(this.deliveryTaskPage || 1);
     },
 
@@ -2385,8 +2697,21 @@ Example output format:
         this.deliveryTaskStatusFilter = status || 'all';
         this.deliveryTaskPage = 1;
         this.deliveryDeadLetterPage = 1;
+        this.deliveryLockConflictPage = 1;
         this.deliveryReplayPage = 1;
         this.loadDeliveryTasks(1);
+    },
+
+    setDeliveryDeadLetterReasonFilter: function (reason) {
+        this.deliveryDeadLetterReasonFilter = reason || 'all';
+        this.deliveryDeadLetterPage = 1;
+        this.loadDeliveryTasks(this.deliveryTaskPage || 1);
+    },
+
+    setDeliveryLockStateFilter: function (lockState) {
+        this.deliveryLockStateFilter = lockState || 'all';
+        this.deliveryLockConflictPage = 1;
+        this.loadDeliveryTasks(this.deliveryTaskPage || 1);
     },
 
     performDeliveryTaskAction: async function (taskId, action) {
@@ -2394,10 +2719,24 @@ Example output format:
             requeue: '将任务重排队',
             replay: '立即人工重放',
             mark_dead_letter: '将任务标记为死信',
-            mark_delivered: '将任务标记为已履约'
+            mark_delivered: '将任务标记为已履约',
+            force_unlock: '将任务强制解锁'
+        };
+        const notePromptMap = {
+            replay: '可选：填写人工重放备注（例如人工补单、对账确认）',
+            mark_dead_letter: '可选：填写死信备注（例如上游永久失败、人工判定不可重试）',
+            force_unlock: '可选：填写强制解锁原因（例如锁过期、worker 异常退出）'
         };
 
         if (!taskId || !action) return;
+
+        let note = '';
+        if (Object.prototype.hasOwnProperty.call(notePromptMap, action)) {
+            const promptValue = window.prompt(notePromptMap[action], '');
+            if (promptValue === null) return;
+            note = String(promptValue || '').trim();
+        }
+
         const message = actionMap[action] || '执行该动作';
         if (!confirm(`确认要${message}吗？`)) return;
 
@@ -2406,14 +2745,14 @@ Example output format:
             const response = await fetch('/api/admin/shop/delivery-actions', {
                 method: 'POST',
                 headers,
-                body: JSON.stringify({ taskId, action })
+                body: JSON.stringify({ taskId, action, note })
             });
             const result = await response.json().catch(() => ({}));
             if (!response.ok || !result.success) {
                 throw new Error(result.message || '履约任务操作失败');
             }
 
-            alert(`已完成：${message}`);
+            alert(result.message || `已完成：${message}`);
             await this.searchOrders(this.ordersPage || 1);
         } catch (err) {
             console.error('[ShopAdmin] performDeliveryTaskAction failed:', err);
