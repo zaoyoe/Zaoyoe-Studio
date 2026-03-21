@@ -5047,6 +5047,202 @@
                             line-height: 1.5;
                         }
 
+                        .shop-delivery-analytics-stack {
+                            display: flex;
+                            flex-direction: column;
+                            gap: 18px;
+                        }
+
+                        .shop-delivery-trend-panel {
+                            display: flex;
+                            flex-direction: column;
+                            gap: 14px;
+                            padding: 16px;
+                            border-radius: 18px;
+                            border: 1px solid rgba(255, 255, 255, 0.08);
+                            background:
+                                radial-gradient(circle at top left, rgba(96, 165, 250, 0.12), transparent 42%),
+                                rgba(255, 255, 255, 0.025);
+                        }
+
+                        .shop-delivery-trend-chart {
+                            min-height: 220px;
+                        }
+
+                        .shop-delivery-trend-bars {
+                            display: grid;
+                            grid-template-columns: repeat(24, minmax(0, 1fr));
+                            gap: 8px;
+                            align-items: end;
+                            min-height: 220px;
+                        }
+
+                        .shop-delivery-trend-bar {
+                            min-width: 0;
+                            display: flex;
+                            flex-direction: column;
+                            align-items: center;
+                            justify-content: flex-end;
+                            gap: 8px;
+                        }
+
+                        .shop-delivery-trend-bar-column {
+                            position: relative;
+                            width: 100%;
+                            max-width: 24px;
+                            height: 168px;
+                            border-radius: 14px;
+                            border: 1px solid rgba(255, 255, 255, 0.06);
+                            background: rgba(148, 163, 184, 0.1);
+                            overflow: hidden;
+                        }
+
+                        .shop-delivery-trend-bar-fill {
+                            position: absolute;
+                            left: 0;
+                            right: 0;
+                            bottom: 0;
+                            border-radius: 12px 12px 4px 4px;
+                            background: linear-gradient(180deg, rgba(96, 165, 250, 0.92), rgba(59, 130, 246, 0.45));
+                        }
+
+                        .shop-delivery-trend-bar-fill--dead {
+                            left: 22%;
+                            right: 22%;
+                            background: linear-gradient(180deg, rgba(248, 113, 113, 0.95), rgba(239, 68, 68, 0.6));
+                        }
+
+                        .shop-delivery-trend-bar span {
+                            min-height: 14px;
+                            font-size: 11px;
+                            color: rgba(226, 232, 240, 0.6);
+                            line-height: 1;
+                        }
+
+                        .shop-delivery-trend-legend {
+                            display: flex;
+                            flex-wrap: wrap;
+                            gap: 10px;
+                            align-items: center;
+                        }
+
+                        .shop-delivery-trend-legend span {
+                            display: inline-flex;
+                            align-items: center;
+                            gap: 6px;
+                            font-size: 12px;
+                            color: rgba(226, 232, 240, 0.72);
+                        }
+
+                        .shop-delivery-trend-legend span i {
+                            font-size: 9px;
+                            color: #60a5fa;
+                        }
+
+                        .shop-delivery-trend-legend span.danger i {
+                            color: #f87171;
+                        }
+
+                        .shop-delivery-trend-legend span.warn i {
+                            color: #fbbf24;
+                        }
+
+                        .shop-delivery-hotspot-grid {
+                            display: grid;
+                            grid-template-columns: repeat(2, minmax(0, 1fr));
+                            gap: 16px;
+                        }
+
+                        .shop-delivery-hotspot-card {
+                            padding: 16px;
+                            border-radius: 18px;
+                            border: 1px solid rgba(255, 255, 255, 0.08);
+                            background: rgba(255, 255, 255, 0.025);
+                            display: flex;
+                            flex-direction: column;
+                            gap: 14px;
+                        }
+
+                        .shop-delivery-hotspot-head {
+                            display: flex;
+                            align-items: center;
+                            justify-content: space-between;
+                            gap: 12px;
+                            flex-wrap: wrap;
+                        }
+
+                        .shop-delivery-hotspot-head strong {
+                            color: #fff;
+                            font-size: 0.95rem;
+                        }
+
+                        .shop-delivery-hotspot-head span {
+                            font-size: 12px;
+                            color: rgba(226, 232, 240, 0.58);
+                        }
+
+                        .shop-delivery-hotspot-list {
+                            display: flex;
+                            flex-direction: column;
+                            gap: 12px;
+                        }
+
+                        .shop-delivery-hotspot-item {
+                            display: flex;
+                            flex-direction: column;
+                            gap: 8px;
+                            padding: 12px 14px;
+                            border-radius: 16px;
+                            border: 1px solid rgba(255, 255, 255, 0.07);
+                            background: rgba(15, 23, 42, 0.4);
+                        }
+
+                        .shop-delivery-hotspot-topline {
+                            display: flex;
+                            align-items: center;
+                            justify-content: space-between;
+                            gap: 12px;
+                        }
+
+                        .shop-delivery-hotspot-key {
+                            min-width: 0;
+                            font-size: 13px;
+                            font-weight: 700;
+                            color: #fff;
+                        }
+
+                        .shop-delivery-hotspot-rank {
+                            flex-shrink: 0;
+                            font-size: 12px;
+                            color: rgba(226, 232, 240, 0.62);
+                        }
+
+                        .shop-delivery-hotspot-bar {
+                            position: relative;
+                            width: 100%;
+                            height: 8px;
+                            overflow: hidden;
+                            border-radius: 999px;
+                            background: rgba(148, 163, 184, 0.12);
+                        }
+
+                        .shop-delivery-hotspot-bar>span {
+                            display: block;
+                            height: 100%;
+                            border-radius: inherit;
+                            background: linear-gradient(90deg, rgba(96, 165, 250, 0.95), rgba(14, 165, 233, 0.75));
+                        }
+
+                        .shop-delivery-hotspot-card--channel .shop-delivery-hotspot-bar>span {
+                            background: linear-gradient(90deg, rgba(248, 113, 113, 0.95), rgba(251, 191, 36, 0.72));
+                        }
+
+                        .shop-delivery-hotspot-meta {
+                            display: flex;
+                            flex-wrap: wrap;
+                            gap: 6px;
+                        }
+
                         @media (max-width: 1200px) {
                             .shop-delivery-strategy-grid {
                                 grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -5099,6 +5295,10 @@
                                 grid-template-columns: 1fr;
                             }
 
+                            .shop-delivery-hotspot-grid {
+                                grid-template-columns: 1fr;
+                            }
+
                             .shop-delivery-subcard-tools {
                                 justify-content: flex-start;
                                 width: 100%;
@@ -5138,6 +5338,16 @@
                         }
 
                         @media (max-width: 768px) {
+                            .shop-delivery-trend-bars {
+                                gap: 6px;
+                                min-height: 190px;
+                            }
+
+                            .shop-delivery-trend-bar-column {
+                                max-width: 18px;
+                                height: 138px;
+                            }
+
                             :is(#shop-view-orders, #shop-view-fulfillment) .shop-table-container {
                                 overflow: visible;
                                 background: transparent;
@@ -5548,6 +5758,46 @@
                         <div id="deliveryTasksPagination"
                             style="display: flex; justify-content: center; gap: 10px; margin-top: 20px;">
                         </div>
+
+                        <section class="shop-delivery-subcard shop-delivery-subcard--wide">
+                            <div class="shop-delivery-subcard-header">
+                                <div class="shop-delivery-subcard-title">
+                                    <h4><i class="fas fa-chart-line"></i> 冲突热点与趋势</h4>
+                                    <p>按近 24 小时冲突记录观察高频目标 / 通道，以及冲突高峰时段。</p>
+                                </div>
+                                <div id="deliveryConflictAnalyticsSummary" class="shop-delivery-subcard-meta">载入中…</div>
+                            </div>
+                            <div class="shop-delivery-subcard-body">
+                                <div class="shop-delivery-analytics-stack">
+                                    <div class="shop-delivery-trend-panel">
+                                        <div id="deliveryConflictTrendChart" class="shop-delivery-trend-chart">
+                                            <div class="shop-delivery-empty">正在加载近 24 小时冲突趋势...</div>
+                                        </div>
+                                        <div id="deliveryConflictTrendLegend" class="shop-delivery-trend-legend"></div>
+                                    </div>
+                                    <div class="shop-delivery-hotspot-grid">
+                                        <div class="shop-delivery-hotspot-card">
+                                            <div class="shop-delivery-hotspot-head">
+                                                <strong>目标热点</strong>
+                                                <span>冲突最多的目标地址</span>
+                                            </div>
+                                            <div id="deliveryTargetHotspots" class="shop-delivery-hotspot-list">
+                                                <div class="shop-delivery-table-note">正在加载热点目标...</div>
+                                            </div>
+                                        </div>
+                                        <div class="shop-delivery-hotspot-card shop-delivery-hotspot-card--channel">
+                                            <div class="shop-delivery-hotspot-head">
+                                                <strong>通道热点</strong>
+                                                <span>冲突最多的通道域名</span>
+                                            </div>
+                                            <div id="deliveryChannelHotspots" class="shop-delivery-hotspot-list">
+                                                <div class="shop-delivery-table-note">正在加载热点通道...</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
 
                         <div class="shop-delivery-subgrid">
                             <section class="shop-delivery-subcard">

@@ -422,6 +422,189 @@ function summarizeConflictAudits(records = []) {
     return counts;
 }
 
+function formatConflictTrendLabel(date) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '—';
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hour = String(date.getHours()).padStart(2, '0');
+    return `${month}-${day} ${hour}:00`;
+}
+
+function buildConflictTrend(records = [], hours = 24) {
+    const bucketCount = Math.max(1, Number(hours || 24));
+    const end = new Date();
+    end.setMinutes(0, 0, 0);
+    const start = new Date(end.getTime() - (bucketCount - 1) * 60 * 60 * 1000);
+    const buckets = Array.from({ length: bucketCount }, (_, index) => {
+        const bucketAt = new Date(start.getTime() + index * 60 * 60 * 1000);
+        return {
+            bucket_at: bucketAt.toISOString(),
+            label: formatConflictTrendLabel(bucketAt),
+            total: 0,
+            target: 0,
+            channel: 0,
+            manual: 0,
+            dead_letter: 0
+        };
+    });
+    const bucketMap = new Map(buckets.map((bucket) => [bucket.bucket_at, bucket]));
+
+    records.forEach((record) => {
+        const createdAt = new Date(record?.created_at || 0);
+        if (Number.isNaN(createdAt.getTime())) return;
+        createdAt.setMinutes(0, 0, 0);
+        const bucket = bucketMap.get(createdAt.toISOString());
+        if (!bucket) return;
+
+        bucket.total += 1;
+        const scope = String(record?.scope || '').trim().toLowerCase();
+        if (scope === 'target') {
+            bucket.target += 1;
+        } else if (scope === 'channel') {
+            bucket.channel += 1;
+        } else if (scope === 'manual') {
+            bucket.manual += 1;
+        }
+
+        if (String(record?.task_status || '').trim().toLowerCase() === 'dead_letter') {
+            bucket.dead_letter += 1;
+        }
+    });
+
+    const maxTotal = buckets.reduce((max, bucket) => Math.max(max, Number(bucket.total || 0)), 1);
+    const hottest = buckets.reduce((current, bucket) => (
+        Number(bucket.total || 0) > Number(current?.total || 0) ? bucket : current
+    ), null);
+    const totals = buckets.reduce((acc, bucket) => {
+        acc.total_conflicts += Number(bucket.total || 0);
+        acc.target_conflicts += Number(bucket.target || 0);
+        acc.channel_conflicts += Number(bucket.channel || 0);
+        acc.manual_conflicts += Number(bucket.manual || 0);
+        acc.dead_letter_conflicts += Number(bucket.dead_letter || 0);
+        return acc;
+    }, {
+        total_conflicts: 0,
+        target_conflicts: 0,
+        channel_conflicts: 0,
+        manual_conflicts: 0,
+        dead_letter_conflicts: 0
+    });
+
+    return {
+        hours: bucketCount,
+        max_total: maxTotal,
+        hottest_hour_label: hottest?.label || null,
+        hottest_hour_total: Number(hottest?.total || 0),
+        ...totals,
+        buckets
+    };
+}
+
+function buildConflictHotspots(records = [], reservationTasks = [], keyField = 'target_key', limit = 6) {
+    const map = new Map();
+
+    const touchItem = (key) => {
+        const normalizedKey = String(key || '').trim().toLowerCase();
+        if (!normalizedKey) return null;
+        if (!map.has(normalizedKey)) {
+            map.set(normalizedKey, {
+                key: normalizedKey,
+                total_conflicts: 0,
+                dead_letter_count: 0,
+                manual_count: 0,
+                active_reservations: 0,
+                latest_at: null,
+                latest_reason_label: null,
+                reason_counts: {}
+            });
+        }
+        return map.get(normalizedKey);
+    };
+
+    records.forEach((record) => {
+        const item = touchItem(record?.[keyField]);
+        if (!item) return;
+
+        item.total_conflicts += 1;
+        if (String(record?.task_status || '').trim().toLowerCase() === 'dead_letter') {
+            item.dead_letter_count += 1;
+        }
+        if (
+            String(record?.scope || '').trim().toLowerCase() === 'manual'
+            || String(record?.reason_key || '').trim().toLowerCase().includes('manual')
+        ) {
+            item.manual_count += 1;
+        }
+
+        const reason = record?.conflict_reason || classifyConflictReason(record);
+        item.reason_counts[reason.key] = Number(item.reason_counts[reason.key] || 0) + 1;
+
+        const createdAt = Number(new Date(record?.created_at || 0).getTime());
+        const latestAt = Number(new Date(item.latest_at || 0).getTime());
+        if (createdAt > latestAt) {
+            item.latest_at = record.created_at;
+            item.latest_reason_label = reason.label || null;
+        }
+    });
+
+    reservationTasks.forEach((task) => {
+        const reservationState = task?.reservation_state || classifyReservationState(task);
+        if (reservationState?.key !== 'active') return;
+        const item = touchItem(task?.[keyField]);
+        if (!item) return;
+        item.active_reservations += 1;
+    });
+
+    return [...map.values()]
+        .map((item) => {
+            const topReason = Object.entries(item.reason_counts || {})
+                .sort((left, right) => Number(right[1] || 0) - Number(left[1] || 0))[0]?.[0] || null;
+            return {
+                key: item.key,
+                total_conflicts: item.total_conflicts,
+                dead_letter_count: item.dead_letter_count,
+                manual_count: item.manual_count,
+                active_reservations: item.active_reservations,
+                latest_at: item.latest_at,
+                latest_reason_label: item.latest_reason_label
+                    || (topReason ? classifyConflictReason({ reason_key: topReason }).label : null)
+                    || '其他冲突'
+            };
+        })
+        .sort((left, right) => (
+            Number(right.total_conflicts || 0) - Number(left.total_conflicts || 0)
+            || Number(right.active_reservations || 0) - Number(left.active_reservations || 0)
+            || Number(new Date(right.latest_at || 0).getTime()) - Number(new Date(left.latest_at || 0).getTime())
+        ))
+        .slice(0, Math.max(1, Math.min(Number(limit || 6), 12)));
+}
+
+function buildConflictAnalytics(records = [], reservationTasks = [], hours = 24, hotspotLimit = 6) {
+    const trend = buildConflictTrend(records, hours);
+    const targets = buildConflictHotspots(records, reservationTasks, 'target_key', hotspotLimit);
+    const channels = buildConflictHotspots(records, reservationTasks, 'channel_key', hotspotLimit);
+
+    return {
+        summary: {
+            hours: trend.hours,
+            total_conflicts: trend.total_conflicts,
+            target_conflicts: trend.target_conflicts,
+            channel_conflicts: trend.channel_conflicts,
+            manual_conflicts: trend.manual_conflicts,
+            dead_letter_conflicts: trend.dead_letter_conflicts,
+            hottest_hour_label: trend.hottest_hour_label,
+            hottest_hour_total: trend.hottest_hour_total,
+            target_hotspots: targets.length,
+            channel_hotspots: channels.length
+        },
+        trend,
+        hotspots: {
+            targets,
+            channels
+        }
+    };
+}
+
 function summarizeReplayRecords(records = []) {
     const uniqueAdmins = new Set();
     const states = {
@@ -749,6 +932,21 @@ async function fetchRecentConflictAudits({ supabase, limit = 12 }) {
     };
 }
 
+async function fetchConflictAnalyticsWindow({ supabase, hours = 24, pageSize = 200, maxPages = 10 }) {
+    const safeHours = Math.max(1, Number(hours || 24));
+    const cutoffIso = new Date(Date.now() - safeHours * 60 * 60 * 1000).toISOString();
+    const records = await fetchAllRows(() => supabase
+        .from('shop_webhook_task_conflicts')
+        .select(CONFLICT_AUDIT_SELECT)
+        .gte('created_at', cutoffIso)
+        .order('created_at', { ascending: false }), pageSize, maxPages);
+
+    return (records || []).map((record) => ({
+        ...record,
+        conflict_reason: classifyConflictReason(record)
+    }));
+}
+
 async function fetchOrdersByIds(supabase, orderIds = []) {
     const ids = unique(orderIds);
     if (!ids.length) return {};
@@ -895,7 +1093,7 @@ module.exports = async (req, res) => {
         const replayPage = parsePositiveInt(url.searchParams.get('replayPage'), 1, 100000);
         const replayPageSize = parsePositiveInt(url.searchParams.get('replayPageSize'), 5, 20);
 
-        const [mainPage, deadLetterPageData, lockPageData, replayPageData, conflictAuditData, reservationOverviewData] = await Promise.all([
+        const [mainPage, deadLetterPageData, lockPageData, replayPageData, conflictAuditData, reservationOverviewData, conflictAnalyticsRecords] = await Promise.all([
             fetchTaskPage({
                 supabase,
                 page,
@@ -928,6 +1126,10 @@ module.exports = async (req, res) => {
             fetchReservationOverview({
                 supabase,
                 limit: 8
+            }),
+            fetchConflictAnalyticsWindow({
+                supabase,
+                hours: 24
             })
         ]);
 
@@ -1075,7 +1277,6 @@ module.exports = async (req, res) => {
         summary.lock_missing = missingLocks;
         summary.force_unlock_candidates = staleLocks + missingLocks;
         summary.manual_replays = manualReplays;
-        summary.recent_conflicts = Number(conflictAuditData.total || 0);
         summary.conflict_tasks = conflictTasks;
 
         const deadLetterSummary = summarizeDeadLetterTasks(deadLetterPageData.allTasks || []);
@@ -1083,10 +1284,17 @@ module.exports = async (req, res) => {
         const replaySummary = summarizeReplayRecords(replayRecords);
         const conflictSummary = summarizeConflictAudits(conflictRecords);
         const reservationSummary = summarizeReservationTasks(reservationOverviewData.allTasks || reservationTasks);
+        const conflictAnalytics = buildConflictAnalytics(
+            conflictAnalyticsRecords,
+            reservationOverviewData.allTasks || reservationTasks,
+            24,
+            6
+        );
         summary.reservation_active = reservationSummary.active;
         summary.reservation_drift = reservationSummary.drift_total;
         summary.reservation_targets = reservationSummary.distinct_targets;
         summary.reservation_channels = reservationSummary.distinct_channels;
+        summary.recent_conflicts = conflictAnalytics.summary.total_conflicts;
 
         return sendJson(res, 200, {
             success: true,
@@ -1116,6 +1324,7 @@ module.exports = async (req, res) => {
                 summary: reservationSummary,
                 tasks: reservationTasks
             },
+            analytics: conflictAnalytics,
             replay: {
                 page: replayPageData.page,
                 pageSize: replayPageData.pageSize,

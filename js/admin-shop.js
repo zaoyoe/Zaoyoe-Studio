@@ -2075,7 +2075,7 @@ Example output format:
             { label: '死信', value: summary.dead_letter || 0, tone: 'danger' },
             { label: '已履约', value: summary.delivered || 0, tone: 'success' },
             { label: '冲突任务', value: summary.conflict_tasks || 0, tone: 'warn' },
-            { label: '最近冲突', value: summary.recent_conflicts || 0, tone: 'warn' },
+            { label: '24h 冲突', value: summary.recent_conflicts || 0, tone: 'warn' },
             { label: '全局占位', value: summary.reservation_active || 0, tone: 'processing' },
             { label: '占位漂移', value: summary.reservation_drift || 0, tone: 'danger' },
             { label: '占位目标', value: summary.reservation_targets || 0, tone: 'neutral' },
@@ -2722,6 +2722,113 @@ Example output format:
         }).join('');
     },
 
+    renderDeliveryHotspotList: function (elementId, items = [], type = 'target') {
+        const target = document.getElementById(elementId);
+        if (!target) return;
+
+        if (!items.length) {
+            target.innerHTML = '<div class="shop-delivery-empty">近 24 小时没有明显热点。</div>';
+            return;
+        }
+
+        const maxConflicts = items.reduce((max, item) => Math.max(max, Number(item?.total_conflicts || 0)), 1);
+        target.innerHTML = items.map((item, index) => {
+            const keyText = this.escapeHtml(this.truncateText(item.key || '—', type === 'target' ? 42 : 28));
+            const totalConflicts = Number(item.total_conflicts || 0);
+            const width = Math.max(12, Math.round((totalConflicts / maxConflicts) * 100));
+            const meta = [
+                this.renderDeliveryMetaBadge(`冲突 ${totalConflicts}`, totalConflicts ? 'warn' : 'muted'),
+                this.renderDeliveryMetaBadge(`活跃占位 ${Number(item.active_reservations || 0)}`, Number(item.active_reservations || 0) ? 'processing' : 'muted'),
+                this.renderDeliveryMetaBadge(`冲突死信 ${Number(item.dead_letter_count || 0)}`, Number(item.dead_letter_count || 0) ? 'danger' : 'muted'),
+                this.renderDeliveryMetaBadge(`人工 ${Number(item.manual_count || 0)}`, Number(item.manual_count || 0) ? 'neutral' : 'muted'),
+                item.latest_reason_label ? this.renderDeliveryMetaBadge(item.latest_reason_label, 'neutral') : '',
+                item.latest_at ? this.renderDeliveryMetaBadge(`最近 ${this.formatDeliveryTime(item.latest_at)}`, 'muted') : ''
+            ].filter(Boolean);
+
+            return `
+                <div class="shop-delivery-hotspot-item">
+                    <div class="shop-delivery-hotspot-topline">
+                        <div class="shop-delivery-hotspot-key" title="${this.escapeHtml(item.key || '')}">${keyText}</div>
+                        <div class="shop-delivery-hotspot-rank">#${index + 1}</div>
+                    </div>
+                    <div class="shop-delivery-hotspot-bar"><span style="width:${width}%"></span></div>
+                    <div class="shop-delivery-hotspot-meta">${meta.join('')}</div>
+                </div>
+            `;
+        }).join('');
+    },
+
+    renderDeliveryConflictAnalytics: function (analytics = {}) {
+        const summary = document.getElementById('deliveryConflictAnalyticsSummary');
+        const chart = document.getElementById('deliveryConflictTrendChart');
+        const legend = document.getElementById('deliveryConflictTrendLegend');
+        const trend = analytics.trend || {};
+        const hotspots = analytics.hotspots || {};
+        const buckets = Array.isArray(trend.buckets) ? trend.buckets : [];
+
+        if (summary) {
+            const summaryData = analytics.summary || {};
+            const hottest = summaryData.hottest_hour_label
+                ? `${summaryData.hottest_hour_label} · ${Number(summaryData.hottest_hour_total || 0)}`
+                : '—';
+            const pills = [
+                this.renderDeliveryMetaBadge(`24h 冲突 ${Number(summaryData.total_conflicts || 0)}`, Number(summaryData.total_conflicts || 0) ? 'warn' : 'muted'),
+                this.renderDeliveryMetaBadge(`目标 ${Number(summaryData.target_conflicts || 0)}`, Number(summaryData.target_conflicts || 0) ? 'processing' : 'muted'),
+                this.renderDeliveryMetaBadge(`通道 ${Number(summaryData.channel_conflicts || 0)}`, Number(summaryData.channel_conflicts || 0) ? 'danger' : 'muted'),
+                this.renderDeliveryMetaBadge(`人工 ${Number(summaryData.manual_conflicts || 0)}`, Number(summaryData.manual_conflicts || 0) ? 'neutral' : 'muted'),
+                this.renderDeliveryMetaBadge(`冲突死信 ${Number(summaryData.dead_letter_conflicts || 0)}`, Number(summaryData.dead_letter_conflicts || 0) ? 'danger' : 'muted'),
+                this.renderDeliveryMetaBadge(`高峰 ${hottest}`, summaryData.hottest_hour_total ? 'warn' : 'muted')
+            ];
+            summary.classList.add('shop-delivery-subcard-meta--rich');
+            summary.innerHTML = pills.join('');
+        }
+
+        if (chart && legend) {
+            const maxValue = buckets.reduce((max, bucket) => Math.max(max, Number(bucket?.total || 0)), 1);
+            const viewportWidth = window.innerWidth || 1280;
+            const labelStep = viewportWidth <= 480 ? 6 : viewportWidth <= 768 ? 4 : 2;
+            const hasData = buckets.some((bucket) => Number(bucket?.total || 0) > 0);
+
+            if (!buckets.length || !hasData) {
+                chart.innerHTML = '<div class="shop-delivery-empty">最近 24 小时暂无冲突记录。</div>';
+                legend.innerHTML = '';
+            } else {
+                chart.innerHTML = `
+                    <div class="shop-delivery-trend-bars">
+                        ${buckets.map((bucket, index) => {
+                            const totalHeight = Math.max(8, Math.round((Number(bucket.total || 0) / maxValue) * 100));
+                            const deadHeight = Number(bucket.dead_letter || 0)
+                                ? Math.max(4, Math.round((Number(bucket.dead_letter || 0) / maxValue) * 100))
+                                : 0;
+                            const showLabel = index % labelStep === 0 || index === buckets.length - 1;
+                            const label = String(bucket.label || '').split(' ')[1] || String(bucket.label || '');
+                            return `
+                                <div class="shop-delivery-trend-bar" title="${this.escapeHtml(bucket.label || '')} · 总冲突 ${Number(bucket.total || 0)} · 目标 ${Number(bucket.target || 0)} · 通道 ${Number(bucket.channel || 0)} · 人工 ${Number(bucket.manual || 0)} · 冲突死信 ${Number(bucket.dead_letter || 0)}">
+                                    <div class="shop-delivery-trend-bar-column">
+                                        <div class="shop-delivery-trend-bar-fill" style="height:${totalHeight}%"></div>
+                                        ${deadHeight ? `<div class="shop-delivery-trend-bar-fill shop-delivery-trend-bar-fill--dead" style="height:${deadHeight}%"></div>` : ''}
+                                    </div>
+                                    <span>${showLabel ? this.escapeHtml(label) : ''}</span>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                `;
+
+                legend.innerHTML = `
+                    <span><i class="fas fa-circle"></i> 总冲突 ${Number(trend.total_conflicts || 0)}</span>
+                    <span><i class="fas fa-circle"></i> 目标 ${Number(trend.target_conflicts || 0)}</span>
+                    <span class="warn"><i class="fas fa-circle"></i> 通道 ${Number(trend.channel_conflicts || 0)}</span>
+                    <span><i class="fas fa-circle"></i> 人工 ${Number(trend.manual_conflicts || 0)}</span>
+                    <span class="danger"><i class="fas fa-circle"></i> 冲突死信 ${Number(trend.dead_letter_conflicts || 0)}</span>
+                `;
+            }
+        }
+
+        this.renderDeliveryHotspotList('deliveryTargetHotspots', hotspots.targets || [], 'target');
+        this.renderDeliveryHotspotList('deliveryChannelHotspots', hotspots.channels || [], 'channel');
+    },
+
     renderReplayRecords: function (records = [], total = 0, page = 1, pageSize = this.deliveryReplayPageSize) {
         const tbody = document.getElementById('deliveryReplayTableBody');
         if (!tbody) return;
@@ -2849,6 +2956,11 @@ Example output format:
         const reservationBody = document.getElementById('deliveryReservationTableBody');
         const replayBody = document.getElementById('deliveryReplayTableBody');
         const conflictAuditBody = document.getElementById('deliveryConflictAuditTableBody');
+        const conflictAnalyticsSummary = document.getElementById('deliveryConflictAnalyticsSummary');
+        const conflictTrendChart = document.getElementById('deliveryConflictTrendChart');
+        const conflictTrendLegend = document.getElementById('deliveryConflictTrendLegend');
+        const targetHotspots = document.getElementById('deliveryTargetHotspots');
+        const channelHotspots = document.getElementById('deliveryChannelHotspots');
         const deadLetterSummary = document.getElementById('deliveryDeadLetterSummary');
         const lockSummary = document.getElementById('deliveryLockConflictSummary');
         const reservationSummary = document.getElementById('deliveryReservationSummary');
@@ -2890,6 +3002,22 @@ Example output format:
         }
         if (conflictAuditBody) {
             conflictAuditBody.innerHTML = '<tr><td colspan="5" class="text-center">正在加载冲突审计...</td></tr>';
+        }
+        if (conflictTrendChart) {
+            conflictTrendChart.innerHTML = '<div class="shop-delivery-empty">正在加载近 24 小时冲突趋势...</div>';
+        }
+        if (conflictTrendLegend) {
+            conflictTrendLegend.innerHTML = '';
+        }
+        if (targetHotspots) {
+            targetHotspots.innerHTML = '<div class="shop-delivery-table-note">正在加载热点目标...</div>';
+        }
+        if (channelHotspots) {
+            channelHotspots.innerHTML = '<div class="shop-delivery-table-note">正在加载热点通道...</div>';
+        }
+        if (conflictAnalyticsSummary) {
+            conflictAnalyticsSummary.classList.add('shop-delivery-subcard-meta--rich');
+            conflictAnalyticsSummary.innerHTML = '<span class="shop-delivery-table-note">正在汇总…</span>';
         }
         if (deadLetterSummary) {
             deadLetterSummary.classList.add('shop-delivery-subcard-meta--rich');
@@ -2972,6 +3100,8 @@ Example output format:
             this.renderReservationSummary(reservations);
             this.renderReservationTasks(reservations.tasks || []);
 
+            this.renderDeliveryConflictAnalytics(result.analytics || {});
+
             const replay = result.replay || {};
             this.renderReplaySummary(replay);
             this.renderReplayRecords(
@@ -3008,6 +3138,22 @@ Example output format:
             }
             if (conflictAuditBody) {
                 conflictAuditBody.innerHTML = `<tr><td colspan="5"><div class="shop-delivery-empty">冲突审计加载失败：${this.escapeHtml(err.message || '未知错误')}</div></td></tr>`;
+            }
+            if (conflictTrendChart) {
+                conflictTrendChart.innerHTML = `<div class="shop-delivery-empty">冲突趋势加载失败：${this.escapeHtml(err.message || '未知错误')}</div>`;
+            }
+            if (conflictTrendLegend) {
+                conflictTrendLegend.innerHTML = '';
+            }
+            if (targetHotspots) {
+                targetHotspots.innerHTML = `<div class="shop-delivery-empty">目标热点加载失败：${this.escapeHtml(err.message || '未知错误')}</div>`;
+            }
+            if (channelHotspots) {
+                channelHotspots.innerHTML = `<div class="shop-delivery-empty">通道热点加载失败：${this.escapeHtml(err.message || '未知错误')}</div>`;
+            }
+            if (conflictAnalyticsSummary) {
+                conflictAnalyticsSummary.classList.add('shop-delivery-subcard-meta--rich');
+                conflictAnalyticsSummary.innerHTML = this.renderDeliveryMetaBadge('加载失败', 'danger');
             }
             if (deadLetterSummary) {
                 deadLetterSummary.classList.add('shop-delivery-subcard-meta--rich');
