@@ -4797,6 +4797,127 @@
                             border: 1px solid rgba(255, 255, 255, 0.08);
                         }
 
+                        .shop-delivery-subgrid {
+                            display: grid;
+                            grid-template-columns: repeat(2, minmax(0, 1fr));
+                            gap: 18px;
+                            margin-top: 20px;
+                        }
+
+                        .shop-delivery-subcard {
+                            border-radius: 20px;
+                            border: 1px solid rgba(255, 255, 255, 0.08);
+                            background: rgba(18, 27, 45, 0.78);
+                            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+                            overflow: hidden;
+                        }
+
+                        .shop-delivery-subcard-header {
+                            display: flex;
+                            align-items: flex-start;
+                            justify-content: space-between;
+                            gap: 16px;
+                            padding: 18px 20px 14px;
+                            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+                        }
+
+                        .shop-delivery-subcard-title {
+                            display: flex;
+                            flex-direction: column;
+                            gap: 6px;
+                        }
+
+                        .shop-delivery-subcard-title h4 {
+                            margin: 0;
+                            font-size: 1rem;
+                            color: #fff;
+                            display: flex;
+                            align-items: center;
+                            gap: 10px;
+                        }
+
+                        .shop-delivery-subcard-title p {
+                            margin: 0;
+                            font-size: 0.85rem;
+                            color: rgba(226, 232, 240, 0.62);
+                            line-height: 1.55;
+                        }
+
+                        .shop-delivery-subcard-meta {
+                            display: inline-flex;
+                            align-items: center;
+                            gap: 8px;
+                            min-height: 36px;
+                            padding: 0 14px;
+                            border-radius: 999px;
+                            background: rgba(255, 255, 255, 0.05);
+                            border: 1px solid rgba(255, 255, 255, 0.08);
+                            color: rgba(226, 232, 240, 0.78);
+                            font-size: 0.86rem;
+                            font-weight: 600;
+                            white-space: nowrap;
+                        }
+
+                        .shop-delivery-subcard-meta--rich {
+                            display: flex;
+                            flex-wrap: wrap;
+                            justify-content: flex-end;
+                            align-items: center;
+                            gap: 8px;
+                            min-height: auto;
+                            padding: 0;
+                            background: transparent;
+                            border: none;
+                            border-radius: 0;
+                            white-space: normal;
+                        }
+
+                        .shop-delivery-meta-badge {
+                            display: inline-flex;
+                            align-items: center;
+                            justify-content: center;
+                            gap: 6px;
+                            min-height: 32px;
+                            padding: 0 12px;
+                            border-radius: 999px;
+                            border: 1px solid rgba(255, 255, 255, 0.08);
+                            background: rgba(255, 255, 255, 0.05);
+                            color: rgba(226, 232, 240, 0.82);
+                            font-size: 0.78rem;
+                            font-weight: 600;
+                            line-height: 1;
+                            white-space: nowrap;
+                        }
+
+                        .shop-delivery-subcard-body {
+                            padding: 18px 20px 20px;
+                        }
+
+                        .shop-delivery-attempt-stack {
+                            display: flex;
+                            flex-direction: column;
+                            gap: 6px;
+                        }
+
+                        .shop-delivery-attempt-line {
+                            font-size: 12px;
+                            color: rgba(226, 232, 240, 0.72);
+                            line-height: 1.5;
+                        }
+
+                        .shop-delivery-observe-stack {
+                            display: flex;
+                            flex-wrap: wrap;
+                            gap: 6px;
+                            max-width: 320px;
+                        }
+
+                        .shop-delivery-table-note {
+                            font-size: 12px;
+                            color: rgba(226, 232, 240, 0.58);
+                            line-height: 1.5;
+                        }
+
                         @media (max-width: 900px) {
                             .shop-delivery-header {
                                 align-items: stretch;
@@ -4813,6 +4934,14 @@
 
                             .shop-delivery-target {
                                 max-width: 160px;
+                            }
+
+                            .shop-delivery-subgrid {
+                                grid-template-columns: 1fr;
+                            }
+
+                            .shop-delivery-subcard-meta--rich {
+                                justify-content: flex-start;
                             }
                         }
                     </style>
@@ -4912,6 +5041,78 @@
 
                         <div id="deliveryTasksPagination"
                             style="display: flex; justify-content: center; gap: 10px; margin-top: 20px;">
+                        </div>
+
+                        <div class="shop-delivery-subgrid">
+                            <section class="shop-delivery-subcard">
+                                <div class="shop-delivery-subcard-header">
+                                    <div class="shop-delivery-subcard-title">
+                                        <h4><i class="fas fa-skull-crossbones"></i> 死信列表</h4>
+                                        <p>集中查看达到最大重试次数或被人工标记为死信的履约任务。</p>
+                                    </div>
+                                    <div id="deliveryDeadLetterSummary" class="shop-delivery-subcard-meta">载入中…</div>
+                                </div>
+                                <div class="shop-delivery-subcard-body">
+                                    <div class="shop-table-container">
+                                        <table class="shop-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>订单号</th>
+                                                    <th>商品 / 用户</th>
+                                                    <th>死信原因</th>
+                                                    <th>锁与幂等</th>
+                                                    <th>最近尝试</th>
+                                                    <th>操作</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="deliveryDeadLetterTableBody">
+                                                <tr>
+                                                    <td colspan="6" class="text-center">正在加载死信列表...</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    <div id="deliveryDeadLetterPagination"
+                                        style="display: flex; justify-content: center; gap: 10px; margin-top: 18px;">
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section class="shop-delivery-subcard">
+                                <div class="shop-delivery-subcard-header">
+                                    <div class="shop-delivery-subcard-title">
+                                        <h4><i class="fas fa-history"></i> 人工重放记录</h4>
+                                        <p>跟踪后台发起的人工重放操作，确认执行人、重放时间和当前任务状态。</p>
+                                    </div>
+                                    <div id="deliveryReplaySummary" class="shop-delivery-subcard-meta">载入中…</div>
+                                </div>
+                                <div class="shop-delivery-subcard-body">
+                                    <div class="shop-table-container">
+                                        <table class="shop-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>时间</th>
+                                                    <th>管理员</th>
+                                                    <th>订单 / 商品</th>
+                                                    <th>状态流转</th>
+                                                    <th>重放次数</th>
+                                                    <th>当前状态</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="deliveryReplayTableBody">
+                                                <tr>
+                                                    <td colspan="6" class="text-center">正在加载人工重放记录...</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    <div id="deliveryReplayPagination"
+                                        style="display: flex; justify-content: center; gap: 10px; margin-top: 18px;">
+                                    </div>
+                                </div>
+                            </section>
                         </div>
                     </div>
                 </div>

@@ -47,6 +47,10 @@ const ShopAdmin = {
     deliveryTaskPage: 1,
     deliveryTaskStatusFilter: 'all',
     deliveryTaskPageSize: 8,
+    deliveryDeadLetterPage: 1,
+    deliveryDeadLetterPageSize: 5,
+    deliveryReplayPage: 1,
+    deliveryReplayPageSize: 5,
     pageSize: 10,
     currentCategory: 'all', // State for category filter
     currentStatusFilter: 'active', // State for status filter: 'active' or 'deleted'
@@ -1848,6 +1852,11 @@ Example output format:
         return `<span class="status-badge" style="display:inline-flex;align-items:center;padding:5px 12px;border-radius:999px;font-size:12px;font-weight:600;color:${colors.text};background:${colors.bg};border:1px solid ${colors.border};white-space:nowrap;">${this.escapeHtml(label)}</span>`;
     },
 
+    renderDeliveryMetaBadge: function (label, tone = 'neutral') {
+        const colors = this.getDeliveryToneStyles(tone);
+        return `<span class="shop-delivery-meta-badge" style="color:${colors.text};background:${colors.bg};border-color:${colors.border};">${this.escapeHtml(label)}</span>`;
+    },
+
     getOrderDeliveryStatusBadge: function (order) {
         const refundStatus = String(order?.refund_status || '').toLowerCase();
         if (refundStatus === 'refunded' || refundStatus === 'full_refund') {
@@ -1930,7 +1939,10 @@ Example output format:
             { label: '待执行', value: summary.retryable || 0, tone: 'waiting' },
             { label: '处理中', value: summary.processing || 0, tone: 'processing' },
             { label: '死信', value: summary.dead_letter || 0, tone: 'danger' },
-            { label: '已履约', value: summary.delivered || 0, tone: 'success' }
+            { label: '已履约', value: summary.delivered || 0, tone: 'success' },
+            { label: '活跃锁', value: summary.locked_active || 0, tone: 'processing' },
+            { label: '过期锁', value: summary.locked_stale || 0, tone: 'danger' },
+            { label: '人工重放', value: summary.manual_replays || 0, tone: 'muted' }
         ];
 
         container.innerHTML = items.map((item) => {
@@ -1941,6 +1953,121 @@ Example output format:
                     : 'shop-delivery-pill';
             return `<span class="${toneClass}"><strong>${item.value}</strong><span>${item.label}</span></span>`;
         }).join('');
+    },
+
+    shortenDeliveryToken: function (value, head = 6, tail = 4) {
+        const text = String(value || '').trim();
+        if (!text) return '';
+        if (text.length <= head + tail + 1) return text;
+        return `${text.slice(0, head)}…${text.slice(-tail)}`;
+    },
+
+    getDeliveryLockBadge: function (task = {}) {
+        if (!task?.lock_token) return '';
+        const expiresAt = task.lock_expires_at ? new Date(task.lock_expires_at).getTime() : 0;
+        const isActive = Number.isFinite(expiresAt) && expiresAt > Date.now();
+        return this.renderDeliveryBadge(isActive ? '活跃锁' : '过期锁', isActive ? 'processing' : 'danger');
+    },
+
+    renderDeliveryObserveChips: function (task = {}) {
+        const chips = [];
+        const lockBadge = this.getDeliveryLockBadge(task);
+
+        if (lockBadge) chips.push(lockBadge);
+        if (task.dedupe_key) {
+            const dedupe = this.escapeHtml(this.shortenDeliveryToken(task.dedupe_key, 10, 6));
+            chips.push(`<span class="shop-delivery-meta-chip" title="${this.escapeHtml(task.dedupe_key)}">幂等 ${dedupe}</span>`);
+        }
+        if (task.lock_token) {
+            const lockToken = this.escapeHtml(this.shortenDeliveryToken(task.lock_token, 8, 6));
+            chips.push(`<span class="shop-delivery-meta-chip" title="${this.escapeHtml(task.lock_token)}">锁 ${lockToken}</span>`);
+        }
+        if (task.worker_name) {
+            chips.push(`<span class="shop-delivery-meta-chip">Worker ${this.escapeHtml(task.worker_name)}</span>`);
+        }
+        if (Number(task.manual_replay_count || 0) > 0) {
+            chips.push(`<span class="shop-delivery-meta-chip">人工重放 ${Number(task.manual_replay_count)}</span>`);
+        }
+        if (task.manual_replay_requested_at) {
+            chips.push(`<span class="shop-delivery-meta-chip">重放申请 ${this.formatDeliveryTime(task.manual_replay_requested_at)}</span>`);
+        }
+
+        if (!chips.length) {
+            return '<div class="shop-delivery-table-note">无额外观测字段</div>';
+        }
+
+        return `<div class="shop-delivery-observe-stack">${chips.join('')}</div>`;
+    },
+
+    renderDeliveryCompactObserveChips: function (record = {}) {
+        const chips = [];
+        if (record.lock_state === 'locked_active') {
+            chips.push(this.renderDeliveryMetaBadge('活跃锁', 'processing'));
+        } else if (record.lock_state === 'locked_stale') {
+            chips.push(this.renderDeliveryMetaBadge('过期锁', 'danger'));
+        }
+        if (record.worker_name) {
+            chips.push(this.renderDeliveryMetaBadge(`Worker ${record.worker_name}`, 'muted'));
+        }
+        if (record.dedupe_key) {
+            chips.push(this.renderDeliveryMetaBadge(`幂等 ${this.shortenDeliveryToken(record.dedupe_key, 8, 5)}`, 'muted'));
+        }
+        return chips.length
+            ? `<div class="shop-delivery-meta">${chips.join('')}</div>`
+            : '<div class="shop-delivery-table-note">无额外观测字段</div>';
+    },
+
+    renderDeliveryAttemptLines: function (task = {}) {
+        const attempts = Array.isArray(task.attempts) ? task.attempts.slice(0, 3) : [];
+        if (!attempts.length) {
+            return '<div class="shop-delivery-table-note">暂无尝试记录</div>';
+        }
+
+        return `
+            <div class="shop-delivery-attempt-stack">
+                ${attempts.map((attempt) => {
+                    const success = Boolean(attempt?.success);
+                    const tone = success ? 'success' : 'danger';
+                    const statusLabel = success ? '成功' : '失败';
+                    const durationText = Number.isFinite(Number(attempt?.duration_ms))
+                        ? `${Math.round(Number(attempt.duration_ms))}ms`
+                        : '—';
+                    const worker = this.escapeHtml(attempt?.worker_name || 'worker');
+                    const time = this.formatDeliveryTime(attempt?.started_at || attempt?.finished_at);
+                    const errorText = attempt?.error_message
+                        ? ` · ${this.escapeHtml(this.truncateText(attempt.error_message, 44))}`
+                        : '';
+
+                    return `
+                        <div class="shop-delivery-attempt-line">
+                            <strong>#${Number(attempt?.attempt_no || 0)}</strong>
+                            ${this.renderDeliveryBadge(statusLabel, tone)}
+                            <span>${worker}</span>
+                            <span>${time}</span>
+                            <span>${durationText}</span>${errorText}
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        `;
+    },
+
+    renderDeliveryActionButtons: function (task = {}, options = {}) {
+        const allowDeadLetter = options.allowDeadLetter !== false;
+        const actions = [];
+
+        if (task.status !== 'delivered') {
+            actions.push(`<button class="shop-delivery-action-btn" onclick="ShopAdmin.performDeliveryTaskAction('${task.id}', 'requeue')">重排队</button>`);
+            actions.push(`<button class="shop-delivery-action-btn" onclick="ShopAdmin.performDeliveryTaskAction('${task.id}', 'replay')">人工重放</button>`);
+            actions.push(`<button class="shop-delivery-action-btn" onclick="ShopAdmin.performDeliveryTaskAction('${task.id}', 'mark_delivered')">标已履约</button>`);
+        }
+        if (allowDeadLetter && task.status !== 'dead_letter') {
+            actions.push(`<button class="shop-delivery-action-btn danger" onclick="ShopAdmin.performDeliveryTaskAction('${task.id}', 'mark_dead_letter')">标死信</button>`);
+        }
+
+        return actions.length
+            ? `<div class="shop-delivery-task-actions">${actions.join('')}</div>`
+            : '<div class="shop-delivery-table-note">暂无可执行动作</div>';
     },
 
     renderDeliveryTasks: function (tasks = [], total = 0, page = 1, pageSize = this.deliveryTaskPageSize) {
@@ -1956,51 +2083,46 @@ Example output format:
         tbody.innerHTML = tasks.map((task) => {
             const order = task.order || {};
             const productName = this.escapeHtml(order.snapshot_product_name || '—');
-            const targetUrl = this.escapeHtml(task.target_url || '');
             const latestError = task.last_error
-                ? `<span title="${this.escapeHtml(task.last_error)}">${this.escapeHtml(this.truncateText(task.last_error, 56))}</span>`
+                ? `<span title="${this.escapeHtml(task.last_error)}">${this.escapeHtml(this.truncateText(task.last_error, 68))}</span>`
                 : '<span style="color:rgba(226,232,240,0.45);">—</span>';
-
-            const timeBlock = [
-                `上次: ${this.formatDeliveryTime(task.last_attempt_at || task.updated_at || task.created_at)}`,
-                `下次: ${this.formatDeliveryTime(task.next_attempt_at)}`
-            ].join('<br>');
-
-            const metaChips = [
-                order.delivery_status ? `<span class="shop-delivery-meta-chip">订单状态 ${this.escapeHtml(order.delivery_status)}</span>` : '',
-                task.worker_name ? `<span class="shop-delivery-meta-chip">Worker ${this.escapeHtml(task.worker_name)}</span>` : '',
-                task.manual_replay_count ? `<span class="shop-delivery-meta-chip">人工重放 ${Number(task.manual_replay_count)}</span>` : ''
+            const executeTimeline = `
+                <div class="shop-delivery-attempt-stack">
+                    <div class="shop-delivery-attempt-line"><strong>上次</strong> <span>${this.formatDeliveryTime(task.last_attempt_at || task.updated_at || task.created_at)}</span></div>
+                    <div class="shop-delivery-attempt-line"><strong>下次</strong> <span>${this.formatDeliveryTime(task.next_attempt_at)}</span></div>
+                </div>
+            `;
+            const taskBadges = [
+                this.getDeliveryTaskStatusBadge(task.status),
+                order.delivery_status ? this.getOrderDeliveryStatusBadge(order) : ''
             ].filter(Boolean).join('');
-
-            const actions = [];
-            if (task.status !== 'delivered') {
-                actions.push(`<button class="shop-delivery-action-btn" onclick="ShopAdmin.performDeliveryTaskAction('${task.id}', 'requeue')">重排队</button>`);
-                actions.push(`<button class="shop-delivery-action-btn" onclick="ShopAdmin.performDeliveryTaskAction('${task.id}', 'replay')">人工重放</button>`);
-                actions.push(`<button class="shop-delivery-action-btn" onclick="ShopAdmin.performDeliveryTaskAction('${task.id}', 'mark_delivered')">标已履约</button>`);
-            }
-            if (task.status !== 'dead_letter') {
-                actions.push(`<button class="shop-delivery-action-btn danger" onclick="ShopAdmin.performDeliveryTaskAction('${task.id}', 'mark_dead_letter')">标死信</button>`);
-            }
 
             return `
                 <tr>
                     <td>
                         <div style="font-weight:600;color:#fff;">${this.escapeHtml(task.order_id || '—')}</div>
-                        <div style="font-size:12px;color:rgba(226,232,240,0.58);">${task.dedupe_key ? this.escapeHtml(this.truncateText(task.dedupe_key, 32)) : '无去重键'}</div>
+                        <div style="font-size:12px;color:rgba(226,232,240,0.58);">${task.dedupe_key ? this.escapeHtml(this.truncateText(task.dedupe_key, 36)) : '无去重键'}</div>
                     </td>
                     <td>
                         <div style="font-weight:600;color:#fff;">${productName}</div>
                         <div style="font-size:12px;color:rgba(226,232,240,0.58);">${this.escapeHtml(order.user_id || '未知用户')}</div>
                     </td>
                     <td>
-                        ${this.getDeliveryTaskStatusBadge(task.status)}
-                        ${metaChips ? `<div class="shop-delivery-meta" style="margin-top:8px;">${metaChips}</div>` : ''}
+                        <div class="shop-delivery-meta" style="margin-bottom:8px;">${taskBadges}</div>
+                        ${this.renderDeliveryObserveChips(task)}
                     </td>
-                    <td>${Number(task.attempt_count || 0)} / ${Number(task.max_attempts || 0)}</td>
-                    <td><div class="shop-delivery-target" title="${targetUrl}">${this.formatDeliveryTaskTarget(task.target_url)}</div></td>
-                    <td style="white-space:normal;line-height:1.5;">${timeBlock}</td>
-                    <td style="white-space:normal;line-height:1.5;">${latestError}</td>
-                    <td><div class="shop-delivery-task-actions">${actions.join('')}</div></td>
+                    <td>
+                        <div style="font-weight:700;color:#fff;margin-bottom:8px;">${Number(task.attempt_count || 0)} / ${Number(task.max_attempts || 0)}</div>
+                        ${this.renderDeliveryAttemptLines(task)}
+                    </td>
+                    <td>
+                        <div class="shop-delivery-target" title="${this.escapeHtml(task.target_url || '')}">${this.formatDeliveryTaskTarget(task.target_url)}</div>
+                    </td>
+                    <td style="white-space:normal;line-height:1.5;">${executeTimeline}</td>
+                    <td style="white-space:normal;line-height:1.55;">
+                        ${latestError}
+                    </td>
+                    <td>${this.renderDeliveryActionButtons(task)}</td>
                 </tr>
             `;
         }).join('');
@@ -2008,12 +2130,159 @@ Example output format:
         this.renderPagination('deliveryTasksPagination', page, total, pageSize, 'loadDeliveryTasks');
     },
 
+    renderDeliveryDeadLetterSummary: function (data = {}) {
+        const meta = document.getElementById('deliveryDeadLetterSummary');
+        if (!meta) return;
+        const summary = data.summary || {};
+        const total = Number(data.total || summary.total || 0);
+        const pills = [
+            this.renderDeliveryMetaBadge(`共 ${total} 条`, total ? 'danger' : 'muted'),
+            this.renderDeliveryMetaBadge(`目标缺失 ${Number(summary.missing_target || 0)}`, Number(summary.missing_target || 0) ? 'danger' : 'muted'),
+            this.renderDeliveryMetaBadge(`超时 ${Number(summary.timeout || 0)}`, Number(summary.timeout || 0) ? 'warn' : 'muted'),
+            this.renderDeliveryMetaBadge(`4xx ${Number(summary.upstream_4xx || 0)}`, Number(summary.upstream_4xx || 0) ? 'danger' : 'muted'),
+            this.renderDeliveryMetaBadge(`5xx ${Number(summary.upstream_5xx || 0)}`, Number(summary.upstream_5xx || 0) ? 'danger' : 'muted'),
+            this.renderDeliveryMetaBadge(`最大重试 ${Number(summary.max_attempts || 0)}`, Number(summary.max_attempts || 0) ? 'warn' : 'muted')
+        ];
+        meta.classList.add('shop-delivery-subcard-meta--rich');
+        meta.innerHTML = total ? pills.join('') : '<span class="shop-delivery-table-note">当前无死信</span>';
+    },
+
+    renderReplaySummary: function (data = {}) {
+        const meta = document.getElementById('deliveryReplaySummary');
+        if (!meta) return;
+        const summary = data.summary || {};
+        const total = Number(data.total || summary.total || 0);
+        const latestReplay = summary.latest_replay_at ? this.formatDeliveryTime(summary.latest_replay_at) : '—';
+        const pills = [
+            this.renderDeliveryMetaBadge(`共 ${total} 条`, total ? 'processing' : 'muted'),
+            this.renderDeliveryMetaBadge(`管理员 ${Number(summary.admin_count || 0)}`, Number(summary.admin_count || 0) ? 'processing' : 'muted'),
+            this.renderDeliveryMetaBadge(`待继续 ${Number(summary.pending || 0) + Number(summary.retry_waiting || 0)}`, (Number(summary.pending || 0) + Number(summary.retry_waiting || 0)) ? 'warn' : 'muted'),
+            this.renderDeliveryMetaBadge(`已履约 ${Number(summary.delivered || 0)}`, Number(summary.delivered || 0) ? 'success' : 'muted'),
+            this.renderDeliveryMetaBadge(`最新 ${latestReplay}`, summary.latest_replay_at ? 'neutral' : 'muted')
+        ];
+        meta.classList.add('shop-delivery-subcard-meta--rich');
+        meta.innerHTML = total ? pills.join('') : '<span class="shop-delivery-table-note">暂无人工重放</span>';
+    },
+
+    renderDeadLetterTasks: function (tasks = [], total = 0, page = 1, pageSize = this.deliveryDeadLetterPageSize) {
+        const tbody = document.getElementById('deliveryDeadLetterTableBody');
+        if (!tbody) return;
+
+        if (!tasks.length) {
+            tbody.innerHTML = '<tr><td colspan="6"><div class="shop-delivery-empty">当前没有死信任务。</div></td></tr>';
+            this.renderPagination('deliveryDeadLetterPagination', page, total, pageSize, 'loadDeliveryDeadLetterPage');
+            return;
+        }
+
+        tbody.innerHTML = tasks.map((task) => {
+            const order = task.order || {};
+            const orderId = this.escapeHtml(task.order_id || '—');
+            const productName = this.escapeHtml(order.snapshot_product_name || '—');
+            const userId = this.escapeHtml(order.user_id || '未知用户');
+            const reason = task.last_error
+                ? `<div style="font-weight:600;color:#fff;">${this.escapeHtml(this.truncateText(task.last_error, 54))}</div>`
+                : '<div style="font-weight:600;color:#fff;">人工标记死信</div>';
+            const responseMeta = [
+                task.last_response_status ? `HTTP ${Number(task.last_response_status)}` : '',
+                task.dead_lettered_at ? `死信于 ${this.formatDeliveryTime(task.dead_lettered_at)}` : ''
+            ].filter(Boolean).join(' · ');
+            const deadLetterReason = task.dead_letter_reason
+                ? this.renderDeliveryBadge(task.dead_letter_reason.label, task.dead_letter_reason.tone || 'muted')
+                : this.renderDeliveryBadge('未知原因', 'muted');
+
+            return `
+                <tr>
+                    <td>
+                        <div style="font-weight:600;color:#fff;">${orderId}</div>
+                        <div class="shop-delivery-table-note">${task.target_url ? this.formatDeliveryTaskTarget(task.target_url) : '无目标地址'}</div>
+                    </td>
+                    <td>
+                        <div style="font-weight:600;color:#fff;">${productName}</div>
+                        <div class="shop-delivery-table-note">${userId}</div>
+                    </td>
+                    <td style="white-space:normal;line-height:1.55;">
+                        <div class="shop-delivery-meta" style="margin-bottom:8px;">${deadLetterReason}</div>
+                        ${reason}
+                        <div class="shop-delivery-table-note" style="margin-top:8px;">${this.escapeHtml(responseMeta || '无额外响应信息')}</div>
+                    </td>
+                    <td>${this.renderDeliveryObserveChips(task)}</td>
+                    <td>${this.renderDeliveryAttemptLines(task)}</td>
+                    <td>${this.renderDeliveryActionButtons(task, { allowDeadLetter: false })}</td>
+                </tr>
+            `;
+        }).join('');
+
+        this.renderPagination('deliveryDeadLetterPagination', page, total, pageSize, 'loadDeliveryDeadLetterPage');
+    },
+
+    renderReplayRecords: function (records = [], total = 0, page = 1, pageSize = this.deliveryReplayPageSize) {
+        const tbody = document.getElementById('deliveryReplayTableBody');
+        if (!tbody) return;
+
+        if (!records.length) {
+            tbody.innerHTML = '<tr><td colspan="6"><div class="shop-delivery-empty">当前没有人工重放记录。</div></td></tr>';
+            this.renderPagination('deliveryReplayPagination', page, total, pageSize, 'loadDeliveryReplayPage');
+            return;
+        }
+
+        tbody.innerHTML = records.map((record) => {
+            const task = record.task || {};
+            const order = record.order || task.order || {};
+            const adminIdentity = this.escapeHtml(record.admin_email || record.admin_id || '未知管理员');
+            const productName = this.escapeHtml(order.snapshot_product_name || '—');
+            const orderId = this.escapeHtml(record.order_id || task.order_id || '—');
+            const transition = [record.previous_status, record.next_status]
+                .filter(Boolean)
+                .map((value) => this.getDeliveryTaskStatusBadge(value))
+                .join('<span style="color:rgba(226,232,240,0.55);">→</span>');
+            const currentState = [
+                task.status ? this.getDeliveryTaskStatusBadge(task.status) : this.renderDeliveryBadge('任务缺失', 'danger'),
+                order.delivery_status ? this.getOrderDeliveryStatusBadge(order) : ''
+            ].filter(Boolean).join('');
+
+            return `
+                <tr>
+                    <td>
+                        <div style="font-weight:600;color:#fff;">${this.formatDeliveryTime(record.created_at)}</div>
+                        <div class="shop-delivery-table-note">${record.task_id ? `任务 ${this.escapeHtml(this.truncateText(record.task_id, 18))}` : '无任务 ID'}</div>
+                    </td>
+                    <td>
+                        <div style="font-weight:600;color:#fff;">${adminIdentity}</div>
+                    </td>
+                    <td>
+                        <div style="font-weight:600;color:#fff;">${productName}</div>
+                        <div class="shop-delivery-table-note">${orderId}</div>
+                    </td>
+                    <td>
+                        <div class="shop-delivery-meta">${transition || this.renderDeliveryBadge('状态未知', 'muted')}</div>
+                        <div class="shop-delivery-table-note" style="margin-top:8px;">${record.previous_status && record.next_status ? '人工重放触发了一次状态迁移' : '仅记录了重放动作，状态可能已被后续 worker 覆盖'}</div>
+                    </td>
+                    <td>
+                        <div style="font-weight:700;color:#fff;">${Number(record.manual_replay_count || task.manual_replay_count || 0)}</div>
+                        <div class="shop-delivery-table-note">累计人工触发次数</div>
+                    </td>
+                    <td>
+                        <div class="shop-delivery-meta">${currentState}</div>
+                        <div style="margin-top:8px;">${this.renderDeliveryCompactObserveChips(record)}</div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+
+        this.renderPagination('deliveryReplayPagination', page, total, pageSize, 'loadDeliveryReplayPage');
+    },
+
     loadDeliveryTasks: async function (page = 1) {
         this.deliveryTaskPage = page;
         const tbody = document.getElementById('deliveryTasksTableBody');
         const summary = document.getElementById('deliveryTaskSummary');
+        const deadLetterBody = document.getElementById('deliveryDeadLetterTableBody');
+        const replayBody = document.getElementById('deliveryReplayTableBody');
+        const deadLetterSummary = document.getElementById('deliveryDeadLetterSummary');
+        const replaySummary = document.getElementById('deliveryReplaySummary');
         const filter = document.getElementById('deliveryTaskStatusFilter');
         const status = filter?.value || this.deliveryTaskStatusFilter || 'all';
+
         this.deliveryTaskStatusFilter = status;
         if (filter && filter.value !== status) {
             filter.value = status;
@@ -2025,13 +2294,31 @@ Example output format:
         if (summary) {
             summary.innerHTML = '<span class="shop-delivery-pill">正在统计履约任务...</span>';
         }
+        if (deadLetterBody) {
+            deadLetterBody.innerHTML = '<tr><td colspan="6" class="text-center">正在加载死信任务...</td></tr>';
+        }
+        if (replayBody) {
+            replayBody.innerHTML = '<tr><td colspan="6" class="text-center">正在加载人工重放记录...</td></tr>';
+        }
+        if (deadLetterSummary) {
+            deadLetterSummary.classList.add('shop-delivery-subcard-meta--rich');
+            deadLetterSummary.innerHTML = '<span class="shop-delivery-table-note">正在汇总…</span>';
+        }
+        if (replaySummary) {
+            replaySummary.classList.add('shop-delivery-subcard-meta--rich');
+            replaySummary.innerHTML = '<span class="shop-delivery-table-note">正在汇总…</span>';
+        }
 
         try {
             const headers = await this.getAdminAuthHeaders();
             const params = new URLSearchParams({
                 page: String(page || 1),
                 pageSize: String(this.deliveryTaskPageSize || 8),
-                status
+                status,
+                deadLetterPage: String(this.deliveryDeadLetterPage || 1),
+                deadLetterPageSize: String(this.deliveryDeadLetterPageSize || 5),
+                replayPage: String(this.deliveryReplayPage || 1),
+                replayPageSize: String(this.deliveryReplayPageSize || 5)
             });
             const response = await fetch(`/api/admin/shop/delivery-tasks?${params.toString()}`, {
                 method: 'GET',
@@ -2045,6 +2332,14 @@ Example output format:
 
             this.renderDeliveryTaskSummary(result.summary || {});
             this.renderDeliveryTasks(result.tasks || [], result.total || 0, result.page || page, result.pageSize || this.deliveryTaskPageSize);
+
+            const deadLetter = result.deadLetter || {};
+            this.renderDeliveryDeadLetterSummary(deadLetter);
+            this.renderDeadLetterTasks(deadLetter.tasks || [], deadLetter.total || 0, deadLetter.page || this.deliveryDeadLetterPage, deadLetter.pageSize || this.deliveryDeadLetterPageSize);
+
+            const replay = result.replay || {};
+            this.renderReplaySummary(replay);
+            this.renderReplayRecords(replay.records || [], replay.total || 0, replay.page || this.deliveryReplayPage, replay.pageSize || this.deliveryReplayPageSize);
         } catch (err) {
             console.error('[ShopAdmin] loadDeliveryTasks failed:', err);
             if (summary) {
@@ -2053,13 +2348,44 @@ Example output format:
             if (tbody) {
                 tbody.innerHTML = `<tr><td colspan="8"><div class="shop-delivery-empty">履约任务加载失败：${this.escapeHtml(err.message || '未知错误')}</div></td></tr>`;
             }
-            const pagination = document.getElementById('deliveryTasksPagination');
-            if (pagination) pagination.innerHTML = '';
+            if (deadLetterBody) {
+                deadLetterBody.innerHTML = `<tr><td colspan="6"><div class="shop-delivery-empty">死信列表加载失败：${this.escapeHtml(err.message || '未知错误')}</div></td></tr>`;
+            }
+            if (replayBody) {
+                replayBody.innerHTML = `<tr><td colspan="6"><div class="shop-delivery-empty">人工重放记录加载失败：${this.escapeHtml(err.message || '未知错误')}</div></td></tr>`;
+            }
+            if (deadLetterSummary) {
+                deadLetterSummary.classList.add('shop-delivery-subcard-meta--rich');
+                deadLetterSummary.innerHTML = `<span class="shop-delivery-meta-badge" style="color:#fda4af;background:rgba(248,113,113,0.12);border-color:rgba(248,113,113,0.24);">加载失败</span>`;
+            }
+            if (replaySummary) {
+                replaySummary.classList.add('shop-delivery-subcard-meta--rich');
+                replaySummary.innerHTML = `<span class="shop-delivery-meta-badge" style="color:#fda4af;background:rgba(248,113,113,0.12);border-color:rgba(248,113,113,0.24);">加载失败</span>`;
+            }
+            const taskPagination = document.getElementById('deliveryTasksPagination');
+            const deadPagination = document.getElementById('deliveryDeadLetterPagination');
+            const replayPagination = document.getElementById('deliveryReplayPagination');
+            if (taskPagination) taskPagination.innerHTML = '';
+            if (deadPagination) deadPagination.innerHTML = '';
+            if (replayPagination) replayPagination.innerHTML = '';
         }
+    },
+
+    loadDeliveryDeadLetterPage: function (page = 1) {
+        this.deliveryDeadLetterPage = page;
+        return this.loadDeliveryTasks(this.deliveryTaskPage || 1);
+    },
+
+    loadDeliveryReplayPage: function (page = 1) {
+        this.deliveryReplayPage = page;
+        return this.loadDeliveryTasks(this.deliveryTaskPage || 1);
     },
 
     setDeliveryTaskStatusFilter: function (status) {
         this.deliveryTaskStatusFilter = status || 'all';
+        this.deliveryTaskPage = 1;
+        this.deliveryDeadLetterPage = 1;
+        this.deliveryReplayPage = 1;
         this.loadDeliveryTasks(1);
     },
 
