@@ -50,8 +50,21 @@
 作用：
 - 钱包购买套餐与自定义充值统一从这里进入
 - 后端统一判断当前生效通道
+- 统一先创建 `payment_checkout_sessions`
 - `mock` 会直接走共享完成逻辑
 - `afdian` / `hupijiao` 返回统一的 checkout context，由前端拉起支付页
+
+### checkout session / 支付意图层
+
+已新增：
+- `payment_checkout_sessions`
+- migration: `/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260321_add_payment_checkout_sessions.sql`
+
+作用：
+- 记录支付前的创建意图
+- 统一保存套餐、金额、积分、通道和跳转上下文
+- 为未来虎皮椒等真实网关接入预留统一入口
+- 避免只在支付成功后才第一次出现订单记录
 
 ### mock
 
@@ -68,6 +81,7 @@
 - 订单创建 / 更新
 - 事件写入
 - 模拟支付积分入账
+- checkout session 创建 / 完成回填
 
 ### afdian
 
@@ -83,6 +97,11 @@
 - 运行时 token 读取
 - checkout context 生成
 
+当前状态：
+- 创建支付时会先写 `payment_checkout_sessions`
+- 真实 `payment_orders` 仍主要在回调后落库
+- 后续如果要把爱发电也完全拉平，需要继续补“会话回填到最终订单”的关联策略
+
 ### hupijiao
 
 当前状态：
@@ -91,12 +110,14 @@
 
 ## 后续接虎皮椒时要补的点
 
-1. 在 `provider-adapters.js` 里补 `hupijiao.createCheckoutContext`
-2. 补 `hupijiao.verifyWebhook`
-3. 补 `hupijiao.queryOrder`
-4. 补 webhook 落 `payment_events`
-5. 补成功订单写入 / 更新 `payment_orders`
-6. 补自动积分入账
+1. 在 `provider-adapters.js` 里补真正的 `hupijiao.createCheckoutContext`
+2. 支付创建时把返回的商户单号 / session_no 写回 `payment_checkout_sessions`
+3. 补 `hupijiao.verifyWebhook`
+4. 补 `hupijiao.queryOrder`
+5. 补 webhook 落 `payment_events`
+6. 补成功订单写入 / 更新 `payment_orders`
+7. 回调时把 `payment_checkout_sessions.payment_order_id` 回填
+8. 补自动积分入账
 
 ## 约束
 

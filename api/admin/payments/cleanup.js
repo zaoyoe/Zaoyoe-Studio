@@ -162,6 +162,7 @@ async function buildCleanupPreview(supabaseAdmin) {
     const testUserIds = testUsers.map((user) => user.id);
 
     const [
+        paymentCheckoutSessions,
         paymentOrders,
         paymentEvents,
         afdianOrders,
@@ -171,6 +172,7 @@ async function buildCleanupPreview(supabaseAdmin) {
         userCheckins,
         userEvents
     ] = await Promise.all([
+        countInOptional(supabaseAdmin, 'payment_checkout_sessions', 'user_id', testUserIds),
         countLike(supabaseAdmin, 'payment_orders', 'provider_order_no', `${TEST_ORDER_PREFIX}%`),
         countLike(supabaseAdmin, 'payment_events', 'provider_order_no', `${TEST_ORDER_PREFIX}%`),
         countLike(supabaseAdmin, 'afdian_orders', 'out_trade_no', `${TEST_ORDER_PREFIX}%`),
@@ -185,6 +187,7 @@ async function buildCleanupPreview(supabaseAdmin) {
         order_prefix: TEST_ORDER_PREFIX,
         user_email_pattern: TEST_EMAIL_PATTERN.toString(),
         counts: {
+            payment_checkout_sessions: paymentCheckoutSessions,
             payment_orders: paymentOrders,
             payment_events: paymentEvents,
             afdian_orders: afdianOrders,
@@ -238,6 +241,7 @@ module.exports = async function handler(req, res) {
         }
 
         const deleted = {
+            payment_checkout_sessions: 0,
             payment_events: 0,
             afdian_orders: 0,
             payment_orders: 0,
@@ -255,6 +259,7 @@ module.exports = async function handler(req, res) {
         };
         const warnings = [];
 
+        deleted.payment_checkout_sessions = await safeDeleteInOptional(supabaseAdmin, 'payment_checkout_sessions', 'user_id', preview.test_user_ids);
         deleted.payment_events = await safeDeleteLikeOptional(supabaseAdmin, 'payment_events', 'provider_order_no', `${TEST_ORDER_PREFIX}%`);
         deleted.afdian_orders = await safeDeleteLikeOptional(supabaseAdmin, 'afdian_orders', 'out_trade_no', `${TEST_ORDER_PREFIX}%`);
         deleted.payment_orders = await safeDeleteLikeOptional(supabaseAdmin, 'payment_orders', 'provider_order_no', `${TEST_ORDER_PREFIX}%`);

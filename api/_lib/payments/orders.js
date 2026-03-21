@@ -1,13 +1,14 @@
+const crypto = require('crypto');
 const {
     getPaymentProviderAdapter,
-    normalizePointValue,
-    roundCurrencyAmount
+    normalizePointValue
 } = require('./provider-adapters');
 const {
     loadStoredPaymentConfigs
 } = require('./providers');
 
 const mockProvider = getPaymentProviderAdapter('mock');
+const CHECKOUT_SESSION_EXPIRY_HOURS = 24;
 
 function sanitizeSite(value) {
     const site = String(value || '').trim().toLowerCase();
@@ -28,6 +29,123 @@ function normalizeCurrency(value, fallback = null) {
 
 function buildMockOrderNo(explicitOrderNo = '') {
     return mockProvider.buildOrderNo({ explicitOrderNo });
+}
+
+function buildCheckoutSessionKey(providerKey = '') {
+    const normalizedProvider = String(providerKey || '')
+        .trim()
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, '')
+        .slice(0, 12) || 'PAY';
+
+    return `PCS_${normalizedProvider}_${Date.now()}_${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+}
+
+function getCheckoutSessionExpiryIso(hours = CHECKOUT_SESSION_EXPIRY_HOURS) {
+    const date = new Date();
+    date.setUTCHours(date.getUTCHours() + Math.max(1, Number(hours) || CHECKOUT_SESSION_EXPIRY_HOURS));
+    return date.toISOString();
+}
+
+async function loadCheckoutSessionForUser(supabase, userId, sessionId) {
+    const normalizedSessionId = String(sessionId || '').trim();
+    if (!normalizedSessionId) return null;
+
+    const { data, error } = await supabase
+        .from('payment_checkout_sessions')
+        .select('*')
+        .eq('id', normalizedSessionId)
+        .maybeSingle();
+
+    if (error) {
+        throw new Error(error.message || 'Failed to inspect payment checkout session');
+    }
+
+    if (!data) return null;
+
+    if (data.user_id && data.user_id !== userId) {
+        const forbiddenError = new Error('该支付会话已归属于其他账号');
+        forbiddenError.statusCode = 403;
+        throw forbiddenError;
+    }
+
+    return data;
+}
+
+async function createCheckoutSession({
+    supabase,
+    user,
+    providerKey,
+    site,
+    packageId = '',
+    packageName = '',
+    paidPoints = 0,
+    bonusPoints = 0,
+    grantedPoints = 0,
+    paidAmount = null,
+    body = {},
+    isCustomRecharge = false
+}) {
+    const payload = {
+        session_key: buildCheckoutSessionKey(providerKey),
+        provider: String(providerKey || 'unknown').trim().toLowerCase() || 'unknown',
+        user_id: user.id,
+        site,
+        package_id: packageId || null,
+        package_name: packageName || null,
+        requested_points: normalizePointValue(paidPoints, 0),
+        bonus_points: normalizePointValue(bonusPoints, 0),
+        granted_points: normalizePointValue(grantedPoints, 0),
+        expected_amount: paidAmount,
+        status: 'created',
+        request_payload: {
+            source: 'payment_create_api',
+            request: {
+                provider_key: String(body.provider_key || providerKey || '').trim().toLowerCase() || null,
+                package_id: packageId || null,
+                points_amount: normalizePointValue(paidPoints, 0),
+                bonus_points: normalizePointValue(bonusPoints, 0),
+                granted_points: normalizePointValue(grantedPoints, 0),
+                paid_amount: paidAmount,
+                site,
+                is_custom_recharge: isCustomRecharge
+            }
+        },
+        provider_metadata: {
+            charge_type: isCustomRecharge ? 'custom' : 'package'
+        },
+        expires_at: getCheckoutSessionExpiryIso()
+    };
+
+    const { data, error } = await supabase
+        .from('payment_checkout_sessions')
+        .insert(payload)
+        .select('*')
+        .single();
+
+    if (error) {
+        throw new Error(error.message || 'Failed to create payment checkout session');
+    }
+
+    return data;
+}
+
+async function updateCheckoutSession(supabase, sessionId, patch = {}) {
+    const normalizedSessionId = String(sessionId || '').trim();
+    if (!normalizedSessionId) return null;
+
+    const { data, error } = await supabase
+        .from('payment_checkout_sessions')
+        .update(patch)
+        .eq('id', normalizedSessionId)
+        .select('*')
+        .maybeSingle();
+
+    if (error) {
+        throw new Error(error.message || 'Failed to update payment checkout session');
+    }
+
+    return data || null;
 }
 
 async function loadPointsPackage(supabase, packageId) {
@@ -90,7 +208,8 @@ function resolveRequestedProviderKey({
 async function completeMockPayment({
     supabase,
     user,
-    body = {}
+    body = {},
+    checkoutSession = null
 }) {
     const site = sanitizeSite(body.site);
     const packageId = body.package_id ? String(body.package_id).trim() : '';
@@ -119,15 +238,43 @@ async function completeMockPayment({
     const referenceId = `mock_${orderNo}`;
     const eventKey = mockProvider.buildEventKey({ orderNo, stage: 'completed' });
     const nowIso = new Date().toISOString();
-    const providerMetadata = mockProvider.buildProviderMetadata({
-        site,
-        isCustomRecharge,
-        packageName,
-        paidPoints,
-        bonusPoints,
-        grantedPoints,
-        paidAmount
-    });
+    const providerMetadata = {
+        ...mockProvider.buildProviderMetadata({
+            site,
+            isCustomRecharge,
+            packageName,
+            paidPoints,
+            bonusPoints,
+            grantedPoints,
+            paidAmount
+        })
+    };
+
+    let activeCheckoutSession = checkoutSession;
+
+    if (!activeCheckoutSession && body.checkout_session_id) {
+        activeCheckoutSession = await loadCheckoutSessionForUser(supabase, user.id, body.checkout_session_id);
+    }
+
+    if (!activeCheckoutSession) {
+        activeCheckoutSession = await createCheckoutSession({
+            supabase,
+            user,
+            providerKey: 'mock',
+            site,
+            packageId,
+            packageName,
+            paidPoints,
+            bonusPoints,
+            grantedPoints,
+            paidAmount,
+            body,
+            isCustomRecharge
+        });
+    }
+
+    providerMetadata.checkout_session_id = activeCheckoutSession.id;
+    providerMetadata.checkout_session_key = activeCheckoutSession.session_key;
 
     const { data: existingOrder, error: existingOrderError } = await supabase
         .from('payment_orders')
@@ -147,6 +294,19 @@ async function completeMockPayment({
     }
 
     if (existingOrder && ['paid', 'redeemed'].includes(String(existingOrder.status || '').trim())) {
+        await updateCheckoutSession(supabase, activeCheckoutSession.id, {
+            status: 'completed',
+            payment_order_id: existingOrder.id,
+            completed_at: nowIso,
+            error_message: null,
+            provider_metadata: {
+                ...activeCheckoutSession.provider_metadata,
+                ...providerMetadata,
+                order_no: orderNo,
+                completed_at: nowIso
+            }
+        });
+
         return {
             success: true,
             provider: 'mock',
@@ -155,6 +315,9 @@ async function completeMockPayment({
             status: existingOrder.status,
             points_amount: normalizePointValue(existingOrder.points_amount, grantedPoints),
             paid_amount: normalizeCurrency(existingOrder.paid_amount, paidAmount),
+            checkout_session_id: activeCheckoutSession.id,
+            checkout_session_key: activeCheckoutSession.session_key,
+            checkout_session_status: 'completed',
             message: `已使用模拟支付完成「${packageName}」`
         };
     }
@@ -179,7 +342,9 @@ async function completeMockPayment({
                 package_id: packageId || null,
                 points_amount: paidPoints,
                 bonus_points: bonusPoints,
-                site
+                site,
+                checkout_session_id: activeCheckoutSession.id,
+                checkout_session_key: activeCheckoutSession.session_key
             }
         },
         provider_metadata: providerMetadata,
@@ -246,7 +411,8 @@ async function completeMockPayment({
                     user_id: user.id,
                     site,
                     points_amount: grantedPoints,
-                    paid_amount: paidAmount
+                    paid_amount: paidAmount,
+                    checkout_session_id: activeCheckoutSession.id
                 },
                 error_message: null,
                 processed_at: nowIso
@@ -255,6 +421,19 @@ async function completeMockPayment({
         if (eventError) {
             throw new Error(eventError.message || 'Failed to record mock payment event');
         }
+
+        await updateCheckoutSession(supabase, activeCheckoutSession.id, {
+            status: 'completed',
+            payment_order_id: pendingOrder.id,
+            completed_at: nowIso,
+            error_message: null,
+            provider_metadata: {
+                ...activeCheckoutSession.provider_metadata,
+                ...providerMetadata,
+                order_no: orderNo,
+                completed_at: nowIso
+            }
+        });
     } catch (runtimeError) {
         await supabase
             .from('payment_orders')
@@ -286,11 +465,23 @@ async function completeMockPayment({
                     user_id: user.id,
                     site,
                     points_amount: grantedPoints,
-                    paid_amount: paidAmount
+                    paid_amount: paidAmount,
+                    checkout_session_id: activeCheckoutSession.id
                 },
                 error_message: runtimeError.message || 'mock payment failed',
                 processed_at: nowIso
             }, { onConflict: 'event_key' });
+
+        await updateCheckoutSession(supabase, activeCheckoutSession.id, {
+            status: 'failed',
+            error_message: runtimeError.message || 'mock payment failed',
+            provider_metadata: {
+                ...activeCheckoutSession.provider_metadata,
+                ...providerMetadata,
+                order_no: orderNo,
+                failed_at: nowIso
+            }
+        });
 
         throw runtimeError;
     }
@@ -304,6 +495,9 @@ async function completeMockPayment({
         points_amount: grantedPoints,
         paid_amount: paidAmount,
         package_name: packageName,
+        checkout_session_id: activeCheckoutSession.id,
+        checkout_session_key: activeCheckoutSession.session_key,
+        checkout_session_status: 'completed',
         message: `已使用模拟支付完成「${packageName}」`
     };
 }
@@ -356,62 +550,119 @@ async function createPaymentRequest({
         throw new Error('充值积分必须大于 0');
     }
 
+    const checkoutSession = await createCheckoutSession({
+        supabase,
+        user,
+        providerKey,
+        site,
+        packageId,
+        packageName,
+        paidPoints,
+        bonusPoints,
+        grantedPoints,
+        paidAmount,
+        body,
+        isCustomRecharge
+    });
+
     if (providerKey === 'mock') {
         return completeMockPayment({
             supabase,
             user,
+            checkoutSession,
             body: {
                 ...body,
                 site,
                 package_id: packageId || null,
                 points_amount: paidPoints,
                 paid_amount: paidAmount,
-                package_name: packageName
+                package_name: packageName,
+                checkout_session_id: checkoutSession.id
             }
         });
     }
 
-    const runtimeContext = await adapter.resolveRuntimeContext({
-        supabase,
-        env,
-        config: paymentChannels
-    });
+    try {
+        const runtimeContext = await adapter.resolveRuntimeContext({
+            supabase,
+            env,
+            config: paymentChannels
+        });
 
-    const checkoutContext = adapter.createCheckoutContext({
-        runtimeContext,
-        paymentChannels,
-        site,
-        isCustomRecharge,
-        packageId,
-        packageName,
-        paidPoints,
-        bonusPoints,
-        grantedPoints,
-        paidAmount
-    });
+        const checkoutContext = adapter.createCheckoutContext({
+            runtimeContext,
+            paymentChannels,
+            site,
+            isCustomRecharge,
+            packageId,
+            packageName,
+            paidPoints,
+            bonusPoints,
+            grantedPoints,
+            paidAmount
+        });
 
-    if (!checkoutContext?.supported) {
-        throw new Error(checkoutContext?.message || `${adapter.label || '当前支付通道'}暂未完成接入`);
+        if (!checkoutContext?.supported) {
+            await updateCheckoutSession(supabase, checkoutSession.id, {
+                status: 'failed',
+                error_message: checkoutContext?.message || `${adapter.label || '当前支付通道'}暂未完成接入`,
+                provider_metadata: {
+                    ...checkoutSession.provider_metadata,
+                    adapter_supported: false
+                }
+            });
+            throw new Error(checkoutContext?.message || `${adapter.label || '当前支付通道'}暂未完成接入`);
+        }
+
+        const updatedSession = await updateCheckoutSession(supabase, checkoutSession.id, {
+            status: 'redirect_ready',
+            checkout_url: checkoutContext.checkoutUrl || null,
+            query_mode: checkoutContext.queryMode || null,
+            provider_metadata: {
+                ...checkoutSession.provider_metadata,
+                display_name: checkoutContext.displayName || adapter.label || '当前支付通道',
+                action: checkoutContext.action || 'redirect',
+                summary: checkoutContext.summary || {}
+            },
+            error_message: null
+        });
+
+        return {
+            success: true,
+            provider: providerKey,
+            mode: checkoutContext.action || 'redirect',
+            display_name: checkoutContext.displayName || adapter.label || '当前支付通道',
+            checkout_url: checkoutContext.checkoutUrl || '',
+            package_name: packageName,
+            points_amount: grantedPoints,
+            paid_amount: paidAmount,
+            query_mode: checkoutContext.queryMode || '',
+            checkout_session_id: updatedSession?.id || checkoutSession.id,
+            checkout_session_key: updatedSession?.session_key || checkoutSession.session_key,
+            checkout_session_status: updatedSession?.status || 'redirect_ready',
+            message: checkoutContext.message || `${checkoutContext.displayName || adapter.label || '当前支付通道'}已准备就绪。`,
+            provider_summary: checkoutContext.summary || {}
+        };
+    } catch (error) {
+        await updateCheckoutSession(supabase, checkoutSession.id, {
+            status: 'failed',
+            error_message: error.message || 'Failed to create checkout session',
+            provider_metadata: {
+                ...checkoutSession.provider_metadata,
+                failed_at: new Date().toISOString()
+            }
+        });
+
+        throw error;
     }
-
-    return {
-        success: true,
-        provider: providerKey,
-        mode: checkoutContext.action || 'redirect',
-        display_name: checkoutContext.displayName || adapter.label || '当前支付通道',
-        checkout_url: checkoutContext.checkoutUrl || '',
-        package_name: packageName,
-        points_amount: grantedPoints,
-        paid_amount: paidAmount,
-        query_mode: checkoutContext.queryMode || '',
-        message: checkoutContext.message || `${checkoutContext.displayName || adapter.label || '当前支付通道'}已准备就绪。`,
-        provider_summary: checkoutContext.summary || {}
-    };
 }
 
 module.exports = {
     completeMockPayment,
+    createCheckoutSession,
     createPaymentRequest,
+    loadCheckoutSessionForUser,
     loadPointsPackage,
-    sanitizeSite
+    sanitizeSite,
+    updateCheckoutSession
 };
