@@ -2855,6 +2855,10 @@
                         style="padding: 10px 20px; cursor: pointer; color: rgba(255,255,255,0.6);">
                         订单
                     </div>
+                    <div class="shop-tab" onclick="ShopAdmin.switchTab('fulfillment')"
+                        style="padding: 10px 20px; cursor: pointer; color: rgba(255,255,255,0.6);">
+                        API 履约
+                    </div>
                 </div>
 
                 <!-- 1. Products View -->
@@ -5134,7 +5138,7 @@
                         }
 
                         @media (max-width: 768px) {
-                            #shop-view-orders .shop-table-container {
+                            :is(#shop-view-orders, #shop-view-fulfillment) .shop-table-container {
                                 overflow: visible;
                                 background: transparent;
                                 border: none;
@@ -5142,22 +5146,22 @@
                                 backdrop-filter: none;
                             }
 
-                            #shop-view-orders .shop-table {
+                            :is(#shop-view-orders, #shop-view-fulfillment) .shop-table {
                                 display: block;
                                 border-collapse: separate;
                             }
 
-                            #shop-view-orders .shop-table thead {
+                            :is(#shop-view-orders, #shop-view-fulfillment) .shop-table thead {
                                 display: none;
                             }
 
-                            #shop-view-orders .shop-table tbody {
+                            :is(#shop-view-orders, #shop-view-fulfillment) .shop-table tbody {
                                 display: flex;
                                 flex-direction: column;
                                 gap: 12px;
                             }
 
-                            #shop-view-orders .shop-table tbody tr {
+                            :is(#shop-view-orders, #shop-view-fulfillment) .shop-table tbody tr {
                                 display: block;
                                 background: rgba(26, 31, 44, 0.72);
                                 border: 1px solid rgba(255, 255, 255, 0.09);
@@ -5166,11 +5170,11 @@
                                 box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
                             }
 
-                            #shop-view-orders .shop-table tbody tr:hover {
+                            :is(#shop-view-orders, #shop-view-fulfillment) .shop-table tbody tr:hover {
                                 background: rgba(26, 31, 44, 0.78);
                             }
 
-                            #shop-view-orders .shop-table td {
+                            :is(#shop-view-orders, #shop-view-fulfillment) .shop-table td {
                                 display: grid;
                                 grid-template-columns: 92px minmax(0, 1fr);
                                 gap: 12px;
@@ -5180,7 +5184,7 @@
                                 white-space: normal;
                             }
 
-                            #shop-view-orders .shop-table td::before {
+                            :is(#shop-view-orders, #shop-view-fulfillment) .shop-table td::before {
                                 content: attr(data-label);
                                 display: block;
                                 color: rgba(226, 232, 240, 0.56);
@@ -5191,60 +5195,61 @@
                                 text-transform: uppercase;
                             }
 
-                            #shop-view-orders .shop-table td:last-child {
+                            :is(#shop-view-orders, #shop-view-fulfillment) .shop-table td:last-child {
                                 border-bottom: none;
                             }
 
-                            #shop-view-orders .shop-table td[colspan] {
+                            :is(#shop-view-orders, #shop-view-fulfillment) .shop-table td[colspan] {
                                 display: block;
                                 padding: 12px;
                             }
 
-                            #shop-view-orders .shop-table td[colspan]::before {
+                            :is(#shop-view-orders, #shop-view-fulfillment) .shop-table td[colspan]::before {
                                 display: none;
                                 content: '';
                             }
 
-                            #shop-view-orders .shop-table td[data-label="操作"] {
+                            :is(#shop-view-orders, #shop-view-fulfillment) .shop-table td[data-label="操作"] {
                                 grid-template-columns: 1fr;
                             }
 
-                            #shop-view-orders .shop-table td[data-label="操作"]::before {
+                            :is(#shop-view-orders, #shop-view-fulfillment) .shop-table td[data-label="操作"]::before {
                                 margin-bottom: 8px;
                             }
 
-                            #shop-view-orders .shop-delivery-task-actions {
+                            :is(#shop-view-orders, #shop-view-fulfillment) .shop-delivery-task-actions {
                                 width: 100%;
                             }
 
-                            #shop-view-orders .shop-delivery-action-btn {
+                            :is(#shop-view-orders, #shop-view-fulfillment) .shop-delivery-action-btn {
                                 flex: 1 1 calc(50% - 8px);
                                 min-height: 40px;
                                 justify-content: center;
                                 text-align: center;
                             }
 
-                            #shop-view-orders .shop-delivery-observe-stack {
+                            :is(#shop-view-orders, #shop-view-fulfillment) .shop-delivery-observe-stack {
                                 max-width: none;
                             }
 
-                            #shop-view-orders .shop-delivery-target {
+                            :is(#shop-view-orders, #shop-view-fulfillment) .shop-delivery-target {
                                 max-width: none;
                                 white-space: normal;
                             }
 
-                            #shop-view-orders .shop-delivery-subcard-body,
-                            #shop-view-orders .shop-delivery-panel {
+                            :is(#shop-view-orders, #shop-view-fulfillment) .shop-delivery-subcard-body,
+                            :is(#shop-view-orders, #shop-view-fulfillment) .shop-delivery-panel {
                                 padding-left: 14px;
                                 padding-right: 14px;
                             }
 
                             #shop-view-orders #ordersPagination,
-                            #shop-view-orders #deliveryTasksPagination,
-                            #shop-view-orders #deliveryDeadLetterPagination,
-                            #shop-view-orders #deliveryLockConflictsPagination,
-                            #shop-view-orders #deliveryReplayPagination {
-                                justify-content: flex-start !important;
+                            #shop-view-fulfillment #deliveryTasksPagination,
+                            #shop-view-fulfillment #deliveryDeadLetterPagination,
+                            #shop-view-fulfillment #deliveryLockConflictsPagination,
+                            #shop-view-fulfillment #deliveryReplayPagination {
+                                justify-content: center !important;
+                                align-items: center;
                                 flex-wrap: wrap;
                             }
 
@@ -5349,12 +5354,12 @@
                                 flex-basis: 100%;
                             }
 
-                            #shop-view-orders .shop-table:not(.shop-table--orders) td {
+                            :is(#shop-view-orders, #shop-view-fulfillment) .shop-table:not(.shop-table--orders) td {
                                 grid-template-columns: 1fr;
                                 gap: 8px;
                             }
 
-                            #shop-view-orders .shop-table:not(.shop-table--orders) td::before {
+                            :is(#shop-view-orders, #shop-view-fulfillment) .shop-table:not(.shop-table--orders) td::before {
                                 margin-bottom: 2px;
                             }
                         }
@@ -5402,8 +5407,11 @@
                     <div id="ordersPagination"
                         style="display: flex; justify-content: center; gap: 10px; margin-top: 20px;">
                     </div>
+                </div>
 
-                    <div class="shop-delivery-panel">
+                <div id="shop-view-fulfillment" class="shop-view" style="display: none;">
+                    <div id="shopDeliveryMount">
+                        <div id="shopDeliveryWorkspace" class="shop-delivery-panel">
                         <div class="shop-delivery-header">
                             <div class="shop-delivery-title">
                                 <h3><i class="fas fa-rocket"></i> API 履约任务</h3>
@@ -5641,6 +5649,7 @@
                                 </div>
                             </section>
                         </div>
+                    </div>
                     </div>
                 </div>
             </div>

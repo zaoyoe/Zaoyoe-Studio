@@ -385,6 +385,7 @@ Example output format:
         await this.renderProductCategoryFilters();
         await this.loadProducts();
         this.ensureRichTextEditors();
+        this.ensureDeliveryWorkspaceMounted();
 
         // Close dropdowns when clicking outside
         document.addEventListener('click', (e) => {
@@ -429,8 +430,16 @@ Example output format:
         this._initOrderEvents();
     },
 
+    ensureDeliveryWorkspaceMounted: function () {
+        const mount = document.getElementById('shopDeliveryMount');
+        const workspace = document.getElementById('shopDeliveryWorkspace');
+        if (!mount || !workspace || workspace.parentElement === mount) return;
+        mount.appendChild(workspace);
+    },
+
     switchTab: function (tabName) {
         this.currentTab = tabName;
+        this.ensureDeliveryWorkspaceMounted();
 
         // Update Tab UI
         document.querySelectorAll('.shop-tab').forEach(el => {
@@ -459,6 +468,7 @@ Example output format:
         if (tabName === 'import') this.initImportView();
         if (tabName === 'inventory') this.initInventoryBrowser(); // Renamed from loadInventoryProductList, consistent with previous edit
         if (tabName === 'orders') this.searchOrders();
+        if (tabName === 'fulfillment') this.loadDeliveryTasks(this.deliveryTaskPage || 1);
     },
 
     // ==================== Products (Grid View) ====================
@@ -2753,7 +2763,11 @@ Example output format:
             }
 
             alert(result.message || `已完成：${message}`);
-            await this.searchOrders(this.ordersPage || 1);
+            if (this.currentTab === 'orders') {
+                await this.searchOrders(this.ordersPage || 1);
+            } else {
+                await this.loadDeliveryTasks(this.deliveryTaskPage || 1);
+            }
         } catch (err) {
             console.error('[ShopAdmin] performDeliveryTaskAction failed:', err);
             alert(`履约任务操作失败：${err.message || '未知错误'}`);
@@ -2862,7 +2876,6 @@ Example output format:
             if (!data || data.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="6" class="text-center">无数据 - 请检查订单号是否正确</td></tr>';
                 this.renderPagination('ordersPagination', page, count || 0, this.pageSize, 'searchOrders');
-                await this.loadDeliveryTasks(this.deliveryTaskPage || 1);
                 return;
             }
 
@@ -3042,7 +3055,6 @@ Example output format:
 
             // Render Pagination
             this.renderPagination('ordersPagination', page, count || 0, this.pageSize, 'searchOrders');
-            await this.loadDeliveryTasks(this.deliveryTaskPage || 1);
 
             // Enable horizontal scroll with mouse wheel for mobile
             const ordersTableContainer = document.querySelector('#shop-view-orders .shop-table-container');
@@ -3053,11 +3065,6 @@ Example output format:
         } catch (err) {
             console.error(err);
             tbody.innerHTML = `<tr><td colspan="6" class="text-danger">Error: ${this.escapeHtml(err.message)}</td></tr>`;
-            try {
-                await this.loadDeliveryTasks(this.deliveryTaskPage || 1);
-            } catch (taskErr) {
-                console.error('[ShopAdmin] failed to refresh delivery tasks after order error:', taskErr);
-            }
         }
     },
 
