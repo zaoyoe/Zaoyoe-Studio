@@ -14,6 +14,9 @@ const {
     roundCurrencyAmount: roundPaymentCurrencyAmount,
     amountsMatch: paymentAmountsMatch
 } = require('../api/_lib/payments/provider-adapters');
+const {
+    reconcileCheckoutSessionForPaymentOrder
+} = require('../api/_lib/payments/orders');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -1188,6 +1191,29 @@ app.post('/api/afdian/webhook', async (req, res) => {
             return res.status(500).json({ ec: 500, em: 'internal error' });
         }
 
+        if (processResult?.payment_order_id) {
+            try {
+                await reconcileCheckoutSessionForPaymentOrder({
+                    supabase,
+                    providerKey: 'afdian',
+                    paymentOrderId: processResult.payment_order_id,
+                    providerOrderNo: orderNo,
+                    site: getCurrentSite(req),
+                    packageId: resolvedPackage?.packageId ?? null,
+                    packageName: resolvedPackage?.packageName ?? null,
+                    expectedAmount: resolvedPackage?.expectedAmount ?? amount,
+                    paidAmount: amount,
+                    pointsAmount: resolvedPackage?.pointsTotal ?? 0,
+                    orderStatus: processResult?.status || (signatureValid && amountValid ? 'paid' : 'pending_review'),
+                    linkedBy: 'afdian_webhook',
+                    allowHeuristic: true,
+                    lookbackMinutes: 120
+                });
+            } catch (linkError) {
+                console.warn('[Afdian] Failed to link checkout session from webhook:', linkError.message);
+            }
+        }
+
         await finalizePaymentEvent(eventKey, {
             payment_order_id: processResult?.payment_order_id || null,
             signature_valid: signatureValid,
@@ -1247,6 +1273,37 @@ app.get('/api/afdian/query', async (req, res) => {
         }
 
         const orderInfo = data[0];
+        try {
+            const { data: paymentOrder } = await supabase
+                .from('payment_orders')
+                .select('id, site, package_id, package_name, expected_amount, paid_amount, points_amount, status')
+                .eq('provider', 'afdian')
+                .eq('provider_order_no', orderNo)
+                .maybeSingle();
+
+            if (paymentOrder?.id) {
+                await reconcileCheckoutSessionForPaymentOrder({
+                    supabase,
+                    providerKey: 'afdian',
+                    paymentOrderId: paymentOrder.id,
+                    providerOrderNo: orderNo,
+                    userId: user.id,
+                    site: paymentOrder.site,
+                    packageId: paymentOrder.package_id,
+                    packageName: paymentOrder.package_name,
+                    expectedAmount: paymentOrder.expected_amount,
+                    paidAmount: paymentOrder.paid_amount,
+                    pointsAmount: paymentOrder.points_amount,
+                    orderStatus: paymentOrder.status,
+                    linkedBy: 'afdian_query_claim',
+                    allowHeuristic: true,
+                    lookbackMinutes: 1440
+                });
+            }
+        } catch (linkError) {
+            console.warn('[Afdian] Failed to link checkout session from query claim:', linkError.message);
+        }
+
         if (!orderInfo.code) {
             const currentStatus = String(orderInfo.payment_status || 'pending_review');
             const message = currentStatus === 'rejected'

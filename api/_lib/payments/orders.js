@@ -9,6 +9,8 @@ const {
 
 const mockProvider = getPaymentProviderAdapter('mock');
 const CHECKOUT_SESSION_EXPIRY_HOURS = 24;
+const ACTIVE_CHECKOUT_SESSION_STATUSES = ['created', 'redirect_ready', 'failed'];
+const TERMINAL_CHECKOUT_SESSION_STATUSES = ['completed', 'cancelled', 'expired'];
 
 function sanitizeSite(value) {
     const site = String(value || '').trim().toLowerCase();
@@ -45,6 +47,269 @@ function getCheckoutSessionExpiryIso(hours = CHECKOUT_SESSION_EXPIRY_HOURS) {
     const date = new Date();
     date.setUTCHours(date.getUTCHours() + Math.max(1, Number(hours) || CHECKOUT_SESSION_EXPIRY_HOURS));
     return date.toISOString();
+}
+
+function buildCheckoutSessionLookbackIso(minutes = 1440) {
+    const date = new Date();
+    date.setUTCMinutes(date.getUTCMinutes() - Math.max(5, Number(minutes) || 1440));
+    return date.toISOString();
+}
+
+function mergeObjects(baseValue, patchValue) {
+    const base = baseValue && typeof baseValue === 'object' && !Array.isArray(baseValue) ? baseValue : {};
+    const patch = patchValue && typeof patchValue === 'object' && !Array.isArray(patchValue) ? patchValue : {};
+    return {
+        ...base,
+        ...patch
+    };
+}
+
+function deriveCheckoutSessionStatusFromOrderStatus(orderStatus = '') {
+    const normalizedStatus = String(orderStatus || '').trim().toLowerCase();
+    if (['paid', 'redeemed'].includes(normalizedStatus)) return 'completed';
+    if (['rejected', 'amount_mismatch'].includes(normalizedStatus)) return 'failed';
+    return 'redirect_ready';
+}
+
+function scoreCheckoutSessionCandidate(session, context = {}) {
+    let score = 0;
+    const providerOrderNo = sanitizeText(context.providerOrderNo, '', 160);
+    const sessionMetadata = session?.provider_metadata && typeof session.provider_metadata === 'object'
+        ? session.provider_metadata
+        : {};
+
+    if (context.userId && session.user_id === context.userId) score += 140;
+    if (context.site && session.site === context.site) score += 25;
+    if (context.packageId && session.package_id === context.packageId) score += 70;
+    if (context.packageName && sanitizeText(session.package_name, '', 120) === context.packageName) score += 18;
+    if (providerOrderNo && (
+        sanitizeText(sessionMetadata.provider_order_no, '', 160) === providerOrderNo
+        || sanitizeText(sessionMetadata.order_no, '', 160) === providerOrderNo
+    )) {
+        score += 220;
+    }
+
+    const expectedAmount = normalizeCurrency(context.expectedAmount, null);
+    const paidAmount = normalizeCurrency(context.paidAmount, null);
+    const sessionExpectedAmount = normalizeCurrency(session.expected_amount, null);
+    if (expectedAmount !== null && sessionExpectedAmount !== null && expectedAmount === sessionExpectedAmount) {
+        score += 50;
+    } else if (paidAmount !== null && sessionExpectedAmount !== null && paidAmount === sessionExpectedAmount) {
+        score += 35;
+    }
+
+    const requestedPoints = normalizePointValue(context.pointsAmount, 0);
+    const sessionGrantedPoints = normalizePointValue(session.granted_points, 0);
+    const sessionRequestedPoints = normalizePointValue(session.requested_points, 0);
+    if (requestedPoints > 0) {
+        if (sessionGrantedPoints === requestedPoints) {
+            score += 35;
+        } else if (sessionRequestedPoints === requestedPoints) {
+            score += 20;
+        }
+    }
+
+    if (String(session.status || '') === 'redirect_ready') score += 8;
+
+    const createdAtMs = Number(new Date(session.created_at || 0).getTime());
+    if (Number.isFinite(createdAtMs) && createdAtMs > 0) {
+        const ageMinutes = Math.max(0, (Date.now() - createdAtMs) / 60000);
+        if (ageMinutes <= 30) {
+            score += 24;
+        } else if (ageMinutes <= 120) {
+            score += 12;
+        }
+    }
+
+    return score;
+}
+
+async function findCheckoutSessionCandidates(supabase, context = {}) {
+    const providerKey = String(context.providerKey || '').trim().toLowerCase();
+    if (!providerKey) return [];
+
+    let query = supabase
+        .from('payment_checkout_sessions')
+        .select('*')
+        .eq('provider', providerKey)
+        .in('status', ACTIVE_CHECKOUT_SESSION_STATUSES)
+        .is('payment_order_id', null)
+        .gte('created_at', buildCheckoutSessionLookbackIso(context.lookbackMinutes || 1440))
+        .order('created_at', { ascending: false })
+        .limit(12);
+
+    if (context.userId) {
+        query = query.eq('user_id', context.userId);
+    }
+
+    if (context.site) {
+        query = query.eq('site', context.site);
+    }
+
+    if (context.packageId) {
+        query = query.eq('package_id', context.packageId);
+    }
+
+    const { data, error } = await query;
+    if (error) {
+        throw new Error(error.message || 'Failed to query payment checkout sessions');
+    }
+
+    return (data || []).map((session) => ({
+        session,
+        score: scoreCheckoutSessionCandidate(session, context)
+    })).sort((left, right) => right.score - left.score);
+}
+
+async function loadCheckoutSessionByPaymentOrder(supabase, paymentOrderId) {
+    const normalizedPaymentOrderId = String(paymentOrderId || '').trim();
+    if (!normalizedPaymentOrderId) return null;
+
+    const { data, error } = await supabase
+        .from('payment_checkout_sessions')
+        .select('*')
+        .eq('payment_order_id', normalizedPaymentOrderId)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+    if (error) {
+        throw new Error(error.message || 'Failed to inspect linked payment checkout session');
+    }
+
+    return data || null;
+}
+
+async function loadPaymentOrderForLinking(supabase, paymentOrderId) {
+    const normalizedPaymentOrderId = String(paymentOrderId || '').trim();
+    if (!normalizedPaymentOrderId) return null;
+
+    const { data, error } = await supabase
+        .from('payment_orders')
+        .select('id, user_id, provider, provider_order_no, site, package_id, package_name, expected_amount, paid_amount, points_amount, status, last_error, raw_payload, provider_metadata')
+        .eq('id', normalizedPaymentOrderId)
+        .maybeSingle();
+
+    if (error) {
+        throw new Error(error.message || 'Failed to inspect payment order');
+    }
+
+    return data || null;
+}
+
+async function reconcileCheckoutSessionForPaymentOrder({
+    supabase,
+    providerKey,
+    paymentOrderId,
+    providerOrderNo = '',
+    userId = '',
+    site = '',
+    packageId = '',
+    packageName = '',
+    expectedAmount = null,
+    paidAmount = null,
+    pointsAmount = 0,
+    orderStatus = '',
+    linkedBy = 'runtime',
+    lookbackMinutes = 1440,
+    allowHeuristic = true
+}) {
+    const normalizedPaymentOrderId = String(paymentOrderId || '').trim();
+    if (!normalizedPaymentOrderId) return null;
+
+    const paymentOrder = await loadPaymentOrderForLinking(supabase, normalizedPaymentOrderId);
+    if (!paymentOrder) return null;
+
+    const existingLinkedSession = await loadCheckoutSessionByPaymentOrder(supabase, normalizedPaymentOrderId);
+    const context = {
+        providerKey: providerKey || paymentOrder.provider,
+        providerOrderNo: providerOrderNo || paymentOrder.provider_order_no,
+        userId: userId || paymentOrder.user_id,
+        site: site || paymentOrder.site,
+        packageId: packageId || paymentOrder.package_id,
+        packageName: packageName || paymentOrder.package_name,
+        expectedAmount: expectedAmount ?? paymentOrder.expected_amount,
+        paidAmount: paidAmount ?? paymentOrder.paid_amount,
+        pointsAmount: pointsAmount || paymentOrder.points_amount,
+        lookbackMinutes
+    };
+
+    let targetSession = existingLinkedSession;
+
+    if (!targetSession) {
+        const candidates = await findCheckoutSessionCandidates(supabase, context);
+        const [bestCandidate, secondCandidate] = candidates;
+        const topScore = bestCandidate?.score || 0;
+        const secondScore = secondCandidate?.score || 0;
+
+        if (context.userId) {
+            targetSession = topScore >= 80 ? bestCandidate?.session || null : null;
+        } else if (allowHeuristic && topScore >= 120 && (topScore - secondScore >= 35 || !secondCandidate)) {
+            targetSession = bestCandidate?.session || null;
+        }
+    }
+
+    if (!targetSession) return null;
+
+    const nowIso = new Date().toISOString();
+    const nextSessionStatus = deriveCheckoutSessionStatusFromOrderStatus(orderStatus || paymentOrder.status);
+    const nextProviderOrderNo = context.providerOrderNo || paymentOrder.provider_order_no;
+
+    const nextSessionProviderMetadata = mergeObjects(targetSession.provider_metadata, {
+        provider_order_no: nextProviderOrderNo || null,
+        payment_order_id: normalizedPaymentOrderId,
+        payment_status: String(orderStatus || paymentOrder.status || '').trim().toLowerCase() || null,
+        linked_by: linkedBy,
+        linked_at: nowIso
+    });
+
+    const updatedSession = await updateCheckoutSession(supabase, targetSession.id, {
+        payment_order_id: normalizedPaymentOrderId,
+        status: nextSessionStatus,
+        completed_at: nextSessionStatus === 'completed'
+            ? (targetSession.completed_at || nowIso)
+            : targetSession.completed_at,
+        error_message: nextSessionStatus === 'failed'
+            ? (paymentOrder.last_error || targetSession.error_message || null)
+            : null,
+        provider_metadata: nextSessionProviderMetadata
+    });
+
+    const nextOrderProviderMetadata = mergeObjects(paymentOrder.provider_metadata, {
+        checkout_session_id: updatedSession?.id || targetSession.id,
+        checkout_session_key: updatedSession?.session_key || targetSession.session_key,
+        checkout_session_status: updatedSession?.status || nextSessionStatus,
+        checkout_session_linked_at: nowIso,
+        checkout_session_linked_by: linkedBy,
+        provider_order_no: nextProviderOrderNo || null
+    });
+    const nextOrderRawPayload = mergeObjects(paymentOrder.raw_payload, {
+        checkout_session_id: updatedSession?.id || targetSession.id,
+        checkout_session_key: updatedSession?.session_key || targetSession.session_key
+    });
+
+    const orderPatch = {
+        provider_metadata: nextOrderProviderMetadata,
+        raw_payload: nextOrderRawPayload
+    };
+    if (!paymentOrder.user_id && context.userId) {
+        orderPatch.user_id = context.userId;
+    }
+
+    const { error: orderUpdateError } = await supabase
+        .from('payment_orders')
+        .update(orderPatch)
+        .eq('id', normalizedPaymentOrderId);
+
+    if (orderUpdateError) {
+        throw new Error(orderUpdateError.message || 'Failed to backfill payment order checkout session');
+    }
+
+    return {
+        sessionId: updatedSession?.id || targetSession.id,
+        checkoutSession: updatedSession || targetSession,
+        paymentOrderId: normalizedPaymentOrderId
+    };
 }
 
 async function loadCheckoutSessionForUser(supabase, userId, sessionId) {
@@ -661,8 +926,10 @@ module.exports = {
     completeMockPayment,
     createCheckoutSession,
     createPaymentRequest,
+    findCheckoutSessionCandidates,
     loadCheckoutSessionForUser,
     loadPointsPackage,
+    reconcileCheckoutSessionForPaymentOrder,
     sanitizeSite,
     updateCheckoutSession
 };

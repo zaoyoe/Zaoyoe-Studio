@@ -100,7 +100,9 @@
 当前状态：
 - 创建支付时会先写 `payment_checkout_sessions`
 - 真实 `payment_orders` 仍主要在回调后落库
-- 后续如果要把爱发电也完全拉平，需要继续补“会话回填到最终订单”的关联策略
+- webhook 阶段会优先尝试把 `payment_checkout_sessions` 回填到最终 `payment_orders`
+- 如果 webhook 阶段无法安全匹配，用户在钱包查码认领时会再做一次按账号的强关联兜底
+- 后续如果要把爱发电也完全拉平，仍建议继续补更强的 `intent/session -> final order` 关联策略
 
 ### hupijiao
 
