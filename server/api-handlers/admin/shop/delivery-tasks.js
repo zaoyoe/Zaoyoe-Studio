@@ -13,7 +13,10 @@ const {
 const SUMMARY_STATUSES = ['pending', 'processing', 'retry_waiting', 'requeued', 'dead_letter', 'delivered'];
 const DEAD_LETTER_REASON_KEYS = new Set(['all', 'manual', 'missing_target', 'timeout', 'upstream_4xx', 'upstream_5xx', 'max_attempts', 'network_failure', 'conflict_strategy', 'unknown']);
 const LOCK_STATE_KEYS = new Set(['all', 'active', 'stale']);
+const CONFLICT_AUDIT_REASON_KEYS = new Set(['all', 'target_max_inflight', 'target_min_interval', 'channel_max_inflight', 'channel_min_interval', 'manual_force_unlock', 'unknown_conflict']);
 const OPEN_TASK_STATUSES = ['pending', 'processing', 'retry_waiting', 'requeued'];
+const CONFLICT_AUDIT_RECENT_LIMIT = 12;
+const CONFLICT_AUDIT_FILTER_SCAN_LIMIT = 80;
 const ANALYTICS_WINDOW_PRESETS = Object.freeze({
     '24h': {
         key: '24h',
@@ -133,6 +136,10 @@ function normalizeFilterValue(value, allowedValues = null, fallback = 'all') {
 function normalizeExactFilterValue(value) {
     const normalized = String(value || '').trim();
     return normalized || null;
+}
+
+function normalizeTextFilterValue(value) {
+    return String(value || '').trim();
 }
 
 function isUuidLike(value) {
@@ -530,6 +537,38 @@ function buildConflictBucketSelection(records = [], bucket = null) {
         record_count: bucketRecords.length,
         records: bucketRecords
     };
+}
+
+function hasActiveConflictAuditFilters(filters = {}) {
+    return normalizeFilterValue(filters.reason, CONFLICT_AUDIT_REASON_KEYS, 'all') !== 'all'
+        || Boolean(normalizeTextFilterValue(filters.target_query || filters.target))
+        || Boolean(normalizeTextFilterValue(filters.channel_query || filters.channel));
+}
+
+function matchesConflictAuditTextFilter(value, query) {
+    const normalizedQuery = normalizeTextFilterValue(query).toLowerCase();
+    if (!normalizedQuery) return true;
+    return String(value || '').trim().toLowerCase().includes(normalizedQuery);
+}
+
+function filterConflictAuditRecords(records = [], filters = {}) {
+    const reason = normalizeFilterValue(filters.reason, CONFLICT_AUDIT_REASON_KEYS, 'all');
+    const targetQuery = normalizeTextFilterValue(filters.target_query || filters.target);
+    const channelQuery = normalizeTextFilterValue(filters.channel_query || filters.channel);
+
+    return (Array.isArray(records) ? records : []).filter((record) => {
+        const conflictReason = record?.conflict_reason || classifyConflictReason(record);
+        if (reason !== 'all' && String(conflictReason?.key || '').trim().toLowerCase() !== reason) {
+            return false;
+        }
+        if (!matchesConflictAuditTextFilter(record?.target_key || record?.task?.target_key || '', targetQuery)) {
+            return false;
+        }
+        if (!matchesConflictAuditTextFilter(record?.channel_key || record?.task?.channel_key || '', channelQuery)) {
+            return false;
+        }
+        return true;
+    });
 }
 
 function matchesConflictBucketTask(task = {}, bucketSelection = null) {
@@ -1154,12 +1193,12 @@ async function fetchReplayLogs({ supabase, page, pageSize }) {
     };
 }
 
-async function fetchRecentConflictAudits({ supabase, limit = 12 }) {
+async function fetchRecentConflictAudits({ supabase, limit = CONFLICT_AUDIT_RECENT_LIMIT }) {
     const { data, error } = await supabase
         .from('shop_webhook_task_conflicts')
         .select(CONFLICT_AUDIT_SELECT)
         .order('created_at', { ascending: false })
-        .limit(Math.max(1, Math.min(limit, 30)));
+        .limit(Math.max(1, Math.min(limit, CONFLICT_AUDIT_FILTER_SCAN_LIMIT)));
 
     if (error) throw error;
 
@@ -1328,6 +1367,12 @@ module.exports = async (req, res) => {
         const analyticsWindow = resolveAnalyticsWindow(url.searchParams.get('analyticsWindow'));
         const conflictBucketStartAt = normalizeIsoTimestamp(url.searchParams.get('conflictBucketStartAt'));
         const conflictBucketEndAt = normalizeIsoTimestamp(url.searchParams.get('conflictBucketEndAt'));
+        const conflictAuditFilters = {
+            reason: normalizeFilterValue(url.searchParams.get('conflictReason'), CONFLICT_AUDIT_REASON_KEYS, 'all'),
+            target_query: normalizeTextFilterValue(url.searchParams.get('conflictTarget')),
+            channel_query: normalizeTextFilterValue(url.searchParams.get('conflictChannel'))
+        };
+        const hasConflictAuditFilter = hasActiveConflictAuditFilters(conflictAuditFilters);
         const taskIdentity = {
             task_id: normalizeExactFilterValue(url.searchParams.get('focusTaskId')),
             order_id: normalizeExactFilterValue(url.searchParams.get('focusOrderId'))
@@ -1356,7 +1401,7 @@ module.exports = async (req, res) => {
             }),
             fetchRecentConflictAudits({
                 supabase,
-                limit: 12
+                limit: hasConflictAuditFilter ? CONFLICT_AUDIT_FILTER_SCAN_LIMIT : CONFLICT_AUDIT_RECENT_LIMIT
             })
         ]);
 
@@ -1364,14 +1409,22 @@ module.exports = async (req, res) => {
             start_at: conflictBucketStartAt,
             end_at: conflictBucketEndAt
         });
-        const selectedConflictAuditRecords = conflictBucket?.active
+        const selectedConflictAuditSourceRecords = conflictBucket?.active
             ? [...(conflictBucket.records || [])]
-                .sort((left, right) => new Date(right?.created_at || 0).getTime() - new Date(left?.created_at || 0).getTime())
-                .slice(0, 12)
-            : latestConflictAuditData.records || [];
+            : [...(latestConflictAuditData.records || [])];
+        const filteredConflictAuditRecords = filterConflictAuditRecords(
+            selectedConflictAuditSourceRecords.sort((left, right) => new Date(right?.created_at || 0).getTime() - new Date(left?.created_at || 0).getTime()),
+            conflictAuditFilters
+        );
+        const selectedConflictAuditRecords = filteredConflictAuditRecords.slice(0, CONFLICT_AUDIT_RECENT_LIMIT);
 
         const conflictAuditData = {
-            total: conflictBucket?.active ? Number(conflictBucket.record_count || 0) : Number(latestConflictAuditData.total || 0),
+            total: filteredConflictAuditRecords.length,
+            sourceTotal: conflictBucket?.active ? Number(conflictBucket.record_count || 0) : Number(latestConflictAuditData.total || 0),
+            filters: {
+                ...conflictAuditFilters,
+                active: hasConflictAuditFilter
+            },
             records: selectedConflictAuditRecords
         };
 
@@ -1595,7 +1648,8 @@ module.exports = async (req, res) => {
                         order_count: Number((conflictBucket.order_ids || []).length || 0)
                     }
                     : null,
-                taskIdentity: Object.keys(taskIdentity).length ? taskIdentity : null
+                taskIdentity: Object.keys(taskIdentity).length ? taskIdentity : null,
+                conflictAudit: conflictAuditData.filters
             },
             tasks: mainTasks,
             deadLetter: {
@@ -1629,6 +1683,8 @@ module.exports = async (req, res) => {
             },
             conflicts: {
                 total: conflictAuditData.total,
+                sourceTotal: conflictAuditData.sourceTotal,
+                filters: conflictAuditData.filters,
                 summary: conflictSummary,
                 records: conflictRecords
             }

@@ -51,6 +51,12 @@ const ShopAdmin = {
     deliveryConflictBucketFilter: null,
     deliveryTaskIdentityFilter: null,
     deliveryConflictAuditSelection: null,
+    deliveryConflictAuditRecords: [],
+    deliveryConflictAuditReasonFilter: 'all',
+    deliveryConflictAuditTargetFilter: '',
+    deliveryConflictAuditChannelFilter: '',
+    deliveryPendingTaskReveal: null,
+    deliveryPendingAuditReveal: null,
     deliveryTaskPageSize: 8,
     deliveryDeadLetterPage: 1,
     deliveryDeadLetterReasonFilter: 'all',
@@ -1883,6 +1889,72 @@ Example output format:
         return `<span class="shop-delivery-meta-badge" style="color:${colors.text};background:${colors.bg};border-color:${colors.border};">${this.escapeHtml(label)}</span>`;
     },
 
+    renderDeliveryQuickFilterChip: function ({ label, tone = 'neutral', active = false, title = '', onClick = '' } = {}) {
+        const colors = this.getDeliveryToneStyles(tone);
+        const textColor = active ? colors.text : 'rgba(226, 232, 240, 0.82)';
+        const background = active ? colors.bg : 'rgba(255, 255, 255, 0.05)';
+        const borderColor = active ? colors.border : 'rgba(255, 255, 255, 0.08)';
+        const titleAttr = title ? ` title="${this.escapeHtml(title)}"` : '';
+        const onclickAttr = onClick ? ` onclick="${onClick}"` : '';
+        const activeClass = active ? ' shop-delivery-meta-chip--active' : '';
+        return `<button type="button" class="shop-delivery-meta-chip shop-delivery-meta-chip--action${activeClass}"${titleAttr}${onclickAttr} style="color:${textColor};background:${background};border-color:${borderColor};">${this.escapeHtml(label)}</button>`;
+    },
+
+    renderConflictAuditSummaryReasonBadge: function ({ reasonKey, label, count = 0, tone = 'neutral', active = false } = {}) {
+        const total = Number(count || 0);
+        if (!total && !active) {
+            return this.renderDeliveryMetaBadge(`${label} ${total}`, 'muted');
+        }
+        return this.renderDeliveryQuickFilterChip({
+            label: `${label} ${total}`,
+            tone,
+            active,
+            title: active ? '再次点击可清除此原因过滤' : `点击按${label}反筛冲突审计`,
+            onClick: `ShopAdmin.applyDeliveryConflictAuditReasonQuickFilter('${encodeURIComponent(String(reasonKey || 'all'))}')`
+        });
+    },
+
+    isDeliveryConflictDeadLetterFocusActive: function () {
+        return String(this.deliveryTaskStatusFilter || 'all').trim().toLowerCase() === 'dead_letter'
+            && String(this.deliveryDeadLetterReasonFilter || 'all').trim().toLowerCase() === 'conflict_strategy';
+    },
+
+    normalizeDeliveryConflictAuditReasonFilter: function (value) {
+        const allowed = new Set([
+            'all',
+            'target_max_inflight',
+            'target_min_interval',
+            'channel_max_inflight',
+            'channel_min_interval',
+            'manual_force_unlock',
+            'unknown_conflict'
+        ]);
+        const normalized = String(value || '').trim().toLowerCase();
+        return allowed.has(normalized) ? normalized : 'all';
+    },
+
+    getDeliveryConflictAuditReasonLabel: function (reasonKey = 'all') {
+        const normalized = this.normalizeDeliveryConflictAuditReasonFilter(reasonKey);
+        if (normalized === 'target_max_inflight') return '目标并发打满';
+        if (normalized === 'target_min_interval') return '目标触发间隔限流';
+        if (normalized === 'channel_max_inflight') return '通道并发打满';
+        if (normalized === 'channel_min_interval') return '通道触发间隔限流';
+        if (normalized === 'manual_force_unlock') return '人工强制解锁';
+        if (normalized === 'unknown_conflict') return '其他冲突';
+        return '全部原因';
+    },
+
+    hasDeliveryConflictAuditFilters: function (filters = null) {
+        const activeFilters = filters || {
+            reason: this.deliveryConflictAuditReasonFilter,
+            target_query: this.deliveryConflictAuditTargetFilter,
+            channel_query: this.deliveryConflictAuditChannelFilter
+        };
+        return this.normalizeDeliveryConflictAuditReasonFilter(activeFilters.reason) !== 'all'
+            || Boolean(String(activeFilters.target_query || '').trim())
+            || Boolean(String(activeFilters.channel_query || '').trim());
+    },
+
     getDeliveryAnalyticsWindowConfig: function (windowKey = this.deliveryAnalyticsWindow) {
         const configs = {
             '24h': {
@@ -1971,6 +2043,140 @@ Example output format:
         }
 
         return { type: 'manual', query: '' };
+    },
+
+    matchesDeliveryTaskIdentity: function (task = {}, identity = this.deliveryTaskIdentityFilter) {
+        const taskId = String(identity?.taskId || '').trim();
+        const orderId = String(identity?.orderId || '').trim();
+        if (!taskId && !orderId) return false;
+        if (taskId && String(task?.id || '').trim() !== taskId) return false;
+        if (orderId && String(task?.order_id || '').trim() !== orderId) return false;
+        return true;
+    },
+
+    revealFocusedDeliveryTaskRow: function () {
+        const pending = this.deliveryPendingTaskReveal || this.deliveryTaskIdentityFilter;
+        const taskId = String(pending?.taskId || '').trim();
+        const orderId = String(pending?.orderId || '').trim();
+        if (!taskId && !orderId) return;
+
+        const tbody = document.getElementById('deliveryTasksTableBody');
+        if (!tbody) return;
+
+        const targetRow = Array.from(tbody.querySelectorAll('tr[data-task-id], tr[data-order-id]')).find((row) => {
+            const rowTaskId = String(row.dataset.taskId || '').trim();
+            const rowOrderId = String(row.dataset.orderId || '').trim();
+            if (taskId && rowTaskId !== taskId) return false;
+            if (orderId && rowOrderId !== orderId) return false;
+            return true;
+        });
+
+        if (!targetRow) {
+            this.deliveryPendingTaskReveal = null;
+            return;
+        }
+
+        targetRow.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center'
+        });
+        targetRow.classList.remove('shop-delivery-task-row--reveal');
+        void targetRow.offsetWidth;
+        targetRow.classList.add('shop-delivery-task-row--reveal');
+        window.setTimeout(() => {
+            targetRow.classList.remove('shop-delivery-task-row--reveal');
+        }, 2200);
+        this.deliveryPendingTaskReveal = null;
+    },
+
+    findDeliveryConflictAuditForTask: function (task = {}, records = this.deliveryConflictAuditRecords || []) {
+        const taskId = String(task?.id || task?.taskId || '').trim();
+        const orderId = String(task?.order_id || task?.orderId || '').trim();
+        if (!taskId && !orderId) return null;
+
+        return (Array.isArray(records) ? records : []).find((record) => {
+            const recordTaskId = String(record?.task_id || record?.task?.id || '').trim();
+            const recordOrderId = String(record?.order_id || record?.task?.order_id || '').trim();
+            if (taskId && recordTaskId === taskId) return true;
+            if (orderId && recordOrderId === orderId) return true;
+            return false;
+        }) || null;
+    },
+
+    revealFocusedDeliveryConflictAuditRow: function () {
+        const auditId = String(this.deliveryPendingAuditReveal?.auditId || this.deliveryConflictAuditSelection?.auditId || '').trim();
+        if (!auditId) return;
+
+        const tbody = document.getElementById('deliveryConflictAuditTableBody');
+        if (!tbody) return;
+
+        const targetRow = tbody.querySelector(`tr[data-audit-id="${auditId}"]`);
+        if (!targetRow) {
+            this.deliveryPendingAuditReveal = null;
+            return;
+        }
+
+        targetRow.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center'
+        });
+        targetRow.classList.remove('shop-delivery-audit-row--reveal');
+        void targetRow.offsetWidth;
+        targetRow.classList.add('shop-delivery-audit-row--reveal');
+        window.setTimeout(() => {
+            targetRow.classList.remove('shop-delivery-audit-row--reveal');
+        }, 2200);
+        this.deliveryPendingAuditReveal = null;
+    },
+
+    renderDeliveryConflictAuditJumpButton: function (task = {}) {
+        const record = this.findDeliveryConflictAuditForTask(task);
+        if (!record) {
+            return '<div class="shop-delivery-table-note">当前筛选下暂无对应冲突审计</div>';
+        }
+
+        const taskId = encodeURIComponent(String(task.id || task.taskId || ''));
+        const orderId = encodeURIComponent(String(task.order_id || task.orderId || ''));
+        const isActive = String(this.deliveryConflictAuditSelection?.auditId || '').trim() === String(record.id || '').trim();
+        return `
+            <button
+                type="button"
+                class="shop-delivery-action-btn${isActive ? ' shop-delivery-action-btn--linked' : ''}"
+                onclick="ShopAdmin.jumpToDeliveryConflictAuditForTask('${taskId}', '${orderId}')"
+            >
+                <i class="fas fa-arrow-down"></i> ${isActive ? '回到审计' : '跳冲突审计'}
+            </button>
+        `;
+    },
+
+    jumpToDeliveryConflictAuditForTask: function (encodedTaskId, encodedOrderId) {
+        const taskId = decodeURIComponent(String(encodedTaskId || ''));
+        const orderId = decodeURIComponent(String(encodedOrderId || ''));
+        const record = this.findDeliveryConflictAuditForTask({
+            id: taskId,
+            order_id: orderId
+        });
+        if (!record) return;
+
+        const nextAuditId = String(record.id || '').trim();
+        if (!nextAuditId) return;
+        this.deliveryPendingAuditReveal = { auditId: nextAuditId };
+
+        if (String(this.deliveryConflictAuditSelection?.auditId || '').trim() === nextAuditId) {
+            window.requestAnimationFrame(() => this.revealFocusedDeliveryConflictAuditRow());
+            return;
+        }
+
+        this.toggleDeliveryConflictAuditSelection(
+            encodeURIComponent(String(record.id || '')),
+            encodeURIComponent(String(record.created_at || '')),
+            encodeURIComponent(String(record.task_id || record.task?.id || '')),
+            encodeURIComponent(String(record.order_id || record.task?.order_id || '')),
+            encodeURIComponent(String(record.target_key || record.task?.target_key || '')),
+            encodeURIComponent(String(record.channel_key || record.task?.channel_key || '')),
+            encodeURIComponent(String(record.reason_key || record.last_conflict_reason || '')),
+            encodeURIComponent(String(record.scope || record.last_conflict_scope || ''))
+        );
     },
 
     renderDeliveryTaskFilterHint: function () {
@@ -2523,6 +2729,7 @@ Example output format:
 
         tbody.innerHTML = tasks.map((task) => {
             const order = task.order || {};
+            const isFocused = this.matchesDeliveryTaskIdentity(task);
             const productName = this.escapeHtml(order.snapshot_product_name || '—');
             const latestError = task.last_error
                 ? `<span title="${this.escapeHtml(task.last_error)}">${this.escapeHtml(this.truncateText(task.last_error, 68))}</span>`
@@ -2539,7 +2746,11 @@ Example output format:
             ].filter(Boolean).join('');
 
             return `
-                <tr>
+                <tr
+                    class="${isFocused ? 'shop-delivery-task-row--focused' : ''}"
+                    data-task-id="${this.escapeHtml(task.id || '')}"
+                    data-order-id="${this.escapeHtml(task.order_id || '')}"
+                >
                     <td data-label="订单号">
                         <div style="font-weight:600;color:#fff;">${this.escapeHtml(task.order_id || '—')}</div>
                         <div style="font-size:12px;color:rgba(226,232,240,0.58);">${task.dedupe_key ? this.escapeHtml(this.truncateText(task.dedupe_key, 36)) : '无去重键'}</div>
@@ -2638,30 +2849,112 @@ Example output format:
         if (!meta) return;
         const summary = data.summary || {};
         const total = Number(data.total || summary.total || 0);
+        const sourceTotal = Number(data.sourceTotal || total || 0);
+        const filters = {
+            reason: this.normalizeDeliveryConflictAuditReasonFilter(data.filters?.reason || this.deliveryConflictAuditReasonFilter),
+            target_query: String(data.filters?.target_query || this.deliveryConflictAuditTargetFilter || '').trim(),
+            channel_query: String(data.filters?.channel_query || this.deliveryConflictAuditChannelFilter || '').trim()
+        };
+        const hasAuditFilters = this.hasDeliveryConflictAuditFilters(filters);
         const latestConflict = summary.latest_conflict_at ? this.formatDeliveryTime(summary.latest_conflict_at) : '—';
         const auditSelection = this.deliveryConflictAuditSelection || null;
+        const activeReason = this.normalizeDeliveryConflictAuditReasonFilter(filters.reason);
+        const deadLetterFocusActive = this.isDeliveryConflictDeadLetterFocusActive();
+        const unknownConflictCount = Math.max(
+            0,
+            total
+                - Number(summary.target_max_inflight || 0)
+                - Number(summary.target_min_interval || 0)
+                - Number(summary.channel_max_inflight || 0)
+                - Number(summary.channel_min_interval || 0)
+                - Number(summary.manual_force_unlock || 0)
+        );
         const pills = [
-            this.renderDeliveryMetaBadge(`最近 ${total} 条`, total ? 'warn' : 'muted'),
-            this.renderDeliveryMetaBadge(`目标并发 ${Number(summary.target_max_inflight || 0)}`, Number(summary.target_max_inflight || 0) ? 'warn' : 'muted'),
-            this.renderDeliveryMetaBadge(`目标限流 ${Number(summary.target_min_interval || 0)}`, Number(summary.target_min_interval || 0) ? 'warn' : 'muted'),
-            this.renderDeliveryMetaBadge(`通道并发 ${Number(summary.channel_max_inflight || 0)}`, Number(summary.channel_max_inflight || 0) ? 'danger' : 'muted'),
-            this.renderDeliveryMetaBadge(`通道限流 ${Number(summary.channel_min_interval || 0)}`, Number(summary.channel_min_interval || 0) ? 'warn' : 'muted'),
-            this.renderDeliveryMetaBadge(`人工解锁 ${Number(summary.manual_force_unlock || 0)}`, Number(summary.manual_force_unlock || 0) ? 'processing' : 'muted'),
-            this.renderDeliveryMetaBadge(`冲突死信 ${Number(summary.dead_letter || 0)}`, Number(summary.dead_letter || 0) ? 'danger' : 'muted'),
+            hasAuditFilters
+                ? this.renderDeliveryQuickFilterChip({
+                    label: sourceTotal ? `命中 ${total} / ${sourceTotal}` : `命中 ${total} 条`,
+                    tone: total ? 'warn' : 'muted',
+                    active: true,
+                    title: '点击清除冲突审计二次过滤',
+                    onClick: 'ShopAdmin.clearDeliveryConflictAuditFilters()'
+                })
+                : this.renderDeliveryMetaBadge(`最近 ${total} 条`, total ? 'warn' : 'muted'),
+            this.renderConflictAuditSummaryReasonBadge({
+                reasonKey: 'target_max_inflight',
+                label: '目标并发',
+                count: summary.target_max_inflight,
+                tone: 'warn',
+                active: activeReason === 'target_max_inflight'
+            }),
+            this.renderConflictAuditSummaryReasonBadge({
+                reasonKey: 'target_min_interval',
+                label: '目标限流',
+                count: summary.target_min_interval,
+                tone: 'warn',
+                active: activeReason === 'target_min_interval'
+            }),
+            this.renderConflictAuditSummaryReasonBadge({
+                reasonKey: 'channel_max_inflight',
+                label: '通道并发',
+                count: summary.channel_max_inflight,
+                tone: 'danger',
+                active: activeReason === 'channel_max_inflight'
+            }),
+            this.renderConflictAuditSummaryReasonBadge({
+                reasonKey: 'channel_min_interval',
+                label: '通道限流',
+                count: summary.channel_min_interval,
+                tone: 'warn',
+                active: activeReason === 'channel_min_interval'
+            }),
+            this.renderConflictAuditSummaryReasonBadge({
+                reasonKey: 'manual_force_unlock',
+                label: '人工解锁',
+                count: summary.manual_force_unlock,
+                tone: 'processing',
+                active: activeReason === 'manual_force_unlock'
+            }),
+            this.renderConflictAuditSummaryReasonBadge({
+                reasonKey: 'unknown_conflict',
+                label: '其他冲突',
+                count: unknownConflictCount,
+                tone: 'muted',
+                active: activeReason === 'unknown_conflict'
+            }),
+            (Number(summary.dead_letter || 0) || deadLetterFocusActive)
+                ? this.renderDeliveryQuickFilterChip({
+                    label: `冲突死信 ${Number(summary.dead_letter || 0)}`,
+                    tone: Number(summary.dead_letter || 0) ? 'danger' : 'muted',
+                    active: deadLetterFocusActive,
+                    title: deadLetterFocusActive
+                        ? '再次点击可清除死信联动筛选'
+                        : '点击联动到冲突死信任务与死信子表',
+                    onClick: 'ShopAdmin.toggleDeliveryConflictDeadLetterFocus()'
+                })
+                : this.renderDeliveryMetaBadge('冲突死信 0', 'muted'),
             this.renderDeliveryMetaBadge(`最新 ${latestConflict}`, summary.latest_conflict_at ? 'neutral' : 'muted'),
             auditSelection?.auditId ? this.renderDeliveryMetaBadge('已锁定上下文', 'processing') : ''
         ];
+        if (filters.target_query) {
+            pills.push(this.renderDeliveryMetaBadge(`目标 ${this.truncateText(filters.target_query, 22)}`, 'neutral'));
+        }
+        if (filters.channel_query) {
+            pills.push(this.renderDeliveryMetaBadge(`通道 ${this.truncateText(filters.channel_query, 22)}`, 'neutral'));
+        }
         meta.classList.add('shop-delivery-subcard-meta--rich');
-        meta.innerHTML = total ? pills.join('') : '<span class="shop-delivery-table-note">暂无冲突审计</span>';
+        meta.innerHTML = (total || hasAuditFilters) ? pills.join('') : '<span class="shop-delivery-table-note">暂无冲突审计</span>';
     },
 
     renderConflictAudits: function (records = []) {
         const tbody = document.getElementById('deliveryConflictAuditTableBody');
         if (!tbody) return;
         const activeAuditId = String(this.deliveryConflictAuditSelection?.auditId || '').trim();
+        const activeReasonFilter = this.normalizeDeliveryConflictAuditReasonFilter(this.deliveryConflictAuditReasonFilter);
+        const activeTargetFilter = String(this.deliveryConflictAuditTargetFilter || '').trim();
+        const activeChannelFilter = String(this.deliveryConflictAuditChannelFilter || '').trim();
 
         if (!records.length) {
-            tbody.innerHTML = '<tr><td colspan="5"><div class="shop-delivery-empty">当前没有最近冲突记录。</div></td></tr>';
+            tbody.innerHTML = `<tr><td colspan="5"><div class="shop-delivery-empty">${this.hasDeliveryConflictAuditFilters() ? '当前二次过滤条件下没有命中的冲突审计。' : '当前没有最近冲突记录。'}</div></td></tr>`;
             return;
         }
 
@@ -2671,23 +2964,60 @@ Example output format:
             const taskId = this.escapeHtml(this.truncateText(record.task_id || task.id || '—', 18));
             const orderId = this.escapeHtml(record.order_id || task.order_id || '—');
             const resultBadge = this.getDeliveryTaskStatusBadge(record.task_status || task.status || 'retry_waiting');
-            const conflictBadge = this.getDeliveryConflictBadge(record) || this.renderDeliveryBadge('其他冲突', 'muted');
             const detail = this.escapeHtml(this.truncateText(record.detail || task.last_conflict_note || '无备注', 72));
-            const targetText = this.escapeHtml(this.truncateText(record.target_key || task.target_key || '—', 32));
-            const channelText = this.escapeHtml(this.truncateText(record.channel_key || task.channel_key || '—', 24));
+            const targetKey = String(record.target_key || task.target_key || '').trim();
+            const channelKey = String(record.channel_key || task.channel_key || '').trim();
+            const rawReasonKey = String(record.conflict_reason?.key || record.reason_key || record.last_conflict_reason || '').trim().toLowerCase();
+            const reasonKey = this.normalizeDeliveryConflictAuditReasonFilter(rawReasonKey || 'unknown_conflict') === 'all'
+                ? 'unknown_conflict'
+                : this.normalizeDeliveryConflictAuditReasonFilter(rawReasonKey || 'unknown_conflict');
+            const reasonLabel = record.conflict_reason?.label || this.getDeliveryConflictAuditReasonLabel(reasonKey);
+            const reasonTone = record.conflict_reason?.tone || (reasonKey === 'channel_max_inflight'
+                ? 'danger'
+                : reasonKey === 'manual_force_unlock'
+                    ? 'processing'
+                    : reasonKey === 'unknown_conflict'
+                        ? 'muted'
+                        : 'warn');
             const isActive = activeAuditId && activeAuditId === String(record.id || '').trim();
             const encodedRecordId = encodeURIComponent(String(record.id || ''));
             const encodedCreatedAt = encodeURIComponent(String(record.created_at || ''));
             const encodedTaskId = encodeURIComponent(String(record.task_id || task.id || ''));
             const encodedOrderId = encodeURIComponent(String(record.order_id || task.order_id || ''));
-            const encodedTargetKey = encodeURIComponent(String(record.target_key || task.target_key || ''));
-            const encodedChannelKey = encodeURIComponent(String(record.channel_key || task.channel_key || ''));
+            const encodedTargetKey = encodeURIComponent(targetKey);
+            const encodedChannelKey = encodeURIComponent(channelKey);
             const encodedReasonKey = encodeURIComponent(String(record.reason_key || record.last_conflict_reason || ''));
             const encodedScope = encodeURIComponent(String(record.scope || record.last_conflict_scope || ''));
+            const reasonFilterChip = this.renderDeliveryQuickFilterChip({
+                label: reasonLabel,
+                tone: reasonTone,
+                active: activeReasonFilter === reasonKey,
+                title: activeReasonFilter === reasonKey ? '再次点击可清除此原因过滤' : '点击按该冲突原因二次过滤',
+                onClick: `event.preventDefault(); event.stopPropagation(); ShopAdmin.applyDeliveryConflictAuditReasonQuickFilter('${encodeURIComponent(reasonKey)}')`
+            });
+            const targetFilterChip = targetKey
+                ? this.renderDeliveryQuickFilterChip({
+                    label: this.truncateText(targetKey, 32),
+                    tone: 'processing',
+                    active: activeTargetFilter === targetKey,
+                    title: activeTargetFilter === targetKey ? '再次点击可清除此目标过滤' : '点击按该目标二次过滤',
+                    onClick: `event.preventDefault(); event.stopPropagation(); ShopAdmin.applyDeliveryConflictAuditTargetQuickFilter('${encodedTargetKey}')`
+                })
+                : '<span class="shop-delivery-table-note">—</span>';
+            const channelFilterChip = channelKey
+                ? this.renderDeliveryQuickFilterChip({
+                    label: this.truncateText(channelKey, 24),
+                    tone: 'danger',
+                    active: activeChannelFilter === channelKey,
+                    title: activeChannelFilter === channelKey ? '再次点击可清除此通道过滤' : '点击按该通道二次过滤',
+                    onClick: `event.preventDefault(); event.stopPropagation(); ShopAdmin.applyDeliveryConflictAuditChannelQuickFilter('${encodedChannelKey}')`
+                })
+                : '<span class="shop-delivery-table-note">—</span>';
 
             return `
                 <tr
                     class="shop-delivery-audit-row shop-delivery-audit-row--action${isActive ? ' shop-delivery-audit-row--active' : ''}"
+                    data-audit-id="${this.escapeHtml(String(record.id || ''))}"
                     onclick="ShopAdmin.toggleDeliveryConflictAuditSelection('${encodedRecordId}', '${encodedCreatedAt}', '${encodedTaskId}', '${encodedOrderId}', '${encodedTargetKey}', '${encodedChannelKey}', '${encodedReasonKey}', '${encodedScope}')"
                     title="${isActive ? '再次点击可取消任务锁定' : '点击锁定该任务、对应时间桶和热点上下文'}"
                 >
@@ -2696,7 +3026,7 @@ Example output format:
                         <div class="shop-delivery-table-note">${record.worker_name ? `Worker ${this.escapeHtml(record.worker_name)}` : '无 worker'}</div>
                     </td>
                     <td data-label="冲突类型">
-                        <div class="shop-delivery-meta" style="margin-bottom:8px;">${conflictBadge}</div>
+                        <div class="shop-delivery-meta" style="margin-bottom:8px;">${reasonFilterChip}</div>
                         <div class="shop-delivery-table-note">${detail}</div>
                     </td>
                     <td data-label="任务 / 订单">
@@ -2704,8 +3034,8 @@ Example output format:
                         <div class="shop-delivery-table-note">${order.snapshot_product_name ? this.escapeHtml(order.snapshot_product_name) : '无商品'} · 订单 ${orderId}</div>
                     </td>
                     <td data-label="目标 / 通道">
-                        <div style="font-weight:600;color:#fff;">${targetText}</div>
-                        <div class="shop-delivery-table-note">${channelText}</div>
+                        <div class="shop-delivery-meta" style="margin-bottom:8px;">${targetFilterChip}</div>
+                        <div class="shop-delivery-meta">${channelFilterChip}</div>
                     </td>
                     <td data-label="结果">
                         <div class="shop-delivery-meta" style="margin-bottom:8px;">${resultBadge}</div>
@@ -2728,6 +3058,7 @@ Example output format:
 
         tbody.innerHTML = tasks.map((task) => {
             const order = task.order || {};
+            const isFocused = this.matchesDeliveryTaskIdentity(task);
             const orderId = this.escapeHtml(task.order_id || '—');
             const productName = this.escapeHtml(order.snapshot_product_name || '—');
             const userId = this.escapeHtml(order.user_id || '未知用户');
@@ -2743,7 +3074,7 @@ Example output format:
                 : this.renderDeliveryBadge('未知原因', 'muted');
 
             return `
-                <tr>
+                <tr class="${isFocused ? 'shop-delivery-linked-row--focused' : ''}">
                     <td data-label="订单号">
                         <div style="font-weight:600;color:#fff;">${orderId}</div>
                         <div class="shop-delivery-table-note">${task.target_url ? this.formatDeliveryTaskTarget(task.target_url) : '无目标地址'}</div>
@@ -2759,7 +3090,10 @@ Example output format:
                     </td>
                     <td data-label="锁与幂等">${this.renderDeliveryObserveChips(task)}</td>
                     <td data-label="最近尝试">${this.renderDeliveryAttemptLines(task)}</td>
-                    <td data-label="操作">${this.renderDeliveryActionButtons(task, { allowDeadLetter: false })}</td>
+                    <td data-label="操作">
+                        ${this.renderDeliveryConflictAuditJumpButton(task)}
+                        ${this.renderDeliveryActionButtons(task, { allowDeadLetter: false })}
+                    </td>
                 </tr>
             `;
         }).join('');
@@ -2779,6 +3113,7 @@ Example output format:
 
         tbody.innerHTML = tasks.map((task) => {
             const order = task.order || {};
+            const isFocused = this.matchesDeliveryTaskIdentity(task);
             const orderId = this.escapeHtml(task.order_id || '—');
             const productName = this.escapeHtml(order.snapshot_product_name || '—');
             const userId = this.escapeHtml(order.user_id || '未知用户');
@@ -2792,7 +3127,7 @@ Example output format:
                 : '暂无最近错误';
 
             return `
-                <tr>
+                <tr class="${isFocused ? 'shop-delivery-linked-row--focused' : ''}">
                     <td data-label="订单号">
                         <div style="font-weight:600;color:#fff;">${orderId}</div>
                         <div class="shop-delivery-table-note">${task.target_url ? this.formatDeliveryTaskTarget(task.target_url) : '无目标地址'}</div>
@@ -2816,7 +3151,10 @@ Example output format:
                         <div class="shop-delivery-table-note" style="margin-top:8px;">尝试 ${Number(task.attempt_count || 0)} / ${Number(task.max_attempts || 0)}</div>
                         <div style="margin-top:8px;">${this.renderDeliveryAttemptLines(task)}</div>
                     </td>
-                    <td data-label="操作">${this.renderDeliveryActionButtons(task, { allowDeadLetter: task.status !== 'dead_letter', allowForceUnlock: true })}</td>
+                    <td data-label="操作">
+                        ${this.renderDeliveryConflictAuditJumpButton(task)}
+                        ${this.renderDeliveryActionButtons(task, { allowDeadLetter: task.status !== 'dead_letter', allowForceUnlock: true })}
+                    </td>
                 </tr>
             `;
         }).join('');
@@ -2860,6 +3198,7 @@ Example output format:
 
         tbody.innerHTML = tasks.map((task) => {
             const order = task.order || {};
+            const isFocused = this.matchesDeliveryTaskIdentity(task);
             const orderId = this.escapeHtml(task.order_id || '—');
             const productName = this.escapeHtml(order.snapshot_product_name || '—');
             const userId = this.escapeHtml(order.user_id || '未知用户');
@@ -2883,7 +3222,7 @@ Example output format:
             ].filter(Boolean).join(' · ');
 
             return `
-                <tr>
+                <tr class="${isFocused ? 'shop-delivery-linked-row--focused' : ''}">
                     <td data-label="状态">
                         <div class="shop-delivery-meta" style="margin-bottom:8px;">${stateBadges}</div>
                         <div class="shop-delivery-table-note">${task.last_conflict_reason ? this.escapeHtml(task.last_conflict_reason) : '无最近冲突原因'}</div>
@@ -2905,7 +3244,10 @@ Example output format:
                         <div class="shop-delivery-table-note" style="margin-top:8px;">${this.escapeHtml(currentLockMeta || '当前无活跃锁信息')}</div>
                         <div style="margin-top:8px;">${this.renderDeliveryObserveChips(task)}</div>
                     </td>
-                    <td data-label="操作">${this.renderDeliveryActionButtons(task, { allowDeadLetter: task.status !== 'dead_letter', allowForceUnlock: true })}</td>
+                    <td data-label="操作">
+                        ${this.renderDeliveryConflictAuditJumpButton(task)}
+                        ${this.renderDeliveryActionButtons(task, { allowDeadLetter: task.status !== 'dead_letter', allowForceUnlock: true })}
+                    </td>
                 </tr>
             `;
         }).join('');
@@ -3208,11 +3550,17 @@ Example output format:
         const analyticsWindowFilter = document.getElementById('deliveryAnalyticsWindowFilter');
         const deadLetterReasonFilter = document.getElementById('deliveryDeadLetterReasonFilter');
         const lockStateFilter = document.getElementById('deliveryLockStateFilter');
+        const conflictAuditReasonFilter = document.getElementById('deliveryConflictAuditReasonFilter');
+        const conflictAuditTargetInput = document.getElementById('deliveryConflictAuditTargetFilter');
+        const conflictAuditChannelInput = document.getElementById('deliveryConflictAuditChannelFilter');
         const status = taskFilter?.value || this.deliveryTaskStatusFilter || 'all';
         const analyticsWindow = analyticsWindowFilter?.value || this.deliveryAnalyticsWindow || '24h';
         const analyticsWindowConfig = this.getDeliveryAnalyticsWindowConfig(analyticsWindow);
         const deadLetterReason = deadLetterReasonFilter?.value || this.deliveryDeadLetterReasonFilter || 'all';
         const lockState = lockStateFilter?.value || this.deliveryLockStateFilter || 'all';
+        const conflictReason = this.normalizeDeliveryConflictAuditReasonFilter(conflictAuditReasonFilter?.value || this.deliveryConflictAuditReasonFilter || 'all');
+        const conflictTarget = String(conflictAuditTargetInput?.value || this.deliveryConflictAuditTargetFilter || '').trim();
+        const conflictChannel = String(conflictAuditChannelInput?.value || this.deliveryConflictAuditChannelFilter || '').trim();
         const query = String(this.deliveryTaskQuery || '').trim();
         const conflictBucket = this.deliveryConflictBucketFilter || null;
         const taskIdentity = this.deliveryTaskIdentityFilter || null;
@@ -3221,12 +3569,18 @@ Example output format:
         this.deliveryDeadLetterReasonFilter = deadLetterReason;
         this.deliveryLockStateFilter = lockState;
         this.deliveryAnalyticsWindow = analyticsWindowConfig.key;
+        this.deliveryConflictAuditReasonFilter = conflictReason;
+        this.deliveryConflictAuditTargetFilter = conflictTarget;
+        this.deliveryConflictAuditChannelFilter = conflictChannel;
 
         if (taskFilter && taskFilter.value !== status) taskFilter.value = status;
         if (taskQueryInput && taskQueryInput.value !== query) taskQueryInput.value = query;
         if (analyticsWindowFilter && analyticsWindowFilter.value !== analyticsWindowConfig.key) analyticsWindowFilter.value = analyticsWindowConfig.key;
         if (deadLetterReasonFilter && deadLetterReasonFilter.value !== deadLetterReason) deadLetterReasonFilter.value = deadLetterReason;
         if (lockStateFilter && lockStateFilter.value !== lockState) lockStateFilter.value = lockState;
+        if (conflictAuditReasonFilter && conflictAuditReasonFilter.value !== conflictReason) conflictAuditReasonFilter.value = conflictReason;
+        if (conflictAuditTargetInput && conflictAuditTargetInput.value !== conflictTarget) conflictAuditTargetInput.value = conflictTarget;
+        if (conflictAuditChannelInput && conflictAuditChannelInput.value !== conflictChannel) conflictAuditChannelInput.value = conflictChannel;
         this.renderDeliveryTaskFilterHint();
 
         if (tbody) {
@@ -3314,6 +3668,9 @@ Example output format:
                 analyticsWindow: analyticsWindowConfig.key,
                 conflictBucketStartAt: conflictBucket?.startAt || '',
                 conflictBucketEndAt: conflictBucket?.endAt || '',
+                conflictReason,
+                conflictTarget,
+                conflictChannel,
                 focusTaskId: taskIdentity?.taskId || '',
                 focusOrderId: taskIdentity?.orderId || '',
                 deadLetterPage: String(this.deliveryDeadLetterPage || 1),
@@ -3338,6 +3695,9 @@ Example output format:
             this.renderDeliveryTaskSummary(result.summary || {});
             this.renderDeliveryTaskFilterHint();
             this.renderDeliveryTasks(result.tasks || [], result.total || 0, result.page || page, result.pageSize || this.deliveryTaskPageSize);
+            if (this.deliveryPendingTaskReveal?.taskId || this.deliveryPendingTaskReveal?.orderId) {
+                window.requestAnimationFrame(() => this.revealFocusedDeliveryTaskRow());
+            }
 
             const deadLetter = result.deadLetter || {};
             this.renderDeliveryDeadLetterSummary(deadLetter);
@@ -3373,12 +3733,24 @@ Example output format:
             );
 
             const conflicts = result.conflicts || {};
+            const conflictFilters = conflicts.filters || {};
+            this.deliveryConflictAuditReasonFilter = this.normalizeDeliveryConflictAuditReasonFilter(conflictFilters.reason || this.deliveryConflictAuditReasonFilter);
+            this.deliveryConflictAuditTargetFilter = String(conflictFilters.target_query || this.deliveryConflictAuditTargetFilter || '').trim();
+            this.deliveryConflictAuditChannelFilter = String(conflictFilters.channel_query || this.deliveryConflictAuditChannelFilter || '').trim();
+            if (conflictAuditReasonFilter && conflictAuditReasonFilter.value !== this.deliveryConflictAuditReasonFilter) conflictAuditReasonFilter.value = this.deliveryConflictAuditReasonFilter;
+            if (conflictAuditTargetInput && conflictAuditTargetInput.value !== this.deliveryConflictAuditTargetFilter) conflictAuditTargetInput.value = this.deliveryConflictAuditTargetFilter;
+            if (conflictAuditChannelInput && conflictAuditChannelInput.value !== this.deliveryConflictAuditChannelFilter) conflictAuditChannelInput.value = this.deliveryConflictAuditChannelFilter;
+            this.deliveryConflictAuditRecords = conflicts.records || [];
             this.renderConflictAuditSummary(conflicts);
             this.renderConflictAudits(conflicts.records || []);
+            if (this.deliveryPendingAuditReveal?.auditId) {
+                window.requestAnimationFrame(() => this.revealFocusedDeliveryConflictAuditRow());
+            }
 
             await strategyPromise;
         } catch (err) {
             console.error('[ShopAdmin] loadDeliveryTasks failed:', err);
+            this.deliveryConflictAuditRecords = [];
             if (summary) {
                 summary.innerHTML = '<span class="shop-delivery-pill shop-delivery-pill--danger">履约任务加载失败</span>';
             }
@@ -3467,6 +3839,8 @@ Example output format:
         this.deliveryConflictBucketFilter = null;
         this.deliveryTaskIdentityFilter = null;
         this.deliveryConflictAuditSelection = null;
+        this.deliveryPendingTaskReveal = null;
+        this.deliveryPendingAuditReveal = null;
         this.deliveryTaskPage = 1;
         this.deliveryDeadLetterPage = 1;
         this.deliveryLockConflictPage = 1;
@@ -3490,6 +3864,8 @@ Example output format:
             };
         this.deliveryTaskIdentityFilter = null;
         this.deliveryConflictAuditSelection = null;
+        this.deliveryPendingTaskReveal = null;
+        this.deliveryPendingAuditReveal = null;
         this.deliveryTaskPage = 1;
         this.deliveryDeadLetterPage = 1;
         this.deliveryLockConflictPage = 1;
@@ -3500,6 +3876,8 @@ Example output format:
         this.deliveryConflictBucketFilter = null;
         this.deliveryTaskIdentityFilter = null;
         this.deliveryConflictAuditSelection = null;
+        this.deliveryPendingTaskReveal = null;
+        this.deliveryPendingAuditReveal = null;
         this.deliveryTaskPage = 1;
         this.deliveryDeadLetterPage = 1;
         this.deliveryLockConflictPage = 1;
@@ -3544,6 +3922,13 @@ Example output format:
             orderId: orderId || '',
             createdAt
         };
+        this.deliveryPendingTaskReveal = {
+            taskId: taskId || '',
+            orderId: orderId || ''
+        };
+        this.deliveryPendingAuditReveal = {
+            auditId
+        };
         this.deliveryTaskQuery = String(queryContext.query || '').trim();
         this.deliveryTaskQueryContext = this.deliveryTaskQuery
             ? {
@@ -3563,10 +3948,92 @@ Example output format:
     clearDeliveryConflictAuditSelection: function () {
         this.deliveryTaskIdentityFilter = null;
         this.deliveryConflictAuditSelection = null;
+        this.deliveryPendingTaskReveal = null;
+        this.deliveryPendingAuditReveal = null;
         this.deliveryTaskPage = 1;
         this.deliveryDeadLetterPage = 1;
         this.deliveryLockConflictPage = 1;
         this.loadDeliveryTasks(1);
+    },
+
+    handleDeliveryConflictAuditFilterKeydown: function (event) {
+        if (event?.key !== 'Enter') return;
+        event.preventDefault();
+        this.applyDeliveryConflictAuditFilters();
+    },
+
+    applyDeliveryConflictAuditFilters: function () {
+        const reasonSelect = document.getElementById('deliveryConflictAuditReasonFilter');
+        const targetInput = document.getElementById('deliveryConflictAuditTargetFilter');
+        const channelInput = document.getElementById('deliveryConflictAuditChannelFilter');
+
+        this.deliveryConflictAuditReasonFilter = this.normalizeDeliveryConflictAuditReasonFilter(reasonSelect?.value || this.deliveryConflictAuditReasonFilter || 'all');
+        this.deliveryConflictAuditTargetFilter = String(targetInput?.value || '').trim();
+        this.deliveryConflictAuditChannelFilter = String(channelInput?.value || '').trim();
+        this.deliveryPendingAuditReveal = null;
+        this.loadDeliveryTasks(this.deliveryTaskPage || 1);
+    },
+
+    applyDeliveryConflictAuditReasonQuickFilter: function (encodedReasonKey) {
+        const nextReasonKey = this.normalizeDeliveryConflictAuditReasonFilter(decodeURIComponent(String(encodedReasonKey || '')));
+        const currentReasonKey = this.normalizeDeliveryConflictAuditReasonFilter(this.deliveryConflictAuditReasonFilter || 'all');
+        this.deliveryConflictAuditReasonFilter = currentReasonKey === nextReasonKey ? 'all' : nextReasonKey;
+        const reasonSelect = document.getElementById('deliveryConflictAuditReasonFilter');
+        if (reasonSelect) reasonSelect.value = this.deliveryConflictAuditReasonFilter;
+        this.deliveryPendingAuditReveal = null;
+        this.loadDeliveryTasks(this.deliveryTaskPage || 1);
+    },
+
+    applyDeliveryConflictAuditTargetQuickFilter: function (encodedTargetKey) {
+        const nextTargetKey = decodeURIComponent(String(encodedTargetKey || '')).trim();
+        this.deliveryConflictAuditTargetFilter = this.deliveryConflictAuditTargetFilter === nextTargetKey ? '' : nextTargetKey;
+        const targetInput = document.getElementById('deliveryConflictAuditTargetFilter');
+        if (targetInput) targetInput.value = this.deliveryConflictAuditTargetFilter;
+        this.deliveryPendingAuditReveal = null;
+        this.loadDeliveryTasks(this.deliveryTaskPage || 1);
+    },
+
+    applyDeliveryConflictAuditChannelQuickFilter: function (encodedChannelKey) {
+        const nextChannelKey = decodeURIComponent(String(encodedChannelKey || '')).trim();
+        this.deliveryConflictAuditChannelFilter = this.deliveryConflictAuditChannelFilter === nextChannelKey ? '' : nextChannelKey;
+        const channelInput = document.getElementById('deliveryConflictAuditChannelFilter');
+        if (channelInput) channelInput.value = this.deliveryConflictAuditChannelFilter;
+        this.deliveryPendingAuditReveal = null;
+        this.loadDeliveryTasks(this.deliveryTaskPage || 1);
+    },
+
+    toggleDeliveryConflictDeadLetterFocus: function () {
+        const nextActive = !this.isDeliveryConflictDeadLetterFocusActive();
+        this.deliveryTaskStatusFilter = nextActive ? 'dead_letter' : 'all';
+        this.deliveryDeadLetterReasonFilter = nextActive ? 'conflict_strategy' : 'all';
+        this.deliveryTaskIdentityFilter = null;
+        this.deliveryConflictAuditSelection = null;
+        this.deliveryPendingTaskReveal = null;
+        this.deliveryPendingAuditReveal = null;
+        const taskFilter = document.getElementById('deliveryTaskStatusFilter');
+        const deadLetterReasonFilter = document.getElementById('deliveryDeadLetterReasonFilter');
+        if (taskFilter) taskFilter.value = this.deliveryTaskStatusFilter;
+        if (deadLetterReasonFilter) deadLetterReasonFilter.value = this.deliveryDeadLetterReasonFilter;
+        this.deliveryTaskPage = 1;
+        this.deliveryDeadLetterPage = 1;
+        this.deliveryLockConflictPage = 1;
+        this.deliveryReplayPage = 1;
+        this.loadDeliveryTasks(1);
+    },
+
+    clearDeliveryConflictAuditFilters: function () {
+        const reasonSelect = document.getElementById('deliveryConflictAuditReasonFilter');
+        const targetInput = document.getElementById('deliveryConflictAuditTargetFilter');
+        const channelInput = document.getElementById('deliveryConflictAuditChannelFilter');
+
+        this.deliveryConflictAuditReasonFilter = 'all';
+        this.deliveryConflictAuditTargetFilter = '';
+        this.deliveryConflictAuditChannelFilter = '';
+        this.deliveryPendingAuditReveal = null;
+        if (reasonSelect) reasonSelect.value = 'all';
+        if (targetInput) targetInput.value = '';
+        if (channelInput) channelInput.value = '';
+        this.loadDeliveryTasks(this.deliveryTaskPage || 1);
     },
 
     handleDeliveryTaskQueryKeydown: function (event) {
@@ -3587,6 +4054,8 @@ Example output format:
             : null;
         this.deliveryTaskIdentityFilter = null;
         this.deliveryConflictAuditSelection = null;
+        this.deliveryPendingTaskReveal = null;
+        this.deliveryPendingAuditReveal = null;
         this.deliveryTaskPage = 1;
         this.deliveryDeadLetterPage = 1;
         this.deliveryLockConflictPage = 1;
@@ -3605,6 +4074,8 @@ Example output format:
         };
         this.deliveryTaskIdentityFilter = null;
         this.deliveryConflictAuditSelection = null;
+        this.deliveryPendingTaskReveal = null;
+        this.deliveryPendingAuditReveal = null;
         this.deliveryTaskPage = 1;
         this.deliveryDeadLetterPage = 1;
         this.deliveryLockConflictPage = 1;
@@ -3616,6 +4087,8 @@ Example output format:
         this.deliveryTaskQueryContext = null;
         this.deliveryTaskIdentityFilter = null;
         this.deliveryConflictAuditSelection = null;
+        this.deliveryPendingTaskReveal = null;
+        this.deliveryPendingAuditReveal = null;
         const input = document.getElementById('deliveryTaskQueryInput');
         if (input) {
             input.value = '';

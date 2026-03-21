@@ -4926,6 +4926,25 @@
                             border: 1px solid rgba(255, 255, 255, 0.08);
                         }
 
+                        .shop-delivery-meta-chip--action {
+                            appearance: none;
+                            cursor: pointer;
+                            transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+                            max-width: 100%;
+                            white-space: nowrap;
+                            overflow: hidden;
+                            text-overflow: ellipsis;
+                        }
+
+                        .shop-delivery-meta-chip--action:hover {
+                            transform: translateY(-1px);
+                            background: rgba(255, 255, 255, 0.1);
+                        }
+
+                        .shop-delivery-meta-chip--active {
+                            box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.05);
+                        }
+
                         .shop-delivery-subgrid {
                             display: grid;
                             grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -4960,6 +4979,11 @@
                             justify-content: flex-end;
                             gap: 10px;
                             flex-wrap: wrap;
+                        }
+
+                        .shop-delivery-subcard-tools--body {
+                            justify-content: flex-start;
+                            margin-bottom: 14px;
                         }
 
                         .shop-delivery-subcard-title {
@@ -5353,6 +5377,54 @@
                         .shop-delivery-audit-row--active td {
                             background: rgba(96, 165, 250, 0.1);
                             box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.18);
+                        }
+
+                        .shop-delivery-audit-row--reveal td {
+                            animation: shopDeliveryAuditRevealPulse 1.8s ease;
+                        }
+
+                        .shop-delivery-task-row--focused td {
+                            background: rgba(251, 191, 36, 0.1);
+                            box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.16);
+                        }
+
+                        .shop-delivery-linked-row--focused td {
+                            background: rgba(96, 165, 250, 0.08);
+                            box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.14);
+                        }
+
+                        .shop-delivery-task-row--reveal td {
+                            animation: shopDeliveryTaskRevealPulse 1.8s ease;
+                        }
+
+                        @keyframes shopDeliveryTaskRevealPulse {
+                            0% {
+                                background: rgba(96, 165, 250, 0.28);
+                                box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.34);
+                            }
+
+                            100% {
+                                background: rgba(251, 191, 36, 0.1);
+                                box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.16);
+                            }
+                        }
+
+                        @keyframes shopDeliveryAuditRevealPulse {
+                            0% {
+                                background: rgba(59, 130, 246, 0.28);
+                                box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.34);
+                            }
+
+                            100% {
+                                background: rgba(96, 165, 250, 0.1);
+                                box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.18);
+                            }
+                        }
+
+                        .shop-delivery-action-btn--linked {
+                            border-color: rgba(96, 165, 250, 0.32);
+                            background: rgba(96, 165, 250, 0.12);
+                            color: #bfdbfe;
                         }
 
                         @media (max-width: 1200px) {
@@ -6108,11 +6180,39 @@
                                 <div class="shop-delivery-subcard-header">
                                     <div class="shop-delivery-subcard-title">
                                         <h4><i class="fas fa-wave-square"></i> 冲突审计</h4>
-                                        <p>查看最近的限流命中、并发占位冲突和人工强制解锁记录。点击某条记录可反向锁定任务、时间桶与热点上下文。</p>
+                                        <p>查看最近的限流命中、并发占位冲突和人工强制解锁记录。支持按原因 / 目标 / 通道做二次过滤，点击行内 chip 可快速回填过滤，点击某条记录仍可反向锁定任务、时间桶与热点上下文。</p>
                                     </div>
                                     <div id="deliveryConflictAuditSummary" class="shop-delivery-subcard-meta">载入中…</div>
                                 </div>
                                 <div class="shop-delivery-subcard-body">
+                                    <div class="shop-delivery-subcard-tools shop-delivery-subcard-tools--body">
+                                        <select id="deliveryConflictAuditReasonFilter" class="shop-delivery-filter"
+                                            onchange="ShopAdmin.applyDeliveryConflictAuditFilters()">
+                                            <option value="all">全部原因</option>
+                                            <option value="target_max_inflight">目标并发打满</option>
+                                            <option value="target_min_interval">目标触发间隔限流</option>
+                                            <option value="channel_max_inflight">通道并发打满</option>
+                                            <option value="channel_min_interval">通道触发间隔限流</option>
+                                            <option value="manual_force_unlock">人工强制解锁</option>
+                                            <option value="unknown_conflict">其他冲突</option>
+                                        </select>
+                                        <input id="deliveryConflictAuditTargetFilter" type="text"
+                                            class="shop-delivery-filter shop-delivery-filter--search"
+                                            placeholder="按目标 key 二次过滤冲突审计"
+                                            onkeydown="ShopAdmin.handleDeliveryConflictAuditFilterKeydown(event)">
+                                        <input id="deliveryConflictAuditChannelFilter" type="text"
+                                            class="shop-delivery-filter shop-delivery-filter--search"
+                                            placeholder="按通道 key 二次过滤冲突审计"
+                                            onkeydown="ShopAdmin.handleDeliveryConflictAuditFilterKeydown(event)">
+                                        <button type="button" class="shop-delivery-inline-btn"
+                                            onclick="ShopAdmin.applyDeliveryConflictAuditFilters()">
+                                            <i class="fas fa-filter"></i> 应用二次过滤
+                                        </button>
+                                        <button type="button" class="shop-delivery-inline-btn"
+                                            onclick="ShopAdmin.clearDeliveryConflictAuditFilters()">
+                                            <i class="fas fa-eraser"></i> 清除二次过滤
+                                        </button>
+                                    </div>
                                     <div class="shop-table-container">
                                         <table class="shop-table">
                                             <thead>
