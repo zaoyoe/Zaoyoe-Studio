@@ -2970,14 +2970,19 @@ Example output format:
                 const userAvatar = user.avatar_url
                     ? user.avatar_url
                     : `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(userName)}&backgroundColor=6b9ece`;
+                const safeUserName = this.escapeHtml(userName);
+                const safeUserEmail = this.escapeHtml(userEmail);
+                const safeUserAvatar = this.escapeHtml(userAvatar);
+                const safeOrderUserId = this.escapeHtml(order.user_id || '');
+                const safeDate = this.escapeHtml(date);
 
                 // Two-line layout like user management page
                 const userDisplay = `
-                    <div style="display:flex;align-items:center;gap:10px;">
-                        <img src="${userAvatar}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;flex-shrink:0;" onerror="this.src='https://api.dicebear.com/7.x/initials/svg?seed=U&backgroundColor=6b9ece'">
-                        <div style="line-height:1.3;">
-                            <div style="font-weight:600;color:#fff;">${userName}</div>
-                            <div style="font-size:12px;color:rgba(255,255,255,0.5);">${userEmail}</div>
+                    <div class="user-cell">
+                        <img src="${safeUserAvatar}" class="user-avatar-small" style="width:36px;height:36px;" onerror="this.src='https://api.dicebear.com/7.x/initials/svg?seed=U&backgroundColor=6b9ece'">
+                        <div class="user-info" style="line-height:1.3;">
+                            <div class="user-name" style="color:#fff;">${safeUserName}</div>
+                            <div class="user-email" style="font-size:12px;color:rgba(255,255,255,0.5);">${safeUserEmail}</div>
                         </div>
                     </div>
                 `;
@@ -3019,9 +3024,9 @@ Example output format:
 
                 tbody.innerHTML += `
                 <tr onclick="ShopAdmin.showOrderContent('${order.id}', '${contentData}')" style="cursor: pointer;" title="点击查看订单详情">
-                    <td data-label="用户" title="${order.user_id}">${userDisplay}</td>
-                    <td data-label="订单时间">${date}</td>
-                    <td data-label="商品">${productName}</td>
+                    <td data-label="用户" title="${safeOrderUserId}">${userDisplay}</td>
+                    <td data-label="订单时间">${safeDate}</td>
+                    <td data-label="商品">${this.escapeHtml(productName)}</td>
                     <td data-label="支付积分">${order.total_price || order.price_paid}</td>
                     <td data-label="发货状态">${status}</td>
                     <td data-label="操作" onclick="event.stopPropagation()">
