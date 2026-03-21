@@ -5608,6 +5608,154 @@
                             color: #bfdbfe;
                         }
 
+                        .shop-delivery-manual {
+                            margin-top: 20px;
+                        }
+
+                        .shop-delivery-manual summary {
+                            list-style: none;
+                            display: flex;
+                            align-items: center;
+                            justify-content: space-between;
+                            gap: 16px;
+                            padding: 18px 20px;
+                            cursor: pointer;
+                            user-select: none;
+                        }
+
+                        .shop-delivery-manual summary::-webkit-details-marker {
+                            display: none;
+                        }
+
+                        .shop-delivery-manual-summary-copy {
+                            display: flex;
+                            flex-direction: column;
+                            gap: 6px;
+                            min-width: 0;
+                        }
+
+                        .shop-delivery-manual-summary-title {
+                            display: flex;
+                            align-items: center;
+                            gap: 10px;
+                            color: #fff;
+                            font-size: 1rem;
+                            font-weight: 700;
+                        }
+
+                        .shop-delivery-manual-summary-desc {
+                            color: rgba(226, 232, 240, 0.66);
+                            font-size: 0.85rem;
+                            line-height: 1.55;
+                        }
+
+                        .shop-delivery-manual-summary-action {
+                            display: inline-flex;
+                            align-items: center;
+                            justify-content: center;
+                            gap: 8px;
+                            min-height: 38px;
+                            padding: 0 14px;
+                            border-radius: 999px;
+                            border: 1px solid rgba(255, 255, 255, 0.1);
+                            background: rgba(255, 255, 255, 0.04);
+                            color: rgba(226, 232, 240, 0.82);
+                            font-size: 0.82rem;
+                            font-weight: 600;
+                            flex-shrink: 0;
+                            transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+                        }
+
+                        .shop-delivery-manual summary:hover .shop-delivery-manual-summary-action {
+                            transform: translateY(-1px);
+                            border-color: rgba(96, 165, 250, 0.42);
+                            background: rgba(96, 165, 250, 0.1);
+                        }
+
+                        .shop-delivery-manual-summary-action i {
+                            transition: transform 0.18s ease;
+                        }
+
+                        .shop-delivery-manual[open] .shop-delivery-manual-summary-action i {
+                            transform: rotate(180deg);
+                        }
+
+                        .shop-delivery-manual-content {
+                            padding: 0 20px 20px;
+                            border-top: 1px solid rgba(255, 255, 255, 0.08);
+                        }
+
+                        .shop-delivery-manual-grid {
+                            display: grid;
+                            grid-template-columns: repeat(2, minmax(0, 1fr));
+                            gap: 16px;
+                            padding-top: 18px;
+                        }
+
+                        .shop-delivery-manual-section {
+                            padding: 16px;
+                            border-radius: 18px;
+                            border: 1px solid rgba(255, 255, 255, 0.08);
+                            background:
+                                radial-gradient(circle at top right, rgba(96, 165, 250, 0.1), transparent 40%),
+                                rgba(255, 255, 255, 0.025);
+                        }
+
+                        .shop-delivery-manual-section h4 {
+                            margin: 0 0 14px;
+                            color: #fff;
+                            font-size: 0.96rem;
+                            display: flex;
+                            align-items: center;
+                            gap: 10px;
+                        }
+
+                        .shop-delivery-manual-list {
+                            display: flex;
+                            flex-direction: column;
+                            gap: 12px;
+                        }
+
+                        .shop-delivery-manual-item {
+                            display: flex;
+                            flex-direction: column;
+                            gap: 6px;
+                            padding: 12px 14px;
+                            border-radius: 16px;
+                            border: 1px solid rgba(255, 255, 255, 0.07);
+                            background: rgba(15, 23, 42, 0.4);
+                        }
+
+                        .shop-delivery-manual-item strong {
+                            color: #fff;
+                            font-size: 0.9rem;
+                        }
+
+                        .shop-delivery-manual-item span {
+                            color: rgba(226, 232, 240, 0.74);
+                            font-size: 0.84rem;
+                            line-height: 1.7;
+                        }
+
+                        .shop-delivery-manual-footnote {
+                            display: flex;
+                            align-items: flex-start;
+                            gap: 10px;
+                            margin-top: 16px;
+                            padding: 14px 16px;
+                            border-radius: 16px;
+                            border: 1px solid rgba(96, 165, 250, 0.18);
+                            background: rgba(59, 130, 246, 0.08);
+                            color: rgba(226, 232, 240, 0.84);
+                            font-size: 0.84rem;
+                            line-height: 1.65;
+                        }
+
+                        .shop-delivery-manual-footnote i {
+                            margin-top: 2px;
+                            color: #93c5fd;
+                        }
+
                         @media (max-width: 1200px) {
                             .shop-delivery-strategy-grid {
                                 grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -5678,6 +5826,15 @@
                                 width: 100%;
                             }
 
+                            .shop-delivery-manual summary {
+                                flex-direction: column;
+                                align-items: stretch;
+                            }
+
+                            .shop-delivery-manual-summary-action {
+                                width: 100%;
+                            }
+
                             .shop-delivery-subcard-meta--rich {
                                 justify-content: flex-start;
                             }
@@ -5732,6 +5889,10 @@
 
                             .shop-delivery-filter--search {
                                 min-width: 0;
+                            }
+
+                            .shop-delivery-manual-grid {
+                                grid-template-columns: 1fr;
                             }
 
                             :is(#shop-view-orders, #shop-view-fulfillment) .shop-table-container {
@@ -6426,6 +6587,82 @@
                                 </div>
                             </section>
                         </div>
+
+                        <details class="shop-delivery-subcard shop-delivery-subcard--wide shop-delivery-manual" id="shopDeliveryOpsManual">
+                            <summary class="shop-delivery-manual-summary">
+                                <div class="shop-delivery-manual-summary-copy">
+                                    <div class="shop-delivery-manual-summary-title">
+                                        <i class="fas fa-clipboard-check"></i>
+                                        <span>上线前验收清单 + 运营 SOP</span>
+                                    </div>
+                                    <div class="shop-delivery-manual-summary-desc">默认折叠，不占位置。上线前照着验一轮；日常排障按同一套动作和升级规则执行。</div>
+                                </div>
+                                <div class="shop-delivery-manual-summary-action">
+                                    <span>展开查看</span>
+                                    <i class="fas fa-chevron-down"></i>
+                                </div>
+                            </summary>
+                            <div class="shop-delivery-manual-content">
+                                <div class="shop-delivery-manual-grid">
+                                    <section class="shop-delivery-manual-section">
+                                        <h4><i class="fas fa-list-check"></i> 上线前验收清单</h4>
+                                        <div class="shop-delivery-manual-list">
+                                            <div class="shop-delivery-manual-item">
+                                                <strong>1. 先确认迁移和策略已生效</strong>
+                                                <span>完成并核对 <code>20260321_add_shop_delivery_conflict_controls.sql</code> 与 <code>20260321_add_shop_delivery_global_reservations.sql</code>。<br><b>通过标准：</b>履约策略页可正常读取和保存目标 / 通道并发、最小间隔、冲突回退和冲突死信阈值；后台日志没有 reservation / conflict RPC 缺失报错。</span>
+                                            </div>
+                                            <div class="shop-delivery-manual-item">
+                                                <strong>2. 走通一条成功履约链路</strong>
+                                                <span>用测试商品下 1 笔 API 履约单，确认任务从 <code>pending</code> 进入 <code>processing</code> 并最终到 <code>delivered</code>。<br><b>通过标准：</b>主任务表、人工重放记录、全局占位观测都能看到完整闭环，任务完成后不残留 reservation。</span>
+                                            </div>
+                                            <div class="shop-delivery-manual-item">
+                                                <strong>3. 走通一条异常和人工处理链路</strong>
+                                                <span>至少演练 1 次超时 / 上游失败 / 锁漂移场景，确认会进入 <code>retry_waiting</code>、冲突审计或死信，并能用 <code>requeue</code>、<code>replay</code>、<code>force unlock</code> 拉回。<br><b>通过标准：</b>每个动作都有对应审计或状态流转，不出现“点了但无记录”。</span>
+                                            </div>
+                                            <div class="shop-delivery-manual-item">
+                                                <strong>4. 验收观测与联动排障入口</strong>
+                                                <span>分别点击热点、趋势柱、冲突审计、死信和占位面板，确认能联动筛选、滚动定位、高亮任务，并能用面包屑单项移除。<br><b>通过标准：</b>恢复链接刷新后仍能回到原视角，运营无需手动重新拼筛选条件。</span>
+                                            </div>
+                                            <div class="shop-delivery-manual-item">
+                                                <strong>5. 先灰度，再放大并发</strong>
+                                                <span>正式上线先用单实例 / 低并发，观察 24 小时冲突、死信和 token / worker 漂移；确认稳定后再提高 <code>worker_parallelism</code> 或扩成多实例。<br><b>通过标准：</b>没有持续上涨的冲突热点，也没有长时间卡在 <code>processing</code> 的任务。</span>
+                                            </div>
+                                        </div>
+                                    </section>
+
+                                    <section class="shop-delivery-manual-section">
+                                        <h4><i class="fas fa-life-ring"></i> 运营 SOP</h4>
+                                        <div class="shop-delivery-manual-list">
+                                            <div class="shop-delivery-manual-item">
+                                                <strong>1. 每日巡检顺序</strong>
+                                                <span>先看顶部 summary，再看近 24 小时冲突趋势和热点，最后处理死信、锁冲突、全局占位。<br><b>优先级：</b><code>processing</code> 卡住 / 锁漂移 &gt; 冲突死信 &gt; 普通重试等待。</span>
+                                            </div>
+                                            <div class="shop-delivery-manual-item">
+                                                <strong>2. 标准排障路径</strong>
+                                                <span>从热点或趋势下钻，点进冲突审计锁定上下文，再回到主任务表确认订单、目标、通道和最近错误。<br><b>原则：</b>先定位是不是单一目标 / 通道热点，再决定是配置问题、上游抖动还是锁状态异常。</span>
+                                            </div>
+                                            <div class="shop-delivery-manual-item">
+                                                <strong>3. 动作选择规则</strong>
+                                                <span><code>requeue</code>：配置刚修好、上游短暂抖动后重新入队。<br><code>replay</code>：需要立刻再跑一次，且已确认下游幂等安全。<br><code>force unlock</code>：只在确认是 stale lock、token drift、worker drift 时使用。<br><code>mark dead letter</code>：目标无效、下游长期不可用，或冲突已达到人工止损阈值。</span>
+                                            </div>
+                                            <div class="shop-delivery-manual-item">
+                                                <strong>4. 升级给研发的条件</strong>
+                                                <span>15 分钟内同一目标 / 通道持续冲突放大、出现大面积 token / worker 漂移、同类任务批量卡在 <code>processing</code>，或人工重放后仍重复失败。<br><b>升级时：</b>附上恢复链接、订单号、热点目标 / 通道和最近审计记录。</span>
+                                            </div>
+                                            <div class="shop-delivery-manual-item">
+                                                <strong>5. 交接和回溯方式</strong>
+                                                <span>排障过程中随时用顶部“复制恢复链接”保存上下文；交班时把链接和结论一并发给下一位处理人。<br><b>目标：</b>让对方打开页面就能回到同一任务、同一时间桶和同一组热点，不需要口头重建现场。</span>
+                                            </div>
+                                        </div>
+                                    </section>
+                                </div>
+
+                                <div class="shop-delivery-manual-footnote">
+                                    <i class="fas fa-circle-info"></i>
+                                    <span>推荐上线节奏：先应用迁移，再部署 server 和后台，先灰度观察，再逐步放大并发。如果是首次把这套界面交给运营，建议先按上面的清单走一轮演练，把 <code>requeue</code>、<code>replay</code>、<code>force unlock</code> 三个动作都实际点通一次。</span>
+                                </div>
+                            </div>
+                        </details>
                     </div>
                     </div>
                 </div>
