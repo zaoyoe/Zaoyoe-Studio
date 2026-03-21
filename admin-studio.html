@@ -5158,9 +5158,18 @@
                             align-items: center;
                             justify-content: flex-end;
                             gap: 8px;
+                            position: relative;
                         }
 
-                        .shop-delivery-trend-bar--action {
+                        .shop-delivery-trend-bar-stack {
+                            position: relative;
+                            width: 100%;
+                            display: flex;
+                            justify-content: center;
+                            align-items: flex-end;
+                        }
+
+                        .shop-delivery-trend-bar-hitarea {
                             appearance: none;
                             padding: 0;
                             border: none;
@@ -5168,9 +5177,12 @@
                             font: inherit;
                             cursor: pointer;
                             transition: transform 0.18s ease;
+                            display: flex;
+                            justify-content: center;
+                            width: 100%;
                         }
 
-                        .shop-delivery-trend-bar--action:hover {
+                        .shop-delivery-trend-bar-hitarea:hover {
                             transform: translateY(-2px);
                         }
 
@@ -5211,6 +5223,30 @@
                             background: linear-gradient(180deg, rgba(248, 113, 113, 0.95), rgba(239, 68, 68, 0.6));
                         }
 
+                        .shop-delivery-trend-bar--dead-active .shop-delivery-trend-bar-fill--dead {
+                            box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.2);
+                            background: linear-gradient(180deg, rgba(252, 165, 165, 0.98), rgba(239, 68, 68, 0.72));
+                        }
+
+                        .shop-delivery-trend-bar-dead-hitarea {
+                            position: absolute;
+                            left: 22%;
+                            right: 22%;
+                            bottom: 0;
+                            border: none;
+                            background: transparent;
+                            border-radius: 12px 12px 4px 4px;
+                            cursor: pointer;
+                            z-index: 2;
+                            transition: box-shadow 0.18s ease, transform 0.18s ease;
+                        }
+
+                        .shop-delivery-trend-bar-dead-hitarea:hover,
+                        .shop-delivery-trend-bar-dead-hitarea--active {
+                            box-shadow: inset 0 0 0 2px rgba(248, 113, 113, 0.42), 0 0 0 3px rgba(248, 113, 113, 0.12);
+                            transform: translateY(-1px);
+                        }
+
                         .shop-delivery-trend-bar span {
                             min-height: 24px;
                             font-size: 11px;
@@ -5226,25 +5262,39 @@
                             align-items: center;
                         }
 
-                        .shop-delivery-trend-legend span {
+                        .shop-delivery-trend-legend-item {
+                            appearance: none;
+                            display: inline-flex;
+                            align-items: center;
+                            gap: 6px;
+                            padding: 6px 10px;
+                            border-radius: 999px;
+                            border: 1px solid rgba(255, 255, 255, 0.08);
+                            background: rgba(255, 255, 255, 0.04);
+                            cursor: pointer;
+                            transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+                        }
+
+                        .shop-delivery-trend-legend-item:hover {
+                            transform: translateY(-1px);
+                            background: rgba(255, 255, 255, 0.08);
+                        }
+
+                        .shop-delivery-trend-legend-item--active {
+                            box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.05);
+                        }
+
+                        .shop-delivery-trend-legend-item span {
                             display: inline-flex;
                             align-items: center;
                             gap: 6px;
                             font-size: 12px;
-                            color: rgba(226, 232, 240, 0.72);
+                            color: inherit;
                         }
 
-                        .shop-delivery-trend-legend span i {
+                        .shop-delivery-trend-legend-item i {
                             font-size: 9px;
                             color: #60a5fa;
-                        }
-
-                        .shop-delivery-trend-legend span.danger i {
-                            color: #f87171;
-                        }
-
-                        .shop-delivery-trend-legend span.warn i {
-                            color: #fbbf24;
                         }
 
                         .shop-delivery-hotspot-grid {
@@ -5297,19 +5347,29 @@
                             background: rgba(15, 23, 42, 0.4);
                         }
 
-                        .shop-delivery-hotspot-item--action {
-                            appearance: none;
-                            width: 100%;
-                            text-align: left;
-                            font: inherit;
-                            cursor: pointer;
+                        .shop-delivery-hotspot-item--interactive {
                             transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
                         }
 
-                        .shop-delivery-hotspot-item--action:hover {
+                        .shop-delivery-hotspot-item--interactive:hover {
                             transform: translateY(-1px);
                             border-color: rgba(96, 165, 250, 0.36);
                             background: rgba(30, 41, 59, 0.58);
+                        }
+
+                        .shop-delivery-hotspot-hitarea {
+                            appearance: none;
+                            width: 100%;
+                            padding: 0;
+                            border: none;
+                            background: transparent;
+                            text-align: left;
+                            font: inherit;
+                            color: inherit;
+                            cursor: pointer;
+                            display: flex;
+                            flex-direction: column;
+                            gap: 8px;
                         }
 
                         .shop-delivery-hotspot-item--active {
@@ -5968,13 +6028,13 @@
                         </div>
 
                         <section class="shop-delivery-subcard shop-delivery-subcard--wide">
-                            <div class="shop-delivery-subcard-header">
-                                <div class="shop-delivery-subcard-title">
-                                    <h4><i class="fas fa-chart-line"></i> 冲突热点与趋势</h4>
-                                    <p>按近 24 小时冲突记录观察高频目标 / 通道，以及冲突高峰时段。</p>
+                                <div class="shop-delivery-subcard-header">
+                                    <div class="shop-delivery-subcard-title">
+                                        <h4><i class="fas fa-chart-line"></i> 冲突热点与趋势</h4>
+                                    <p>按近 24 小时冲突记录观察高频目标 / 通道，以及冲突高峰时段。点击红色死信段可直接下钻到该时段的冲突死信。</p>
+                                    </div>
+                                    <div id="deliveryConflictAnalyticsSummary" class="shop-delivery-subcard-meta">载入中…</div>
                                 </div>
-                                <div id="deliveryConflictAnalyticsSummary" class="shop-delivery-subcard-meta">载入中…</div>
-                            </div>
                             <div class="shop-delivery-subcard-body">
                                 <div class="shop-delivery-analytics-stack">
                                     <div class="shop-delivery-analytics-toolbar">
@@ -5984,7 +6044,7 @@
                                             <option value="72h">近 72 小时</option>
                                             <option value="7d">近 7 天</option>
                                         </select>
-                                        <span class="shop-delivery-table-note">点击热点、趋势柱或冲突审计记录，会把目标 / 通道 / 冲突时段 / 任务锁定回填到上方筛选，并联动任务、死信、锁冲突和占位面板。</span>
+                                        <span class="shop-delivery-table-note">点击热点主区域、趋势柱、图例计数或冲突审计记录，会把目标 / 通道 / 冲突时段 / 任务锁定回填到上方筛选；热点里的人工 / 冲突死信 / 最新原因 chip 和趋势里的红色死信段会额外带上对应下钻联动。</span>
                                     </div>
                                     <div class="shop-delivery-trend-panel">
                                         <div id="deliveryConflictTrendChart" class="shop-delivery-trend-chart">
@@ -6189,6 +6249,8 @@
                                         <select id="deliveryConflictAuditReasonFilter" class="shop-delivery-filter"
                                             onchange="ShopAdmin.applyDeliveryConflictAuditFilters()">
                                             <option value="all">全部原因</option>
+                                            <option value="target_conflicts">目标类冲突</option>
+                                            <option value="channel_conflicts">通道类冲突</option>
                                             <option value="target_max_inflight">目标并发打满</option>
                                             <option value="target_min_interval">目标触发间隔限流</option>
                                             <option value="channel_max_inflight">通道并发打满</option>

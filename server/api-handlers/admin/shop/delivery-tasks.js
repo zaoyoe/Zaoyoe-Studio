@@ -13,7 +13,7 @@ const {
 const SUMMARY_STATUSES = ['pending', 'processing', 'retry_waiting', 'requeued', 'dead_letter', 'delivered'];
 const DEAD_LETTER_REASON_KEYS = new Set(['all', 'manual', 'missing_target', 'timeout', 'upstream_4xx', 'upstream_5xx', 'max_attempts', 'network_failure', 'conflict_strategy', 'unknown']);
 const LOCK_STATE_KEYS = new Set(['all', 'active', 'stale']);
-const CONFLICT_AUDIT_REASON_KEYS = new Set(['all', 'target_max_inflight', 'target_min_interval', 'channel_max_inflight', 'channel_min_interval', 'manual_force_unlock', 'unknown_conflict']);
+const CONFLICT_AUDIT_REASON_KEYS = new Set(['all', 'target_conflicts', 'target_max_inflight', 'target_min_interval', 'channel_conflicts', 'channel_max_inflight', 'channel_min_interval', 'manual_force_unlock', 'unknown_conflict']);
 const OPEN_TASK_STATUSES = ['pending', 'processing', 'retry_waiting', 'requeued'];
 const CONFLICT_AUDIT_RECENT_LIMIT = 12;
 const CONFLICT_AUDIT_FILTER_SCAN_LIMIT = 80;
@@ -551,14 +551,28 @@ function matchesConflictAuditTextFilter(value, query) {
     return String(value || '').trim().toLowerCase().includes(normalizedQuery);
 }
 
+function matchesConflictAuditReasonFilter(record = {}, reason = 'all') {
+    const normalizedReason = normalizeFilterValue(reason, CONFLICT_AUDIT_REASON_KEYS, 'all');
+    if (normalizedReason === 'all') return true;
+
+    const conflictReason = record?.conflict_reason || classifyConflictReason(record);
+    const conflictReasonKey = String(conflictReason?.key || '').trim().toLowerCase();
+    if (normalizedReason === 'target_conflicts') {
+        return conflictReasonKey === 'target_max_inflight' || conflictReasonKey === 'target_min_interval';
+    }
+    if (normalizedReason === 'channel_conflicts') {
+        return conflictReasonKey === 'channel_max_inflight' || conflictReasonKey === 'channel_min_interval';
+    }
+    return conflictReasonKey === normalizedReason;
+}
+
 function filterConflictAuditRecords(records = [], filters = {}) {
     const reason = normalizeFilterValue(filters.reason, CONFLICT_AUDIT_REASON_KEYS, 'all');
     const targetQuery = normalizeTextFilterValue(filters.target_query || filters.target);
     const channelQuery = normalizeTextFilterValue(filters.channel_query || filters.channel);
 
     return (Array.isArray(records) ? records : []).filter((record) => {
-        const conflictReason = record?.conflict_reason || classifyConflictReason(record);
-        if (reason !== 'all' && String(conflictReason?.key || '').trim().toLowerCase() !== reason) {
+        if (!matchesConflictAuditReasonFilter(record, reason)) {
             return false;
         }
         if (!matchesConflictAuditTextFilter(record?.target_key || record?.task?.target_key || '', targetQuery)) {
@@ -699,6 +713,7 @@ function buildConflictHotspots(records = [], reservationTasks = [], keyField = '
                 manual_count: 0,
                 active_reservations: 0,
                 latest_at: null,
+                latest_reason_key: null,
                 latest_reason_label: null,
                 reason_counts: {}
             });
@@ -728,6 +743,7 @@ function buildConflictHotspots(records = [], reservationTasks = [], keyField = '
         const latestAt = Number(new Date(item.latest_at || 0).getTime());
         if (createdAt > latestAt) {
             item.latest_at = record.created_at;
+            item.latest_reason_key = reason.key || null;
             item.latest_reason_label = reason.label || null;
         }
     });
@@ -751,6 +767,7 @@ function buildConflictHotspots(records = [], reservationTasks = [], keyField = '
                 manual_count: item.manual_count,
                 active_reservations: item.active_reservations,
                 latest_at: item.latest_at,
+                latest_reason_key: item.latest_reason_key || topReason || 'unknown_conflict',
                 latest_reason_label: item.latest_reason_label
                     || (topReason ? classifyConflictReason({ reason_key: topReason }).label : null)
                     || '其他冲突'

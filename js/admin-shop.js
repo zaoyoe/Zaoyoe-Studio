@@ -1900,6 +1900,27 @@ Example output format:
         return `<button type="button" class="shop-delivery-meta-chip shop-delivery-meta-chip--action${activeClass}"${titleAttr}${onclickAttr} style="color:${textColor};background:${background};border-color:${borderColor};">${this.escapeHtml(label)}</button>`;
     },
 
+    renderDeliveryTrendLegendButton: function ({ label, tone = 'neutral', active = false, title = '', onClick = '' } = {}) {
+        const colors = this.getDeliveryToneStyles(tone);
+        const textColor = active ? colors.text : 'rgba(226, 232, 240, 0.72)';
+        const background = active ? colors.bg : 'rgba(255, 255, 255, 0.04)';
+        const borderColor = active ? colors.border : 'rgba(255, 255, 255, 0.08)';
+        const titleAttr = title ? ` title="${this.escapeHtml(title)}"` : '';
+        const onclickAttr = onClick ? ` onclick="${onClick}"` : '';
+        const activeClass = active ? ' shop-delivery-trend-legend-item--active' : '';
+        return `
+            <button
+                type="button"
+                class="shop-delivery-trend-legend-item${activeClass}"
+               ${titleAttr}${onclickAttr}
+                style="color:${textColor};background:${background};border-color:${borderColor};"
+            >
+                <i class="fas fa-circle" style="color:${colors.text};"></i>
+                <span>${this.escapeHtml(label)}</span>
+            </button>
+        `;
+    },
+
     renderConflictAuditSummaryReasonBadge: function ({ reasonKey, label, count = 0, tone = 'neutral', active = false } = {}) {
         const total = Number(count || 0);
         if (!total && !active) {
@@ -1919,11 +1940,30 @@ Example output format:
             && String(this.deliveryDeadLetterReasonFilter || 'all').trim().toLowerCase() === 'conflict_strategy';
     },
 
+    isDeliveryConflictBucketActive: function (startAt, endAt, bucket = this.deliveryConflictBucketFilter) {
+        return String(bucket?.startAt || '').trim() === String(startAt || '').trim()
+            && String(bucket?.endAt || '').trim() === String(endAt || '').trim();
+    },
+
+    isDeliveryHotspotQueryActive: function (type = 'target', key = '') {
+        const normalizedType = type === 'channel' ? 'channel' : 'target';
+        const queryContext = this.deliveryTaskQueryContext || {};
+        const activeQuery = String(this.deliveryTaskQuery || '').trim().toLowerCase();
+        const normalizedKey = String(key || '').trim().toLowerCase();
+        return Boolean(
+            normalizedKey
+            && String(queryContext.type || '').trim().toLowerCase() === normalizedType
+            && activeQuery === normalizedKey
+        );
+    },
+
     normalizeDeliveryConflictAuditReasonFilter: function (value) {
         const allowed = new Set([
             'all',
+            'target_conflicts',
             'target_max_inflight',
             'target_min_interval',
+            'channel_conflicts',
             'channel_max_inflight',
             'channel_min_interval',
             'manual_force_unlock',
@@ -1935,13 +1975,40 @@ Example output format:
 
     getDeliveryConflictAuditReasonLabel: function (reasonKey = 'all') {
         const normalized = this.normalizeDeliveryConflictAuditReasonFilter(reasonKey);
+        if (normalized === 'target_conflicts') return '目标类冲突';
         if (normalized === 'target_max_inflight') return '目标并发打满';
         if (normalized === 'target_min_interval') return '目标触发间隔限流';
+        if (normalized === 'channel_conflicts') return '通道类冲突';
         if (normalized === 'channel_max_inflight') return '通道并发打满';
         if (normalized === 'channel_min_interval') return '通道触发间隔限流';
         if (normalized === 'manual_force_unlock') return '人工强制解锁';
         if (normalized === 'unknown_conflict') return '其他冲突';
         return '全部原因';
+    },
+
+    getDeliveryConflictReasonTone: function (reasonKey = 'all') {
+        const normalized = this.normalizeDeliveryConflictAuditReasonFilter(reasonKey);
+        if (normalized === 'channel_conflicts' || normalized === 'channel_max_inflight') return 'danger';
+        if (normalized === 'manual_force_unlock') return 'processing';
+        if (normalized === 'unknown_conflict') return 'muted';
+        if (normalized === 'target_conflicts') return 'processing';
+        if (normalized === 'all') return 'neutral';
+        return 'warn';
+    },
+
+    isDeliveryConflictTrendLegendActive: function (kind = 'total') {
+        const normalizedKind = String(kind || 'total').trim().toLowerCase();
+        const reason = this.normalizeDeliveryConflictAuditReasonFilter(this.deliveryConflictAuditReasonFilter);
+        if (normalizedKind === 'total') return reason === 'all';
+        if (normalizedKind === 'target') {
+            return ['target_conflicts', 'target_max_inflight', 'target_min_interval'].includes(reason);
+        }
+        if (normalizedKind === 'channel') {
+            return ['channel_conflicts', 'channel_max_inflight', 'channel_min_interval'].includes(reason);
+        }
+        if (normalizedKind === 'manual') return reason === 'manual_force_unlock';
+        if (normalizedKind === 'dead_letter') return this.isDeliveryConflictDeadLetterFocusActive();
+        return false;
     },
 
     hasDeliveryConflictAuditFilters: function (filters = null) {
@@ -2941,6 +3008,9 @@ Example output format:
         if (filters.channel_query) {
             pills.push(this.renderDeliveryMetaBadge(`通道 ${this.truncateText(filters.channel_query, 22)}`, 'neutral'));
         }
+        if (['target_conflicts', 'channel_conflicts'].includes(activeReason)) {
+            pills.push(this.renderDeliveryMetaBadge(`原因 ${this.getDeliveryConflictAuditReasonLabel(activeReason)}`, 'processing'));
+        }
         meta.classList.add('shop-delivery-subcard-meta--rich');
         meta.innerHTML = (total || hasAuditFilters) ? pills.join('') : '<span class="shop-delivery-table-note">暂无冲突审计</span>';
     },
@@ -3257,8 +3327,7 @@ Example output format:
         const target = document.getElementById(elementId);
         if (!target) return;
         const windowConfig = this.getDeliveryAnalyticsWindowConfig();
-        const queryContext = this.deliveryTaskQueryContext || {};
-        const activeQuery = String(this.deliveryTaskQuery || '').trim().toLowerCase();
+        const activeConflictReason = this.normalizeDeliveryConflictAuditReasonFilter(this.deliveryConflictAuditReasonFilter);
 
         if (!items.length) {
             target.innerHTML = `<div class="shop-delivery-empty">${windowConfig.description}没有明显热点。</div>`;
@@ -3271,33 +3340,66 @@ Example output format:
             const keyText = this.escapeHtml(this.truncateText(item.key || '—', type === 'target' ? 42 : 28));
             const totalConflicts = Number(item.total_conflicts || 0);
             const width = Math.max(12, Math.round((totalConflicts / maxConflicts) * 100));
-            const isActive = String(queryContext.type || '').trim().toLowerCase() === type
-                && activeQuery
-                && activeQuery === String(item.key || '').trim().toLowerCase();
+            const isActive = this.isDeliveryHotspotQueryActive(type, item.key);
+            const isManualActive = isActive && activeConflictReason === 'manual_force_unlock';
+            const isDeadLetterActive = isActive && this.isDeliveryConflictDeadLetterFocusActive();
+            const latestReasonKey = this.normalizeDeliveryConflictAuditReasonFilter(item.latest_reason_key || 'all');
+            const hasLatestReason = totalConflicts > 0 && latestReasonKey !== 'all';
+            const isLatestReasonActive = isActive && activeConflictReason === latestReasonKey;
             const meta = [
                 this.renderDeliveryMetaBadge(`冲突 ${totalConflicts}`, totalConflicts ? 'warn' : 'muted'),
                 this.renderDeliveryMetaBadge(`活跃占位 ${Number(item.active_reservations || 0)}`, Number(item.active_reservations || 0) ? 'processing' : 'muted'),
-                this.renderDeliveryMetaBadge(`冲突死信 ${Number(item.dead_letter_count || 0)}`, Number(item.dead_letter_count || 0) ? 'danger' : 'muted'),
-                this.renderDeliveryMetaBadge(`人工 ${Number(item.manual_count || 0)}`, Number(item.manual_count || 0) ? 'neutral' : 'muted'),
-                item.latest_reason_label ? this.renderDeliveryMetaBadge(item.latest_reason_label, 'neutral') : '',
+                (Number(item.dead_letter_count || 0) || isDeadLetterActive)
+                    ? this.renderDeliveryQuickFilterChip({
+                        label: `冲突死信 ${Number(item.dead_letter_count || 0)}`,
+                        tone: Number(item.dead_letter_count || 0) ? 'danger' : 'muted',
+                        active: isDeadLetterActive,
+                        title: isDeadLetterActive ? '再次点击可退出该热点的冲突死信下钻' : '点击下钻到该热点的冲突死信',
+                        onClick: `ShopAdmin.applyDeliveryHotspotMetricDrilldown('${type}', '${encodedKey}', 'dead_letter')`
+                    })
+                    : this.renderDeliveryMetaBadge('冲突死信 0', 'muted'),
+                (Number(item.manual_count || 0) || isManualActive)
+                    ? this.renderDeliveryQuickFilterChip({
+                        label: `人工 ${Number(item.manual_count || 0)}`,
+                        tone: Number(item.manual_count || 0) ? 'neutral' : 'muted',
+                        active: isManualActive,
+                        title: isManualActive ? '再次点击可退出该热点的人工冲突下钻' : '点击下钻到该热点的人工冲突',
+                        onClick: `ShopAdmin.applyDeliveryHotspotMetricDrilldown('${type}', '${encodedKey}', 'manual')`
+                    })
+                    : this.renderDeliveryMetaBadge('人工 0', 'muted'),
+                item.latest_reason_label
+                    ? (
+                        hasLatestReason
+                            ? this.renderDeliveryQuickFilterChip({
+                                label: item.latest_reason_label,
+                                tone: this.getDeliveryConflictReasonTone(latestReasonKey),
+                                active: isLatestReasonActive,
+                                title: isLatestReasonActive ? '再次点击可退出该热点的最新原因下钻' : '点击按该热点的最新原因下钻',
+                                onClick: `ShopAdmin.applyDeliveryHotspotReasonDrilldown('${type}', '${encodedKey}', '${encodeURIComponent(latestReasonKey)}')`
+                            })
+                            : this.renderDeliveryMetaBadge(item.latest_reason_label, 'neutral')
+                    )
+                    : '',
                 item.latest_at ? this.renderDeliveryMetaBadge(`最近 ${this.formatDeliveryTime(item.latest_at)}`, 'muted') : '',
                 this.renderDeliveryMetaBadge(isActive ? '已联动履约页' : '点击联动履约页', isActive ? 'processing' : 'muted')
             ].filter(Boolean);
 
             return `
-                <button
-                    type="button"
-                    class="shop-delivery-hotspot-item shop-delivery-hotspot-item--action${isActive ? ' shop-delivery-hotspot-item--active' : ''}"
-                    onclick="ShopAdmin.applyDeliveryHotspotFilter('${type}', '${encodedKey}')"
-                    title="点击按${type === 'channel' ? '通道' : '目标'}联动履约页"
-                >
-                    <div class="shop-delivery-hotspot-topline">
-                        <div class="shop-delivery-hotspot-key" title="${this.escapeHtml(item.key || '')}">${keyText}</div>
-                        <div class="shop-delivery-hotspot-rank">#${index + 1}</div>
-                    </div>
-                    <div class="shop-delivery-hotspot-bar"><span style="width:${width}%"></span></div>
+                <div class="shop-delivery-hotspot-item shop-delivery-hotspot-item--interactive${isActive ? ' shop-delivery-hotspot-item--active' : ''}">
+                    <button
+                        type="button"
+                        class="shop-delivery-hotspot-hitarea"
+                        onclick="ShopAdmin.applyDeliveryHotspotFilter('${type}', '${encodedKey}')"
+                        title="点击按${type === 'channel' ? '通道' : '目标'}联动履约页"
+                    >
+                        <div class="shop-delivery-hotspot-topline">
+                            <div class="shop-delivery-hotspot-key" title="${this.escapeHtml(item.key || '')}">${keyText}</div>
+                            <div class="shop-delivery-hotspot-rank">#${index + 1}</div>
+                        </div>
+                        <div class="shop-delivery-hotspot-bar"><span style="width:${width}%"></span></div>
+                    </button>
                     <div class="shop-delivery-hotspot-meta">${meta.join('')}</div>
-                </button>
+                </div>
             `;
         }).join('');
     },
@@ -3359,45 +3461,90 @@ Example output format:
                             const bucketLabelHtml = Number(trend.bucket_hours || 1) > 1
                                 ? this.escapeHtml(bucketLabel).replace(' ', '<br>')
                                 : this.escapeHtml(bucketLabel.split(' ')[1] || bucketLabel);
-                            const isActive = activeBucket.startAt === bucket.bucket_at
-                                && activeBucket.endAt === bucket.bucket_end_at;
+                            const isActive = this.isDeliveryConflictBucketActive(bucket.bucket_at, bucket.bucket_end_at, activeBucket);
+                            const isDeadActive = isActive && this.isDeliveryConflictDeadLetterFocusActive();
                             const isClickable = Number(bucket.total || 0) > 0;
                             const titleText = `${bucket.label || ''} · 总冲突 ${Number(bucket.total || 0)} · 目标 ${Number(bucket.target || 0)} · 通道 ${Number(bucket.channel || 0)} · 人工 ${Number(bucket.manual || 0)} · 冲突死信 ${Number(bucket.dead_letter || 0)}`;
                             if (!isClickable) {
                                 return `
                                     <div class="shop-delivery-trend-bar" title="${this.escapeHtml(titleText)}">
-                                        <div class="shop-delivery-trend-bar-column">
-                                            <div class="shop-delivery-trend-bar-fill" style="height:${totalHeight}%"></div>
-                                            ${deadHeight ? `<div class="shop-delivery-trend-bar-fill shop-delivery-trend-bar-fill--dead" style="height:${deadHeight}%"></div>` : ''}
+                                        <div class="shop-delivery-trend-bar-stack">
+                                            <div class="shop-delivery-trend-bar-column">
+                                                <div class="shop-delivery-trend-bar-fill" style="height:${totalHeight}%"></div>
+                                                ${deadHeight ? `<div class="shop-delivery-trend-bar-fill shop-delivery-trend-bar-fill--dead" style="height:${deadHeight}%"></div>` : ''}
+                                            </div>
                                         </div>
                                         <span>${showLabel ? bucketLabelHtml : ''}</span>
                                     </div>
                                 `;
                             }
                             return `
-                                <button
-                                    type="button"
-                                    class="shop-delivery-trend-bar shop-delivery-trend-bar--action${isActive ? ' shop-delivery-trend-bar--active' : ''}"
-                                    onclick="ShopAdmin.toggleDeliveryConflictBucketFilter('${encodeURIComponent(bucket.bucket_at || '')}', '${encodeURIComponent(bucket.bucket_end_at || '')}', '${encodeURIComponent(bucket.label || '')}')"
-                                    title="${this.escapeHtml(titleText)}"
-                                >
-                                    <div class="shop-delivery-trend-bar-column">
-                                        <div class="shop-delivery-trend-bar-fill" style="height:${totalHeight}%"></div>
-                                        ${deadHeight ? `<div class="shop-delivery-trend-bar-fill shop-delivery-trend-bar-fill--dead" style="height:${deadHeight}%"></div>` : ''}
+                                <div class="shop-delivery-trend-bar${isActive ? ' shop-delivery-trend-bar--active' : ''}${isDeadActive ? ' shop-delivery-trend-bar--dead-active' : ''}">
+                                    <div class="shop-delivery-trend-bar-stack">
+                                        <button
+                                            type="button"
+                                            class="shop-delivery-trend-bar-hitarea shop-delivery-trend-bar--action"
+                                            onclick="ShopAdmin.toggleDeliveryConflictBucketFilter('${encodeURIComponent(bucket.bucket_at || '')}', '${encodeURIComponent(bucket.bucket_end_at || '')}', '${encodeURIComponent(bucket.label || '')}')"
+                                            title="${this.escapeHtml(titleText)}"
+                                        >
+                                            <div class="shop-delivery-trend-bar-column">
+                                                <div class="shop-delivery-trend-bar-fill" style="height:${totalHeight}%"></div>
+                                                ${deadHeight ? `<div class="shop-delivery-trend-bar-fill shop-delivery-trend-bar-fill--dead" style="height:${deadHeight}%"></div>` : ''}
+                                            </div>
+                                        </button>
+                                        ${deadHeight ? `
+                                            <button
+                                                type="button"
+                                                class="shop-delivery-trend-bar-dead-hitarea${isDeadActive ? ' shop-delivery-trend-bar-dead-hitarea--active' : ''}"
+                                                style="height:${deadHeight}%"
+                                                onclick="ShopAdmin.toggleDeliveryConflictDeadLetterBucketFocus('${encodeURIComponent(bucket.bucket_at || '')}', '${encodeURIComponent(bucket.bucket_end_at || '')}', '${encodeURIComponent(bucket.label || '')}')"
+                                                title="${this.escapeHtml(`${bucket.label || ''} · 冲突死信 ${Number(bucket.dead_letter || 0)} · 点击联动死信任务与冲突策略`)}"
+                                            ></button>
+                                        ` : ''}
                                     </div>
                                     <span>${showLabel ? bucketLabelHtml : ''}</span>
-                                </button>
+                                </div>
                             `;
                         }).join('')}
                     </div>
                 `;
 
                 legend.innerHTML = `
-                    <span><i class="fas fa-circle"></i> ${windowLabel} 总冲突 ${Number(trend.total_conflicts || 0)}</span>
-                    <span><i class="fas fa-circle"></i> 目标 ${Number(trend.target_conflicts || 0)}</span>
-                    <span class="warn"><i class="fas fa-circle"></i> 通道 ${Number(trend.channel_conflicts || 0)}</span>
-                    <span><i class="fas fa-circle"></i> 人工 ${Number(trend.manual_conflicts || 0)}</span>
-                    <span class="danger"><i class="fas fa-circle"></i> 冲突死信 ${Number(trend.dead_letter_conflicts || 0)}</span>
+                    ${this.renderDeliveryTrendLegendButton({
+                        label: `${windowLabel} 总冲突 ${Number(trend.total_conflicts || 0)}`,
+                        tone: 'neutral',
+                        active: this.isDeliveryConflictTrendLegendActive('total'),
+                        title: '点击清除冲突类型反筛',
+                        onClick: `ShopAdmin.applyDeliveryConflictAuditReasonQuickFilter('${encodeURIComponent('all')}')`
+                    })}
+                    ${this.renderDeliveryTrendLegendButton({
+                        label: `目标 ${Number(trend.target_conflicts || 0)}`,
+                        tone: 'processing',
+                        active: this.isDeliveryConflictTrendLegendActive('target'),
+                        title: '点击按目标类冲突反筛冲突审计',
+                        onClick: `ShopAdmin.applyDeliveryConflictAuditReasonQuickFilter('${encodeURIComponent('target_conflicts')}')`
+                    })}
+                    ${this.renderDeliveryTrendLegendButton({
+                        label: `通道 ${Number(trend.channel_conflicts || 0)}`,
+                        tone: 'danger',
+                        active: this.isDeliveryConflictTrendLegendActive('channel'),
+                        title: '点击按通道类冲突反筛冲突审计',
+                        onClick: `ShopAdmin.applyDeliveryConflictAuditReasonQuickFilter('${encodeURIComponent('channel_conflicts')}')`
+                    })}
+                    ${this.renderDeliveryTrendLegendButton({
+                        label: `人工 ${Number(trend.manual_conflicts || 0)}`,
+                        tone: 'neutral',
+                        active: this.isDeliveryConflictTrendLegendActive('manual'),
+                        title: '点击按人工冲突反筛冲突审计',
+                        onClick: `ShopAdmin.applyDeliveryConflictAuditReasonQuickFilter('${encodeURIComponent('manual_force_unlock')}')`
+                    })}
+                    ${this.renderDeliveryTrendLegendButton({
+                        label: `冲突死信 ${Number(trend.dead_letter_conflicts || 0)}`,
+                        tone: 'danger',
+                        active: this.isDeliveryConflictTrendLegendActive('dead_letter'),
+                        title: '点击联动冲突死信任务与死信子表',
+                        onClick: 'ShopAdmin.toggleDeliveryConflictDeadLetterFocus()'
+                    })}
                 `;
             }
         }
@@ -3872,6 +4019,38 @@ Example output format:
         this.loadDeliveryTasks(1);
     },
 
+    toggleDeliveryConflictDeadLetterBucketFocus: function (encodedStartAt, encodedEndAt, encodedLabel) {
+        const startAt = decodeURIComponent(String(encodedStartAt || ''));
+        const endAt = decodeURIComponent(String(encodedEndAt || ''));
+        const label = decodeURIComponent(String(encodedLabel || ''));
+        if (!startAt || !endAt) return;
+
+        const isSameBucket = this.isDeliveryConflictBucketActive(startAt, endAt);
+        const isActive = isSameBucket && this.isDeliveryConflictDeadLetterFocusActive();
+        this.deliveryConflictBucketFilter = isActive
+            ? null
+            : {
+                startAt,
+                endAt,
+                label
+            };
+        this.deliveryTaskStatusFilter = isActive ? 'all' : 'dead_letter';
+        this.deliveryDeadLetterReasonFilter = isActive ? 'all' : 'conflict_strategy';
+        this.deliveryTaskIdentityFilter = null;
+        this.deliveryConflictAuditSelection = null;
+        this.deliveryPendingTaskReveal = null;
+        this.deliveryPendingAuditReveal = null;
+        const taskFilter = document.getElementById('deliveryTaskStatusFilter');
+        const deadLetterReasonFilter = document.getElementById('deliveryDeadLetterReasonFilter');
+        if (taskFilter) taskFilter.value = this.deliveryTaskStatusFilter;
+        if (deadLetterReasonFilter) deadLetterReasonFilter.value = this.deliveryDeadLetterReasonFilter;
+        this.deliveryTaskPage = 1;
+        this.deliveryDeadLetterPage = 1;
+        this.deliveryLockConflictPage = 1;
+        this.deliveryReplayPage = 1;
+        this.loadDeliveryTasks(1);
+    },
+
     clearDeliveryConflictBucketFilter: function () {
         this.deliveryConflictBucketFilter = null;
         this.deliveryTaskIdentityFilter = null;
@@ -4079,6 +4258,91 @@ Example output format:
         this.deliveryTaskPage = 1;
         this.deliveryDeadLetterPage = 1;
         this.deliveryLockConflictPage = 1;
+        this.loadDeliveryTasks(1);
+    },
+
+    applyDeliveryHotspotMetricDrilldown: function (type, encodedKey, metricKind = 'manual') {
+        const decodedKey = decodeURIComponent(String(encodedKey || ''));
+        const nextQuery = decodedKey.trim();
+        if (!nextQuery) return;
+
+        const normalizedType = type === 'channel' ? 'channel' : 'target';
+        const normalizedMetric = String(metricKind || '').trim().toLowerCase();
+        const isSameHotspot = this.isDeliveryHotspotQueryActive(normalizedType, nextQuery);
+        const isManualActive = isSameHotspot && this.normalizeDeliveryConflictAuditReasonFilter(this.deliveryConflictAuditReasonFilter) === 'manual_force_unlock';
+        const isDeadLetterActive = isSameHotspot && this.isDeliveryConflictDeadLetterFocusActive();
+
+        this.deliveryTaskQuery = nextQuery;
+        this.deliveryTaskQueryContext = {
+            type: normalizedType,
+            label: nextQuery
+        };
+        this.deliveryTaskIdentityFilter = null;
+        this.deliveryConflictAuditSelection = null;
+        this.deliveryPendingTaskReveal = null;
+        this.deliveryPendingAuditReveal = null;
+
+        const taskFilter = document.getElementById('deliveryTaskStatusFilter');
+        const deadLetterReasonFilter = document.getElementById('deliveryDeadLetterReasonFilter');
+        const conflictAuditReasonFilter = document.getElementById('deliveryConflictAuditReasonFilter');
+
+        if (normalizedMetric === 'dead_letter') {
+            const nextActive = !isDeadLetterActive;
+            this.deliveryTaskStatusFilter = nextActive ? 'dead_letter' : 'all';
+            this.deliveryDeadLetterReasonFilter = nextActive ? 'conflict_strategy' : 'all';
+            this.deliveryConflictAuditReasonFilter = 'all';
+        } else {
+            const nextActive = !isManualActive;
+            this.deliveryConflictAuditReasonFilter = nextActive ? 'manual_force_unlock' : 'all';
+            this.deliveryTaskStatusFilter = 'all';
+            this.deliveryDeadLetterReasonFilter = 'all';
+        }
+
+        if (taskFilter) taskFilter.value = this.deliveryTaskStatusFilter;
+        if (deadLetterReasonFilter) deadLetterReasonFilter.value = this.deliveryDeadLetterReasonFilter;
+        if (conflictAuditReasonFilter) conflictAuditReasonFilter.value = this.deliveryConflictAuditReasonFilter;
+
+        this.deliveryTaskPage = 1;
+        this.deliveryDeadLetterPage = 1;
+        this.deliveryLockConflictPage = 1;
+        this.deliveryReplayPage = 1;
+        this.loadDeliveryTasks(1);
+    },
+
+    applyDeliveryHotspotReasonDrilldown: function (type, encodedKey, encodedReasonKey) {
+        const decodedKey = decodeURIComponent(String(encodedKey || ''));
+        const nextQuery = decodedKey.trim();
+        const nextReason = this.normalizeDeliveryConflictAuditReasonFilter(decodeURIComponent(String(encodedReasonKey || '')));
+        if (!nextQuery || nextReason === 'all') return;
+
+        const normalizedType = type === 'channel' ? 'channel' : 'target';
+        const isSameHotspot = this.isDeliveryHotspotQueryActive(normalizedType, nextQuery);
+        const isSameReasonActive = isSameHotspot && this.normalizeDeliveryConflictAuditReasonFilter(this.deliveryConflictAuditReasonFilter) === nextReason;
+
+        this.deliveryTaskQuery = nextQuery;
+        this.deliveryTaskQueryContext = {
+            type: normalizedType,
+            label: nextQuery
+        };
+        this.deliveryTaskIdentityFilter = null;
+        this.deliveryConflictAuditSelection = null;
+        this.deliveryPendingTaskReveal = null;
+        this.deliveryPendingAuditReveal = null;
+        this.deliveryConflictAuditReasonFilter = isSameReasonActive ? 'all' : nextReason;
+        this.deliveryTaskStatusFilter = 'all';
+        this.deliveryDeadLetterReasonFilter = 'all';
+
+        const taskFilter = document.getElementById('deliveryTaskStatusFilter');
+        const deadLetterReasonFilter = document.getElementById('deliveryDeadLetterReasonFilter');
+        const conflictAuditReasonFilter = document.getElementById('deliveryConflictAuditReasonFilter');
+        if (taskFilter) taskFilter.value = this.deliveryTaskStatusFilter;
+        if (deadLetterReasonFilter) deadLetterReasonFilter.value = this.deliveryDeadLetterReasonFilter;
+        if (conflictAuditReasonFilter) conflictAuditReasonFilter.value = this.deliveryConflictAuditReasonFilter;
+
+        this.deliveryTaskPage = 1;
+        this.deliveryDeadLetterPage = 1;
+        this.deliveryLockConflictPage = 1;
+        this.deliveryReplayPage = 1;
         this.loadDeliveryTasks(1);
     },
 
