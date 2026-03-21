@@ -4764,6 +4764,28 @@
                             background: rgba(96, 165, 250, 0.1);
                         }
 
+                        .shop-delivery-inline-btn--success {
+                            border-color: rgba(16, 185, 129, 0.34);
+                            background: rgba(16, 185, 129, 0.12);
+                            color: #bbf7d0;
+                        }
+
+                        .shop-delivery-inline-btn--success:hover {
+                            border-color: rgba(52, 211, 153, 0.5);
+                            background: rgba(16, 185, 129, 0.18);
+                        }
+
+                        .shop-delivery-inline-btn--danger {
+                            border-color: rgba(248, 113, 113, 0.34);
+                            background: rgba(248, 113, 113, 0.12);
+                            color: #fecaca;
+                        }
+
+                        .shop-delivery-inline-btn--danger:hover {
+                            border-color: rgba(252, 165, 165, 0.48);
+                            background: rgba(248, 113, 113, 0.18);
+                        }
+
                         .shop-delivery-filter-banner {
                             display: flex;
                             align-items: center;
@@ -4779,6 +4801,96 @@
 
                         .shop-delivery-filter-banner--idle {
                             justify-content: flex-start;
+                        }
+
+                        .shop-delivery-filter-stack {
+                            display: flex;
+                            flex-direction: column;
+                            gap: 10px;
+                            min-width: 0;
+                            flex: 1;
+                        }
+
+                        .shop-delivery-filter-crumbs {
+                            display: flex;
+                            flex-wrap: wrap;
+                            gap: 8px;
+                        }
+
+                        .shop-delivery-filter-crumb {
+                            appearance: none;
+                            display: inline-flex;
+                            align-items: center;
+                            gap: 8px;
+                            max-width: 100%;
+                            padding: 7px 12px;
+                            border-radius: 999px;
+                            border: 1px solid rgba(255, 255, 255, 0.08);
+                            background: rgba(255, 255, 255, 0.06);
+                            cursor: pointer;
+                            transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+                            font-size: 12px;
+                            font-weight: 600;
+                            position: relative;
+                            overflow: visible;
+                        }
+
+                        .shop-delivery-filter-crumb:hover {
+                            transform: translateY(-1px);
+                            border-color: rgba(255, 255, 255, 0.18);
+                            background: rgba(255, 255, 255, 0.12);
+                        }
+
+                        .shop-delivery-filter-crumb[data-preview]:hover::after,
+                        .shop-delivery-filter-crumb[data-preview]:focus-visible::after {
+                            content: attr(data-preview);
+                            position: absolute;
+                            left: 0;
+                            bottom: calc(100% + 12px);
+                            width: max-content;
+                            max-width: min(280px, 72vw);
+                            padding: 10px 12px;
+                            border-radius: 12px;
+                            border: 1px solid rgba(255, 255, 255, 0.1);
+                            background: rgba(15, 23, 42, 0.96);
+                            box-shadow: 0 18px 40px rgba(15, 23, 42, 0.34);
+                            color: rgba(226, 232, 240, 0.88);
+                            font-size: 12px;
+                            font-weight: 500;
+                            line-height: 1.5;
+                            white-space: normal;
+                            text-align: left;
+                            z-index: 20;
+                            pointer-events: none;
+                        }
+
+                        .shop-delivery-filter-crumb[data-preview]:hover::before,
+                        .shop-delivery-filter-crumb[data-preview]:focus-visible::before {
+                            content: "";
+                            position: absolute;
+                            left: 16px;
+                            bottom: calc(100% + 4px);
+                            width: 10px;
+                            height: 10px;
+                            border-right: 1px solid rgba(255, 255, 255, 0.1);
+                            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+                            background: rgba(15, 23, 42, 0.96);
+                            transform: rotate(45deg);
+                            z-index: 19;
+                            pointer-events: none;
+                        }
+
+                        .shop-delivery-filter-crumb span {
+                            min-width: 0;
+                            overflow: hidden;
+                            text-overflow: ellipsis;
+                            white-space: nowrap;
+                        }
+
+                        .shop-delivery-filter-crumb i {
+                            flex-shrink: 0;
+                            font-size: 10px;
+                            opacity: 0.82;
                         }
 
                         .shop-delivery-field {
@@ -5111,6 +5223,15 @@
                             font-size: 12px;
                             color: rgba(226, 232, 240, 0.58);
                             line-height: 1.5;
+                        }
+
+                        .shop-delivery-table-note--soft {
+                            color: rgba(191, 219, 254, 0.78);
+                        }
+
+                        .shop-delivery-controls--banner {
+                            align-items: center;
+                            justify-content: flex-end;
                         }
 
                         .shop-delivery-analytics-stack {
@@ -5519,6 +5640,15 @@
                             .shop-delivery-controls {
                                 justify-content: stretch;
                                 width: 100%;
+                            }
+
+                            .shop-delivery-controls--banner {
+                                justify-content: stretch;
+                            }
+
+                            .shop-delivery-controls--banner .shop-delivery-inline-btn {
+                                width: 100%;
+                                justify-content: center;
                             }
 
                             .shop-delivery-filter {
@@ -9020,12 +9150,49 @@
     <script src="js/admin-site-filter.js"></script>
     <script src="js/admin-tickets.js"></script>
     <script src="admin-studio.js"></script>
-    <script src="js/admin-shop.js?v=CLICK_DYNAMIC_V15"></script>
+    <script src="js/admin-shop.js?v=CLICK_DYNAMIC_V17"></script>
 </body>
 
 <!-- Admin Chat Script -->
 <script src="js/admin-chat.js"></script>
 <script>
+    function getAdminStudioUrlObject() {
+        try {
+            return new URL(window.location.href);
+        } catch (error) {
+            console.warn('[AdminStudio] Failed to parse current URL:', error);
+            return null;
+        }
+    }
+
+    function syncAdminStudioModuleUrl(moduleName) {
+        const url = getAdminStudioUrlObject();
+        if (!url || typeof window.history?.replaceState !== 'function') return;
+
+        const normalizedModule = String(moduleName || '').trim().toLowerCase() || 'gallery';
+        if (normalizedModule === 'gallery') {
+            url.searchParams.delete('module');
+        } else {
+            url.searchParams.set('module', normalizedModule);
+        }
+
+        const nextRelativeUrl = `${url.pathname}${url.search}${url.hash}`;
+        const currentRelativeUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+        if (nextRelativeUrl !== currentRelativeUrl) {
+            window.history.replaceState(window.history.state, '', nextRelativeUrl);
+        }
+    }
+
+    function restoreAdminStudioModuleFromUrl() {
+        const url = getAdminStudioUrlObject();
+        if (!url) return 'gallery';
+
+        const requestedModule = String(url.searchParams.get('module') || '').trim().toLowerCase();
+        if (!requestedModule) return 'gallery';
+
+        return document.getElementById(`module-${requestedModule}`) ? requestedModule : 'gallery';
+    }
+
     // Module Switching Logic (Enhanced)
     const originalSwitchModule = window.switchModule;
     window.switchModule = function (moduleName) {
@@ -9070,10 +9237,17 @@
         if (typeof originalSwitchModule === 'function' && originalSwitchModule.name !== 'window.switchModule') {
             originalSwitchModule(moduleName);
         }
+
+        syncAdminStudioModuleUrl(moduleName);
     };
 
     // Auto-initialize shop module after all scripts are loaded
     window.addEventListener('load', function () {
+        const initialModule = restoreAdminStudioModuleFromUrl();
+        if (initialModule !== 'gallery') {
+            window.switchModule(initialModule);
+        }
+
         console.log('Window loaded, checking shop module...');
         // Always initialize shop module since it's the default view
         if (typeof ShopAdmin !== 'undefined' && typeof ShopAdmin.init === 'function') {

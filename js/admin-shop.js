@@ -55,6 +55,8 @@ const ShopAdmin = {
     deliveryConflictAuditReasonFilter: 'all',
     deliveryConflictAuditTargetFilter: '',
     deliveryConflictAuditChannelFilter: '',
+    deliveryRestoreLinkFeedback: null,
+    deliveryRestoreLinkFeedbackTimer: null,
     deliveryPendingTaskReveal: null,
     deliveryPendingAuditReveal: null,
     deliveryTaskPageSize: 8,
@@ -392,6 +394,7 @@ Example output format:
             return;
         }
         this._initialized = true;
+        const restoredShopState = this.restoreShopUrlState();
 
         console.log('Admin Shop Init...');
         await this.renderProductCategoryFilters();
@@ -426,8 +429,8 @@ Example output format:
             });
         }
 
-        // Initialize with Products Tab Active
-        this.switchTab('products');
+        // Restore the last shop tab/filter context from URL when available.
+        this.switchTab(restoredShopState?.tabName || 'products');
 
         // Listen to textarea changes for line count
         const inventoryInput = document.getElementById('inventoryInput');
@@ -449,9 +452,262 @@ Example output format:
         mount.appendChild(workspace);
     },
 
+    getShopUrlObject: function () {
+        try {
+            return new URL(window.location.href);
+        } catch (error) {
+            console.warn('[ShopAdmin] Failed to parse current URL:', error);
+            return null;
+        }
+    },
+
+    restoreShopUrlState: function () {
+        const url = this.getShopUrlObject();
+        const validTabs = new Set(['products', 'import', 'inventory', 'orders', 'fulfillment']);
+        if (!url) return { tabName: this.currentTab || 'products' };
+
+        const search = url.searchParams;
+        const deliveryQuery = String(search.get('deliveryQuery') || '').trim();
+        const deliveryQueryType = String(search.get('deliveryQueryType') || 'manual').trim().toLowerCase();
+        const deliveryBucketStartAt = String(search.get('deliveryBucketStartAt') || '').trim();
+        const deliveryBucketEndAt = String(search.get('deliveryBucketEndAt') || '').trim();
+        const deliveryBucketLabel = String(search.get('deliveryBucketLabel') || '').trim();
+        const deliveryFocusTaskId = String(search.get('deliveryFocusTaskId') || '').trim();
+        const deliveryFocusOrderId = String(search.get('deliveryFocusOrderId') || '').trim();
+        const deliveryFocusAuditId = String(search.get('deliveryFocusAuditId') || '').trim();
+
+        this.deliveryTaskQuery = deliveryQuery;
+        this.deliveryTaskQueryContext = deliveryQuery
+            ? {
+                type: ['target', 'channel', 'manual'].includes(deliveryQueryType) ? deliveryQueryType : 'manual',
+                label: deliveryQuery
+            }
+            : null;
+        this.deliveryConflictBucketFilter = deliveryBucketStartAt && deliveryBucketEndAt
+            ? {
+                startAt: deliveryBucketStartAt,
+                endAt: deliveryBucketEndAt,
+                label: deliveryBucketLabel
+            }
+            : null;
+        this.deliveryTaskIdentityFilter = deliveryFocusTaskId || deliveryFocusOrderId
+            ? {
+                taskId: deliveryFocusTaskId || '',
+                orderId: deliveryFocusOrderId || ''
+            }
+            : null;
+        this.deliveryConflictAuditSelection = deliveryFocusAuditId
+            ? {
+                auditId: deliveryFocusAuditId,
+                taskId: deliveryFocusTaskId || '',
+                orderId: deliveryFocusOrderId || '',
+                createdAt: ''
+            }
+            : null;
+        this.deliveryTaskStatusFilter = String(search.get('deliveryTaskStatus') || 'all').trim().toLowerCase() || 'all';
+        this.deliveryDeadLetterReasonFilter = String(search.get('deliveryDeadLetterReason') || 'all').trim().toLowerCase() || 'all';
+        this.deliveryLockStateFilter = String(search.get('deliveryLockState') || 'all').trim().toLowerCase() || 'all';
+        this.deliveryConflictAuditReasonFilter = this.normalizeDeliveryConflictAuditReasonFilter(search.get('deliveryConflictReason'));
+        this.deliveryConflictAuditTargetFilter = String(search.get('deliveryConflictTarget') || '').trim();
+        this.deliveryConflictAuditChannelFilter = String(search.get('deliveryConflictChannel') || '').trim();
+        this.deliveryAnalyticsWindow = this.getDeliveryAnalyticsWindowConfig(search.get('deliveryAnalyticsWindow')).key;
+        this.deliveryPendingTaskReveal = this.deliveryTaskIdentityFilter ? { ...this.deliveryTaskIdentityFilter } : null;
+        this.deliveryPendingAuditReveal = deliveryFocusAuditId ? { auditId: deliveryFocusAuditId } : null;
+
+        const explicitTab = String(search.get('shopTab') || '').trim().toLowerCase();
+        const hasDeliveryContext = Boolean(
+            deliveryQuery
+            || this.deliveryConflictBucketFilter
+            || this.deliveryTaskIdentityFilter
+            || this.deliveryConflictAuditSelection
+            || this.deliveryTaskStatusFilter !== 'all'
+            || this.deliveryDeadLetterReasonFilter !== 'all'
+            || this.deliveryLockStateFilter !== 'all'
+            || this.deliveryConflictAuditReasonFilter !== 'all'
+            || this.deliveryConflictAuditTargetFilter
+            || this.deliveryConflictAuditChannelFilter
+            || this.deliveryAnalyticsWindow !== '24h'
+        );
+        const nextTab = validTabs.has(explicitTab)
+            ? explicitTab
+            : (hasDeliveryContext ? 'fulfillment' : (this.currentTab || 'products'));
+        return { tabName: nextTab };
+    },
+
+    syncShopUrlState: function () {
+        const url = this.getShopUrlObject();
+        if (!url || typeof window.history?.replaceState !== 'function') return;
+
+        const search = url.searchParams;
+        this.applyShopUrlStateToSearchParams(search);
+
+        const nextRelativeUrl = `${url.pathname}${url.search}${url.hash}`;
+        const currentRelativeUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+        if (nextRelativeUrl !== currentRelativeUrl) {
+            window.history.replaceState(window.history.state, '', nextRelativeUrl);
+        }
+    },
+
+    applyShopUrlStateToSearchParams: function (search) {
+        if (!search || typeof search.delete !== 'function' || typeof search.set !== 'function') return;
+
+        const setOrDelete = (key, value, defaultValue = '') => {
+            const normalized = String(value ?? '').trim();
+            const normalizedDefault = String(defaultValue ?? '').trim();
+            if (!normalized || normalized === normalizedDefault) {
+                search.delete(key);
+                return;
+            }
+            search.set(key, normalized);
+        };
+
+        setOrDelete('shopTab', this.currentTab, 'products');
+        setOrDelete('deliveryAnalyticsWindow', this.deliveryAnalyticsWindow, '24h');
+        setOrDelete('deliveryQuery', this.deliveryTaskQuery, '');
+        setOrDelete('deliveryQueryType', this.deliveryTaskQuery ? (this.deliveryTaskQueryContext?.type || 'manual') : '', 'manual');
+        setOrDelete('deliveryBucketStartAt', this.deliveryConflictBucketFilter?.startAt || '', '');
+        setOrDelete('deliveryBucketEndAt', this.deliveryConflictBucketFilter?.endAt || '', '');
+        setOrDelete('deliveryBucketLabel', this.deliveryConflictBucketFilter?.label || '', '');
+        setOrDelete('deliveryFocusTaskId', this.deliveryTaskIdentityFilter?.taskId || '', '');
+        setOrDelete('deliveryFocusOrderId', this.deliveryTaskIdentityFilter?.orderId || '', '');
+        setOrDelete('deliveryFocusAuditId', this.deliveryConflictAuditSelection?.auditId || '', '');
+        setOrDelete('deliveryTaskStatus', this.deliveryTaskStatusFilter, 'all');
+        setOrDelete('deliveryDeadLetterReason', this.deliveryDeadLetterReasonFilter, 'all');
+        setOrDelete('deliveryLockState', this.deliveryLockStateFilter, 'all');
+        setOrDelete('deliveryConflictReason', this.deliveryConflictAuditReasonFilter, 'all');
+        setOrDelete('deliveryConflictTarget', this.deliveryConflictAuditTargetFilter, '');
+        setOrDelete('deliveryConflictChannel', this.deliveryConflictAuditChannelFilter, '');
+    },
+
+    buildDeliveryRestoreUrl: function () {
+        const currentUrl = this.getShopUrlObject();
+        if (!currentUrl) return '';
+
+        const restoreUrl = new URL(currentUrl.pathname, currentUrl.origin);
+        restoreUrl.hash = currentUrl.hash;
+        restoreUrl.searchParams.set('module', 'shop');
+        this.applyShopUrlStateToSearchParams(restoreUrl.searchParams);
+        return restoreUrl.toString();
+    },
+
+    copyTextToClipboard: async function (content) {
+        const text = String(content ?? '');
+        if (!text) throw new Error('EMPTY_COPY_TEXT');
+
+        if (navigator?.clipboard?.writeText) {
+            await navigator.clipboard.writeText(text);
+            return;
+        }
+
+        const helper = document.createElement('textarea');
+        helper.value = text;
+        helper.setAttribute('readonly', '');
+        helper.style.position = 'fixed';
+        helper.style.opacity = '0';
+        helper.style.pointerEvents = 'none';
+        document.body.appendChild(helper);
+        helper.select();
+        helper.setSelectionRange(0, helper.value.length);
+
+        let copied = false;
+        try {
+            copied = document.execCommand('copy');
+        } finally {
+            helper.remove();
+        }
+
+        if (!copied) {
+            throw new Error('COPY_COMMAND_FAILED');
+        }
+    },
+
+    setDeliveryRestoreLinkFeedback: function (tone = 'neutral', message = '') {
+        if (this.deliveryRestoreLinkFeedbackTimer) {
+            window.clearTimeout(this.deliveryRestoreLinkFeedbackTimer);
+            this.deliveryRestoreLinkFeedbackTimer = null;
+        }
+
+        const normalizedMessage = String(message || '').trim();
+        this.deliveryRestoreLinkFeedback = normalizedMessage
+            ? {
+                tone: tone || 'neutral',
+                message: normalizedMessage
+            }
+            : null;
+
+        const filterHint = document.getElementById('deliveryTaskFilterHint');
+        if (filterHint) {
+            this.renderDeliveryTaskFilterHint();
+        }
+
+        if (!this.deliveryRestoreLinkFeedback) return;
+        this.deliveryRestoreLinkFeedbackTimer = window.setTimeout(() => {
+            this.deliveryRestoreLinkFeedbackTimer = null;
+            this.deliveryRestoreLinkFeedback = null;
+            const nextFilterHint = document.getElementById('deliveryTaskFilterHint');
+            if (nextFilterHint) {
+                this.renderDeliveryTaskFilterHint();
+            }
+        }, 2600);
+    },
+
+    getDeliveryRestoreLinkFeedbackMeta: function () {
+        const feedback = this.deliveryRestoreLinkFeedback || null;
+        if (!feedback) {
+            return {
+                tone: 'neutral',
+                icon: 'fa-link',
+                label: '复制恢复链接',
+                note: '链接会保留当前商城模块、页签、时间窗与联动筛选，适合刷新后继续排障或直接发给同事。'
+            };
+        }
+
+        if (feedback.tone === 'success') {
+            return {
+                tone: 'success',
+                icon: 'fa-check',
+                label: '已复制恢复链接',
+                note: feedback.message
+            };
+        }
+
+        if (feedback.tone === 'danger') {
+            return {
+                tone: 'danger',
+                icon: 'fa-triangle-exclamation',
+                label: '复制失败',
+                note: feedback.message
+            };
+        }
+
+        return {
+            tone: 'neutral',
+            icon: 'fa-link',
+            label: '复制恢复链接',
+            note: feedback.message
+        };
+    },
+
+    copyDeliveryRestoreLink: async function () {
+        const restoreUrl = this.buildDeliveryRestoreUrl();
+        if (!restoreUrl) {
+            this.setDeliveryRestoreLinkFeedback('danger', '恢复链接生成失败，请稍后再试。');
+            return;
+        }
+
+        try {
+            await this.copyTextToClipboard(restoreUrl);
+            this.setDeliveryRestoreLinkFeedback('success', '已复制。打开或分享这条链接后，会直接回到当前履约排障上下文。');
+        } catch (error) {
+            console.error('[ShopAdmin] copyDeliveryRestoreLink failed:', error);
+            this.setDeliveryRestoreLinkFeedback('danger', '剪贴板写入失败，请检查浏览器权限或手动复制地址栏。');
+        }
+    },
+
     switchTab: function (tabName) {
         this.currentTab = tabName;
         this.ensureDeliveryWorkspaceMounted();
+        this.syncShopUrlState();
 
         // Update Tab UI
         document.querySelectorAll('.shop-tab').forEach(el => {
@@ -1889,6 +2145,24 @@ Example output format:
         return `<span class="shop-delivery-meta-badge" style="color:${colors.text};background:${colors.bg};border-color:${colors.border};">${this.escapeHtml(label)}</span>`;
     },
 
+    renderDeliveryFilterBreadcrumb: function ({ label, tone = 'neutral', title = '', preview = '', onRemove = '' } = {}) {
+        const colors = this.getDeliveryToneStyles(tone);
+        const titleAttr = title ? ` title="${this.escapeHtml(title)}"` : '';
+        const previewAttr = preview ? ` data-preview="${this.escapeHtml(preview)}"` : '';
+        const onClickAttr = onRemove ? ` onclick="${onRemove}"` : '';
+        return `
+            <button
+                type="button"
+                class="shop-delivery-filter-crumb"
+                style="color:${colors.text};background:${colors.bg};border-color:${colors.border};"
+                ${titleAttr}${previewAttr}${onClickAttr}
+            >
+                <span>${this.escapeHtml(label)}</span>
+                <i class="fas fa-times"></i>
+            </button>
+        `;
+    },
+
     renderDeliveryQuickFilterChip: function ({ label, tone = 'neutral', active = false, title = '', onClick = '' } = {}) {
         const colors = this.getDeliveryToneStyles(tone);
         const textColor = active ? colors.text : 'rgba(226, 232, 240, 0.82)';
@@ -1945,6 +2219,17 @@ Example output format:
             && String(bucket?.endAt || '').trim() === String(endAt || '').trim();
     },
 
+    getDeliveryTaskQuerySourceMeta: function (context = this.deliveryTaskQueryContext) {
+        const sourceType = String(context?.type || 'manual').trim().toLowerCase();
+        if (sourceType === 'target') {
+            return { label: '目标热点', tone: 'processing' };
+        }
+        if (sourceType === 'channel') {
+            return { label: '通道热点', tone: 'danger' };
+        }
+        return { label: '关键字', tone: 'neutral' };
+    },
+
     isDeliveryHotspotQueryActive: function (type = 'target', key = '') {
         const normalizedType = type === 'channel' ? 'channel' : 'target';
         const queryContext = this.deliveryTaskQueryContext || {};
@@ -1994,6 +2279,185 @@ Example output format:
         if (normalized === 'target_conflicts') return 'processing';
         if (normalized === 'all') return 'neutral';
         return 'warn';
+    },
+
+    getDeliveryTaskStatusFilterMeta: function (status = this.deliveryTaskStatusFilter) {
+        const normalized = String(status || 'all').trim().toLowerCase();
+        const map = {
+            all: { label: '全部状态', tone: 'muted' },
+            pending: { label: '待履约', tone: 'warn' },
+            processing: { label: '处理中', tone: 'processing' },
+            retry_waiting: { label: '待重试', tone: 'warn' },
+            requeued: { label: '已重排队', tone: 'processing' },
+            dead_letter: { label: '死信', tone: 'danger' },
+            delivered: { label: '已履约', tone: 'success' }
+        };
+        return map[normalized] || { label: normalized || '全部状态', tone: 'neutral' };
+    },
+
+    getDeliveryDeadLetterReasonFilterMeta: function (reason = this.deliveryDeadLetterReasonFilter) {
+        const normalized = String(reason || 'all').trim().toLowerCase();
+        const map = {
+            all: { label: '全部原因', tone: 'muted' },
+            manual: { label: '人工标记', tone: 'processing' },
+            missing_target: { label: '目标缺失', tone: 'danger' },
+            timeout: { label: '请求超时', tone: 'warn' },
+            upstream_4xx: { label: '上游 4xx', tone: 'danger' },
+            upstream_5xx: { label: '上游 5xx', tone: 'danger' },
+            max_attempts: { label: '达到最大重试', tone: 'warn' },
+            conflict_strategy: { label: '冲突策略', tone: 'warn' },
+            network_failure: { label: '网络失败', tone: 'neutral' },
+            unknown: { label: '未知原因', tone: 'muted' }
+        };
+        return map[normalized] || { label: normalized || '全部原因', tone: 'neutral' };
+    },
+
+    getDeliveryLockStateFilterMeta: function (lockState = this.deliveryLockStateFilter) {
+        const normalized = String(lockState || 'all').trim().toLowerCase();
+        const map = {
+            all: { label: '全部锁异常', tone: 'muted' },
+            active: { label: '仅活跃锁', tone: 'processing' },
+            stale: { label: '过期 / 缺锁', tone: 'danger' }
+        };
+        return map[normalized] || { label: normalized || '全部锁异常', tone: 'neutral' };
+    },
+
+    buildDeliveryFilterPreviewText: function (panels = []) {
+        const labels = (Array.isArray(panels) ? panels : []).map((panel) => String(panel || '').trim()).filter(Boolean);
+        return labels.length ? `影响范围：${labels.join(' / ')}` : '';
+    },
+
+    buildDeliveryActiveFilterBreadcrumbs: function () {
+        const crumbs = [];
+        const query = String(this.deliveryTaskQuery || '').trim();
+        const bucket = this.deliveryConflictBucketFilter || null;
+        const auditSelection = this.deliveryConflictAuditSelection || null;
+        const taskStatus = String(this.deliveryTaskStatusFilter || 'all').trim().toLowerCase();
+        const deadLetterReason = String(this.deliveryDeadLetterReasonFilter || 'all').trim().toLowerCase();
+        const lockState = String(this.deliveryLockStateFilter || 'all').trim().toLowerCase();
+        const auditReason = this.normalizeDeliveryConflictAuditReasonFilter(this.deliveryConflictAuditReasonFilter);
+        const auditTarget = String(this.deliveryConflictAuditTargetFilter || '').trim();
+        const auditChannel = String(this.deliveryConflictAuditChannelFilter || '').trim();
+        const deadLetterFocusActive = this.isDeliveryConflictDeadLetterFocusActive();
+
+        if (query) {
+            const sourceMeta = this.getDeliveryTaskQuerySourceMeta();
+            crumbs.push({
+                key: 'query',
+                label: `${sourceMeta.label}: ${this.truncateText(query, 44)}`,
+                tone: sourceMeta.tone,
+                preview: this.buildDeliveryFilterPreviewText(['主任务', '死信', '锁冲突', '全局占位']),
+                onRemove: 'ShopAdmin.clearDeliveryTaskQuery()',
+                title: '移除关键字 / 热点筛选'
+            });
+        }
+
+        if (bucket?.startAt && bucket?.endAt) {
+            crumbs.push({
+                key: 'bucket',
+                label: `冲突时段: ${this.getDeliveryConflictBucketLabel(bucket)}`,
+                tone: 'warn',
+                preview: this.buildDeliveryFilterPreviewText(['主任务', '死信', '锁冲突', '全局占位', '冲突审计']),
+                onRemove: 'ShopAdmin.clearDeliveryConflictBucketFilter()',
+                title: '移除冲突时段联动'
+            });
+        }
+
+        if (auditSelection?.auditId) {
+            crumbs.push({
+                key: 'audit-lock',
+                label: `任务锁定: ${this.truncateText(auditSelection.taskId || auditSelection.orderId || auditSelection.auditId, 26)}`,
+                tone: 'processing',
+                preview: this.buildDeliveryFilterPreviewText(['主任务', '死信', '锁冲突', '全局占位', '冲突审计']),
+                onRemove: 'ShopAdmin.clearDeliveryConflictAuditSelection()',
+                title: '移除审计记录锁定'
+            });
+        }
+
+        if (deadLetterFocusActive) {
+            crumbs.push({
+                key: 'dead-letter-focus',
+                label: '冲突死信联动',
+                tone: 'danger',
+                preview: this.buildDeliveryFilterPreviewText(['主任务', '死信']),
+                onRemove: 'ShopAdmin.clearDeliveryConflictDeadLetterFocus()',
+                title: '移除冲突死信联动'
+            });
+        } else {
+            if (taskStatus !== 'all') {
+                const taskStatusMeta = this.getDeliveryTaskStatusFilterMeta(taskStatus);
+                crumbs.push({
+                    key: 'task-status',
+                    label: `任务状态: ${taskStatusMeta.label}`,
+                    tone: taskStatusMeta.tone,
+                    preview: this.buildDeliveryFilterPreviewText(['主任务']),
+                    onRemove: 'ShopAdmin.clearDeliveryTaskStatusFilter()',
+                    title: '移除任务状态筛选'
+                });
+            }
+            if (deadLetterReason !== 'all') {
+                const deadLetterMeta = this.getDeliveryDeadLetterReasonFilterMeta(deadLetterReason);
+                crumbs.push({
+                    key: 'dead-letter-reason',
+                    label: `死信原因: ${deadLetterMeta.label}`,
+                    tone: deadLetterMeta.tone,
+                    preview: this.buildDeliveryFilterPreviewText(['死信']),
+                    onRemove: 'ShopAdmin.clearDeliveryDeadLetterReasonFilter()',
+                    title: '移除死信原因筛选'
+                });
+            }
+        }
+
+        if (lockState !== 'all') {
+            const lockStateMeta = this.getDeliveryLockStateFilterMeta(lockState);
+            crumbs.push({
+                key: 'lock-state',
+                label: `锁视角: ${lockStateMeta.label}`,
+                tone: lockStateMeta.tone,
+                preview: this.buildDeliveryFilterPreviewText(['锁冲突']),
+                onRemove: 'ShopAdmin.clearDeliveryLockStateFilter()',
+                title: '移除锁状态筛选'
+            });
+        }
+
+        if (auditReason !== 'all') {
+            crumbs.push({
+                key: 'audit-reason',
+                label: `审计原因: ${this.getDeliveryConflictAuditReasonLabel(auditReason)}`,
+                tone: this.getDeliveryConflictReasonTone(auditReason),
+                preview: this.buildDeliveryFilterPreviewText(['冲突审计']),
+                onRemove: 'ShopAdmin.clearDeliveryConflictAuditReasonFilter()',
+                title: '移除冲突审计原因筛选'
+            });
+        }
+
+        if (auditTarget) {
+            crumbs.push({
+                key: 'audit-target',
+                label: `审计目标: ${this.truncateText(auditTarget, 36)}`,
+                tone: 'processing',
+                preview: this.buildDeliveryFilterPreviewText(['冲突审计']),
+                onRemove: 'ShopAdmin.clearDeliveryConflictAuditTargetFilter()',
+                title: '移除冲突审计目标筛选'
+            });
+        }
+
+        if (auditChannel) {
+            crumbs.push({
+                key: 'audit-channel',
+                label: `审计通道: ${this.truncateText(auditChannel, 30)}`,
+                tone: 'danger',
+                preview: this.buildDeliveryFilterPreviewText(['冲突审计']),
+                onRemove: 'ShopAdmin.clearDeliveryConflictAuditChannelFilter()',
+                title: '移除冲突审计通道筛选'
+            });
+        }
+
+        return crumbs;
+    },
+
+    hasDeliveryActiveFilterBreadcrumbs: function () {
+        return this.buildDeliveryActiveFilterBreadcrumbs().length > 0;
     },
 
     isDeliveryConflictTrendLegendActive: function (kind = 'total') {
@@ -2250,74 +2714,47 @@ Example output format:
         const container = document.getElementById('deliveryTaskFilterHint');
         if (!container) return;
 
-        const query = String(this.deliveryTaskQuery || '').trim();
-        const bucket = this.deliveryConflictBucketFilter || null;
-        const auditSelection = this.deliveryConflictAuditSelection || null;
-        if (!query && !bucket && !auditSelection) {
+        const breadcrumbs = this.buildDeliveryActiveFilterBreadcrumbs();
+        const restoreLinkMeta = this.getDeliveryRestoreLinkFeedbackMeta();
+        const restoreLinkButtonClass = restoreLinkMeta.tone === 'success'
+            ? 'shop-delivery-inline-btn shop-delivery-inline-btn--success'
+            : (restoreLinkMeta.tone === 'danger'
+                ? 'shop-delivery-inline-btn shop-delivery-inline-btn--danger'
+                : 'shop-delivery-inline-btn');
+        if (!breadcrumbs.length) {
             container.innerHTML = `
                 <div class="shop-delivery-filter-banner shop-delivery-filter-banner--idle">
-                    <span class="shop-delivery-table-note">当前未联动筛选履约页。你可以输入关键字，或直接点击下方热点、趋势柱、冲突审计记录，把目标 / 通道 / 冲突时段 / 任务锁定回填到任务、死信、锁冲突和占位面板里。</span>
+                    <div class="shop-delivery-filter-stack">
+                        <span class="shop-delivery-table-note">当前未联动筛选履约页。你可以输入关键字，或直接点击下方热点、趋势柱、冲突审计记录，把目标 / 通道 / 冲突时段 / 任务锁定回填到任务、死信、锁冲突和占位面板里。</span>
+                        <span class="shop-delivery-table-note shop-delivery-table-note--soft">${this.escapeHtml(restoreLinkMeta.note)}</span>
+                    </div>
+                    <div class="shop-delivery-controls shop-delivery-controls--banner">
+                        <button type="button" class="${restoreLinkButtonClass}" onclick="ShopAdmin.copyDeliveryRestoreLink()">
+                            <i class="fas ${this.escapeHtml(restoreLinkMeta.icon)}"></i> ${this.escapeHtml(restoreLinkMeta.label)}
+                        </button>
+                    </div>
                 </div>
             `;
             return;
         }
 
-        const context = this.deliveryTaskQueryContext || {};
-        const sourceType = String(context.type || 'manual').trim().toLowerCase();
-        const sourceLabel = sourceType === 'target'
-            ? '目标热点反筛'
-            : sourceType === 'channel'
-                ? '通道热点反筛'
-                : '手动任务筛选';
-        const tone = sourceType === 'channel'
-            ? 'danger'
-            : sourceType === 'target'
-                ? 'processing'
-                : 'neutral';
-        const badges = [];
-        if (query) {
-            badges.push(this.renderDeliveryMetaBadge(sourceLabel, tone));
-            badges.push(this.renderDeliveryMetaBadge(this.truncateText(query, 56), 'neutral'));
-        }
-        if (bucket?.startAt && bucket?.endAt) {
-            badges.push(this.renderDeliveryMetaBadge('冲突时段联动', 'warn'));
-            badges.push(this.renderDeliveryMetaBadge(this.getDeliveryConflictBucketLabel(bucket), 'neutral'));
-        }
-        if (auditSelection?.auditId) {
-            badges.push(this.renderDeliveryMetaBadge('审计记录锁定', 'processing'));
-            badges.push(this.renderDeliveryMetaBadge(this.truncateText(auditSelection.taskId || auditSelection.orderId || auditSelection.auditId, 26), 'neutral'));
-        }
-        badges.push(this.renderDeliveryMetaBadge('已联动任务 / 死信 / 锁冲突 / 占位', 'muted'));
-        const actions = [
-            query
-                ? `
-                    <button type="button" class="shop-delivery-inline-btn" onclick="ShopAdmin.clearDeliveryTaskQuery()">
-                        <i class="fas fa-times"></i> 清除关键字
-                    </button>
-                `
-                : '',
-            bucket?.startAt && bucket?.endAt
-                ? `
-                    <button type="button" class="shop-delivery-inline-btn" onclick="ShopAdmin.clearDeliveryConflictBucketFilter()">
-                        <i class="fas fa-clock"></i> 清除时段
-                    </button>
-                `
-                : '',
-            auditSelection?.auditId
-                ? `
-                    <button type="button" class="shop-delivery-inline-btn" onclick="ShopAdmin.clearDeliveryConflictAuditSelection()">
-                        <i class="fas fa-thumbtack"></i> 清除任务锁定
-                    </button>
-                `
-                : ''
-        ].filter(Boolean).join('');
-
         container.innerHTML = `
             <div class="shop-delivery-filter-banner">
-                <div class="shop-delivery-meta">
-                    ${badges.join('')}
+                <div class="shop-delivery-filter-stack">
+                    <span class="shop-delivery-table-note">当前已生效筛选已同步到对应面板。悬停面包屑可预览影响范围，点击任一项可单独移除。</span>
+                    <div class="shop-delivery-filter-crumbs">
+                        ${breadcrumbs.map((crumb) => this.renderDeliveryFilterBreadcrumb(crumb)).join('')}
+                    </div>
+                    <span class="shop-delivery-table-note shop-delivery-table-note--soft">${this.escapeHtml(restoreLinkMeta.note)}</span>
                 </div>
-                <div class="shop-delivery-controls">${actions}</div>
+                <div class="shop-delivery-controls shop-delivery-controls--banner">
+                    <button type="button" class="${restoreLinkButtonClass}" onclick="ShopAdmin.copyDeliveryRestoreLink()">
+                        <i class="fas ${this.escapeHtml(restoreLinkMeta.icon)}"></i> ${this.escapeHtml(restoreLinkMeta.label)}
+                    </button>
+                    <button type="button" class="shop-delivery-inline-btn" onclick="ShopAdmin.clearAllDeliveryFilterBreadcrumbs()">
+                        <i class="fas fa-broom"></i> 清空全部
+                    </button>
+                </div>
             </div>
         `;
     },
@@ -3729,6 +4166,7 @@ Example output format:
         if (conflictAuditTargetInput && conflictAuditTargetInput.value !== conflictTarget) conflictAuditTargetInput.value = conflictTarget;
         if (conflictAuditChannelInput && conflictAuditChannelInput.value !== conflictChannel) conflictAuditChannelInput.value = conflictChannel;
         this.renderDeliveryTaskFilterHint();
+        this.syncShopUrlState();
 
         if (tbody) {
             tbody.innerHTML = '<tr><td colspan="8" class="text-center">正在加载履约任务...</td></tr>';
@@ -3736,7 +4174,7 @@ Example output format:
         if (summary) {
             summary.innerHTML = '<span class="shop-delivery-pill">正在统计履约任务...</span>';
         }
-        if (filterHint && !query && !conflictBucket?.startAt && !taskIdentity?.taskId && !taskIdentity?.orderId) {
+        if (filterHint && !this.hasDeliveryActiveFilterBreadcrumbs()) {
             filterHint.innerHTML = `
                 <div class="shop-delivery-filter-banner shop-delivery-filter-banner--idle">
                     <span class="shop-delivery-table-note">当前未联动筛选履约页。你可以输入关键字，或直接点击下方热点、趋势柱、冲突审计记录，把目标 / 通道 / 冲突时段 / 任务锁定回填到任务、死信、锁冲突和占位面板里。</span>
@@ -3887,6 +4325,7 @@ Example output format:
             if (conflictAuditReasonFilter && conflictAuditReasonFilter.value !== this.deliveryConflictAuditReasonFilter) conflictAuditReasonFilter.value = this.deliveryConflictAuditReasonFilter;
             if (conflictAuditTargetInput && conflictAuditTargetInput.value !== this.deliveryConflictAuditTargetFilter) conflictAuditTargetInput.value = this.deliveryConflictAuditTargetFilter;
             if (conflictAuditChannelInput && conflictAuditChannelInput.value !== this.deliveryConflictAuditChannelFilter) conflictAuditChannelInput.value = this.deliveryConflictAuditChannelFilter;
+            this.syncShopUrlState();
             this.deliveryConflictAuditRecords = conflicts.records || [];
             this.renderConflictAuditSummary(conflicts);
             this.renderConflictAudits(conflicts.records || []);
@@ -4181,6 +4620,30 @@ Example output format:
         this.loadDeliveryTasks(this.deliveryTaskPage || 1);
     },
 
+    clearDeliveryConflictAuditReasonFilter: function () {
+        this.deliveryConflictAuditReasonFilter = 'all';
+        const reasonSelect = document.getElementById('deliveryConflictAuditReasonFilter');
+        if (reasonSelect) reasonSelect.value = 'all';
+        this.deliveryPendingAuditReveal = null;
+        this.loadDeliveryTasks(this.deliveryTaskPage || 1);
+    },
+
+    clearDeliveryConflictAuditTargetFilter: function () {
+        this.deliveryConflictAuditTargetFilter = '';
+        const targetInput = document.getElementById('deliveryConflictAuditTargetFilter');
+        if (targetInput) targetInput.value = '';
+        this.deliveryPendingAuditReveal = null;
+        this.loadDeliveryTasks(this.deliveryTaskPage || 1);
+    },
+
+    clearDeliveryConflictAuditChannelFilter: function () {
+        this.deliveryConflictAuditChannelFilter = '';
+        const channelInput = document.getElementById('deliveryConflictAuditChannelFilter');
+        if (channelInput) channelInput.value = '';
+        this.deliveryPendingAuditReveal = null;
+        this.loadDeliveryTasks(this.deliveryTaskPage || 1);
+    },
+
     toggleDeliveryConflictDeadLetterFocus: function () {
         const nextActive = !this.isDeliveryConflictDeadLetterFocusActive();
         this.deliveryTaskStatusFilter = nextActive ? 'dead_letter' : 'all';
@@ -4193,6 +4656,20 @@ Example output format:
         const deadLetterReasonFilter = document.getElementById('deliveryDeadLetterReasonFilter');
         if (taskFilter) taskFilter.value = this.deliveryTaskStatusFilter;
         if (deadLetterReasonFilter) deadLetterReasonFilter.value = this.deliveryDeadLetterReasonFilter;
+        this.deliveryTaskPage = 1;
+        this.deliveryDeadLetterPage = 1;
+        this.deliveryLockConflictPage = 1;
+        this.deliveryReplayPage = 1;
+        this.loadDeliveryTasks(1);
+    },
+
+    clearDeliveryConflictDeadLetterFocus: function () {
+        this.deliveryTaskStatusFilter = 'all';
+        this.deliveryDeadLetterReasonFilter = 'all';
+        const taskFilter = document.getElementById('deliveryTaskStatusFilter');
+        const deadLetterReasonFilter = document.getElementById('deliveryDeadLetterReasonFilter');
+        if (taskFilter) taskFilter.value = 'all';
+        if (deadLetterReasonFilter) deadLetterReasonFilter.value = 'all';
         this.deliveryTaskPage = 1;
         this.deliveryDeadLetterPage = 1;
         this.deliveryLockConflictPage = 1;
@@ -4363,6 +4840,43 @@ Example output format:
         this.loadDeliveryTasks(1);
     },
 
+    clearAllDeliveryFilterBreadcrumbs: function () {
+        this.deliveryTaskQuery = '';
+        this.deliveryTaskQueryContext = null;
+        this.deliveryConflictBucketFilter = null;
+        this.deliveryTaskIdentityFilter = null;
+        this.deliveryConflictAuditSelection = null;
+        this.deliveryConflictAuditReasonFilter = 'all';
+        this.deliveryConflictAuditTargetFilter = '';
+        this.deliveryConflictAuditChannelFilter = '';
+        this.deliveryTaskStatusFilter = 'all';
+        this.deliveryDeadLetterReasonFilter = 'all';
+        this.deliveryLockStateFilter = 'all';
+        this.deliveryPendingTaskReveal = null;
+        this.deliveryPendingAuditReveal = null;
+
+        const taskQueryInput = document.getElementById('deliveryTaskQueryInput');
+        const taskFilter = document.getElementById('deliveryTaskStatusFilter');
+        const deadLetterReasonFilter = document.getElementById('deliveryDeadLetterReasonFilter');
+        const lockStateFilter = document.getElementById('deliveryLockStateFilter');
+        const conflictAuditReasonFilter = document.getElementById('deliveryConflictAuditReasonFilter');
+        const conflictAuditTargetInput = document.getElementById('deliveryConflictAuditTargetFilter');
+        const conflictAuditChannelInput = document.getElementById('deliveryConflictAuditChannelFilter');
+        if (taskQueryInput) taskQueryInput.value = '';
+        if (taskFilter) taskFilter.value = 'all';
+        if (deadLetterReasonFilter) deadLetterReasonFilter.value = 'all';
+        if (lockStateFilter) lockStateFilter.value = 'all';
+        if (conflictAuditReasonFilter) conflictAuditReasonFilter.value = 'all';
+        if (conflictAuditTargetInput) conflictAuditTargetInput.value = '';
+        if (conflictAuditChannelInput) conflictAuditChannelInput.value = '';
+
+        this.deliveryTaskPage = 1;
+        this.deliveryDeadLetterPage = 1;
+        this.deliveryLockConflictPage = 1;
+        this.deliveryReplayPage = 1;
+        this.loadDeliveryTasks(1);
+    },
+
     setDeliveryTaskStatusFilter: function (status) {
         this.deliveryTaskStatusFilter = status || 'all';
         this.deliveryTaskPage = 1;
@@ -4372,14 +4886,34 @@ Example output format:
         this.loadDeliveryTasks(1);
     },
 
+    clearDeliveryTaskStatusFilter: function () {
+        this.setDeliveryTaskStatusFilter('all');
+    },
+
     setDeliveryDeadLetterReasonFilter: function (reason) {
         this.deliveryDeadLetterReasonFilter = reason || 'all';
         this.deliveryDeadLetterPage = 1;
         this.loadDeliveryTasks(this.deliveryTaskPage || 1);
     },
 
+    clearDeliveryDeadLetterReasonFilter: function () {
+        this.deliveryDeadLetterReasonFilter = 'all';
+        const deadLetterReasonFilter = document.getElementById('deliveryDeadLetterReasonFilter');
+        if (deadLetterReasonFilter) deadLetterReasonFilter.value = 'all';
+        this.deliveryDeadLetterPage = 1;
+        this.loadDeliveryTasks(this.deliveryTaskPage || 1);
+    },
+
     setDeliveryLockStateFilter: function (lockState) {
         this.deliveryLockStateFilter = lockState || 'all';
+        this.deliveryLockConflictPage = 1;
+        this.loadDeliveryTasks(this.deliveryTaskPage || 1);
+    },
+
+    clearDeliveryLockStateFilter: function () {
+        this.deliveryLockStateFilter = 'all';
+        const lockStateFilter = document.getElementById('deliveryLockStateFilter');
+        if (lockStateFilter) lockStateFilter.value = 'all';
         this.deliveryLockConflictPage = 1;
         this.loadDeliveryTasks(this.deliveryTaskPage || 1);
     },
