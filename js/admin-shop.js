@@ -2200,30 +2200,30 @@ Example output format:
 
             return `
                 <tr>
-                    <td>
+                    <td data-label="订单号">
                         <div style="font-weight:600;color:#fff;">${this.escapeHtml(task.order_id || '—')}</div>
                         <div style="font-size:12px;color:rgba(226,232,240,0.58);">${task.dedupe_key ? this.escapeHtml(this.truncateText(task.dedupe_key, 36)) : '无去重键'}</div>
                     </td>
-                    <td>
+                    <td data-label="商品">
                         <div style="font-weight:600;color:#fff;">${productName}</div>
                         <div style="font-size:12px;color:rgba(226,232,240,0.58);">${this.escapeHtml(order.user_id || '未知用户')}</div>
                     </td>
-                    <td>
+                    <td data-label="任务状态">
                         <div class="shop-delivery-meta" style="margin-bottom:8px;">${taskBadges}</div>
                         ${this.renderDeliveryObserveChips(task)}
                     </td>
-                    <td>
+                    <td data-label="尝试次数">
                         <div style="font-weight:700;color:#fff;margin-bottom:8px;">${Number(task.attempt_count || 0)} / ${Number(task.max_attempts || 0)}</div>
                         ${this.renderDeliveryAttemptLines(task)}
                     </td>
-                    <td>
+                    <td data-label="目标地址">
                         <div class="shop-delivery-target" title="${this.escapeHtml(task.target_url || '')}">${this.formatDeliveryTaskTarget(task.target_url)}</div>
                     </td>
-                    <td style="white-space:normal;line-height:1.5;">${executeTimeline}</td>
-                    <td style="white-space:normal;line-height:1.55;">
+                    <td data-label="最近执行 / 下次重试" style="white-space:normal;line-height:1.5;">${executeTimeline}</td>
+                    <td data-label="最近错误" style="white-space:normal;line-height:1.55;">
                         ${latestError}
                     </td>
-                    <td>${this.renderDeliveryActionButtons(task)}</td>
+                    <td data-label="操作">${this.renderDeliveryActionButtons(task)}</td>
                 </tr>
             `;
         }).join('');
@@ -2320,22 +2320,22 @@ Example output format:
 
             return `
                 <tr>
-                    <td>
+                    <td data-label="订单号">
                         <div style="font-weight:600;color:#fff;">${orderId}</div>
                         <div class="shop-delivery-table-note">${task.target_url ? this.formatDeliveryTaskTarget(task.target_url) : '无目标地址'}</div>
                     </td>
-                    <td>
+                    <td data-label="商品 / 用户">
                         <div style="font-weight:600;color:#fff;">${productName}</div>
                         <div class="shop-delivery-table-note">${userId}</div>
                     </td>
-                    <td style="white-space:normal;line-height:1.55;">
+                    <td data-label="死信原因" style="white-space:normal;line-height:1.55;">
                         <div class="shop-delivery-meta" style="margin-bottom:8px;">${deadLetterReason}</div>
                         ${reason}
                         <div class="shop-delivery-table-note" style="margin-top:8px;">${this.escapeHtml(responseMeta || '无额外响应信息')}</div>
                     </td>
-                    <td>${this.renderDeliveryObserveChips(task)}</td>
-                    <td>${this.renderDeliveryAttemptLines(task)}</td>
-                    <td>${this.renderDeliveryActionButtons(task, { allowDeadLetter: false })}</td>
+                    <td data-label="锁与幂等">${this.renderDeliveryObserveChips(task)}</td>
+                    <td data-label="最近尝试">${this.renderDeliveryAttemptLines(task)}</td>
+                    <td data-label="操作">${this.renderDeliveryActionButtons(task, { allowDeadLetter: false })}</td>
                 </tr>
             `;
         }).join('');
@@ -2369,30 +2369,30 @@ Example output format:
 
             return `
                 <tr>
-                    <td>
+                    <td data-label="订单号">
                         <div style="font-weight:600;color:#fff;">${orderId}</div>
                         <div class="shop-delivery-table-note">${task.target_url ? this.formatDeliveryTaskTarget(task.target_url) : '无目标地址'}</div>
                     </td>
-                    <td>
+                    <td data-label="商品 / 用户">
                         <div style="font-weight:600;color:#fff;">${productName}</div>
                         <div class="shop-delivery-table-note">${userId}</div>
                     </td>
-                    <td>
+                    <td data-label="锁状态">
                         <div class="shop-delivery-meta" style="margin-bottom:8px;">
                             ${this.getDeliveryTaskStatusBadge(task.status)}
                             ${this.getDeliveryLockBadge(task)}
                         </div>
                         <div class="shop-delivery-table-note">${this.escapeHtml(lockMeta || '无锁字段元信息')}</div>
                     </td>
-                    <td>
+                    <td data-label="锁与幂等">
                         ${this.renderDeliveryObserveChips(task)}
                     </td>
-                    <td style="white-space:normal;line-height:1.55;">
+                    <td data-label="最近错误 / 尝试" style="white-space:normal;line-height:1.55;">
                         <div style="font-weight:600;color:#fff;">${errorLabel}</div>
                         <div class="shop-delivery-table-note" style="margin-top:8px;">尝试 ${Number(task.attempt_count || 0)} / ${Number(task.max_attempts || 0)}</div>
                         <div style="margin-top:8px;">${this.renderDeliveryAttemptLines(task)}</div>
                     </td>
-                    <td>${this.renderDeliveryActionButtons(task, { allowDeadLetter: task.status !== 'dead_letter', allowForceUnlock: true })}</td>
+                    <td data-label="操作">${this.renderDeliveryActionButtons(task, { allowDeadLetter: task.status !== 'dead_letter', allowForceUnlock: true })}</td>
                 </tr>
             `;
         }).join('');
@@ -2430,27 +2430,27 @@ Example output format:
 
             return `
                 <tr>
-                    <td>
+                    <td data-label="时间">
                         <div style="font-weight:600;color:#fff;">${this.formatDeliveryTime(record.created_at)}</div>
                         <div class="shop-delivery-table-note">${record.task_id ? `任务 ${this.escapeHtml(this.truncateText(record.task_id, 18))}` : '无任务 ID'}</div>
                     </td>
-                    <td>
+                    <td data-label="管理员">
                         <div style="font-weight:600;color:#fff;">${adminIdentity}</div>
                     </td>
-                    <td>
+                    <td data-label="订单 / 商品">
                         <div style="font-weight:600;color:#fff;">${productName}</div>
                         <div class="shop-delivery-table-note">${orderId}</div>
                     </td>
-                    <td>
+                    <td data-label="状态流转">
                         <div class="shop-delivery-meta">${transition || this.renderDeliveryBadge('状态未知', 'muted')}</div>
                         <div class="shop-delivery-table-note" style="margin-top:8px;">${record.previous_status && record.next_status ? '人工重放触发了一次状态迁移' : '仅记录了重放动作，状态可能已被后续 worker 覆盖'}</div>
                         ${noteText}
                     </td>
-                    <td>
+                    <td data-label="重放次数">
                         <div style="font-weight:700;color:#fff;">${Number(record.manual_replay_count || task.manual_replay_count || 0)}</div>
                         <div class="shop-delivery-table-note">累计人工触发次数</div>
                     </td>
-                    <td>
+                    <td data-label="当前状态">
                         <div class="shop-delivery-meta">${currentState}</div>
                         <div style="margin-top:8px;">${this.renderDeliveryCompactObserveChips(record)}</div>
                     </td>
@@ -3019,12 +3019,12 @@ Example output format:
 
                 tbody.innerHTML += `
                 <tr onclick="ShopAdmin.showOrderContent('${order.id}', '${contentData}')" style="cursor: pointer;" title="点击查看订单详情">
-                    <td title="${order.user_id}" style="white-space:nowrap;">${userDisplay}</td>
-                    <td>${date}</td>
-                    <td>${productName}</td>
-                    <td>${order.total_price || order.price_paid}</td>
-                    <td>${status}</td>
-                    <td onclick="event.stopPropagation()">
+                    <td data-label="用户" title="${order.user_id}">${userDisplay}</td>
+                    <td data-label="订单时间">${date}</td>
+                    <td data-label="商品">${productName}</td>
+                    <td data-label="支付积分">${order.total_price || order.price_paid}</td>
+                    <td data-label="发货状态">${status}</td>
+                    <td data-label="操作" onclick="event.stopPropagation()">
                         ${(order.refund_status !== 'refunded' && order.refund_status !== 'full_refund') ?
                         `<button class="btn-icon danger" onclick="ShopAdmin.refundOrder('${order.id}')" title="退款"><i class="fas fa-undo"></i></button>`
                         : '<span style="color: rgba(255,255,255,0.3); font-size: 12px;">-</span>'}

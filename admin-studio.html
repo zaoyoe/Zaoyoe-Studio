@@ -4598,6 +4598,32 @@
                 <!-- 3. Orders View -->
                 <div id="shop-view-orders" class="shop-view" style="display: none;">
                     <style>
+                        .shop-orders-toolbar-shell {
+                            margin: 0 auto;
+                            max-width: 800px;
+                            padding: 40px 0;
+                        }
+
+                        .shop-orders-search-bar {
+                            display: flex;
+                            gap: 16px;
+                            margin: 0 auto;
+                            align-items: center;
+                        }
+
+                        .shop-theme-primary-btn {
+                            background: #3d5a80 !important;
+                            border: 1px solid #3d5a80 !important;
+                            color: #fff !important;
+                            box-shadow: none;
+                        }
+
+                        .shop-theme-primary-btn:hover:not(:disabled) {
+                            background: #47688d !important;
+                            border-color: #47688d !important;
+                            box-shadow: 0 10px 24px rgba(61, 90, 128, 0.26);
+                        }
+
                         .shop-table-container {
                             background: rgba(26, 31, 44, 0.6);
                             border: 1px solid rgba(255, 255, 255, 0.1);
@@ -4702,6 +4728,12 @@
                             display: flex;
                             flex-direction: column;
                             gap: 8px;
+                            min-width: 0;
+                            padding: 14px;
+                            border-radius: 16px;
+                            border: 1px solid rgba(255, 255, 255, 0.08);
+                            background: rgba(255, 255, 255, 0.035);
+                            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
                         }
 
                         .shop-delivery-field label {
@@ -4712,13 +4744,30 @@
                         }
 
                         .shop-delivery-field input {
+                            box-sizing: border-box;
                             width: 100%;
+                            min-width: 0;
+                            height: 48px;
                             padding: 11px 14px;
-                            border-radius: 12px;
-                            border: 1px solid rgba(255, 255, 255, 0.1);
-                            background: rgba(255, 255, 255, 0.05);
+                            border-radius: 14px;
+                            border: 1px solid rgba(255, 255, 255, 0.12);
+                            background: rgba(15, 23, 42, 0.48);
                             color: #f8fafc;
                             outline: none;
+                            appearance: textfield;
+                            -moz-appearance: textfield;
+                        }
+
+                        .shop-delivery-field input:focus {
+                            border-color: rgba(107, 158, 206, 0.55);
+                            box-shadow: 0 0 0 3px rgba(61, 90, 128, 0.18);
+                            background: rgba(15, 23, 42, 0.66);
+                        }
+
+                        .shop-delivery-field input[type="number"]::-webkit-outer-spin-button,
+                        .shop-delivery-field input[type="number"]::-webkit-inner-spin-button {
+                            -webkit-appearance: none;
+                            margin: 0;
                         }
 
                         .shop-delivery-summary {
@@ -4930,7 +4979,7 @@
 
                         .shop-delivery-strategy-grid {
                             display: grid;
-                            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+                            grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
                             gap: 12px;
                             margin-bottom: 16px;
                         }
@@ -4983,18 +5032,48 @@
                             line-height: 1.5;
                         }
 
+                        @media (max-width: 1200px) {
+                            .shop-delivery-strategy-grid {
+                                grid-template-columns: repeat(3, minmax(0, 1fr));
+                            }
+                        }
+
                         @media (max-width: 900px) {
+                            .shop-orders-toolbar-shell {
+                                padding: 24px 0 20px;
+                            }
+
+                            .shop-orders-search-bar {
+                                flex-direction: column;
+                                align-items: stretch;
+                            }
+
+                            .shop-orders-search-bar>button {
+                                width: 100%;
+                                justify-content: center;
+                            }
+
+                            .shop-delivery-panel {
+                                padding: 18px;
+                            }
+
                             .shop-delivery-header {
                                 align-items: stretch;
                             }
 
                             .shop-delivery-controls {
                                 justify-content: stretch;
+                                width: 100%;
                             }
 
                             .shop-delivery-filter {
                                 min-width: 0;
                                 width: 100%;
+                            }
+
+                            .shop-delivery-subcard-header {
+                                flex-direction: column;
+                                align-items: stretch;
                             }
 
                             .shop-delivery-target {
@@ -5007,6 +5086,7 @@
 
                             .shop-delivery-subcard-tools {
                                 justify-content: flex-start;
+                                width: 100%;
                             }
 
                             .shop-delivery-subcard-meta--rich {
@@ -5016,13 +5096,160 @@
                             .shop-delivery-strategy-actions {
                                 align-items: stretch;
                             }
+
+                            .shop-delivery-strategy-grid {
+                                grid-template-columns: repeat(2, minmax(0, 1fr));
+                            }
+
+                            .shop-delivery-strategy-actions .shop-delivery-controls {
+                                width: 100%;
+                            }
+
+                            .shop-delivery-strategy-actions .shop-delivery-controls .btn {
+                                width: 100%;
+                                justify-content: center;
+                            }
+                        }
+
+                        @media (max-width: 768px) {
+                            #shop-view-orders .shop-table-container {
+                                overflow: visible;
+                                background: transparent;
+                                border: none;
+                                box-shadow: none;
+                                backdrop-filter: none;
+                            }
+
+                            #shop-view-orders .shop-table {
+                                display: block;
+                                border-collapse: separate;
+                            }
+
+                            #shop-view-orders .shop-table thead {
+                                display: none;
+                            }
+
+                            #shop-view-orders .shop-table tbody {
+                                display: flex;
+                                flex-direction: column;
+                                gap: 12px;
+                            }
+
+                            #shop-view-orders .shop-table tbody tr {
+                                display: block;
+                                background: rgba(26, 31, 44, 0.72);
+                                border: 1px solid rgba(255, 255, 255, 0.09);
+                                border-radius: 18px;
+                                overflow: hidden;
+                                box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+                            }
+
+                            #shop-view-orders .shop-table tbody tr:hover {
+                                background: rgba(26, 31, 44, 0.78);
+                            }
+
+                            #shop-view-orders .shop-table td {
+                                display: grid;
+                                grid-template-columns: 92px minmax(0, 1fr);
+                                gap: 12px;
+                                align-items: start;
+                                width: 100%;
+                                padding: 12px 14px;
+                                white-space: normal;
+                            }
+
+                            #shop-view-orders .shop-table td::before {
+                                content: attr(data-label);
+                                display: block;
+                                color: rgba(226, 232, 240, 0.56);
+                                font-size: 11px;
+                                font-weight: 700;
+                                line-height: 1.45;
+                                letter-spacing: 0.05em;
+                                text-transform: uppercase;
+                            }
+
+                            #shop-view-orders .shop-table td:last-child {
+                                border-bottom: none;
+                            }
+
+                            #shop-view-orders .shop-table td[colspan] {
+                                display: block;
+                                padding: 12px;
+                            }
+
+                            #shop-view-orders .shop-table td[colspan]::before {
+                                display: none;
+                                content: '';
+                            }
+
+                            #shop-view-orders .shop-table td[data-label="操作"] {
+                                grid-template-columns: 1fr;
+                            }
+
+                            #shop-view-orders .shop-table td[data-label="操作"]::before {
+                                margin-bottom: 8px;
+                            }
+
+                            #shop-view-orders .shop-delivery-task-actions {
+                                width: 100%;
+                            }
+
+                            #shop-view-orders .shop-delivery-action-btn {
+                                flex: 1 1 calc(50% - 8px);
+                                min-height: 40px;
+                                justify-content: center;
+                                text-align: center;
+                            }
+
+                            #shop-view-orders .shop-delivery-observe-stack {
+                                max-width: none;
+                            }
+
+                            #shop-view-orders .shop-delivery-target {
+                                max-width: none;
+                                white-space: normal;
+                            }
+
+                            #shop-view-orders .shop-delivery-subcard-body,
+                            #shop-view-orders .shop-delivery-panel {
+                                padding-left: 14px;
+                                padding-right: 14px;
+                            }
+
+                            #shop-view-orders #ordersPagination,
+                            #shop-view-orders #deliveryTasksPagination,
+                            #shop-view-orders #deliveryDeadLetterPagination,
+                            #shop-view-orders #deliveryLockConflictsPagination,
+                            #shop-view-orders #deliveryReplayPagination {
+                                justify-content: flex-start !important;
+                                flex-wrap: wrap;
+                            }
+                        }
+
+                        @media (max-width: 560px) {
+                            .shop-delivery-strategy-grid {
+                                grid-template-columns: 1fr;
+                            }
+
+                            .shop-delivery-action-btn {
+                                flex-basis: 100%;
+                            }
+
+                            #shop-view-orders .shop-table td {
+                                grid-template-columns: 1fr;
+                                gap: 8px;
+                            }
+
+                            #shop-view-orders .shop-table td::before {
+                                margin-bottom: 2px;
+                            }
                         }
                     </style>
 
                     <!-- Hero Search Section (Copied from Points Lookup) -->
-                    <div style="margin: 0 auto; max-width: 800px; padding: 40px 0;">
-                        <div class="lookup-search-container"
-                            style="display: flex; gap: 16px; margin: 0 auto; align-items: center;">
+                    <div class="shop-orders-toolbar-shell">
+                        <div class="lookup-search-container shop-orders-search-bar">
                             <div class="lookup-search-box"
                                 style="display: flex; gap: 12px; padding: 12px 20px; border-radius: 12px; align-items: center; flex: 1; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1);">
                                 <i class="fas fa-search" style="color: var(--text-dim, #888);"></i>
@@ -5030,8 +5257,8 @@
                                     style="background: transparent; border: none; color: #fff; width: 100%; outline: none; font-size: 16px;"
                                     onkeypress="if(event.key==='Enter') ShopAdmin.searchOrders()">
                             </div>
-                            <button class="btn btn-primary" onclick="ShopAdmin.searchOrders()"
-                                style="padding: 12px 30px; font-size: 16px; background: #3d5a80; border-color: #3d5a80;">
+                            <button class="btn btn-primary shop-theme-primary-btn" onclick="ShopAdmin.searchOrders()"
+                                style="padding: 12px 30px; font-size: 16px;">
                                 查询
                             </button>
                             <button class="btn btn-secondary" onclick="ShopAdmin.exportOrders()"
@@ -5139,7 +5366,7 @@
                                         <button class="btn btn-secondary" onclick="ShopAdmin.loadDeliveryTasks(ShopAdmin.deliveryTaskPage || 1)">
                                             <i class="fas fa-sync-alt"></i> 重新加载
                                         </button>
-                                        <button id="deliveryStrategySaveBtn" class="btn btn-primary" onclick="ShopAdmin.saveDeliveryStrategy()">
+                                        <button id="deliveryStrategySaveBtn" class="btn btn-primary shop-theme-primary-btn" onclick="ShopAdmin.saveDeliveryStrategy()">
                                             <i class="fas fa-save"></i> 保存策略
                                         </button>
                                     </div>
