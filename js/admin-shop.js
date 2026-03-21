@@ -48,6 +48,7 @@ const ShopAdmin = {
     deliveryTaskStatusFilter: 'all',
     deliveryTaskQuery: '',
     deliveryTaskQueryContext: null,
+    deliveryConflictBucketFilter: null,
     deliveryTaskPageSize: 8,
     deliveryDeadLetterPage: 1,
     deliveryDeadLetterReasonFilter: 'all',
@@ -1902,15 +1903,27 @@ Example output format:
         return configs[normalized] || configs['24h'];
     },
 
+    getDeliveryConflictBucketLabel: function (bucket = this.deliveryConflictBucketFilter) {
+        if (!bucket?.startAt || !bucket?.endAt) return '';
+        const startText = this.formatDeliveryTime(bucket.startAt);
+        const endText = this.formatDeliveryTime(bucket.endAt);
+        const explicitLabel = String(bucket.label || '').trim();
+        if (explicitLabel) {
+            return `${explicitLabel} · ${startText} - ${endText}`;
+        }
+        return `${startText} - ${endText}`;
+    },
+
     renderDeliveryTaskFilterHint: function () {
         const container = document.getElementById('deliveryTaskFilterHint');
         if (!container) return;
 
         const query = String(this.deliveryTaskQuery || '').trim();
-        if (!query) {
+        const bucket = this.deliveryConflictBucketFilter || null;
+        if (!query && !bucket) {
             container.innerHTML = `
                 <div class="shop-delivery-filter-banner shop-delivery-filter-banner--idle">
-                    <span class="shop-delivery-table-note">当前未联动筛选履约页。你可以输入关键字，或直接点击下方热点把目标 / 通道回填到任务、死信、锁冲突和占位面板里。</span>
+                    <span class="shop-delivery-table-note">当前未联动筛选履约页。你可以输入关键字，或直接点击下方热点、趋势柱，把目标 / 通道 / 冲突时段回填到任务、死信、锁冲突和占位面板里。</span>
                 </div>
             `;
             return;
@@ -1928,17 +1941,39 @@ Example output format:
             : sourceType === 'target'
                 ? 'processing'
                 : 'neutral';
+        const badges = [];
+        if (query) {
+            badges.push(this.renderDeliveryMetaBadge(sourceLabel, tone));
+            badges.push(this.renderDeliveryMetaBadge(this.truncateText(query, 56), 'neutral'));
+        }
+        if (bucket?.startAt && bucket?.endAt) {
+            badges.push(this.renderDeliveryMetaBadge('冲突时段联动', 'warn'));
+            badges.push(this.renderDeliveryMetaBadge(this.getDeliveryConflictBucketLabel(bucket), 'neutral'));
+        }
+        badges.push(this.renderDeliveryMetaBadge('已联动任务 / 死信 / 锁冲突 / 占位', 'muted'));
+        const actions = [
+            query
+                ? `
+                    <button type="button" class="shop-delivery-inline-btn" onclick="ShopAdmin.clearDeliveryTaskQuery()">
+                        <i class="fas fa-times"></i> 清除关键字
+                    </button>
+                `
+                : '',
+            bucket?.startAt && bucket?.endAt
+                ? `
+                    <button type="button" class="shop-delivery-inline-btn" onclick="ShopAdmin.clearDeliveryConflictBucketFilter()">
+                        <i class="fas fa-clock"></i> 清除时段
+                    </button>
+                `
+                : ''
+        ].filter(Boolean).join('');
 
         container.innerHTML = `
             <div class="shop-delivery-filter-banner">
                 <div class="shop-delivery-meta">
-                    ${this.renderDeliveryMetaBadge(sourceLabel, tone)}
-                    ${this.renderDeliveryMetaBadge(this.truncateText(query, 56), 'neutral')}
-                    ${this.renderDeliveryMetaBadge('已联动任务 / 死信 / 锁冲突 / 占位', 'muted')}
+                    ${badges.join('')}
                 </div>
-                <button type="button" class="shop-delivery-inline-btn" onclick="ShopAdmin.clearDeliveryTaskQuery()">
-                    <i class="fas fa-times"></i> 清除反筛
-                </button>
+                <div class="shop-delivery-controls">${actions}</div>
             </div>
         `;
     },
@@ -2849,6 +2884,7 @@ Example output format:
         const windowConfig = analytics.window || this.getDeliveryAnalyticsWindowConfig();
         const windowLabel = windowConfig.label || this.getDeliveryAnalyticsWindowConfig().label;
         const windowDescription = windowConfig.description || this.getDeliveryAnalyticsWindowConfig().description;
+        const activeBucket = this.deliveryConflictBucketFilter || {};
 
         if (windowFilter && windowFilter.value !== String(windowConfig.key || this.deliveryAnalyticsWindow)) {
             windowFilter.value = String(windowConfig.key || this.deliveryAnalyticsWindow);
@@ -2894,14 +2930,34 @@ Example output format:
                             const bucketLabelHtml = Number(trend.bucket_hours || 1) > 1
                                 ? this.escapeHtml(bucketLabel).replace(' ', '<br>')
                                 : this.escapeHtml(bucketLabel.split(' ')[1] || bucketLabel);
+                            const isActive = activeBucket.startAt === bucket.bucket_at
+                                && activeBucket.endAt === bucket.bucket_end_at;
+                            const isClickable = Number(bucket.total || 0) > 0;
+                            const titleText = `${bucket.label || ''} · 总冲突 ${Number(bucket.total || 0)} · 目标 ${Number(bucket.target || 0)} · 通道 ${Number(bucket.channel || 0)} · 人工 ${Number(bucket.manual || 0)} · 冲突死信 ${Number(bucket.dead_letter || 0)}`;
+                            if (!isClickable) {
+                                return `
+                                    <div class="shop-delivery-trend-bar" title="${this.escapeHtml(titleText)}">
+                                        <div class="shop-delivery-trend-bar-column">
+                                            <div class="shop-delivery-trend-bar-fill" style="height:${totalHeight}%"></div>
+                                            ${deadHeight ? `<div class="shop-delivery-trend-bar-fill shop-delivery-trend-bar-fill--dead" style="height:${deadHeight}%"></div>` : ''}
+                                        </div>
+                                        <span>${showLabel ? bucketLabelHtml : ''}</span>
+                                    </div>
+                                `;
+                            }
                             return `
-                                <div class="shop-delivery-trend-bar" title="${this.escapeHtml(bucket.label || '')} · 总冲突 ${Number(bucket.total || 0)} · 目标 ${Number(bucket.target || 0)} · 通道 ${Number(bucket.channel || 0)} · 人工 ${Number(bucket.manual || 0)} · 冲突死信 ${Number(bucket.dead_letter || 0)}">
+                                <button
+                                    type="button"
+                                    class="shop-delivery-trend-bar shop-delivery-trend-bar--action${isActive ? ' shop-delivery-trend-bar--active' : ''}"
+                                    onclick="ShopAdmin.toggleDeliveryConflictBucketFilter('${encodeURIComponent(bucket.bucket_at || '')}', '${encodeURIComponent(bucket.bucket_end_at || '')}', '${encodeURIComponent(bucket.label || '')}')"
+                                    title="${this.escapeHtml(titleText)}"
+                                >
                                     <div class="shop-delivery-trend-bar-column">
                                         <div class="shop-delivery-trend-bar-fill" style="height:${totalHeight}%"></div>
                                         ${deadHeight ? `<div class="shop-delivery-trend-bar-fill shop-delivery-trend-bar-fill--dead" style="height:${deadHeight}%"></div>` : ''}
                                     </div>
                                     <span>${showLabel ? bucketLabelHtml : ''}</span>
-                                </div>
+                                </button>
                             `;
                         }).join('')}
                     </div>
@@ -3071,6 +3127,7 @@ Example output format:
         const deadLetterReason = deadLetterReasonFilter?.value || this.deliveryDeadLetterReasonFilter || 'all';
         const lockState = lockStateFilter?.value || this.deliveryLockStateFilter || 'all';
         const query = String(this.deliveryTaskQuery || '').trim();
+        const conflictBucket = this.deliveryConflictBucketFilter || null;
 
         this.deliveryTaskStatusFilter = status;
         this.deliveryDeadLetterReasonFilter = deadLetterReason;
@@ -3090,10 +3147,10 @@ Example output format:
         if (summary) {
             summary.innerHTML = '<span class="shop-delivery-pill">正在统计履约任务...</span>';
         }
-        if (filterHint && !query) {
+        if (filterHint && !query && !conflictBucket?.startAt) {
             filterHint.innerHTML = `
                 <div class="shop-delivery-filter-banner shop-delivery-filter-banner--idle">
-                    <span class="shop-delivery-table-note">当前未联动筛选履约页。你可以输入关键字，或直接点击下方热点把目标 / 通道回填到任务、死信、锁冲突和占位面板里。</span>
+                    <span class="shop-delivery-table-note">当前未联动筛选履约页。你可以输入关键字，或直接点击下方热点、趋势柱，把目标 / 通道 / 冲突时段回填到任务、死信、锁冲突和占位面板里。</span>
                 </div>
             `;
         }
@@ -3167,6 +3224,8 @@ Example output format:
                 status,
                 query,
                 analyticsWindow: analyticsWindowConfig.key,
+                conflictBucketStartAt: conflictBucket?.startAt || '',
+                conflictBucketEndAt: conflictBucket?.endAt || '',
                 deadLetterPage: String(this.deliveryDeadLetterPage || 1),
                 deadLetterPageSize: String(this.deliveryDeadLetterPageSize || 5),
                 deadLetterReason,
@@ -3315,7 +3374,40 @@ Example output format:
 
     setDeliveryAnalyticsWindow: function (windowKey) {
         this.deliveryAnalyticsWindow = this.getDeliveryAnalyticsWindowConfig(windowKey).key;
+        this.deliveryConflictBucketFilter = null;
+        this.deliveryTaskPage = 1;
+        this.deliveryDeadLetterPage = 1;
+        this.deliveryLockConflictPage = 1;
         this.loadDeliveryTasks(this.deliveryTaskPage || 1);
+    },
+
+    toggleDeliveryConflictBucketFilter: function (encodedStartAt, encodedEndAt, encodedLabel) {
+        const startAt = decodeURIComponent(String(encodedStartAt || ''));
+        const endAt = decodeURIComponent(String(encodedEndAt || ''));
+        const label = decodeURIComponent(String(encodedLabel || ''));
+        if (!startAt || !endAt) return;
+
+        const current = this.deliveryConflictBucketFilter || {};
+        const isSameBucket = current.startAt === startAt && current.endAt === endAt;
+        this.deliveryConflictBucketFilter = isSameBucket
+            ? null
+            : {
+                startAt,
+                endAt,
+                label
+            };
+        this.deliveryTaskPage = 1;
+        this.deliveryDeadLetterPage = 1;
+        this.deliveryLockConflictPage = 1;
+        this.loadDeliveryTasks(1);
+    },
+
+    clearDeliveryConflictBucketFilter: function () {
+        this.deliveryConflictBucketFilter = null;
+        this.deliveryTaskPage = 1;
+        this.deliveryDeadLetterPage = 1;
+        this.deliveryLockConflictPage = 1;
+        this.loadDeliveryTasks(1);
     },
 
     handleDeliveryTaskQueryKeydown: function (event) {

@@ -5136,6 +5136,31 @@
                             gap: 8px;
                         }
 
+                        .shop-delivery-trend-bar--action {
+                            appearance: none;
+                            padding: 0;
+                            border: none;
+                            background: transparent;
+                            font: inherit;
+                            cursor: pointer;
+                            transition: transform 0.18s ease;
+                        }
+
+                        .shop-delivery-trend-bar--action:hover {
+                            transform: translateY(-2px);
+                        }
+
+                        .shop-delivery-trend-bar--active .shop-delivery-trend-bar-column {
+                            border-color: rgba(96, 165, 250, 0.5);
+                            box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.14);
+                            background: rgba(96, 165, 250, 0.12);
+                        }
+
+                        .shop-delivery-trend-bar--active span {
+                            color: rgba(226, 232, 240, 0.92);
+                            font-weight: 700;
+                        }
+
                         .shop-delivery-trend-bar-column {
                             position: relative;
                             width: 100%;
@@ -5742,7 +5767,7 @@
 
                         <div id="deliveryTaskFilterHint">
                             <div class="shop-delivery-filter-banner shop-delivery-filter-banner--idle">
-                                <span class="shop-delivery-table-note">当前未联动筛选履约页。你可以输入关键字，或直接点击下方热点把目标 / 通道回填到任务、死信、锁冲突和占位面板里。</span>
+                                <span class="shop-delivery-table-note">当前未联动筛选履约页。你可以输入关键字，或直接点击下方热点、趋势柱，把目标 / 通道 / 冲突时段回填到任务、死信、锁冲突和占位面板里。</span>
                             </div>
                         </div>
 
@@ -5874,7 +5899,7 @@
                                             <option value="72h">近 72 小时</option>
                                             <option value="7d">近 7 天</option>
                                         </select>
-                                        <span class="shop-delivery-table-note">点击热点会把目标 / 通道直接回填到上方筛选，并联动任务、死信、锁冲突和占位面板。</span>
+                                        <span class="shop-delivery-table-note">点击热点或趋势柱会把目标 / 通道 / 冲突时段回填到上方筛选，并联动任务、死信、锁冲突和占位面板。</span>
                                     </div>
                                     <div class="shop-delivery-trend-panel">
                                         <div id="deliveryConflictTrendChart" class="shop-delivery-trend-chart">
