@@ -6,7 +6,9 @@ This runbook is for applying and validating the March 22, 2026 payment / redempt
 
 The current hardening set covers:
 
+- payment checkout session / pending order creation hardening
 - verify / payment order review entrypoints
+- payment site value constraints
 - points mutation RPC hardening
 - site-aware balance and redemption RPCs
 - retirement of legacy redemption overloads
@@ -15,8 +17,11 @@ Key files:
 
 - [/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_harden_shop_purchase_identity.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_harden_shop_purchase_identity.sql)
 - [/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_harden_points_mutation_rpcs.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_harden_points_mutation_rpcs.sql)
+- [/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_harden_payment_creation_entrypoints.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_harden_payment_creation_entrypoints.sql)
 - [/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_harden_payment_redemption_entrypoints.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_harden_payment_redemption_entrypoints.sql)
+- [/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_constrain_payment_sites.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_constrain_payment_sites.sql)
 - [/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_retire_legacy_redemption_overloads.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_retire_legacy_redemption_overloads.sql)
+- [/Volumes/chao/AI/xianyu_profit_calculator/supabase/inspect_payment_site_values.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/inspect_payment_site_values.sql)
 - [/Volumes/chao/AI/xianyu_profit_calculator/supabase/verify_payment_redemption_hardening.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/verify_payment_redemption_hardening.sql)
 
 Deprecated scripts that must not be executed anymore:
@@ -31,25 +36,34 @@ Deprecated scripts that must not be executed anymore:
 2. Take a database backup or create a branch/snapshot.
 3. Make sure the app rollout that depends on these SQL changes is ready to deploy.
 4. Do not run deprecated root SQL scripts from the repository root.
+5. Before applying `20260322_constrain_payment_sites.sql`, scan the target project for historical `site` anomalies:
+   - SQL editor: [/Volumes/chao/AI/xianyu_profit_calculator/supabase/inspect_payment_site_values.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/inspect_payment_site_values.sql)
+   - CLI / service-role env: `npm run scan:payment-sites -- --env-file server/.env.production --fail-on-anomaly`
+6. If the repository is only linked to the production project, do not treat that linked project as staging by default. Confirm the target project ref first.
 
 ## Apply Order
 
 If the target database already includes the earlier March 22 migrations, apply only:
 
-1. [/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_retire_legacy_redemption_overloads.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_retire_legacy_redemption_overloads.sql)
+1. [/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_harden_payment_creation_entrypoints.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_harden_payment_creation_entrypoints.sql)
+2. [/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_constrain_payment_sites.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_constrain_payment_sites.sql)
+3. [/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_retire_legacy_redemption_overloads.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_retire_legacy_redemption_overloads.sql)
 
 If the target database is behind the current hardened baseline, apply in this order:
 
 1. [/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_harden_shop_purchase_identity.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_harden_shop_purchase_identity.sql)
 2. [/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_harden_points_mutation_rpcs.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_harden_points_mutation_rpcs.sql)
-3. [/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_harden_payment_redemption_entrypoints.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_harden_payment_redemption_entrypoints.sql)
-4. [/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_retire_legacy_redemption_overloads.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_retire_legacy_redemption_overloads.sql)
+3. [/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_harden_payment_creation_entrypoints.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_harden_payment_creation_entrypoints.sql)
+4. [/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_harden_payment_redemption_entrypoints.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_harden_payment_redemption_entrypoints.sql)
+5. [/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_constrain_payment_sites.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_constrain_payment_sites.sql)
+6. [/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_retire_legacy_redemption_overloads.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/migrations/20260322_retire_legacy_redemption_overloads.sql)
 
 ## Database Verification
 
 Run:
 
 1. [/Volumes/chao/AI/xianyu_profit_calculator/supabase/verify_payment_redemption_hardening.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/verify_payment_redemption_hardening.sql)
+2. [/Volumes/chao/AI/xianyu_profit_calculator/supabase/inspect_payment_site_values.sql](/Volumes/chao/AI/xianyu_profit_calculator/supabase/inspect_payment_site_values.sql)
 
 Expected function results:
 
@@ -66,6 +80,8 @@ Expected data checks:
 - No `payment_orders` should have `redemption_code` before status reaches `paid` or `redeemed`.
 - No unresolved / unverified payment orders should already own usable redemption codes.
 - `points_ledger` rows with `reference_id like 'redeem_%'` should not be missing `site`.
+- `payment_checkout_sessions.site` and `payment_orders.site` should only contain `cn` / `intl`.
+- `20260322_constrain_payment_sites.sql` should not find legacy rows with blank / unsupported site values before the constraint is added.
 
 ## App Smoke Tests
 

@@ -1,4 +1,7 @@
 const crypto = require('crypto');
+const path = require('path');
+const dotenv = require('dotenv');
+const { createClient } = require('@supabase/supabase-js');
 
 function readEnv(name) {
     return String(process.env[name] || '').trim();
@@ -50,9 +53,112 @@ function printCheck(label, ok, details) {
     console.log(`${status} ${label}: ${details}`);
 }
 
-function main() {
-    const args = new Set(process.argv.slice(2));
-    const allowNonProduction = args.has('--allow-non-production');
+function parseArgs(argv = []) {
+    const options = {
+        allowNonProduction: false,
+        envFile: '',
+        validateSupabase: false,
+        validatePaymentSchema: false
+    };
+
+    for (let index = 0; index < argv.length; index += 1) {
+        const value = String(argv[index] || '').trim();
+        if (!value) continue;
+
+        if (value === '--allow-non-production') {
+            options.allowNonProduction = true;
+            continue;
+        }
+
+        if (value === '--validate-supabase') {
+            options.validateSupabase = true;
+            continue;
+        }
+
+        if (value === '--validate-payment-schema') {
+            options.validatePaymentSchema = true;
+            continue;
+        }
+
+        if (value === '--env-file') {
+            options.envFile = path.resolve(process.cwd(), String(argv[index + 1] || '').trim());
+            index += 1;
+        }
+    }
+
+    return options;
+}
+
+function loadEnvFile(envFile) {
+    if (!envFile) return;
+    dotenv.config({
+        path: envFile,
+        override: true
+    });
+}
+
+function getSupabaseClient() {
+    const url = readEnv('SUPABASE_URL');
+    const serviceRoleKey = readEnv('SUPABASE_SERVICE_ROLE_KEY');
+    if (!url || !serviceRoleKey) return null;
+
+    return createClient(url, serviceRoleKey, {
+        auth: {
+            persistSession: false,
+            autoRefreshToken: false
+        }
+    });
+}
+
+async function runSupabaseValidation({ validatePaymentSchema = false } = {}) {
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+        return [{
+            label: 'Supabase live access',
+            ok: false,
+            details: 'missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY'
+        }];
+    }
+
+    const checks = [];
+    const systemConfigResult = await supabase
+        .from('system_config')
+        .select('config_key', { count: 'exact', head: true })
+        .limit(1);
+
+    checks.push({
+        label: 'Supabase live access',
+        ok: !systemConfigResult.error && systemConfigResult.status >= 200 && systemConfigResult.status < 300,
+        details: systemConfigResult.error
+            ? `status=${systemConfigResult.status} ${systemConfigResult.statusText || ''} ${systemConfigResult.error.message || ''}`.trim()
+            : `status=${systemConfigResult.status} ${systemConfigResult.statusText || 'OK'}`
+    });
+
+    if (!validatePaymentSchema) {
+        return checks;
+    }
+
+    for (const table of ['payment_orders', 'payment_checkout_sessions']) {
+        const result = await supabase
+            .from(table)
+            .select('id', { count: 'exact', head: true })
+            .limit(1);
+
+        checks.push({
+            label: `${table} schema access`,
+            ok: !result.error && result.status >= 200 && result.status < 300,
+            details: result.error
+                ? `status=${result.status} ${result.statusText || ''} ${result.error.message || ''}`.trim()
+                : `status=${result.status} ${result.statusText || 'OK'} count=${Number(result.count || 0)}`
+        });
+    }
+
+    return checks;
+}
+
+async function main() {
+    const options = parseArgs(process.argv.slice(2));
+    loadEnvFile(options.envFile);
 
     const serviceRoleKey = readEnv('SUPABASE_SERVICE_ROLE_KEY');
     const adminEncryptionKey = readEnv('ADMIN_CONFIG_ENCRYPTION_KEY');
@@ -105,17 +211,26 @@ function main() {
         },
         {
             label: 'production-like runtime',
-            ok: runtime.productionLike || allowNonProduction,
+            ok: runtime.productionLike || options.allowNonProduction,
             details: runtime.productionLike
                 ? `enabled via ${runtime.source}`
-                : allowNonProduction
+                : options.allowNonProduction
                     ? 'not production-like, but allowed by --allow-non-production'
                     : 'missing production marker (set DEPLOYMENT_TIER=production if VERCEL_ENV / RAILWAY_ENVIRONMENT_NAME are unavailable)'
         }
     ];
 
+    if (options.validateSupabase || options.validatePaymentSchema) {
+        checks.push(...await runSupabaseValidation({
+            validatePaymentSchema: options.validatePaymentSchema
+        }));
+    }
+
     console.log('Production Environment Check');
     console.log('Compare ADMIN_CONFIG_ENCRYPTION_KEY, PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET, and ADMIN_STUDIO_ACCESS_SECRET fingerprints across Vercel and Railway; they should match.');
+    if (options.envFile) {
+        console.log(`Loaded env file: ${options.envFile}`);
+    }
     console.log('');
 
     checks.forEach((check) => {
@@ -147,4 +262,7 @@ function main() {
     console.log('Result: PASS');
 }
 
-main();
+main().catch((error) => {
+    console.error(error.message || error);
+    process.exitCode = 1;
+});
