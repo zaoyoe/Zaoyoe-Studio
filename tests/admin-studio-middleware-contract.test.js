@@ -10,6 +10,7 @@ test('admin studio middleware uses explicit Vercel next() pass-through', () => {
     const source = fs.readFileSync(middlewarePath, 'utf8');
 
     assert.match(source, /import\s+\{\s*next\s*\}\s+from\s+['"]@vercel\/functions['"]/);
+    assert.match(source, /return\s+import\(['"]\.\/api\/_lib\/admin-studio-access\.mjs['"]\)/);
     assert.match(source, /return\s+next\(\);/);
     assert.match(source, /Response\.redirect\(redirectUrl,\s*307\)/);
 });
