@@ -1,5 +1,5 @@
 -- ============================================
--- Verify payment / redemption hardening after 2026-03-22 security fixes
+-- Verify payment / redemption / points hardening after 2026-03-22 security fixes
 -- Run in Supabase SQL Editor against the target environment
 -- ============================================
 
@@ -9,6 +9,19 @@ WITH function_targets AS (
     FROM (
         VALUES
             ('public.fn_purchase_shop_item(uuid,uuid)'::TEXT, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, 'legacy 2-arg overload should be dropped'),
+            ('public.fn_redeem_code(character varying)'::TEXT, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, 'legacy 1-arg redemption overload should be dropped'),
+            ('public.fn_redeem_code(character varying,character varying)'::TEXT, TRUE, TRUE, FALSE, FALSE, FALSE, FALSE, 'site-aware redemption RPC should only be callable by authenticated users'),
+            ('public.fn_get_user_balance(uuid)'::TEXT, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, 'legacy single-arg balance overload should be dropped'),
+            ('public.fn_get_user_balance(character varying)'::TEXT, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, 'legacy varchar balance overload should be dropped'),
+            ('public.fn_get_user_balance(uuid,character varying)'::TEXT, TRUE, TRUE, FALSE, TRUE, FALSE, FALSE, 'site-aware balance RPC should allow authenticated/service_role callers only'),
+            ('public.fn_add_points(uuid,integer,text,text)'::TEXT, TRUE, FALSE, FALSE, TRUE, FALSE, FALSE, 'legacy internal add-points helper should remain service_role only'),
+            ('public.fn_add_points(uuid,integer,text,text,character varying)'::TEXT, TRUE, FALSE, FALSE, TRUE, FALSE, FALSE, 'site-aware internal add-points helper should remain service_role only'),
+            ('public.fn_deduct_points(integer,text,text)'::TEXT, TRUE, TRUE, FALSE, FALSE, FALSE, FALSE, 'legacy self-deduct helper remains authenticated only for compatibility'),
+            ('public.fn_deduct_points(integer,text,text,character varying)'::TEXT, TRUE, TRUE, FALSE, FALSE, FALSE, FALSE, 'site-aware self-deduct helper remains authenticated only for compatibility'),
+            ('public.fn_deduct_points(uuid,integer,text,text)'::TEXT, TRUE, FALSE, FALSE, TRUE, FALSE, FALSE, 'admin deduction helper should remain service_role only'),
+            ('public.fn_deduct_points_admin_site(uuid,integer,text,text,character varying)'::TEXT, TRUE, FALSE, FALSE, TRUE, FALSE, FALSE, 'site-aware admin deduction helper should remain service_role only'),
+            ('public.fn_recharge_points(uuid,numeric,numeric,text,text)'::TEXT, TRUE, FALSE, FALSE, TRUE, FALSE, FALSE, 'legacy recharge helper should remain service_role only'),
+            ('public.fn_recharge_points(uuid,numeric,numeric,text,text,character varying)'::TEXT, TRUE, FALSE, FALSE, TRUE, FALSE, FALSE, 'site-aware recharge helper should remain service_role only'),
             ('public.fn_dispatch_code(character varying,character varying)'::TEXT, TRUE, FALSE, FALSE, TRUE, FALSE, FALSE, 'legacy dispatch RPC should be service_role only'),
             ('public.fn_ensure_redemption_code_for_payment_order(uuid,uuid,integer,character varying,text)'::TEXT, TRUE, TRUE, FALSE, TRUE, TRUE, TRUE, 'mint-code RPC should require admin/service_role and paid gate'),
             ('public.fn_apply_payment_order_review(uuid,text,text,uuid)'::TEXT, TRUE, TRUE, FALSE, TRUE, TRUE, FALSE, 'manual review RPC should enforce admin/service_role'),
@@ -156,5 +169,20 @@ SELECT
 FROM public.redemption_batches
 WHERE package_id IS NULL
   AND COALESCE(custom_points_amount, 0) > 0
+ORDER BY created_at DESC
+LIMIT 100;
+
+-- 6. Recent points ledger redemptions that missed site attribution (should trend to zero)
+SELECT
+    id,
+    user_id,
+    amount,
+    reason,
+    reference_id,
+    site,
+    created_at
+FROM public.points_ledger
+WHERE reference_id LIKE 'redeem\_%' ESCAPE '\'
+  AND COALESCE(site, '') = ''
 ORDER BY created_at DESC
 LIMIT 100;

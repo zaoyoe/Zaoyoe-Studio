@@ -50,6 +50,7 @@ test('standalone Supabase helper SQL files stay aligned with hardened site-aware
 
 test('database migrations retire the legacy redemption overload and formalize the new guardrails', () => {
     const migrationSql = readRepoFile(path.join('supabase', 'migrations', '20260322_retire_legacy_redemption_overloads.sql'));
+    const verificationSql = readRepoFile(path.join('supabase', 'verify_payment_redemption_hardening.sql'));
 
     assert.match(
         migrationSql,
@@ -75,5 +76,59 @@ test('database migrations retire the legacy redemption overload and formalize th
         migrationSql,
         /DROP FUNCTION IF EXISTS public\.fn_get_user_balance\(UUID\);/,
         'retirement migration should remain idempotent against old balance overloads'
+    );
+    assert.match(
+        verificationSql,
+        /public\.fn_redeem_code\(character varying\)/,
+        'verification SQL should explicitly check that the legacy single-argument redemption overload is gone'
+    );
+    assert.match(
+        verificationSql,
+        /public\.fn_redeem_code\(character varying,character varying\)/,
+        'verification SQL should explicitly check the site-aware redemption overload'
+    );
+    assert.match(
+        verificationSql,
+        /public\.fn_get_user_balance\(uuid\)/,
+        'verification SQL should explicitly check that the old single-argument balance overload is gone'
+    );
+    assert.match(
+        verificationSql,
+        /public\.fn_get_user_balance\(uuid,character varying\)/,
+        'verification SQL should explicitly check the site-aware balance overload'
+    );
+});
+
+test('root legacy SQL scripts no longer ship executable single-site payment or redemption entrypoints', () => {
+    const rootCommercialSql = readRepoFile('commercial_points_functions.sql');
+    const rootRedemptionSql = readRepoFile('redemption_functions.sql');
+    const affiliateUpgradeSql = readRepoFile('6.5_affiliate_dashboard_upgrade.sql');
+
+    assert.doesNotMatch(
+        rootCommercialSql,
+        /CREATE OR REPLACE FUNCTION fn_add_points\(/,
+        'commercial_points_functions.sql should be a deprecated stub, not an executable fn_add_points source'
+    );
+    assert.doesNotMatch(
+        rootCommercialSql,
+        /CREATE OR REPLACE FUNCTION fn_deduct_points\(/,
+        'commercial_points_functions.sql should be a deprecated stub, not an executable fn_deduct_points source'
+    );
+
+    assert.doesNotMatch(
+        rootRedemptionSql,
+        /CREATE OR REPLACE FUNCTION fn_redeem_code\(/,
+        'redemption_functions.sql should not redefine the legacy redemption RPC'
+    );
+    assert.doesNotMatch(
+        rootRedemptionSql,
+        /GRANT EXECUTE ON FUNCTION fn_redeem_code\(VARCHAR\) TO authenticated;/,
+        'redemption_functions.sql must not re-grant the legacy single-argument redemption overload'
+    );
+
+    assert.doesNotMatch(
+        affiliateUpgradeSql,
+        /CREATE OR REPLACE FUNCTION public\.fn_recharge_points\(/,
+        '6.5_affiliate_dashboard_upgrade.sql should not redeclare points recharge RPCs'
     );
 });
